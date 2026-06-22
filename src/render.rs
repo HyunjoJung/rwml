@@ -14,8 +14,10 @@
 //! and inline) are decoded and drawn as raster pictures, fit to the content box.
 //!
 //! Fonts come from the system font collection (parley's default `FontContext`),
-//! so Korean renders when a Hangul-capable face is installed. A bundled font is a
-//! later, license-gated addition.
+//! so Korean renders when a Hangul-capable face is installed. For headless/server
+//! use without system CJK fonts, a caller can register its own font bytes via
+//! [`crate::render_pdf_with_fonts`] (the renderer does not embed a multi-megabyte
+//! CJK font into the crate; install one — e.g. Noto Sans CJK — or supply it).
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -971,9 +973,26 @@ fn place_table(pages: &mut Pages, y: &mut f32, rows: Vec<RowLayout>, header_rows
     }
 }
 
-/// Render a [`DocModel`] to a single-column A4 PDF.
+/// Render a [`DocModel`] to a single-column A4 PDF using system fonts.
 pub(crate) fn to_pdf(model: &DocModel) -> Vec<u8> {
+    to_pdf_with_fonts(model, &[])
+}
+
+/// Render a [`DocModel`] to PDF, first registering each blob in `extra_fonts` into
+/// the layout font collection. Lets a caller supply a Korean (or any) font so
+/// rendering works in environments without matching system fonts — the font is
+/// then available by its own family name and participates in script fallback.
+/// Undecodable font blobs are ignored.
+pub(crate) fn to_pdf_with_fonts(model: &DocModel, extra_fonts: &[Vec<u8>]) -> Vec<u8> {
+    use parley::fontique::Blob;
     let mut font_cx = FontContext::default();
+    for f in extra_fonts {
+        if !f.is_empty() {
+            font_cx
+                .collection
+                .register_fonts(Blob::from(f.clone()), None);
+        }
+    }
     let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
     let mut font_cache: HashMap<u64, Font> = HashMap::new();
 
@@ -1445,6 +1464,19 @@ mod tests {
                 .any(|w| w == b"example.com"),
             "hyperlink URI missing from PDF"
         );
+    }
+
+    #[test]
+    fn extra_fonts_register_and_garbage_is_ignored() {
+        let model = DocModel {
+            blocks: vec![para("등록 글꼴 테스트 with 한글", None)],
+            ..DocModel::default()
+        };
+        // Empty and undecodable font blobs must be skipped, not panic; rendering
+        // still succeeds via system fonts.
+        let pdf = super::to_pdf_with_fonts(&model, &[Vec::new(), vec![1, 2, 3, 4, 5]]);
+        assert!(pdf.starts_with(b"%PDF"));
+        assert!(pdf.len() > 400);
     }
 
     #[test]

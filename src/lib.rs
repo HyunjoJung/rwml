@@ -102,6 +102,16 @@ pub fn render_pdf(model: &DocModel) -> Vec<u8> {
     render::to_pdf(model)
 }
 
+/// Render a [`DocModel`] to PDF after registering caller-supplied fonts (e.g. a
+/// bundled Korean face via `include_bytes!`). Use this in headless/server
+/// environments that lack system CJK fonts: each blob is added to the layout font
+/// collection, made available by its family name and used for script fallback.
+/// Available with the `render` feature.
+#[cfg(feature = "render")]
+pub fn render_pdf_with_fonts(model: &DocModel, fonts: &[Vec<u8>]) -> Vec<u8> {
+    render::to_pdf_with_fonts(model, fonts)
+}
+
 /// A parsed Word document — either legacy `.doc` (OLE2/[MS-DOC]) or modern
 /// `.docx` (OOXML). [`Document::open`] format-detects from the magic bytes and
 /// both backends feed the **same** [`DocModel`] and exporters, so `text()`,
