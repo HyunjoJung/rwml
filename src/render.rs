@@ -6,8 +6,10 @@
 //! table rows — which are flowed top-to-bottom onto fixed A4 pages (page breaks at
 //! line/row boundaries), then each page's glyph runs and table borders are drawn
 //! with krilla. Tables are rendered as a real grid: columns are reconstructed
-//! (including `col_span`/`row_span` placement), sized evenly, and bordered. Inline
-//! images are not yet placed.
+//! (including `col_span`/`row_span` placement), sized to authored `col_widths_pct`
+//! or to content, then bordered; cells carry rich per-run text (bold/italic/color/
+//! size/font), background shading, and vertical alignment. Inline images are not
+//! yet placed.
 //!
 //! Fonts come from the system font collection (parley's default `FontContext`),
 //! so Korean renders when a Hangul-capable face is installed. A bundled font is a
@@ -29,7 +31,7 @@ use parley::layout::Alignment;
 use parley::style::{FontFamily, FontFamilyName, FontStyle, FontWeight, StyleProperty};
 use parley::{FontContext, LayoutContext};
 
-use crate::model::{Align, Block, Cell, CharProps, DocModel, Paragraph, Table};
+use crate::model::{Align, Block, Cell, CharProps, DocModel, Paragraph, Table, VCell};
 
 // A4 page geometry, in PDF points.
 const PAGE_W: f32 = 595.0;
@@ -66,12 +68,14 @@ struct LineLayout {
     runs: Vec<RunDraw>,
 }
 
-/// A bordered table cell: its left edge + width (relative to the content origin)
-/// and its wrapped text lines.
+/// A bordered table cell: its left edge + width (relative to the content origin),
+/// its wrapped rich text lines, the background fill, and the vertical alignment.
 struct CellBox {
     x: f32,
     width: f32,
     lines: Vec<LineLayout>,
+    shading: Option<rgb::Color>,
+    valign: VCell,
 }
 
 /// One table row: its height and the cells across it (including empty cells where
@@ -418,9 +422,58 @@ fn natural_width(
         .fold(0.0_f32, f32::max)
 }
 
-/// Lay out a table into one [`FlowItem::Row`] per row. Columns are sized to their
-/// content (natural widths scaled to fill the content box), so a narrow label
-/// column and a wide value column read correctly instead of being forced equal.
+/// Shape a cell's paragraph blocks into wrapped, richly-styled lines (each
+/// paragraph keeps its own runs' bold/italic/color/size/font and alignment).
+/// Nested tables/images in a cell are not laid out as grids — only their text was
+/// ever surfaced — so they contribute nothing here, matching [`Cell::text`].
+fn shape_cell(
+    cell: &Cell,
+    inner_w: f32,
+    font_cx: &mut FontContext,
+    layout_cx: &mut LayoutContext<rgb::Color>,
+    font_cache: &mut HashMap<u64, Font>,
+) -> Vec<LineLayout> {
+    let mut lines = Vec::new();
+    for b in &cell.blocks {
+        if let Block::Paragraph(p) = b {
+            let mut text = String::new();
+            let mut ranges: Vec<(usize, usize, CharProps)> = Vec::new();
+            for r in &p.runs {
+                if r.text.is_empty() {
+                    continue;
+                }
+                let s = text.len();
+                text.push_str(&r.text);
+                ranges.push((s, text.len(), r.props.clone()));
+            }
+            if text.trim().is_empty() {
+                continue;
+            }
+            let align = match p.props.align {
+                Align::Left => Alignment::Start,
+                Align::Center => Alignment::Center,
+                Align::Right => Alignment::Right,
+                Align::Justify => Alignment::Justify,
+            };
+            lines.extend(shape(
+                &text,
+                &ranges,
+                p.props.heading_level,
+                align,
+                inner_w,
+                font_cx,
+                layout_cx,
+                font_cache,
+            ));
+        }
+    }
+    lines
+}
+
+/// Lay out a table into one [`FlowItem::Row`] per row. Column widths come from the
+/// model's authored `col_widths_pct` when present; otherwise columns are sized to
+/// their content (natural widths scaled to fill the content box), so a narrow
+/// label column and a wide value column read correctly instead of being equal.
 fn layout_table(
     t: &Table,
     out: &mut Vec<FlowItem>,
@@ -430,33 +483,40 @@ fn layout_table(
 ) {
     let (grid, ncols) = reconstruct_grid(t);
 
-    // Pass 1: per-column natural width (min 20pt so no column collapses), then
-    // scale the columns to exactly fill the content width.
-    let mut col_nat = vec![20.0_f32; ncols];
-    for placed_row in &grid {
-        for pc in placed_row {
-            if let Some(c) = pc.cell {
-                let txt = c.text().replace('\n', " ");
-                let per = (natural_width(&txt, font_cx, layout_cx) + 2.0 * CELL_PAD)
-                    / pc.span.max(1) as f32;
-                for slot in col_nat
-                    .iter_mut()
-                    .take((pc.col + pc.span).min(ncols))
-                    .skip(pc.col)
-                {
-                    *slot = slot.max(per);
+    // Column edges: honor authored percentages when they match the grid, else
+    // size to content (min 20pt/col) and scale to fill the content width.
+    let mut col_x = vec![0.0_f32; ncols + 1];
+    if t.col_widths_pct.len() == ncols && t.col_widths_pct.iter().all(|w| *w > 0.0) {
+        let sum: f32 = t.col_widths_pct.iter().sum();
+        for c in 0..ncols {
+            col_x[c + 1] = col_x[c] + CONTENT_W * (t.col_widths_pct[c] / sum);
+        }
+    } else {
+        let mut col_nat = vec![20.0_f32; ncols];
+        for placed_row in &grid {
+            for pc in placed_row {
+                if let Some(c) = pc.cell {
+                    let txt = c.text().replace('\n', " ");
+                    let per = (natural_width(&txt, font_cx, layout_cx) + 2.0 * CELL_PAD)
+                        / pc.span.max(1) as f32;
+                    for slot in col_nat
+                        .iter_mut()
+                        .take((pc.col + pc.span).min(ncols))
+                        .skip(pc.col)
+                    {
+                        *slot = slot.max(per);
+                    }
                 }
             }
         }
-    }
-    let total: f32 = col_nat.iter().sum();
-    let scale = if total > 0.0 { CONTENT_W / total } else { 1.0 };
-    let mut col_x = vec![0.0_f32; ncols + 1];
-    for c in 0..ncols {
-        col_x[c + 1] = col_x[c] + col_nat[c] * scale;
+        let total: f32 = col_nat.iter().sum();
+        let scale = if total > 0.0 { CONTENT_W / total } else { 1.0 };
+        for c in 0..ncols {
+            col_x[c + 1] = col_x[c] + col_nat[c] * scale;
+        }
     }
 
-    // Pass 2: shape each cell at its column width and build the rows.
+    // Pass 2: shape each cell richly at its column width and build the rows.
     for placed_row in grid {
         let mut cells = Vec::with_capacity(placed_row.len());
         let mut row_h = 0.0_f32;
@@ -464,29 +524,29 @@ fn layout_table(
             let end = (pc.col + pc.span).min(ncols);
             let x = col_x[pc.col];
             let width = col_x[end] - x;
-            let lines = match pc.cell {
+            let (lines, shading, valign) = match pc.cell {
                 Some(c) => {
-                    let txt = c.text().replace('\n', " ");
-                    if txt.trim().is_empty() {
-                        Vec::new()
-                    } else {
-                        shape(
-                            &txt,
-                            &[],
-                            None,
-                            Alignment::Start,
-                            (width - 2.0 * CELL_PAD).max(1.0),
-                            font_cx,
-                            layout_cx,
-                            font_cache,
-                        )
-                    }
+                    let lines = shape_cell(
+                        c,
+                        (width - 2.0 * CELL_PAD).max(1.0),
+                        font_cx,
+                        layout_cx,
+                        font_cache,
+                    );
+                    let shading = c.shading.map(|s| rgb::Color::new(s.r, s.g, s.b));
+                    (lines, shading, c.valign)
                 }
-                None => Vec::new(),
+                None => (Vec::new(), None, VCell::Top),
             };
             let content_h: f32 = lines.iter().map(|l| l.height).sum();
             row_h = row_h.max(content_h + 2.0 * CELL_PAD);
-            cells.push(CellBox { x, width, lines });
+            cells.push(CellBox {
+                x,
+                width,
+                lines,
+                shading,
+                valign,
+            });
         }
         // A minimum row height so empty rows still draw a band.
         row_h = row_h.max(14.0);
@@ -521,8 +581,8 @@ fn collect_blocks(
     }
 }
 
-/// Fill an axis-aligned rectangle in solid black (used for thin table borders).
-fn fill_rect(surface: &mut Surface<'_>, x: f32, y: f32, w: f32, h: f32) {
+/// Fill an axis-aligned rectangle in a solid color.
+fn fill_rect_color(surface: &mut Surface<'_>, x: f32, y: f32, w: f32, h: f32, color: rgb::Color) {
     if w <= 0.0 || h <= 0.0 {
         return;
     }
@@ -534,12 +594,17 @@ fn fill_rect(surface: &mut Surface<'_>, x: f32, y: f32, w: f32, h: f32) {
     pb.close();
     if let Some(path) = pb.finish() {
         surface.set_fill(Some(Fill {
-            paint: rgb::Color::new(0, 0, 0).into(),
+            paint: color.into(),
             rule: FillRule::NonZero,
             opacity: NormalizedF32::ONE,
         }));
         surface.draw_path(&path);
     }
+}
+
+/// Fill an axis-aligned rectangle in solid black (used for thin table borders).
+fn fill_rect(surface: &mut Surface<'_>, x: f32, y: f32, w: f32, h: f32) {
+    fill_rect_color(surface, x, y, w, h, rgb::Color::new(0, 0, 0));
 }
 
 /// Draw a cell border (four thin edges) around `(x, y, w, h)`.
@@ -626,8 +691,19 @@ pub(crate) fn to_pdf(model: &DocModel) -> Vec<u8> {
                 FlowItem::Row(row) => {
                     for cell in row.cells {
                         let cx = MARGIN + cell.x;
+                        if let Some(fill) = cell.shading {
+                            fill_rect_color(&mut surface, cx, top, cell.width, row.height, fill);
+                        }
                         draw_border(&mut surface, cx, top, cell.width, row.height);
-                        let mut ly = top + CELL_PAD;
+                        // Vertical alignment within the cell band.
+                        let content_h: f32 = cell.lines.iter().map(|l| l.height).sum();
+                        let avail = row.height - 2.0 * CELL_PAD;
+                        let off = match cell.valign {
+                            VCell::Top => 0.0,
+                            VCell::Center => ((avail - content_h) * 0.5).max(0.0),
+                            VCell::Bottom => (avail - content_h).max(0.0),
+                        };
+                        let mut ly = top + CELL_PAD + off;
                         for line in cell.lines {
                             let baseline = ly + line.baseline;
                             let lh = line.height;
@@ -744,6 +820,56 @@ mod tests {
         let pdf = super::to_pdf(&model);
         assert!(pdf.starts_with(b"%PDF"));
         assert!(pdf.len() > 500);
+    }
+
+    #[test]
+    fn renders_rich_shaded_table_without_panicking() {
+        use crate::model::{CharProps, Color, VCell};
+        let navy = Color {
+            r: 0x1F,
+            g: 0x38,
+            b: 0x64,
+        };
+        let white = Color {
+            r: 0xFF,
+            g: 0xFF,
+            b: 0xFF,
+        };
+        let hdr = Cell {
+            blocks: vec![Block::Paragraph(Paragraph {
+                props: ParaProps::default(),
+                runs: vec![Run {
+                    text: "항목".to_string(),
+                    props: CharProps {
+                        bold: true,
+                        color: Some(white),
+                        ..CharProps::default()
+                    },
+                    ..Run::default()
+                }],
+            })],
+            shading: Some(navy),
+            valign: VCell::Center,
+            ..Cell::default()
+        };
+        let table = Table {
+            rows: vec![
+                Row {
+                    cells: vec![hdr, cell("값")],
+                },
+                Row {
+                    cells: vec![cell("가격"), cell("1,000원")],
+                },
+            ],
+            header_rows: 1,
+            col_widths_pct: vec![0.3, 0.7],
+        };
+        let pdf = super::to_pdf(&DocModel {
+            blocks: vec![Block::Table(table)],
+            ..DocModel::default()
+        });
+        assert!(pdf.starts_with(b"%PDF"));
+        assert!(pdf.len() > 800);
     }
 
     #[test]
