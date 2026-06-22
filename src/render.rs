@@ -47,13 +47,14 @@ const BORDER: f32 = 0.4;
 const MAX_TABLE_COLS: usize = 1024;
 
 /// One drawable run on a line: its x offset within the content box, the krilla
-/// glyphs, the resolved font, the size, and the source text (for the ToUnicode
-/// map that keeps the PDF text selectable).
+/// glyphs, the resolved font, the size, the fill color, and the source text (for
+/// the ToUnicode map that keeps the PDF text selectable).
 struct RunDraw {
     x: f32,
     glyphs: Vec<KrillaGlyph>,
     font: Font,
     size: f32,
+    color: rgb::Color,
     text: Rc<str>,
 }
 
@@ -96,6 +97,33 @@ fn font_stack() -> FontFamily<'static> {
         FontFamilyName::Named(Cow::Borrowed("Noto Sans KR")),
         FontFamilyName::Named(Cow::Borrowed("Arial")),
     ]))
+}
+
+/// The system stack with a named face tried first (for an authored `CharProps.font`),
+/// then the Korean-capable fallbacks.
+fn named_stack(name: &str) -> FontFamily<'static> {
+    FontFamily::List(Cow::Owned(vec![
+        FontFamilyName::Named(Cow::Owned(name.to_string())),
+        FontFamilyName::Named(Cow::Borrowed("Malgun Gothic")),
+        FontFamilyName::Named(Cow::Borrowed("Noto Sans CJK KR")),
+        FontFamilyName::Named(Cow::Borrowed("Noto Sans KR")),
+        FontFamilyName::Named(Cow::Borrowed("Arial")),
+    ]))
+}
+
+/// The fill color of the `CharProps` range covering byte `pos` (default black).
+/// Color is not a shaping property, so parley does not split runs on it; we look
+/// it up per cluster and split draw segments where it changes.
+fn color_at(ranges: &[(usize, usize, CharProps)], pos: usize) -> rgb::Color {
+    for (s, e, p) in ranges {
+        if pos >= *s && pos < *e {
+            return p
+                .color
+                .map(|c| rgb::Color::new(c.r, c.g, c.b))
+                .unwrap_or(rgb::Color::new(0, 0, 0));
+        }
+    }
+    rgb::Color::new(0, 0, 0)
 }
 
 fn heading_size(level: Option<u8>) -> f32 {
@@ -147,6 +175,18 @@ fn shape(
         if props.strike {
             builder.push(StyleProperty::Strikethrough(true), *s..*e);
         }
+        // Authored character size (half-points → points) overrides the base size.
+        if let Some(half) = props.size_half_pt {
+            if half > 0 {
+                builder.push(StyleProperty::FontSize(half as f32 / 2.0), *s..*e);
+            }
+        }
+        // Authored font family, tried before the Korean-capable fallbacks.
+        if let Some(name) = &props.font {
+            if !name.is_empty() {
+                builder.push(StyleProperty::FontFamily(named_stack(name)), *s..*e);
+            }
+        }
     }
 
     let mut layout = builder.build(text);
@@ -181,6 +221,11 @@ fn shape(
             };
             let font_size = run.font_size();
             let mut glyphs: Vec<KrillaGlyph> = Vec::new();
+            // Color can change within a single (uniformly-shaped) parley run, so
+            // accumulate glyphs into per-color segments, flushing on each change.
+            let mut seg_color = rgb::Color::new(0, 0, 0);
+            let mut seg_x = run_x;
+            let mut started = false;
             for cluster in run.visual_clusters() {
                 if cluster.is_ligature_continuation() {
                     if let Some(g) = glyphs.last_mut() {
@@ -188,6 +233,20 @@ fn shape(
                     }
                     continue;
                 }
+                let c = color_at(ranges, cluster.text_range().start);
+                if started && c != seg_color && !glyphs.is_empty() {
+                    runs.push(RunDraw {
+                        x: seg_x,
+                        glyphs: std::mem::take(&mut glyphs),
+                        font: krilla_font.clone(),
+                        size: font_size,
+                        color: seg_color,
+                        text: text_rc.clone(),
+                    });
+                    seg_x = x_cursor;
+                }
+                seg_color = c;
+                started = true;
                 for glyph in cluster.glyphs() {
                     glyphs.push(KrillaGlyph::new(
                         GlyphId::new(glyph.id),
@@ -203,10 +262,11 @@ fn shape(
             }
             if !glyphs.is_empty() {
                 runs.push(RunDraw {
-                    x: run_x,
+                    x: seg_x,
                     glyphs,
                     font: krilla_font,
                     size: font_size,
+                    color: seg_color,
                     text: text_rc.clone(),
                 });
             }
@@ -490,10 +550,10 @@ fn draw_border(surface: &mut Surface<'_>, x: f32, y: f32, w: f32, h: f32) {
     fill_rect(surface, x + w - BORDER, y, BORDER, h); // right
 }
 
-/// Draw a run's glyphs at an absolute baseline position.
+/// Draw a run's glyphs at an absolute baseline position, in the run's color.
 fn draw_run(surface: &mut Surface<'_>, run: RunDraw, x_abs: f32, baseline_y: f32) {
     surface.set_fill(Some(Fill {
-        paint: rgb::Color::new(0, 0, 0).into(),
+        paint: run.color.into(),
         rule: FillRule::NonZero,
         opacity: NormalizedF32::ONE,
     }));
@@ -649,6 +709,41 @@ mod tests {
         let pdf = super::to_pdf(&model);
         assert!(pdf.starts_with(b"%PDF"));
         assert!(pdf.len() > 800);
+    }
+
+    #[test]
+    fn renders_rich_runs_without_panicking() {
+        use crate::model::{CharProps, Color};
+        let model = DocModel {
+            blocks: vec![Block::Paragraph(Paragraph {
+                props: ParaProps::default(),
+                runs: vec![
+                    Run {
+                        text: "검정 ".to_string(),
+                        ..Run::default()
+                    },
+                    Run {
+                        text: "빨강 큰글씨".to_string(),
+                        props: CharProps {
+                            color: Some(Color {
+                                r: 0xC0,
+                                g: 0,
+                                b: 0,
+                            }),
+                            size_half_pt: Some(36),
+                            bold: true,
+                            font: Some("Malgun Gothic".to_string()),
+                            ..CharProps::default()
+                        },
+                        ..Run::default()
+                    },
+                ],
+            })],
+            ..DocModel::default()
+        };
+        let pdf = super::to_pdf(&model);
+        assert!(pdf.starts_with(b"%PDF"));
+        assert!(pdf.len() > 500);
     }
 
     #[test]
