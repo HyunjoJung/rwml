@@ -23,7 +23,7 @@ thiserror = "2.0"
 # Modern .docx (OOXML WordprocessingML) support — on by default; disable for the
 # dependency-light legacy-.doc-only build (`default-features = false`). Mirrors
 # the sibling `rxls` crate's .xlsx feature setup.
-zip = { version = "2.2", default-features = false, features = ["deflate"], optional = true }
+zip = { version = "8.6", default-features = false, features = ["deflate"], optional = true }
 quick-xml = { version = "0.36", optional = true }
 # Native typesetting renderer (DocModel → PDF): parley for layout/shaping/CJK
 # line-breaking, krilla for PDF emit with subsetted fonts + selectable text.
