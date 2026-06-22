@@ -21,20 +21,28 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Format
         run: cargo fmt --all -- --check
-      - name: Clippy
+      - name: Clippy (default)
         run: cargo clippy --all-targets -- -D warnings
-      - name: Test
+      - name: Clippy (all features)
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Test (default)
         run: cargo test --all-targets
+      - name: Test (render)
+        run: cargo test --all-targets --features render
       - name: Doctests
-        run: cargo test --doc
+        run: cargo test --doc --all-features
       - name: Doc
-        run: cargo doc --no-deps
+        run: cargo doc --no-deps --all-features
 
   msrv:
-    name: MSRV (1.74)
+    name: MSRV 1.74 (default) · 1.88 (render)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.74.0
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build
+      - name: Build (default features, MSRV 1.74)
+        run: cargo build
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - name: Build (render feature, MSRV 1.88)
+        run: cargo build --features render

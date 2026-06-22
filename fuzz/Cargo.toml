@@ -16,11 +16,18 @@ libfuzzer-sys = "0.4"
 
 [dependencies.rdoc]
 path = ".."
-features = ["docx"]
+features = ["docx", "render"]
 
 [[bin]]
 name = "parse"
 path = "fuzz_targets/parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "render"
+path = "fuzz_targets/render.rs"
 test = false
 doc = false
 bench = false

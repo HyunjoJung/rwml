@@ -16,7 +16,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@nightly
       - name: Install cargo-fuzz
         run: cargo install cargo-fuzz --locked
-      - name: Build fuzz target
+      - name: Build fuzz targets
         run: cargo +nightly fuzz build
-      - name: Run fuzzer (smoke — extend in OSS-Fuzz / longer jobs)
-        run: cargo +nightly fuzz run parse -- -max_total_time=180 -rss_limit_mb=2048
+      - name: Fuzz the parser/writer (smoke — extend in OSS-Fuzz / longer jobs)
+        run: cargo +nightly fuzz run parse -- -max_total_time=120 -rss_limit_mb=2048
+      - name: Fuzz the renderer (smoke)
+        run: cargo +nightly fuzz run render -- -max_total_time=120 -rss_limit_mb=2048
