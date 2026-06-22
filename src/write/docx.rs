@@ -13,9 +13,75 @@
 //! * image → a `media/` part + `<a:blip r:embed>`; hyperlink → an external
 //!   relationship + `<w:hyperlink r:id>`.
 
-use super::esc_text;
 use super::opc::{Package, Rel};
-use crate::model::{Align, Block, CharProps, FieldRole, Image, ParaProps, Paragraph, Table};
+use super::{esc_attr, esc_text};
+use crate::model::{
+    Align, Block, CharProps, Color, FieldRole, Image, ParaProps, Paragraph, Table, VertAlign,
+};
+
+/// `Color` → 6-hex `RRGGBB` for OOXML `w:val`.
+fn hex(c: Color) -> String {
+    format!("{:02X}{:02X}{:02X}", c.r, c.g, c.b)
+}
+
+/// Points → twips (1/20 pt), the OOXML measurement unit.
+fn pt_twips(pt: f32) -> i64 {
+    (pt * 20.0).round() as i64
+}
+
+/// Image extent in EMU from intrinsic pixels (96 dpi → 9525 EMU/px), clamped to
+/// the ~6in content width with aspect preserved. Falls back to 2in² when the
+/// dimensions are unknown.
+fn image_extent_emu(w: Option<u32>, h: Option<u32>) -> (u32, u32) {
+    const EMU_PER_PX: u32 = 9525;
+    const MAX_W_EMU: u32 = 5_486_400; // 6 inches
+    const FALLBACK: u32 = 1_828_800; // 2 inches
+    let (Some(w), Some(h)) = (w, h) else {
+        return (FALLBACK, FALLBACK);
+    };
+    if w == 0 || h == 0 {
+        return (FALLBACK, FALLBACK);
+    }
+    let mut cx = w.saturating_mul(EMU_PER_PX);
+    let mut cy = h.saturating_mul(EMU_PER_PX);
+    if cx > MAX_W_EMU {
+        cy = ((cy as u64 * MAX_W_EMU as u64) / cx as u64).max(1) as u32;
+        cx = MAX_W_EMU;
+    }
+    (cx.max(1), cy.max(1))
+}
+
+const CT_STYLES: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml";
+const REL_STYLES: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";
+
+/// A `word/styles.xml` defining `Normal` + `Heading1..6` (so `w:pStyle` renders
+/// as a real heading in Word; the `outlineLvl` we also emit keeps round-trip
+/// robust). Heading sizes in half-points: 32/28/26/24/22/22.
+fn styles_xml() -> String {
+    let mut s = String::new();
+    s.push_str(XML_DECL);
+    s.push_str(&format!(r#"<w:styles xmlns:w="{W_NS}">"#));
+    s.push_str(
+        r#"<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>"#,
+    );
+    for (lvl, sz) in [(1u8, 32), (2, 28), (3, 26), (4, 24), (5, 22), (6, 22)] {
+        s.push_str(&format!(
+            concat!(
+                r#"<w:style w:type="paragraph" w:styleId="Heading{lvl}">"#,
+                r#"<w:name w:val="heading {lvl}"/><w:basedOn w:val="Normal"/>"#,
+                r#"<w:next w:val="Normal"/><w:qFormat/>"#,
+                r#"<w:pPr><w:outlineLvl w:val="{ol}"/></w:pPr>"#,
+                r#"<w:rPr><w:b/><w:sz w:val="{sz}"/><w:szCs w:val="{sz}"/></w:rPr></w:style>"#,
+            ),
+            lvl = lvl,
+            ol = lvl - 1,
+            sz = sz
+        ));
+    }
+    s.push_str("</w:styles>");
+    s
+}
 
 const W_NS: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const R_NS: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -51,6 +117,8 @@ struct Ctx {
     next_rid: u32,
     /// Whether any list item was emitted (⇒ write `numbering.xml`).
     has_list: bool,
+    /// Whether any heading was emitted (⇒ write `styles.xml`).
+    has_heading: bool,
     /// Image counter for unique `media/imageN` names + drawing ids.
     img_id: u32,
 }
@@ -62,6 +130,7 @@ impl Ctx {
             media: Vec::new(),
             next_rid: 1,
             has_list: false,
+            has_heading: false,
             img_id: 0,
         }
     }
@@ -112,11 +181,30 @@ impl Ctx {
             Align::Justify => Some("both"),
         };
         let outline = heading.map(|h| h.saturating_sub(1));
-        if list.is_none() && jc.is_none() && outline.is_none() {
+        let style_id = heading.map(|h| format!("Heading{}", h.clamp(1, 6)));
+        let sp = pr.spacing;
+        let ind = pr.indent;
+        let has_spacing = sp.before_pt.is_some() || sp.after_pt.is_some() || sp.line_pct.is_some();
+        let has_indent = ind.left_pt.is_some()
+            || ind.right_pt.is_some()
+            || ind.first_line_pt.is_some()
+            || ind.hanging_pt.is_some();
+        if style_id.is_none()
+            && list.is_none()
+            && jc.is_none()
+            && outline.is_none()
+            && !has_spacing
+            && !has_indent
+            && pr.shading.is_none()
+        {
             return;
         }
         out.push_str("<w:pPr>");
-        // Schema order within CT_PPr: numPr, then jc, then outlineLvl.
+        // Schema order: pStyle, numPr, shd, spacing, ind, jc, outlineLvl.
+        if let Some(s) = &style_id {
+            self.has_heading = true;
+            out.push_str(&format!(r#"<w:pStyle w:val="{s}"/>"#));
+        }
         if let Some(li) = list {
             self.has_list = true;
             let num_id = if li.ordered { 1 } else { 2 };
@@ -124,6 +212,44 @@ impl Ctx {
                 r#"<w:numPr><w:ilvl w:val="{}"/><w:numId w:val="{num_id}"/></w:numPr>"#,
                 li.level
             ));
+        }
+        if let Some(c) = pr.shading {
+            out.push_str(&format!(
+                r#"<w:shd w:val="clear" w:color="auto" w:fill="{}"/>"#,
+                hex(c)
+            ));
+        }
+        if has_spacing {
+            let mut a = String::new();
+            if let Some(b) = sp.before_pt {
+                a += &format!(r#" w:before="{}""#, pt_twips(b));
+            }
+            if let Some(af) = sp.after_pt {
+                a += &format!(r#" w:after="{}""#, pt_twips(af));
+            }
+            if let Some(l) = sp.line_pct {
+                a += &format!(
+                    r#" w:line="{}" w:lineRule="auto""#,
+                    (l * 240.0).round() as i64
+                );
+            }
+            out.push_str(&format!("<w:spacing{a}/>"));
+        }
+        if has_indent {
+            let mut a = String::new();
+            if let Some(l) = ind.left_pt {
+                a += &format!(r#" w:left="{}""#, pt_twips(l));
+            }
+            if let Some(r) = ind.right_pt {
+                a += &format!(r#" w:right="{}""#, pt_twips(r));
+            }
+            if let Some(f) = ind.first_line_pt {
+                a += &format!(r#" w:firstLine="{}""#, pt_twips(f));
+            }
+            if let Some(h) = ind.hanging_pt {
+                a += &format!(r#" w:hanging="{}""#, pt_twips(h));
+            }
+            out.push_str(&format!("<w:ind{a}/>"));
         }
         if let Some(j) = jc {
             out.push_str(&format!(r#"<w:jc w:val="{j}"/>"#));
@@ -169,8 +295,10 @@ impl Ctx {
         let target = format!("media/image{n}.{ext}");
         let rid = self.add_rel(REL_IMAGE, &target, false);
         self.media.push((format!("word/{target}"), bytes, ext, ct));
-        // Default ~2in × 2in box (EMU); the reader ignores extent, Word renders it.
-        let (cx, cy) = (1_828_800u32, 1_828_800u32);
+        // Extent (EMU) from the image's intrinsic pixels at 96 dpi (1px = 9525
+        // EMU), clamped to the ~6in content width; falls back to 2in² if the
+        // header had no dimensions.
+        let (cx, cy) = image_extent_emu(img.width_px, img.height_px);
         out.push_str(&format!(
             concat!(
                 r#"<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">"#,
@@ -251,11 +379,30 @@ impl Ctx {
                     let span = (c.col_span.max(1) as usize).min(MAX_TABLE_COLS);
                     let rs = (c.row_span.max(1) as usize).min(MAX_TABLE_COLS);
                     row_xml.push_str("<w:tc><w:tcPr>");
+                    if let Some(p) = c.width_pct {
+                        let w = (p.clamp(0.0, 1.0) * 5000.0).round() as i64;
+                        row_xml.push_str(&format!(r#"<w:tcW w:w="{w}" w:type="pct"/>"#));
+                    }
                     if span > 1 {
                         row_xml.push_str(&format!(r#"<w:gridSpan w:val="{span}"/>"#));
                     }
                     if rs > 1 {
                         row_xml.push_str(r#"<w:vMerge w:val="restart"/>"#);
+                    }
+                    match c.valign {
+                        crate::model::VCell::Center => {
+                            row_xml.push_str(r#"<w:vAlign w:val="center"/>"#)
+                        }
+                        crate::model::VCell::Bottom => {
+                            row_xml.push_str(r#"<w:vAlign w:val="bottom"/>"#)
+                        }
+                        crate::model::VCell::Top => {}
+                    }
+                    if let Some(col) = c.shading {
+                        row_xml.push_str(&format!(
+                            r#"<w:shd w:val="clear" w:color="auto" w:fill="{}"/>"#,
+                            hex(col)
+                        ));
                     }
                     row_xml.push_str("</w:tcPr>");
                     self.write_cell_blocks(&mut row_xml, &c.blocks);
@@ -310,15 +457,37 @@ impl Ctx {
 /// Write `<w:rPr>` toggles in schema order (b, i, strike, vanish, u). Free
 /// function (no `Ctx` state needed).
 fn write_rpr(out: &mut String, p: &CharProps) {
-    if !(p.bold || p.italic || p.underline || p.strike || p.hidden) {
+    let has = p.bold
+        || p.italic
+        || p.underline
+        || p.strike
+        || p.hidden
+        || p.small_caps
+        || p.font.is_some()
+        || p.size_half_pt.is_some()
+        || p.color.is_some()
+        || p.highlight.is_some()
+        || p.vert_align != VertAlign::Baseline;
+    if !has {
         return;
     }
     out.push_str("<w:rPr>");
+    // Schema order: rFonts, b, i, smallCaps, strike, vanish, color, sz/szCs,
+    // highlight, u, vertAlign.
+    if let Some(f) = &p.font {
+        let f = esc_attr(f);
+        out.push_str(&format!(
+            r#"<w:rFonts w:ascii="{f}" w:hAnsi="{f}" w:eastAsia="{f}" w:cs="{f}"/>"#
+        ));
+    }
     if p.bold {
         out.push_str("<w:b/>");
     }
     if p.italic {
         out.push_str("<w:i/>");
+    }
+    if p.small_caps {
+        out.push_str("<w:smallCaps/>");
     }
     if p.strike {
         out.push_str("<w:strike/>");
@@ -326,8 +495,22 @@ fn write_rpr(out: &mut String, p: &CharProps) {
     if p.hidden {
         out.push_str("<w:vanish/>");
     }
+    if let Some(c) = p.color {
+        out.push_str(&format!(r#"<w:color w:val="{}"/>"#, hex(c)));
+    }
+    if let Some(sz) = p.size_half_pt {
+        out.push_str(&format!(r#"<w:sz w:val="{sz}"/><w:szCs w:val="{sz}"/>"#));
+    }
+    if let Some(h) = &p.highlight {
+        out.push_str(&format!(r#"<w:highlight w:val="{}"/>"#, esc_attr(h)));
+    }
     if p.underline {
         out.push_str(r#"<w:u w:val="single"/>"#);
+    }
+    match p.vert_align {
+        VertAlign::Super => out.push_str(r#"<w:vertAlign w:val="superscript"/>"#),
+        VertAlign::Sub => out.push_str(r#"<w:vertAlign w:val="subscript"/>"#),
+        VertAlign::Baseline => {}
     }
     out.push_str("</w:rPr>");
 }
@@ -410,11 +593,21 @@ pub(crate) fn to_docx(model: &crate::DocModel) -> Vec<u8> {
         r#"<w:document xmlns:w="{W_NS}" xmlns:r="{R_NS}" xmlns:wp="{WP_NS}" xmlns:a="{A_NS}" xmlns:pic="{PIC_NS}"><w:body>"#
     ));
     doc.push_str(&body);
-    // A4 section.
-    doc.push_str(concat!(
-        r#"<w:sectPr><w:pgSz w:w="11906" w:h="16838"/>"#,
-        r#"<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/>"#,
-        r#"</w:sectPr>"#,
+    // Section: page size + margins from DocSetup (twips = pt*20; pt = EMU... here
+    // PageSetup is already in points). Orientation swaps w/h.
+    let page = &model.setup.page;
+    let (mut w, mut h) = (pt_twips(page.width_pt), pt_twips(page.height_pt));
+    if page.landscape {
+        std::mem::swap(&mut w, &mut h);
+    }
+    let m = pt_twips(page.margin_pt);
+    let orient = if page.landscape {
+        " w:orient=\"landscape\""
+    } else {
+        ""
+    };
+    doc.push_str(&format!(
+        r#"<w:sectPr><w:pgSz w:w="{w}" w:h="{h}"{orient}/><w:pgMar w:top="{m}" w:right="{m}" w:bottom="{m}" w:left="{m}" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr>"#
     ));
     doc.push_str("</w:body></w:document>");
 
@@ -436,6 +629,21 @@ pub(crate) fn to_docx(model: &crate::DocModel) -> Vec<u8> {
             target: "numbering.xml".to_string(),
             external: false,
         });
+        ctx.next_rid += 1;
+    }
+    if ctx.has_heading {
+        pkg.add_part(
+            "word/styles.xml",
+            Some(CT_STYLES),
+            styles_xml().into_bytes(),
+        );
+        doc_rels.push(Rel {
+            id: format!("rId{}", ctx.next_rid),
+            rel_type: REL_STYLES.to_string(),
+            target: "styles.xml".to_string(),
+            external: false,
+        });
+        ctx.next_rid += 1;
     }
 
     for (path, bytes, ext, ct) in ctx.media {
@@ -659,6 +867,78 @@ mod tests {
         let imgs = doc.images();
         assert_eq!(imgs.len(), 1);
         assert_eq!(imgs[0].bytes.as_deref(), Some(&png[..]));
+    }
+
+    #[test]
+    fn round_trips_rich_char_and_para_formatting() {
+        use crate::model::{Color, Indent, Spacing};
+        let run = Run {
+            text: "빨강굵게".to_string(),
+            props: CharProps {
+                bold: true,
+                color: Some(Color {
+                    r: 0xFF,
+                    g: 0,
+                    b: 0,
+                }),
+                size_half_pt: Some(28),
+                font: Some("맑은 고딕".to_string()),
+                ..CharProps::default()
+            },
+            ..Run::default()
+        };
+        let para = Paragraph {
+            props: ParaProps {
+                spacing: Spacing {
+                    before_pt: Some(12.0),
+                    after_pt: Some(6.0),
+                    line_pct: Some(1.5),
+                },
+                indent: Indent {
+                    left_pt: Some(24.0),
+                    ..Indent::default()
+                },
+                shading: Some(Color {
+                    r: 0xEE,
+                    g: 0xEE,
+                    b: 0xEE,
+                }),
+                ..ParaProps::default()
+            },
+            runs: vec![run],
+        };
+        let model = DocModel {
+            blocks: vec![Block::Paragraph(para)],
+            ..DocModel::default()
+        };
+        let m2 = Document::open(&super::to_docx(&model)).unwrap().model();
+        let Block::Paragraph(p) = &m2.blocks[0] else {
+            panic!("para")
+        };
+        let rp = &p.runs[0].props;
+        assert!(rp.bold);
+        assert_eq!(
+            rp.color,
+            Some(Color {
+                r: 0xFF,
+                g: 0,
+                b: 0
+            })
+        );
+        assert_eq!(rp.size_half_pt, Some(28));
+        assert_eq!(rp.font.as_deref(), Some("맑은 고딕"));
+        assert_eq!(p.props.spacing.before_pt, Some(12.0));
+        assert_eq!(p.props.spacing.after_pt, Some(6.0));
+        assert_eq!(p.props.spacing.line_pct, Some(1.5));
+        assert_eq!(p.props.indent.left_pt, Some(24.0));
+        assert_eq!(
+            p.props.shading,
+            Some(Color {
+                r: 0xEE,
+                g: 0xEE,
+                b: 0xEE
+            })
+        );
     }
 
     #[test]
