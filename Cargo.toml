@@ -17,7 +17,7 @@ exclude = [".github/"]
 # Standalone, dependency-light, no workspace inheritance — this crate is meant
 # to be liftable into its own repository / crates.io as-is.
 [dependencies]
-cfb = "0.10"
+cfb = "0.14"
 encoding_rs = "0.8"
 thiserror = "2.0"
 # Modern .docx (OOXML WordprocessingML) support — on by default; disable for the
