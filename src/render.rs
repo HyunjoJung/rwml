@@ -21,8 +21,10 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use krilla::action::LinkAction;
+use krilla::annotation::{Annotation, LinkAnnotation, Target};
 use krilla::color::rgb;
-use krilla::geom::{PathBuilder, Point, Size, Transform};
+use krilla::geom::{PathBuilder, Point, Rect, Size, Transform};
 use krilla::image::Image as PdfImage;
 use krilla::num::NormalizedF32;
 use krilla::page::PageSettings;
@@ -35,7 +37,7 @@ use parley::style::{FontFamily, FontFamilyName, FontStyle, FontWeight, StyleProp
 use parley::{FontContext, LayoutContext};
 
 use crate::model::{
-    Align, Block, Cell, CharProps, DocModel, Image, ListInfo, Paragraph, Table, VCell,
+    Align, Block, Cell, CharProps, DocModel, FieldRole, Image, ListInfo, Paragraph, Table, VCell,
 };
 
 // A4 page geometry, in PDF points.
@@ -65,7 +67,16 @@ struct RunDraw {
     font: Font,
     size: f32,
     color: rgb::Color,
+    /// Hyperlink target, if this run is part of a `FieldRole::Hyperlink` range.
+    link: Option<Rc<str>>,
     text: Rc<str>,
+}
+
+impl RunDraw {
+    /// Advance width of the run in points (sum of glyph advances × size).
+    fn width(&self) -> f32 {
+        self.glyphs.iter().map(|g| g.x_advance).sum::<f32>() * self.size
+    }
 }
 
 /// A laid-out line: its advance height, the baseline offset from the line top,
@@ -200,6 +211,15 @@ fn color_at(ranges: &[(usize, usize, CharProps)], pos: usize) -> rgb::Color {
     rgb::Color::new(0, 0, 0)
 }
 
+/// The hyperlink URL covering byte `pos`, if any. Like color, a link is not a
+/// shaping property, so we look it up per cluster and split draw segments on it.
+fn link_at(links: &[(usize, usize, Rc<str>)], pos: usize) -> Option<Rc<str>> {
+    links
+        .iter()
+        .find(|(s, e, _)| pos >= *s && pos < *e)
+        .map(|(_, _, u)| u.clone())
+}
+
 fn heading_size(level: Option<u8>) -> f32 {
     match level {
         Some(1) => 20.0,
@@ -216,6 +236,7 @@ fn heading_size(level: Option<u8>) -> f32 {
 fn shape(
     text: &str,
     ranges: &[(usize, usize, CharProps)],
+    links: &[(usize, usize, Rc<str>)],
     heading_level: Option<u8>,
     align: Alignment,
     width: f32,
@@ -295,9 +316,10 @@ fn shape(
             };
             let font_size = run.font_size();
             let mut glyphs: Vec<KrillaGlyph> = Vec::new();
-            // Color can change within a single (uniformly-shaped) parley run, so
-            // accumulate glyphs into per-color segments, flushing on each change.
+            // Color and hyperlink can change within a single (uniformly-shaped)
+            // parley run, so accumulate glyphs into segments, flushing each change.
             let mut seg_color = rgb::Color::new(0, 0, 0);
+            let mut seg_link: Option<Rc<str>> = None;
             let mut seg_x = run_x;
             let mut started = false;
             for cluster in run.visual_clusters() {
@@ -308,18 +330,21 @@ fn shape(
                     continue;
                 }
                 let c = color_at(ranges, cluster.text_range().start);
-                if started && c != seg_color && !glyphs.is_empty() {
+                let lk = link_at(links, cluster.text_range().start);
+                if started && (c != seg_color || lk != seg_link) && !glyphs.is_empty() {
                     runs.push(RunDraw {
                         x: seg_x,
                         glyphs: std::mem::take(&mut glyphs),
                         font: krilla_font.clone(),
                         size: font_size,
                         color: seg_color,
+                        link: seg_link.clone(),
                         text: text_rc.clone(),
                     });
                     seg_x = x_cursor;
                 }
                 seg_color = c;
+                seg_link = lk;
                 started = true;
                 for glyph in cluster.glyphs() {
                     glyphs.push(KrillaGlyph::new(
@@ -341,6 +366,7 @@ fn shape(
                     font: krilla_font,
                     size: font_size,
                     color: seg_color,
+                    link: seg_link,
                     text: text_rc.clone(),
                 });
             }
@@ -408,6 +434,7 @@ fn layout_paragraph(
 
     let mut text = String::new();
     let mut ranges: Vec<(usize, usize, CharProps)> = Vec::new();
+    let mut links: Vec<(usize, usize, Rc<str>)> = Vec::new();
     let mut images: Vec<&Image> = Vec::new();
     if let Some(m) = marker {
         if !m.is_empty() {
@@ -428,6 +455,9 @@ fn layout_paragraph(
         let s = text.len();
         text.push_str(&r.text);
         ranges.push((s, text.len(), r.props.clone()));
+        if let FieldRole::Hyperlink { url } = &r.field {
+            links.push((s, text.len(), Rc::from(url.as_str())));
+        }
     }
     if !text.trim().is_empty() {
         let align = match p.props.align {
@@ -439,6 +469,7 @@ fn layout_paragraph(
         for mut line in shape(
             &text,
             &ranges,
+            &links,
             p.props.heading_level,
             align,
             wrap_w,
@@ -571,6 +602,7 @@ fn shape_cell(
         if let Block::Paragraph(p) = b {
             let mut text = String::new();
             let mut ranges: Vec<(usize, usize, CharProps)> = Vec::new();
+            let mut links: Vec<(usize, usize, Rc<str>)> = Vec::new();
             for r in &p.runs {
                 if r.text.is_empty() {
                     continue;
@@ -578,6 +610,9 @@ fn shape_cell(
                 let s = text.len();
                 text.push_str(&r.text);
                 ranges.push((s, text.len(), r.props.clone()));
+                if let FieldRole::Hyperlink { url } = &r.field {
+                    links.push((s, text.len(), Rc::from(url.as_str())));
+                }
             }
             if text.trim().is_empty() {
                 continue;
@@ -591,6 +626,7 @@ fn shape_cell(
             lines.extend(shape(
                 &text,
                 &ranges,
+                &links,
                 p.props.heading_level,
                 align,
                 inner_w,
@@ -985,6 +1021,9 @@ pub(crate) fn to_pdf(model: &DocModel) -> Vec<u8> {
             continue;
         };
         let mut page = document.start_page_with(settings);
+        // Link rects collected while drawing (top-down coords); added as annotations
+        // after the surface is finished (which releases its borrow on the page).
+        let mut page_links: Vec<(f32, f32, f32, f32, Rc<str>)> = Vec::new();
         let mut surface = page.surface();
         for (top, item) in page_items {
             match item {
@@ -1001,7 +1040,12 @@ pub(crate) fn to_pdf(model: &DocModel) -> Vec<u8> {
                 FlowItem::Line(line) => {
                     let baseline = top + line.baseline;
                     let x0 = MARGIN + line.x_indent;
+                    let lh = line.height;
                     for run in line.runs {
+                        if let Some(url) = run.link.clone() {
+                            let l = x0 + run.x;
+                            page_links.push((l, top, l + run.width(), top + lh, url));
+                        }
                         draw_run(&mut surface, run, x0, baseline);
                     }
                 }
@@ -1025,6 +1069,10 @@ pub(crate) fn to_pdf(model: &DocModel) -> Vec<u8> {
                             let baseline = ly + line.baseline;
                             let lh = line.height;
                             for run in line.runs {
+                                if let Some(url) = run.link.clone() {
+                                    let l = cx + CELL_PAD + run.x;
+                                    page_links.push((l, ly, l + run.width(), ly + lh, url));
+                                }
                                 draw_run(&mut surface, run, cx + CELL_PAD, baseline);
                             }
                             ly += lh;
@@ -1034,6 +1082,15 @@ pub(crate) fn to_pdf(model: &DocModel) -> Vec<u8> {
             }
         }
         surface.finish();
+        for (l, t, r, b, url) in page_links {
+            if let Some(rect) = Rect::from_ltrb(l, t, r, b) {
+                let target = Target::Action(LinkAction::new(url.to_string()).into());
+                page.add_annotation(Annotation::new_link(
+                    LinkAnnotation::new(rect, target),
+                    None,
+                ));
+            }
+        }
         page.finish();
     }
     document.finish().unwrap_or_default()
@@ -1356,6 +1413,38 @@ mod tests {
         let pdf = super::to_pdf(&model);
         assert!(pdf.starts_with(b"%PDF"));
         assert!(pdf.len() < 5_000_000, "unexpectedly large: {}", pdf.len());
+    }
+
+    #[test]
+    fn renders_hyperlink_without_panicking() {
+        use crate::model::FieldRole;
+        let model = DocModel {
+            blocks: vec![Block::Paragraph(Paragraph {
+                props: ParaProps::default(),
+                runs: vec![
+                    Run {
+                        text: "원문 ".to_string(),
+                        ..Run::default()
+                    },
+                    Run {
+                        text: "링크".to_string(),
+                        field: FieldRole::Hyperlink {
+                            url: "https://example.com".to_string(),
+                        },
+                        ..Run::default()
+                    },
+                ],
+            })],
+            ..DocModel::default()
+        };
+        let pdf = super::to_pdf(&model);
+        assert!(pdf.starts_with(b"%PDF"));
+        // The URI string is written into the annotation dictionary.
+        assert!(
+            pdf.windows(b"example.com".len())
+                .any(|w| w == b"example.com"),
+            "hyperlink URI missing from PDF"
+        );
     }
 
     #[test]
