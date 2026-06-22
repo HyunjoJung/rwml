@@ -387,8 +387,10 @@ pub struct DocSetup {
     pub page: PageSetup,
     /// Running header content (empty = none).
     pub header: Vec<Block>,
-    /// Running footer content (a `PAGE` field run renders page numbers).
+    /// Running footer content (empty = none).
     pub footer: Vec<Block>,
+    /// Emit a centered page number (`PAGE` field) in the footer.
+    pub page_numbers: bool,
     /// Document title metadata.
     pub title: Option<String>,
     /// Document author metadata.

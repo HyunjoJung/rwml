@@ -167,6 +167,20 @@ fn main() {
         setup: DocSetup {
             title: Some("입찰 비교 리포트".to_string()),
             creator: Some("kr-bid".to_string()),
+            header: vec![Block::Paragraph(Paragraph {
+                props: ParaProps {
+                    align: Align::Right,
+                    ..ParaProps::default()
+                },
+                runs: vec![run(
+                    "나라장터 입찰 비교 리포트 — 대외비",
+                    CharProps {
+                        color: Some(navy),
+                        ..CharProps::default()
+                    },
+                )],
+            })],
+            page_numbers: true,
             ..DocSetup::default()
         },
         ..DocModel::default()

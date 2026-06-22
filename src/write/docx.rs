@@ -54,6 +54,56 @@ fn image_extent_emu(w: Option<u32>, h: Option<u32>) -> (u32, u32) {
 const CT_STYLES: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml";
 const REL_STYLES: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";
+const CT_HEADER: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml";
+const CT_FOOTER: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml";
+const REL_HEADER: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header";
+const REL_FOOTER: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer";
+
+/// Build a `word/header1.xml` / `footer1.xml` part body from running paragraphs
+/// (text + run formatting + alignment; images/links/tables inside a header are
+/// out of scope — rendered as their text). Appends a centered `PAGE` field when
+/// `page_numbers`. A header/footer must contain at least one paragraph.
+fn render_hf_body(blocks: &[crate::model::Block], page_numbers: bool) -> String {
+    use crate::model::Block;
+    let mut out = String::new();
+    for b in blocks {
+        if let Block::Paragraph(p) = b {
+            out.push_str("<w:p>");
+            let jc = match p.props.align {
+                Align::Center => Some("center"),
+                Align::Right => Some("right"),
+                Align::Justify => Some("both"),
+                Align::Left => None,
+            };
+            if let Some(j) = jc {
+                out.push_str(&format!(r#"<w:pPr><w:jc w:val="{j}"/></w:pPr>"#));
+            }
+            for r in &p.runs {
+                out.push_str("<w:r>");
+                write_rpr(&mut out, &r.props);
+                write_run_text(&mut out, &r.text);
+                out.push_str("</w:r>");
+            }
+            out.push_str("</w:p>");
+        }
+    }
+    if page_numbers {
+        out.push_str(
+            r#"<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:fldSimple w:instr=" PAGE "><w:r><w:t>1</w:t></w:r></w:fldSimple></w:p>"#,
+        );
+    }
+    if out.is_empty() {
+        out.push_str("<w:p/>");
+    }
+    out
+}
+
+/// Wrap a header/footer body in its root element + namespaces.
+fn hf_part(tag: &str, body: &str) -> Vec<u8> {
+    format!(r#"{XML_DECL}<w:{tag} xmlns:w="{W_NS}" xmlns:r="{R_NS}">{body}</w:{tag}>"#).into_bytes()
+}
 
 /// A `word/styles.xml` defining `Normal` + `Heading1..6` (so `w:pStyle` renders
 /// as a real heading in Word; the `outlineLvl` we also emit keeps round-trip
@@ -593,8 +643,54 @@ pub(crate) fn to_docx(model: &crate::DocModel) -> Vec<u8> {
         r#"<w:document xmlns:w="{W_NS}" xmlns:r="{R_NS}" xmlns:wp="{WP_NS}" xmlns:a="{A_NS}" xmlns:pic="{PIC_NS}"><w:body>"#
     ));
     doc.push_str(&body);
-    // Section: page size + margins from DocSetup (twips = pt*20; pt = EMU... here
-    // PageSetup is already in points). Orientation swaps w/h.
+
+    // Header/footer parts + their section references (computed before the sectPr,
+    // which references them by relationship id).
+    let mut doc_rels = std::mem::take(&mut ctx.doc_rels);
+    let mut hf_parts: Vec<(&'static str, &'static str, Vec<u8>)> = Vec::new();
+    let mut sect_refs = String::new();
+    if !model.setup.header.is_empty() {
+        let rid = format!("rId{}", ctx.next_rid);
+        ctx.next_rid += 1;
+        hf_parts.push((
+            "word/header1.xml",
+            CT_HEADER,
+            hf_part("hdr", &render_hf_body(&model.setup.header, false)),
+        ));
+        doc_rels.push(Rel {
+            id: rid.clone(),
+            rel_type: REL_HEADER.to_string(),
+            target: "header1.xml".to_string(),
+            external: false,
+        });
+        sect_refs.push_str(&format!(
+            r#"<w:headerReference w:type="default" r:id="{rid}"/>"#
+        ));
+    }
+    if !model.setup.footer.is_empty() || model.setup.page_numbers {
+        let rid = format!("rId{}", ctx.next_rid);
+        ctx.next_rid += 1;
+        hf_parts.push((
+            "word/footer1.xml",
+            CT_FOOTER,
+            hf_part(
+                "ftr",
+                &render_hf_body(&model.setup.footer, model.setup.page_numbers),
+            ),
+        ));
+        doc_rels.push(Rel {
+            id: rid.clone(),
+            rel_type: REL_FOOTER.to_string(),
+            target: "footer1.xml".to_string(),
+            external: false,
+        });
+        sect_refs.push_str(&format!(
+            r#"<w:footerReference w:type="default" r:id="{rid}"/>"#
+        ));
+    }
+
+    // Section: header/footer refs (schema order: before pgSz) then page geometry
+    // from DocSetup. Orientation swaps width/height.
     let page = &model.setup.page;
     let (mut w, mut h) = (pt_twips(page.width_pt), pt_twips(page.height_pt));
     if page.landscape {
@@ -607,14 +703,15 @@ pub(crate) fn to_docx(model: &crate::DocModel) -> Vec<u8> {
         ""
     };
     doc.push_str(&format!(
-        r#"<w:sectPr><w:pgSz w:w="{w}" w:h="{h}"{orient}/><w:pgMar w:top="{m}" w:right="{m}" w:bottom="{m}" w:left="{m}" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr>"#
+        r#"<w:sectPr>{sect_refs}<w:pgSz w:w="{w}" w:h="{h}"{orient}/><w:pgMar w:top="{m}" w:right="{m}" w:bottom="{m}" w:left="{m}" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr>"#
     ));
     doc.push_str("</w:body></w:document>");
 
     let mut pkg = Package::new();
     pkg.add_part("word/document.xml", Some(CT_DOCUMENT), doc.into_bytes());
-
-    let mut doc_rels = std::mem::take(&mut ctx.doc_rels);
+    for (path, ct, bytes) in hf_parts {
+        pkg.add_part(path, Some(ct), bytes);
+    }
     if ctx.has_list {
         pkg.add_part(
             "word/numbering.xml",
@@ -975,5 +1072,33 @@ mod tests {
             bytes.len()
         );
         assert!(Document::open(&bytes).is_ok());
+    }
+
+    /// A header/footer + page numbers emit the `header1.xml`/`footer1.xml` parts
+    /// (with a `PAGE` field) and section references, and crucially do **not**
+    /// corrupt the body: it still re-opens and reads back. (LibreOffice's headless
+    /// converter cannot load *any* docx with a header — even canonical ones — so
+    /// the body round-trip + the part bytes are the verifiable oracle.)
+    #[test]
+    fn emits_header_footer_and_page_numbers() {
+        use crate::model::DocSetup;
+        let model = DocModel {
+            blocks: vec![Block::Paragraph(para("본문"))],
+            setup: DocSetup {
+                header: vec![Block::Paragraph(para("러닝 헤더"))],
+                footer: vec![Block::Paragraph(para("푸터"))],
+                page_numbers: true,
+                ..DocSetup::default()
+            },
+            ..DocModel::default()
+        };
+        let bytes = super::to_docx(&model);
+        let blob = String::from_utf8_lossy(&bytes);
+        // The OPC zip stores part names uncompressed in the local headers.
+        assert!(blob.contains("word/header1.xml"), "missing header part");
+        assert!(blob.contains("word/footer1.xml"), "missing footer part");
+        // Body must still round-trip (header didn't break the document).
+        let doc = Document::open(&bytes).expect("doc with header/footer must open");
+        assert_eq!(doc.text().trim(), "본문");
     }
 }
