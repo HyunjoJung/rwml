@@ -6,6 +6,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **`.docx` authoring (`rdoc::write_docx`)** — build a `DocModel` from data and
+  serialize a clean, Office-openable `.docx`. Emits rich `w:rPr` (font, half-point
+  size, color, highlight, small-caps, super/subscript), `w:pPr` (named heading
+  styles via a synthesized `styles.xml` with `outlineLvl`, alignment, spacing,
+  indent, shading), bordered tables with per-cell shading / `tcW` width / vertical
+  alignment, real image extents, page setup (`sectPr`), and running headers/footers
+  with a `PAGE` field. Round-trips through the reader; opens in Word & LibreOffice.
+  See `examples/report.rs`.
+- **PDF rendering (`rdoc::render_pdf`, `render` feature)** — native typesetting with
+  `parley` (Korean/CJK line-breaking + script font fallback) and `krilla` (subset
+  embedded fonts, selectable text). Honors run color/size/font, lists + indentation,
+  bordered tables with shaded vertically-aligned cells and authored column widths,
+  images (PNG/JPEG/GIF/WebP), and clickable hyperlink annotations; multi-page tables
+  repeat header rows and oversized rows split across pages.
+  `render_pdf_with_fonts` registers caller-supplied fonts for headless/server use.
+- **Richer read model** — `CharProps` now carries font/size/color/highlight/
+  vert-align/small-caps (incl. `.doc` CHPX `sprm` decoding + the `SttbfFfn` font
+  table); `ParaProps` gains spacing/indent/shading; `Cell`/`Table` gain shading,
+  vertical alignment, and column widths; new `DocSetup`/`PageSetup`. All additive
+  and `Default`, so existing read paths are unaffected.
+- **Validation** — `scripts/render_validate.py` (recall / page-count / visual-hash
+  vs LibreOffice), a `render` fuzz target, and an integration test of the public
+  authoring/render API.
+
 ### Security
 - **Tighter zip-bomb bound for `.docx`** (`docx/mod.rs`): each ZIP part's
   decompressed size is capped at 64 MiB (was 256 MiB) and rejected up front when

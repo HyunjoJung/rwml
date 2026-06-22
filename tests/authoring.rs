@@ -16,8 +16,16 @@ fn run(text: &str, props: CharProps) -> rdoc::Run {
 }
 
 fn report() -> DocModel {
-    let navy = Color { r: 0x1F, g: 0x38, b: 0x64 };
-    let white = Color { r: 0xFF, g: 0xFF, b: 0xFF };
+    let navy = Color {
+        r: 0x1F,
+        g: 0x38,
+        b: 0x64,
+    };
+    let white = Color {
+        r: 0xFF,
+        g: 0xFF,
+        b: 0xFF,
+    };
     let title = Block::Paragraph(Paragraph {
         props: ParaProps {
             heading_level: Some(1),
@@ -86,7 +94,10 @@ fn write_docx_round_trips_through_reader() {
     let doc = Document::open(&bytes).expect("authored .docx must re-open");
     let text = doc.text();
     assert!(text.contains("입찰 비교 리포트"), "title lost: {text:?}");
-    assert!(text.contains("공고명") && text.contains("조달청"), "table text lost");
+    assert!(
+        text.contains("공고명") && text.contains("조달청"),
+        "table text lost"
+    );
 }
 
 #[cfg(feature = "render")]
