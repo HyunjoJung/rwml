@@ -44,3 +44,8 @@ path = "examples/extract.rs"
 name = "to_pdf"
 path = "examples/to_pdf.rs"
 required-features = ["render"]
+
+[[example]]
+name = "report"
+path = "examples/report.rs"
+required-features = ["docx"]

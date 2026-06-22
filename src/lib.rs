@@ -82,6 +82,16 @@ pub fn extract_text(bytes: &[u8]) -> Result<String> {
     }
 }
 
+/// Serialize a [`DocModel`] — one you built from data, or read from a `.doc`/
+/// `.docx` — to a clean, Office-openable **`.docx`** byte buffer. This is the
+/// authoring entry point: construct a `DocModel` (paragraphs/runs with fonts,
+/// sizes, colors; headings; styled/sized/shaded tables; images; page setup) and
+/// write a styled Word document. Available with the default `docx` feature.
+#[cfg(feature = "docx")]
+pub fn write_docx(model: &DocModel) -> Vec<u8> {
+    write::to_docx(model)
+}
+
 /// A parsed Word document — either legacy `.doc` (OLE2/[MS-DOC]) or modern
 /// `.docx` (OOXML). [`Document::open`] format-detects from the magic bytes and
 /// both backends feed the **same** [`DocModel`] and exporters, so `text()`,
