@@ -1,0 +1,688 @@
+//! Native typesetting renderer: `DocModel` → A4 **PDF** via `parley` (layout,
+//! shaping, Korean/CJK line-breaking + font fallback) and `krilla` (PDF emit with
+//! subsetted embedded fonts and selectable text). Behind the `render` feature.
+//!
+//! Pipeline: blocks are laid out into a stream of flow items — text lines and
+//! table rows — which are flowed top-to-bottom onto fixed A4 pages (page breaks at
+//! line/row boundaries), then each page's glyph runs and table borders are drawn
+//! with krilla. Tables are rendered as a real grid: columns are reconstructed
+//! (including `col_span`/`row_span` placement), sized evenly, and bordered. Inline
+//! images are not yet placed.
+//!
+//! Fonts come from the system font collection (parley's default `FontContext`),
+//! so Korean renders when a Hangul-capable face is installed. A bundled font is a
+//! later, license-gated addition.
+
+use std::borrow::Cow;
+use std::collections::HashMap;
+use std::rc::Rc;
+
+use krilla::color::rgb;
+use krilla::geom::{PathBuilder, Point};
+use krilla::num::NormalizedF32;
+use krilla::page::PageSettings;
+use krilla::paint::{Fill, FillRule};
+use krilla::surface::Surface;
+use krilla::text::{Font, GlyphId, KrillaGlyph};
+use krilla::Document as PdfDoc;
+use parley::layout::Alignment;
+use parley::style::{FontFamily, FontFamilyName, FontStyle, FontWeight, StyleProperty};
+use parley::{FontContext, LayoutContext};
+
+use crate::model::{Align, Block, Cell, CharProps, DocModel, Paragraph, Table};
+
+// A4 page geometry, in PDF points.
+const PAGE_W: f32 = 595.0;
+const PAGE_H: f32 = 842.0;
+const MARGIN: f32 = 56.0;
+const CONTENT_W: f32 = PAGE_W - 2.0 * MARGIN;
+const TOP: f32 = MARGIN;
+const BOTTOM: f32 = PAGE_H - MARGIN;
+const PARA_GAP: f32 = 6.0;
+const CELL_PAD: f32 = 3.0;
+const BORDER: f32 = 0.4;
+/// Hard cap on grid columns / a cell's column or row span, so a hostile model
+/// (e.g. `col_span = u16::MAX`) cannot amplify into millions of cells/elements.
+/// Far above any real document (Excel maxes at 16384 columns).
+const MAX_TABLE_COLS: usize = 1024;
+
+/// One drawable run on a line: its x offset within the content box, the krilla
+/// glyphs, the resolved font, the size, and the source text (for the ToUnicode
+/// map that keeps the PDF text selectable).
+struct RunDraw {
+    x: f32,
+    glyphs: Vec<KrillaGlyph>,
+    font: Font,
+    size: f32,
+    text: Rc<str>,
+}
+
+/// A laid-out line: its advance height, the baseline offset from the line top,
+/// and its runs.
+struct LineLayout {
+    height: f32,
+    baseline: f32,
+    runs: Vec<RunDraw>,
+}
+
+/// A bordered table cell: its left edge + width (relative to the content origin)
+/// and its wrapped text lines.
+struct CellBox {
+    x: f32,
+    width: f32,
+    lines: Vec<LineLayout>,
+}
+
+/// One table row: its height and the cells across it (including empty cells where
+/// a `row_span` from an earlier row covers a column).
+struct RowLayout {
+    height: f32,
+    cells: Vec<CellBox>,
+}
+
+/// A unit of block flow, paginated top-to-bottom.
+enum FlowItem {
+    Gap(f32),
+    Line(LineLayout),
+    Row(RowLayout),
+}
+
+/// The system font stack, with Windows/Noto Korean faces preferred so Hangul
+/// shapes even before fontique's automatic per-script fallback kicks in.
+fn font_stack() -> FontFamily<'static> {
+    FontFamily::List(Cow::Borrowed(&[
+        FontFamilyName::Named(Cow::Borrowed("Malgun Gothic")),
+        FontFamilyName::Named(Cow::Borrowed("Noto Sans CJK KR")),
+        FontFamilyName::Named(Cow::Borrowed("Noto Sans KR")),
+        FontFamilyName::Named(Cow::Borrowed("Arial")),
+    ]))
+}
+
+fn heading_size(level: Option<u8>) -> f32 {
+    match level {
+        Some(1) => 20.0,
+        Some(2) => 17.0,
+        Some(3) => 15.0,
+        Some(4) => 13.5,
+        Some(_) => 12.5,
+        None => 11.0,
+    }
+}
+
+/// Shape a styled text string into positioned lines at a given wrap `width`.
+#[allow(clippy::too_many_arguments)]
+fn shape(
+    text: &str,
+    ranges: &[(usize, usize, CharProps)],
+    heading_level: Option<u8>,
+    align: Alignment,
+    width: f32,
+    font_cx: &mut FontContext,
+    layout_cx: &mut LayoutContext<rgb::Color>,
+    font_cache: &mut HashMap<u64, Font>,
+) -> Vec<LineLayout> {
+    let base_size = heading_size(heading_level);
+    let heading = heading_level.is_some();
+
+    let mut builder = layout_cx.ranged_builder(font_cx, text, 1.0, false);
+    builder.push_default(StyleProperty::Brush(rgb::Color::new(0, 0, 0)));
+    builder.push_default(StyleProperty::FontFamily(font_stack()));
+    builder.push_default(StyleProperty::FontSize(base_size));
+    builder.push_default(StyleProperty::LineHeight(
+        parley::style::LineHeight::FontSizeRelative(1.35),
+    ));
+    if heading {
+        builder.push_default(StyleProperty::FontWeight(FontWeight::new(700.0)));
+    }
+    for (s, e, props) in ranges {
+        if props.bold && !heading {
+            builder.push(StyleProperty::FontWeight(FontWeight::new(700.0)), *s..*e);
+        }
+        if props.italic {
+            builder.push(StyleProperty::FontStyle(FontStyle::Italic), *s..*e);
+        }
+        if props.underline {
+            builder.push(StyleProperty::Underline(true), *s..*e);
+        }
+        if props.strike {
+            builder.push(StyleProperty::Strikethrough(true), *s..*e);
+        }
+    }
+
+    let mut layout = builder.build(text);
+    layout.break_all_lines(Some(width.max(1.0)));
+    layout.align(align, Default::default());
+
+    let text_rc: Rc<str> = Rc::from(text);
+    let mut out = Vec::new();
+    for line in layout.lines() {
+        let m = line.metrics();
+        let baseline = m.ascent + m.leading * 0.5;
+        let height = m.line_height;
+        let mut runs: Vec<RunDraw> = Vec::new();
+        // `offset` is the line's alignment shift (0 for Start/left).
+        let mut x_cursor = m.offset;
+        for run in line.runs() {
+            let run_x = x_cursor;
+            let font = run.font().clone();
+            let (font_data, id) = font.data.into_raw_parts();
+            // A face parley can shape but krilla cannot ingest (bitmap/COLR/odd
+            // index) makes `Font::new` return `None` — skip the run rather than
+            // panic, honoring the crate's panic-free contract.
+            let krilla_font = match font_cache.get(&id) {
+                Some(f) => f.clone(),
+                None => match Font::new(font_data.into(), font.index) {
+                    Some(f) => {
+                        font_cache.insert(id, f.clone());
+                        f
+                    }
+                    None => continue,
+                },
+            };
+            let font_size = run.font_size();
+            let mut glyphs: Vec<KrillaGlyph> = Vec::new();
+            for cluster in run.visual_clusters() {
+                if cluster.is_ligature_continuation() {
+                    if let Some(g) = glyphs.last_mut() {
+                        g.text_range.end = cluster.text_range().end;
+                    }
+                    continue;
+                }
+                for glyph in cluster.glyphs() {
+                    glyphs.push(KrillaGlyph::new(
+                        GlyphId::new(glyph.id),
+                        glyph.advance / font_size,
+                        glyph.x / font_size,
+                        glyph.y / font_size,
+                        0.0,
+                        cluster.text_range(),
+                        None,
+                    ));
+                    x_cursor += glyph.advance;
+                }
+            }
+            if !glyphs.is_empty() {
+                runs.push(RunDraw {
+                    x: run_x,
+                    glyphs,
+                    font: krilla_font,
+                    size: font_size,
+                    text: text_rc.clone(),
+                });
+            }
+        }
+        out.push(LineLayout {
+            height,
+            baseline,
+            runs,
+        });
+    }
+    out
+}
+
+/// Lay out one paragraph into flow items.
+fn layout_paragraph(
+    p: &Paragraph,
+    out: &mut Vec<FlowItem>,
+    font_cx: &mut FontContext,
+    layout_cx: &mut LayoutContext<rgb::Color>,
+    font_cache: &mut HashMap<u64, Font>,
+) {
+    let mut text = String::new();
+    let mut ranges: Vec<(usize, usize, CharProps)> = Vec::new();
+    for r in &p.runs {
+        if r.text.is_empty() {
+            continue;
+        }
+        let s = text.len();
+        text.push_str(&r.text);
+        ranges.push((s, text.len(), r.props.clone()));
+    }
+    if text.trim().is_empty() {
+        return;
+    }
+    let align = match p.props.align {
+        Align::Left => Alignment::Start,
+        Align::Center => Alignment::Center,
+        Align::Right => Alignment::Right,
+        Align::Justify => Alignment::Justify,
+    };
+    for line in shape(
+        &text,
+        &ranges,
+        p.props.heading_level,
+        align,
+        CONTENT_W,
+        font_cx,
+        layout_cx,
+        font_cache,
+    ) {
+        out.push(FlowItem::Line(line));
+    }
+}
+
+/// A cell placed on the reconstructed grid: its starting column, column span, and
+/// the source cell (`None` = a `row_span` continuation slot, drawn as an empty box).
+struct PlacedCell<'a> {
+    col: usize,
+    span: usize,
+    cell: Option<&'a Cell>,
+}
+
+/// Reconstruct the table grid (re-inserting `row_span` continuation slots so cells
+/// land in their true columns) and the total column count.
+fn reconstruct_grid(t: &Table) -> (Vec<Vec<PlacedCell<'_>>>, usize) {
+    struct Active {
+        col: usize,
+        span: usize,
+        rows_left: usize,
+    }
+    let mut active: Vec<Active> = Vec::new();
+    let mut grid: Vec<Vec<PlacedCell<'_>>> = Vec::with_capacity(t.rows.len());
+    let mut ncols = 0usize;
+    for row in &t.rows {
+        let mut placed = Vec::new();
+        let mut carried: Vec<Active> = Vec::new();
+        let mut col = 0usize;
+        let mut ci = 0usize;
+        loop {
+            if col >= MAX_TABLE_COLS {
+                break;
+            }
+            if let Some(pos) = active.iter().position(|a| a.col == col) {
+                let a = active.remove(pos);
+                placed.push(PlacedCell {
+                    col,
+                    span: a.span,
+                    cell: None,
+                });
+                col += a.span;
+                if a.rows_left > 1 {
+                    carried.push(Active {
+                        col: a.col,
+                        span: a.span,
+                        rows_left: a.rows_left - 1,
+                    });
+                }
+                continue;
+            }
+            if ci < row.cells.len() {
+                let c = &row.cells[ci];
+                ci += 1;
+                let span = (c.col_span.max(1) as usize).min(MAX_TABLE_COLS);
+                let rs = (c.row_span.max(1) as usize).min(MAX_TABLE_COLS);
+                placed.push(PlacedCell {
+                    col,
+                    span,
+                    cell: Some(c),
+                });
+                if rs > 1 {
+                    carried.push(Active {
+                        col,
+                        span,
+                        rows_left: rs - 1,
+                    });
+                }
+                col += span;
+                continue;
+            }
+            break;
+        }
+        ncols = ncols.max(col);
+        active.extend(carried);
+        active.sort_by_key(|a| a.col);
+        grid.push(placed);
+    }
+    (grid, ncols.max(1))
+}
+
+/// The unwrapped (single-line) width of a string at body size — used to size
+/// table columns to their content.
+fn natural_width(
+    text: &str,
+    font_cx: &mut FontContext,
+    layout_cx: &mut LayoutContext<rgb::Color>,
+) -> f32 {
+    if text.trim().is_empty() {
+        return 0.0;
+    }
+    let mut b = layout_cx.ranged_builder(font_cx, text, 1.0, false);
+    b.push_default(StyleProperty::Brush(rgb::Color::new(0, 0, 0)));
+    b.push_default(StyleProperty::FontFamily(font_stack()));
+    b.push_default(StyleProperty::FontSize(11.0));
+    let mut layout = b.build(text);
+    layout.break_all_lines(None);
+    layout
+        .lines()
+        .map(|l| l.metrics().advance)
+        .fold(0.0_f32, f32::max)
+}
+
+/// Lay out a table into one [`FlowItem::Row`] per row. Columns are sized to their
+/// content (natural widths scaled to fill the content box), so a narrow label
+/// column and a wide value column read correctly instead of being forced equal.
+fn layout_table(
+    t: &Table,
+    out: &mut Vec<FlowItem>,
+    font_cx: &mut FontContext,
+    layout_cx: &mut LayoutContext<rgb::Color>,
+    font_cache: &mut HashMap<u64, Font>,
+) {
+    let (grid, ncols) = reconstruct_grid(t);
+
+    // Pass 1: per-column natural width (min 20pt so no column collapses), then
+    // scale the columns to exactly fill the content width.
+    let mut col_nat = vec![20.0_f32; ncols];
+    for placed_row in &grid {
+        for pc in placed_row {
+            if let Some(c) = pc.cell {
+                let txt = c.text().replace('\n', " ");
+                let per = (natural_width(&txt, font_cx, layout_cx) + 2.0 * CELL_PAD)
+                    / pc.span.max(1) as f32;
+                for slot in col_nat
+                    .iter_mut()
+                    .take((pc.col + pc.span).min(ncols))
+                    .skip(pc.col)
+                {
+                    *slot = slot.max(per);
+                }
+            }
+        }
+    }
+    let total: f32 = col_nat.iter().sum();
+    let scale = if total > 0.0 { CONTENT_W / total } else { 1.0 };
+    let mut col_x = vec![0.0_f32; ncols + 1];
+    for c in 0..ncols {
+        col_x[c + 1] = col_x[c] + col_nat[c] * scale;
+    }
+
+    // Pass 2: shape each cell at its column width and build the rows.
+    for placed_row in grid {
+        let mut cells = Vec::with_capacity(placed_row.len());
+        let mut row_h = 0.0_f32;
+        for pc in placed_row {
+            let end = (pc.col + pc.span).min(ncols);
+            let x = col_x[pc.col];
+            let width = col_x[end] - x;
+            let lines = match pc.cell {
+                Some(c) => {
+                    let txt = c.text().replace('\n', " ");
+                    if txt.trim().is_empty() {
+                        Vec::new()
+                    } else {
+                        shape(
+                            &txt,
+                            &[],
+                            None,
+                            Alignment::Start,
+                            (width - 2.0 * CELL_PAD).max(1.0),
+                            font_cx,
+                            layout_cx,
+                            font_cache,
+                        )
+                    }
+                }
+                None => Vec::new(),
+            };
+            let content_h: f32 = lines.iter().map(|l| l.height).sum();
+            row_h = row_h.max(content_h + 2.0 * CELL_PAD);
+            cells.push(CellBox { x, width, lines });
+        }
+        // A minimum row height so empty rows still draw a band.
+        row_h = row_h.max(14.0);
+        out.push(FlowItem::Row(RowLayout {
+            height: row_h,
+            cells,
+        }));
+    }
+}
+
+fn collect_blocks(
+    blocks: &[Block],
+    out: &mut Vec<FlowItem>,
+    font_cx: &mut FontContext,
+    layout_cx: &mut LayoutContext<rgb::Color>,
+    font_cache: &mut HashMap<u64, Font>,
+) {
+    for b in blocks {
+        match b {
+            Block::Paragraph(p) => {
+                layout_paragraph(p, out, font_cx, layout_cx, font_cache);
+                out.push(FlowItem::Gap(PARA_GAP));
+            }
+            Block::Table(t) => {
+                layout_table(t, out, font_cx, layout_cx, font_cache);
+                out.push(FlowItem::Gap(PARA_GAP));
+            }
+            Block::Image(_) => {
+                // Inline images are not yet placed.
+            }
+        }
+    }
+}
+
+/// Fill an axis-aligned rectangle in solid black (used for thin table borders).
+fn fill_rect(surface: &mut Surface<'_>, x: f32, y: f32, w: f32, h: f32) {
+    if w <= 0.0 || h <= 0.0 {
+        return;
+    }
+    let mut pb = PathBuilder::new();
+    pb.move_to(x, y);
+    pb.line_to(x + w, y);
+    pb.line_to(x + w, y + h);
+    pb.line_to(x, y + h);
+    pb.close();
+    if let Some(path) = pb.finish() {
+        surface.set_fill(Some(Fill {
+            paint: rgb::Color::new(0, 0, 0).into(),
+            rule: FillRule::NonZero,
+            opacity: NormalizedF32::ONE,
+        }));
+        surface.draw_path(&path);
+    }
+}
+
+/// Draw a cell border (four thin edges) around `(x, y, w, h)`.
+fn draw_border(surface: &mut Surface<'_>, x: f32, y: f32, w: f32, h: f32) {
+    fill_rect(surface, x, y, w, BORDER); // top
+    fill_rect(surface, x, y + h - BORDER, w, BORDER); // bottom
+    fill_rect(surface, x, y, BORDER, h); // left
+    fill_rect(surface, x + w - BORDER, y, BORDER, h); // right
+}
+
+/// Draw a run's glyphs at an absolute baseline position.
+fn draw_run(surface: &mut Surface<'_>, run: RunDraw, x_abs: f32, baseline_y: f32) {
+    surface.set_fill(Some(Fill {
+        paint: rgb::Color::new(0, 0, 0).into(),
+        rule: FillRule::NonZero,
+        opacity: NormalizedF32::ONE,
+    }));
+    surface.draw_glyphs(
+        Point::from_xy(x_abs + run.x, baseline_y),
+        &run.glyphs,
+        run.font,
+        &run.text,
+        run.size,
+        false,
+    );
+}
+
+/// Render a [`DocModel`] to a single-column A4 PDF.
+pub(crate) fn to_pdf(model: &DocModel) -> Vec<u8> {
+    let mut font_cx = FontContext::default();
+    let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+    let mut font_cache: HashMap<u64, Font> = HashMap::new();
+
+    let mut items: Vec<FlowItem> = Vec::new();
+    collect_blocks(
+        &model.blocks,
+        &mut items,
+        &mut font_cx,
+        &mut layout_cx,
+        &mut font_cache,
+    );
+
+    // Paginate: flow items top-to-bottom onto A4 pages, breaking at item boundaries.
+    let mut pages: Vec<Vec<(f32, FlowItem)>> = vec![Vec::new()];
+    let mut y = TOP;
+    for item in items {
+        let h = match &item {
+            FlowItem::Gap(g) => *g,
+            FlowItem::Line(l) => l.height,
+            FlowItem::Row(r) => r.height,
+        };
+        if matches!(item, FlowItem::Gap(_)) {
+            y += h;
+            continue;
+        }
+        let page_nonempty = pages.last().map(|p| !p.is_empty()).unwrap_or(false);
+        if y + h > BOTTOM && page_nonempty {
+            pages.push(Vec::new());
+            y = TOP;
+        }
+        if let Some(page) = pages.last_mut() {
+            page.push((y, item));
+        }
+        y += h;
+    }
+
+    // Emit.
+    let mut document = PdfDoc::new();
+    for page_items in pages {
+        let Some(settings) = PageSettings::from_wh(PAGE_W, PAGE_H) else {
+            continue;
+        };
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        for (top, item) in page_items {
+            match item {
+                FlowItem::Gap(_) => {}
+                FlowItem::Line(line) => {
+                    let baseline = top + line.baseline;
+                    for run in line.runs {
+                        draw_run(&mut surface, run, MARGIN, baseline);
+                    }
+                }
+                FlowItem::Row(row) => {
+                    for cell in row.cells {
+                        let cx = MARGIN + cell.x;
+                        draw_border(&mut surface, cx, top, cell.width, row.height);
+                        let mut ly = top + CELL_PAD;
+                        for line in cell.lines {
+                            let baseline = ly + line.baseline;
+                            let lh = line.height;
+                            for run in line.runs {
+                                draw_run(&mut surface, run, cx + CELL_PAD, baseline);
+                            }
+                            ly += lh;
+                        }
+                    }
+                }
+            }
+        }
+        surface.finish();
+        page.finish();
+    }
+    document.finish().unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::model::{Block, Cell, DocModel, ParaProps, Paragraph, Row, Run, Table};
+
+    fn para(text: &str, heading: Option<u8>) -> Block {
+        Block::Paragraph(Paragraph {
+            props: ParaProps {
+                heading_level: heading,
+                ..ParaProps::default()
+            },
+            runs: vec![Run {
+                text: text.to_string(),
+                ..Run::default()
+            }],
+        })
+    }
+
+    fn cell(text: &str) -> Cell {
+        Cell {
+            blocks: vec![para(text, None)],
+            ..Cell::default()
+        }
+    }
+
+    #[test]
+    fn renders_a_valid_pdf() {
+        let model = DocModel {
+            blocks: vec![
+                para("제목 하나", Some(1)),
+                para("본문 문단 with mixed English and 한글 text.", None),
+            ],
+            ..DocModel::default()
+        };
+        let pdf = super::to_pdf(&model);
+        assert!(pdf.starts_with(b"%PDF"), "output is not a PDF");
+        assert!(
+            pdf.len() > 500,
+            "PDF unexpectedly small: {} bytes",
+            pdf.len()
+        );
+    }
+
+    #[test]
+    fn renders_a_table_grid() {
+        let table = Table {
+            rows: vec![
+                Row {
+                    cells: vec![cell("항목"), cell("내용")],
+                },
+                Row {
+                    cells: vec![cell("가격"), cell("1,000원")],
+                },
+            ],
+            header_rows: 1,
+            ..Default::default()
+        };
+        let model = DocModel {
+            blocks: vec![para("표 테스트", Some(2)), Block::Table(table)],
+            ..DocModel::default()
+        };
+        let pdf = super::to_pdf(&model);
+        assert!(pdf.starts_with(b"%PDF"));
+        assert!(pdf.len() > 800);
+    }
+
+    #[test]
+    fn empty_model_renders_without_panicking() {
+        let pdf = super::to_pdf(&DocModel::default());
+        assert!(pdf.starts_with(b"%PDF"));
+    }
+
+    #[test]
+    fn giant_span_table_renders_bounded() {
+        // A hostile col_span must be clamped so the renderer can't amplify into
+        // millions of columns / panic.
+        let model = DocModel {
+            blocks: vec![Block::Table(Table {
+                rows: vec![Row {
+                    cells: vec![Cell {
+                        blocks: vec![para("x", None)],
+                        col_span: u16::MAX,
+                        row_span: 1,
+                        is_header: false,
+                        ..Default::default()
+                    }],
+                }],
+                header_rows: 0,
+                ..Default::default()
+            })],
+            ..DocModel::default()
+        };
+        let pdf = super::to_pdf(&model);
+        assert!(pdf.starts_with(b"%PDF"));
+        assert!(
+            pdf.len() < 3_000_000,
+            "giant span amplified PDF to {} bytes",
+            pdf.len()
+        );
+    }
+}
