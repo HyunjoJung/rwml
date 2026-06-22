@@ -8,8 +8,8 @@
 //! with krilla. Tables are rendered as a real grid: columns are reconstructed
 //! (including `col_span`/`row_span` placement), sized to authored `col_widths_pct`
 //! or to content, then bordered; cells carry rich per-run text (bold/italic/color/
-//! size/font), background shading, and vertical alignment. Inline images are not
-//! yet placed.
+//! size/font), background shading, and vertical alignment. Images (block-level
+//! and inline) are decoded and drawn as raster pictures, fit to the content box.
 //!
 //! Fonts come from the system font collection (parley's default `FontContext`),
 //! so Korean renders when a Hangul-capable face is installed. A bundled font is a
@@ -20,18 +20,19 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use krilla::color::rgb;
-use krilla::geom::{PathBuilder, Point};
+use krilla::geom::{PathBuilder, Point, Size, Transform};
+use krilla::image::Image as PdfImage;
 use krilla::num::NormalizedF32;
 use krilla::page::PageSettings;
 use krilla::paint::{Fill, FillRule};
 use krilla::surface::Surface;
 use krilla::text::{Font, GlyphId, KrillaGlyph};
-use krilla::Document as PdfDoc;
+use krilla::{Data, Document as PdfDoc};
 use parley::layout::Alignment;
 use parley::style::{FontFamily, FontFamilyName, FontStyle, FontWeight, StyleProperty};
 use parley::{FontContext, LayoutContext};
 
-use crate::model::{Align, Block, Cell, CharProps, DocModel, Paragraph, Table, VCell};
+use crate::model::{Align, Block, Cell, CharProps, DocModel, Image, Paragraph, Table, VCell};
 
 // A4 page geometry, in PDF points.
 const PAGE_W: f32 = 595.0;
@@ -90,6 +91,53 @@ enum FlowItem {
     Gap(f32),
     Line(LineLayout),
     Row(RowLayout),
+    Picture { image: PdfImage, w: f32, h: f32 },
+}
+
+/// Decode embedded image bytes into a krilla raster image, by MIME when known and
+/// otherwise by magic-byte sniffing. Returns the image and its pixel dimensions,
+/// or `None` for an unrecognized/undecodable format (so the renderer skips it
+/// rather than panicking).
+fn decode_image(bytes: &[u8], mime: Option<&str>) -> Option<(PdfImage, u32, u32)> {
+    let data: Data = bytes.to_vec().into();
+    let is_webp = bytes.len() > 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP";
+    let img = match mime {
+        Some("image/png") => PdfImage::from_png(data, false),
+        Some("image/jpeg") => PdfImage::from_jpeg(data, false),
+        Some("image/gif") => PdfImage::from_gif(data, false),
+        Some("image/webp") => PdfImage::from_webp(data, false),
+        _ if bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47]) => PdfImage::from_png(data, false),
+        _ if bytes.starts_with(&[0xFF, 0xD8]) => PdfImage::from_jpeg(data, false),
+        _ if bytes.starts_with(b"GIF8") => PdfImage::from_gif(data, false),
+        _ if is_webp => PdfImage::from_webp(data, false),
+        _ => return None,
+    }
+    .ok()?;
+    let (w, h) = img.size();
+    Some((img, w, h))
+}
+
+/// Decode a model image and size it to a [`FlowItem::Picture`] (96-dpi px → PDF
+/// points, fit to the content box and a single page height, aspect preserved).
+/// `None` if there are no bytes or the format is undecodable.
+fn image_flow_item(img: &Image) -> Option<FlowItem> {
+    let bytes = img.bytes.as_ref()?;
+    let (image, wpx, hpx) = decode_image(bytes, img.mime.as_deref())?;
+    let mut w = wpx as f32 * 0.75;
+    let mut h = hpx as f32 * 0.75;
+    // CONTENT_W and max_h are positive constants, so exceeding them implies > 0.
+    if w > CONTENT_W {
+        let s = CONTENT_W / w;
+        w = CONTENT_W;
+        h *= s;
+    }
+    let max_h = BOTTOM - TOP;
+    if h > max_h {
+        let s = max_h / h;
+        h = max_h;
+        w *= s;
+    }
+    (w > 0.0 && h > 0.0).then_some(FlowItem::Picture { image, w, h })
 }
 
 /// The system font stack, with Windows/Noto Korean faces preferred so Hangul
@@ -294,7 +342,13 @@ fn layout_paragraph(
 ) {
     let mut text = String::new();
     let mut ranges: Vec<(usize, usize, CharProps)> = Vec::new();
+    let mut images: Vec<&Image> = Vec::new();
     for r in &p.runs {
+        // The reader carries images as inline runs (Run.image); flow them as
+        // block pictures after the paragraph's text.
+        if let Some(img) = &r.image {
+            images.push(img);
+        }
         if r.text.is_empty() {
             continue;
         }
@@ -302,26 +356,31 @@ fn layout_paragraph(
         text.push_str(&r.text);
         ranges.push((s, text.len(), r.props.clone()));
     }
-    if text.trim().is_empty() {
-        return;
+    if !text.trim().is_empty() {
+        let align = match p.props.align {
+            Align::Left => Alignment::Start,
+            Align::Center => Alignment::Center,
+            Align::Right => Alignment::Right,
+            Align::Justify => Alignment::Justify,
+        };
+        for line in shape(
+            &text,
+            &ranges,
+            p.props.heading_level,
+            align,
+            CONTENT_W,
+            font_cx,
+            layout_cx,
+            font_cache,
+        ) {
+            out.push(FlowItem::Line(line));
+        }
     }
-    let align = match p.props.align {
-        Align::Left => Alignment::Start,
-        Align::Center => Alignment::Center,
-        Align::Right => Alignment::Right,
-        Align::Justify => Alignment::Justify,
-    };
-    for line in shape(
-        &text,
-        &ranges,
-        p.props.heading_level,
-        align,
-        CONTENT_W,
-        font_cx,
-        layout_cx,
-        font_cache,
-    ) {
-        out.push(FlowItem::Line(line));
+    for img in images {
+        if let Some(item) = image_flow_item(img) {
+            out.push(FlowItem::Gap(PARA_GAP));
+            out.push(item);
+        }
     }
 }
 
@@ -574,8 +633,11 @@ fn collect_blocks(
                 layout_table(t, out, font_cx, layout_cx, font_cache);
                 out.push(FlowItem::Gap(PARA_GAP));
             }
-            Block::Image(_) => {
-                // Inline images are not yet placed.
+            Block::Image(img) => {
+                if let Some(item) = image_flow_item(img) {
+                    out.push(item);
+                    out.push(FlowItem::Gap(PARA_GAP));
+                }
             }
         }
     }
@@ -655,6 +717,7 @@ pub(crate) fn to_pdf(model: &DocModel) -> Vec<u8> {
             FlowItem::Gap(g) => *g,
             FlowItem::Line(l) => l.height,
             FlowItem::Row(r) => r.height,
+            FlowItem::Picture { h, .. } => *h,
         };
         if matches!(item, FlowItem::Gap(_)) {
             y += h;
@@ -682,6 +745,15 @@ pub(crate) fn to_pdf(model: &DocModel) -> Vec<u8> {
         for (top, item) in page_items {
             match item {
                 FlowItem::Gap(_) => {}
+                FlowItem::Picture { image, w, h } => {
+                    // Center horizontally within the content box.
+                    let x = MARGIN + ((CONTENT_W - w) * 0.5).max(0.0);
+                    if let Some(sz) = Size::from_wh(w, h) {
+                        surface.push_transform(&Transform::from_translate(x, top));
+                        surface.draw_image(image, sz);
+                        surface.pop();
+                    }
+                }
                 FlowItem::Line(line) => {
                     let baseline = top + line.baseline;
                     for run in line.runs {
@@ -870,6 +942,56 @@ mod tests {
         });
         assert!(pdf.starts_with(b"%PDF"));
         assert!(pdf.len() > 800);
+    }
+
+    #[test]
+    fn renders_embedded_image() {
+        use crate::model::Image;
+        // A 4×3 PNG (solid navy), generated and frozen as a fixture.
+        const TINY_PNG: &[u8] = &[
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48,
+            0x44, 0x52, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x03, 0x08, 0x02, 0x00, 0x00,
+            0x00, 0x3B, 0x96, 0x39, 0x91, 0x00, 0x00, 0x00, 0x13, 0x49, 0x44, 0x41, 0x54, 0x78,
+            0x9C, 0x63, 0x94, 0xB7, 0x48, 0x61, 0x80, 0x01, 0x26, 0x38, 0x0B, 0x9D, 0x03, 0x00,
+            0x1B, 0x5E, 0x00, 0xC1, 0xBF, 0x92, 0xAB, 0x14, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45,
+            0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+        ];
+        // Both representations: a block image and an inline-run image (what the
+        // reader produces) must render.
+        let model = DocModel {
+            blocks: vec![
+                Block::Image(Image {
+                    bytes: Some(TINY_PNG.to_vec()),
+                    mime: Some("image/png".to_string()),
+                    ..Image::default()
+                }),
+                Block::Paragraph(Paragraph {
+                    props: ParaProps::default(),
+                    runs: vec![Run {
+                        image: Some(Image {
+                            bytes: Some(TINY_PNG.to_vec()),
+                            mime: None, // force magic-byte sniffing
+                            ..Image::default()
+                        }),
+                        ..Run::default()
+                    }],
+                }),
+            ],
+            ..DocModel::default()
+        };
+        let pdf = super::to_pdf(&model);
+        assert!(pdf.starts_with(b"%PDF"));
+        assert!(pdf.len() > 500);
+        // An undecodable blob must be skipped, not panic.
+        let bad = DocModel {
+            blocks: vec![Block::Image(Image {
+                bytes: Some(vec![1, 2, 3, 4]),
+                mime: Some("image/png".to_string()),
+                ..Image::default()
+            })],
+            ..DocModel::default()
+        };
+        assert!(super::to_pdf(&bad).starts_with(b"%PDF"));
     }
 
     #[test]

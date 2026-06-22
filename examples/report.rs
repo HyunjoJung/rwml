@@ -157,13 +157,31 @@ fn main() {
         col_widths_pct: vec![0.40, 0.22, 0.23, 0.15],
     };
 
+    // Optional embedded image (e.g. a chart) when RDOC_IMAGE points to a file.
+    let mut blocks = vec![
+        title,
+        intro,
+        heading(2, navy, "입찰 목록"),
+        Block::Table(table),
+    ];
+    if let Ok(path) = std::env::var("RDOC_IMAGE") {
+        if let Ok(bytes) = std::fs::read(&path) {
+            let mime = if path.ends_with(".jpg") || path.ends_with(".jpeg") {
+                "image/jpeg"
+            } else {
+                "image/png"
+            };
+            blocks.push(heading(2, navy, "예산 추이"));
+            blocks.push(rdoc::Block::Image(rdoc::Image {
+                bytes: Some(bytes),
+                mime: Some(mime.to_string()),
+                ..rdoc::Image::default()
+            }));
+        }
+    }
+
     let model = DocModel {
-        blocks: vec![
-            title,
-            intro,
-            heading(2, navy, "입찰 목록"),
-            Block::Table(table),
-        ],
+        blocks,
         setup: DocSetup {
             title: Some("입찰 비교 리포트".to_string()),
             creator: Some("kr-bid".to_string()),
