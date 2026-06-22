@@ -32,7 +32,9 @@ use parley::layout::Alignment;
 use parley::style::{FontFamily, FontFamilyName, FontStyle, FontWeight, StyleProperty};
 use parley::{FontContext, LayoutContext};
 
-use crate::model::{Align, Block, Cell, CharProps, DocModel, Image, Paragraph, Table, VCell};
+use crate::model::{
+    Align, Block, Cell, CharProps, DocModel, Image, ListInfo, Paragraph, Table, VCell,
+};
 
 // A4 page geometry, in PDF points.
 const PAGE_W: f32 = 595.0;
@@ -44,6 +46,8 @@ const BOTTOM: f32 = PAGE_H - MARGIN;
 const PARA_GAP: f32 = 6.0;
 const CELL_PAD: f32 = 3.0;
 const BORDER: f32 = 0.4;
+/// Left indent added per list nesting level, in points.
+const LIST_INDENT: f32 = 18.0;
 /// Hard cap on grid columns / a cell's column or row span, so a hostile model
 /// (e.g. `col_span = u16::MAX`) cannot amplify into millions of cells/elements.
 /// Far above any real document (Excel maxes at 16384 columns).
@@ -62,10 +66,12 @@ struct RunDraw {
 }
 
 /// A laid-out line: its advance height, the baseline offset from the line top,
-/// and its runs.
+/// its left indent (0 inside table cells; set for indented/list paragraphs), and
+/// its runs.
 struct LineLayout {
     height: f32,
     baseline: f32,
+    x_indent: f32,
     runs: Vec<RunDraw>,
 }
 
@@ -326,23 +332,74 @@ fn shape(
         out.push(LineLayout {
             height,
             baseline,
+            x_indent: 0.0,
             runs,
         });
     }
     out
 }
 
-/// Lay out one paragraph into flow items.
+/// Per-document ordered-list counters (levels 0..=8). Bullets and reader-captured
+/// labels need no counter; an authored ordered item without a label is numbered
+/// here.
+#[derive(Default)]
+struct ListState {
+    counters: [u32; 9],
+}
+
+impl ListState {
+    /// The marker for a list item, advancing/resetting the ordered counters.
+    /// Prefers the reader's captured label; otherwise synthesizes `1.`/`2.`… for
+    /// ordered lists or a per-level bullet glyph.
+    fn marker(&mut self, list: &ListInfo) -> String {
+        let lvl = (list.level as usize).min(8);
+        if list.ordered {
+            for c in self.counters.iter_mut().skip(lvl + 1) {
+                *c = 0;
+            }
+            self.counters[lvl] += 1;
+        }
+        if !list.label.trim().is_empty() {
+            return list.label.trim().to_string();
+        }
+        if list.ordered {
+            format!("{}.", self.counters[lvl])
+        } else {
+            match lvl % 3 {
+                0 => "•",
+                1 => "◦",
+                _ => "▪",
+            }
+            .to_string()
+        }
+    }
+}
+
+/// Lay out one paragraph into flow items, with an optional list `marker` and the
+/// paragraph's left/right indent (list level adds a per-level indent).
 fn layout_paragraph(
     p: &Paragraph,
     out: &mut Vec<FlowItem>,
+    marker: Option<&str>,
     font_cx: &mut FontContext,
     layout_cx: &mut LayoutContext<rgb::Color>,
     font_cache: &mut HashMap<u64, Font>,
 ) {
+    let list_level = p.props.list.as_ref().map(|l| l.level).unwrap_or(0) as f32;
+    let left = p.props.indent.left_pt.unwrap_or(0.0).max(0.0) + list_level * LIST_INDENT;
+    let right = p.props.indent.right_pt.unwrap_or(0.0).max(0.0);
+    let wrap_w = (CONTENT_W - left - right).max(20.0);
+
     let mut text = String::new();
     let mut ranges: Vec<(usize, usize, CharProps)> = Vec::new();
     let mut images: Vec<&Image> = Vec::new();
+    if let Some(m) = marker {
+        if !m.is_empty() {
+            text.push_str(m);
+            text.push(' ');
+            ranges.push((0, text.len(), CharProps::default()));
+        }
+    }
     for r in &p.runs {
         // The reader carries images as inline runs (Run.image); flow them as
         // block pictures after the paragraph's text.
@@ -363,16 +420,17 @@ fn layout_paragraph(
             Align::Right => Alignment::Right,
             Align::Justify => Alignment::Justify,
         };
-        for line in shape(
+        for mut line in shape(
             &text,
             &ranges,
             p.props.heading_level,
             align,
-            CONTENT_W,
+            wrap_w,
             font_cx,
             layout_cx,
             font_cache,
         ) {
+            line.x_indent = left;
             out.push(FlowItem::Line(line));
         }
     }
@@ -623,11 +681,26 @@ fn collect_blocks(
     layout_cx: &mut LayoutContext<rgb::Color>,
     font_cache: &mut HashMap<u64, Font>,
 ) {
+    let mut lists = ListState::default();
     for b in blocks {
         match b {
             Block::Paragraph(p) => {
-                layout_paragraph(p, out, font_cx, layout_cx, font_cache);
-                out.push(FlowItem::Gap(PARA_GAP));
+                // A heading suppresses list marking, mirroring the writer.
+                let marker = match (&p.props.list, p.props.heading_level) {
+                    (Some(list), None) => Some(lists.marker(list)),
+                    _ => None,
+                };
+                if let Some(before) = p.props.spacing.before_pt.filter(|b| *b > 0.0) {
+                    out.push(FlowItem::Gap(before));
+                }
+                layout_paragraph(p, out, marker.as_deref(), font_cx, layout_cx, font_cache);
+                let after = p
+                    .props
+                    .spacing
+                    .after_pt
+                    .filter(|a| *a > 0.0)
+                    .unwrap_or(PARA_GAP);
+                out.push(FlowItem::Gap(after));
             }
             Block::Table(t) => {
                 layout_table(t, out, font_cx, layout_cx, font_cache);
@@ -756,8 +829,9 @@ pub(crate) fn to_pdf(model: &DocModel) -> Vec<u8> {
                 }
                 FlowItem::Line(line) => {
                     let baseline = top + line.baseline;
+                    let x0 = MARGIN + line.x_indent;
                     for run in line.runs {
-                        draw_run(&mut surface, run, MARGIN, baseline);
+                        draw_run(&mut surface, run, x0, baseline);
                     }
                 }
                 FlowItem::Row(row) => {
@@ -992,6 +1066,83 @@ mod tests {
             ..DocModel::default()
         };
         assert!(super::to_pdf(&bad).starts_with(b"%PDF"));
+    }
+
+    #[test]
+    fn list_state_numbers_and_resets_levels() {
+        use crate::model::ListInfo;
+        let mut s = super::ListState::default();
+        let ol = |level: u8| ListInfo {
+            level,
+            ordered: true,
+            label: String::new(),
+        };
+        let ul = |level: u8| ListInfo {
+            level,
+            ordered: false,
+            label: String::new(),
+        };
+        assert_eq!(s.marker(&ol(0)), "1.");
+        assert_eq!(s.marker(&ol(0)), "2.");
+        assert_eq!(s.marker(&ul(1)), "◦"); // nested bullet doesn't bump level 0
+        assert_eq!(s.marker(&ol(1)), "1."); // first ordered at level 1
+        assert_eq!(s.marker(&ol(0)), "3."); // level 0 resumes
+        assert_eq!(s.marker(&ol(1)), "1."); // level 1 was reset by the level-0 item
+                                            // A reader-captured label is preferred verbatim.
+        assert_eq!(
+            s.marker(&ListInfo {
+                level: 0,
+                ordered: true,
+                label: "가.".to_string()
+            }),
+            "가."
+        );
+    }
+
+    #[test]
+    fn renders_lists_and_indent_without_panicking() {
+        use crate::model::{Indent, ListInfo};
+        let item = |level: u8, ordered: bool, t: &str| {
+            Block::Paragraph(Paragraph {
+                props: ParaProps {
+                    list: Some(ListInfo {
+                        level,
+                        ordered,
+                        label: String::new(),
+                    }),
+                    ..ParaProps::default()
+                },
+                runs: vec![Run {
+                    text: t.to_string(),
+                    ..Run::default()
+                }],
+            })
+        };
+        let indented = Block::Paragraph(Paragraph {
+            props: ParaProps {
+                indent: Indent {
+                    left_pt: Some(36.0),
+                    ..Indent::default()
+                },
+                ..ParaProps::default()
+            },
+            runs: vec![Run {
+                text: "들여쓰기된 문단".to_string(),
+                ..Run::default()
+            }],
+        });
+        let model = DocModel {
+            blocks: vec![
+                item(0, true, "첫째"),
+                item(1, false, "하위 항목"),
+                item(0, true, "둘째"),
+                indented,
+            ],
+            ..DocModel::default()
+        };
+        let pdf = super::to_pdf(&model);
+        assert!(pdf.starts_with(b"%PDF"));
+        assert!(pdf.len() > 600);
     }
 
     #[test]

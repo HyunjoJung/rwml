@@ -92,6 +92,16 @@ pub fn write_docx(model: &DocModel) -> Vec<u8> {
     write::to_docx(model)
 }
 
+/// Render a [`DocModel`] — one you built from data, or read from a `.doc`/`.docx`
+/// — to a single-column A4 **PDF** with native typesetting (`parley` + `krilla`).
+/// The rendering entry point for previews and generated reports: rich text
+/// (color/size/font), lists, indentation, bordered tables with shaded cells, and
+/// images. Available with the `render` feature.
+#[cfg(feature = "render")]
+pub fn render_pdf(model: &DocModel) -> Vec<u8> {
+    render::to_pdf(model)
+}
+
 /// A parsed Word document — either legacy `.doc` (OLE2/[MS-DOC]) or modern
 /// `.docx` (OOXML). [`Document::open`] format-detects from the magic bytes and
 /// both backends feed the **same** [`DocModel`] and exporters, so `text()`,
@@ -243,9 +253,10 @@ impl Document {
     /// Render this document to a single-column A4 **PDF** with native typesetting
     /// — `parley` lays out and shapes the text (Korean/CJK line-breaking and font
     /// fallback included) and `krilla` emits the PDF with subsetted embedded fonts
-    /// and selectable text. Available with the `render` feature (which raises the
-    /// MSRV to 1.88). Tables render as text rows and inline images are not yet
-    /// placed — a gridded layout is the next milestone.
+    /// and selectable text. Tables render as a real bordered grid with rich,
+    /// shaded, vertically-aligned cells; paragraphs honor color/size/font, lists,
+    /// and indentation; images are drawn. Available with the `render` feature
+    /// (which raises the MSRV to 1.88).
     #[cfg(feature = "render")]
     pub fn to_pdf(&self) -> Vec<u8> {
         render::to_pdf(&self.model())
