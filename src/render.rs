@@ -3,9 +3,11 @@
 //! subsetted embedded fonts and selectable text). Behind the `render` feature.
 //!
 //! Pipeline: blocks are laid out into a stream of flow items — text lines and
-//! table rows — which are flowed top-to-bottom onto fixed A4 pages (page breaks at
-//! line/row boundaries), then each page's glyph runs and table borders are drawn
-//! with krilla. Tables are rendered as a real grid: columns are reconstructed
+//! table rows — which are flowed top-to-bottom onto fixed A4 pages, then each
+//! page's glyph runs and table borders are drawn with krilla. A table that spans
+//! pages repeats its header rows after each break, and a row taller than a page is
+//! split across pages at line boundaries. Tables are rendered as a real grid:
+//! columns are reconstructed
 //! (including `col_span`/`row_span` placement), sized to authored `col_widths_pct`
 //! or to content, then bordered; cells carry rich per-run text (bold/italic/color/
 //! size/font), background shading, and vertical alignment. Images (block-level
@@ -56,6 +58,7 @@ const MAX_TABLE_COLS: usize = 1024;
 /// One drawable run on a line: its x offset within the content box, the krilla
 /// glyphs, the resolved font, the size, the fill color, and the source text (for
 /// the ToUnicode map that keeps the PDF text selectable).
+#[derive(Clone)]
 struct RunDraw {
     x: f32,
     glyphs: Vec<KrillaGlyph>,
@@ -68,6 +71,7 @@ struct RunDraw {
 /// A laid-out line: its advance height, the baseline offset from the line top,
 /// its left indent (0 inside table cells; set for indented/list paragraphs), and
 /// its runs.
+#[derive(Clone)]
 struct LineLayout {
     height: f32,
     baseline: f32,
@@ -77,6 +81,7 @@ struct LineLayout {
 
 /// A bordered table cell: its left edge + width (relative to the content origin),
 /// its wrapped rich text lines, the background fill, and the vertical alignment.
+#[derive(Clone)]
 struct CellBox {
     x: f32,
     width: f32,
@@ -87,17 +92,28 @@ struct CellBox {
 
 /// One table row: its height and the cells across it (including empty cells where
 /// a `row_span` from an earlier row covers a column).
+#[derive(Clone)]
 struct RowLayout {
     height: f32,
     cells: Vec<CellBox>,
 }
 
-/// A unit of block flow, paginated top-to-bottom.
+/// A unit of block flow, paginated top-to-bottom. `Table` groups its rows (with the
+/// header-row count) so pagination can repeat headers and split oversized rows;
+/// `Row` is an individual placed row produced during pagination.
 enum FlowItem {
     Gap(f32),
     Line(LineLayout),
     Row(RowLayout),
-    Picture { image: PdfImage, w: f32, h: f32 },
+    Table {
+        rows: Vec<RowLayout>,
+        header_rows: usize,
+    },
+    Picture {
+        image: PdfImage,
+        w: f32,
+        h: f32,
+    },
 }
 
 /// Decode embedded image bytes into a krilla raster image, by MIME when known and
@@ -634,6 +650,7 @@ fn layout_table(
     }
 
     // Pass 2: shape each cell richly at its column width and build the rows.
+    let mut rows: Vec<RowLayout> = Vec::with_capacity(grid.len());
     for placed_row in grid {
         let mut cells = Vec::with_capacity(placed_row.len());
         let mut row_h = 0.0_f32;
@@ -667,10 +684,77 @@ fn layout_table(
         }
         // A minimum row height so empty rows still draw a band.
         row_h = row_h.max(14.0);
-        out.push(FlowItem::Row(RowLayout {
+        rows.push(RowLayout {
             height: row_h,
             cells,
-        }));
+        });
+    }
+    let header_rows = t.header_rows.min(rows.len());
+    out.push(FlowItem::Table { rows, header_rows });
+}
+
+/// Split a row into a fragment that fits `avail` points of height and the leftover
+/// rest, by partitioning each cell's lines. At least one line is always kept in
+/// the fragment so progress is guaranteed even for a line taller than a page.
+fn split_row(row: RowLayout, avail: f32) -> (RowLayout, Option<RowLayout>) {
+    let budget = (avail - 2.0 * CELL_PAD).max(0.0);
+    let mut frag_cells = Vec::with_capacity(row.cells.len());
+    let mut rest_cells = Vec::with_capacity(row.cells.len());
+    let mut any_rest = false;
+    for cell in row.cells {
+        let CellBox {
+            x,
+            width,
+            shading,
+            valign,
+            lines,
+        } = cell;
+        let mut used = 0.0_f32;
+        let mut head = Vec::new();
+        let mut tail = Vec::new();
+        for line in lines {
+            if tail.is_empty() && (head.is_empty() || used + line.height <= budget) {
+                used += line.height;
+                head.push(line);
+            } else {
+                tail.push(line);
+            }
+        }
+        if !tail.is_empty() {
+            any_rest = true;
+        }
+        frag_cells.push(CellBox {
+            x,
+            width,
+            shading,
+            valign,
+            lines: head,
+        });
+        rest_cells.push(CellBox {
+            x,
+            width,
+            shading,
+            valign,
+            lines: tail,
+        });
+    }
+    let frag = RowLayout {
+        height: avail,
+        cells: frag_cells,
+    };
+    if any_rest {
+        let rest_h = rest_cells
+            .iter()
+            .map(|c| c.lines.iter().map(|l| l.height).sum::<f32>())
+            .fold(0.0_f32, f32::max)
+            + 2.0 * CELL_PAD;
+        let rest = RowLayout {
+            height: rest_h.max(14.0),
+            cells: rest_cells,
+        };
+        (frag, Some(rest))
+    } else {
+        (frag, None)
     }
 }
 
@@ -767,6 +851,90 @@ fn draw_run(surface: &mut Surface<'_>, run: RunDraw, x_abs: f32, baseline_y: f32
     );
 }
 
+type Pages = Vec<Vec<(f32, FlowItem)>>;
+
+fn page_nonempty(pages: &Pages) -> bool {
+    pages.last().map(|p| !p.is_empty()).unwrap_or(false)
+}
+
+/// Place an item at the current `y` on the last page, then advance `y`.
+fn place_item(pages: &mut Pages, y: &mut f32, item: FlowItem, h: f32) {
+    if let Some(p) = pages.last_mut() {
+        p.push((*y, item));
+    }
+    *y += h;
+}
+
+/// Break to a fresh page if `h` won't fit the remaining space on a non-empty page.
+fn ensure(pages: &mut Pages, y: &mut f32, h: f32) {
+    if *y + h > BOTTOM && page_nonempty(pages) {
+        pages.push(Vec::new());
+        *y = TOP;
+    }
+}
+
+/// Re-place the header rows (clones) at the top of the current page.
+fn repeat_headers(pages: &mut Pages, y: &mut f32, headers: &[RowLayout]) {
+    for h in headers {
+        let hr = h.clone();
+        let hh = hr.height;
+        place_item(pages, y, FlowItem::Row(hr), hh);
+    }
+}
+
+/// Place one row, breaking pages as needed: a row that fits a fresh page is moved
+/// whole (with the header rows repeated); a row taller than a page is split across
+/// pages at line boundaries. `is_header` rows are never themselves preceded by a
+/// header repeat.
+fn place_row(
+    pages: &mut Pages,
+    y: &mut f32,
+    mut row: RowLayout,
+    headers: &[RowLayout],
+    is_header: bool,
+) {
+    let mut on_fresh = !page_nonempty(pages);
+    loop {
+        let avail = BOTTOM - *y;
+        if row.height <= avail {
+            let h = row.height;
+            place_item(pages, y, FlowItem::Row(row), h);
+            return;
+        }
+        if !on_fresh {
+            // Move the whole row to a fresh page and repeat headers.
+            pages.push(Vec::new());
+            *y = TOP;
+            if !is_header {
+                repeat_headers(pages, y, headers);
+            }
+            on_fresh = true;
+            continue;
+        }
+        // On a fresh page (after any headers) and still too tall: split.
+        let (frag, rest) = split_row(row, BOTTOM - *y);
+        let fh = frag.height;
+        place_item(pages, y, FlowItem::Row(frag), fh);
+        pages.push(Vec::new());
+        *y = TOP;
+        if !is_header {
+            repeat_headers(pages, y, headers);
+        }
+        match rest {
+            Some(r) => row = r,
+            None => return,
+        }
+    }
+}
+
+/// Paginate a table: place every row, repeating the header rows after each break.
+fn place_table(pages: &mut Pages, y: &mut f32, rows: Vec<RowLayout>, header_rows: usize) {
+    let headers: Vec<RowLayout> = rows.iter().take(header_rows).cloned().collect();
+    for (i, row) in rows.into_iter().enumerate() {
+        place_row(pages, y, row, &headers, i < header_rows);
+    }
+}
+
 /// Render a [`DocModel`] to a single-column A4 PDF.
 pub(crate) fn to_pdf(model: &DocModel) -> Vec<u8> {
     let mut font_cx = FontContext::default();
@@ -782,29 +950,32 @@ pub(crate) fn to_pdf(model: &DocModel) -> Vec<u8> {
         &mut font_cache,
     );
 
-    // Paginate: flow items top-to-bottom onto A4 pages, breaking at item boundaries.
-    let mut pages: Vec<Vec<(f32, FlowItem)>> = vec![Vec::new()];
+    // Paginate: flow items top-to-bottom onto A4 pages. Tables repeat their header
+    // rows after each break and split rows taller than a page across pages.
+    let mut pages: Pages = vec![Vec::new()];
     let mut y = TOP;
     for item in items {
-        let h = match &item {
-            FlowItem::Gap(g) => *g,
-            FlowItem::Line(l) => l.height,
-            FlowItem::Row(r) => r.height,
-            FlowItem::Picture { h, .. } => *h,
-        };
-        if matches!(item, FlowItem::Gap(_)) {
-            y += h;
-            continue;
+        match item {
+            FlowItem::Gap(g) => y += g,
+            FlowItem::Line(l) => {
+                let h = l.height;
+                ensure(&mut pages, &mut y, h);
+                place_item(&mut pages, &mut y, FlowItem::Line(l), h);
+            }
+            FlowItem::Picture { image, w, h } => {
+                ensure(&mut pages, &mut y, h);
+                place_item(&mut pages, &mut y, FlowItem::Picture { image, w, h }, h);
+            }
+            FlowItem::Table { rows, header_rows } => {
+                place_table(&mut pages, &mut y, rows, header_rows);
+            }
+            // Rows reach pagination only inside a Table; place defensively.
+            FlowItem::Row(r) => {
+                let h = r.height;
+                ensure(&mut pages, &mut y, h);
+                place_item(&mut pages, &mut y, FlowItem::Row(r), h);
+            }
         }
-        let page_nonempty = pages.last().map(|p| !p.is_empty()).unwrap_or(false);
-        if y + h > BOTTOM && page_nonempty {
-            pages.push(Vec::new());
-            y = TOP;
-        }
-        if let Some(page) = pages.last_mut() {
-            page.push((y, item));
-        }
-        y += h;
     }
 
     // Emit.
@@ -817,7 +988,7 @@ pub(crate) fn to_pdf(model: &DocModel) -> Vec<u8> {
         let mut surface = page.surface();
         for (top, item) in page_items {
             match item {
-                FlowItem::Gap(_) => {}
+                FlowItem::Gap(_) | FlowItem::Table { .. } => {}
                 FlowItem::Picture { image, w, h } => {
                     // Center horizontally within the content box.
                     let x = MARGIN + ((CONTENT_W - w) * 0.5).max(0.0);
@@ -1143,6 +1314,48 @@ mod tests {
         let pdf = super::to_pdf(&model);
         assert!(pdf.starts_with(b"%PDF"));
         assert!(pdf.len() > 600);
+    }
+
+    #[test]
+    fn multi_page_table_and_oversized_row_terminate() {
+        // A table whose rows exceed a page (header repeat path) plus one row with a
+        // cell taller than several pages (the split path) must render to a bounded,
+        // valid multi-page PDF without hanging.
+        let hdr = Cell {
+            blocks: vec![para("머리글", None)],
+            is_header: true,
+            ..Cell::default()
+        };
+        let mut rows = vec![Row {
+            cells: vec![hdr, cell("값")],
+        }];
+        for i in 0..80 {
+            rows.push(Row {
+                cells: vec![cell(&format!("행 {i}")), cell("내용")],
+            });
+        }
+        // A single row with a very tall cell (300 paragraphs ⇒ 300+ lines).
+        let tall_blocks: Vec<Block> = (0..300).map(|n| para(&format!("줄 {n}"), None)).collect();
+        rows.push(Row {
+            cells: vec![
+                Cell {
+                    blocks: tall_blocks,
+                    ..Cell::default()
+                },
+                cell("끝"),
+            ],
+        });
+        let model = DocModel {
+            blocks: vec![Block::Table(Table {
+                rows,
+                header_rows: 1,
+                ..Default::default()
+            })],
+            ..DocModel::default()
+        };
+        let pdf = super::to_pdf(&model);
+        assert!(pdf.starts_with(b"%PDF"));
+        assert!(pdf.len() < 5_000_000, "unexpectedly large: {}", pdf.len());
     }
 
     #[test]
