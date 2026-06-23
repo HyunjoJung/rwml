@@ -1,0 +1,50 @@
+name: CI
+
+# Manual-only: this repo is validated by a LOCAL gate (cargo fmt/clippy/test/doc + the
+# corpus checks). Auto-on-push/PR is disabled to avoid consuming GitHub Actions minutes the
+# repo budget does not cover; run on demand from the Actions tab, or restore the
+# push/pull_request triggers below when runner budget is available.
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  check:
+    name: fmt · clippy · test · doc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy (default)
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Clippy (all features)
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Test (default)
+        run: cargo test --all-targets
+      - name: Test (render)
+        run: cargo test --all-targets --features render
+      - name: Doctests
+        run: cargo test --doc --all-features
+      - name: Doc
+        run: cargo doc --no-deps --all-features
+
+  msrv:
+    name: MSRV 1.74 (default) · 1.88 (render)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.74.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Build (default features, MSRV 1.74)
+        run: cargo build
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - name: Build (render feature, MSRV 1.88)
+        run: cargo build --features render

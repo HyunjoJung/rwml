@@ -1,0 +1,51 @@
+[package]
+name = "rdoc"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.74"
+license = "MIT"
+description = "Native Rust reader for Microsoft Word — legacy .doc (Word 97-2003 binary, [MS-DOC]) and modern .docx (OOXML WordprocessingML); plain text, document model, Markdown/HTML"
+repository = "https://github.com/HyunjoJung/rdoc"
+homepage = "https://github.com/HyunjoJung/rdoc"
+documentation = "https://docs.rs/rdoc"
+readme = "README.md"
+authors = ["Hyunjo Jung <mrjung0987@seoultech.ac.kr>"]
+keywords = ["doc", "docx", "msword", "ole2", "parser"]
+categories = ["parser-implementations", "text-processing"]
+exclude = [".github/"]
+
+# Standalone, dependency-light, no workspace inheritance — this crate is meant
+# to be liftable into its own repository / crates.io as-is.
+[dependencies]
+cfb = "0.10"
+encoding_rs = "0.8"
+thiserror = "2.0"
+# Modern .docx (OOXML WordprocessingML) support — on by default; disable for the
+# dependency-light legacy-.doc-only build (`default-features = false`). Mirrors
+# the sibling `rxls` crate's .xlsx feature setup.
+zip = { version = "2.2", default-features = false, features = ["deflate"], optional = true }
+quick-xml = { version = "0.36", optional = true }
+# Native typesetting renderer (DocModel → PDF): parley for layout/shaping/CJK
+# line-breaking, krilla for PDF emit with subsetted fonts + selectable text.
+# Heavy + raises the MSRV to 1.88 (parley), so it is strictly opt-in.
+krilla = { version = "0.8", optional = true }
+parley = { version = "0.10", optional = true }
+
+[features]
+default = ["docx"]
+docx = ["dep:zip", "dep:quick-xml"]
+render = ["dep:krilla", "dep:parley"]
+
+[[example]]
+name = "extract"
+path = "examples/extract.rs"
+
+[[example]]
+name = "to_pdf"
+path = "examples/to_pdf.rs"
+required-features = ["render"]
+
+[[example]]
+name = "report"
+path = "examples/report.rs"
+required-features = ["docx"]

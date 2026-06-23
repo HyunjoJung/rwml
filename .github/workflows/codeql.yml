@@ -1,0 +1,30 @@
+name: CodeQL
+
+# Manual-only to avoid consuming GitHub Actions minutes the repo budget does not cover.
+# Restore the push/pull_request/schedule triggers below when runner budget is available.
+on:
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    name: Analyze (rust)
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: rust
+
+      - name: Build
+        run: cargo build --all-targets
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:rust"

@@ -1,0 +1,186 @@
+# Changelog
+
+All notable changes to `rdoc` are documented here. The format is based on
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
+adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+- **Package-preserving `.docx` editing (`Document::open` → edit → `save`).** rdoc is
+  now an *editor*, not only a generator: opening a `.docx` retains the whole OPC
+  package, and `Document::save() -> Result<Vec<u8>>` re-emits it with every part it
+  doesn't model preserved verbatim — themes, settings, fonts, comments, custom XML,
+  charts, embeddings, and unknown/future parts. A no-op open→save is byte-stable per
+  part. Two edit surfaces (see `docs/prd-rdoc-write-edit.md` / `docs/trd-…`):
+  - **Model overlay (A)** — `Document::body_mut()` edits the rich `DocModel`; `save`
+    regenerates only `word/document.xml` and merges relationships (preserving the
+    original's satellite rels, re-minted to non-colliding `rId`s). Note: regenerating
+    the body from the lossy model does not preserve unmodeled *body* elements.
+  - **Element-tree edit (B)** — `Document::replace_body_text` and
+    `Document::add_image_png` mutate the live `document.xml` element tree, so fields,
+    content controls (`w:sdt`), `mc:AlternateContent` shapes, comments, and tracked
+    changes are **preserved**; image insertion reconciles the media part,
+    content-type, and a fresh `rId` transactionally. Lazy promotion means only the
+    edited part re-serializes; every other part stays byte-identical.
+  - **New documents** — `Document::new()` opens a bundled blank template (à la
+    python-docx's `default.docx`); `try_write_docx` is a fallible `write_docx`.
+  New internals: `opc` (OPC round-trip layer — parts/content-types/rels graph +
+  `rId` allocator) and `xmltree` (a faithful, edit-preserving arena XML tree).
+  Validated on the 127-file corpus with python-docx as the strict external checker:
+  passthrough byte-stable per part; A-overlay and B-image edits produce packages
+  python-docx opens (B: inline image present) on every openable file.
+- **Render fidelity & extraction depth.** Run-level
+  `mc:AlternateContent` shapes are extracted (floating text boxes no longer
+  dropped); `.docx` autonumber labels are computed from `numFmt`/`lvlText`/`start`
+  (1./a)/1.1/i. instead of decimal-only); footnotes/endnotes are read; `w:caps`/
+  `w:smallCaps` render uppercased; and the renderer is **model-driven** for page
+  size, orientation, and per-side margins (Letter/A3/landscape/sidebar layouts
+  paginate correctly instead of a forced A4). A whole-archive media budget caps
+  cumulative image inflation. Across these, `.docx` render recall vs LibreOffice
+  rose to ~0.93 and `.doc` page counts line up; see the *Scope & parity* notes
+  for the remaining renderer limitations.
+- **`.docx` headers/footers + text boxes are now read and rendered.** The reader
+  resolves running headers/footers from the body `sectPr` references into
+  `DocSetup.header`/`footer` (each part with its own rels/media, de-duplicated),
+  extracts text-box text (`w:txbxContent`, DrawingML & VML, single branch on
+  `mc:AlternateContent`) into the body, and the renderer draws the headers/footers
+  in every page margin and flattens nested-table cells. `text()` now includes
+  headers/footers; `main_text()` is body-only; `header_text()` works for `.docx`.
+  Lifted mean rendered-PDF recall vs LibreOffice on feature-bearing corpus docs
+  from 0.687 to 0.932. The text-box recursion is depth-bounded (no stack overflow
+  on hostile nesting).
+- **`.docx` authoring (`rdoc::write_docx`)** — build a `DocModel` from data and
+  serialize a clean, Office-openable `.docx`. Emits rich `w:rPr` (font, half-point
+  size, color, highlight, small-caps, super/subscript), `w:pPr` (named heading
+  styles via a synthesized `styles.xml` with `outlineLvl`, alignment, spacing,
+  indent, shading), bordered tables with per-cell shading / `tcW` width / vertical
+  alignment, real image extents, page setup (`sectPr`), and running headers/footers
+  with a `PAGE` field. Round-trips through the reader; opens in Word & LibreOffice.
+  See `examples/report.rs`.
+- **PDF rendering (`rdoc::render_pdf`, `render` feature)** — native typesetting with
+  `parley` (Korean/CJK line-breaking + script font fallback) and `krilla` (subset
+  embedded fonts, selectable text). Honors run color/size/font, lists + indentation,
+  bordered tables with shaded vertically-aligned cells and authored column widths,
+  images (PNG/JPEG/GIF/WebP), and clickable hyperlink annotations; multi-page tables
+  repeat header rows and oversized rows split across pages.
+  `render_pdf_with_fonts` registers caller-supplied fonts for headless/server use.
+- **Richer read model** — `CharProps` now carries font/size/color/highlight/
+  vert-align/small-caps (incl. `.doc` CHPX `sprm` decoding + the `SttbfFfn` font
+  table); `ParaProps` gains spacing/indent/shading; `Cell`/`Table` gain shading,
+  vertical alignment, and column widths; new `DocSetup`/`PageSetup`. All additive
+  and `Default`, so existing read paths are unaffected.
+- **Validation** — `scripts/render_validate.py` (recall / page-count / visual-hash
+  vs LibreOffice), a `render` fuzz target, and an integration test of the public
+  authoring/render API.
+
+### Security
+- **Tighter zip-bomb bound for `.docx`** (`docx/mod.rs`): each ZIP part's
+  decompressed size is capped at 64 MiB (was 256 MiB) and rejected up front when
+  the ZIP-declared uncompressed size exceeds it, so a ~200 KB `.docx` that inflates
+  to gigabytes is refused in milliseconds with a clean error instead of burning
+  ~1 GiB / ~16 s.
+
+### Fixed
+- **Field instruction state machine** (`assemble.rs`): a field with no `0x14`
+  separator (`0x13 … 0x15`) left the model assembler stuck in "instruction" mode,
+  silently dropping *all* document content after it. Instruction tracking is now
+  a per-field stack (visible only when every open field has passed its
+  separator), which also correctly hides a nested field's result when it sits
+  inside an enclosing field's instruction. Recovered substantial structure across
+  the 426-file corpus (tables 17.1k → 20.5k, headings 4.5k → 4.9k, bold runs
+  14.1k → 16.2k, images 618 → 657) with no new panics.
+- **Inline image magic scan** (`image.rs`): the raster-signature scan returned
+  the first byte offset where *any* magic matched, so a chance `FF D8 FF` triple
+  in the Escher/OLE binary pre-empted a real later PNG, and the 3-byte JPEG magic
+  had no marker validation — extracting tens of KB of garbage as `image/jpeg`
+  when a false `FF D8 FF 85` sequence appeared before the real image. Now each
+  format is scanned over the whole payload in reliability
+  order (PNG → GIF → JPEG), and JPEG requires `FF D8 FF <marker ≥ 0xC0>`. Suspect
+  extractions on the corpus dropped from 2 to 0.
+- **CHPX FC alignment for undecodable bytes** (`assemble.rs::decode_with_fc`): an
+  8-bit byte with no mapping in the document codepage decodes to U+FFFD, and the
+  per-character re-encode used to size its source bytes turned that into a
+  multi-byte numeric character reference (`&#65533;`), over-counting and shifting
+  every following character's FC so its CHPX (bold/italic/…) was misattributed.
+  The byte width is now clamped to the real 1–2 byte range with a round-trip
+  error treated as a single source byte.
+
+### Added
+- **Unified `.docx` (OOXML WordprocessingML) reader.** `rdoc` now reads modern
+  `.docx` in addition to legacy `.doc`, into the **same** [`DocModel`] and the
+  same `text` / `to_markdown` / `to_html` / `images` surfaces.
+  [`Document::open`] format-detects from the magic bytes (OLE2 `D0CF11E0` → `.doc`,
+  ZIP `PK` → `.docx`). The `.docx` path (behind a default-on `docx` cargo feature
+  using `zip` + `quick-xml`, mirroring the sibling `rxls` `.xlsx` setup) parses
+  `word/document.xml` (paragraphs/runs with bold/italic/underline; tables with
+  `gridSpan`/`vMerge` → colspan/rowspan), `word/styles.xml` (heading levels:
+  `Heading N` / `제목 N`), `word/numbering.xml` (ordered vs bullet),
+  `word/_rels` + `word/media` (hyperlink targets and inline images). It is
+  recursion-depth-capped (no stack-overflow on pathological nesting), XXE-safe
+  (external XML entities are never resolved), and zip-bomb-guarded. Disable with
+  `default-features = false` for a dependency-light `.doc`-only build. The goal is
+  *unification + ownership* (one Word crate, one IR, no JVM, no external `.docx`
+  dependency) — not to outdo the mature `docx-rs` on `.docx` features; see the
+  README. Validated against python-docx on the 127-file Apache POI `.docx` corpus:
+  **98.6% mean / 100% median set-word recall, 85/87 files ≥ 99%, 0 panics.**
+- **Full document model + Markdown/HTML export.** Beyond flat text, `rdoc` now
+  builds a lazy typed IR (`Document::model` → `Vec<Block>`) and renders
+  `Document::to_markdown` / `Document::to_html` — no other Rust crate does this
+  for the legacy binary `.doc` format. Components:
+  - **Character runs** (`chpx.rs`): per-run bold/italic/underline/strike/hidden
+    from the CHPX bin table (`PlcfBteChpx` → CHPX FKPs).
+  - **Headings** (`stsh.rs`): from the STSH style sheet (`sti` 1–9, `istdBase`
+    chain) and outline level (`sprmPOutLvl`), matching English `Heading N` and
+    Korean `제목 N`.
+  - **Merge-aware tables** (`table.rs`): `sprmTDefTable` → real `colspan`
+    (global cell-boundary set + `fMerged`) and `rowspan`
+    (`fVertRestart`/`fVertMerge` by column), with a GFM/HTML-fallback exporter.
+  - **Hyperlinks** from field marks (`0x13`/`0x14`/`0x15`), and **inline
+    PNG/JPEG/GIF images** extracted byte-for-byte from the `Data` stream
+    (`image.rs`; `Document::images()` ≈ POI `getAllPictures`).
+  - Validated on private Korean-language fixtures; the fast `text()` path is
+    untouched (still ~97.4% POI parity).
+- Initial public release of `rdoc`.
+- `extract_text(&[u8]) -> Result<String>` convenience entry point.
+- `Document` API: `open`, `text`, `main_text`, `footnote_text`, `header_text`,
+  `char_count`, `is_complex`.
+- OLE2/CFB container access, FIB parsing via variable-length navigation
+  (csw/cslw), CLX/piece-table decoding, UTF-16LE and cp1252 (`fCompressed`)
+  piece decoding, Word control-mark handling, and line normalization.
+- Typed [`Error`] enum; panic-free, bounds-checked parsing.
+- Synthetic-`.doc` round-trip tests, `extract` example, README, and MIT license.
+
+### Changed
+- Compressed (8-bit) pieces are now decoded in the document's ANSI codepage
+  derived from the FIB language id (`lid`) — Korean `0x0412` → cp949/EUC-KR,
+  Japanese → cp932, etc. — instead of being hard-coded to cp1252. (Informed by
+  LibreOffice ww8 `GetCharSetFromLanguage`, antiword, catdoc.)
+- Control-mark handling: column break (`0x0E`) → newline, non-breaking hyphen
+  (`0x1E`) → `-`, non-breaking space (`0xA0`) → regular space, and the `0x09`
+  tab is now **preserved** (it is real content that POI keeps) instead of being
+  dropped with other control characters.
+
+### Added
+- **Table reconstruction** (first step toward a full parser): parse the
+  `PlcfBtePapx` bin table and PAPX FKP pages ([MS-DOC] 2.8.25 / 2.9.137) to
+  recover each paragraph's `fInTable`/`fTtp` flags, and render table cell marks
+  (`0x07`) as POI does — cells tab-separated, rows newline-separated. Degrades
+  gracefully (newline per cell) when paragraph properties are unavailable.
+- **List autonumber reconstruction**: parse `PlfLst`/`LSTF`/`LVL`/`LVLF` and
+  `PlfLfo`/`LFO` ([MS-DOC] 2.9.150/.131/.132/.133/.149/.129), read each
+  paragraph's `ilfo`/`ilvl`, and compute the rendered label (`1.`, `1.1`, `가.`,
+  `(1)` …) with per-level counters, restart-on-higher-level, and the level's
+  `xst` number template + `ixchFollow` separator. Number formats cover decimal,
+  roman, letter, ordinal, circled, decimal-zero, and **Korean** (Ganada `가나다`,
+  Chosung `ㄱㄴㄷ`, Sino-Korean `일이삼`, native counting). Generated labels go
+  into `text()` only; `raw`/the sub-document accessors stay aligned with Word's
+  CP space.
+
+### Security / robustness
+- Detect encrypted / XOR-obfuscated documents (`fEncrypted`/`fObfuscated`) and
+  return `Error::Encrypted` instead of indexing scrambled bytes.
+- Detect pre-Word-97 (Word 6/95, `nFib < 0x00C1`) and return
+  `Error::UnsupportedVersion` so callers can route to a fallback extractor.
+
+[Unreleased]: https://github.com/HyunjoJung/rdoc/commits/main
