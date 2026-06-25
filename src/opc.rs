@@ -473,6 +473,28 @@ impl Package {
                 )));
             }
         }
+        for (rels_path, entries) in &self.rels {
+            if !self.touched.contains(rels_path) {
+                continue;
+            }
+            let source_part = source_part_of_rels_path(rels_path).ok_or_else(|| {
+                Error::Docx(format!(
+                    "{rels_path} is not a valid relationships part path"
+                ))
+            })?;
+            for rel in entries {
+                if rel.external {
+                    continue;
+                }
+                let target = resolve_rel_target(&source_part, rel_target_part_path(&rel.target));
+                if !self.has_part(&target) {
+                    return Err(Error::Docx(format!(
+                        "{rels_path} relationship {} targets missing part {target}",
+                        rel.id
+                    )));
+                }
+            }
+        }
         // Re-apply the same entry-count budget `from_zip` enforces, so an edit can't
         // produce a package with more entries than the crate will reopen. Count the parts
         // ACTUALLY emitted: every `order` entry (dirs + parts) plus only the parts added
@@ -548,6 +570,19 @@ impl Package {
     /// Whether a part exists (no allocation, unlike [`Package::part`]).
     pub(crate) fn has_part(&self, name: &str) -> bool {
         self.parts.keys().any(|p| p.eq_ignore_ascii_case(name))
+    }
+
+    /// All retained part names, without a leading slash.
+    pub(crate) fn part_names(&self) -> impl Iterator<Item = &str> {
+        self.parts.keys().map(String::as_str)
+    }
+
+    /// Package parts that were added, replaced, promoted for XML editing, or
+    /// regenerated during preservation edits in this session.
+    pub(crate) fn touched_parts(&self) -> Vec<String> {
+        let mut parts: Vec<String> = self.touched.iter().cloned().collect();
+        parts.sort();
+        parts
     }
 
     /// A read-only handle to a part's tree **iff it is already promoted** (`Part::Xml`).
@@ -662,8 +697,6 @@ impl Package {
     }
 
     /// Relationships declared for `content_part` (resolves its sibling `_rels`).
-    /// Test-only read accessor for asserting the rels graph.
-    #[cfg(test)]
     pub(crate) fn rels_for(&self, content_part: &str) -> &[Rel] {
         self.rels
             .get(&rels_path_of(content_part))
@@ -722,6 +755,83 @@ impl Package {
         });
         self.regen_rels(&rels_path);
         rid
+    }
+
+    /// Ensure `src_part` has an internal relationship of `rel_type` to `target_part`,
+    /// returning the existing or newly allocated relationship id.
+    pub(crate) fn ensure_relationship(
+        &mut self,
+        src_part: &str,
+        rel_type: &str,
+        target_part: &str,
+    ) -> String {
+        let rels_path = rels_path_of(src_part);
+        if let Some(existing) = self.rels.get(&rels_path).and_then(|entries| {
+            entries.iter().find(|rel| {
+                !rel.external
+                    && rel.rel_type == rel_type
+                    && resolve_rel_target(src_part, &rel.target).eq_ignore_ascii_case(target_part)
+            })
+        }) {
+            return existing.id.clone();
+        }
+
+        let rid = self.alloc_rid();
+        let target = rel_target(src_part, target_part);
+        self.rels.entry(rels_path.clone()).or_default().push(Rel {
+            id: rid.clone(),
+            rel_type: rel_type.to_string(),
+            target,
+            external: false,
+        });
+        self.regen_rels(&rels_path);
+        rid
+    }
+
+    /// Update the target of an existing external relationship and regenerate only
+    /// that relationship part. The relationship must match the expected type so a
+    /// caller cannot accidentally retarget images, headers, or internal package parts.
+    pub(crate) fn set_external_relationship_target(
+        &mut self,
+        src_part: &str,
+        rel_type: &str,
+        rel_id: &str,
+        target: &str,
+    ) -> Result<()> {
+        if target.is_empty() {
+            return Err(Error::Docx("relationship target must not be empty".into()));
+        }
+        if target.chars().any(|c| !is_xml_legal_char(c)) {
+            return Err(Error::Docx(
+                "relationship target contains an XML-illegal character".into(),
+            ));
+        }
+
+        let rels_path = rels_path_of(src_part);
+        let changed = {
+            let entries = self
+                .rels
+                .get_mut(&rels_path)
+                .ok_or_else(|| Error::Docx(format!("missing relationships for {src_part}")))?;
+            let rel = entries
+                .iter_mut()
+                .find(|rel| rel.id == rel_id && rel.rel_type == rel_type && rel.external)
+                .ok_or_else(|| {
+                    Error::Docx(format!(
+                        "relationship {rel_id:?} is not an external relationship of the expected type"
+                    ))
+                })?;
+            if rel.target == target {
+                false
+            } else {
+                rel.target = target.to_string();
+                true
+            }
+        };
+        if changed {
+            self.regen_rels(&rels_path);
+        }
+        Ok(())
     }
 
     /// Regenerate the `[Content_Types].xml` part bytes from the parsed view.
@@ -798,6 +908,20 @@ fn rels_path_of(part: &str) -> String {
     }
 }
 
+/// Inverse of [`rels_path_of`]: `_rels/.rels` → ``,
+/// `word/_rels/document.xml.rels` → `word/document.xml`.
+fn source_part_of_rels_path(rels_path: &str) -> Option<String> {
+    if rels_path == "_rels/.rels" {
+        return Some(String::new());
+    }
+    let rels_source = rels_path.strip_suffix(".rels")?;
+    if let Some(file) = rels_source.strip_prefix("_rels/") {
+        return (!file.is_empty()).then(|| file.to_string());
+    }
+    let (dir, file) = rels_source.rsplit_once("/_rels/")?;
+    (!dir.is_empty() && !file.is_empty()).then(|| format!("{dir}/{file}"))
+}
+
 /// Is this a relationships part — `.rels` under a `_rels/` directory? (A content
 /// part merely *named* `foo.rels` outside `_rels/` is not a relationships part.)
 fn is_rels(name: &str) -> bool {
@@ -808,6 +932,9 @@ fn is_rels(name: &str) -> bool {
 /// (Common case: both under `word/` ⇒ a path relative to `word/`.)
 fn rel_target(src_part: &str, new_part: &str) -> String {
     let src_dir = src_part.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
+    if src_dir.is_empty() {
+        return new_part.to_string();
+    }
     if !src_dir.is_empty() {
         if let Some(rest) = new_part.strip_prefix(&format!("{src_dir}/")) {
             return rest.to_string();
@@ -815,6 +942,37 @@ fn rel_target(src_part: &str, new_part: &str) -> String {
     }
     // Fall back to an absolute package path.
     format!("/{new_part}")
+}
+
+fn rel_target_part_path(target: &str) -> &str {
+    let before_fragment = target.split_once('#').map_or(target, |(path, _)| path);
+    before_fragment
+        .split_once('?')
+        .map_or(before_fragment, |(path, _)| path)
+}
+
+/// Resolve an internal relationship target against `src_part`'s directory and
+/// normalize dot segments to an OPC package part name without a leading slash.
+pub(crate) fn resolve_rel_target(src_part: &str, target: &str) -> String {
+    let base: Vec<&str> = if target.starts_with('/') {
+        Vec::new()
+    } else {
+        src_part
+            .rsplit_once('/')
+            .map(|(dir, _)| dir.split('/').filter(|s| !s.is_empty()).collect())
+            .unwrap_or_default()
+    };
+    let mut segs = base;
+    for seg in target.split('/') {
+        match seg {
+            "" | "." => {}
+            ".." => {
+                segs.pop();
+            }
+            s => segs.push(s),
+        }
+    }
+    segs.join("/")
 }
 
 /// Minimal XML attribute-value escape.
@@ -2158,6 +2316,46 @@ mod tests {
         let rels_res = pkg.to_zip();
         set_test_max_meta(MAX_META_RECORDS);
         assert!(rels_res.is_err(), "save emitted .rels past the reopen cap");
+    }
+
+    #[test]
+    fn to_zip_rejects_touched_internal_relationship_to_missing_part() {
+        let ct = format!(
+            r#"<Types xmlns="{CT_NS}"><Default Extension="rels" ContentType="{CT_RELS}"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/xml"/></Types>"#
+        );
+        let zip = build_zip(&[
+            (CONTENT_TYPES, ct.as_bytes()),
+            ("word/document.xml", b"<w:document/>"),
+        ]);
+        let mut pkg = Package::from_zip(&zip).unwrap();
+
+        pkg.ensure_relationship("word/document.xml", "urn:missing", "word/missing.xml");
+
+        let save = pkg.to_zip();
+        assert!(
+            save.is_err(),
+            "save emitted a touched .rels part targeting a missing package part"
+        );
+    }
+
+    #[test]
+    fn to_zip_rejects_touched_root_relationship_to_missing_part() {
+        let ct = format!(
+            r#"<Types xmlns="{CT_NS}"><Default Extension="rels" ContentType="{CT_RELS}"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/xml"/></Types>"#
+        );
+        let zip = build_zip(&[
+            (CONTENT_TYPES, ct.as_bytes()),
+            ("word/document.xml", b"<w:document/>"),
+        ]);
+        let mut pkg = Package::from_zip(&zip).unwrap();
+
+        pkg.ensure_relationship("", "urn:missing-root", "docProps/missing.xml");
+
+        let save = pkg.to_zip();
+        assert!(
+            save.is_err(),
+            "save emitted a touched root .rels part targeting a missing package part"
+        );
     }
 
     /// `[Content_Types].xml` missing the mandatory `rels` Default is injected

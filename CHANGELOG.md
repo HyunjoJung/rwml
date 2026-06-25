@@ -7,6 +7,72 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **PAGE field-result formatting.** Trusted deterministic `.docx` body `PAGE`
+  current-page text now combines supported page-number formats with common
+  `\* Upper`/`\* Lower`/`\* Caps`/`\* FirstCap` field-result switches.
+- **PAGEREF field-result formatting.** Deterministic `.docx` `PAGEREF`
+  page-reference text now combines supported page-number formats with common
+  `\* Upper`/`\* Lower`/`\* Caps`/`\* FirstCap` field-result switches.
+- **PAGEREF final-section page numbering.** Trusted `.docx` `PAGEREF`
+  targets in single-section documents now honor final `body/sectPr`
+  `w:pgNumType w:start` and supported `w:fmt` page-number defaults when an
+  explicit source page marker already makes the target page unambiguous.
+- **Field result marker fidelity.** `Document::set_field_result()` now writes
+  user-supplied tabs/newlines as WordprocessingML `w:tab`/`w:br` markers for
+  both simple and common complex cached field results.
+- **Text replacement marker fidelity.** `Document::replace_body_text()`,
+  `Document::replace_header_footer_text()`, `Document::replace_text_in_part()`,
+  and `Document::set_table_cell_text()` now write user-supplied tabs/newlines as
+  WordprocessingML `w:tab`/`w:br` markers instead of literal control characters
+  inside `w:t`.
+- **NOTEREF field-result formatting.** Deterministic `NOTEREF`/`FTNREF`
+  footnote/endnote mark and source-order relative-position results now apply
+  common `\* Upper`/`\* Lower`/`\* Caps`/`\* FirstCap` field-result switches,
+  while unresolved targets and unsupported switches remain cached and
+  diagnostic.
+- **Standalone `AUTONUMLGL`/`AUTONUMOUT` fields.** Plain automatic-numbering
+  variants now compute source-order values on the same deterministic counter as
+  `AUTONUM`, while richer outline formatting remains cached and diagnostic.
+- **Unquoted single-token `SET` fields.** Deterministic `SET Bookmark Value`
+  fields now accept a single unquoted literal token, feed later plain
+  `REF`/direct bookmark references, and still reject ambiguous multi-token
+  unquoted assignments.
+- **Legacy `FORMTEXT` current values.** Non-empty `FORMTEXT` result text is now
+  materialized as the computed value instead of being reported as unsupported;
+  empty-current text-input defaults, checkbox states, and dropdown selections
+  keep their existing deterministic legacy-form behavior.
+- **3-D bar/column shape styling.** `ChartBuilder::shape(ChartShape::...)`
+  now emits Word-compatible `c:shape` values such as `cylinder` and `pyramid`
+  for authored 3-D bar and 3-D column charts and renders approximate shaped
+  native previews without preserved-chart warnings.
+- **Surface chart wireframe styling.** `ChartBuilder::wireframe()` now emits
+  `c:wireframe val="1"` for authored surface and 3-D surface charts and draws a
+  wireframe-style native preview without preserved-chart warnings.
+- **3-D surface chart authoring and preview.** `ChartBuilder::surface_3d()`
+  emits workbook-backed OOXML `c:surface3DChart` parts, reopens through the
+  normal package path, and renders through the native chart-preview pipeline
+  without preserved-chart warnings.
+- **3-D line and area chart authoring and preview.** `ChartBuilder::line_3d()`
+  and `ChartBuilder::area_3d()` emit workbook-backed OOXML `c:line3DChart`
+  and `c:area3DChart` parts, reopen through the normal package path, and render
+  through the native chart-preview pipeline without preserved-chart warnings.
+- **3-D bar and column chart authoring and preview.** `ChartBuilder::bar_3d()`
+  and `ChartBuilder::column_3d()` emit workbook-backed OOXML `c:bar3DChart`
+  parts, reopen through the normal package path, and render through the native
+  chart-preview pipeline without preserved-chart warnings.
+- **3-D pie chart authoring and preview.** `ChartBuilder::pie_3d()` emits
+  workbook-backed OOXML `c:pie3DChart` parts, reopens through the normal package
+  path, and renders through the native chart-preview pipeline without
+  preserved-chart warnings.
+- **Comment/note edit whitespace preservation.** Newly created `.docx`
+  comments, updated comments, and newly created or replaced footnote/endnote
+  text now mark generated `w:t` runs with `xml:space="preserve"` when
+  user-supplied text has leading or trailing whitespace and emit `\t`/`\n` as
+  WordprocessingML tab/break markers.
+- **Comment tab/break fidelity.** `.docx` comment extraction now treats
+  `w:tab`, `w:br`, and `w:cr` markers as visible tab/newline text in both
+  comment bodies and anchors, and authored comments emit `\t`/`\n` as
+  WordprocessingML markers.
 - **Package-preserving `.docx` editing (`Document::open` → edit → `save`).** rdoc is
   now an *editor*, not only a generator: opening a `.docx` retains the whole OPC
   package, and `Document::save() -> Result<Vec<u8>>` re-emits it with every part it
@@ -40,9 +106,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   cumulative image inflation. Across these, `.docx` render recall vs LibreOffice
   rose to ~0.93 and `.doc` page counts line up; see the *Scope & parity* notes
   for the remaining renderer limitations.
+- **Wrapper-aware floating-shape anchors.** `.docx` `wp:anchor` extraction now
+  resolves anchor block index/text through transparent body-level content
+  controls and custom XML wrappers, records the zero-width anchor character
+  offset inside normalized containing-block text, captures DrawingML
+  `a:prstGeom/@prst` preset geometry plus simple sRGB solid fill/outline colors
+  for textless Office-Art shapes, records enabled `wp:simplePos` absolute points,
+  captures `wp:effectExtent` visual-effect bounds, records wrap-element `dist*`
+  text-distance margins, matches the visible body blocks used by the model, and
+  improves preview overlay page selection for those wrapped anchors.
 - **`.docx` headers/footers + text boxes are now read and rendered.** The reader
   resolves running headers/footers from the body `sectPr` references into
-  `DocSetup.header`/`footer` (each part with its own rels/media, de-duplicated),
+  paragraph section-break setup plus final `DocSetup` default, first-page, and
+  even-page header/footer variants, using the previous section's default when a
+  later section omits it. `header_footers()` exposes the exact referenced
+  `part#type` records, each part with its own rels/media, de-duplicated, and
+  authored `.docx` output now emits first/even variant refs plus the needed
+  settings marker for even-page headers, and the renderer selects section-aware
+  first/even/default running variants, with first-page variants scoped to each
+  section and even variants based on emitted page parity,
   extracts text-box text (`w:txbxContent`, DrawingML & VML, single branch on
   `mc:AlternateContent`) into the body, and the renderer draws the headers/footers
   in every page margin and flattens nested-table cells. `text()` now includes
@@ -73,6 +155,245 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Validation** — `scripts/render_validate.py` (recall / page-count / visual-hash
   vs LibreOffice), a `render` fuzz target, and an integration test of the public
   authoring/render API.
+- **PAGE field evaluation** — body `PAGE` fields now compute current page
+  numbers from trusted leading structural or source-rendered `.docx` contexts,
+  including section page-number restarts/styles and deterministic page-number
+  format switches. Visible-content manual-break and broader layout-derived
+  current-page cases preserve cached text and now report `NoComputedResult`
+  diagnostics.
+- **Named `PAGEREF` diagnostics** — `FieldKind::PageRef` now distinguishes
+  Word `PAGEREF` fields from unknown fields, preserves their cached page-reference
+  text, computes page numbers only when leading explicit page breaks before
+  visible body content, enabled paragraph `w:pageBreakBefore`, explicit or
+  default `nextPage`, and explicit `evenPage`/`oddPage` section starts in
+  leading or trusted rendered context, including trusted `w:pgNumType w:start`
+  displayed page-number restarts and supported `w:pgNumType w:fmt` styles
+  (`decimal`, `decimalZero`, lower/upper letter, lower/upper roman,
+  ordinal/cardinal text) on those section starts, source-persisted
+  `w:lastRenderedPageBreak` markers, or
+  explicit hard breaks after a trusted leading/rendered page context make the
+  target bookmark page structural, applies deterministic `\* Arabic`,
+  `\* alphabetic`/`\* ALPHABETIC`, `\* roman`/`\* ROMAN`, `\* Ordinal`,
+  `\* CardText`, `\* OrdText`, and page-number-only `\* ArabicDash`
+  number-format switches plus common field-result format switches, computes
+  `\p` relative results from trusted leading
+  structural page context or source-persisted rendered page-break/source-order
+  hints (`above`, `below`, or `on page N`), and reports missing `PAGEREF`
+  bookmark targets as `UnresolvedBookmark` separately from remaining
+  layout-dependent page references, remaining unsupported section page-number
+  formats reported as `UnsupportedSwitch`, and unknown fields.
+  Compatibility note: downstream code
+  with exhaustive matches on the public `FieldKind` enum must add a `PageRef`
+  arm or wildcard fallback.
+- **REF relative-position and numbered-paragraph fields** — `.docx`
+  `REF Bookmark \p` now computes `above`/`below` from unambiguous source-order
+  bookmark and field positions, and `REF Bookmark \n` computes explicit
+  numbered-paragraph bookmark labels from `word/numbering.xml`, including
+  `\n \p` relative suffixes, `\n \t` numeric-text suppression, and
+  `REF Bookmark \r` relative-context numbered labels with `\r \p` relative
+  suffixes and `\r \t` numeric-text suppression when the REF field paragraph
+  also has an unambiguous numbering context, plus
+  `REF Bookmark \w` full-context numbered labels with `\w \p` relative suffixes
+  and `\w \t` numeric-text suppression,
+  `REF Bookmark \f` computes visible body footnote/endnote reference marks
+  when the bookmark encloses a body note reference, including prior generated
+  `REF \f` marks in source order,
+  `REF Bookmark \d "separator"` is accepted as supported syntax and preserves
+  cached text until sequence/page separator semantics are modeled, reporting
+  `NoComputedResult` separately from unresolved bookmarks, missing explicit or
+  direct `REF \f` bookmark targets report `UnresolvedBookmark`, while broader
+  existing non-note `REF \f` cases report `UnsupportedSwitch`,
+  and direct bookmark-name fields such as `{ Figure1 }` are treated as supported
+  `REF`-equivalent fields when the named bookmark exists, including the
+  supported `\h`, `\n`, `\n \t`, `\r`, `\r \t`, `\w`, `\w \t`, `\f`, `\d`, `\p`, and `\* Upper`/`\* Lower`/`\* Caps`/`\* FirstCap`
+  switches. Existing-bookmark direct fields with uncomputed `\d` or non-note
+  `\f` now remain classified under `REF`, preserving cached text while reporting
+  the same `UnresolvedBookmark`/`NoComputedResult`/`UnsupportedSwitch` reason
+  split as explicit `REF` fields, and diagnostics still preserve remaining value-changing REF
+  cases such as comment/annotation insertion and broader REF semantics.
+- **NOTEREF field evaluation** — `FieldKind::NoteRef` now distinguishes Word
+  `NOTEREF` fields, plus legacy `FTNREF`, from unknown fields. `.docx`
+  `NOTEREF Bookmark`, `\h`, `\f`, and `\p` compute footnote/endnote reference
+  marks or source-order `above`/`below` results when the bookmark encloses a body
+  note reference mark, with common `\* Upper`/`\* Lower`/`\* Caps`/`\* FirstCap`
+  field-result switches applied to deterministic output. Diagnostics now distinguish missing `NOTEREF` bookmark
+  targets as `UnresolvedBookmark`, existing bookmarks without a body note-reference
+  mark as `NoComputedResult`, and unsupported switches as `UnsupportedSwitch`.
+  Compatibility note: downstream code with exhaustive
+  matches on the public `FieldKind` enum must add a `NoteRef` arm or wildcard
+  fallback.
+- **Public release policy metadata** — `scripts/release_manifest.py` can embed the
+  named `public-release` policy with required Rust gates and selected optional
+  render/extraction thresholds, and `--enforce-policy-inputs` turns local report
+  inputs plus the exact public `MANIFEST.tsv`/`RENDER_MANIFEST.tsv` corpus pair
+  into required passing evidence for strict public manifests; the tag release
+  workflow now runs fmt, clippy, default tests, doc tests, and render-feature
+  tests before packaging.
+- **TOC switch policy** — computed `.docx` `TOC` fields now accept Word's
+  text-preserving `\w` and `\x` switches as non-blocking for plain-text computed
+  results, `\s Identifier` sequence-number page prefixes as page-number-only
+  syntax, range-less `TOC \o` fields as all heading-outline levels, and
+  standalone `TOC \b Bookmark` fields as bookmark-scoped default heading TOCs,
+  while still normalizing tabs and line breaks in heading text. Diagnostics now
+  report missing `TOC \b` scopes as `UnresolvedBookmark` and existing scopes
+  with no matching entries as `NoComputedResult`.
+- **SECTION and bounded SECTIONPAGES field evaluation** — `.docx` `SECTION`
+  fields now compute the current structural section number from paragraph
+  `w:sectPr` breaks, and `SECTIONPAGES` computes structurally bounded section
+  page counts when the count is source-only and does not require layout. Both
+  support simple and common complex fields with neutral/general numeric format
+  switches, and replace stale cached text in the read model. Layout-derived
+  `SECTIONPAGES` cases remain cached unless covered by a more specific evaluator
+  below.
+- **STYLEREF paragraph- and character-style evaluation** — `.docx` `STYLEREF`
+  fields now compute deterministic body paragraph-style text by matching style id
+  or style name, searching backward from the field and falling forward when no
+  earlier match exists, and also compute body character-style run text in source
+  order, including same-paragraph backward lookup. Simple and common complex
+  fields support neutral/general text format switches. Deterministic numbered
+  source paragraphs also compute `\n`, `\r`, `\w`, and numeric-text `\t` results
+  from the existing numbering context. Page-aware/header-footer lookup and
+  layout-dependent variants still preserve cached text with diagnostics.
+- **TC-based TOC entries** — `FieldKind::TocEntry` now distinguishes Word `TC`
+  table-of-contents entry fields from unknown fields, and `TOC \f` can compute
+  plain-text results from matching `TC "Text"` markers with optional `\f` type
+  identifiers and `\l` levels. Compatibility note: downstream code with
+  exhaustive matches on the public `FieldKind` enum must add a `TocEntry` arm or
+  wildcard fallback.
+- **SEQ-based TOC captions** — `FieldKind::Sequence` now distinguishes Word
+  `SEQ` fields from unknown fields, `TOC \c "Identifier"` can compute
+  plain-text full-caption lists, and `TOC \a Identifier` can compute
+  label/number-omitted caption-text lists from paragraphs containing matching
+  cached `SEQ` fields. Compatibility note: downstream code with exhaustive matches on the
+  public `FieldKind` enum must add a `Sequence` arm or wildcard fallback.
+- **Document-info display fields** — `FieldKind::DocumentInfo(String)` now
+  distinguishes common cached display fields such as `DATE`, `TIME`, `AUTHOR`,
+  `TITLE`, `SUBJECT`, `KEYWORDS`, `COMMENTS`, `LASTSAVEDBY`, `DOCPROPERTY`,
+  `DOCVARIABLE`, `EDITTIME`, `FILESIZE`, `NUMPAGES`, `NUMWORDS`, and `NUMCHARS` from
+  unknown fields. These fields keep their cached result text, do not claim a
+  computed value, and no longer produce unsupported-field warnings. Compatibility
+  note: downstream code with exhaustive matches on the public `FieldKind` enum
+  must add a `DocumentInfo` arm or wildcard fallback.
+- **Dynamic field diagnostics and deterministic formula/QUOTE/IF/COMPARE evaluation** —
+  `FieldKind::Dynamic(String)` now distinguishes known expression, prompt, and
+  merge-control fields such as `=`, `IF`, `QUOTE`, `FILLIN`, `ASK`, `COMPARE`,
+  `SET`, `NEXT`, `NEXTIF`, and `SKIPIF` from unknown fields. rdoc computes
+  deterministic literal arithmetic `.docx` formula fields (`=`) with numeric
+  constants, literal scalar numeric/logical functions (`ABS`, `AND`, `AVERAGE`,
+  `COUNT`, `DEFINED`, `FALSE`, `IF`, `INT`, `MAX`, `MIN`, `MOD`, `NOT`, `OR`,
+  `PRODUCT`, `ROUND`, `SIGN`, `SUM`, `TRUE`), `+`, `-`, `*`, `/`, parentheses,
+  unary signs, literal comparison operators (`=`, `<>`, `<`, `<=`, `>`, `>=`),
+  simple non-spanning table-position aggregate formulas over existing plain
+  numeric `LEFT`/`RIGHT`/`ABOVE`/`BELOW` cells,
+  and simple `\#` numeric pictures using `0`/`#`/`x` placeholders,
+  decimal places, grouping
+  commas, literal prefix/suffix characters such as `$` or `%`,
+  single-section leading `+`/`-` sign-control items, and `x`
+  digit-drop/rounding positions, plus two- and three-section
+  positive/negative/zero numeric pictures separated by semicolons,
+  deterministic `.docx` `QUOTE "LiteralText"` fields with neutral
+  `MERGEFORMAT`/`CHARFORMAT` and general text-format switches, plus literal
+  `IF` fields for numeric comparisons and quoted string equality/inequality, and
+  literal `COMPARE` fields returning `1`/`0`, including quoted `?`/`*`
+  Expression2 wildcard equality/inequality; remaining dynamic/control fields,
+  including bookmark/reference formula expressions, unsupported formula
+  arguments, quoted text, caption references, broader numeric-picture syntax,
+  and non-literal `QUOTE`/`IF`/`COMPARE` forms, preserve cached result text and
+  report `NoComputedResult` instead of `UnknownField`.
+  Compatibility note: downstream code with exhaustive matches on the public
+  `FieldKind` enum must add a `Dynamic` arm or wildcard fallback.
+- **Inserted-content field diagnostics** — `FieldKind::InsertedContent(String)`
+  now distinguishes `INCLUDETEXT`, `INCLUDEPICTURE`, `LINK`, `EMBED`,
+  `DATABASE`, `DDE`, `DDEAUTO`, `IMPORT`, `INCLUDE`, `AUTOTEXT`, and
+  `AUTOTEXTLIST` fields from unknown fields. rdoc preserves their cached result
+  text, does not evaluate linked/external content, and reports
+  `NoComputedResult` instead of `UnknownField`. Compatibility note:
+  downstream code with exhaustive matches on the public `FieldKind` enum must
+  add an `InsertedContent` arm or wildcard fallback.
+- **Mail-merge helper field diagnostics** — `FieldKind::MailMerge(String)` now
+  distinguishes `ADDRESSBLOCK`, `GREETINGLINE`, `MERGEREC`, and `MERGESEQ`
+  fields from unknown fields. rdoc preserves their cached result text, does not
+  evaluate merge records, and reports `NoComputedResult` instead of
+  `UnknownField`. Compatibility note: downstream code with exhaustive matches
+  on the public `FieldKind` enum must add a `MailMerge` arm or wildcard
+  fallback.
+- **Reference/index field diagnostics** — `FieldKind::ReferenceIndex(String)`
+  now distinguishes `BIBLIOGRAPHY`, `CITATION`, `INDEX`, `RD`, `TA`, `TOA`, and
+  `XE` fields from unknown fields. rdoc preserves their cached result text, does
+  not evaluate bibliography/index/table-of-authorities semantics, and reports
+  `NoComputedResult` instead of `UnknownField`. Compatibility note: downstream
+  code with exhaustive matches on the public `FieldKind` enum must add a
+  `ReferenceIndex` arm or wildcard fallback.
+- **Numbering/list field diagnostics** — `FieldKind::Numbering(String)` now
+  distinguishes `AUTONUM`, `AUTONUMLGL`, `AUTONUMOUT`, `BIDIOUTLINE`, and
+  `LISTNUM` fields from unknown fields. rdoc computes deterministic source-order
+  plain `AUTONUM` values with common number-format switches and the documented
+  `\s` separator switch, including unquoted or quoted one-character separators,
+  standalone plain/neutral `AUTONUMLGL` and `AUTONUMOUT` values on the same
+  counter, plus level-1 `LISTNUM NumberDefault` values with common number-format
+  switches and `\s` starts/resets; the remaining contextual
+  automatic-numbering/list fields preserve cached result text and report
+  `NoComputedResult` instead of
+  `UnknownField`. Compatibility note: downstream code with exhaustive matches on
+  the public `FieldKind` enum must add a `Numbering` arm or wildcard fallback.
+- **Document-structure field diagnostics** —
+  `FieldKind::DocumentStructure(String)` now distinguishes `REVNUM`, `SECTION`,
+  `SECTIONPAGES`, and `STYLEREF` fields from unknown fields. rdoc computes
+  current `SECTION` numbers when structural section breaks are available,
+  structurally bounded `SECTIONPAGES` counts when no layout inference is needed,
+  and deterministic body paragraph- and character-style `STYLEREF` text by
+  nearest styled paragraph/run lookup; remaining document-structure/style lookup
+  cases preserve cached result text and report `NoComputedResult` instead of
+  `UnknownField`.
+  Compatibility note: downstream code with exhaustive matches on the public
+  `FieldKind` enum must add a `DocumentStructure` arm or wildcard fallback.
+- **Display/layout field diagnostics and deterministic EQ/SYMBOL evaluation** —
+  `FieldKind::Display(String)` now distinguishes `ADVANCE`, `EQ`, and `SYMBOL`
+  fields from unknown fields. rdoc computes deterministic `.docx` `EQ \f(n,d)`
+  simple fractions as plain `n/d` text with comma or semicolon separators,
+  quoted/spaced operands, and documented escaped comma/open-parenthesis/backslash
+  operand characters, simple `EQ \r(radicand)` and `EQ \r(degree,radicand)`
+  radicals as plain root text, and deterministic `SYMBOL` character insertion
+  for decimal/hex/default ANSI codepoints, Unicode `\u`, neutral `\h`, size
+  `\s`, and common Symbol/Wingdings font mappings, including simple and common
+  complex fields. Layout offsets, broader equation formatting,
+  Shift-JIS `SYMBOL`, and broader font-specific symbol mappings preserve cached
+  result text and report `NoComputedResult` instead of `UnknownField`.
+  Compatibility note: downstream code with exhaustive matches on the public
+  `FieldKind` enum must add a `Display` arm or wildcard fallback.
+- **Action/automation field diagnostics and display-text evaluation** —
+  `FieldKind::Action(String)` now distinguishes `GOTOBUTTON`, `MACROBUTTON`,
+  and `PRINT` fields from unknown fields. rdoc computes deterministic
+  `GOTOBUTTON`/`MACROBUTTON` display text without executing navigation or
+  macros, and renders validated `PRINT` printer-control fields as hidden output
+  without executing printer/PostScript instructions; unsupported action forms
+  preserve cached result text and report `NoComputedResult` instead of
+  `UnknownField`. Compatibility note:
+  downstream code with exhaustive matches on the public `FieldKind` enum must
+  add an `Action` arm or wildcard fallback.
+- **Compatibility/private field diagnostics** —
+  `FieldKind::Compatibility(String)` now distinguishes `PRIVATE`, `ADDIN`,
+  `DATA`, `GLOSSARY`, and `HTMLACTIVEX` fields from unknown fields. rdoc
+  preserves cached text, leaves opaque payloads uninterpreted, and reports
+  `NoComputedResult` instead of `UnknownField`. Compatibility note: downstream
+  code with exhaustive matches on the public `FieldKind` enum must add a
+  `Compatibility` arm or wildcard fallback.
+- **Barcode field diagnostics** — `FieldKind::Barcode(String)` now
+  distinguishes `BARCODE`, `DISPLAYBARCODE`, and `MERGEBARCODE` fields from
+  unknown fields. rdoc preserves cached text, does not generate barcode images,
+  and reports `NoComputedResult` instead of `UnknownField`. Compatibility note:
+  downstream code with exhaustive matches on the public `FieldKind` enum must
+  add a `Barcode` arm or wildcard fallback.
+- **Legacy form field computed subset** — `FieldKind::FormField(String)` now
+  distinguishes `FORMTEXT`, `FORMCHECKBOX`, and `FORMDROPDOWN` fields from
+  unknown fields. rdoc computes deterministic `w:ffData` checkbox states and
+  dropdown selected `listEntry` text for `FORMCHECKBOX`/`FORMDROPDOWN`, and
+  `FORMTEXT` fields materialize explicit non-empty current results or
+  empty-current `w:textInput` default text; broader protected-form behavior
+  preserves cached text and reports `NoComputedResult` instead of
+  `UnknownField`.
+  Compatibility note: downstream code with exhaustive matches on the public
+  `FieldKind` enum must add a `FormField` arm or wildcard fallback.
 
 ### Security
 - **Tighter zip-bomb bound for `.docx`** (`docx/mod.rs`): each ZIP part's

@@ -1,0 +1,8 @@
+# path	comments	footnotes	endnotes	text_boxes	fields	tracked_insertions	tracked_deletions	tracked_moves	tracked_property_changes	content_controls	hyperlinks	nested_tables	floating_shapes	charts	ole_objects	unsupported_metafiles	warnings
+synthetic/kitchen_sink.docx	1	1	0	1	0	1	1	0	0	1	0	0	1	0	0	0	FloatingShapePlaceholderOnly|TrackedChangesPresent
+synthetic/comments.docx	2	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	-
+synthetic/revisions.docx	0	0	0	0	0	1	1	2	1	0	0	0	0	0	0	0	IncompleteRevisionView|TrackedChangesPresent
+synthetic/fields.docx	0	0	0	0	6	0	0	0	0	0	1	0	0	0	0	0	UnsupportedFieldEvaluation
+synthetic/hyperlinks.docx	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	0	-
+synthetic/nested_tables.docx	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	-
+synthetic/unsupported_objects.docx	0	0	0	0	0	0	0	0	0	0	0	0	2	1	1	2	ChartsPreservedButNotModeled|FloatingShapePlaceholderOnly|OleObjectsPreservedButNotModeled|UnsupportedMetafileImages

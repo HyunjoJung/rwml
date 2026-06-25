@@ -16,6 +16,9 @@ exclude = [".github/"]
 
 # Standalone, dependency-light, no workspace inheritance — this crate is meant
 # to be liftable into its own repository / crates.io as-is.
+[lib]
+crate-type = ["rlib", "cdylib"]
+
 [dependencies]
 cfb = "0.10"
 encoding_rs = "0.8"
@@ -25,6 +28,7 @@ thiserror = "2.0"
 # the sibling `rxls` crate's .xlsx feature setup.
 zip = { version = "2.2", default-features = false, features = ["deflate"], optional = true }
 quick-xml = { version = "0.36", optional = true }
+flate2 = { version = "1.0", optional = true }
 # Native typesetting renderer (DocModel → PDF): parley for layout/shaping/CJK
 # line-breaking, krilla for PDF emit with subsetted fonts + selectable text.
 # Heavy + raises the MSRV to 1.88 (parley), so it is strictly opt-in.
@@ -33,12 +37,20 @@ parley = { version = "0.10", optional = true }
 
 [features]
 default = ["docx"]
-docx = ["dep:zip", "dep:quick-xml"]
+docx = ["dep:zip", "dep:quick-xml", "dep:flate2"]
 render = ["dep:krilla", "dep:parley"]
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
 
 [[example]]
 name = "extract"
 path = "examples/extract.rs"
+
+[[bin]]
+name = "rdoc"
+path = "src/bin/rdoc.rs"
+required-features = ["docx"]
 
 [[example]]
 name = "to_pdf"

@@ -46,6 +46,10 @@ pub enum Error {
     /// (the `docx` cargo feature is disabled).
     #[error("malformed or unsupported .docx: {0}")]
     Docx(String),
+
+    /// Native PDF rendering failed.
+    #[error("render failed: {0}")]
+    Render(String),
 }
 
 /// Convenience alias.

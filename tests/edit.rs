@@ -1,0 +1,2199 @@
+#![cfg(feature = "docx")]
+
+use std::io::{Read, Write};
+
+use rdoc::{CoreProperty, Document, NoteKind};
+
+fn docx_fixture(parts: &[(&str, &str)]) -> Vec<u8> {
+    let mut out = Vec::new();
+    {
+        let cursor = std::io::Cursor::new(&mut out);
+        let mut zip = zip::ZipWriter::new(cursor);
+        let opt = zip::write::SimpleFileOptions::default();
+        for (name, body) in parts {
+            zip.start_file(*name, opt).unwrap();
+            zip.write_all(body.as_bytes()).unwrap();
+        }
+        zip.finish().unwrap();
+    }
+    out
+}
+
+fn docx_fixture_bytes(parts: &[(&str, &[u8])]) -> Vec<u8> {
+    let mut out = Vec::new();
+    {
+        let cursor = std::io::Cursor::new(&mut out);
+        let mut zip = zip::ZipWriter::new(cursor);
+        let opt = zip::write::SimpleFileOptions::default();
+        for (name, body) in parts {
+            zip.start_file(*name, opt).unwrap();
+            zip.write_all(body).unwrap();
+        }
+        zip.finish().unwrap();
+    }
+    out
+}
+
+fn crc32(data: &[u8]) -> u32 {
+    let mut crc: u32 = 0xFFFF_FFFF;
+    for &b in data {
+        crc ^= b as u32;
+        for _ in 0..8 {
+            crc = (crc >> 1) ^ (0xEDB8_8320 & (!(crc & 1)).wrapping_add(1));
+        }
+    }
+    !crc
+}
+
+fn append_png_chunk(out: &mut Vec<u8>, typ: &[u8; 4], data: &[u8]) {
+    out.extend_from_slice(&(data.len() as u32).to_be_bytes());
+    out.extend_from_slice(typ);
+    out.extend_from_slice(data);
+    let mut crc_input = Vec::new();
+    crc_input.extend_from_slice(typ);
+    crc_input.extend_from_slice(data);
+    out.extend_from_slice(&crc32(&crc_input).to_be_bytes());
+}
+
+fn tiny_png() -> Vec<u8> {
+    vec![
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x03, 0x08, 0x02, 0x00, 0x00, 0x00, 0x36,
+        0x88, 0x49, 0xD6, 0x00, 0x00, 0x00, 0x0B, 0x49, 0x44, 0x41, 0x54, 0x78, 0xDA, 0x63, 0x60,
+        0xC0, 0x02, 0x00, 0x00, 0x15, 0x00, 0x01, 0x39, 0xC1, 0xE0, 0x23, 0x00, 0x00, 0x00, 0x00,
+        0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    ]
+}
+
+fn tiny_png_with_marker(marker: &[u8]) -> Vec<u8> {
+    let png = tiny_png();
+    let iend_start = png.len() - 12;
+    let mut out = png[..iend_start].to_vec();
+    append_png_chunk(&mut out, b"tEXt", marker);
+    out.extend_from_slice(&png[iend_start..]);
+    out
+}
+
+fn tiny_jpeg() -> Vec<u8> {
+    vec![
+        0xFF, 0xD8, // SOI
+        0xFF, 0xE0, 0x00, 0x10, b'J', b'F', b'I', b'F', 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00,
+        0x01, 0x00, 0x00, // APP0/JFIF
+        0xFF, 0xC0, 0x00, 0x11, 0x08, 0x00, 0x03, 0x00, 0x02, 0x03, 0x01, 0x11, 0x00, 0x02, 0x11,
+        0x00, 0x03, 0x11, 0x00, // SOF0, 2x3 RGB
+        0xFF, 0xDA, 0x00, 0x0C, 0x03, 0x01, 0x00, 0x02, 0x00, 0x03, 0x00, 0x00, 0x3F, 0x00,
+        0x00, // SOS + minimal entropy payload
+        0xFF, 0xD9, // EOI
+    ]
+}
+
+fn tiny_jpeg_with_comment(marker: &[u8]) -> Vec<u8> {
+    let jpeg = tiny_jpeg();
+    let app0_end = 2 + 2 + u16::from_be_bytes([jpeg[4], jpeg[5]]) as usize;
+    let mut out = jpeg[..app0_end].to_vec();
+    out.extend_from_slice(&[0xFF, 0xFE]);
+    out.extend_from_slice(&((marker.len() + 2) as u16).to_be_bytes());
+    out.extend_from_slice(marker);
+    out.extend_from_slice(&jpeg[app0_end..]);
+    out
+}
+
+fn unzip_parts(bytes: &[u8]) -> std::collections::BTreeMap<String, Vec<u8>> {
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes.to_vec())).unwrap();
+    let mut parts = std::collections::BTreeMap::new();
+    for i in 0..zip.len() {
+        let mut file = zip.by_index(i).unwrap();
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes).unwrap();
+        parts.insert(file.name().to_string(), bytes);
+    }
+    parts
+}
+
+fn header_footer_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/header2.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rIdFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:r><w:t>OLD</w:t></w:r></w:p><w:sectPr><w:headerReference w:type="default" r:id="rIdHeader"/><w:footerReference w:type="default" r:id="rIdFooter"/></w:sectPr></w:body></w:document>"#,
+        ),
+        (
+            "word/header1.xml",
+            r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><w:p><w:r><w:t>OLD</w:t></w:r></w:p><w:p><w:r><w:drawing><a:t>OLD</a:t></w:drawing></w:r></w:p></w:hdr>"#,
+        ),
+        (
+            "word/header2.xml",
+            r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>OLD</w:t></w:r></w:p></w:hdr>"#,
+        ),
+        (
+            "word/footer1.xml",
+            r#"<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>OLD</w:t></w:r></w:p></w:ftr>"#,
+        ),
+    ])
+}
+
+fn table_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>BEFORE</w:t></w:r></w:p><w:tbl><w:tr><w:tc><w:p><w:r><w:t>A1</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>B</w:t></w:r><w:r><w:t>1</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>A2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>B2</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p><w:r><w:t>AFTER</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn grid_span_table_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr><w:p><w:r><w:t>Merged AB</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>C1</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>A2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>B2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>C2</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn vmerge_table_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr><w:p><w:r><w:t>A merged</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>B1</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p/></w:tc><w:tc><w:p><w:r><w:t>B2</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn nested_table_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:tc><w:p><w:r><w:t>Outer</w:t></w:r></w:p><w:tbl><w:tr><w:tc><w:p><w:r><w:t>Inner</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn notes_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rIdEnd" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>BODY</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r><w:r><w:endnoteReference w:id="2"/></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:t>OLD</w:t></w:r></w:p></w:footnote><w:footnote w:id="1"><w:p><w:r><w:t>OLD</w:t></w:r><w:r><w:t> foot</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+        (
+            "word/endnotes.xml",
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="2"><w:p><w:r><w:t>OLD</w:t></w:r></w:p></w:endnote></w:endnotes>"#,
+        ),
+    ])
+}
+
+fn notes_with_anchor_text_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rIdEnd" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Foot before </w:t></w:r><w:r><w:footnoteReference w:id="7"/></w:r><w:r><w:t>foot after</w:t></w:r></w:p><w:p><w:r><w:t>End before </w:t></w:r><w:r><w:endnoteReference w:id="8"/></w:r><w:r><w:t>end after</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="7"><w:p><w:r><w:t>Foot body</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+        (
+            "word/endnotes.xml",
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="8"><w:p><w:r><w:t>End body</w:t></w:r></w:p></w:endnote></w:endnotes>"#,
+        ),
+    ])
+}
+
+fn notes_with_revision_wrapped_anchor_text_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rIdEnd" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:ins w:id="20" w:author="Editor"><w:p><w:r><w:t>Inserted foot before </w:t></w:r><w:r><w:footnoteReference w:id="7"/></w:r><w:r><w:t>inserted foot after</w:t></w:r></w:p></w:ins><w:moveTo w:id="21" w:author="Editor"><w:p><w:r><w:t>Moved end before </w:t></w:r><w:r><w:endnoteReference w:id="8"/></w:r><w:r><w:t>moved end after</w:t></w:r></w:p></w:moveTo></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="7"><w:p><w:r><w:t>Foot body</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+        (
+            "word/endnotes.xml",
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="8"><w:p><w:r><w:t>End body</w:t></w:r></w:p></w:endnote></w:endnotes>"#,
+        ),
+    ])
+}
+
+fn text_box_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" xmlns:v="urn:schemas-microsoft-com:vml"><w:body><w:p><w:r><w:t>BODY </w:t></w:r><w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>BOX TEXT</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></w:drawing></mc:Choice><mc:Fallback><w:pict><v:shape><v:textbox><w:txbxContent><w:p><w:r><w:t>BOX TEXT</w:t></w:r></w:p></w:txbxContent></v:textbox></v:shape></w:pict></mc:Fallback></mc:AlternateContent></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn revision_wrapped_text_box_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:drawing><w:txbxContent><w:p><w:r><w:t>Direct box</w:t></w:r></w:p></w:txbxContent></w:drawing></w:r></w:p><w:ins w:id="20" w:author="Editor"><w:p><w:r><w:drawing><w:txbxContent><w:p><w:r><w:t>Inserted box</w:t></w:r></w:p></w:txbxContent></w:drawing></w:r></w:p></w:ins><w:moveTo w:id="21" w:author="Editor"><w:p><w:r><w:drawing><w:txbxContent><w:p><w:r><w:t>Moved-to box</w:t></w:r></w:p></w:txbxContent></w:drawing></w:r></w:p></w:moveTo><w:del w:id="22" w:author="Editor"><w:p><w:r><w:drawing><w:txbxContent><w:p><w:r><w:delText>Deleted box</w:delText></w:r></w:p></w:txbxContent></w:drawing></w:r></w:p></w:del><w:moveFrom w:id="23" w:author="Editor"><w:p><w:r><w:drawing><w:txbxContent><w:p><w:r><w:delText>Moved-from box</w:delText></w:r></w:p></w:txbxContent></w:drawing></w:r></w:p></w:moveFrom></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn no_notes_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>BODY</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn split_run_no_notes_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>BO</w:t></w:r><w:r><w:t>DY</w:t></w:r><w:r><w:t> tail</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn image_docx(png: &[u8]) -> Vec<u8> {
+    let ct = br#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#;
+    let root_rels = br#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#;
+    let doc_rels = br#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdImg" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/></Relationships>"#;
+    let body = br#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body><w:p><w:r><w:t>BEFORE</w:t></w:r></w:p><w:p><w:r><w:drawing><wp:inline><wp:extent cx="19050" cy="28575"/><wp:docPr id="1" name="image1"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill><a:blip r:embed="rIdImg"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:body></w:document>"#;
+    docx_fixture_bytes(&[
+        ("[Content_Types].xml", ct),
+        ("_rels/.rels", root_rels),
+        ("word/_rels/document.xml.rels", doc_rels),
+        ("word/document.xml", body),
+        ("word/media/image1.png", png),
+    ])
+}
+
+fn jpeg_image_docx(jpeg: &[u8]) -> Vec<u8> {
+    let ct = br#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="jpeg" ContentType="image/jpeg"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#;
+    let root_rels = br#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#;
+    let doc_rels = br#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdImg" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/photo.jpeg"/></Relationships>"#;
+    let body = br#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body><w:p><w:r><w:t>BEFORE</w:t></w:r></w:p><w:p><w:r><w:drawing><wp:inline><wp:extent cx="19050" cy="28575"/><wp:docPr id="1" name="image1"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill><a:blip r:embed="rIdImg"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:body></w:document>"#;
+    docx_fixture_bytes(&[
+        ("[Content_Types].xml", ct),
+        ("_rels/.rels", root_rels),
+        ("word/_rels/document.xml.rels", doc_rels),
+        ("word/document.xml", body),
+        ("word/media/photo.jpeg", jpeg),
+    ])
+}
+
+fn core_properties_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rIdCore" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>BODY</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "docProps/core.xml",
+            r#"<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Old title</dc:title><dc:creator>Old Author</dc:creator></cp:coreProperties>"#,
+        ),
+    ])
+}
+
+fn hyperlink_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFirst" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://old.example/first" TargetMode="External"/><Relationship Id="rIdOrphan" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://old.example/orphan" TargetMode="External"/><Relationship Id="rIdSecond" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://old.example/second" TargetMode="External"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:hyperlink r:id="rIdFirst"><w:r><w:t>First</w:t></w:r></w:hyperlink><w:r><w:t> and </w:t></w:r><w:hyperlink r:id="rIdSecond"><w:r><w:t>Second</w:t></w:r></w:hyperlink></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn content_control_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Before</w:t></w:r></w:p><w:sdt><w:sdtPr><w:alias w:val="Client name"/><w:tag w:val="client-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Old</w:t></w:r><w:r><w:t> Client</w:t></w:r></w:p></w:sdtContent></w:sdt><w:sdt><w:sdtPr><w:alias w:val="Project"/><w:tag w:val="project-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Keep Project</w:t></w:r></w:p></w:sdtContent></w:sdt><w:sdt><w:sdtPr><w:tag w:val="client-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Old Again</w:t></w:r></w:p></w:sdtContent></w:sdt><w:p><w:r><w:t>After</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn merge_template_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Before</w:t></w:r></w:p><w:sdt><w:sdtPr><w:alias w:val="Client name"/><w:tag w:val="client-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Old Client Control</w:t></w:r></w:p></w:sdtContent></w:sdt><w:p><w:fldSimple w:instr=" MERGEFIELD  client-name  \* MERGEFORMAT "><w:r><w:t>Old Client Field</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> MERGEFIELD &quot;project-name&quot; \* MERGEFORMAT </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Old Project Field</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:p><w:r><w:t>After</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn header_footer_merge_template_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/header2.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rIdFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:r><w:t>Body</w:t></w:r></w:p><w:sectPr><w:headerReference w:type="default" r:id="rIdHeader"/><w:footerReference w:type="default" r:id="rIdFooter"/></w:sectPr></w:body></w:document>"#,
+        ),
+        (
+            "word/header1.xml",
+            r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:fldSimple w:instr=" MERGEFIELD client-name \* MERGEFORMAT "><w:r><w:t>Old Header Client</w:t></w:r></w:fldSimple></w:p></w:hdr>"#,
+        ),
+        (
+            "word/header2.xml",
+            r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:fldSimple w:instr=" MERGEFIELD client-name \* MERGEFORMAT "><w:r><w:t>Orphan Header Client</w:t></w:r></w:fldSimple></w:p></w:hdr>"#,
+        ),
+        (
+            "word/footer1.xml",
+            r#"<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> MERGEFIELD &quot;project-name&quot; \* MERGEFORMAT </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Old Footer Project</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:ftr>"#,
+        ),
+    ])
+}
+
+fn header_footer_content_control_template_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/header2.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rIdFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:r><w:t>Body</w:t></w:r></w:p><w:sectPr><w:headerReference w:type="default" r:id="rIdHeader"/><w:footerReference w:type="default" r:id="rIdFooter"/></w:sectPr></w:body></w:document>"#,
+        ),
+        (
+            "word/header1.xml",
+            r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:sdt><w:sdtPr><w:alias w:val="Client"/><w:tag w:val="client-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Old Header Client</w:t></w:r></w:p></w:sdtContent></w:sdt></w:hdr>"#,
+        ),
+        (
+            "word/header2.xml",
+            r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:sdt><w:sdtPr><w:tag w:val="client-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Orphan Header Client</w:t></w:r></w:p></w:sdtContent></w:sdt></w:hdr>"#,
+        ),
+        (
+            "word/footer1.xml",
+            r#"<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:sdt><w:sdtPr><w:tag w:val="project-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Old</w:t></w:r><w:r><w:t> Footer Project</w:t></w:r></w:p></w:sdtContent></w:sdt></w:ftr>"#,
+        ),
+    ])
+}
+
+fn header_footer_merge_template_missing_result_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:fldSimple w:instr=" MERGEFIELD client-name \* MERGEFORMAT "><w:r><w:t>Old Body Client</w:t></w:r></w:fldSimple></w:p><w:sectPr><w:headerReference w:type="default" r:id="rIdHeader"/></w:sectPr></w:body></w:document>"#,
+        ),
+        (
+            "word/header1.xml",
+            r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:fldSimple w:instr=" MERGEFIELD client-name \* MERGEFORMAT "/></w:p></w:hdr>"#,
+        ),
+    ])
+}
+
+fn tracked_revisions_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Before</w:t></w:r><w:ins w:id="1" w:author="Alice"><w:r><w:t> added</w:t></w:r></w:ins><w:del w:id="2" w:author="Bob"><w:r><w:delText> removed</w:delText></w:r></w:del><w:moveFrom w:id="3"><w:r><w:delText> from</w:delText></w:r></w:moveFrom><w:moveTo w:id="4"><w:r><w:t> to</w:t></w:r></w:moveTo><w:r><w:t> After</w:t></w:r></w:p><w:p><w:pPr><w:jc w:val="left"/><w:pPrChange w:id="5" w:author="Editor"><w:pPr><w:jc w:val="right"/></w:pPr></w:pPrChange></w:pPr><w:r><w:rPr><w:b/><w:rPrChange w:id="6"><w:rPr><w:i/></w:rPr></w:rPrChange></w:rPr><w:t>Props</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[test]
+fn fill_content_control_by_tag_updates_matching_controls() {
+    let mut doc = Document::open(&content_control_docx()).expect("fixture opens");
+
+    let changed = doc
+        .fill_content_control_by_tag("client-name", "Acme & Co")
+        .expect("tagged content controls filled");
+
+    assert_eq!(changed, 2);
+    assert_eq!(doc.edited_parts(), ["word/document.xml"]);
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    assert!(
+        body.contains(r#"<w:alias w:val="Client name"/>"#)
+            && body.contains(r#"<w:tag w:val="client-name"/>"#),
+        "content-control metadata not preserved: {body}"
+    );
+    assert!(
+        body.contains("<w:t>Acme &amp; Co</w:t>"),
+        "filled text missing or unescaped: {body}"
+    );
+    assert!(
+        body.contains("<w:t></w:t>"),
+        "stale second run in first content control should be cleared: {body}"
+    );
+    assert!(
+        body.contains("<w:t>Keep Project</w:t>"),
+        "non-matching content control changed: {body}"
+    );
+    assert!(
+        body.contains("<w:t>Before</w:t>") && body.contains("<w:t>After</w:t>"),
+        "ordinary body text changed: {body}"
+    );
+    assert!(
+        !body.contains(">Old<") && !body.contains(">Old Again<"),
+        "old tagged values leaked after fill: {body}"
+    );
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    assert!(reopened.text().contains("Acme & Co"));
+    assert!(reopened.text().contains("Keep Project"));
+}
+
+#[test]
+fn fill_content_control_by_tag_missing_tag_is_noop() {
+    let fixture = content_control_docx();
+    let before = unzip_parts(&fixture);
+    let mut doc = Document::open(&fixture).expect("fixture opens");
+
+    assert_eq!(
+        doc.fill_content_control_by_tag("missing", "Value").unwrap(),
+        0
+    );
+    assert!(doc.edited_parts().is_empty());
+
+    let after = unzip_parts(&doc.save().expect("save noop"));
+    assert_eq!(
+        before.get("word/document.xml"),
+        after.get("word/document.xml"),
+        "missing tag fill should not canonicalize document.xml"
+    );
+}
+
+#[test]
+fn fill_content_control_by_tag_rejects_empty_tag() {
+    let mut doc = Document::open(&content_control_docx()).expect("fixture opens");
+
+    let err = doc
+        .fill_content_control_by_tag("", "Value")
+        .expect_err("empty tag rejected");
+
+    assert!(err.to_string().contains("tag must not be empty"), "{err}");
+    assert!(doc.edited_parts().is_empty());
+}
+
+#[test]
+fn fill_content_controls_by_tag_updates_multiple_tags_atomically() {
+    let mut doc = Document::open(&content_control_docx()).expect("fixture opens");
+
+    let changed = doc
+        .fill_content_controls_by_tag([("client-name", "Acme & Co"), ("project-name", "Roadmap")])
+        .expect("tagged content controls filled");
+
+    assert_eq!(changed, 3);
+    assert_eq!(doc.edited_parts(), ["word/document.xml"]);
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    assert_eq!(
+        body.matches("<w:t>Acme &amp; Co</w:t>").count(),
+        2,
+        "both client-name controls should be filled: {body}"
+    );
+    assert!(
+        body.contains("<w:t>Roadmap</w:t>"),
+        "project-name control should be filled: {body}"
+    );
+    assert!(
+        !body.contains(">Old<")
+            && !body.contains(">Old Again<")
+            && !body.contains(">Keep Project<"),
+        "old template values leaked after multi-fill: {body}"
+    );
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    assert!(reopened.text().contains("Acme & Co"));
+    assert!(reopened.text().contains("Roadmap"));
+}
+
+#[test]
+fn fill_content_controls_by_tag_empty_input_is_noop() {
+    let fixture = content_control_docx();
+    let before = unzip_parts(&fixture);
+    let mut doc = Document::open(&fixture).expect("fixture opens");
+
+    assert_eq!(
+        doc.fill_content_controls_by_tag(std::iter::empty::<(&str, &str)>())
+            .unwrap(),
+        0
+    );
+    assert!(doc.edited_parts().is_empty());
+
+    let after = unzip_parts(&doc.save().expect("save noop"));
+    assert_eq!(
+        before.get("word/document.xml"),
+        after.get("word/document.xml"),
+        "empty multi-fill should not canonicalize document.xml"
+    );
+}
+
+#[test]
+fn fill_content_controls_by_tag_rejects_empty_tag() {
+    let mut doc = Document::open(&content_control_docx()).expect("fixture opens");
+
+    let err = doc
+        .fill_content_controls_by_tag([("", "Value"), ("project-name", "Roadmap")])
+        .expect_err("empty tag rejected");
+
+    assert!(err.to_string().contains("tag must not be empty"), "{err}");
+    assert!(doc.edited_parts().is_empty());
+}
+
+#[test]
+fn fill_content_controls_by_tag_rejects_duplicate_tag() {
+    let mut doc = Document::open(&content_control_docx()).expect("fixture opens");
+
+    let err = doc
+        .fill_content_controls_by_tag([("client-name", "First"), ("client-name", "Second")])
+        .expect_err("duplicate tag rejected");
+
+    assert!(err.to_string().contains("duplicate tag"), "{err}");
+    assert!(doc.edited_parts().is_empty());
+}
+
+#[test]
+fn fill_template_fields_updates_content_controls_and_merge_fields() {
+    let mut doc = Document::open(&merge_template_docx()).expect("fixture opens");
+    let fields = doc.fields();
+    assert_eq!(fields.len(), 2);
+    assert_eq!(
+        fields[0].instruction,
+        "MERGEFIELD client-name \\* MERGEFORMAT"
+    );
+    assert_eq!(
+        fields[1].instruction,
+        "MERGEFIELD \"project-name\" \\* MERGEFORMAT"
+    );
+
+    let changed = doc
+        .fill_template_fields([("client-name", "Acme & Co"), ("project-name", "Roadmap")])
+        .expect("template fields filled");
+
+    assert_eq!(changed, 3);
+    assert_eq!(doc.edited_parts(), ["word/document.xml"]);
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+
+    assert!(
+        body.contains(r#"<w:alias w:val="Client name"/>"#)
+            && body.contains(r#"<w:tag w:val="client-name"/>"#),
+        "content-control metadata not preserved: {body}"
+    );
+    assert!(
+        body.contains("<w:t>Acme &amp; Co</w:t>") && body.contains("<w:t>Roadmap</w:t>"),
+        "filled template text missing or unescaped: {body}"
+    );
+    assert!(
+        body.contains(r#"MERGEFIELD  client-name  \* MERGEFORMAT"#)
+            && body.contains(r#"MERGEFIELD "project-name" \* MERGEFORMAT"#),
+        "merge field instructions should be preserved: {body}"
+    );
+    assert!(
+        !body.contains("Old Client Control")
+            && !body.contains("Old Client Field")
+            && !body.contains("Old Project Field"),
+        "old template values leaked after fill: {body}"
+    );
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    let reopened_fields = reopened.fields();
+    assert_eq!(reopened_fields[0].result, "Acme & Co");
+    assert_eq!(reopened_fields[1].result, "Roadmap");
+    assert!(reopened.text().contains("Acme & Co"));
+    assert!(reopened.text().contains("Roadmap"));
+}
+
+#[test]
+fn fill_template_fields_missing_names_are_noop() {
+    let fixture = merge_template_docx();
+    let before = unzip_parts(&fixture);
+    let mut doc = Document::open(&fixture).expect("fixture opens");
+
+    assert_eq!(doc.fill_template_fields([("missing", "Value")]).unwrap(), 0);
+    assert!(doc.edited_parts().is_empty());
+
+    let after = unzip_parts(&doc.save().expect("save noop"));
+    assert_eq!(
+        before.get("word/document.xml"),
+        after.get("word/document.xml"),
+        "missing template field should not canonicalize document.xml"
+    );
+}
+
+#[test]
+fn fill_template_fields_updates_referenced_header_footer_merge_fields() {
+    let mut doc = Document::open(&header_footer_merge_template_docx()).expect("fixture opens");
+    assert!(
+        doc.fields().is_empty(),
+        "field reads should stay scoped to the document body"
+    );
+
+    let changed = doc
+        .fill_template_fields([("client-name", "Acme & Co"), ("project-name", "Roadmap")])
+        .expect("header/footer merge fields filled");
+
+    assert_eq!(changed, 2);
+    assert_eq!(doc.edited_parts(), ["word/footer1.xml", "word/header1.xml"]);
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let header = String::from_utf8(parts["word/header1.xml"].clone()).unwrap();
+    let orphan_header = String::from_utf8(parts["word/header2.xml"].clone()).unwrap();
+    let footer = String::from_utf8(parts["word/footer1.xml"].clone()).unwrap();
+
+    assert!(
+        body.contains("<w:t>Body</w:t>"),
+        "body text should stay unchanged: {body}"
+    );
+    assert!(
+        header.contains("<w:t>Acme &amp; Co</w:t>")
+            && header.contains(r#"MERGEFIELD client-name \* MERGEFORMAT"#),
+        "referenced header field should be filled while preserving instruction: {header}"
+    );
+    assert!(
+        footer.contains("<w:t>Roadmap</w:t>")
+            && footer.contains(r#"MERGEFIELD "project-name" \* MERGEFORMAT"#),
+        "referenced footer field should be filled while preserving instruction: {footer}"
+    );
+    assert!(
+        orphan_header.contains("Orphan Header Client") && !orphan_header.contains("Acme"),
+        "unreferenced header part should not be edited: {orphan_header}"
+    );
+}
+
+#[test]
+fn fill_template_fields_updates_referenced_header_footer_content_controls() {
+    let mut doc =
+        Document::open(&header_footer_content_control_template_docx()).expect("fixture opens");
+
+    let changed = doc
+        .fill_template_fields([("client-name", "Acme & Co"), ("project-name", "Roadmap")])
+        .expect("header/footer content controls filled");
+
+    assert_eq!(changed, 2);
+    assert_eq!(doc.edited_parts(), ["word/footer1.xml", "word/header1.xml"]);
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let header = String::from_utf8(parts["word/header1.xml"].clone()).unwrap();
+    let orphan_header = String::from_utf8(parts["word/header2.xml"].clone()).unwrap();
+    let footer = String::from_utf8(parts["word/footer1.xml"].clone()).unwrap();
+
+    assert!(
+        body.contains("<w:t>Body</w:t>"),
+        "body text should stay unchanged: {body}"
+    );
+    assert!(
+        header.contains(r#"<w:tag w:val="client-name"/>"#)
+            && header.contains("<w:t>Acme &amp; Co</w:t>"),
+        "referenced header content control should be filled and keep metadata: {header}"
+    );
+    assert!(
+        footer.contains(r#"<w:tag w:val="project-name"/>"#)
+            && footer.contains("<w:t>Roadmap</w:t>")
+            && footer.contains("<w:t></w:t>"),
+        "referenced footer content control should fill first run and clear stale runs: {footer}"
+    );
+    assert!(
+        orphan_header.contains("Orphan Header Client") && !orphan_header.contains("Acme"),
+        "unreferenced header part should not be edited: {orphan_header}"
+    );
+}
+
+#[test]
+fn fill_template_fields_missing_header_footer_names_are_noop() {
+    let fixture = header_footer_merge_template_docx();
+    let before = unzip_parts(&fixture);
+    let mut doc = Document::open(&fixture).expect("fixture opens");
+
+    assert_eq!(doc.fill_template_fields([("missing", "Value")]).unwrap(), 0);
+    assert!(doc.edited_parts().is_empty());
+
+    let after = unzip_parts(&doc.save().expect("save noop"));
+    assert_eq!(
+        before.get("word/document.xml"),
+        after.get("word/document.xml"),
+        "missing header/footer template field should not canonicalize document.xml"
+    );
+    assert_eq!(
+        before.get("word/header1.xml"),
+        after.get("word/header1.xml"),
+        "missing header/footer template field should not canonicalize header1.xml"
+    );
+    assert_eq!(
+        before.get("word/footer1.xml"),
+        after.get("word/footer1.xml"),
+        "missing header/footer template field should not canonicalize footer1.xml"
+    );
+}
+
+#[test]
+fn fill_template_fields_rejects_header_footer_merge_field_without_cached_result_without_mutation() {
+    let fixture = header_footer_merge_template_missing_result_docx();
+    let before = unzip_parts(&fixture);
+    let mut doc = Document::open(&fixture).expect("fixture opens");
+
+    let err = doc
+        .fill_template_fields([("client-name", "Acme")])
+        .expect_err("header/footer merge field without cached text rejected");
+
+    assert!(
+        err.to_string()
+            .contains("merge field \"client-name\" has no cached result text"),
+        "{err}"
+    );
+    assert!(doc.edited_parts().is_empty());
+    let after = unzip_parts(&doc.save().expect("save after rejected edit"));
+    assert_eq!(
+        before.get("word/document.xml"),
+        after.get("word/document.xml"),
+        "rejected header/footer template fill should not mutate document.xml"
+    );
+    assert_eq!(
+        before.get("word/header1.xml"),
+        after.get("word/header1.xml"),
+        "rejected header/footer template fill should not mutate header1.xml"
+    );
+}
+
+#[test]
+fn fill_template_fields_rejects_empty_name() {
+    let mut doc = Document::open(&merge_template_docx()).expect("fixture opens");
+
+    let err = doc
+        .fill_template_fields([("", "Value")])
+        .expect_err("empty template field name rejected");
+
+    assert!(
+        err.to_string().contains("field name must not be empty"),
+        "{err}"
+    );
+    assert!(doc.edited_parts().is_empty());
+}
+
+#[test]
+fn fill_template_fields_rejects_duplicate_name() {
+    let mut doc = Document::open(&merge_template_docx()).expect("fixture opens");
+
+    let err = doc
+        .fill_template_fields([("client-name", "First"), ("client-name", "Second")])
+        .expect_err("duplicate template field name rejected");
+
+    assert!(err.to_string().contains("duplicate field name"), "{err}");
+    assert!(doc.edited_parts().is_empty());
+}
+
+#[test]
+fn accept_all_revisions_accepts_body_tracked_changes() {
+    let mut doc = Document::open(&tracked_revisions_docx()).expect("fixture opens");
+
+    let changed = doc.accept_all_revisions().expect("body revisions accepted");
+
+    assert_eq!(changed, 6);
+    assert_eq!(doc.edited_parts(), ["word/document.xml"]);
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    for marker in [
+        "<w:ins",
+        "<w:del",
+        "<w:moveFrom",
+        "<w:moveTo",
+        "<w:pPrChange",
+        "<w:rPrChange",
+        "<w:delText",
+    ] {
+        assert!(
+            !body.contains(marker),
+            "accepted document still contains {marker}: {body}"
+        );
+    }
+    assert!(
+        body.contains("<w:t>Before</w:t>")
+            && body.contains("<w:t> added</w:t>")
+            && body.contains("<w:t> to</w:t>")
+            && body.contains("<w:t> After</w:t>")
+            && body.contains("<w:t>Props</w:t>"),
+        "accepted text was not preserved: {body}"
+    );
+    assert!(
+        !body.contains("removed") && !body.contains(" from"),
+        "rejected revision text leaked into accepted document: {body}"
+    );
+    assert!(
+        body.contains(r#"<w:jc w:val="left"/>"#) && body.contains("<w:b/>"),
+        "current properties should be preserved while property-change history is removed: {body}"
+    );
+
+    let reopened = Document::open(&saved).expect("reopen accepted docx");
+    assert!(reopened.revisions().is_empty());
+    assert!(reopened.text().contains("Before added to After"));
+    assert!(reopened.text().contains("Props"));
+}
+
+#[test]
+fn accept_all_revisions_without_revisions_is_noop() {
+    let fixture = content_control_docx();
+    let before = unzip_parts(&fixture);
+    let mut doc = Document::open(&fixture).expect("fixture opens");
+
+    assert_eq!(doc.accept_all_revisions().unwrap(), 0);
+    assert!(doc.edited_parts().is_empty());
+
+    let after = unzip_parts(&doc.save().expect("save noop"));
+    assert_eq!(
+        before.get("word/document.xml"),
+        after.get("word/document.xml"),
+        "no-op revision acceptance should not canonicalize document.xml"
+    );
+}
+
+#[test]
+fn reject_all_revisions_rejects_body_tracked_changes() {
+    let mut doc = Document::open(&tracked_revisions_docx()).expect("fixture opens");
+
+    let changed = doc.reject_all_revisions().expect("body revisions rejected");
+
+    assert_eq!(changed, 8);
+    assert_eq!(doc.edited_parts(), ["word/document.xml"]);
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    for marker in [
+        "<w:ins",
+        "<w:del",
+        "<w:moveFrom",
+        "<w:moveTo",
+        "<w:pPrChange",
+        "<w:rPrChange",
+        "<w:delText",
+    ] {
+        assert!(
+            !body.contains(marker),
+            "rejected document still contains {marker}: {body}"
+        );
+    }
+    assert!(
+        body.contains("<w:t>Before</w:t>")
+            && body.contains("<w:t> removed</w:t>")
+            && body.contains("<w:t> from</w:t>")
+            && body.contains("<w:t> After</w:t>")
+            && body.contains("<w:t>Props</w:t>"),
+        "original text was not restored: {body}"
+    );
+    assert!(
+        !body.contains(" added") && !body.contains(" to"),
+        "accepted revision text leaked into rejected document: {body}"
+    );
+    assert!(
+        body.contains(r#"<w:jc w:val="left"/>"#) && body.contains("<w:b/>"),
+        "current properties should be preserved while property-change history is removed: {body}"
+    );
+
+    let reopened = Document::open(&saved).expect("reopen rejected docx");
+    assert!(reopened.revisions().is_empty());
+    assert!(reopened.text().contains("Before removed from After"));
+    assert!(reopened.text().contains("Props"));
+}
+
+#[test]
+fn reject_all_revisions_without_revisions_is_noop() {
+    let fixture = content_control_docx();
+    let before = unzip_parts(&fixture);
+    let mut doc = Document::open(&fixture).expect("fixture opens");
+
+    assert_eq!(doc.reject_all_revisions().unwrap(), 0);
+    assert!(doc.edited_parts().is_empty());
+
+    let after = unzip_parts(&doc.save().expect("save noop"));
+    assert_eq!(
+        before.get("word/document.xml"),
+        after.get("word/document.xml"),
+        "no-op revision rejection should not canonicalize document.xml"
+    );
+}
+
+#[test]
+fn set_hyperlink_target_updates_body_relationship_only() {
+    let fixture = hyperlink_docx();
+    let original_parts = unzip_parts(&fixture);
+    let original_body = original_parts["word/document.xml"].clone();
+    let mut doc = Document::open(&fixture).expect("fixture opens");
+
+    doc.set_hyperlink_target(1, "https://new.example/second?x=1&y=2")
+        .expect("second hyperlink target updated");
+
+    assert_eq!(doc.edited_parts(), ["word/_rels/document.xml.rels"]);
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    assert_eq!(
+        parts["word/document.xml"], original_body,
+        "body XML must stay byte-preserved"
+    );
+    let rels = String::from_utf8(parts["word/_rels/document.xml.rels"].clone()).unwrap();
+    assert!(
+        rels.contains(r#"Id="rIdFirst" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://old.example/first" TargetMode="External""#),
+        "first hyperlink changed: {rels}"
+    );
+    assert!(
+        rels.contains(r#"Id="rIdOrphan" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://old.example/orphan" TargetMode="External""#),
+        "orphan relationship changed: {rels}"
+    );
+    assert!(
+        rels.contains(r#"Id="rIdSecond" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://new.example/second?x=1&amp;y=2" TargetMode="External""#),
+        "second hyperlink target not updated/escaped: {rels}"
+    );
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    let html = reopened.to_html();
+    assert!(
+        html.contains(r#"<a href="https://new.example/second?x=1&amp;y=2">Second</a>"#),
+        "reopened HTML should resolve the edited relationship: {html}"
+    );
+}
+
+#[test]
+fn set_hyperlink_target_rejects_invalid_index_without_mutation() {
+    let mut doc = Document::open(&hyperlink_docx()).expect("fixture opens");
+
+    let err = doc
+        .set_hyperlink_target(2, "https://new.example/missing")
+        .expect_err("missing hyperlink index rejected");
+
+    assert!(
+        err.to_string().contains("hyperlink index 2 out of range"),
+        "{err}"
+    );
+    assert!(doc.edited_parts().is_empty());
+}
+
+#[test]
+fn edited_parts_reports_package_parts_touched_by_preservation_edits() {
+    let mut doc = Document::open(&header_footer_docx()).expect("fixture opens");
+    assert!(
+        doc.edited_parts().is_empty(),
+        "freshly opened package should not report dirty parts"
+    );
+
+    assert_eq!(doc.replace_body_text("OLD", "BODY").unwrap(), 1);
+    assert_eq!(doc.edited_parts(), ["word/document.xml"]);
+
+    assert_eq!(doc.replace_header_footer_text("OLD", "HF").unwrap(), 2);
+    assert_eq!(
+        doc.edited_parts(),
+        ["word/document.xml", "word/footer1.xml", "word/header1.xml"]
+    );
+
+    let mut metadata = Document::open(&table_docx()).expect("fixture opens");
+    metadata
+        .set_core_property(CoreProperty::Creator, "Hyunjo Jung")
+        .expect("creator property added");
+    assert_eq!(
+        metadata.edited_parts(),
+        ["[Content_Types].xml", "_rels/.rels", "docProps/core.xml"]
+    );
+}
+
+#[test]
+fn replace_header_footer_text_edits_referenced_parts_only() {
+    let mut doc = Document::open(&header_footer_docx()).expect("fixture opens");
+
+    assert_eq!(doc.replace_header_footer_text("OLD", "NEW").unwrap(), 2);
+
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let header = String::from_utf8(parts["word/header1.xml"].clone()).unwrap();
+    let orphan = String::from_utf8(parts["word/header2.xml"].clone()).unwrap();
+    let footer = String::from_utf8(parts["word/footer1.xml"].clone()).unwrap();
+
+    assert!(body.contains("<w:t>OLD</w:t>"), "body changed: {body}");
+    assert!(
+        header.contains("<w:t>NEW</w:t>"),
+        "header not edited: {header}"
+    );
+    assert!(
+        header.contains("<a:t>OLD</a:t>"),
+        "DrawingML text should not be edited: {header}"
+    );
+    assert!(
+        footer.contains("<w:t>NEW</w:t>"),
+        "footer not edited: {footer}"
+    );
+    assert!(
+        orphan.contains("<w:t>OLD</w:t>"),
+        "unreferenced header should not be edited: {orphan}"
+    );
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    assert_eq!(reopened.header_text(), "NEW");
+}
+
+#[test]
+fn replace_body_text_writes_tabs_and_breaks_as_markers() {
+    let mut doc = Document::open(&header_footer_docx()).expect("fixture opens");
+
+    assert_eq!(doc.replace_body_text("OLD", "Line 1\nLine\t2").unwrap(), 1);
+
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let header = String::from_utf8(parts["word/header1.xml"].clone()).unwrap();
+    let footer = String::from_utf8(parts["word/footer1.xml"].clone()).unwrap();
+
+    assert!(
+        body.contains("<w:t>Line 1</w:t><w:br/><w:t>Line</w:t><w:tab/><w:t>2</w:t>"),
+        "body replacement did not use WML markers: {body}"
+    );
+    assert!(
+        header.contains("<w:t>OLD</w:t>"),
+        "header should not be edited by body replacement: {header}"
+    );
+    assert!(
+        footer.contains("<w:t>OLD</w:t>"),
+        "footer should not be edited by body replacement: {footer}"
+    );
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    assert_eq!(reopened.main_text(), "Line 1\nLine\t2");
+}
+
+#[test]
+fn replace_header_footer_text_writes_tabs_and_breaks_as_markers() {
+    let mut doc = Document::open(&header_footer_docx()).expect("fixture opens");
+
+    assert_eq!(
+        doc.replace_header_footer_text("OLD", "Line 1\nLine\t2")
+            .unwrap(),
+        2
+    );
+
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let header = String::from_utf8(parts["word/header1.xml"].clone()).unwrap();
+    let footer = String::from_utf8(parts["word/footer1.xml"].clone()).unwrap();
+
+    assert!(body.contains("<w:t>OLD</w:t>"), "body changed: {body}");
+    assert!(
+        header.contains("<w:t>Line 1</w:t><w:br/><w:t>Line</w:t><w:tab/><w:t>2</w:t>"),
+        "header replacement did not use WML markers: {header}"
+    );
+    assert!(
+        footer.contains("<w:t>Line 1</w:t><w:br/><w:t>Line</w:t><w:tab/><w:t>2</w:t>"),
+        "footer replacement did not use WML markers: {footer}"
+    );
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    assert!(
+        reopened.header_text().contains("Line 1\nLine\t2"),
+        "reopened header/footer text should include marker-expanded text"
+    );
+}
+
+#[test]
+fn replace_text_in_part_edits_one_existing_wml_part() {
+    let mut doc = Document::open(&header_footer_docx()).expect("fixture opens");
+
+    assert_eq!(
+        doc.replace_text_in_part("word/header2.xml", "OLD", "NEW")
+            .unwrap(),
+        1
+    );
+
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let referenced_header = String::from_utf8(parts["word/header1.xml"].clone()).unwrap();
+    let unreferenced_header = String::from_utf8(parts["word/header2.xml"].clone()).unwrap();
+    let footer = String::from_utf8(parts["word/footer1.xml"].clone()).unwrap();
+
+    assert!(body.contains("<w:t>OLD</w:t>"), "body changed: {body}");
+    assert!(
+        referenced_header.contains("<w:t>OLD</w:t>"),
+        "referenced header changed: {referenced_header}"
+    );
+    assert!(
+        unreferenced_header.contains("<w:t>NEW</w:t>"),
+        "target part not edited: {unreferenced_header}"
+    );
+    assert!(
+        footer.contains("<w:t>OLD</w:t>"),
+        "footer changed: {footer}"
+    );
+
+    let mut reopened = Document::open(&saved).expect("reopen edited docx");
+    assert_eq!(
+        reopened
+            .replace_text_in_part("word/header2.xml", "missing", "x")
+            .unwrap(),
+        0
+    );
+    assert!(
+        reopened
+            .replace_text_in_part("word/missing.xml", "OLD", "NEW")
+            .is_err(),
+        "missing target part should be an error"
+    );
+}
+
+#[test]
+fn replace_text_in_part_writes_tabs_and_breaks_as_markers() {
+    let mut doc = Document::open(&header_footer_docx()).expect("fixture opens");
+
+    assert_eq!(
+        doc.replace_text_in_part("word/header2.xml", "OLD", "Line 1\nLine\t2")
+            .unwrap(),
+        1
+    );
+
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let referenced_header = String::from_utf8(parts["word/header1.xml"].clone()).unwrap();
+    let unreferenced_header = String::from_utf8(parts["word/header2.xml"].clone()).unwrap();
+    let footer = String::from_utf8(parts["word/footer1.xml"].clone()).unwrap();
+
+    assert!(body.contains("<w:t>OLD</w:t>"), "body changed: {body}");
+    assert!(
+        referenced_header.contains("<w:t>OLD</w:t>"),
+        "referenced header changed: {referenced_header}"
+    );
+    assert!(
+        unreferenced_header.contains("<w:t>Line 1</w:t><w:br/><w:t>Line</w:t><w:tab/><w:t>2</w:t>"),
+        "target part replacement did not use WML markers: {unreferenced_header}"
+    );
+    assert!(
+        footer.contains("<w:t>OLD</w:t>"),
+        "footer changed: {footer}"
+    );
+}
+
+#[test]
+fn set_table_cell_text_updates_one_body_table_cell() {
+    let mut doc = Document::open(&table_docx()).expect("fixture opens");
+
+    doc.set_table_cell_text(0, 0, 1, "B1-updated")
+        .expect("table cell text updates");
+
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+
+    assert!(
+        body.contains("<w:t>BEFORE</w:t>"),
+        "body prefix changed: {body}"
+    );
+    assert!(body.contains("<w:t>A1</w:t>"), "other cell changed: {body}");
+    assert!(
+        body.contains("<w:t>B1-updated</w:t>"),
+        "target cell not updated: {body}"
+    );
+    assert!(
+        body.contains("<w:t></w:t>"),
+        "second run in target cell should be cleared: {body}"
+    );
+    assert!(body.contains("<w:t>B2</w:t>"), "other row changed: {body}");
+    assert!(
+        body.contains("<w:t>AFTER</w:t>"),
+        "body suffix changed: {body}"
+    );
+
+    let mut reopened = Document::open(&saved).expect("reopen edited docx");
+    assert_eq!(
+        reopened.main_text(),
+        "BEFORE\nA1\tB1-updated\nA2\tB2\nAFTER"
+    );
+    assert!(
+        reopened.set_table_cell_text(0, 10, 0, "missing").is_err(),
+        "out-of-range row should be an error"
+    );
+}
+
+#[test]
+fn set_table_cell_text_writes_tabs_and_breaks_as_markers() {
+    let mut doc = Document::open(&table_docx()).expect("fixture opens");
+
+    doc.set_table_cell_text(0, 0, 1, "Line 1\nLine\t2")
+        .expect("table cell text updates");
+
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+
+    assert!(body.contains("<w:t>A1</w:t>"), "other cell changed: {body}");
+    assert!(
+        body.contains("<w:t>Line 1</w:t><w:br/><w:t>Line</w:t><w:tab/><w:t>2</w:t>"),
+        "table cell replacement did not use WML markers: {body}"
+    );
+    assert!(
+        body.contains("<w:t></w:t>"),
+        "second run in target cell should still be cleared: {body}"
+    );
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    assert_eq!(
+        reopened.main_text(),
+        "BEFORE\nA1\tLine 1\nLine\t2\nA2\tB2\nAFTER"
+    );
+}
+
+#[test]
+fn set_table_cell_text_uses_grid_span_logical_columns() {
+    let mut doc = Document::open(&grid_span_table_docx()).expect("fixture opens");
+
+    doc.set_table_cell_text(0, 0, 1, "Merged updated")
+        .expect("logical column inside gridSpan edits merged cell");
+    doc.set_table_cell_text(0, 0, 2, "C1-updated")
+        .expect("logical column after gridSpan edits following cell");
+
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+
+    assert!(
+        body.contains("<w:gridSpan w:val=\"2\"/>"),
+        "gridSpan markup should be preserved: {body}"
+    );
+    assert!(
+        body.contains("<w:t>Merged updated</w:t>"),
+        "spanned cell was not updated: {body}"
+    );
+    assert!(
+        !body.contains("<w:t>Merged AB</w:t>"),
+        "old spanned cell text remains: {body}"
+    );
+    assert!(
+        body.contains("<w:t>C1-updated</w:t>"),
+        "following logical cell was not updated: {body}"
+    );
+    assert!(body.contains("<w:t>A2</w:t>"), "other row changed: {body}");
+    assert!(body.contains("<w:t>B2</w:t>"), "other row changed: {body}");
+    assert!(body.contains("<w:t>C2</w:t>"), "other row changed: {body}");
+}
+
+#[test]
+fn set_table_cell_text_uses_vmerge_logical_rows() {
+    let mut doc = Document::open(&vmerge_table_docx()).expect("fixture opens");
+
+    doc.set_table_cell_text(0, 1, 0, "A merged updated")
+        .expect("logical row inside vMerge edits restart cell");
+    doc.set_table_cell_text(0, 1, 1, "B2-updated")
+        .expect("normal cell beside vMerge continuation edits in-place");
+
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+
+    assert!(
+        body.contains(r#"<w:vMerge w:val="restart"/>"#),
+        "vMerge restart markup should be preserved: {body}"
+    );
+    assert!(
+        body.contains("<w:vMerge/>"),
+        "vMerge continuation markup should be preserved: {body}"
+    );
+    assert!(
+        body.contains("<w:t>A merged updated</w:t>"),
+        "restart cell was not updated through continuation coordinate: {body}"
+    );
+    assert!(
+        !body.contains("<w:t>A merged</w:t>"),
+        "old restart cell text remains: {body}"
+    );
+    assert!(body.contains("<w:t>B1</w:t>"), "other row changed: {body}");
+    assert!(
+        body.contains("<w:t>B2-updated</w:t>"),
+        "normal cell beside continuation was not updated: {body}"
+    );
+}
+
+#[test]
+fn set_table_cell_text_rejects_nested_table_cell_without_mutation() {
+    let before = nested_table_docx();
+    let before_parts = unzip_parts(&before);
+    let mut doc = Document::open(&before).expect("fixture opens");
+
+    let err = doc
+        .set_table_cell_text(0, 0, 0, "Updated")
+        .expect_err("nested table parent cell should be rejected");
+    assert!(
+        err.to_string().contains("nested table"),
+        "unexpected error: {err}"
+    );
+
+    let saved = doc.save().expect("save after rejected edit");
+    let after_parts = unzip_parts(&saved);
+    assert_eq!(
+        after_parts["word/document.xml"], before_parts["word/document.xml"],
+        "rejected nested table edit mutated document.xml"
+    );
+}
+
+#[test]
+fn docx_text_boxes_are_exposed_as_side_table_once() {
+    let doc = Document::open(&text_box_docx()).expect("fixture opens");
+
+    assert_eq!(doc.text().matches("BOX TEXT").count(), 1);
+    assert_eq!(doc.text_box_text(), "BOX TEXT");
+    let text_boxes = doc.text_boxes();
+    assert_eq!(text_boxes.len(), 1);
+    assert_eq!(text_boxes[0].id, "docx-text-box-0");
+    assert_eq!(text_boxes[0].text, "BOX TEXT");
+    assert_eq!(text_boxes[0].anchor, None);
+}
+
+#[test]
+fn docx_text_boxes_follow_accepted_revision_view() {
+    let doc = Document::open(&revision_wrapped_text_box_docx()).expect("fixture opens");
+
+    assert_eq!(doc.main_text(), "Direct box\nInserted box\nMoved-to box");
+    let text_boxes = doc.text_boxes();
+    let texts: Vec<_> = text_boxes
+        .iter()
+        .map(|text_box| text_box.text.as_str())
+        .collect();
+    assert_eq!(texts, vec!["Direct box", "Inserted box", "Moved-to box"]);
+}
+
+#[test]
+fn docx_notes_are_exposed_as_note_side_table() {
+    let doc = Document::open(&notes_docx()).expect("fixture opens");
+
+    assert_eq!(doc.footnote_text(), "OLD foot");
+    assert_eq!(doc.endnote_text(), "OLD");
+    let notes = doc.notes();
+    assert_eq!(notes.len(), 2);
+    assert_eq!(notes[0].id, "1");
+    assert_eq!(notes[0].kind, NoteKind::Footnote);
+    assert_eq!(notes[0].text, "OLD foot");
+    assert_eq!(notes[0].anchor.as_ref().map(|a| a.id.as_str()), Some("1"));
+    assert_eq!(
+        notes[0].anchor.as_ref().map(|a| a.text.as_str()),
+        Some("BODY")
+    );
+    assert_eq!(notes[1].id, "2");
+    assert_eq!(notes[1].kind, NoteKind::Endnote);
+    assert_eq!(notes[1].text, "OLD");
+    assert_eq!(notes[1].anchor.as_ref().map(|a| a.id.as_str()), Some("2"));
+    assert_eq!(
+        notes[1].anchor.as_ref().map(|a| a.text.as_str()),
+        Some("BODY")
+    );
+}
+
+#[test]
+fn docx_note_reference_anchors_include_containing_body_text() {
+    let doc = Document::open(&notes_with_anchor_text_docx()).expect("fixture opens");
+
+    let notes = doc.notes();
+    assert_eq!(notes.len(), 2);
+    assert_eq!(notes[0].id, "7");
+    assert_eq!(notes[0].kind, NoteKind::Footnote);
+    assert_eq!(
+        notes[0].anchor.as_ref().map(|a| a.text.as_str()),
+        Some("Foot before foot after")
+    );
+    assert_eq!(notes[1].id, "8");
+    assert_eq!(notes[1].kind, NoteKind::Endnote);
+    assert_eq!(
+        notes[1].anchor.as_ref().map(|a| a.text.as_str()),
+        Some("End before end after")
+    );
+}
+
+#[test]
+fn docx_note_reference_anchors_survive_accepted_revision_wrappers() {
+    let doc =
+        Document::open(&notes_with_revision_wrapped_anchor_text_docx()).expect("fixture opens");
+
+    assert_eq!(
+        doc.main_text(),
+        "Inserted foot before inserted foot after\nMoved end before moved end after"
+    );
+    let notes = doc.notes();
+    assert_eq!(notes.len(), 2);
+    assert_eq!(notes[0].id, "7");
+    assert_eq!(notes[0].kind, NoteKind::Footnote);
+    assert_eq!(
+        notes[0].anchor.as_ref().map(|a| a.text.as_str()),
+        Some("Inserted foot before inserted foot after")
+    );
+    assert_eq!(notes[1].id, "8");
+    assert_eq!(notes[1].kind, NoteKind::Endnote);
+    assert_eq!(
+        notes[1].anchor.as_ref().map(|a| a.text.as_str()),
+        Some("Moved end before moved end after")
+    );
+}
+
+#[test]
+fn replace_note_text_edits_footnotes_and_endnotes_only() {
+    let mut doc = Document::open(&notes_docx()).expect("fixture opens");
+
+    assert_eq!(doc.replace_note_text("OLD", "NEW").unwrap(), 2);
+
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let footnotes = String::from_utf8(parts["word/footnotes.xml"].clone()).unwrap();
+    let endnotes = String::from_utf8(parts["word/endnotes.xml"].clone()).unwrap();
+
+    assert!(body.contains("<w:t>BODY</w:t>"), "body changed: {body}");
+    assert!(
+        footnotes.contains(r#"<w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:t>OLD</w:t>"#),
+        "separator footnote should not be edited: {footnotes}"
+    );
+    assert!(
+        footnotes.contains(r#"<w:footnote w:id="1"><w:p><w:r><w:t>NEW</w:t>"#),
+        "real footnote not edited: {footnotes}"
+    );
+    assert!(
+        footnotes.contains("<w:t> foot</w:t>"),
+        "other footnote run should remain: {footnotes}"
+    );
+    assert!(
+        endnotes.contains(r#"<w:endnote w:id="2"><w:p><w:r><w:t>NEW</w:t>"#),
+        "endnote not edited: {endnotes}"
+    );
+
+    let mut reopened = Document::open(&saved).expect("reopen edited docx");
+    assert_eq!(reopened.text(), "BODY\nNEW foot\nNEW");
+    assert_eq!(reopened.replace_note_text("missing", "x").unwrap(), 0);
+}
+
+#[test]
+fn replace_note_text_writes_tabs_and_breaks_as_markers() {
+    let mut doc = Document::open(&notes_docx()).expect("fixture opens");
+
+    assert_eq!(doc.replace_note_text("OLD", "Line 1\nLine\t2").unwrap(), 2);
+
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let footnotes = String::from_utf8(parts["word/footnotes.xml"].clone()).unwrap();
+    let endnotes = String::from_utf8(parts["word/endnotes.xml"].clone()).unwrap();
+
+    assert!(
+        footnotes.contains("<w:t>Line 1</w:t><w:br/><w:t>Line</w:t><w:tab/><w:t>2</w:t>"),
+        "footnote replacement did not use WML markers: {footnotes}"
+    );
+    assert!(
+        endnotes.contains("<w:t>Line 1</w:t><w:br/><w:t>Line</w:t><w:tab/><w:t>2</w:t>"),
+        "endnote replacement did not use WML markers: {endnotes}"
+    );
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    assert_eq!(reopened.footnote_text(), "Line 1\nLine\t2 foot");
+    assert_eq!(reopened.endnote_text(), "Line 1\nLine\t2");
+}
+
+#[test]
+fn add_footnote_on_text_creates_part_relationship_anchor_and_note() {
+    let mut doc = Document::open(&no_notes_docx()).expect("fixture opens");
+
+    let id = doc
+        .add_footnote_on_text("BODY", "Foot <one> & two")
+        .expect("footnote added");
+
+    assert_eq!(id, "1");
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let footnotes = String::from_utf8(parts["word/footnotes.xml"].clone()).unwrap();
+    let rels = String::from_utf8(parts["word/_rels/document.xml.rels"].clone()).unwrap();
+    let ct = String::from_utf8(parts["[Content_Types].xml"].clone()).unwrap();
+
+    let anchor = body.find(r#"<w:t>BODY</w:t>"#).unwrap_or(usize::MAX);
+    let reference = body.find(r#"<w:footnoteReference"#).unwrap_or(usize::MAX);
+    assert!(
+        anchor < reference && body.contains(r#"<w:footnoteReference w:id="1"/>"#),
+        "footnote reference missing or misplaced: {body}"
+    );
+    assert!(
+        footnotes.contains(r#"<w:footnote w:type="separator" w:id="-1">"#)
+            && footnotes.contains(r#"<w:footnote w:type="continuationSeparator" w:id="0">"#)
+            && footnotes.contains(r#"w:id="1""#),
+        "footnotes skeleton or note missing: {footnotes}"
+    );
+    assert!(
+        footnotes.contains(r#"<w:t>Foot &lt;one&gt; &amp; two</w:t>"#),
+        "footnote text not escaped: {footnotes}"
+    );
+    assert!(
+        rels.contains(
+            r#"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml""#
+        ),
+        "footnotes relationship missing: {rels}"
+    );
+    assert!(
+        ct.contains(r#"PartName="/word/footnotes.xml""#)
+            && ct.contains("wordprocessingml.footnotes+xml"),
+        "footnotes content type missing: {ct}"
+    );
+
+    let mut reopened = Document::open(&saved).expect("reopen edited docx");
+    assert_eq!(
+        reopened
+            .replace_note_text("Foot <one> & two", "Updated")
+            .unwrap(),
+        1
+    );
+}
+
+#[test]
+fn add_notes_on_text_preserve_edge_whitespace() {
+    let mut doc = Document::open(&no_notes_docx()).expect("fixture opens");
+
+    doc.add_footnote_on_text("BODY", " Foot note ")
+        .expect("footnote added");
+    doc.add_endnote_on_text("BODY", " End note ")
+        .expect("endnote added");
+
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let footnotes = String::from_utf8(parts["word/footnotes.xml"].clone()).unwrap();
+    let endnotes = String::from_utf8(parts["word/endnotes.xml"].clone()).unwrap();
+
+    assert!(
+        footnotes.contains(r#"<w:t xml:space="preserve"> Foot note </w:t>"#),
+        "footnote text should preserve edge whitespace: {footnotes}"
+    );
+    assert!(
+        endnotes.contains(r#"<w:t xml:space="preserve"> End note </w:t>"#),
+        "endnote text should preserve edge whitespace: {endnotes}"
+    );
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    let notes = reopened.notes();
+    assert_eq!(notes.len(), 2);
+    assert_eq!(notes[0].kind, NoteKind::Footnote);
+    assert_eq!(notes[0].text, "Foot note");
+    assert_eq!(notes[1].kind, NoteKind::Endnote);
+    assert_eq!(notes[1].text, "End note");
+}
+
+#[test]
+fn add_notes_on_text_write_tabs_and_breaks_as_markers() {
+    let mut doc = Document::open(&no_notes_docx()).expect("fixture opens");
+
+    doc.add_footnote_on_text("BODY", "Foot\nLine\t2")
+        .expect("footnote added");
+    doc.add_endnote_on_text("BODY", "End\nLine\t3")
+        .expect("endnote added");
+
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let footnotes = String::from_utf8(parts["word/footnotes.xml"].clone()).unwrap();
+    let endnotes = String::from_utf8(parts["word/endnotes.xml"].clone()).unwrap();
+
+    assert!(
+        footnotes.contains(r#"<w:t>Foot</w:t><w:br/><w:t>Line</w:t><w:tab/><w:t>2</w:t>"#),
+        "footnote text should encode tabs and breaks as WML markers: {footnotes}"
+    );
+    assert!(
+        endnotes.contains(r#"<w:t>End</w:t><w:br/><w:t>Line</w:t><w:tab/><w:t>3</w:t>"#),
+        "endnote text should encode tabs and breaks as WML markers: {endnotes}"
+    );
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    let notes = reopened.notes();
+    assert_eq!(notes.len(), 2);
+    assert_eq!(notes[0].text, "Foot\nLine\t2");
+    assert_eq!(notes[1].text, "End\nLine\t3");
+}
+
+#[test]
+fn add_footnote_on_text_uses_next_id_and_rejects_missing_anchor_without_mutation() {
+    let mut doc = Document::open(&notes_docx()).expect("fixture opens");
+
+    let id = doc
+        .add_footnote_on_text("BODY", "Second footnote")
+        .expect("footnote added");
+
+    assert_eq!(id, "2");
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let footnotes = String::from_utf8(parts["word/footnotes.xml"].clone()).unwrap();
+    assert!(
+        body.contains(r#"<w:footnoteReference w:id="1"/>"#)
+            && body.contains(r#"<w:footnoteReference w:id="2"/>"#),
+        "existing and new footnote references should be present: {body}"
+    );
+    assert!(
+        footnotes.contains(r#"w:id="1""#)
+            && footnotes.contains(r#"w:id="2""#)
+            && footnotes.contains(r#"<w:t>Second footnote</w:t>"#),
+        "existing and new footnotes should be present: {footnotes}"
+    );
+
+    let before_missing = saved;
+    let before_parts = unzip_parts(&before_missing);
+    let mut missing = Document::open(&before_missing).expect("reopen edited docx");
+    assert!(
+        missing
+            .add_footnote_on_text("Missing anchor", "Nope")
+            .is_err(),
+        "missing anchor text should be an error"
+    );
+    let after_missing = missing.save().expect("save after rejected edit");
+    let after_parts = unzip_parts(&after_missing);
+    assert_eq!(
+        after_parts["word/document.xml"], before_parts["word/document.xml"],
+        "rejected footnote edit mutated document.xml"
+    );
+    assert_eq!(
+        after_parts["word/footnotes.xml"], before_parts["word/footnotes.xml"],
+        "rejected footnote edit mutated footnotes.xml"
+    );
+}
+
+#[test]
+fn add_notes_on_text_can_anchor_across_adjacent_runs() {
+    let mut doc = Document::open(&split_run_no_notes_docx()).expect("fixture opens");
+
+    let footnote_id = doc
+        .add_footnote_on_text("BODY", "Split footnote")
+        .expect("footnote added across split runs");
+    let endnote_id = doc
+        .add_endnote_on_text("BODY", "Split endnote")
+        .expect("endnote added across split runs");
+
+    assert_eq!(footnote_id, "1");
+    assert_eq!(endnote_id, "1");
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let footnotes = String::from_utf8(parts["word/footnotes.xml"].clone()).unwrap();
+    let endnotes = String::from_utf8(parts["word/endnotes.xml"].clone()).unwrap();
+
+    let first = body.find(r#"<w:t>BO</w:t>"#).unwrap_or(usize::MAX);
+    let second = body.find(r#"<w:t>DY</w:t>"#).unwrap_or(usize::MAX);
+    let footnote_ref = body
+        .find(r#"<w:footnoteReference w:id="1"/>"#)
+        .unwrap_or(usize::MAX);
+    let endnote_ref = body
+        .find(r#"<w:endnoteReference w:id="1"/>"#)
+        .unwrap_or(usize::MAX);
+    let tail = body.find(r#"<w:t> tail</w:t>"#).unwrap_or(usize::MAX);
+    assert!(
+        first < second
+            && second < footnote_ref
+            && second < endnote_ref
+            && footnote_ref < tail
+            && endnote_ref < tail,
+        "split-run note references missing or misplaced: {body}"
+    );
+    assert!(
+        footnotes.contains(r#"<w:t>Split footnote</w:t>"#)
+            && endnotes.contains(r#"<w:t>Split endnote</w:t>"#),
+        "split-run notes missing: footnotes={footnotes} endnotes={endnotes}"
+    );
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    assert!(reopened.text().contains("Split footnote"));
+    assert!(reopened.text().contains("Split endnote"));
+}
+
+#[test]
+fn add_endnote_on_text_creates_part_relationship_anchor_and_note() {
+    let mut doc = Document::open(&no_notes_docx()).expect("fixture opens");
+
+    let id = doc
+        .add_endnote_on_text("BODY", "End <one> & two")
+        .expect("endnote added");
+
+    assert_eq!(id, "1");
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let endnotes = String::from_utf8(parts["word/endnotes.xml"].clone()).unwrap();
+    let rels = String::from_utf8(parts["word/_rels/document.xml.rels"].clone()).unwrap();
+    let ct = String::from_utf8(parts["[Content_Types].xml"].clone()).unwrap();
+
+    let anchor = body.find(r#"<w:t>BODY</w:t>"#).unwrap_or(usize::MAX);
+    let reference = body.find(r#"<w:endnoteReference"#).unwrap_or(usize::MAX);
+    assert!(
+        anchor < reference && body.contains(r#"<w:endnoteReference w:id="1"/>"#),
+        "endnote reference missing or misplaced: {body}"
+    );
+    assert!(
+        endnotes.contains(r#"<w:endnote w:type="separator" w:id="-1">"#)
+            && endnotes.contains(r#"<w:endnote w:type="continuationSeparator" w:id="0">"#)
+            && endnotes.contains(r#"w:id="1""#),
+        "endnotes skeleton or note missing: {endnotes}"
+    );
+    assert!(
+        endnotes.contains(r#"<w:t>End &lt;one&gt; &amp; two</w:t>"#),
+        "endnote text not escaped: {endnotes}"
+    );
+    assert!(
+        rels.contains(
+            r#"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml""#
+        ),
+        "endnotes relationship missing: {rels}"
+    );
+    assert!(
+        ct.contains(r#"PartName="/word/endnotes.xml""#)
+            && ct.contains("wordprocessingml.endnotes+xml"),
+        "endnotes content type missing: {ct}"
+    );
+
+    let mut reopened = Document::open(&saved).expect("reopen edited docx");
+    assert_eq!(
+        reopened
+            .replace_note_text("End <one> & two", "Updated")
+            .unwrap(),
+        1
+    );
+}
+
+#[test]
+fn add_endnote_on_text_uses_next_id_and_rejects_missing_anchor_without_mutation() {
+    let mut doc = Document::open(&notes_docx()).expect("fixture opens");
+
+    let id = doc
+        .add_endnote_on_text("BODY", "Second endnote")
+        .expect("endnote added");
+
+    assert_eq!(id, "3");
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let endnotes = String::from_utf8(parts["word/endnotes.xml"].clone()).unwrap();
+    assert!(
+        body.contains(r#"<w:endnoteReference w:id="2"/>"#)
+            && body.contains(r#"<w:endnoteReference w:id="3"/>"#),
+        "existing and new endnote references should be present: {body}"
+    );
+    assert!(
+        endnotes.contains(r#"w:id="2""#)
+            && endnotes.contains(r#"w:id="3""#)
+            && endnotes.contains(r#"<w:t>Second endnote</w:t>"#),
+        "existing and new endnotes should be present: {endnotes}"
+    );
+
+    let before_missing = saved;
+    let before_parts = unzip_parts(&before_missing);
+    let mut missing = Document::open(&before_missing).expect("reopen edited docx");
+    assert!(
+        missing
+            .add_endnote_on_text("Missing anchor", "Nope")
+            .is_err(),
+        "missing anchor text should be an error"
+    );
+    let after_missing = missing.save().expect("save after rejected edit");
+    let after_parts = unzip_parts(&after_missing);
+    assert_eq!(
+        after_parts["word/document.xml"], before_parts["word/document.xml"],
+        "rejected endnote edit mutated document.xml"
+    );
+    assert_eq!(
+        after_parts["word/endnotes.xml"], before_parts["word/endnotes.xml"],
+        "rejected endnote edit mutated endnotes.xml"
+    );
+}
+
+#[test]
+fn replace_image_png_updates_existing_media_part_only() {
+    let original_png = tiny_png();
+    let replacement_png = tiny_png_with_marker(b"rdoc replacement");
+    let mut doc = Document::open(&image_docx(&original_png)).expect("fixture opens");
+
+    assert_eq!(
+        doc.images()[0].bytes.as_deref(),
+        Some(original_png.as_slice())
+    );
+
+    doc.replace_image_png(&replacement_png, "image1.png")
+        .expect("replace existing image");
+
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    assert_eq!(parts["word/media/image1.png"], replacement_png);
+    assert_eq!(
+        parts["word/document.xml"],
+        unzip_parts(&image_docx(&original_png))["word/document.xml"]
+    );
+    assert_eq!(
+        parts["word/_rels/document.xml.rels"],
+        unzip_parts(&image_docx(&original_png))["word/_rels/document.xml.rels"]
+    );
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    assert_eq!(reopened.text(), "BEFORE");
+    assert_eq!(
+        reopened.images()[0].bytes.as_deref(),
+        Some(replacement_png.as_slice())
+    );
+}
+
+#[test]
+fn replace_image_png_rejects_missing_or_invalid_inputs_without_mutation() {
+    let original_png = tiny_png();
+    let before = image_docx(&original_png);
+    let mut doc = Document::open(&before).expect("fixture opens");
+
+    assert!(doc.replace_image_png(b"not png", "image1.png").is_err());
+    assert!(doc.replace_image_png(&tiny_png(), "missing.png").is_err());
+    assert!(doc.replace_image_png(&tiny_png(), "../image1.png").is_err());
+
+    let after = doc.save().expect("save after failed edits");
+    let before_parts = unzip_parts(&before);
+    let after_parts = unzip_parts(&after);
+    assert_eq!(after_parts["word/media/image1.png"], original_png);
+    assert_eq!(
+        after_parts["word/document.xml"],
+        before_parts["word/document.xml"]
+    );
+    assert_eq!(
+        after_parts["word/_rels/document.xml.rels"],
+        before_parts["word/_rels/document.xml.rels"]
+    );
+}
+
+#[test]
+fn add_image_jpeg_inserts_media_relationship_and_content_type() {
+    let jpeg = tiny_jpeg();
+    let mut doc = Document::open(&no_notes_docx()).expect("fixture opens");
+
+    doc.add_image_jpeg(&jpeg, "photo.jpg")
+        .expect("insert jpeg image");
+
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    assert_eq!(parts["word/media/photo.jpg"], jpeg);
+
+    let ct = String::from_utf8(parts["[Content_Types].xml"].clone()).unwrap();
+    assert!(
+        ct.contains(r#"PartName="/word/media/photo.jpg""#)
+            && ct.contains(r#"ContentType="image/jpeg""#),
+        "jpeg content type missing: {ct}"
+    );
+    let rels = String::from_utf8(parts["word/_rels/document.xml.rels"].clone()).unwrap();
+    assert!(
+        rels.contains(
+            r#"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image""#
+        ) && rels.contains(r#"Target="media/photo.jpg""#),
+        "jpeg relationship missing: {rels}"
+    );
+    let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    assert!(
+        body.contains("<w:drawing") && body.contains("r:embed"),
+        "drawing missing: {body}"
+    );
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    let images = reopened.images();
+    assert_eq!(images.len(), 1);
+    assert_eq!(images[0].mime.as_deref(), Some("image/jpeg"));
+    assert_eq!(images[0].bytes.as_deref(), Some(jpeg.as_slice()));
+    assert_eq!(images[0].width_px, Some(2));
+    assert_eq!(images[0].height_px, Some(3));
+}
+
+#[test]
+fn replace_image_jpeg_updates_existing_media_part_only() {
+    let original_jpeg = tiny_jpeg();
+    let replacement_jpeg = tiny_jpeg_with_comment(b"rdoc replacement");
+    let before = jpeg_image_docx(&original_jpeg);
+    let before_parts = unzip_parts(&before);
+    let mut doc = Document::open(&before).expect("fixture opens");
+
+    assert_eq!(
+        doc.images()[0].bytes.as_deref(),
+        Some(original_jpeg.as_slice())
+    );
+
+    doc.replace_image_jpeg(&replacement_jpeg, "photo.jpeg")
+        .expect("replace existing jpeg");
+
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    assert_eq!(parts["word/media/photo.jpeg"], replacement_jpeg);
+    assert_eq!(
+        parts["word/document.xml"],
+        before_parts["word/document.xml"]
+    );
+    assert_eq!(
+        parts["word/_rels/document.xml.rels"],
+        before_parts["word/_rels/document.xml.rels"]
+    );
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    assert_eq!(reopened.images()[0].mime.as_deref(), Some("image/jpeg"));
+    assert_eq!(
+        reopened.images()[0].bytes.as_deref(),
+        Some(replacement_jpeg.as_slice())
+    );
+}
+
+#[test]
+fn replace_image_jpeg_rejects_missing_or_invalid_inputs_without_mutation() {
+    let original_jpeg = tiny_jpeg();
+    let before = jpeg_image_docx(&original_jpeg);
+    let before_parts = unzip_parts(&before);
+    let mut doc = Document::open(&before).expect("fixture opens");
+
+    assert!(doc.replace_image_jpeg(b"not jpeg", "photo.jpeg").is_err());
+    assert!(doc
+        .replace_image_jpeg(&tiny_jpeg(), "missing.jpeg")
+        .is_err());
+    assert!(doc
+        .replace_image_jpeg(&tiny_jpeg(), "../photo.jpeg")
+        .is_err());
+
+    let after = doc.save().expect("save after failed edits");
+    let after_parts = unzip_parts(&after);
+    assert_eq!(after_parts["word/media/photo.jpeg"], original_jpeg);
+    assert_eq!(
+        after_parts["word/document.xml"],
+        before_parts["word/document.xml"]
+    );
+    assert_eq!(
+        after_parts["word/_rels/document.xml.rels"],
+        before_parts["word/_rels/document.xml.rels"]
+    );
+}
+
+#[test]
+fn set_core_property_updates_existing_core_properties_part_only() {
+    let before = core_properties_docx();
+    let mut doc = Document::open(&before).expect("fixture opens");
+
+    doc.set_core_property(CoreProperty::Title, "New <Title> & Co")
+        .expect("title updates");
+
+    let saved = doc.save().expect("save edited docx");
+    let before_parts = unzip_parts(&before);
+    let parts = unzip_parts(&saved);
+    let core = String::from_utf8(parts["docProps/core.xml"].clone()).unwrap();
+
+    assert!(core.contains("<dc:title>New &lt;Title&gt; &amp; Co</dc:title>"));
+    assert!(core.contains("<dc:creator>Old Author</dc:creator>"));
+    assert_eq!(
+        parts["word/document.xml"], before_parts["word/document.xml"],
+        "body should not be rewritten"
+    );
+    assert!(Document::open(&saved).is_ok());
+}
+
+#[test]
+fn set_core_property_creates_missing_part_relationship_and_content_type() {
+    let before = table_docx();
+    let mut doc = Document::open(&before).expect("fixture opens");
+
+    doc.set_core_property(CoreProperty::Creator, "Hyunjo Jung")
+        .expect("creator property added");
+
+    let saved = doc.save().expect("save edited docx");
+    let before_parts = unzip_parts(&before);
+    let parts = unzip_parts(&saved);
+    let core = String::from_utf8(parts["docProps/core.xml"].clone()).unwrap();
+    let root_rels = String::from_utf8(parts["_rels/.rels"].clone()).unwrap();
+    let ct = String::from_utf8(parts["[Content_Types].xml"].clone()).unwrap();
+
+    assert!(
+        core.contains("<dc:creator") && core.contains(">Hyunjo Jung</dc:creator>"),
+        "creator property missing: {core}"
+    );
+    assert!(
+        root_rels.contains(
+            r#"Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml""#
+        ),
+        "core properties relationship missing: {root_rels}"
+    );
+    assert!(
+        ct.contains(r#"PartName="/docProps/core.xml""#)
+            && ct.contains("application/vnd.openxmlformats-package.core-properties+xml"),
+        "core properties content type missing: {ct}"
+    );
+    assert_eq!(
+        parts["word/document.xml"],
+        before_parts["word/document.xml"]
+    );
+    assert!(Document::open(&saved).is_ok());
+}

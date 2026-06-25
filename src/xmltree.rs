@@ -119,10 +119,43 @@ fn commit_should_fail() -> bool {
 /// The WordprocessingML namespace URI — used to resolve which `t` elements are real
 /// body text runs vs DrawingML text.
 pub(crate) const WML_NS: &[u8] = b"http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+const OOXML_REL_NS: &[u8] = b"http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+
+fn wml_ns_str() -> &'static str {
+    std::str::from_utf8(WML_NS).expect("WML namespace is valid UTF-8")
+}
 
 /// A `Copy` handle into an [`XmlTree`]'s arena.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub(crate) struct NodeId(u32);
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum WmlVMerge {
+    None,
+    Restart,
+    Continue,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum WmlRevisionEditPolicy {
+    Accept,
+    Reject,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum WmlRevisionEditAction {
+    Keep,
+    Remove,
+    Unwrap,
+    RenameDeletedText,
+}
+
+#[derive(Clone, Copy)]
+struct WmlActiveVMerge {
+    col: usize,
+    span: usize,
+    cell: NodeId,
+}
 
 /// A single XML node. Element attribute values and text are stored **unescaped**
 /// and canonically re-escaped on serialization; `Raw` markup (declaration, comment,
@@ -382,6 +415,27 @@ impl XmlTree {
         }
         Ok(id)
     }
+
+    fn parent_child_index(&self, target: NodeId) -> Option<(NodeId, usize)> {
+        fn rec(t: &XmlTree, parent: NodeId, target: NodeId) -> Option<(NodeId, usize)> {
+            for (index, &child) in t.nodes[parent.0 as usize].children.iter().enumerate() {
+                if child == target {
+                    return Some((parent, index));
+                }
+                if let Some(found) = rec(t, child, target) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+
+        for &root in &self.roots {
+            if let Some(found) = rec(self, root, target) {
+                return Some(found);
+            }
+        }
+        None
+    }
 }
 
 /// Maximum attributes accepted on a single element — a size-capped part could otherwise
@@ -501,6 +555,127 @@ fn esc_attr_into(s: &[u8], out: &mut Vec<u8>) {
     }
 }
 
+fn escaped_text(s: &str) -> String {
+    let mut out = Vec::new();
+    esc_text_into(s.as_bytes(), &mut out);
+    String::from_utf8(out).expect("XML text escaping preserves UTF-8")
+}
+
+fn escaped_attr(s: &str) -> String {
+    let mut out = Vec::new();
+    esc_attr_into(s.as_bytes(), &mut out);
+    String::from_utf8(out).expect("XML attribute escaping preserves UTF-8")
+}
+
+fn wml_text_run_content_xml(text: &str) -> String {
+    fn flush(out: &mut String, buf: &mut String) {
+        if buf.is_empty() {
+            return;
+        }
+        let preserve = buf.as_str() != buf.trim_matches([' ', '\t', '\n', '\r']);
+        let text = escaped_text(buf);
+        if preserve {
+            out.push_str(&format!(r#"<w:t xml:space="preserve">{text}</w:t>"#));
+        } else {
+            out.push_str(&format!(r#"<w:t>{text}</w:t>"#));
+        }
+        buf.clear();
+    }
+
+    let mut out = String::new();
+    let mut buf = String::new();
+    for ch in text.chars() {
+        match ch {
+            '\t' => {
+                flush(&mut out, &mut buf);
+                out.push_str("<w:tab/>");
+            }
+            '\n' => {
+                flush(&mut out, &mut buf);
+                out.push_str("<w:br/>");
+            }
+            '\r' => {}
+            c if (c as u32) < 0x20 => {}
+            c => buf.push(c),
+        }
+    }
+    flush(&mut out, &mut buf);
+    out
+}
+
+pub(crate) fn wml_text_run_content_node_count(text: &str) -> Result<usize> {
+    let xml = wml_text_run_content_xml(text);
+    if xml.is_empty() {
+        return Ok(0);
+    }
+    XmlTree::parse(xml.as_bytes()).map(|tree| tree.node_count())
+}
+
+#[derive(Debug)]
+struct FieldScan {
+    wanted: usize,
+    seen: usize,
+    target: Option<Vec<NodeId>>,
+    complex: Option<ComplexFieldScan>,
+}
+
+#[derive(Debug)]
+struct ComplexFieldScan {
+    result_phase: bool,
+    result_runs: Vec<NodeId>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct WmlRunRange {
+    parent: NodeId,
+    first_index: usize,
+    last_index: usize,
+}
+
+#[derive(Debug)]
+struct WmlCommentTextEditTarget {
+    first_run: Option<NodeId>,
+    text_runs: Vec<NodeId>,
+}
+
+fn attr_value_local<'a>(attrs: &'a [(Vec<u8>, Vec<u8>)], local: &[u8]) -> Option<&'a [u8]> {
+    attrs.iter().find_map(|(k, v)| {
+        let lname = k
+            .iter()
+            .position(|&b| b == b':')
+            .map_or(k.as_slice(), |i| &k[i + 1..]);
+        (lname == local).then_some(v.as_slice())
+    })
+}
+
+fn attr_value_ns_local<'a>(
+    attrs: &'a [(Vec<u8>, Vec<u8>)],
+    scope: &[(Vec<u8>, Vec<u8>)],
+    ns: &[u8],
+    local: &[u8],
+) -> Option<&'a [u8]> {
+    attrs.iter().find_map(|(k, v)| {
+        let (prefix, lname): (&[u8], &[u8]) = match k.iter().position(|&b| b == b':') {
+            Some(i) => (&k[..i], &k[i + 1..]),
+            None => (b"", k),
+        };
+        if lname != local {
+            return None;
+        }
+        let matches_ns = if prefix.is_empty() {
+            ns.is_empty()
+        } else {
+            scope
+                .iter()
+                .rev()
+                .find(|(p, _)| p.as_slice() == prefix)
+                .map(|(_, u)| u.as_slice())
+                == Some(ns)
+        };
+        matches_ns.then_some(v.as_slice())
+    })
+}
+
 #[cfg(test)]
 impl Node {
     /// Convenience for tests: the unescaped text of a [`Node::Text`].
@@ -595,6 +770,24 @@ impl XmlTree {
                 self.nodes[id.0 as usize].children.clear();
                 self.push(Node::Text(text.as_bytes().to_vec()), Some(id))?;
             }
+        }
+        Ok(())
+    }
+
+    /// Replace one existing WML text element with WML run content (`w:t`,
+    /// `w:tab`, `w:br`) at the same child position inside its parent run.
+    pub(crate) fn replace_wml_text_element_with_run_content(
+        &mut self,
+        id: NodeId,
+        text: &str,
+    ) -> Result<()> {
+        let (parent, index) = self
+            .parent_child_index(id)
+            .ok_or_else(|| Error::Docx("wml text node has no parent".into()))?;
+        let xml = wml_text_run_content_xml(text);
+        self.nodes[parent.0 as usize].children.remove(index);
+        if !xml.is_empty() {
+            self.insert_fragment_at(parent, index, xml.as_bytes())?;
         }
         Ok(())
     }
@@ -720,6 +913,89 @@ impl XmlTree {
         Err(Error::Docx("document.xml has no w:body".into()))
     }
 
+    /// The sole top-level WML root of a non-body WordprocessingML part, such as
+    /// `w:hdr` or `w:ftr`. This applies the same strict outside-root checks as
+    /// [`Self::wml_body_strict`] before returning the root element itself.
+    pub(crate) fn wml_part_root_strict(
+        &self,
+        part_name: &str,
+        root_local: &[u8],
+    ) -> Result<NodeId> {
+        self.part_root_strict_ns(part_name, WML_NS, root_local, "WordprocessingML w")
+    }
+
+    /// The sole top-level WordprocessingML root of an XML part, accepting any
+    /// local root name. Use this for explicit part-scoped edits where the caller
+    /// already named the part and the edit surface is limited to descendant `w:t`.
+    pub(crate) fn wml_any_part_root_strict(&self, part_name: &str) -> Result<NodeId> {
+        self.part_root_strict_ns_any_local(part_name, WML_NS, "WordprocessingML w")
+    }
+
+    /// The sole top-level root of an XML part, namespace-resolved and with the same
+    /// outside-root safety checks used by WordprocessingML edit surfaces.
+    pub(crate) fn part_root_strict_ns(
+        &self,
+        part_name: &str,
+        root_ns: &[u8],
+        root_local: &[u8],
+        expected_prefix: &str,
+    ) -> Result<NodeId> {
+        let root = self.part_root_strict_ns_any_local(part_name, root_ns, expected_prefix)?;
+        let mut scope: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
+        self.push_xmlns(root, &mut scope);
+        if self.resolves_to(root, root_ns, root_local, &scope) {
+            Ok(root)
+        } else {
+            let expected = String::from_utf8_lossy(root_local);
+            Err(Error::Docx(format!(
+                "{part_name} root is not a {expected_prefix}:{expected}"
+            )))
+        }
+    }
+
+    fn part_root_strict_ns_any_local(
+        &self,
+        part_name: &str,
+        root_ns: &[u8],
+        expected_prefix: &str,
+    ) -> Result<NodeId> {
+        let mut elements = self
+            .roots
+            .iter()
+            .copied()
+            .filter(|&r| matches!(self.nodes[r.0 as usize].node, Node::Element { .. }));
+        let root = elements
+            .next()
+            .ok_or_else(|| Error::Docx(format!("{part_name} has no root element")))?;
+        if elements.next().is_some() {
+            return Err(Error::Docx(format!(
+                "{part_name} has more than one top-level element"
+            )));
+        }
+        for &r in &self.roots {
+            if let Node::Raw(bytes) = &self.nodes[r.0 as usize].node {
+                let is_ws = bytes
+                    .iter()
+                    .all(|b| matches!(b, b' ' | b'\t' | b'\r' | b'\n'));
+                let allowed_markup = bytes.starts_with(b"<!--") || bytes.starts_with(b"<?");
+                if !is_ws && !allowed_markup {
+                    return Err(Error::Docx(format!(
+                        "{part_name} has invalid content outside the root element"
+                    )));
+                }
+            }
+        }
+        let mut scope: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
+        self.push_xmlns(root, &mut scope);
+        if self.resolves_to_ns(root, root_ns, &scope) {
+            Ok(root)
+        } else {
+            Err(Error::Docx(format!(
+                "{part_name} root is not in the {expected_prefix} namespace"
+            )))
+        }
+    }
+
     /// Append `id`'s own `xmlns`/`xmlns:*` declarations onto `scope`.
     fn push_xmlns(&self, id: NodeId, scope: &mut Vec<(Vec<u8>, Vec<u8>)>) {
         if let Node::Element { attrs, .. } = &self.nodes[id.0 as usize].node {
@@ -756,6 +1032,22 @@ impl XmlTree {
                 .find(|(p, _)| p.as_slice() == prefix)
                 .map(|(_, u)| u.as_slice())
                 == Some(ns)
+    }
+
+    fn resolves_to_ns(&self, id: NodeId, ns: &[u8], scope: &[(Vec<u8>, Vec<u8>)]) -> bool {
+        let Node::Element { name, .. } = &self.nodes[id.0 as usize].node else {
+            return false;
+        };
+        let prefix: &[u8] = match name.iter().position(|&b| b == b':') {
+            Some(i) => &name[..i],
+            None => b"",
+        };
+        scope
+            .iter()
+            .rev()
+            .find(|(p, _)| p.as_slice() == prefix)
+            .map(|(_, u)| u.as_slice())
+            == Some(ns)
     }
 
     /// The namespace bindings (`prefix → uri`, `""` = default) in effect for `target`'s
@@ -817,6 +1109,384 @@ impl XmlTree {
         out
     }
 
+    /// Relationship ids from body-scoped `w:hyperlink r:id="..."` elements in XML order.
+    pub(crate) fn wml_hyperlink_rids_under(&self, body: NodeId) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut scope = self.ns_scope_at(body);
+        for i in 0..self.nodes[body.0 as usize].children.len() {
+            let c = self.nodes[body.0 as usize].children[i];
+            self.collect_wml_hyperlink_rids(c, &mut scope, &mut out);
+        }
+        out
+    }
+
+    /// Cached result `w:t` nodes for the zero-based field in body order.
+    ///
+    /// The order matches the public `Document::fields()` extraction: simple fields
+    /// are counted at their `w:fldSimple` element, while complex fields are counted
+    /// when their `w:fldChar w:fldCharType="end"` marker closes the cached result.
+    pub(crate) fn wml_field_result_runs_under(
+        &self,
+        body: NodeId,
+        field_index: usize,
+    ) -> Option<Vec<NodeId>> {
+        let mut scan = FieldScan {
+            wanted: field_index,
+            seen: 0,
+            target: None,
+            complex: None,
+        };
+        let mut scope = self.ns_scope_at(body);
+        for i in 0..self.nodes[body.0 as usize].children.len() {
+            if scan.target.is_some() {
+                break;
+            }
+            let c = self.nodes[body.0 as usize].children[i];
+            self.collect_wml_field_results(c, &mut scope, &mut scan);
+        }
+        scan.target
+    }
+
+    /// Visible `w:t` nodes for body content controls whose `w:sdtPr/w:tag/@w:val`
+    /// exactly matches `tag`, in body order.
+    pub(crate) fn wml_content_control_text_runs_by_tag_under(
+        &self,
+        body: NodeId,
+        tag: &str,
+    ) -> Vec<Vec<NodeId>> {
+        let mut out = Vec::new();
+        let mut scope = self.ns_scope_at(body);
+        for i in 0..self.nodes[body.0 as usize].children.len() {
+            let c = self.nodes[body.0 as usize].children[i];
+            self.collect_wml_content_control_text_by_tag(c, &mut scope, tag.as_bytes(), &mut out);
+        }
+        out
+    }
+
+    /// Accept tracked revision markup under a WML body subtree.
+    ///
+    /// Insertions and move destinations are unwrapped so their current content
+    /// remains. Deletions, move sources, and tracked property-change history are
+    /// removed. The edit is structural only and does not allocate new nodes.
+    pub(crate) fn accept_wml_revisions_under(&mut self, body: NodeId) -> usize {
+        let mut scope = self.ns_scope_at(body);
+        self.edit_wml_revisions_descendants(body, &mut scope, WmlRevisionEditPolicy::Accept)
+    }
+
+    /// Reject tracked revision markup under a WML body subtree.
+    ///
+    /// Deletions and move sources are unwrapped so the original content remains,
+    /// with `w:delText` normalized back to `w:t`. Insertions, move destinations,
+    /// and tracked property-change history are removed.
+    pub(crate) fn reject_wml_revisions_under(&mut self, body: NodeId) -> usize {
+        let mut scope = self.ns_scope_at(body);
+        self.edit_wml_revisions_descendants(body, &mut scope, WmlRevisionEditPolicy::Reject)
+    }
+
+    /// Replace the visible text for one `w:comment`, using WML run markers for tabs
+    /// and breaks while clearing any later existing text runs.
+    pub(crate) fn set_wml_comment_text_under(
+        &mut self,
+        root: NodeId,
+        comment_id: &str,
+        text: &str,
+    ) -> Result<()> {
+        let target = self
+            .wml_comment_text_edit_target_under(root, comment_id)
+            .ok_or_else(|| Error::Docx(format!("comment id {comment_id:?} not found")))?;
+        let first_run = target
+            .first_run
+            .ok_or_else(|| Error::Docx(format!("comment id {comment_id:?} has no visible text")))?;
+        if target.text_runs.is_empty() {
+            return Err(Error::Docx(format!(
+                "comment id {comment_id:?} has no visible text"
+            )));
+        }
+
+        let old_children = self.nodes[first_run.0 as usize].children.clone();
+        let xml = wml_text_run_content_xml(text);
+        self.nodes[first_run.0 as usize].children.clear();
+        self.insert_fragment_at(first_run, 0, xml.as_bytes())?;
+        for id in target.text_runs {
+            if !old_children.contains(&id) {
+                self.set_element_text(id, "")?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Cached visible `w:t` nodes for a physical cell in a top-level body table.
+    pub(crate) fn wml_table_cell_text_runs_under(
+        &self,
+        body: NodeId,
+        table_index: usize,
+        row_index: usize,
+        cell_index: usize,
+    ) -> Option<Vec<NodeId>> {
+        let mut seen = 0usize;
+        let mut scope = self.ns_scope_at(body);
+        for i in 0..self.nodes[body.0 as usize].children.len() {
+            let c = self.nodes[body.0 as usize].children[i];
+            let base = scope.len();
+            self.push_xmlns(c, &mut scope);
+            if self.resolves_to(c, WML_NS, b"tbl", &scope) {
+                if seen == table_index {
+                    let result =
+                        self.wml_table_cell_text_runs(c, &mut scope, row_index, cell_index);
+                    scope.truncate(base);
+                    return result;
+                }
+                seen += 1;
+            }
+            scope.truncate(base);
+        }
+        None
+    }
+
+    /// Whether a physical cell in a top-level body table contains a nested `w:tbl`.
+    pub(crate) fn wml_table_cell_has_nested_table_under(
+        &self,
+        body: NodeId,
+        table_index: usize,
+        row_index: usize,
+        cell_index: usize,
+    ) -> Option<bool> {
+        let mut seen = 0usize;
+        let mut scope = self.ns_scope_at(body);
+        for i in 0..self.nodes[body.0 as usize].children.len() {
+            let c = self.nodes[body.0 as usize].children[i];
+            let base = scope.len();
+            self.push_xmlns(c, &mut scope);
+            if self.resolves_to(c, WML_NS, b"tbl", &scope) {
+                if seen == table_index {
+                    let result =
+                        self.wml_table_cell_has_nested_table(c, &mut scope, row_index, cell_index);
+                    scope.truncate(base);
+                    return result;
+                }
+                seen += 1;
+            }
+            scope.truncate(base);
+        }
+        None
+    }
+
+    /// Cached visible `w:t` nodes for real footnote/endnote entries under a notes root,
+    /// skipping separator/continuation boilerplate.
+    pub(crate) fn wml_note_text_runs_under(&self, root: NodeId, note_local: &[u8]) -> Vec<NodeId> {
+        let mut out = Vec::new();
+        let mut scope = self.ns_scope_at(root);
+        for i in 0..self.nodes[root.0 as usize].children.len() {
+            let c = self.nodes[root.0 as usize].children[i];
+            let base = scope.len();
+            self.push_xmlns(c, &mut scope);
+            if self.resolves_to(c, WML_NS, note_local, &scope) {
+                let skip = match &self.nodes[c.0 as usize].node {
+                    Node::Element { attrs, .. } => matches!(
+                        attr_value_local(attrs, b"type"),
+                        Some(b"separator" | b"continuationSeparator" | b"continuationNotice")
+                    ),
+                    _ => false,
+                };
+                if !skip {
+                    self.collect_wml_t(c, &mut scope, &mut out);
+                }
+            }
+            scope.truncate(base);
+        }
+        out
+    }
+
+    /// Insert Word comment range markers around the first adjacent `w:r` sequence under
+    /// `body` whose visible `w:t` text exactly equals `anchor_text`.
+    pub(crate) fn add_wml_comment_anchor_on_text(
+        &mut self,
+        body: NodeId,
+        anchor_text: &str,
+        comment_id: &str,
+    ) -> Result<()> {
+        let mut scope = self.ns_scope_at(body);
+        let mut target = None;
+        for i in 0..self.nodes[body.0 as usize].children.len() {
+            let c = self.nodes[body.0 as usize].children[i];
+            if self.find_wml_run_range_with_text(c, &mut scope, anchor_text, &mut target) {
+                break;
+            }
+        }
+        let Some(range) = target else {
+            return Err(Error::Docx(format!(
+                "comment anchor text {anchor_text:?} not found"
+            )));
+        };
+
+        let id = escaped_attr(comment_id);
+        let start = format!(
+            r#"<w:commentRangeStart xmlns:w="{}" w:id="{id}"/>"#,
+            wml_ns_str()
+        );
+        let end = format!(
+            r#"<w:commentRangeEnd xmlns:w="{}" w:id="{id}"/><w:r xmlns:w="{}"><w:commentReference w:id="{id}"/></w:r>"#,
+            wml_ns_str(),
+            wml_ns_str()
+        );
+        self.insert_fragment_at(range.parent, range.first_index, start.as_bytes())?;
+        self.insert_fragment_at(range.parent, range.last_index + 2, end.as_bytes())?;
+        Ok(())
+    }
+
+    /// Insert a Word footnote reference run after the first adjacent `w:r` sequence
+    /// under `body` whose visible `w:t` text exactly equals `anchor_text`.
+    pub(crate) fn add_wml_footnote_reference_on_text(
+        &mut self,
+        body: NodeId,
+        anchor_text: &str,
+        footnote_id: &str,
+    ) -> Result<()> {
+        let mut scope = self.ns_scope_at(body);
+        let mut target = None;
+        for i in 0..self.nodes[body.0 as usize].children.len() {
+            let c = self.nodes[body.0 as usize].children[i];
+            if self.find_wml_run_range_with_text(c, &mut scope, anchor_text, &mut target) {
+                break;
+            }
+        }
+        let Some(range) = target else {
+            return Err(Error::Docx(format!(
+                "footnote anchor text {anchor_text:?} not found"
+            )));
+        };
+
+        let id = escaped_attr(footnote_id);
+        let reference = format!(
+            r#"<w:r xmlns:w="{}"><w:footnoteReference w:id="{id}"/></w:r>"#,
+            wml_ns_str()
+        );
+        self.insert_fragment_at(range.parent, range.last_index + 1, reference.as_bytes())
+    }
+
+    /// Insert a Word endnote reference run after the first adjacent `w:r` sequence under
+    /// `body` whose visible `w:t` text exactly equals `anchor_text`.
+    pub(crate) fn add_wml_endnote_reference_on_text(
+        &mut self,
+        body: NodeId,
+        anchor_text: &str,
+        endnote_id: &str,
+    ) -> Result<()> {
+        let mut scope = self.ns_scope_at(body);
+        let mut target = None;
+        for i in 0..self.nodes[body.0 as usize].children.len() {
+            let c = self.nodes[body.0 as usize].children[i];
+            if self.find_wml_run_range_with_text(c, &mut scope, anchor_text, &mut target) {
+                break;
+            }
+        }
+        let Some(range) = target else {
+            return Err(Error::Docx(format!(
+                "endnote anchor text {anchor_text:?} not found"
+            )));
+        };
+
+        let id = escaped_attr(endnote_id);
+        let reference = format!(
+            r#"<w:r xmlns:w="{}"><w:endnoteReference w:id="{id}"/></w:r>"#,
+            wml_ns_str()
+        );
+        self.insert_fragment_at(range.parent, range.last_index + 1, reference.as_bytes())
+    }
+
+    /// Append one `w:comment` record to a `w:comments` root.
+    pub(crate) fn append_wml_comment(
+        &mut self,
+        root: NodeId,
+        comment_id: &str,
+        text: &str,
+        author: &str,
+    ) -> Result<()> {
+        let id = escaped_attr(comment_id);
+        let author = escaped_attr(author);
+        let text = wml_text_run_content_xml(text);
+        let xml = format!(
+            r#"<w:comment xmlns:w="{}" w:id="{id}" w:author="{author}"><w:p><w:r>{text}</w:r></w:p></w:comment>"#,
+            wml_ns_str()
+        );
+        let pos = self.nodes[root.0 as usize].children.len();
+        self.insert_fragment_at(root, pos, xml.as_bytes())
+    }
+
+    /// Append one real `w:footnote` record to a `w:footnotes` root.
+    pub(crate) fn append_wml_footnote(
+        &mut self,
+        root: NodeId,
+        footnote_id: &str,
+        text: &str,
+    ) -> Result<()> {
+        let id = escaped_attr(footnote_id);
+        let text = wml_text_run_content_xml(text);
+        let xml = format!(
+            r#"<w:footnote xmlns:w="{}" w:id="{id}"><w:p><w:r>{text}</w:r></w:p></w:footnote>"#,
+            wml_ns_str()
+        );
+        let pos = self.nodes[root.0 as usize].children.len();
+        self.insert_fragment_at(root, pos, xml.as_bytes())
+    }
+
+    /// Append one real `w:endnote` record to a `w:endnotes` root.
+    pub(crate) fn append_wml_endnote(
+        &mut self,
+        root: NodeId,
+        endnote_id: &str,
+        text: &str,
+    ) -> Result<()> {
+        let id = escaped_attr(endnote_id);
+        let text = wml_text_run_content_xml(text);
+        let xml = format!(
+            r#"<w:endnote xmlns:w="{}" w:id="{id}"><w:p><w:r>{text}</w:r></w:p></w:endnote>"#,
+            wml_ns_str()
+        );
+        let pos = self.nodes[root.0 as usize].children.len();
+        self.insert_fragment_at(root, pos, xml.as_bytes())
+    }
+
+    /// Set a direct child element's text by namespace/local-name, appending a new
+    /// namespaced element fragment when the property is absent.
+    pub(crate) fn set_child_text_ns_local(
+        &mut self,
+        root: NodeId,
+        ns: &[u8],
+        local: &[u8],
+        fallback_qname: &str,
+        text: &str,
+    ) -> Result<()> {
+        let mut scope = self.ns_scope_at(root);
+        for i in 0..self.nodes[root.0 as usize].children.len() {
+            let c = self.nodes[root.0 as usize].children[i];
+            let base = scope.len();
+            self.push_xmlns(c, &mut scope);
+            if self.resolves_to(c, ns, local, &scope) {
+                scope.truncate(base);
+                return self.set_element_text(c, text);
+            }
+            scope.truncate(base);
+        }
+
+        let prefix = fallback_qname
+            .split_once(':')
+            .map(|(prefix, _)| prefix)
+            .unwrap_or("");
+        let xmlns = if prefix.is_empty() {
+            format!(r#"xmlns="{}""#, escaped_attr(&String::from_utf8_lossy(ns)))
+        } else {
+            format!(
+                r#"xmlns:{prefix}="{}""#,
+                escaped_attr(&String::from_utf8_lossy(ns))
+            )
+        };
+        let text = escaped_text(text);
+        let xml = format!("<{fallback_qname} {xmlns}>{text}</{fallback_qname}>");
+        let pos = self.nodes[root.0 as usize].children.len();
+        self.insert_fragment_at(root, pos, xml.as_bytes())
+    }
+
     /// Whole-document variant (test-only): collect WML `t` from every root, threading
     /// bindings top-down. Production edits use the body-anchored [`Self::wml_text_runs_under`].
     #[cfg(test)]
@@ -827,6 +1497,314 @@ impl XmlTree {
             self.collect_wml_t(self.roots[r], &mut scope, &mut out);
         }
         out
+    }
+
+    fn wml_table_cell_text_runs(
+        &self,
+        table: NodeId,
+        scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+        row_index: usize,
+        cell_index: usize,
+    ) -> Option<Vec<NodeId>> {
+        let cell = self.wml_table_cell_at(table, scope, row_index, cell_index)?;
+        let mut runs = Vec::new();
+        let mut cell_scope = self.ns_scope_at(cell);
+        for i in 0..self.nodes[cell.0 as usize].children.len() {
+            let c = self.nodes[cell.0 as usize].children[i];
+            self.collect_wml_t(c, &mut cell_scope, &mut runs);
+        }
+        Some(runs)
+    }
+
+    fn wml_table_cell_has_nested_table(
+        &self,
+        table: NodeId,
+        scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+        row_index: usize,
+        cell_index: usize,
+    ) -> Option<bool> {
+        let cell = self.wml_table_cell_at(table, scope, row_index, cell_index)?;
+        let mut cell_scope = self.ns_scope_at(cell);
+        Some(self.contains_wml_table_descendant(cell, &mut cell_scope))
+    }
+
+    fn wml_table_cell_at(
+        &self,
+        table: NodeId,
+        scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+        row_index: usize,
+        cell_index: usize,
+    ) -> Option<NodeId> {
+        let mut seen = 0usize;
+        let mut active_vmerges = Vec::new();
+        for i in 0..self.nodes[table.0 as usize].children.len() {
+            let c = self.nodes[table.0 as usize].children[i];
+            let base = scope.len();
+            self.push_xmlns(c, scope);
+            if self.resolves_to(c, WML_NS, b"tr", scope) {
+                let result = self.wml_row_cell_at(c, scope, cell_index, &mut active_vmerges);
+                if seen == row_index {
+                    scope.truncate(base);
+                    return result;
+                }
+                seen += 1;
+            }
+            scope.truncate(base);
+        }
+        None
+    }
+
+    fn wml_row_cell_at(
+        &self,
+        row: NodeId,
+        scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+        cell_index: usize,
+        active_vmerges: &mut Vec<WmlActiveVMerge>,
+    ) -> Option<NodeId> {
+        let previous_vmerges = active_vmerges.clone();
+        let mut next_vmerges = Vec::new();
+        let mut found = None;
+        let mut logical_col = 0usize;
+        for i in 0..self.nodes[row.0 as usize].children.len() {
+            let c = self.nodes[row.0 as usize].children[i];
+            let base = scope.len();
+            self.push_xmlns(c, scope);
+            if self.resolves_to(c, WML_NS, b"tc", scope) {
+                let vmerge = self.wml_table_cell_vmerge(c, scope);
+                let active = previous_vmerges.iter().find(|m| m.col == logical_col);
+                let span = if vmerge == WmlVMerge::Continue {
+                    active.map_or_else(
+                        || self.wml_table_cell_grid_span(c, scope),
+                        |m| m.span.max(1),
+                    )
+                } else {
+                    self.wml_table_cell_grid_span(c, scope)
+                };
+                let next_col = logical_col.saturating_add(span);
+                if (logical_col..next_col).contains(&cell_index) {
+                    found = Some(match vmerge {
+                        WmlVMerge::Continue => active.map_or(c, |m| m.cell),
+                        WmlVMerge::None | WmlVMerge::Restart => c,
+                    });
+                }
+                match vmerge {
+                    WmlVMerge::Restart => next_vmerges.push(WmlActiveVMerge {
+                        col: logical_col,
+                        span,
+                        cell: c,
+                    }),
+                    WmlVMerge::Continue => {
+                        if let Some(active) = active {
+                            next_vmerges.push(WmlActiveVMerge {
+                                col: logical_col,
+                                span,
+                                cell: active.cell,
+                            });
+                        }
+                    }
+                    WmlVMerge::None => {}
+                }
+                logical_col = next_col;
+            }
+            scope.truncate(base);
+        }
+        *active_vmerges = next_vmerges;
+        found
+    }
+
+    fn wml_table_cell_grid_span(&self, cell: NodeId, scope: &mut Vec<(Vec<u8>, Vec<u8>)>) -> usize {
+        for i in 0..self.nodes[cell.0 as usize].children.len() {
+            let c = self.nodes[cell.0 as usize].children[i];
+            let base = scope.len();
+            self.push_xmlns(c, scope);
+            if self.resolves_to(c, WML_NS, b"tcPr", scope) {
+                let span = self.wml_tcpr_grid_span(c, scope);
+                scope.truncate(base);
+                return span;
+            }
+            scope.truncate(base);
+        }
+        1
+    }
+
+    fn wml_tcpr_grid_span(&self, tcpr: NodeId, scope: &mut Vec<(Vec<u8>, Vec<u8>)>) -> usize {
+        let mut span = 1usize;
+        for i in 0..self.nodes[tcpr.0 as usize].children.len() {
+            let c = self.nodes[tcpr.0 as usize].children[i];
+            let base = scope.len();
+            self.push_xmlns(c, scope);
+            if self.resolves_to(c, WML_NS, b"gridSpan", scope) {
+                if let Node::Element { attrs, .. } = &self.nodes[c.0 as usize].node {
+                    span = attr_value_local(attrs, b"val")
+                        .and_then(|v| std::str::from_utf8(v).ok())
+                        .and_then(|v| v.parse::<usize>().ok())
+                        .filter(|&v| v > 0)
+                        .unwrap_or(1);
+                }
+            }
+            scope.truncate(base);
+        }
+        span
+    }
+
+    fn wml_table_cell_vmerge(
+        &self,
+        cell: NodeId,
+        scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+    ) -> WmlVMerge {
+        for i in 0..self.nodes[cell.0 as usize].children.len() {
+            let c = self.nodes[cell.0 as usize].children[i];
+            let base = scope.len();
+            self.push_xmlns(c, scope);
+            if self.resolves_to(c, WML_NS, b"tcPr", scope) {
+                let vmerge = self.wml_tcpr_vmerge(c, scope);
+                scope.truncate(base);
+                return vmerge;
+            }
+            scope.truncate(base);
+        }
+        WmlVMerge::None
+    }
+
+    fn wml_tcpr_vmerge(&self, tcpr: NodeId, scope: &mut Vec<(Vec<u8>, Vec<u8>)>) -> WmlVMerge {
+        let mut vmerge = WmlVMerge::None;
+        for i in 0..self.nodes[tcpr.0 as usize].children.len() {
+            let c = self.nodes[tcpr.0 as usize].children[i];
+            let base = scope.len();
+            self.push_xmlns(c, scope);
+            if self.resolves_to(c, WML_NS, b"vMerge", scope) {
+                vmerge = if let Node::Element { attrs, .. } = &self.nodes[c.0 as usize].node {
+                    match attr_value_local(attrs, b"val") {
+                        Some(b"restart") => WmlVMerge::Restart,
+                        _ => WmlVMerge::Continue,
+                    }
+                } else {
+                    WmlVMerge::Continue
+                };
+            }
+            scope.truncate(base);
+        }
+        vmerge
+    }
+
+    fn contains_wml_table_descendant(
+        &self,
+        id: NodeId,
+        scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+    ) -> bool {
+        for i in 0..self.nodes[id.0 as usize].children.len() {
+            let c = self.nodes[id.0 as usize].children[i];
+            let base = scope.len();
+            self.push_xmlns(c, scope);
+            if self.resolves_to(c, WML_NS, b"tbl", scope)
+                || self.contains_wml_table_descendant(c, scope)
+            {
+                scope.truncate(base);
+                return true;
+            }
+            scope.truncate(base);
+        }
+        false
+    }
+
+    fn edit_wml_revisions_descendants(
+        &mut self,
+        id: NodeId,
+        scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+        policy: WmlRevisionEditPolicy,
+    ) -> usize {
+        let mut changed = 0usize;
+        let mut i = 0usize;
+        while i < self.nodes[id.0 as usize].children.len() {
+            let child = self.nodes[id.0 as usize].children[i];
+            let base = scope.len();
+            self.push_xmlns(child, scope);
+            match self.wml_revision_edit_action(child, scope, policy) {
+                WmlRevisionEditAction::Remove => {
+                    self.nodes[id.0 as usize].children.remove(i);
+                    changed += 1;
+                }
+                WmlRevisionEditAction::Unwrap => {
+                    changed += self.edit_wml_revisions_descendants(child, scope, policy);
+                    let replacement = self.nodes[child.0 as usize].children.clone();
+                    let replacement_len = replacement.len();
+                    self.nodes[id.0 as usize]
+                        .children
+                        .splice(i..=i, replacement);
+                    changed += 1;
+                    i += replacement_len;
+                }
+                WmlRevisionEditAction::RenameDeletedText => {
+                    if self.rename_wml_del_text_to_text(child) {
+                        changed += 1;
+                    }
+                    changed += self.edit_wml_revisions_descendants(child, scope, policy);
+                    i += 1;
+                }
+                WmlRevisionEditAction::Keep => {
+                    changed += self.edit_wml_revisions_descendants(child, scope, policy);
+                    i += 1;
+                }
+            }
+            scope.truncate(base);
+        }
+        changed
+    }
+
+    fn wml_revision_edit_action(
+        &self,
+        id: NodeId,
+        scope: &[(Vec<u8>, Vec<u8>)],
+        policy: WmlRevisionEditPolicy,
+    ) -> WmlRevisionEditAction {
+        let is_inserted = self.resolves_to(id, WML_NS, b"ins", scope)
+            || self.resolves_to(id, WML_NS, b"moveTo", scope);
+        let is_deleted = self.resolves_to(id, WML_NS, b"del", scope)
+            || self.resolves_to(id, WML_NS, b"moveFrom", scope);
+        let is_property_change = self.resolves_to(id, WML_NS, b"pPrChange", scope)
+            || self.resolves_to(id, WML_NS, b"rPrChange", scope)
+            || self.resolves_to(id, WML_NS, b"tblPrChange", scope)
+            || self.resolves_to(id, WML_NS, b"trPrChange", scope)
+            || self.resolves_to(id, WML_NS, b"tcPrChange", scope)
+            || self.resolves_to(id, WML_NS, b"sectPrChange", scope);
+        if is_property_change {
+            return WmlRevisionEditAction::Remove;
+        }
+        match policy {
+            WmlRevisionEditPolicy::Accept => {
+                if is_inserted {
+                    WmlRevisionEditAction::Unwrap
+                } else if is_deleted {
+                    WmlRevisionEditAction::Remove
+                } else {
+                    WmlRevisionEditAction::Keep
+                }
+            }
+            WmlRevisionEditPolicy::Reject => {
+                if is_inserted {
+                    WmlRevisionEditAction::Remove
+                } else if is_deleted {
+                    WmlRevisionEditAction::Unwrap
+                } else if self.resolves_to(id, WML_NS, b"delText", scope) {
+                    WmlRevisionEditAction::RenameDeletedText
+                } else {
+                    WmlRevisionEditAction::Keep
+                }
+            }
+        }
+    }
+
+    fn rename_wml_del_text_to_text(&mut self, id: NodeId) -> bool {
+        let Node::Element { name, .. } = &mut self.nodes[id.0 as usize].node else {
+            return false;
+        };
+        let local_start = name.iter().position(|&b| b == b':').map_or(0, |i| i + 1);
+        if &name[local_start..] != b"delText" {
+            return false;
+        }
+        name.truncate(local_start);
+        name.extend_from_slice(b"t");
+        true
     }
 
     fn collect_wml_t(
@@ -858,6 +1836,349 @@ impl XmlTree {
         for i in 0..self.nodes[id.0 as usize].children.len() {
             let c = self.nodes[id.0 as usize].children[i];
             self.collect_wml_t(c, scope, out);
+        }
+        scope.truncate(base);
+    }
+
+    fn collect_wml_content_control_text_by_tag(
+        &self,
+        id: NodeId,
+        scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+        tag: &[u8],
+        out: &mut Vec<Vec<NodeId>>,
+    ) {
+        let base = scope.len();
+        self.push_xmlns(id, scope);
+        if self.resolves_to(id, WML_NS, b"sdt", scope) && self.wml_sdt_tag_matches(id, scope, tag) {
+            let mut runs = Vec::new();
+            self.collect_wml_t(id, scope, &mut runs);
+            out.push(runs);
+            scope.truncate(base);
+            return;
+        }
+        for i in 0..self.nodes[id.0 as usize].children.len() {
+            let c = self.nodes[id.0 as usize].children[i];
+            self.collect_wml_content_control_text_by_tag(c, scope, tag, out);
+        }
+        scope.truncate(base);
+    }
+
+    fn wml_sdt_tag_matches(
+        &self,
+        sdt: NodeId,
+        scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+        tag: &[u8],
+    ) -> bool {
+        for i in 0..self.nodes[sdt.0 as usize].children.len() {
+            let c = self.nodes[sdt.0 as usize].children[i];
+            let base = scope.len();
+            self.push_xmlns(c, scope);
+            if self.resolves_to(c, WML_NS, b"sdtPr", scope) {
+                let found = self.wml_sdtpr_tag_matches(c, scope, tag);
+                scope.truncate(base);
+                return found;
+            }
+            scope.truncate(base);
+        }
+        false
+    }
+
+    fn wml_sdtpr_tag_matches(
+        &self,
+        sdt_pr: NodeId,
+        scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+        tag: &[u8],
+    ) -> bool {
+        for i in 0..self.nodes[sdt_pr.0 as usize].children.len() {
+            let c = self.nodes[sdt_pr.0 as usize].children[i];
+            let base = scope.len();
+            self.push_xmlns(c, scope);
+            let matches = self.resolves_to(c, WML_NS, b"tag", scope)
+                && match &self.nodes[c.0 as usize].node {
+                    Node::Element { attrs, .. } => attr_value_local(attrs, b"val") == Some(tag),
+                    _ => false,
+                };
+            scope.truncate(base);
+            if matches {
+                return true;
+            }
+        }
+        false
+    }
+
+    fn collect_wml_hyperlink_rids(
+        &self,
+        id: NodeId,
+        scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+        out: &mut Vec<String>,
+    ) {
+        let base = scope.len();
+        self.push_xmlns(id, scope);
+        if self.resolves_to(id, WML_NS, b"hyperlink", scope) {
+            if let Node::Element { attrs, .. } = &self.nodes[id.0 as usize].node {
+                if let Some(rid) = attr_value_ns_local(attrs, scope, OOXML_REL_NS, b"id")
+                    .and_then(|v| std::str::from_utf8(v).ok())
+                {
+                    out.push(rid.to_string());
+                }
+            }
+        }
+        for i in 0..self.nodes[id.0 as usize].children.len() {
+            let c = self.nodes[id.0 as usize].children[i];
+            self.collect_wml_hyperlink_rids(c, scope, out);
+        }
+        scope.truncate(base);
+    }
+
+    fn find_wml_run_range_with_text(
+        &self,
+        id: NodeId,
+        scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+        anchor_text: &str,
+        out: &mut Option<WmlRunRange>,
+    ) -> bool {
+        let base = scope.len();
+        self.push_xmlns(id, scope);
+        if self.find_wml_child_run_range(id, scope, anchor_text, out) {
+            scope.truncate(base);
+            return true;
+        }
+        for i in 0..self.nodes[id.0 as usize].children.len() {
+            let c = self.nodes[id.0 as usize].children[i];
+            if self.find_wml_run_range_with_text(c, scope, anchor_text, out) {
+                scope.truncate(base);
+                return true;
+            }
+        }
+        scope.truncate(base);
+        false
+    }
+
+    fn find_wml_child_run_range(
+        &self,
+        parent: NodeId,
+        scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+        anchor_text: &str,
+        out: &mut Option<WmlRunRange>,
+    ) -> bool {
+        let children = &self.nodes[parent.0 as usize].children;
+        for start in 0..children.len() {
+            let Some(first_text) = self.wml_run_text(children[start], scope) else {
+                continue;
+            };
+            let mut candidate = first_text;
+            if candidate == anchor_text {
+                *out = Some(WmlRunRange {
+                    parent,
+                    first_index: start,
+                    last_index: start,
+                });
+                return true;
+            }
+            if !anchor_text.starts_with(&candidate) {
+                continue;
+            }
+            for (end, &child) in children.iter().enumerate().skip(start + 1) {
+                let Some(text) = self.wml_run_text(child, scope) else {
+                    break;
+                };
+                candidate.push_str(&text);
+                if candidate == anchor_text {
+                    *out = Some(WmlRunRange {
+                        parent,
+                        first_index: start,
+                        last_index: end,
+                    });
+                    return true;
+                }
+                if !anchor_text.starts_with(&candidate) {
+                    break;
+                }
+            }
+        }
+        false
+    }
+
+    fn wml_run_text(&self, id: NodeId, scope: &mut Vec<(Vec<u8>, Vec<u8>)>) -> Option<String> {
+        let base = scope.len();
+        self.push_xmlns(id, scope);
+        let text = if self.resolves_to(id, WML_NS, b"r", scope) {
+            let mut runs = Vec::new();
+            self.collect_wml_t(id, scope, &mut runs);
+            Some(runs.into_iter().map(|run| self.text_of(run)).collect())
+        } else {
+            None
+        };
+        scope.truncate(base);
+        text
+    }
+
+    fn wml_comment_text_edit_target_under(
+        &self,
+        root: NodeId,
+        comment_id: &str,
+    ) -> Option<WmlCommentTextEditTarget> {
+        let mut out = None;
+        let mut scope = self.ns_scope_at(root);
+        for i in 0..self.nodes[root.0 as usize].children.len() {
+            if out.is_some() {
+                break;
+            }
+            let c = self.nodes[root.0 as usize].children[i];
+            self.collect_wml_comment_text_edit_target(
+                c,
+                &mut scope,
+                comment_id.as_bytes(),
+                &mut out,
+            );
+        }
+        out
+    }
+
+    fn collect_wml_comment_text_edit_target(
+        &self,
+        id: NodeId,
+        scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+        comment_id: &[u8],
+        out: &mut Option<WmlCommentTextEditTarget>,
+    ) {
+        if out.is_some() {
+            return;
+        }
+        let base = scope.len();
+        if let Node::Element { attrs, .. } = &self.nodes[id.0 as usize].node {
+            for (k, v) in attrs {
+                if k.as_slice() == b"xmlns" {
+                    scope.push((Vec::new(), v.clone()));
+                } else if let Some(p) = k.strip_prefix(b"xmlns:".as_slice()) {
+                    scope.push((p.to_vec(), v.clone()));
+                }
+            }
+            if self.resolves_to(id, WML_NS, b"comment", scope)
+                && attr_value_local(attrs, b"id") == Some(comment_id)
+            {
+                let mut target = WmlCommentTextEditTarget {
+                    first_run: None,
+                    text_runs: Vec::new(),
+                };
+                self.collect_wml_comment_text_edit_descendants(id, scope, None, &mut target);
+                *out = Some(target);
+                scope.truncate(base);
+                return;
+            }
+        }
+
+        for i in 0..self.nodes[id.0 as usize].children.len() {
+            let c = self.nodes[id.0 as usize].children[i];
+            self.collect_wml_comment_text_edit_target(c, scope, comment_id, out);
+            if out.is_some() {
+                break;
+            }
+        }
+        scope.truncate(base);
+    }
+
+    fn collect_wml_comment_text_edit_descendants(
+        &self,
+        id: NodeId,
+        scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+        current_run: Option<NodeId>,
+        target: &mut WmlCommentTextEditTarget,
+    ) {
+        let base = scope.len();
+        self.push_xmlns(id, scope);
+        let run = if self.resolves_to(id, WML_NS, b"r", scope) {
+            Some(id)
+        } else {
+            current_run
+        };
+        if self.resolves_to(id, WML_NS, b"t", scope) {
+            target.text_runs.push(id);
+            if target.first_run.is_none() {
+                target.first_run = run;
+            }
+        }
+        for i in 0..self.nodes[id.0 as usize].children.len() {
+            let c = self.nodes[id.0 as usize].children[i];
+            self.collect_wml_comment_text_edit_descendants(c, scope, run, target);
+        }
+        scope.truncate(base);
+    }
+
+    fn collect_wml_field_results(
+        &self,
+        id: NodeId,
+        scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+        scan: &mut FieldScan,
+    ) {
+        if scan.target.is_some() {
+            return;
+        }
+        let base = scope.len();
+        let mut fld_char_type: Option<Vec<u8>> = None;
+        if let Node::Element { attrs, .. } = &self.nodes[id.0 as usize].node {
+            for (k, v) in attrs {
+                if k.as_slice() == b"xmlns" {
+                    scope.push((Vec::new(), v.clone()));
+                } else if let Some(p) = k.strip_prefix(b"xmlns:".as_slice()) {
+                    scope.push((p.to_vec(), v.clone()));
+                }
+            }
+            if self.resolves_to(id, WML_NS, b"fldSimple", scope) {
+                if scan.seen == scan.wanted {
+                    let mut result = Vec::new();
+                    for i in 0..self.nodes[id.0 as usize].children.len() {
+                        let c = self.nodes[id.0 as usize].children[i];
+                        self.collect_wml_t(c, scope, &mut result);
+                    }
+                    scan.target = Some(result);
+                }
+                scan.seen += 1;
+                scope.truncate(base);
+                return;
+            }
+            if self.resolves_to(id, WML_NS, b"fldChar", scope) {
+                fld_char_type = attr_value_local(attrs, b"fldCharType").map(Vec::from);
+            } else if self.resolves_to(id, WML_NS, b"t", scope) {
+                if let Some(complex) = scan.complex.as_mut() {
+                    if complex.result_phase {
+                        complex.result_runs.push(id);
+                    }
+                }
+            }
+        }
+
+        match fld_char_type.as_deref() {
+            Some(b"begin") => {
+                scan.complex = Some(ComplexFieldScan {
+                    result_phase: false,
+                    result_runs: Vec::new(),
+                });
+            }
+            Some(b"separate") => {
+                if let Some(complex) = scan.complex.as_mut() {
+                    complex.result_phase = true;
+                }
+            }
+            Some(b"end") => {
+                if let Some(complex) = scan.complex.take() {
+                    if scan.seen == scan.wanted {
+                        scan.target = Some(complex.result_runs);
+                    }
+                    scan.seen += 1;
+                }
+                scope.truncate(base);
+                return;
+            }
+            _ => {}
+        }
+
+        for i in 0..self.nodes[id.0 as usize].children.len() {
+            if scan.target.is_some() {
+                break;
+            }
+            let c = self.nodes[id.0 as usize].children[i];
+            self.collect_wml_field_results(c, scope, scan);
         }
         scope.truncate(base);
     }
@@ -966,6 +2287,35 @@ impl XmlTree {
             for (k, id) in tail.into_iter().enumerate() {
                 ch.insert(p + k, id);
             }
+        }
+        Ok(())
+    }
+
+    fn insert_fragment_at(&mut self, parent: NodeId, index: usize, xml: &[u8]) -> Result<()> {
+        // Test seam: simulate a commit-time allocation failure (see `commit_should_fail`).
+        #[cfg(test)]
+        if commit_should_fail() {
+            return Err(Error::Docx(
+                "simulated commit-time allocation failure (test seam)".into(),
+            ));
+        }
+        let pos = index.min(self.nodes[parent.0 as usize].children.len());
+        let frag = XmlTree::parse(xml)?;
+        if self.nodes.len().saturating_add(frag.nodes.len()) > node_budget() {
+            return Err(Error::Docx("edit would exceed the node budget".into()));
+        }
+        let added: Vec<NodeId> = frag
+            .roots
+            .iter()
+            .map(|&r| self.graft(&frag, r, parent))
+            .collect::<Result<_>>()?;
+        let n = added.len();
+        let pi = parent.0 as usize;
+        let head_len = self.nodes[pi].children.len() - n;
+        let ch = &mut self.nodes[pi].children;
+        let tail: Vec<NodeId> = ch.split_off(head_len);
+        for (k, id) in tail.into_iter().enumerate() {
+            ch.insert(pos + k, id);
         }
         Ok(())
     }

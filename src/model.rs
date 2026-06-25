@@ -10,17 +10,124 @@
 //! of block-level nodes; paragraphs hold inline runs) so the Markdown/HTML
 //! exporters are simple folds.
 
+use crate::annotation::RevisionKind;
+
 /// A whole `.doc` document as an ordered list of block-level nodes plus
 /// document-level metadata.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct DocModel {
     /// Block-level content, in reading order.
     pub blocks: Vec<Block>,
+    /// Source-region spans for content that came from distinct Word
+    /// subdocuments. Empty for authored models and sources that do not expose a
+    /// region map yet.
+    pub regions: Vec<SourceRegion>,
     /// Document-level metadata (codepage, language, counts).
     pub meta: DocMeta,
     /// Document-level layout for authoring/rendering (page size, header/footer,
     /// metadata). Defaults to A4 portrait with no running header/footer.
     pub setup: DocSetup,
+}
+
+/// A coarse source subdocument region from the original Word file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SourceRegionKind {
+    /// Main body text.
+    Main,
+    /// Legacy footnote subdocument.
+    Footnote,
+    /// Header/footer subdocument.
+    HeaderFooter,
+    /// Legacy annotation/comment subdocument.
+    Annotation,
+    /// Legacy endnote subdocument.
+    Endnote,
+    /// Text-box subdocument.
+    TextBox,
+}
+
+/// A span of [`DocModel::blocks`] that came from one source subdocument.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceRegion {
+    /// Region kind.
+    pub kind: SourceRegionKind,
+    /// Source-specific story index within the subdocument, when a format table
+    /// exposes one. For legacy `.doc` header/footer regions this is the
+    /// `PlcfHdd` story index.
+    pub source_story_index: Option<usize>,
+    /// Inclusive start block index in [`DocModel::blocks`].
+    pub block_start: usize,
+    /// Exclusive end block index in [`DocModel::blocks`].
+    pub block_end: usize,
+    /// UTF-16 CP start in the original Word source stream.
+    pub source_start_cp: usize,
+    /// UTF-16 CP length reported by the source metadata.
+    pub source_len_cp: usize,
+    /// Visible character start within the flattened model text.
+    pub text_start: usize,
+    /// Visible character length contributed by this region.
+    pub text_len: usize,
+}
+
+impl DocModel {
+    /// Iterate source-region spans of the requested kind.
+    pub fn source_regions(&self, kind: SourceRegionKind) -> impl Iterator<Item = &SourceRegion> {
+        self.regions
+            .iter()
+            .filter(move |region| region.kind == kind)
+    }
+
+    /// Return the block slice covered by a source-region span.
+    ///
+    /// The range is clamped to this model, so passing a stale region from another
+    /// model returns an empty or shortened slice instead of panicking.
+    pub fn source_region_blocks(&self, region: &SourceRegion) -> &[Block] {
+        let start = region.block_start.min(self.blocks.len());
+        let end = region.block_end.min(self.blocks.len());
+        if start <= end {
+            &self.blocks[start..end]
+        } else {
+            &self.blocks[0..0]
+        }
+    }
+
+    /// Concatenate visible text from the blocks covered by a source-region span.
+    pub fn source_region_text(&self, region: &SourceRegion) -> String {
+        let mut out = String::new();
+        append_blocks_text(self.source_region_blocks(region), &mut out);
+        out
+    }
+
+    /// Concatenate visible text from all source regions of one kind, in model
+    /// order. Returns an empty string when the model has no matching regions.
+    pub fn source_region_kind_text(&self, kind: SourceRegionKind) -> String {
+        let mut out = String::new();
+        for region in self.source_regions(kind) {
+            append_blocks_text(self.source_region_blocks(region), &mut out);
+        }
+        out
+    }
+}
+
+fn append_blocks_text(blocks: &[Block], out: &mut String) {
+    for block in blocks {
+        match block {
+            Block::Paragraph(paragraph) => {
+                for run in &paragraph.runs {
+                    out.push_str(&run.text);
+                }
+            }
+            Block::Table(table) => {
+                for row in &table.rows {
+                    for cell in &row.cells {
+                        append_blocks_text(&cell.blocks, out);
+                    }
+                }
+            }
+            Block::Image(_) | Block::Chart(_) | Block::SectionBreak(_) => {}
+            Block::PageBreak => out.push('\n'),
+        }
+    }
 }
 
 /// Document-level metadata.
@@ -56,6 +163,12 @@ pub enum Block {
     Table(Table),
     /// A block-level image (an image-only paragraph).
     Image(Image),
+    /// A block-level chart with literal category/value data.
+    Chart(Chart),
+    /// An explicit page break between block-level items.
+    PageBreak,
+    /// A section boundary carrying layout for the section that just ended.
+    SectionBreak(SectionSetup),
 }
 
 /// A paragraph: inline runs plus paragraph-level properties.
@@ -109,6 +222,8 @@ pub struct Indent {
 /// Paragraph-level properties.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ParaProps {
+    /// Raw Word paragraph style id (`w:pStyle/@w:val`), if known or authored.
+    pub style_id: Option<String>,
     /// Resolved style name (e.g. `Heading 1`, `제목 1`), if the style sheet was read.
     pub style_name: Option<String>,
     /// Heading level `1..=6`, from the outline level or a recognized style name.
@@ -125,6 +240,76 @@ pub struct ParaProps {
     pub indent: Indent,
     /// Paragraph background shading, if any.
     pub shading: Option<Color>,
+}
+
+/// A paragraph style definition for generated `.docx` output.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ParagraphStyle {
+    /// Stable Word style id (`w:styleId` / paragraph `w:pStyle` value).
+    pub id: String,
+    /// Human-readable style name.
+    pub name: String,
+    /// Base style id, if any.
+    pub based_on: Option<String>,
+    /// Next paragraph style id, if any.
+    pub next: Option<String>,
+    /// Whether the style should appear in Word's quick style gallery.
+    pub q_format: bool,
+    /// Optional heading level `1..=9`, emitted as style `outlineLvl`.
+    pub heading_level: Option<u8>,
+    /// Default paragraph alignment.
+    pub align: Align,
+    /// Default paragraph spacing.
+    pub spacing: Spacing,
+    /// Default paragraph indentation.
+    pub indent: Indent,
+    /// Default paragraph background shading.
+    pub shading: Option<Color>,
+    /// Default character properties for runs using this style.
+    pub run: CharProps,
+}
+
+/// A comment to author on a generated run.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AuthoredComment {
+    /// Comment body text.
+    pub text: String,
+    /// Comment author, if any.
+    pub author: Option<String>,
+    /// Author initials, if any.
+    pub initials: Option<String>,
+    /// Comment timestamp, if any.
+    pub date: Option<String>,
+}
+
+/// Tracked revision metadata to author on a generated run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthoredRevision {
+    /// Revision kind. Generated `.docx` currently supports insertion/deletion.
+    pub kind: RevisionKind,
+    /// Revision author, if any.
+    pub author: Option<String>,
+    /// Revision timestamp, if any.
+    pub date: Option<String>,
+}
+
+/// Plain text content-control metadata to author on a generated run.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AuthoredContentControl {
+    /// Human-readable content-control title/alias, if any.
+    pub alias: Option<String>,
+    /// Machine-readable content-control tag, if any.
+    pub tag: Option<String>,
+}
+
+impl Default for AuthoredRevision {
+    fn default() -> Self {
+        Self {
+            kind: RevisionKind::Insertion,
+            author: None,
+            date: None,
+        }
+    }
 }
 
 /// List membership of a paragraph.
@@ -150,6 +335,12 @@ pub struct Run {
     pub field: FieldRole,
     /// An inline picture (the run's text is empty when this is set).
     pub image: Option<Image>,
+    /// Authored comment anchored to this run.
+    pub comment: Option<AuthoredComment>,
+    /// Authored tracked insertion/deletion metadata for this run.
+    pub revision: Option<AuthoredRevision>,
+    /// Authored plain text content-control metadata for this run.
+    pub content_control: Option<AuthoredContentControl>,
 }
 
 /// An sRGB color.
@@ -215,8 +406,7 @@ pub struct CharProps {
     pub caps: bool,
 }
 
-/// Whether a run is plain text or the result of a field (only the field *result*
-/// reaches the model; the instruction is parsed away).
+/// Whether a run is plain text or the cached result of a field.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum FieldRole {
     /// Plain text (not part of a field).
@@ -226,6 +416,11 @@ pub enum FieldRole {
     Hyperlink {
         /// The link target.
         url: String,
+    },
+    /// A simple non-hyperlink field whose instruction is preserved.
+    Simple {
+        /// Normalized field instruction such as `PAGE`, `FILENAME \p`, or `REF Figure1`.
+        instruction: String,
     },
     /// Any other field (PAGE, REF, …) whose result text is kept verbatim.
     Other,
@@ -356,6 +551,102 @@ pub struct Image {
     pub height_px: Option<u32>,
 }
 
+/// Supported chart layouts for authored `.docx` output.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ChartKind {
+    /// A clustered horizontal bar chart.
+    #[default]
+    Bar,
+    /// A clustered 3-D horizontal bar chart.
+    Bar3D,
+    /// A clustered vertical column chart.
+    Column,
+    /// A clustered 3-D vertical column chart.
+    Column3D,
+    /// A line chart with category labels on the horizontal axis.
+    Line,
+    /// A 3-D line chart with category labels on the horizontal axis.
+    Line3D,
+    /// An area chart with category labels on the horizontal axis.
+    Area,
+    /// A 3-D area chart with category labels on the horizontal axis.
+    Area3D,
+    /// A radar chart with category labels around a radial axis.
+    Radar,
+    /// A scatter chart with numeric horizontal and vertical values.
+    Scatter,
+    /// A bubble chart with numeric horizontal values, vertical values, and sizes.
+    Bubble,
+    /// A pie chart using the first series as slice values.
+    Pie,
+    /// A 3-D pie chart using the first series as slice values.
+    Pie3D,
+    /// A pie-of-pie chart using the first series as slice values.
+    PieOfPie,
+    /// A bar-of-pie chart using the first series as slice values.
+    BarOfPie,
+    /// A doughnut chart using the first series as slice values.
+    Doughnut,
+    /// A surface chart using category columns and series rows as a value grid.
+    Surface,
+    /// A 3-D surface chart using category columns and series rows as a value grid.
+    Surface3D,
+    /// A stock chart using date/category labels and open/high/low/close-style series.
+    Stock,
+}
+
+/// Supported shape styles for authored 3-D bar/column charts.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ChartShape {
+    /// Rectangular 3-D boxes.
+    #[default]
+    Box,
+    /// Cylindrical 3-D bars or columns.
+    Cylinder,
+    /// Cone-shaped 3-D bars or columns.
+    Cone,
+    /// Cone-shaped 3-D bars or columns scaled to the maximum value.
+    ConeToMax,
+    /// Pyramid-shaped 3-D bars or columns.
+    Pyramid,
+    /// Pyramid-shaped 3-D bars or columns scaled to the maximum value.
+    PyramidToMax,
+}
+
+/// One named chart series with literal numeric values.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ChartSeries {
+    /// Series display name.
+    pub name: String,
+    /// Values aligned with [`Chart::categories`].
+    pub values: Vec<f64>,
+    /// Optional bubble sizes aligned with [`ChartSeries::values`].
+    pub bubble_sizes: Vec<f64>,
+}
+
+/// A block-level chart with literal category and numeric caches.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Chart {
+    /// Chart layout.
+    pub kind: ChartKind,
+    /// Optional display title.
+    pub title: Option<String>,
+    /// Category labels shared by all series.
+    pub categories: Vec<String>,
+    /// Named numeric series.
+    pub series: Vec<ChartSeries>,
+    /// Drawing width in pixels, interpreted at 96 dpi.
+    pub width_px: Option<u32>,
+    /// Drawing height in pixels, interpreted at 96 dpi.
+    pub height_px: Option<u32>,
+    /// Alternate text for the chart drawing.
+    pub alt: Option<String>,
+    /// Render surface-family charts as wireframes instead of filled surfaces.
+    pub wireframe: bool,
+    /// Shape style for 3-D bar and 3-D column charts.
+    pub shape: ChartShape,
+}
+
 /// Page geometry, in points. Default is A4 portrait with 1-inch margins.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PageSetup {
@@ -414,20 +705,72 @@ impl Default for PageSetup {
     }
 }
 
+/// Section-level layout recovered from or generated into `.docx` section
+/// properties.
+///
+/// In WordprocessingML a section property block closes the section that came
+/// before it. `Block::SectionBreak(setup)` follows that convention: the stored
+/// setup describes the section ending at that block, while `DocModel::setup`
+/// describes the final section.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct SectionSetup {
+    /// Page geometry.
+    pub page: PageSetup,
+    /// Running header content (empty = none).
+    pub header: Vec<Block>,
+    /// First-page running header content (empty = none or default applies).
+    pub first_header: Vec<Block>,
+    /// Even-page running header content (empty = none or default applies).
+    pub even_header: Vec<Block>,
+    /// Running footer content (empty = none).
+    pub footer: Vec<Block>,
+    /// First-page running footer content (empty = none or default applies).
+    pub first_footer: Vec<Block>,
+    /// Even-page running footer content (empty = none or default applies).
+    pub even_footer: Vec<Block>,
+    /// Emit a centered page number (`PAGE` field) in the footer.
+    pub page_numbers: bool,
+}
+
 /// Document-level layout + metadata, for authoring and rendering. All fields are
 /// optional/default so existing read paths are unaffected.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct DocSetup {
     /// Page geometry.
     pub page: PageSetup,
+    /// Paragraph style definitions for generated `.docx` output.
+    pub styles: Vec<ParagraphStyle>,
     /// Running header content (empty = none).
     pub header: Vec<Block>,
+    /// First-page running header content (empty = none or default applies).
+    pub first_header: Vec<Block>,
+    /// Even-page running header content (empty = none or default applies).
+    pub even_header: Vec<Block>,
     /// Running footer content (empty = none).
     pub footer: Vec<Block>,
+    /// First-page running footer content (empty = none or default applies).
+    pub first_footer: Vec<Block>,
+    /// Even-page running footer content (empty = none or default applies).
+    pub even_footer: Vec<Block>,
     /// Emit a centered page number (`PAGE` field) in the footer.
     pub page_numbers: bool,
     /// Document title metadata.
     pub title: Option<String>,
     /// Document author metadata.
     pub creator: Option<String>,
+}
+
+impl From<&DocSetup> for SectionSetup {
+    fn from(setup: &DocSetup) -> Self {
+        SectionSetup {
+            page: setup.page,
+            header: setup.header.clone(),
+            first_header: setup.first_header.clone(),
+            even_header: setup.even_header.clone(),
+            footer: setup.footer.clone(),
+            first_footer: setup.first_footer.clone(),
+            even_footer: setup.even_footer.clone(),
+            page_numbers: setup.page_numbers,
+        }
+    }
 }

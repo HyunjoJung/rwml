@@ -52,6 +52,9 @@ pub(crate) struct Fib {
     /// `fcPlfLfo`/`lcbPlfLfo` — the list-format-override table (`PlfLfo`).
     pub fc_plf_lfo: usize,
     pub lcb_plf_lfo: usize,
+    /// `fcPlcfHdd`/`lcbPlcfHdd` — story boundaries for the header document.
+    pub fc_plcf_hdd: usize,
+    pub lcb_plcf_hdd: usize,
     /// Character counts partitioning the CP space across sub-documents.
     pub ccp_text: u32,
     pub ccp_ftn: u32,
@@ -121,6 +124,9 @@ impl Fib {
         let lcb_plf_lst = u32le(word, fclcb_off + 73 * 8 + 4).unwrap_or(0) as usize;
         let fc_plf_lfo = u32le(word, fclcb_off + 74 * 8).unwrap_or(0) as usize;
         let lcb_plf_lfo = u32le(word, fclcb_off + 74 * 8 + 4).unwrap_or(0) as usize;
+        // PlcfHdd = FibRgFcLcb97 index 11.
+        let fc_plcf_hdd = u32le(word, fclcb_off + 11 * 8).unwrap_or(0) as usize;
+        let lcb_plcf_hdd = u32le(word, fclcb_off + 11 * 8 + 4).unwrap_or(0) as usize;
 
         Ok(Fib {
             nfib,
@@ -143,6 +149,8 @@ impl Fib {
             lcb_plf_lst,
             fc_plf_lfo,
             lcb_plf_lfo,
+            fc_plcf_hdd,
+            lcb_plcf_hdd,
             ccp_text,
             ccp_ftn,
             ccp_hdd,

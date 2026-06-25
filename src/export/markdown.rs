@@ -30,6 +30,16 @@ fn render_block(block: &Block) -> String {
         Block::Paragraph(p) => render_paragraph(p),
         Block::Table(t) => render_table(t),
         Block::Image(img) => format!("![{}]()", img.alt.as_deref().unwrap_or("image")),
+        Block::Chart(chart) => format!(
+            "![{}]()",
+            chart
+                .alt
+                .as_deref()
+                .or(chart.title.as_deref())
+                .unwrap_or("chart")
+        ),
+        Block::PageBreak => "\\pagebreak".to_string(),
+        Block::SectionBreak(_) => "\\pagebreak".to_string(),
     }
 }
 

@@ -81,6 +81,31 @@ impl Numbering {
         };
         Some(expand(&pattern, levels, counters))
     }
+
+    /// Format the current list item using all available ancestor counters,
+    /// matching REF `\w` full-context numbering such as `1.a.i`.
+    pub(crate) fn full_context_label(
+        &self,
+        num_id: &str,
+        ilvl: u8,
+        counters: &[u32; 9],
+    ) -> Option<String> {
+        let levels = self.levels(num_id)?;
+        let max = ilvl.min(8);
+        let mut parts = Vec::new();
+        for level in 0..=max {
+            let count = counters[level as usize];
+            if count == 0 {
+                return None;
+            }
+            let lvl = levels.get(&level).cloned().unwrap_or_default();
+            if !lvl.ordered {
+                return None;
+            }
+            parts.push(format_num(count, &lvl.num_fmt));
+        }
+        (!parts.is_empty()).then(|| parts.join("."))
+    }
 }
 
 /// Expand an `lvlText` pattern, replacing `%1`..`%9` with the corresponding

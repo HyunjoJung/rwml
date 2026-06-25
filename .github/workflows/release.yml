@@ -20,9 +20,45 @@ jobs:
 
       - name: Verify the crate builds, tests, and packages
         run: |
+          python3 scripts/public_hygiene_audit.py
+          cargo fmt --all -- --check
+          cargo clippy --all-targets -- -D warnings
           cargo test --all-targets
           cargo test --doc
+          cargo test --all-targets --features render
           cargo package
+
+      - name: Generate release manifest
+        run: |
+          mkdir -p dist
+          python3 scripts/public_hygiene_audit.py --json > dist/public-hygiene.json
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$VERSION" = "$GITHUB_REF_NAME" ]; then
+            VERSION="$(python3 - <<'PY'
+import tomllib
+from pathlib import Path
+print(tomllib.loads(Path("Cargo.toml").read_text(encoding="utf-8"))["package"]["version"])
+PY
+)"
+          fi
+          python3 scripts/release_manifest.py \
+            --version "$VERSION" \
+            --git-rev "$GITHUB_SHA" \
+            --release-policy public-release \
+            --hygiene-report dist/public-hygiene.json \
+            --corpus-manifest corpus/public/MANIFEST.tsv \
+            --corpus-manifest corpus/public/RENDER_MANIFEST.tsv \
+            --output dist/rdoc-release-manifest.json \
+            target/package/rdoc-*.crate
+
+      - name: Upload release manifest artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rdoc-release-manifest
+          path: |
+            dist/public-hygiene.json
+            dist/rdoc-release-manifest.json
+            target/package/rdoc-*.crate
 
       - name: Publish
         run: cargo publish --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"

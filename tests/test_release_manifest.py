@@ -1,0 +1,939 @@
+import hashlib
+import importlib.util
+import json
+import pathlib
+import subprocess
+import sys
+import tempfile
+import unittest
+
+
+SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "release_manifest.py"
+SPEC = importlib.util.spec_from_file_location("release_manifest", SCRIPT)
+release_manifest = importlib.util.module_from_spec(SPEC)
+assert SPEC.loader is not None
+sys.modules[SPEC.name] = release_manifest
+SPEC.loader.exec_module(release_manifest)
+
+
+class ReleaseManifestTests(unittest.TestCase):
+    def test_manifest_records_artifact_sizes_checksums_and_validation_summary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            artifact_a = root / "rdoc-aarch64-apple-darwin.tar.gz"
+            artifact_b = root / "rdoc-x86_64-unknown-linux-gnu.tar.gz"
+            validation = root / "render-validation.json"
+            benchmark_a = root / "extract-a-benchmark.json"
+            benchmark_b = root / "extract-b-benchmark.json"
+            artifact_a.write_bytes(b"darwin artifact")
+            artifact_b.write_bytes(b"linux artifact")
+            validation.write_text(
+                json.dumps(
+                    {
+                        "summary": {
+                            "documents": 3,
+                            "measured": 2,
+                            "mean_recall": 0.93,
+                        },
+                        "gate": {
+                            "passed": True,
+                            "checks": [
+                                {
+                                    "metric": "below_recall_min",
+                                    "op": "<=",
+                                    "threshold": 0,
+                                    "actual": 0,
+                                    "passed": True,
+                                }
+                            ],
+                        },
+                        "rows": [{"document": "sample.docx", "status": "pass"}],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            benchmark_a.write_text(
+                json.dumps(
+                    {
+                        "schema": "rdoc.benchmark-report.v1",
+                        "summary": {
+                            "files": 4,
+                            "scored": 4,
+                            "poi_recall_mean": 0.96,
+                        },
+                        "gate": {
+                            "passed": True,
+                            "checks": [
+                                {
+                                    "metric": "poi_recall_mean",
+                                    "op": ">=",
+                                    "threshold": 0.95,
+                                    "actual": 0.96,
+                                    "passed": True,
+                                }
+                            ],
+                        },
+                        "rows": [{"file": "sample", "poi_recall": 1.0}],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            benchmark_b.write_text(
+                json.dumps(
+                    {
+                        "schema": "rdoc.benchmark-report.v1",
+                        "summary": {
+                            "files": 2,
+                            "scored": 1,
+                            "poi_recall_mean": 0.5,
+                        },
+                        "gate": {
+                            "passed": False,
+                            "checks": [
+                                {
+                                    "metric": "poi_recall_mean",
+                                    "op": ">=",
+                                    "threshold": 0.95,
+                                    "actual": 0.5,
+                                    "passed": False,
+                                }
+                            ],
+                        },
+                        "rows": [{"file": "other", "poi_recall": 0.5}],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            manifest = release_manifest.release_manifest(
+                [artifact_b, artifact_a],
+                validation_report=validation,
+                benchmark_reports=[benchmark_b, benchmark_a],
+                version="0.1.0",
+                git_rev="abc123",
+            )
+
+        self.assertEqual(manifest["schema"], "rdoc.release-manifest.v1")
+        self.assertEqual(manifest["version"], "0.1.0")
+        self.assertEqual(manifest["git_rev"], "abc123")
+        self.assertEqual(
+            [artifact["name"] for artifact in manifest["artifacts"]],
+            [
+                "rdoc-aarch64-apple-darwin.tar.gz",
+                "rdoc-x86_64-unknown-linux-gnu.tar.gz",
+            ],
+        )
+        self.assertEqual(manifest["artifacts"][0]["bytes"], len(b"darwin artifact"))
+        self.assertEqual(
+            manifest["artifacts"][0]["sha256"],
+            hashlib.sha256(b"darwin artifact").hexdigest(),
+        )
+        self.assertEqual(
+            manifest["validation"]["summary"],
+            {"documents": 3, "measured": 2, "mean_recall": 0.93},
+        )
+        self.assertEqual(
+            manifest["validation"]["gate"],
+            {
+                "passed": True,
+                "checks": [
+                    {
+                        "metric": "below_recall_min",
+                        "op": "<=",
+                        "threshold": 0,
+                        "actual": 0,
+                        "passed": True,
+                    }
+                ],
+            },
+        )
+        self.assertNotIn("rows", manifest["validation"])
+        self.assertEqual(
+            manifest["benchmarks"],
+            [
+                {
+                    "path": benchmark_a.as_posix(),
+                    "summary": {
+                        "files": 4,
+                        "scored": 4,
+                        "poi_recall_mean": 0.96,
+                    },
+                    "gate": {
+                        "passed": True,
+                        "checks": [
+                            {
+                                "metric": "poi_recall_mean",
+                                "op": ">=",
+                                "threshold": 0.95,
+                                "actual": 0.96,
+                                "passed": True,
+                            }
+                        ],
+                    },
+                },
+                {
+                    "path": benchmark_b.as_posix(),
+                    "summary": {
+                        "files": 2,
+                        "scored": 1,
+                        "poi_recall_mean": 0.5,
+                    },
+                    "gate": {
+                        "passed": False,
+                        "checks": [
+                            {
+                                "metric": "poi_recall_mean",
+                                "op": ">=",
+                                "threshold": 0.95,
+                                "actual": 0.5,
+                                "passed": False,
+                            }
+                        ],
+                    },
+                }
+            ],
+        )
+
+    def test_cli_writes_manifest_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            artifact = root / "rdoc.wasm"
+            corpus = root / "MANIFEST.tsv"
+            output = root / "manifest.json"
+            artifact.write_bytes(b"wasm bytes")
+            corpus.write_text(
+                "# path\tfields\twarnings\nsynthetic/fields.docx\t6\tUnsupportedFieldEvaluation\n",
+                encoding="utf-8",
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--version",
+                    "0.1.0",
+                    "--git-rev",
+                    "abc123",
+                    "--corpus-manifest",
+                    str(corpus),
+                    "--output",
+                    str(output),
+                    str(artifact),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            manifest = json.loads(output.read_text(encoding="utf-8"))
+
+        self.assertEqual(manifest["artifacts"][0]["name"], "rdoc.wasm")
+        self.assertEqual(
+            manifest["artifacts"][0]["sha256"],
+            hashlib.sha256(b"wasm bytes").hexdigest(),
+        )
+        self.assertEqual(
+            manifest["corpus_manifests"][0]["summary"],
+            {
+                "documents": 1,
+                "numeric_totals": {"fields": 6},
+                "warning_counts": {"UnsupportedFieldEvaluation": 1},
+            },
+        )
+
+    def test_manifest_embeds_public_corpus_manifest_summaries_without_rows(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            artifact = root / "rdoc.tar.gz"
+            corpus = root / "MANIFEST.tsv"
+            render = root / "RENDER_MANIFEST.tsv"
+            artifact.write_bytes(b"release artifact")
+            corpus.write_text(
+                "\n".join(
+                    [
+                        "# path\tcomments\tfields\tfloating_shapes\twarnings",
+                        "synthetic/a.docx\t2\t1\t0\tUnsupportedFieldEvaluation",
+                        "synthetic/b.docx\t0\t0\t1\t"
+                        "FloatingShapePlaceholderOnly|TrackedChangesPresent",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            render.write_text(
+                "\n".join(
+                    [
+                        "# path\tpages\twarnings",
+                        "synthetic/a.docx\t1\t-",
+                        "synthetic/b.docx\t3\tFloatingShapePlaceholderOnly",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            manifest = release_manifest.release_manifest(
+                [artifact],
+                corpus_manifests=[render, corpus],
+            )
+
+        self.assertEqual(
+            manifest["corpus_manifests"],
+            [
+                {
+                    "path": corpus.as_posix(),
+                    "summary": {
+                        "documents": 2,
+                        "numeric_totals": {
+                            "comments": 2,
+                            "fields": 1,
+                            "floating_shapes": 1,
+                        },
+                        "warning_counts": {
+                            "FloatingShapePlaceholderOnly": 1,
+                            "TrackedChangesPresent": 1,
+                            "UnsupportedFieldEvaluation": 1,
+                        },
+                    },
+                },
+                {
+                    "path": render.as_posix(),
+                    "summary": {
+                        "documents": 2,
+                        "numeric_totals": {"pages": 4},
+                        "warning_counts": {"FloatingShapePlaceholderOnly": 1},
+                    },
+                },
+            ],
+        )
+        self.assertNotIn("rows", manifest["corpus_manifests"][0])
+
+    def test_manifest_embeds_named_release_policy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            artifact = root / "rdoc.tar.gz"
+            artifact.write_bytes(b"release artifact")
+
+            manifest = release_manifest.release_manifest(
+                [artifact],
+                release_policy="public-release",
+            )
+
+        self.assertEqual(
+            manifest["release_policy"],
+            {
+                "name": "public-release",
+                "required_gates": {
+                    "default": [
+                        "python3 scripts/public_hygiene_audit.py",
+                        "cargo fmt --all -- --check",
+                        "cargo clippy --all-targets -- -D warnings",
+                        "cargo test --all-targets",
+                        "cargo test --doc",
+                    ],
+                    "render": [
+                        "cargo test --all-targets --features render",
+                    ],
+                },
+                "optional_local_gates": {
+                    "extraction_benchmark": {
+                        "min_poi_recall_mean": 0.95,
+                        "min_poi_f1_mean": 0.95,
+                        "max_errors": 0,
+                    },
+                    "render_validation": {
+                        "recall_min": 0.97,
+                        "min_mean_recall": 0.9,
+                        "max_skipped": 0,
+                    },
+                    "public_corpus": {
+                        "manifest_match": "exact",
+                    },
+                },
+            },
+        )
+        self.assertEqual(
+            manifest["release_evidence"],
+            {
+                "policy": "public-release",
+                "strict_policy_enforced": False,
+                "strict_policy_inputs_complete": False,
+                "strict_missing": [
+                    "hygiene report",
+                    "validation report",
+                    "benchmark report",
+                    "corpus manifest",
+                ],
+                "provided": {
+                    "hygiene_report": None,
+                    "validation_report": None,
+                    "benchmark_reports": [],
+                    "corpus_manifests": [],
+                },
+            },
+        )
+
+    def test_cli_writes_named_release_policy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            artifact = root / "rdoc.tar.gz"
+            output = root / "manifest.json"
+            artifact.write_bytes(b"release artifact")
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--release-policy",
+                    "public-release",
+                    "--output",
+                    str(output),
+                    str(artifact),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            manifest = json.loads(output.read_text(encoding="utf-8"))
+
+        self.assertEqual(manifest["release_policy"]["name"], "public-release")
+        self.assertFalse(manifest["release_evidence"]["strict_policy_enforced"])
+        self.assertFalse(manifest["release_evidence"]["strict_policy_inputs_complete"])
+
+    def test_enforced_public_release_policy_requires_local_reports(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            artifact = root / "rdoc.tar.gz"
+            artifact.write_bytes(b"release artifact")
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "public-release requires hygiene report, validation report, benchmark report, corpus manifest",
+            ):
+                release_manifest.release_manifest(
+                    [artifact],
+                    release_policy="public-release",
+                    enforce_policy_inputs=True,
+                )
+
+    def test_enforced_public_release_policy_requires_both_public_corpus_manifests(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            artifact = root / "rdoc.tar.gz"
+            hygiene = root / "public-hygiene.json"
+            validation = root / "render-validation.json"
+            benchmark = root / "extract-benchmark.json"
+            corpus = root / "MANIFEST.tsv"
+            artifact.write_bytes(b"release artifact")
+            hygiene.write_text(
+                json.dumps({"passed": True, "findings": []}),
+                encoding="utf-8",
+            )
+            validation.write_text(
+                json.dumps(
+                    {
+                        "summary": {"documents": 1, "mean_recall": 0.97},
+                        "gate": {"passed": True, "checks": []},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            benchmark.write_text(
+                json.dumps(
+                    {
+                        "summary": {"files": 1, "poi_recall_mean": 0.99},
+                        "gate": {"passed": True, "checks": []},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            corpus.write_text(
+                "# path\tfields\twarnings\nsynthetic/a.docx\t0\t-\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "public-release requires corpus manifests exactly MANIFEST.tsv and RENDER_MANIFEST.tsv",
+            ):
+                release_manifest.release_manifest(
+                    [artifact],
+                    release_policy="public-release",
+                    enforce_policy_inputs=True,
+                    hygiene_report=hygiene,
+                    validation_report=validation,
+                    benchmark_reports=[benchmark],
+                    corpus_manifests=[corpus],
+                )
+
+    def test_enforced_public_release_policy_rejects_extra_corpus_manifests(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            artifact = root / "rdoc.tar.gz"
+            hygiene = root / "public-hygiene.json"
+            validation = root / "render-validation.json"
+            benchmark = root / "extract-benchmark.json"
+            corpus = root / "MANIFEST.tsv"
+            render_corpus = root / "RENDER_MANIFEST.tsv"
+            extra_corpus = root / "PRIVATE_MANIFEST.tsv"
+            artifact.write_bytes(b"release artifact")
+            hygiene.write_text(
+                json.dumps({"passed": True, "findings": []}),
+                encoding="utf-8",
+            )
+            validation.write_text(
+                json.dumps(
+                    {
+                        "summary": {"documents": 1, "mean_recall": 0.97},
+                        "gate": {"passed": True, "checks": []},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            benchmark.write_text(
+                json.dumps(
+                    {
+                        "summary": {"files": 1, "poi_recall_mean": 0.99},
+                        "gate": {"passed": True, "checks": []},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            corpus.write_text(
+                "# path\tfields\twarnings\nsynthetic/a.docx\t0\t-\n",
+                encoding="utf-8",
+            )
+            render_corpus.write_text(
+                "# path\tpages\twarnings\nsynthetic/a.docx\t1\t-\n",
+                encoding="utf-8",
+            )
+            extra_corpus.write_text(
+                "# path\tfields\twarnings\nsynthetic/private.docx\t0\t-\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "public-release requires corpus manifests exactly MANIFEST.tsv and RENDER_MANIFEST.tsv",
+            ):
+                release_manifest.release_manifest(
+                    [artifact],
+                    release_policy="public-release",
+                    enforce_policy_inputs=True,
+                    hygiene_report=hygiene,
+                    validation_report=validation,
+                    benchmark_reports=[benchmark],
+                    corpus_manifests=[corpus, render_corpus, extra_corpus],
+                )
+
+    def test_cli_enforced_policy_rejects_failing_gate_report(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            artifact = root / "rdoc.tar.gz"
+            hygiene = root / "public-hygiene.json"
+            validation = root / "render-validation.json"
+            benchmark = root / "extract-benchmark.json"
+            corpus = root / "MANIFEST.tsv"
+            render_corpus = root / "RENDER_MANIFEST.tsv"
+            artifact.write_bytes(b"release artifact")
+            hygiene.write_text(
+                json.dumps({"passed": True, "findings": []}),
+                encoding="utf-8",
+            )
+            validation.write_text(
+                json.dumps(
+                    {
+                        "summary": {"documents": 1, "mean_recall": 0.5},
+                        "gate": {"passed": False, "checks": []},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            benchmark.write_text(
+                json.dumps(
+                    {
+                        "summary": {"files": 1, "poi_recall_mean": 1.0},
+                        "gate": {"passed": True, "checks": []},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            corpus.write_text("# path\tfields\twarnings\nsynthetic/a.docx\t0\t-\n", encoding="utf-8")
+            render_corpus.write_text("# path\tpages\twarnings\nsynthetic/a.docx\t1\t-\n", encoding="utf-8")
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--release-policy",
+                    "public-release",
+                    "--enforce-policy-inputs",
+                    "--hygiene-report",
+                    str(hygiene),
+                    "--validation-report",
+                    str(validation),
+                    "--benchmark-report",
+                    str(benchmark),
+                    "--corpus-manifest",
+                    str(corpus),
+                    "--corpus-manifest",
+                    str(render_corpus),
+                    str(artifact),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(completed.returncode, 2)
+            self.assertIn(
+                "public-release validation report gate did not pass",
+                completed.stderr,
+            )
+
+    def test_enforced_public_release_policy_rejects_weaker_validation_thresholds(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            artifact = root / "rdoc.tar.gz"
+            hygiene = root / "public-hygiene.json"
+            validation = root / "render-validation.json"
+            benchmark = root / "extract-benchmark.json"
+            corpus = root / "MANIFEST.tsv"
+            render_corpus = root / "RENDER_MANIFEST.tsv"
+            artifact.write_bytes(b"release artifact")
+            hygiene.write_text(
+                json.dumps({"passed": True, "findings": []}),
+                encoding="utf-8",
+            )
+            validation.write_text(
+                json.dumps(
+                    {
+                        "summary": {"documents": 1, "recall_min": 0.8, "mean_recall": 0.97},
+                        "gate": {
+                            "passed": True,
+                            "checks": [
+                                {
+                                    "metric": "mean_recall",
+                                    "op": ">=",
+                                    "threshold": 0.8,
+                                    "actual": 0.97,
+                                    "passed": True,
+                                },
+                                {
+                                    "metric": "skipped",
+                                    "op": "<=",
+                                    "threshold": 0,
+                                    "actual": 0,
+                                    "passed": True,
+                                },
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            benchmark.write_text(
+                json.dumps(
+                    {
+                        "summary": {
+                            "files": 1,
+                            "poi_recall_mean": 1.0,
+                            "poi_f1_mean": 1.0,
+                            "errors": 0,
+                        },
+                        "gate": {
+                            "passed": True,
+                            "checks": [
+                                {
+                                    "metric": "poi_recall_mean",
+                                    "op": ">=",
+                                    "threshold": 0.95,
+                                    "actual": 1.0,
+                                    "passed": True,
+                                },
+                                {
+                                    "metric": "poi_f1_mean",
+                                    "op": ">=",
+                                    "threshold": 0.95,
+                                    "actual": 1.0,
+                                    "passed": True,
+                                },
+                                {
+                                    "metric": "errors",
+                                    "op": "<=",
+                                    "threshold": 0,
+                                    "actual": 0,
+                                    "passed": True,
+                                },
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            corpus.write_text("# path\tfields\twarnings\nsynthetic/a.docx\t0\t-\n", encoding="utf-8")
+            render_corpus.write_text("# path\tpages\twarnings\nsynthetic/a.docx\t1\t-\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "public-release validation report summary recall_min must be at least 0.97",
+            ):
+                release_manifest.release_manifest(
+                    [artifact],
+                    release_policy="public-release",
+                    enforce_policy_inputs=True,
+                    hygiene_report=hygiene,
+                    validation_report=validation,
+                    benchmark_reports=[benchmark],
+                    corpus_manifests=[corpus, render_corpus],
+                )
+
+    def test_enforced_public_release_policy_rejects_missing_benchmark_threshold(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            artifact = root / "rdoc.tar.gz"
+            hygiene = root / "public-hygiene.json"
+            validation = root / "render-validation.json"
+            benchmark = root / "extract-benchmark.json"
+            corpus = root / "MANIFEST.tsv"
+            render_corpus = root / "RENDER_MANIFEST.tsv"
+            artifact.write_bytes(b"release artifact")
+            hygiene.write_text(
+                json.dumps({"passed": True, "findings": []}),
+                encoding="utf-8",
+            )
+            validation.write_text(
+                json.dumps(
+                    {
+                        "summary": {
+                            "documents": 1,
+                            "recall_min": 0.97,
+                            "mean_recall": 0.97,
+                            "skipped": 0,
+                        },
+                        "gate": {
+                            "passed": True,
+                            "checks": [
+                                {
+                                    "metric": "below_recall_min",
+                                    "op": "<=",
+                                    "threshold": 0,
+                                    "actual": 0,
+                                    "passed": True,
+                                },
+                                {
+                                    "metric": "mean_recall",
+                                    "op": ">=",
+                                    "threshold": 0.9,
+                                    "actual": 0.97,
+                                    "passed": True,
+                                },
+                                {
+                                    "metric": "skipped",
+                                    "op": "<=",
+                                    "threshold": 0,
+                                    "actual": 0,
+                                    "passed": True,
+                                },
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            benchmark.write_text(
+                json.dumps(
+                    {
+                        "summary": {
+                            "files": 1,
+                            "poi_recall_mean": 1.0,
+                            "poi_f1_mean": 1.0,
+                            "errors": 0,
+                        },
+                        "gate": {
+                            "passed": True,
+                            "checks": [
+                                {
+                                    "metric": "poi_recall_mean",
+                                    "op": ">=",
+                                    "threshold": 0.95,
+                                    "actual": 1.0,
+                                    "passed": True,
+                                },
+                                {
+                                    "metric": "errors",
+                                    "op": "<=",
+                                    "threshold": 0,
+                                    "actual": 0,
+                                    "passed": True,
+                                },
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            corpus.write_text("# path\tfields\twarnings\nsynthetic/a.docx\t0\t-\n", encoding="utf-8")
+            render_corpus.write_text("# path\tpages\twarnings\nsynthetic/a.docx\t1\t-\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "public-release benchmark report gate must include poi_f1_mean >= 0.95",
+            ):
+                release_manifest.release_manifest(
+                    [artifact],
+                    release_policy="public-release",
+                    enforce_policy_inputs=True,
+                    hygiene_report=hygiene,
+                    validation_report=validation,
+                    benchmark_reports=[benchmark],
+                    corpus_manifests=[corpus, render_corpus],
+                )
+
+    def test_enforced_public_release_policy_accepts_passing_local_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            artifact = root / "rdoc.tar.gz"
+            hygiene = root / "public-hygiene.json"
+            validation = root / "render-validation.json"
+            benchmark = root / "extract-benchmark.json"
+            corpus = root / "MANIFEST.tsv"
+            render_corpus = root / "RENDER_MANIFEST.tsv"
+            artifact.write_bytes(b"release artifact")
+            hygiene.write_text(
+                json.dumps(
+                    {
+                        "schema": "rdoc.public-hygiene-audit.v1",
+                        "passed": True,
+                        "findings": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            validation.write_text(
+                json.dumps(
+                    {
+                        "summary": {
+                            "documents": 1,
+                            "recall_min": 0.97,
+                            "mean_recall": 0.97,
+                            "skipped": 0,
+                        },
+                        "gate": {
+                            "passed": True,
+                            "checks": [
+                                {
+                                    "metric": "below_recall_min",
+                                    "op": "<=",
+                                    "threshold": 0,
+                                    "actual": 0,
+                                    "passed": True,
+                                },
+                                {
+                                    "metric": "mean_recall",
+                                    "op": ">=",
+                                    "threshold": 0.9,
+                                    "actual": 0.97,
+                                    "passed": True,
+                                },
+                                {
+                                    "metric": "skipped",
+                                    "op": "<=",
+                                    "threshold": 0,
+                                    "actual": 0,
+                                    "passed": True,
+                                },
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            benchmark.write_text(
+                json.dumps(
+                    {
+                        "summary": {
+                            "files": 1,
+                            "poi_recall_mean": 0.99,
+                            "poi_f1_mean": 0.99,
+                            "errors": 0,
+                        },
+                        "gate": {
+                            "passed": True,
+                            "checks": [
+                                {
+                                    "metric": "poi_recall_mean",
+                                    "op": ">=",
+                                    "threshold": 0.95,
+                                    "actual": 0.99,
+                                    "passed": True,
+                                },
+                                {
+                                    "metric": "poi_f1_mean",
+                                    "op": ">=",
+                                    "threshold": 0.95,
+                                    "actual": 0.99,
+                                    "passed": True,
+                                },
+                                {
+                                    "metric": "errors",
+                                    "op": "<=",
+                                    "threshold": 0,
+                                    "actual": 0,
+                                    "passed": True,
+                                },
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            corpus.write_text("# path\tfields\twarnings\nsynthetic/a.docx\t0\t-\n", encoding="utf-8")
+            render_corpus.write_text("# path\tpages\twarnings\nsynthetic/a.docx\t1\t-\n", encoding="utf-8")
+
+            manifest = release_manifest.release_manifest(
+                [artifact],
+                release_policy="public-release",
+                enforce_policy_inputs=True,
+                hygiene_report=hygiene,
+                validation_report=validation,
+                benchmark_reports=[benchmark],
+                corpus_manifests=[corpus, render_corpus],
+            )
+
+        self.assertEqual(manifest["release_policy"]["name"], "public-release")
+        self.assertEqual(
+            manifest["release_evidence"],
+            {
+                "policy": "public-release",
+                "strict_policy_enforced": True,
+                "strict_policy_inputs_complete": True,
+                "strict_missing": [],
+                "provided": {
+                    "hygiene_report": hygiene.as_posix(),
+                    "validation_report": validation.as_posix(),
+                    "benchmark_reports": [benchmark.as_posix()],
+                    "corpus_manifests": [corpus.as_posix(), render_corpus.as_posix()],
+                },
+            },
+        )
+        self.assertEqual(
+            manifest["hygiene"],
+            {
+                "path": hygiene.as_posix(),
+                "gate": {"passed": True, "findings": 0},
+            },
+        )
+        self.assertEqual(manifest["validation"]["gate"]["passed"], True)
+        self.assertEqual(manifest["benchmarks"][0]["gate"]["passed"], True)
+        self.assertEqual(
+            [item["summary"]["documents"] for item in manifest["corpus_manifests"]],
+            [1, 1],
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

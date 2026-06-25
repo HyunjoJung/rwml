@@ -59,6 +59,18 @@ fn render_block(block: &Block) -> String {
             "<img alt=\"{}\">",
             escape_attr(img.alt.as_deref().unwrap_or("image"))
         ),
+        Block::Chart(chart) => format!(
+            "<figure class=\"chart\" aria-label=\"{}\"></figure>",
+            escape_attr(
+                chart
+                    .alt
+                    .as_deref()
+                    .or(chart.title.as_deref())
+                    .unwrap_or("chart")
+            )
+        ),
+        Block::PageBreak => "<hr class=\"page-break\">".to_string(),
+        Block::SectionBreak(_) => "<hr class=\"section-break\">".to_string(),
     }
 }
 

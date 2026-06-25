@@ -13,6 +13,9 @@ are tokenized identically. The script reports measurements only; it does not
 decide which extractor is "better".
 
   python scripts/bench_vs_mature.py --corpus DIR [--limit N] [--json]
+  python scripts/bench_vs_mature.py --corpus DIR --json --version 0.1.0 \
+    --git-rev "$(git rev-parse HEAD)" --min-poi-recall-mean 0.95 \
+    --min-poi-f1-mean 0.95 --max-errors 0 --output dist/extract-benchmark.json
 
 The corpus directory must contain:
   sample-poi/*.poi.txt        Apache POI golden output
@@ -32,6 +35,10 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+
+
+SCHEMA = "rdoc.benchmark-report.v1"
+BENCHMARK = "extract-vs-mature"
 
 
 def clean_golden(s: str) -> str:
@@ -68,11 +75,152 @@ def rdoc_text(extract_bin: Path, doc: Path) -> str | None:
     return r.stdout.decode("utf-8", "replace")
 
 
+def mean_metric(rows: list[dict], key: str) -> float:
+    values = [r[key] for r in rows if key in r]
+    return round(sum(values) / len(values), 4) if values else 0
+
+
+def median_metric(rows: list[dict], key: str) -> float:
+    values = sorted(r[key] for r in rows if key in r)
+    if not values:
+        return 0
+    mid = len(values) // 2
+    if len(values) % 2:
+        return round(values[mid], 4)
+    return round((values[mid - 1] + values[mid]) / 2, 4)
+
+
+def benchmark_summary(rows: list[dict]) -> dict:
+    ok = [r for r in rows if "poi_recall" in r]
+    return {
+        "files": len(rows),
+        "scored": len(ok),
+        "errors": sum(1 for r in rows if r.get("rdoc") == "ERROR"),
+        "poi_recall_mean": mean_metric(ok, "poi_recall"),
+        "poi_f1_mean": mean_metric(ok, "poi_f1"),
+        "poi_recall_median": median_metric(ok, "poi_recall"),
+        "lo_scored": sum(1 for r in ok if "lo_recall" in r),
+        "lo_recall_mean": mean_metric(ok, "lo_recall"),
+    }
+
+
+def add_threshold_check(
+    checks: list[dict],
+    metric: str,
+    actual: float | int | None,
+    op: str,
+    threshold: float | int | None,
+) -> None:
+    if threshold is None:
+        return
+    if actual is None:
+        passed = False
+    elif op == ">=":
+        passed = actual >= threshold
+    elif op == "<=":
+        passed = actual <= threshold
+    else:
+        raise ValueError(f"unsupported threshold operator: {op}")
+    checks.append(
+        {
+            "metric": metric,
+            "op": op,
+            "threshold": threshold,
+            "actual": actual,
+            "passed": passed,
+        }
+    )
+
+
+def benchmark_gate(summary: dict, thresholds: dict | None = None) -> dict | None:
+    thresholds = thresholds or {}
+    checks = []
+    add_threshold_check(
+        checks,
+        "poi_recall_mean",
+        summary.get("poi_recall_mean"),
+        ">=",
+        thresholds.get("min_poi_recall_mean"),
+    )
+    add_threshold_check(
+        checks,
+        "poi_f1_mean",
+        summary.get("poi_f1_mean"),
+        ">=",
+        thresholds.get("min_poi_f1_mean"),
+    )
+    add_threshold_check(
+        checks,
+        "lo_recall_mean",
+        summary.get("lo_recall_mean"),
+        ">=",
+        thresholds.get("min_lo_recall_mean"),
+    )
+    add_threshold_check(
+        checks,
+        "errors",
+        summary.get("errors"),
+        "<=",
+        thresholds.get("max_errors"),
+    )
+    add_threshold_check(
+        checks,
+        "scored",
+        summary.get("scored"),
+        ">=",
+        thresholds.get("min_scored"),
+    )
+    if not checks:
+        return None
+    return {"passed": all(check["passed"] for check in checks), "checks": checks}
+
+
+def benchmark_report(
+    rows: list[dict],
+    *,
+    version: str | None = None,
+    git_rev: str | None = None,
+    thresholds: dict | None = None,
+) -> dict:
+    summary = benchmark_summary(rows)
+    report = {
+        "schema": SCHEMA,
+        "benchmark": BENCHMARK,
+        "summary": summary,
+        "rows": rows,
+    }
+    if version is not None:
+        report["version"] = version
+    if git_rev is not None:
+        report["git_rev"] = git_rev
+    gate = benchmark_gate(summary, thresholds)
+    if gate is not None:
+        report["gate"] = gate
+    return report
+
+
+def write_json_report(report: dict, output: Path | None) -> None:
+    payload = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
+    if output is None:
+        sys.stdout.write(payload)
+    else:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(payload, encoding="utf-8")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--corpus", type=Path, default=None)
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--version", help="release version string to include in JSON output")
+    ap.add_argument("--git-rev", help="git revision to include in JSON output")
+    ap.add_argument("--output", type=Path, help="write JSON report to this path")
+    ap.add_argument("--min-poi-recall-mean", type=float)
+    ap.add_argument("--min-poi-f1-mean", type=float)
+    ap.add_argument("--min-lo-recall-mean", type=float)
+    ap.add_argument("--max-errors", type=int)
+    ap.add_argument("--min-scored", type=int)
     args = ap.parse_args()
     if args.corpus is None:
         env_corpus = os.environ.get("RDOC_BENCH_CORPUS")
@@ -108,30 +256,43 @@ def main() -> int:
         gt = toks(got)
         poi = g.read_text(encoding="utf-8", errors="replace")
         rp, pp, fp = prf(toks(poi), gt)
-        row = {"file": base, "poi_recall": rp, "poi_prec": pp, "poi_f1": fp}
+        row = {
+            "file": base,
+            "poi_recall": round(rp, 4),
+            "poi_prec": round(pp, 4),
+            "poi_f1": round(fp, 4),
+        }
         lo_file = lo_dir / f"{base}.txt"
         if lo_file.exists():
             lo = lo_file.read_text(encoding="utf-8", errors="replace")
             rl, pl, fl = prf(toks(lo), gt)
-            row.update({"lo_recall": rl, "lo_prec": pl, "lo_f1": fl})
+            row.update(
+                {
+                    "lo_recall": round(rl, 4),
+                    "lo_prec": round(pl, 4),
+                    "lo_f1": round(fl, 4),
+                }
+            )
         rows.append(row)
 
-    ok = [r for r in rows if "poi_recall" in r]
-    summary = {
-        "files": len(rows),
-        "scored": len(ok),
-        "errors": sum(1 for r in rows if r.get("rdoc") == "ERROR"),
-        "poi_recall_mean": round(sum(r["poi_recall"] for r in ok) / len(ok), 4) if ok else 0,
-        "poi_f1_mean": round(sum(r["poi_f1"] for r in ok) / len(ok), 4) if ok else 0,
-        "poi_recall_median": round(sorted(r["poi_recall"] for r in ok)[len(ok) // 2], 4) if ok else 0,
-        "lo_recall_mean": round(
-            sum(r["lo_recall"] for r in ok if "lo_recall" in r) / max(1, sum(1 for r in ok if "lo_recall" in r)), 4
-        ),
+    thresholds = {
+        "min_poi_recall_mean": args.min_poi_recall_mean,
+        "min_poi_f1_mean": args.min_poi_f1_mean,
+        "min_lo_recall_mean": args.min_lo_recall_mean,
+        "max_errors": args.max_errors,
+        "min_scored": args.min_scored,
     }
+    report = benchmark_report(
+        rows,
+        version=args.version,
+        git_rev=args.git_rev,
+        thresholds=thresholds,
+    )
+    summary = report["summary"]
 
-    if args.json:
-        print(json.dumps({"summary": summary, "rows": rows}, ensure_ascii=False, indent=2))
-        return 0
+    if args.json or args.output is not None:
+        write_json_report(report, args.output)
+        return 0 if report.get("gate", {"passed": True})["passed"] else 1
 
     print(f"{'file':16} {'POI rec':>8} {'POI F1':>8} {'LO rec':>8}")
     print("-" * 46)
@@ -148,7 +309,18 @@ def main() -> int:
         f"over {summary['scored']} files ({summary['errors']} errors)"
     )
     print(f"rdoc vs LibreOffice: recall {summary['lo_recall_mean']:.3f} mean")
-    return 0
+    failures = [
+        check
+        for check in report.get("gate", {}).get("checks", [])
+        if not check["passed"]
+    ]
+    for check in failures:
+        print(
+            "threshold failed: "
+            f"{check['metric']} {check['op']} {check['threshold']} "
+            f"(actual {check['actual']})"
+        )
+    return 0 if not failures else 1
 
 
 if __name__ == "__main__":

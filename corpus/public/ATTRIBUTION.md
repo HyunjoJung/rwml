@@ -8,6 +8,11 @@ content; these files are part of rdoc and covered by the repository's own licens
 | File | Features exercised |
 |------|--------------------|
 | `kitchen_sink.docx` | tracked changes (`w:ins`/`w:del`), content control (`w:sdt`), text box (`mc:AlternateContent`/`w:txbxContent`), footnote, comment, table, inline PNG, header/footer |
+| `comments.docx` | two comments with body ranges and comment-reference markers |
+| `revisions.docx` | insertion, deletion, move-from, move-to, and paragraph-property tracked-change markers |
+| `fields.docx` | simple and complex fields: `PAGE`, `TOC`, `REF`, `HYPERLINK`, unknown `CUSTOM`, and `FILENAME` |
+| `hyperlinks.docx` | relationship-backed `w:hyperlink` with an external target |
+| `unsupported_objects.docx` | floating shape, alternate content, chart payload/reference, OLE object marker, WMF/EMF media |
 
 ## vendored/
 

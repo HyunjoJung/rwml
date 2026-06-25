@@ -16,17 +16,19 @@ use crate::clx::Piece;
 use crate::fib::Fib;
 use crate::list::Numberer;
 use crate::model::{
-    Align, Block, CharProps, DocMeta, DocModel, FieldRole, Image, ListInfo, ParaProps, Paragraph,
-    Stats,
+    Align, Block, CharProps, DocMeta, DocModel, DocSetup, FieldRole, Image, ListInfo, ParaProps,
+    Paragraph, SourceRegion, SourceRegionKind, Stats,
 };
 use crate::papx::PapxTable;
 use crate::stsh::StyleSheet;
 use crate::table::{self, RowBuild};
+use crate::util::u32le;
 
 /// Build the document model from the already-parsed structures.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_model(
     word: &[u8],
+    table: &[u8],
     pieces: &[Piece],
     enc: &'static Encoding,
     papx: &PapxTable,
@@ -38,19 +40,223 @@ pub(crate) fn build_model(
     fib: &Fib,
 ) -> DocModel {
     let (units, fcs) = decode_with_fc(word, pieces, enc);
-    let mut asm = Asm::new(papx, chpx, stylesheet, data, fonts, numberer);
-    asm.run(&units, &fcs);
-    let blocks = asm.finish();
+    let (blocks, regions) = build_legacy_region_blocks(
+        &units, &fcs, table, papx, chpx, stylesheet, data, fonts, numberer, fib,
+    );
     let stats = compute_stats(&blocks);
+    let setup = legacy_doc_setup_from_regions(&blocks, &regions);
     DocModel {
         blocks,
+        regions,
         meta: DocMeta {
             codepage: fib.ansi_codepage(),
             lid: fib.lid,
             stats,
         },
-        setup: crate::model::DocSetup::default(),
+        setup,
     }
+}
+
+fn legacy_doc_setup_from_regions(blocks: &[Block], regions: &[SourceRegion]) -> DocSetup {
+    let mut setup = DocSetup::default();
+    if let Some(region) = regions.iter().find(|region| {
+        region.kind == SourceRegionKind::HeaderFooter
+            && region.block_start < region.block_end
+            && legacy_header_footer_story_is_header(region.source_story_index).unwrap_or(true)
+    }) {
+        let start = region.block_start.min(blocks.len());
+        let end = region.block_end.min(blocks.len());
+        if start < end {
+            setup.header = blocks[start..end].to_vec();
+        }
+    }
+    setup
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_legacy_region_blocks(
+    units: &[u16],
+    fcs: &[u32],
+    table: &[u8],
+    papx: &PapxTable,
+    chpx: &ChpxTable,
+    stylesheet: &StyleSheet,
+    data: &[u8],
+    fonts: &[String],
+    numberer: &mut Numberer<'_>,
+    fib: &Fib,
+) -> (Vec<Block>, Vec<SourceRegion>) {
+    let mut blocks = Vec::new();
+    let mut regions = Vec::new();
+    let mut source_start_cp = 0usize;
+    let mut text_start = 0usize;
+    let header_stories = header_footer_story_ranges(fib, table);
+
+    for (kind, source_len_cp) in legacy_region_specs(fib) {
+        if kind == SourceRegionKind::HeaderFooter && !header_stories.is_empty() {
+            for story in header_stories
+                .iter()
+                .filter(|story| story.story_index >= HEADER_FOOTER_STORY_BASE)
+            {
+                push_legacy_region(
+                    units,
+                    fcs,
+                    papx,
+                    chpx,
+                    stylesheet,
+                    data,
+                    fonts,
+                    numberer,
+                    &mut blocks,
+                    &mut regions,
+                    &mut text_start,
+                    kind,
+                    source_start_cp.saturating_add(story.start_cp),
+                    story.end_cp.saturating_sub(story.start_cp),
+                    Some(story.story_index),
+                    false,
+                );
+            }
+        } else {
+            push_legacy_region(
+                units,
+                fcs,
+                papx,
+                chpx,
+                stylesheet,
+                data,
+                fonts,
+                numberer,
+                &mut blocks,
+                &mut regions,
+                &mut text_start,
+                kind,
+                source_start_cp,
+                source_len_cp,
+                None,
+                kind == SourceRegionKind::Main,
+            );
+        }
+
+        source_start_cp = source_start_cp.saturating_add(source_len_cp);
+    }
+
+    (blocks, regions)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn push_legacy_region(
+    units: &[u16],
+    fcs: &[u32],
+    papx: &PapxTable,
+    chpx: &ChpxTable,
+    stylesheet: &StyleSheet,
+    data: &[u8],
+    fonts: &[String],
+    numberer: &mut Numberer<'_>,
+    blocks: &mut Vec<Block>,
+    regions: &mut Vec<SourceRegion>,
+    text_start: &mut usize,
+    kind: SourceRegionKind,
+    source_start_cp: usize,
+    source_len_cp: usize,
+    source_story_index: Option<usize>,
+    include_empty: bool,
+) {
+    let block_start = blocks.len();
+    let actual_start = source_start_cp.min(units.len()).min(fcs.len());
+    let actual_end = source_start_cp
+        .saturating_add(source_len_cp)
+        .min(units.len())
+        .min(fcs.len());
+    let mut region_blocks = if actual_start < actual_end {
+        let mut asm = Asm::new(papx, chpx, stylesheet, data, fonts, numberer);
+        asm.run(
+            &units[actual_start..actual_end],
+            &fcs[actual_start..actual_end],
+        );
+        asm.finish()
+    } else {
+        Vec::new()
+    };
+    let text_len = compute_stats(&region_blocks).text_chars;
+    blocks.append(&mut region_blocks);
+    let block_end = blocks.len();
+
+    if source_len_cp > 0 || include_empty {
+        regions.push(SourceRegion {
+            kind,
+            source_story_index,
+            block_start,
+            block_end,
+            source_start_cp,
+            source_len_cp,
+            text_start: *text_start,
+            text_len,
+        });
+    }
+
+    *text_start = (*text_start).saturating_add(text_len);
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct HeaderStoryRange {
+    story_index: usize,
+    start_cp: usize,
+    end_cp: usize,
+}
+
+const HEADER_FOOTER_STORY_BASE: usize = 6;
+
+fn legacy_header_footer_story_is_header(story_index: Option<usize>) -> Option<bool> {
+    let story_index = story_index?;
+    let position = story_index.checked_sub(HEADER_FOOTER_STORY_BASE)? % 6;
+    match position {
+        0 | 1 | 4 => Some(true),
+        _ => Some(false),
+    }
+}
+
+fn header_footer_story_ranges(fib: &Fib, table: &[u8]) -> Vec<HeaderStoryRange> {
+    if fib.ccp_hdd == 0 || fib.lcb_plcf_hdd < 12 {
+        return Vec::new();
+    }
+    let Some(slice) = table.get(fib.fc_plcf_hdd..fib.fc_plcf_hdd.saturating_add(fib.lcb_plcf_hdd))
+    else {
+        return Vec::new();
+    };
+    let cp_count = slice.len() / 4;
+    if cp_count < 3 {
+        return Vec::new();
+    }
+    let story_count = cp_count.saturating_sub(2);
+    let hdd_len = fib.ccp_hdd as usize;
+    let mut stories = Vec::new();
+    for story_index in 0..story_count {
+        let start = u32le(slice, story_index * 4).unwrap_or(0) as usize;
+        let end = u32le(slice, (story_index + 1) * 4).unwrap_or(0) as usize;
+        let start = start.min(hdd_len);
+        let end = end.min(hdd_len);
+        if start < end {
+            stories.push(HeaderStoryRange {
+                story_index,
+                start_cp: start,
+                end_cp: end,
+            });
+        }
+    }
+    stories
+}
+
+fn legacy_region_specs(fib: &Fib) -> [(SourceRegionKind, usize); 6] {
+    [
+        (SourceRegionKind::Main, fib.ccp_text as usize),
+        (SourceRegionKind::Footnote, fib.ccp_ftn as usize),
+        (SourceRegionKind::HeaderFooter, fib.ccp_hdd as usize),
+        (SourceRegionKind::Annotation, fib.ccp_atn as usize),
+        (SourceRegionKind::Endnote, fib.ccp_edn as usize),
+        (SourceRegionKind::TextBox, fib.ccp_txbx as usize),
+    ]
 }
 
 /// Decode every piece in CP order into UTF-16 code units, recording each unit's
@@ -153,21 +359,19 @@ struct Asm<'a, 'l> {
 
     // Field state. `field_stack` holds one entry per currently-open field
     // (`0x13`..`0x15`), each recording whether that field has passed its `0x14`
-    // separator. Text is visible only when *every* open field has seen its
-    // separator: if any enclosing field is still in its instruction part, the
-    // text (even a nested field's result) belongs to that instruction and is
-    // dropped. This makes a field with no separator at all, and text after any
-    // field ends, correctly return to visible-content mode — a plain bool could
-    // never be un-stuck and silently swallowed all trailing text.
-    field_stack: Vec<bool>,
+    // separator and the instruction parsed at that point. Text is visible only
+    // when *every* open field has seen its separator: if any enclosing field is
+    // still in its instruction part, the text (even a nested field's result)
+    // belongs to that instruction and is dropped. This makes a field with no
+    // separator at all, and text after any field ends, correctly return to
+    // visible-content mode — a plain bool could never be un-stuck and silently
+    // swallowed all trailing text.
+    field_stack: Vec<FieldState>,
     // Count of `field_stack` entries still in their instruction part (not yet
     // separated). `in_instruction()` is `unseparated != 0` — an O(1) replacement
     // for scanning `field_stack` per code unit, which a crafted run of N field
     // markers + N text chars turned into O(N²) work (CPU DoS via the model APIs).
     unseparated: usize,
-    instr_buf: Vec<u16>,
-    active_url: Option<String>,
-
     // Per-document inline-picture cache + byte budget. A crafted `.doc` can point
     // many picture runs (`0x01`) at the same `fcPic`, so without dedup the same
     // `Data` payload is rescanned and recopied per run — O(runs × payload). Cache
@@ -175,6 +379,13 @@ struct Asm<'a, 'l> {
     // (legit image bytes live once in `Data`, so ≤ ~2×data.len()).
     img_cache: HashMap<u32, Image>,
     img_budget: usize,
+}
+
+#[derive(Default)]
+struct FieldState {
+    separated: bool,
+    instr_buf: Vec<u16>,
+    role: FieldRole,
 }
 
 // Local alias to the model Run (avoid a name clash with the field below).
@@ -207,8 +418,6 @@ impl<'a, 'l> Asm<'a, 'l> {
             cell_blocks: Vec::new(),
             field_stack: Vec::new(),
             unseparated: 0,
-            instr_buf: Vec::new(),
-            active_url: None,
             img_cache: HashMap::new(),
             img_budget: data.len().saturating_mul(2).saturating_add(1 << 20),
         }
@@ -222,41 +431,58 @@ impl<'a, 'l> Asm<'a, 'l> {
         self.unseparated != 0
     }
 
+    fn active_field_role(&self) -> FieldRole {
+        if self.in_instruction() {
+            return FieldRole::None;
+        }
+        self.field_stack
+            .last()
+            .map(|field| field.role.clone())
+            .unwrap_or_default()
+    }
+
+    fn push_instruction_unit(&mut self, u: u16) {
+        if let Some(field) = self
+            .field_stack
+            .iter_mut()
+            .rev()
+            .find(|field| !field.separated)
+        {
+            field.instr_buf.push(u);
+        }
+    }
+
     fn run(&mut self, units: &[u16], fcs: &[u32]) {
         for (i, &u) in units.iter().enumerate() {
             let fc = fcs.get(i).copied().unwrap_or(0);
             match u {
                 FIELD_BEGIN => {
                     self.flush_run();
-                    self.field_stack.push(false);
+                    self.field_stack.push(FieldState::default());
                     self.unseparated += 1;
-                    self.instr_buf.clear();
                 }
                 FIELD_SEP => {
                     // Mark the innermost field as separated → its result follows.
                     let n = self.field_stack.len();
-                    if n > 0 && !self.field_stack[n - 1] {
-                        self.field_stack[n - 1] = true;
+                    if n > 0 && !self.field_stack[n - 1].separated {
+                        self.field_stack[n - 1].separated = true;
                         self.unseparated -= 1;
                     }
-                    let instr = String::from_utf16_lossy(&self.instr_buf);
-                    if let Some(url) = parse_hyperlink(&instr) {
-                        self.active_url = Some(url);
+                    if let Some(field) = self.field_stack.last_mut() {
+                        let instr = String::from_utf16_lossy(&field.instr_buf);
+                        field.role = field_role_from_instruction(&instr);
                     }
                     self.flush_run();
                 }
                 FIELD_END => {
                     self.flush_run();
-                    if let Some(was_separated) = self.field_stack.pop() {
-                        if !was_separated {
+                    if let Some(field) = self.field_stack.pop() {
+                        if !field.separated {
                             self.unseparated -= 1;
                         }
                     }
-                    if self.field_stack.is_empty() {
-                        self.active_url = None;
-                    }
                 }
-                _ if self.in_instruction() => self.instr_buf.push(u),
+                _ if self.in_instruction() => self.push_instruction_unit(u),
                 PARA_MARK => self.end_paragraph(fc, false),
                 CELL_MARK => self.end_paragraph(fc, true),
                 0x0001 => self.picture(fc),
@@ -279,6 +505,9 @@ impl<'a, 'l> Asm<'a, 'l> {
             props: CharProps::default(),
             field: FieldRole::None,
             image: Some(img),
+            comment: None,
+            revision: None,
+            content_control: None,
         });
     }
 
@@ -355,10 +584,7 @@ impl<'a, 'l> Asm<'a, 'l> {
                 font: chp.ftc.and_then(|ftc| crate::ffn::name_of(self.fonts, ftc)),
                 ..Default::default()
             };
-            self.run_field = match &self.active_url {
-                Some(url) => FieldRole::Hyperlink { url: url.clone() },
-                None => FieldRole::None,
-            };
+            self.run_field = self.active_field_role();
         }
         self.run_buf.push(unit);
     }
@@ -374,6 +600,9 @@ impl<'a, 'l> Asm<'a, 'l> {
             props: self.run_props.clone(),
             field: self.run_field.clone(),
             image: None,
+            comment: None,
+            revision: None,
+            content_control: None,
         });
     }
 
@@ -513,6 +742,22 @@ fn parse_hyperlink(instr: &str) -> Option<String> {
     }
 }
 
+fn normalize_field_instruction(instr: &str) -> String {
+    instr.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn field_role_from_instruction(instr: &str) -> FieldRole {
+    if let Some(url) = parse_hyperlink(instr) {
+        return FieldRole::Hyperlink { url };
+    }
+    let instruction = normalize_field_instruction(instr);
+    if instruction.is_empty() {
+        FieldRole::None
+    } else {
+        FieldRole::Simple { instruction }
+    }
+}
+
 /// Aggregate paragraph/table/figure/character counts over a block tree. Shared
 /// with the `.docx` path so both backends report stats identically.
 pub(crate) fn compute_stats(blocks: &[Block]) -> Stats {
@@ -534,6 +779,7 @@ fn count_blocks(blocks: &[Block], s: &mut Stats) {
                 }
             }
             Block::Image(_) => s.figures = s.figures.saturating_add(1),
+            Block::Chart(_) | Block::PageBreak | Block::SectionBreak(_) => {}
             Block::Table(t) => {
                 s.tables = s.tables.saturating_add(1);
                 for row in &t.rows {
@@ -620,6 +866,32 @@ mod tests {
             other => panic!("expected linked result run, got {other:?}"),
         }
         // The url does not leak onto the post-field tail.
+        let tail = p.runs.iter().find(|r| r.text == " tail").unwrap();
+        assert_eq!(tail.field, FieldRole::None);
+    }
+
+    #[test]
+    fn simple_field_result_keeps_instruction_on_result_run() {
+        let mut units = vec![FIELD_BEGIN];
+        units.extend(us(" PAGE "));
+        units.push(FIELD_SEP);
+        units.extend(us("7"));
+        units.push(FIELD_END);
+        units.extend(us(" tail"));
+        units.push(PARA_MARK);
+        let blocks = run_units(&units);
+        let Block::Paragraph(p) = &blocks[0] else {
+            panic!("expected paragraph");
+        };
+
+        assert_eq!(p.text(), "7 tail");
+        let page = p.runs.iter().find(|r| r.text == "7").unwrap();
+        assert_eq!(
+            page.field,
+            FieldRole::Simple {
+                instruction: "PAGE".to_string()
+            }
+        );
         let tail = p.runs.iter().find(|r| r.text == " tail").unwrap();
         assert_eq!(tail.field, FieldRole::None);
     }

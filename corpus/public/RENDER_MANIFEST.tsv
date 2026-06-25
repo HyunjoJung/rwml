@@ -1,0 +1,8 @@
+# path	pages	warnings
+synthetic/kitchen_sink.docx	1	FloatingShapePlaceholderOnly
+synthetic/comments.docx	1	-
+synthetic/revisions.docx	1	-
+synthetic/fields.docx	1	UnsupportedFieldEvaluation
+synthetic/hyperlinks.docx	1	-
+synthetic/nested_tables.docx	1	-
+synthetic/unsupported_objects.docx	1	ChartsPreservedButNotModeled|FloatingShapePlaceholderOnly|OleObjectsPreservedButNotModeled|UnsupportedMetafileImages

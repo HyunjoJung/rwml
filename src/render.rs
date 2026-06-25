@@ -39,9 +39,12 @@ use parley::style::{FontFamily, FontFamilyName, FontStyle, FontWeight, StyleProp
 use parley::{FontContext, LayoutContext};
 
 use crate::model::{
-    Align, Block, Cell, CharProps, DocModel, FieldRole, Image, ListInfo, PageSetup, Paragraph,
-    Table, VCell,
+    Align, Block, Cell, CharProps, Chart, ChartKind, ChartShape, Color, DocModel, FieldRole, Image,
+    ListInfo, PageSetup, ParaProps, Paragraph, Run, SectionSetup, Spacing, Table, VCell,
 };
+use crate::report::{self, FeatureInventory, RenderReport, RenderedPdf};
+use crate::{Error, Result};
+use crate::{FieldKind, FloatingShape, ShapePosition};
 
 // A4 fallback page geometry, in PDF points (used when the model has no page setup).
 const PAGE_W: f32 = 595.0;
@@ -117,6 +120,19 @@ const FOOTER_GAP: f32 = 8.0;
 /// (e.g. `col_span = u16::MAX`) cannot amplify into millions of cells/elements.
 /// Far above any real document (Excel maxes at 16384 columns).
 const MAX_TABLE_COLS: usize = 1024;
+const EMU_PER_PT: f32 = 12_700.0;
+const MAX_FLOATING_SHAPE_OVERLAYS: usize = 64;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DynamicTextKind {
+    PageNumber,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DynamicTextRun {
+    kind: DynamicTextKind,
+    props: CharProps,
+}
 
 /// One drawable run on a line: its x offset within the content box, the krilla
 /// glyphs, the resolved font, the size, the fill color, and the source text (for
@@ -130,6 +146,8 @@ struct RunDraw {
     color: rgb::Color,
     /// Hyperlink target, if this run is part of a `FieldRole::Hyperlink` range.
     link: Option<Rc<str>>,
+    /// Dynamic text to re-shape when the final page context is known.
+    dynamic: Option<DynamicTextRun>,
     text: Rc<str>,
 }
 
@@ -174,9 +192,12 @@ struct RowLayout {
 /// header-row count) so pagination can repeat headers and split oversized rows;
 /// `Row` is an individual placed row produced during pagination.
 enum FlowItem {
+    BlockStart(usize),
     Gap(f32),
     Line(LineLayout),
     Row(RowLayout),
+    PageBreak,
+    SectionBreak(SectionSetup),
     Table {
         rows: Vec<RowLayout>,
         header_rows: usize,
@@ -186,6 +207,33 @@ enum FlowItem {
         w: f32,
         h: f32,
     },
+    Chart {
+        chart: Chart,
+        w: f32,
+        h: f32,
+    },
+}
+
+#[derive(Clone)]
+struct RenderPageSection {
+    setup: SectionSetup,
+    first_page_index: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct FloatingShapeOverlay {
+    page_index: usize,
+    label: String,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ShapeAxis {
+    Horizontal,
+    Vertical,
 }
 
 /// Decode embedded image bytes into a krilla raster image, by MIME when known and
@@ -232,6 +280,34 @@ fn image_flow_item(img: &Image, geom: Geom) -> Option<FlowItem> {
         w *= s;
     }
     (w > 0.0 && h > 0.0).then_some(FlowItem::Picture { image, w, h })
+}
+
+/// Size an authored chart block for PDF flow (96-dpi px -> PDF points, fit to
+/// the content box and one page). Empty charts are skipped rather than rendered
+/// as misleading empty axes.
+fn chart_flow_item(chart: &Chart, geom: Geom) -> Option<FlowItem> {
+    if chart.categories.is_empty() || chart.series.is_empty() {
+        return None;
+    }
+    let mut w = chart.width_px.unwrap_or(480) as f32 * 0.75;
+    let mut h = chart.height_px.unwrap_or(320) as f32 * 0.75;
+    let content_w = geom.content_w();
+    if w > content_w {
+        let s = content_w / w;
+        w = content_w;
+        h *= s;
+    }
+    let max_h = geom.bottom() - geom.top();
+    if h > max_h {
+        let s = max_h / h;
+        h = max_h;
+        w *= s;
+    }
+    (w > 0.0 && h > 0.0).then_some(FlowItem::Chart {
+        chart: chart.clone(),
+        w,
+        h,
+    })
 }
 
 /// The system font stack, with Windows/Noto Korean faces preferred so Hangul
@@ -290,6 +366,548 @@ fn cased(props: &CharProps, text: &str) -> String {
     }
 }
 
+fn display_text(props: &CharProps, text: &str) -> String {
+    let text = cased(props, text);
+    let Some(font) = props.font.as_deref() else {
+        return text;
+    };
+    let normalized = font
+        .chars()
+        .filter(|ch| !ch.is_whitespace() && *ch != '-' && *ch != '_')
+        .flat_map(char::to_lowercase)
+        .collect::<String>();
+    if normalized.contains("wingdings") {
+        map_chars(&text, wingdings_char)
+    } else if normalized == "symbol" || normalized.ends_with("symbol") {
+        map_chars(&text, symbol_char)
+    } else {
+        text
+    }
+}
+
+fn placeholder_label(count: usize, singular: &str, plural: &str, suffix: &str) -> String {
+    let label = if count == 1 { singular } else { plural };
+    format!("[rdoc preview placeholder: {count} {label} {suffix}]")
+}
+
+fn emu_to_pt(value: i64) -> f32 {
+    value as f32 / EMU_PER_PT
+}
+
+fn format_pt(value: f32) -> String {
+    let rounded = value.round();
+    if (value - rounded).abs() < 0.05 {
+        format!("{}", rounded as i32)
+    } else {
+        format!("{value:.1}")
+    }
+}
+
+fn shape_position_label(axis: ShapeAxis, pos: Option<&ShapePosition>) -> String {
+    let axis_label = match axis {
+        ShapeAxis::Horizontal => "x",
+        ShapeAxis::Vertical => "y",
+    };
+    let Some(pos) = pos else {
+        return format!("{axis_label} page");
+    };
+    let relative_from = pos.relative_from.as_deref().unwrap_or("page");
+    if let Some(offset) = pos.offset_emu {
+        let sign = if offset < 0 { "-" } else { "+" };
+        return format!(
+            "{axis_label} {relative_from} {sign} {} pt",
+            format_pt(emu_to_pt(offset.saturating_abs()))
+        );
+    }
+    if let Some(align) = pos.align.as_deref() {
+        return format!("{axis_label} {relative_from} {align}");
+    }
+    format!("{axis_label} {relative_from}")
+}
+
+fn shape_simple_position_label(axis: ShapeAxis, shape: &FloatingShape) -> Option<String> {
+    if shape.simple_position_enabled != Some(true) {
+        return None;
+    }
+    let point = shape.simple_position?;
+    let (axis_label, value) = match axis {
+        ShapeAxis::Horizontal => ("x", point.x_emu),
+        ShapeAxis::Vertical => ("y", point.y_emu),
+    };
+    Some(format!(
+        "{axis_label} simplePos {} pt",
+        format_pt(emu_to_pt(value))
+    ))
+}
+
+fn floating_shape_axis_label(shape: &FloatingShape, axis: ShapeAxis) -> String {
+    shape_simple_position_label(axis, shape).unwrap_or_else(|| match axis {
+        ShapeAxis::Horizontal => shape_position_label(axis, shape.horizontal_position.as_ref()),
+        ShapeAxis::Vertical => shape_position_label(axis, shape.vertical_position.as_ref()),
+    })
+}
+
+fn floating_shape_name(shape: &FloatingShape, index: usize) -> String {
+    for value in [
+        shape.name.as_deref(),
+        shape.description.as_deref(),
+        (!shape.id.is_empty()).then_some(shape.id.as_str()),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+    format!("#{index}")
+}
+
+fn compact_shape_text_label(prefix: &str, text: &str) -> Option<String> {
+    let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.is_empty() {
+        return None;
+    }
+    let max_chars = 48;
+    let value = if normalized.chars().count() > max_chars {
+        let mut truncated = normalized.chars().take(max_chars - 3).collect::<String>();
+        truncated.push_str("...");
+        truncated
+    } else {
+        normalized
+    };
+    Some(format!("{prefix} {value}"))
+}
+
+fn shape_color_label(prefix: &str, color: crate::Color) -> String {
+    format!("{prefix} #{:02X}{:02X}{:02X}", color.r, color.g, color.b)
+}
+
+fn shape_effect_extent_label(effect: crate::ShapeEffectExtent) -> String {
+    format!(
+        "effect l {} pt, t {} pt, r {} pt, b {} pt",
+        format_pt(emu_to_pt(effect.left_emu)),
+        format_pt(emu_to_pt(effect.top_emu)),
+        format_pt(emu_to_pt(effect.right_emu)),
+        format_pt(emu_to_pt(effect.bottom_emu))
+    )
+}
+
+fn shape_distance_label(prefix: &str, distance: crate::ShapeDistance) -> Option<String> {
+    let values = [
+        ("t", distance.top_emu),
+        ("b", distance.bottom_emu),
+        ("l", distance.left_emu),
+        ("r", distance.right_emu),
+    ]
+    .into_iter()
+    .filter_map(|(label, value)| {
+        value.map(|value| format!("{label} {} pt", format_pt(emu_to_pt(value))))
+    })
+    .collect::<Vec<_>>();
+    (!values.is_empty()).then(|| format!("{prefix} {}", values.join(", ")))
+}
+
+fn floating_shape_label(shape: &FloatingShape, index: usize, w: f32, h: f32) -> String {
+    let mut layout = vec![
+        floating_shape_axis_label(shape, ShapeAxis::Horizontal),
+        floating_shape_axis_label(shape, ShapeAxis::Vertical),
+    ];
+    if let Some(relative_height) = shape.relative_height {
+        layout.push(format!("z {relative_height}"));
+    }
+    if let Some(behind_doc) = shape.behind_doc {
+        layout.push(if behind_doc { "behind" } else { "front" }.to_string());
+    }
+    if let Some(wrapping) = shape.wrapping.as_ref() {
+        layout.push(match wrapping.text.as_deref() {
+            Some(text) if !text.trim().is_empty() => {
+                format!("wrap {} {}", wrapping.kind, text.trim())
+            }
+            _ => format!("wrap {}", wrapping.kind),
+        });
+        if let Some(distance_label) = shape_distance_label("dist", wrapping.distance) {
+            if let Some(last) = layout.last_mut() {
+                last.push(' ');
+                last.push_str(&distance_label);
+            }
+        }
+    }
+    if let Some(geometry) = shape.preset_geometry.as_deref() {
+        let geometry = geometry.trim();
+        if !geometry.is_empty() {
+            layout.push(format!("geometry {geometry}"));
+        }
+    }
+    if let Some(effect) = shape.effect_extent {
+        layout.push(shape_effect_extent_label(effect));
+    }
+    if let Some(color) = shape.fill_color {
+        layout.push(shape_color_label("fill", color));
+    }
+    if let Some(color) = shape.outline_color {
+        layout.push(shape_color_label("outline", color));
+    }
+    if let Some(anchor_label) = shape
+        .anchor_text
+        .as_deref()
+        .and_then(|text| compact_shape_text_label("anchor", text))
+    {
+        layout.push(anchor_label);
+    }
+    if let Some(text_label) = shape
+        .text
+        .as_deref()
+        .and_then(|text| compact_shape_text_label("text", text))
+    {
+        layout.push(text_label);
+    }
+    format!(
+        "floating shape {index}: {} ({} x {} pt, {})",
+        floating_shape_name(shape, index),
+        format_pt(w),
+        format_pt(h),
+        layout.join(", ")
+    )
+}
+
+fn floating_shape_size(shape: &FloatingShape, geom: Geom) -> (f32, f32) {
+    let (mut w, mut h) = shape
+        .extent
+        .map(|extent| (emu_to_pt(extent.cx_emu), emu_to_pt(extent.cy_emu)))
+        .unwrap_or((96.0, 48.0));
+    let max_w = (geom.page_w - 8.0).max(24.0);
+    let max_h = (geom.page_h - 8.0).max(18.0);
+    w = w.clamp(24.0, max_w);
+    h = h.clamp(18.0, max_h);
+    (w, h)
+}
+
+fn shape_reference(axis: ShapeAxis, relative_from: Option<&str>, geom: Geom) -> (f32, f32) {
+    let relative_from = relative_from.unwrap_or("page").to_ascii_lowercase();
+    match axis {
+        ShapeAxis::Horizontal => match relative_from.as_str() {
+            "page" => (0.0, geom.page_w),
+            "margin" | "leftmargin" | "rightmargin" => (geom.left, geom.content_w()),
+            _ => (geom.left, geom.content_w()),
+        },
+        ShapeAxis::Vertical => match relative_from.as_str() {
+            "page" => (0.0, geom.page_h),
+            "margin" | "topmargin" | "bottommargin" => {
+                (geom.top(), (geom.bottom() - geom.top()).max(1.0))
+            }
+            _ => (geom.top(), (geom.bottom() - geom.top()).max(1.0)),
+        },
+    }
+}
+
+fn aligned_shape_coordinate(base: f32, span: f32, size: f32, align: Option<&str>) -> f32 {
+    match align.unwrap_or("left").to_ascii_lowercase().as_str() {
+        "center" | "middle" => base + ((span - size) * 0.5).max(0.0),
+        "right" | "bottom" | "outside" => base + (span - size).max(0.0),
+        _ => base,
+    }
+}
+
+fn floating_shape_coordinate(
+    pos: Option<&ShapePosition>,
+    axis: ShapeAxis,
+    geom: Geom,
+    size: f32,
+) -> f32 {
+    let (base, span) = shape_reference(axis, pos.and_then(|p| p.relative_from.as_deref()), geom);
+    let raw = match pos {
+        Some(pos) => pos
+            .offset_emu
+            .map(|offset| base + emu_to_pt(offset))
+            .unwrap_or_else(|| aligned_shape_coordinate(base, span, size, pos.align.as_deref())),
+        None => base,
+    };
+    let page_span = match axis {
+        ShapeAxis::Horizontal => geom.page_w,
+        ShapeAxis::Vertical => geom.page_h,
+    };
+    raw.clamp(0.0, (page_span - size).max(0.0))
+}
+
+fn floating_shape_simple_coordinate(
+    shape: &FloatingShape,
+    axis: ShapeAxis,
+    size: f32,
+    geom: Geom,
+) -> Option<f32> {
+    if shape.simple_position_enabled != Some(true) {
+        return None;
+    }
+    let point = shape.simple_position?;
+    let raw = match axis {
+        ShapeAxis::Horizontal => emu_to_pt(point.x_emu),
+        ShapeAxis::Vertical => emu_to_pt(point.y_emu),
+    };
+    let page_span = match axis {
+        ShapeAxis::Horizontal => geom.page_w,
+        ShapeAxis::Vertical => geom.page_h,
+    };
+    Some(raw.clamp(0.0, (page_span - size).max(0.0)))
+}
+
+fn floating_shape_overlays_for_pages(
+    shapes: &[FloatingShape],
+    geom: Geom,
+    block_pages: &HashMap<usize, usize>,
+) -> Vec<FloatingShapeOverlay> {
+    let mut ordered_shapes = shapes
+        .iter()
+        .take(MAX_FLOATING_SHAPE_OVERLAYS)
+        .enumerate()
+        .collect::<Vec<_>>();
+    ordered_shapes.sort_by_key(|(i, shape)| {
+        (
+            shape.behind_doc != Some(true),
+            shape.relative_height.unwrap_or(0),
+            *i,
+        )
+    });
+    ordered_shapes
+        .into_iter()
+        .map(|(i, shape)| {
+            let index = i + 1;
+            let (w, h) = floating_shape_size(shape, geom);
+            let x = floating_shape_simple_coordinate(shape, ShapeAxis::Horizontal, w, geom)
+                .unwrap_or_else(|| {
+                    floating_shape_coordinate(
+                        shape.horizontal_position.as_ref(),
+                        ShapeAxis::Horizontal,
+                        geom,
+                        w,
+                    )
+                });
+            let y = floating_shape_simple_coordinate(shape, ShapeAxis::Vertical, h, geom)
+                .unwrap_or_else(|| {
+                    floating_shape_coordinate(
+                        shape.vertical_position.as_ref(),
+                        ShapeAxis::Vertical,
+                        geom,
+                        h,
+                    )
+                });
+            let page_index = shape
+                .anchor_block_index
+                .and_then(|index| block_pages.get(&index).copied())
+                .unwrap_or(0);
+            FloatingShapeOverlay {
+                page_index,
+                label: floating_shape_label(shape, index, w, h),
+                x,
+                y,
+                w,
+                h,
+            }
+        })
+        .collect()
+}
+
+fn unsupported_placeholder_texts(features: &FeatureInventory) -> Vec<String> {
+    let mut placeholders = Vec::new();
+    if features.floating_shapes > 0 {
+        placeholders.push(placeholder_label(
+            features.floating_shapes,
+            "floating shape",
+            "floating shapes",
+            "preserved but not positioned",
+        ));
+    }
+    if features.charts > 0 {
+        placeholders.push(placeholder_label(
+            features.charts,
+            "chart",
+            "charts",
+            "preserved but not modeled",
+        ));
+    }
+    if features.ole_objects > 0 {
+        placeholders.push(placeholder_label(
+            features.ole_objects,
+            "OLE object",
+            "OLE objects",
+            "preserved but not modeled",
+        ));
+    }
+    if features.unsupported_metafiles > 0 {
+        placeholders.push(placeholder_label(
+            features.unsupported_metafiles,
+            "WMF/EMF image",
+            "WMF/EMF images",
+            "preserved but not rendered",
+        ));
+    }
+    placeholders
+}
+
+fn unsupported_placeholder_texts_with_known_shapes(
+    features: &FeatureInventory,
+    known_floating_shapes: usize,
+) -> Vec<String> {
+    let mut features = features.clone();
+    features.floating_shapes = features
+        .floating_shapes
+        .saturating_sub(known_floating_shapes);
+    unsupported_placeholder_texts(&features)
+}
+
+fn unsupported_placeholder_blocks(
+    features: &FeatureInventory,
+    known_floating_shapes: usize,
+) -> Vec<Block> {
+    unsupported_placeholder_texts_with_known_shapes(features, known_floating_shapes)
+        .into_iter()
+        .map(|text| {
+            Block::Paragraph(Paragraph {
+                props: ParaProps {
+                    spacing: Spacing {
+                        before_pt: Some(0.0),
+                        after_pt: Some(2.0),
+                        ..Spacing::default()
+                    },
+                    ..ParaProps::default()
+                },
+                runs: vec![Run {
+                    text,
+                    props: CharProps {
+                        italic: true,
+                        color: Some(Color::rgb(90, 90, 90)),
+                        size_half_pt: Some(18),
+                        ..CharProps::default()
+                    },
+                    ..Run::default()
+                }],
+            })
+        })
+        .collect()
+}
+
+fn page_field_text(
+    props: &CharProps,
+    text: &str,
+    field: &FieldRole,
+    page_number: Option<usize>,
+) -> String {
+    match (field, page_number) {
+        (FieldRole::Simple { instruction }, Some(page_number))
+            if FieldKind::from_instruction(instruction) == FieldKind::Page =>
+        {
+            display_text(props, &page_number.to_string())
+        }
+        _ => display_text(props, text),
+    }
+}
+
+fn dynamic_text_for_field(field: &FieldRole, props: &CharProps) -> Option<DynamicTextRun> {
+    match field {
+        FieldRole::Simple { instruction }
+            if FieldKind::from_instruction(instruction) == FieldKind::Page =>
+        {
+            Some(DynamicTextRun {
+                kind: DynamicTextKind::PageNumber,
+                props: props.clone(),
+            })
+        }
+        _ => None,
+    }
+}
+
+fn map_chars(text: &str, map: fn(char) -> Option<char>) -> String {
+    let mut changed = false;
+    let mapped = text
+        .chars()
+        .map(|ch| {
+            if let Some(mapped) = map(ch) {
+                changed = true;
+                mapped
+            } else {
+                ch
+            }
+        })
+        .collect::<String>();
+    if changed {
+        mapped
+    } else {
+        text.to_string()
+    }
+}
+
+fn symbol_char(ch: char) -> Option<char> {
+    Some(match ch {
+        'A' => 'Α',
+        'B' => 'Β',
+        'C' => 'Χ',
+        'D' => 'Δ',
+        'E' => 'Ε',
+        'F' => 'Φ',
+        'G' => 'Γ',
+        'H' => 'Η',
+        'I' => 'Ι',
+        'K' => 'Κ',
+        'L' => 'Λ',
+        'M' => 'Μ',
+        'N' => 'Ν',
+        'O' => 'Ο',
+        'P' => 'Π',
+        'Q' => 'Θ',
+        'R' => 'Ρ',
+        'S' => 'Σ',
+        'T' => 'Τ',
+        'U' => 'Υ',
+        'W' => 'Ω',
+        'X' => 'Ξ',
+        'Y' => 'Ψ',
+        'Z' => 'Ζ',
+        'a' => 'α',
+        'b' => 'β',
+        'c' => 'χ',
+        'd' => 'δ',
+        'e' => 'ε',
+        'f' => 'φ',
+        'g' => 'γ',
+        'h' => 'η',
+        'i' => 'ι',
+        'k' => 'κ',
+        'l' => 'λ',
+        'm' => 'μ',
+        'n' => 'ν',
+        'o' => 'ο',
+        'p' => 'π',
+        'q' => 'θ',
+        'r' => 'ρ',
+        's' => 'σ',
+        't' => 'τ',
+        'u' => 'υ',
+        'w' => 'ω',
+        'x' => 'ξ',
+        'y' => 'ψ',
+        'z' => 'ζ',
+        '\u{00B7}' => '•',
+        _ => return None,
+    })
+}
+
+fn wingdings_char(ch: char) -> Option<char> {
+    Some(match ch {
+        '\u{00FC}' => '✓',
+        '\u{00FB}' => '☑',
+        '\u{00FE}' => '☒',
+        '\u{00A8}' => '◊',
+        '\u{00D8}' => '➢',
+        '\u{00E0}' => '➔',
+        '\u{00E8}' => '➣',
+        'l' => '●',
+        'n' => '■',
+        'u' => '◆',
+        _ => return None,
+    })
+}
+
 /// The hyperlink URL covering byte `pos`, if any. Like color, a link is not a
 /// shaping property, so we look it up per cluster and split draw segments on it.
 fn link_at(links: &[(usize, usize, Rc<str>)], pos: usize) -> Option<Rc<str>> {
@@ -301,6 +919,15 @@ fn link_at(links: &[(usize, usize, Rc<str>)], pos: usize) -> Option<Rc<str>> {
     }
     let (_, e, u) = &links[i - 1];
     (pos < *e).then(|| u.clone())
+}
+
+fn dynamic_at(ranges: &[(usize, usize, DynamicTextRun)], pos: usize) -> Option<DynamicTextRun> {
+    let i = ranges.partition_point(|(s, _, _)| *s <= pos);
+    if i == 0 {
+        return None;
+    }
+    let (_, e, dynamic) = &ranges[i - 1];
+    (pos < *e).then(|| dynamic.clone())
 }
 
 fn heading_size(level: Option<u8>) -> f32 {
@@ -320,6 +947,7 @@ fn shape(
     text: &str,
     ranges: &[(usize, usize, CharProps)],
     links: &[(usize, usize, Rc<str>)],
+    dynamic_ranges: &[(usize, usize, DynamicTextRun)],
     heading_level: Option<u8>,
     align: Alignment,
     width: f32,
@@ -403,6 +1031,7 @@ fn shape(
             // parley run, so accumulate glyphs into segments, flushing each change.
             let mut seg_color = rgb::Color::new(0, 0, 0);
             let mut seg_link: Option<Rc<str>> = None;
+            let mut seg_dynamic: Option<DynamicTextRun> = None;
             let mut seg_x = run_x;
             let mut started = false;
             for cluster in run.visual_clusters() {
@@ -414,7 +1043,11 @@ fn shape(
                 }
                 let c = color_at(ranges, cluster.text_range().start);
                 let lk = link_at(links, cluster.text_range().start);
-                if started && (c != seg_color || lk != seg_link) && !glyphs.is_empty() {
+                let dynamic = dynamic_at(dynamic_ranges, cluster.text_range().start);
+                if started
+                    && (c != seg_color || lk != seg_link || dynamic != seg_dynamic)
+                    && !glyphs.is_empty()
+                {
                     runs.push(RunDraw {
                         x: seg_x,
                         glyphs: std::mem::take(&mut glyphs),
@@ -422,12 +1055,14 @@ fn shape(
                         size: font_size,
                         color: seg_color,
                         link: seg_link.clone(),
+                        dynamic: seg_dynamic.clone(),
                         text: text_rc.clone(),
                     });
                     seg_x = x_cursor;
                 }
                 seg_color = c;
                 seg_link = lk;
+                seg_dynamic = dynamic;
                 started = true;
                 for glyph in cluster.glyphs() {
                     glyphs.push(KrillaGlyph::new(
@@ -450,6 +1085,7 @@ fn shape(
                     size: font_size,
                     color: seg_color,
                     link: seg_link,
+                    dynamic: seg_dynamic,
                     text: text_rc.clone(),
                 });
             }
@@ -520,6 +1156,7 @@ fn layout_paragraph(
     let mut text = String::new();
     let mut ranges: Vec<(usize, usize, CharProps)> = Vec::new();
     let mut links: Vec<(usize, usize, Rc<str>)> = Vec::new();
+    let mut dynamic_ranges: Vec<(usize, usize, DynamicTextRun)> = Vec::new();
     let mut images: Vec<&Image> = Vec::new();
     if let Some(m) = marker {
         if !m.is_empty() {
@@ -538,10 +1175,13 @@ fn layout_paragraph(
             continue;
         }
         let s = text.len();
-        text.push_str(&cased(&r.props, &r.text));
+        text.push_str(&page_field_text(&r.props, &r.text, &r.field, None));
         ranges.push((s, text.len(), r.props.clone()));
         if let FieldRole::Hyperlink { url } = &r.field {
             links.push((s, text.len(), Rc::from(url.as_str())));
+        }
+        if let Some(dynamic) = dynamic_text_for_field(&r.field, &r.props) {
+            dynamic_ranges.push((s, text.len(), dynamic));
         }
     }
     if !text.trim().is_empty() {
@@ -555,6 +1195,7 @@ fn layout_paragraph(
             &text,
             &ranges,
             &links,
+            &dynamic_ranges,
             p.props.heading_level,
             align,
             wrap_w,
@@ -699,15 +1340,19 @@ fn shape_cell(
                 let mut text = String::new();
                 let mut ranges: Vec<(usize, usize, CharProps)> = Vec::new();
                 let mut links: Vec<(usize, usize, Rc<str>)> = Vec::new();
+                let mut dynamic_ranges: Vec<(usize, usize, DynamicTextRun)> = Vec::new();
                 for r in &p.runs {
                     if r.text.is_empty() {
                         continue;
                     }
                     let s = text.len();
-                    text.push_str(&cased(&r.props, &r.text));
+                    text.push_str(&page_field_text(&r.props, &r.text, &r.field, None));
                     ranges.push((s, text.len(), r.props.clone()));
                     if let FieldRole::Hyperlink { url } = &r.field {
                         links.push((s, text.len(), Rc::from(url.as_str())));
+                    }
+                    if let Some(dynamic) = dynamic_text_for_field(&r.field, &r.props) {
+                        dynamic_ranges.push((s, text.len(), dynamic));
                     }
                 }
                 if text.trim().is_empty() {
@@ -723,6 +1368,7 @@ fn shape_cell(
                     &text,
                     &ranges,
                     &links,
+                    &dynamic_ranges,
                     p.props.heading_level,
                     align,
                     inner_w,
@@ -745,7 +1391,7 @@ fn shape_cell(
                     }
                 }
             }
-            Block::Image(_) => {}
+            Block::Image(_) | Block::Chart(_) | Block::PageBreak | Block::SectionBreak(_) => {}
         }
     }
     lines.truncate(MAX_CELL_LINES);
@@ -932,6 +1578,136 @@ fn layout_lines(
         .collect()
 }
 
+trait RunningSurfaceSetup {
+    fn header(&self) -> &[Block];
+    fn first_header(&self) -> &[Block];
+    fn even_header(&self) -> &[Block];
+    fn footer(&self) -> &[Block];
+    fn first_footer(&self) -> &[Block];
+    fn even_footer(&self) -> &[Block];
+}
+
+impl RunningSurfaceSetup for crate::model::DocSetup {
+    fn header(&self) -> &[Block] {
+        &self.header
+    }
+
+    fn first_header(&self) -> &[Block] {
+        &self.first_header
+    }
+
+    fn even_header(&self) -> &[Block] {
+        &self.even_header
+    }
+
+    fn footer(&self) -> &[Block] {
+        &self.footer
+    }
+
+    fn first_footer(&self) -> &[Block] {
+        &self.first_footer
+    }
+
+    fn even_footer(&self) -> &[Block] {
+        &self.even_footer
+    }
+}
+
+impl RunningSurfaceSetup for SectionSetup {
+    fn header(&self) -> &[Block] {
+        &self.header
+    }
+
+    fn first_header(&self) -> &[Block] {
+        &self.first_header
+    }
+
+    fn even_header(&self) -> &[Block] {
+        &self.even_header
+    }
+
+    fn footer(&self) -> &[Block] {
+        &self.footer
+    }
+
+    fn first_footer(&self) -> &[Block] {
+        &self.first_footer
+    }
+
+    fn even_footer(&self) -> &[Block] {
+        &self.even_footer
+    }
+}
+
+fn running_header_footer_blocks_for_page<T: RunningSurfaceSetup + ?Sized>(
+    setup: &T,
+    page_number: usize,
+    is_first_section_page: bool,
+) -> (&[Block], &[Block]) {
+    let header = if is_first_section_page && !setup.first_header().is_empty() {
+        setup.first_header()
+    } else if page_number % 2 == 0 && !setup.even_header().is_empty() {
+        setup.even_header()
+    } else {
+        setup.header()
+    };
+    let footer = if is_first_section_page && !setup.first_footer().is_empty() {
+        setup.first_footer()
+    } else if page_number % 2 == 0 && !setup.even_footer().is_empty() {
+        setup.even_footer()
+    } else {
+        setup.footer()
+    };
+    (header, footer)
+}
+
+fn assign_section_to_render_pages(
+    page_sections: &mut [Option<RenderPageSection>],
+    start_page_index: usize,
+    end_page_index: usize,
+    setup: &SectionSetup,
+) {
+    if page_sections.is_empty() {
+        return;
+    }
+    let last_page_index = page_sections.len() - 1;
+    let start = start_page_index.min(last_page_index);
+    let end = end_page_index.min(last_page_index);
+    if start > end {
+        return;
+    }
+    for page_section in &mut page_sections[start..=end] {
+        *page_section = Some(RenderPageSection {
+            setup: setup.clone(),
+            first_page_index: start,
+        });
+    }
+}
+
+fn layout_page_number_line(
+    page_number: usize,
+    geom: Geom,
+    font_cx: &mut FontContext,
+    layout_cx: &mut LayoutContext<rgb::Color>,
+    font_cache: &mut HashMap<u64, Font>,
+) -> Option<LineLayout> {
+    let text = page_number.to_string();
+    shape(
+        &text,
+        &[(0, text.len(), CharProps::default())],
+        &[],
+        &[],
+        None,
+        Alignment::Center,
+        geom.content_w(),
+        font_cx,
+        layout_cx,
+        font_cache,
+    )
+    .into_iter()
+    .next()
+}
+
 fn collect_blocks(
     blocks: &[Block],
     out: &mut Vec<FlowItem>,
@@ -940,8 +1716,34 @@ fn collect_blocks(
     layout_cx: &mut LayoutContext<rgb::Color>,
     font_cache: &mut HashMap<u64, Font>,
 ) {
+    collect_blocks_inner(blocks, out, geom, font_cx, layout_cx, font_cache, false);
+}
+
+fn collect_blocks_with_block_anchors(
+    blocks: &[Block],
+    out: &mut Vec<FlowItem>,
+    geom: Geom,
+    font_cx: &mut FontContext,
+    layout_cx: &mut LayoutContext<rgb::Color>,
+    font_cache: &mut HashMap<u64, Font>,
+) {
+    collect_blocks_inner(blocks, out, geom, font_cx, layout_cx, font_cache, true);
+}
+
+fn collect_blocks_inner(
+    blocks: &[Block],
+    out: &mut Vec<FlowItem>,
+    geom: Geom,
+    font_cx: &mut FontContext,
+    layout_cx: &mut LayoutContext<rgb::Color>,
+    font_cache: &mut HashMap<u64, Font>,
+    include_block_anchors: bool,
+) {
     let mut lists = ListState::default();
-    for b in blocks {
+    for (block_index, b) in blocks.iter().enumerate() {
+        if include_block_anchors {
+            out.push(FlowItem::BlockStart(block_index));
+        }
         match b {
             Block::Paragraph(p) => {
                 // A heading suppresses list marking, mirroring the writer.
@@ -979,6 +1781,14 @@ fn collect_blocks(
                     out.push(FlowItem::Gap(PARA_GAP));
                 }
             }
+            Block::Chart(chart) => {
+                if let Some(item) = chart_flow_item(chart, geom) {
+                    out.push(item);
+                    out.push(FlowItem::Gap(PARA_GAP));
+                }
+            }
+            Block::PageBreak => out.push(FlowItem::PageBreak),
+            Block::SectionBreak(section) => out.push(FlowItem::SectionBreak(section.clone())),
         }
     }
 }
@@ -1004,6 +1814,127 @@ fn fill_rect_color(surface: &mut Surface<'_>, x: f32, y: f32, w: f32, h: f32, co
     }
 }
 
+fn fill_circle_color(surface: &mut Surface<'_>, cx: f32, cy: f32, radius: f32, color: rgb::Color) {
+    if radius <= 0.0 {
+        return;
+    }
+    let mut pb = PathBuilder::new();
+    let steps = 28usize;
+    for step in 0..=steps {
+        let angle = std::f32::consts::TAU * step as f32 / steps as f32;
+        let x = cx + radius * angle.cos();
+        let y = cy + radius * angle.sin();
+        if step == 0 {
+            pb.move_to(x, y);
+        } else {
+            pb.line_to(x, y);
+        }
+    }
+    pb.close();
+    if let Some(path) = pb.finish() {
+        surface.set_fill(Some(Fill {
+            paint: color.into(),
+            rule: FillRule::NonZero,
+            opacity: NormalizedF32::ONE,
+        }));
+        surface.draw_path(&path);
+    }
+}
+
+fn fill_triangle_color(
+    surface: &mut Surface<'_>,
+    p1: (f32, f32),
+    p2: (f32, f32),
+    p3: (f32, f32),
+    color: rgb::Color,
+) {
+    let mut pb = PathBuilder::new();
+    pb.move_to(p1.0, p1.1);
+    pb.line_to(p2.0, p2.1);
+    pb.line_to(p3.0, p3.1);
+    pb.close();
+    if let Some(path) = pb.finish() {
+        surface.set_fill(Some(Fill {
+            paint: color.into(),
+            rule: FillRule::NonZero,
+            opacity: NormalizedF32::ONE,
+        }));
+        surface.draw_path(&path);
+    }
+}
+
+fn fill_chart_bar_shape(
+    surface: &mut Surface<'_>,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    shape: ChartShape,
+    color: rgb::Color,
+) {
+    if w <= 0.0 || h <= 0.0 {
+        return;
+    }
+    match shape {
+        ChartShape::Cylinder => {
+            let radius = (h * 0.5).min(w * 0.5);
+            fill_rect_color(
+                surface,
+                x + radius * 0.5,
+                y,
+                (w - radius).max(1.0),
+                h,
+                color,
+            );
+            fill_circle_color(surface, x + radius, y + h * 0.5, radius, color);
+            fill_circle_color(surface, x + w - radius, y + h * 0.5, radius, color);
+        }
+        ChartShape::Cone
+        | ChartShape::ConeToMax
+        | ChartShape::Pyramid
+        | ChartShape::PyramidToMax => {
+            fill_triangle_color(surface, (x, y), (x, y + h), (x + w, y + h * 0.5), color);
+        }
+        ChartShape::Box => fill_rect_color(surface, x, y, w, h, color),
+    }
+}
+
+fn fill_chart_column_shape(
+    surface: &mut Surface<'_>,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    shape: ChartShape,
+    color: rgb::Color,
+) {
+    if w <= 0.0 || h <= 0.0 {
+        return;
+    }
+    match shape {
+        ChartShape::Cylinder => {
+            let radius = (w * 0.5).min(h * 0.5);
+            fill_rect_color(
+                surface,
+                x,
+                y + radius * 0.5,
+                w,
+                (h - radius).max(1.0),
+                color,
+            );
+            fill_circle_color(surface, x + w * 0.5, y + radius, radius, color);
+            fill_circle_color(surface, x + w * 0.5, y + h - radius, radius, color);
+        }
+        ChartShape::Cone
+        | ChartShape::ConeToMax
+        | ChartShape::Pyramid
+        | ChartShape::PyramidToMax => {
+            fill_triangle_color(surface, (x + w * 0.5, y), (x, y + h), (x + w, y + h), color);
+        }
+        ChartShape::Box => fill_rect_color(surface, x, y, w, h, color),
+    }
+}
+
 /// Fill an axis-aligned rectangle in solid black (used for thin table borders).
 fn fill_rect(surface: &mut Surface<'_>, x: f32, y: f32, w: f32, h: f32) {
     fill_rect_color(surface, x, y, w, h, rgb::Color::new(0, 0, 0));
@@ -1015,6 +1946,1028 @@ fn draw_border(surface: &mut Surface<'_>, x: f32, y: f32, w: f32, h: f32) {
     fill_rect(surface, x, y + h - BORDER, w, BORDER); // bottom
     fill_rect(surface, x, y, BORDER, h); // left
     fill_rect(surface, x + w - BORDER, y, BORDER, h); // right
+}
+
+fn draw_border_color(surface: &mut Surface<'_>, x: f32, y: f32, w: f32, h: f32, color: rgb::Color) {
+    fill_rect_color(surface, x, y, w, BORDER, color);
+    fill_rect_color(surface, x, y + h - BORDER, w, BORDER, color);
+    fill_rect_color(surface, x, y, BORDER, h, color);
+    fill_rect_color(surface, x + w - BORDER, y, BORDER, h, color);
+}
+
+fn draw_floating_shape_overlay(
+    surface: &mut Surface<'_>,
+    overlay: &FloatingShapeOverlay,
+    font_cx: &mut FontContext,
+    layout_cx: &mut LayoutContext<rgb::Color>,
+    font_cache: &mut HashMap<u64, Font>,
+) {
+    fill_rect_color(
+        surface,
+        overlay.x,
+        overlay.y,
+        overlay.w,
+        overlay.h,
+        rgb::Color::new(0xF6, 0xF8, 0xFA),
+    );
+    draw_border_color(
+        surface,
+        overlay.x,
+        overlay.y,
+        overlay.w,
+        overlay.h,
+        rgb::Color::new(0x5D, 0x6B, 0x78),
+    );
+    draw_chart_text(
+        surface,
+        &overlay.label,
+        overlay.x + 4.0,
+        overlay.y + 4.0,
+        (overlay.w - 8.0).max(1.0),
+        7.5,
+        false,
+        Alignment::Start,
+        Color::rgb(0x32, 0x3A, 0x43),
+        font_cx,
+        layout_cx,
+        font_cache,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_chart_text(
+    surface: &mut Surface<'_>,
+    text: &str,
+    x: f32,
+    y: f32,
+    width: f32,
+    size_pt: f32,
+    bold: bool,
+    align: Alignment,
+    color: Color,
+    font_cx: &mut FontContext,
+    layout_cx: &mut LayoutContext<rgb::Color>,
+    font_cache: &mut HashMap<u64, Font>,
+) -> f32 {
+    if text.trim().is_empty() || width <= 0.0 {
+        return 0.0;
+    }
+    let size_half_pt = (size_pt * 2.0).round().max(1.0) as u16;
+    let props = CharProps {
+        bold,
+        size_half_pt: Some(size_half_pt),
+        color: Some(color),
+        ..CharProps::default()
+    };
+    let mut consumed = 0.0;
+    for line in shape(
+        text,
+        &[(0, text.len(), props)],
+        &[],
+        &[],
+        None,
+        align,
+        width,
+        font_cx,
+        layout_cx,
+        font_cache,
+    )
+    .into_iter()
+    .take(2)
+    {
+        let baseline = y + consumed + line.baseline;
+        for run in line.runs {
+            draw_run(surface, run, x + line.x_indent, baseline);
+        }
+        consumed += line.height;
+    }
+    consumed
+}
+
+fn chart_series_color(index: usize) -> rgb::Color {
+    const COLORS: [(u8, u8, u8); 6] = [
+        (0x2F, 0x6F, 0xD6),
+        (0xD9, 0x4E, 0x4E),
+        (0x27, 0x9A, 0x68),
+        (0x9B, 0x5D, 0xC8),
+        (0xD8, 0x8A, 0x25),
+        (0x36, 0x8C, 0xA8),
+    ];
+    let (r, g, b) = COLORS[index % COLORS.len()];
+    rgb::Color::new(r, g, b)
+}
+
+fn chart_value_range(chart: &Chart) -> (f64, f64) {
+    let mut min = 0.0;
+    let mut max = 0.0;
+    for value in chart
+        .series
+        .iter()
+        .flat_map(|series| series.values.iter().copied())
+        .filter(|value| value.is_finite())
+    {
+        if value < min {
+            min = value;
+        }
+        if value > max {
+            max = value;
+        }
+    }
+    if min == max {
+        if max == 0.0 {
+            max = 1.0;
+        } else if max > 0.0 {
+            min = 0.0;
+        } else {
+            max = 0.0;
+        }
+    }
+    (min, max)
+}
+
+fn chart_bubble_size_range(chart: &Chart) -> (f64, f64) {
+    let mut max = 1.0;
+    for size in chart
+        .series
+        .iter()
+        .flat_map(|series| series.bubble_sizes.iter().copied())
+        .filter(|size| size.is_finite() && *size > 0.0)
+    {
+        if size > max {
+            max = size;
+        }
+    }
+    (1.0, max)
+}
+
+fn format_chart_tick(value: f64) -> String {
+    if !value.is_finite() {
+        return "0".to_string();
+    }
+    if (value.fract()).abs() < 0.001 {
+        format!("{}", value.round() as i64)
+    } else {
+        format!("{value:.1}")
+    }
+}
+
+fn fill_line_segment(
+    surface: &mut Surface<'_>,
+    x1: f32,
+    y1: f32,
+    x2: f32,
+    y2: f32,
+    width: f32,
+    color: rgb::Color,
+) {
+    let dx = x2 - x1;
+    let dy = y2 - y1;
+    let len = (dx * dx + dy * dy).sqrt();
+    if len <= 0.01 {
+        fill_rect_color(
+            surface,
+            x1 - width * 0.5,
+            y1 - width * 0.5,
+            width,
+            width,
+            color,
+        );
+        return;
+    }
+    let px = -dy / len * width * 0.5;
+    let py = dx / len * width * 0.5;
+    let mut pb = PathBuilder::new();
+    pb.move_to(x1 + px, y1 + py);
+    pb.line_to(x2 + px, y2 + py);
+    pb.line_to(x2 - px, y2 - py);
+    pb.line_to(x1 - px, y1 - py);
+    pb.close();
+    if let Some(path) = pb.finish() {
+        surface.set_fill(Some(Fill {
+            paint: color.into(),
+            rule: FillRule::NonZero,
+            opacity: NormalizedF32::ONE,
+        }));
+        surface.draw_path(&path);
+    }
+}
+
+fn fill_area_shape(
+    surface: &mut Surface<'_>,
+    points: &[(f32, f32)],
+    baseline_y: f32,
+    color: rgb::Color,
+) {
+    let Some((first_x, _)) = points.first().copied() else {
+        return;
+    };
+    let Some((last_x, _)) = points.last().copied() else {
+        return;
+    };
+    let mut pb = PathBuilder::new();
+    pb.move_to(first_x, baseline_y);
+    for (x, y) in points {
+        pb.line_to(*x, *y);
+    }
+    pb.line_to(last_x, baseline_y);
+    pb.close();
+    if let Some(path) = pb.finish() {
+        surface.set_fill(Some(Fill {
+            paint: color.into(),
+            rule: FillRule::NonZero,
+            opacity: NormalizedF32::ONE,
+        }));
+        surface.draw_path(&path);
+    }
+}
+
+fn fill_pie_slice(
+    surface: &mut Surface<'_>,
+    cx: f32,
+    cy: f32,
+    radius: f32,
+    start_angle: f32,
+    sweep: f32,
+    color: rgb::Color,
+) {
+    if radius <= 0.0 || sweep.abs() <= 0.0001 {
+        return;
+    }
+    let steps = ((sweep.abs() / (std::f32::consts::PI / 24.0)).ceil() as usize).clamp(2, 96);
+    let mut pb = PathBuilder::new();
+    pb.move_to(cx, cy);
+    for step in 0..=steps {
+        let angle = start_angle + sweep * step as f32 / steps as f32;
+        pb.line_to(cx + angle.cos() * radius, cy + angle.sin() * radius);
+    }
+    pb.close();
+    if let Some(path) = pb.finish() {
+        surface.set_fill(Some(Fill {
+            paint: color.into(),
+            rule: FillRule::NonZero,
+            opacity: NormalizedF32::ONE,
+        }));
+        surface.draw_path(&path);
+    }
+}
+
+fn draw_pie_chart(
+    surface: &mut Surface<'_>,
+    chart: &Chart,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    doughnut: bool,
+) {
+    let Some(series) = chart.series.first() else {
+        return;
+    };
+    let values = chart
+        .categories
+        .iter()
+        .enumerate()
+        .map(|(index, _)| {
+            series
+                .values
+                .get(index)
+                .copied()
+                .filter(|value| value.is_finite() && *value > 0.0)
+                .unwrap_or(0.0)
+        })
+        .collect::<Vec<_>>();
+    let total: f64 = values.iter().sum();
+    if total <= 0.0 {
+        return;
+    }
+    let radius = (w.min(h) * 0.42).max(1.0);
+    let cx = x + w * 0.5;
+    let cy = y + h * 0.5;
+    let mut angle = -std::f32::consts::FRAC_PI_2;
+    for (index, value) in values.iter().enumerate() {
+        if *value <= 0.0 {
+            continue;
+        }
+        let sweep = (*value / total) as f32 * std::f32::consts::TAU;
+        fill_pie_slice(
+            surface,
+            cx,
+            cy,
+            radius,
+            angle,
+            sweep,
+            chart_series_color(index),
+        );
+        angle += sweep;
+    }
+    if doughnut {
+        fill_pie_slice(
+            surface,
+            cx,
+            cy,
+            radius * 0.52,
+            -std::f32::consts::FRAC_PI_2,
+            std::f32::consts::TAU,
+            rgb::Color::new(0xFF, 0xFF, 0xFF),
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_radar_chart(
+    surface: &mut Surface<'_>,
+    chart: &Chart,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    font_cx: &mut FontContext,
+    layout_cx: &mut LayoutContext<rgb::Color>,
+    font_cache: &mut HashMap<u64, Font>,
+) {
+    if chart.categories.is_empty() || chart.series.is_empty() {
+        return;
+    }
+    let grid = rgb::Color::new(0xE1, 0xE5, 0xEA);
+    let axis = rgb::Color::new(0x5D, 0x66, 0x70);
+    let max_value = chart
+        .series
+        .iter()
+        .flat_map(|series| series.values.iter().copied())
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .fold(0.0_f64, f64::max)
+        .max(1.0);
+    let cx = x + w * 0.5;
+    let cy = y + h * 0.5;
+    let radius = (w.min(h) * 0.36).max(1.0);
+    let label_radius = radius + 9.0;
+    let count = chart.categories.len();
+    let point_at = |index: usize, value: f64| {
+        let angle =
+            -std::f32::consts::FRAC_PI_2 + index as f32 / count as f32 * std::f32::consts::TAU;
+        let frac = (value.max(0.0) / max_value).clamp(0.0, 1.0) as f32;
+        (
+            cx + angle.cos() * radius * frac,
+            cy + angle.sin() * radius * frac,
+        )
+    };
+    for ring in 1..=4 {
+        let frac = ring as f64 / 4.0;
+        let ring_points = (0..count)
+            .map(|index| point_at(index, max_value * frac))
+            .collect::<Vec<_>>();
+        for index in 0..ring_points.len() {
+            let (x1, y1) = ring_points[index];
+            let (x2, y2) = ring_points[(index + 1) % ring_points.len()];
+            fill_line_segment(surface, x1, y1, x2, y2, 0.45, grid);
+        }
+    }
+    for (index, category) in chart.categories.iter().enumerate() {
+        let (spoke_x, spoke_y) = point_at(index, max_value);
+        fill_line_segment(surface, cx, cy, spoke_x, spoke_y, 0.45, axis);
+        let angle =
+            -std::f32::consts::FRAC_PI_2 + index as f32 / count as f32 * std::f32::consts::TAU;
+        let label_x = cx + angle.cos() * label_radius;
+        let label_y = cy + angle.sin() * label_radius;
+        draw_chart_text(
+            surface,
+            category,
+            label_x - 28.0,
+            label_y - 5.0,
+            56.0,
+            7.5,
+            false,
+            Alignment::Center,
+            Color::rgb(0x25, 0x2D, 0x36),
+            font_cx,
+            layout_cx,
+            font_cache,
+        );
+    }
+    for (series_index, series) in chart.series.iter().enumerate() {
+        let color = chart_series_color(series_index);
+        let points = (0..count)
+            .map(|index| {
+                let value = series
+                    .values
+                    .get(index)
+                    .copied()
+                    .filter(|value| value.is_finite())
+                    .unwrap_or(0.0);
+                point_at(index, value)
+            })
+            .collect::<Vec<_>>();
+        for index in 0..points.len() {
+            let (x1, y1) = points[index];
+            let (x2, y2) = points[(index + 1) % points.len()];
+            fill_line_segment(surface, x1, y1, x2, y2, 1.5, color);
+            fill_rect_color(surface, x1 - 2.0, y1 - 2.0, 4.0, 4.0, color);
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_authored_chart(
+    surface: &mut Surface<'_>,
+    chart: &Chart,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    font_cx: &mut FontContext,
+    layout_cx: &mut LayoutContext<rgb::Color>,
+    font_cache: &mut HashMap<u64, Font>,
+) {
+    let border = rgb::Color::new(0xA7, 0xB0, 0xBA);
+    let axis = rgb::Color::new(0x5D, 0x66, 0x70);
+    let grid = rgb::Color::new(0xE1, 0xE5, 0xEA);
+    fill_rect_color(surface, x, y, w, h, rgb::Color::new(0xFF, 0xFF, 0xFF));
+    fill_rect_color(surface, x, y, w, BORDER, border);
+    fill_rect_color(surface, x, y + h - BORDER, w, BORDER, border);
+    fill_rect_color(surface, x, y, BORDER, h, border);
+    fill_rect_color(surface, x + w - BORDER, y, BORDER, h, border);
+
+    let mut content_top = y + 8.0;
+    if let Some(title) = chart.title.as_deref() {
+        let used = draw_chart_text(
+            surface,
+            title,
+            x + 8.0,
+            content_top,
+            (w - 16.0).max(1.0),
+            11.0,
+            true,
+            Alignment::Center,
+            Color::rgb(0x1E, 0x2A, 0x36),
+            font_cx,
+            layout_cx,
+            font_cache,
+        );
+        content_top += used + 4.0;
+    }
+
+    let label_w = (w * 0.24).clamp(54.0, 110.0);
+    let legend_h = 18.0;
+    let plot_left = x + label_w + 10.0;
+    let plot_right = x + w - 12.0;
+    let plot_top = content_top;
+    let plot_bottom = y + h - legend_h - 18.0;
+    let plot_w = (plot_right - plot_left).max(1.0);
+    let plot_h = (plot_bottom - plot_top).max(1.0);
+    if plot_w <= 8.0 || plot_h <= 8.0 {
+        return;
+    }
+
+    if matches!(
+        chart.kind,
+        ChartKind::Pie
+            | ChartKind::Pie3D
+            | ChartKind::PieOfPie
+            | ChartKind::BarOfPie
+            | ChartKind::Doughnut
+    ) {
+        draw_pie_chart(
+            surface,
+            chart,
+            plot_left,
+            plot_top,
+            plot_w,
+            plot_h,
+            chart.kind == ChartKind::Doughnut,
+        );
+        let mut legend_x = plot_left;
+        let legend_y = y + h - 14.0;
+        for (index, category) in chart.categories.iter().enumerate() {
+            if legend_x >= plot_right - 20.0 {
+                break;
+            }
+            fill_rect_color(
+                surface,
+                legend_x,
+                legend_y + 3.0,
+                6.0,
+                6.0,
+                chart_series_color(index),
+            );
+            let used = draw_chart_text(
+                surface,
+                category,
+                legend_x + 9.0,
+                legend_y,
+                (plot_right - legend_x - 9.0).max(1.0),
+                8.0,
+                false,
+                Alignment::Start,
+                Color::rgb(0x25, 0x2D, 0x36),
+                font_cx,
+                layout_cx,
+                font_cache,
+            );
+            legend_x += 9.0 + (category.chars().count() as f32 * 4.8).max(used * 3.0) + 12.0;
+        }
+        return;
+    }
+
+    if chart.kind == ChartKind::Radar {
+        draw_radar_chart(
+            surface, chart, plot_left, plot_top, plot_w, plot_h, font_cx, layout_cx, font_cache,
+        );
+        let mut legend_x = plot_left;
+        let legend_y = y + h - 14.0;
+        for (index, series) in chart.series.iter().enumerate() {
+            if legend_x >= plot_right - 20.0 {
+                break;
+            }
+            fill_rect_color(
+                surface,
+                legend_x,
+                legend_y + 3.0,
+                6.0,
+                6.0,
+                chart_series_color(index),
+            );
+            let used = draw_chart_text(
+                surface,
+                &series.name,
+                legend_x + 9.0,
+                legend_y,
+                (plot_right - legend_x - 9.0).max(1.0),
+                8.0,
+                false,
+                Alignment::Start,
+                Color::rgb(0x25, 0x2D, 0x36),
+                font_cx,
+                layout_cx,
+                font_cache,
+            );
+            legend_x += 9.0 + (series.name.chars().count() as f32 * 4.8).max(used * 3.0) + 12.0;
+        }
+        return;
+    }
+
+    let (min_value, max_value) = chart_value_range(chart);
+    let range = (max_value - min_value).max(1.0);
+    let value_x = |value: f64| plot_left + (((value - min_value) / range) as f32 * plot_w);
+    let value_y = |value: f64| plot_bottom - (((value - min_value) / range) as f32 * plot_h);
+
+    let max_series_points = chart
+        .series
+        .iter()
+        .map(|series| series.values.len())
+        .max()
+        .unwrap_or(0);
+    let category_count = chart.categories.len().max(max_series_points).max(1);
+    let series_count = chart.series.len().max(1);
+
+    match chart.kind {
+        ChartKind::Bar | ChartKind::Bar3D => {
+            let zero_x = value_x(0.0).clamp(plot_left, plot_right);
+            for tick in 0..=4 {
+                let frac = tick as f32 / 4.0;
+                let x_tick = plot_left + frac * plot_w;
+                fill_rect_color(surface, x_tick, plot_top, 0.35, plot_h, grid);
+                let value = min_value + (max_value - min_value) * tick as f64 / 4.0;
+                let label = format_chart_tick(value);
+                draw_chart_text(
+                    surface,
+                    &label,
+                    x_tick - 18.0,
+                    plot_bottom + 3.0,
+                    36.0,
+                    7.5,
+                    false,
+                    Alignment::Center,
+                    Color::rgb(0x4C, 0x55, 0x5F),
+                    font_cx,
+                    layout_cx,
+                    font_cache,
+                );
+            }
+            fill_rect_color(surface, zero_x, plot_top, 0.8, plot_h, axis);
+            fill_rect_color(surface, plot_left, plot_bottom, plot_w, 0.8, axis);
+
+            let band_h = plot_h / category_count as f32;
+            let group_h = (band_h * 0.68).max(3.0);
+            let bar_h = ((group_h / series_count as f32) - 1.0).max(2.0);
+            for (category_index, category) in chart.categories.iter().enumerate() {
+                let band_top = plot_top + category_index as f32 * band_h;
+                let label_y = band_top + (band_h - 9.0).max(0.0) * 0.5;
+                draw_chart_text(
+                    surface,
+                    category,
+                    x + 5.0,
+                    label_y,
+                    label_w,
+                    8.0,
+                    false,
+                    Alignment::End,
+                    Color::rgb(0x25, 0x2D, 0x36),
+                    font_cx,
+                    layout_cx,
+                    font_cache,
+                );
+
+                let group_top = band_top + (band_h - group_h) * 0.5;
+                for (series_index, series) in chart.series.iter().enumerate() {
+                    let value = series
+                        .values
+                        .get(category_index)
+                        .copied()
+                        .filter(|value| value.is_finite())
+                        .unwrap_or(0.0);
+                    let x_value = value_x(value).clamp(plot_left, plot_right);
+                    let bar_left = zero_x.min(x_value);
+                    let bar_width = (zero_x - x_value).abs().max(1.0);
+                    let bar_top = group_top + series_index as f32 * (bar_h + 1.0);
+                    let color = chart_series_color(series_index);
+                    if chart.kind == ChartKind::Bar3D {
+                        fill_chart_bar_shape(
+                            surface,
+                            bar_left,
+                            bar_top,
+                            bar_width,
+                            bar_h,
+                            chart.shape,
+                            color,
+                        );
+                    } else {
+                        fill_rect_color(surface, bar_left, bar_top, bar_width, bar_h, color);
+                    }
+                }
+            }
+        }
+        ChartKind::Column
+        | ChartKind::Column3D
+        | ChartKind::Line
+        | ChartKind::Line3D
+        | ChartKind::Area
+        | ChartKind::Area3D
+        | ChartKind::Scatter
+        | ChartKind::Bubble
+        | ChartKind::Surface
+        | ChartKind::Surface3D
+        | ChartKind::Stock => {
+            let zero_y = value_y(0.0).clamp(plot_top, plot_bottom);
+            for tick in 0..=4 {
+                let frac = tick as f32 / 4.0;
+                let y_tick = plot_bottom - frac * plot_h;
+                fill_rect_color(surface, plot_left, y_tick, plot_w, 0.35, grid);
+                let value = min_value + (max_value - min_value) * tick as f64 / 4.0;
+                let label = format_chart_tick(value);
+                draw_chart_text(
+                    surface,
+                    &label,
+                    x + 5.0,
+                    y_tick - 5.0,
+                    label_w,
+                    7.5,
+                    false,
+                    Alignment::End,
+                    Color::rgb(0x4C, 0x55, 0x5F),
+                    font_cx,
+                    layout_cx,
+                    font_cache,
+                );
+            }
+            fill_rect_color(surface, plot_left, zero_y, plot_w, 0.8, axis);
+            fill_rect_color(surface, plot_left, plot_top, 0.8, plot_h, axis);
+
+            let band_w = plot_w / category_count as f32;
+            for (category_index, category) in chart.categories.iter().enumerate() {
+                let center_x = plot_left + category_index as f32 * band_w + band_w * 0.5;
+                draw_chart_text(
+                    surface,
+                    category,
+                    center_x - band_w * 0.48,
+                    plot_bottom + 3.0,
+                    band_w * 0.96,
+                    8.0,
+                    false,
+                    Alignment::Center,
+                    Color::rgb(0x25, 0x2D, 0x36),
+                    font_cx,
+                    layout_cx,
+                    font_cache,
+                );
+            }
+
+            match chart.kind {
+                ChartKind::Column | ChartKind::Column3D => {
+                    let group_w = (band_w * 0.68).max(3.0);
+                    let column_w = ((group_w / series_count as f32) - 2.0).max(2.0);
+                    for (category_index, _) in chart.categories.iter().enumerate() {
+                        let group_left =
+                            plot_left + category_index as f32 * band_w + (band_w - group_w) * 0.5;
+                        for (series_index, series) in chart.series.iter().enumerate() {
+                            let value = series
+                                .values
+                                .get(category_index)
+                                .copied()
+                                .filter(|value| value.is_finite())
+                                .unwrap_or(0.0);
+                            let y_value = value_y(value).clamp(plot_top, plot_bottom);
+                            let column_top = zero_y.min(y_value);
+                            let column_h = (zero_y - y_value).abs().max(1.0);
+                            let column_left = group_left + series_index as f32 * (column_w + 2.0);
+                            let color = chart_series_color(series_index);
+                            if chart.kind == ChartKind::Column3D {
+                                fill_chart_column_shape(
+                                    surface,
+                                    column_left,
+                                    column_top,
+                                    column_w,
+                                    column_h,
+                                    chart.shape,
+                                    color,
+                                );
+                            } else {
+                                fill_rect_color(
+                                    surface,
+                                    column_left,
+                                    column_top,
+                                    column_w,
+                                    column_h,
+                                    color,
+                                );
+                            }
+                        }
+                    }
+                }
+                ChartKind::Area | ChartKind::Area3D => {
+                    for (series_index, series) in chart.series.iter().enumerate() {
+                        let color = chart_series_color(series_index);
+                        let mut points = Vec::new();
+                        for category_index in 0..chart.categories.len() {
+                            let value = series
+                                .values
+                                .get(category_index)
+                                .copied()
+                                .filter(|value| value.is_finite())
+                                .unwrap_or(0.0);
+                            points.push((
+                                plot_left + category_index as f32 * band_w + band_w * 0.5,
+                                value_y(value).clamp(plot_top, plot_bottom),
+                            ));
+                        }
+                        fill_area_shape(surface, &points, zero_y, color);
+                        let mut previous: Option<(f32, f32)> = None;
+                        for (point_x, point_y) in points {
+                            if let Some((prev_x, prev_y)) = previous {
+                                fill_line_segment(
+                                    surface, prev_x, prev_y, point_x, point_y, 1.4, color,
+                                );
+                            }
+                            fill_rect_color(surface, point_x - 2.0, point_y - 2.0, 4.0, 4.0, color);
+                            previous = Some((point_x, point_y));
+                        }
+                    }
+                }
+                ChartKind::Line | ChartKind::Line3D => {
+                    for (series_index, series) in chart.series.iter().enumerate() {
+                        let color = chart_series_color(series_index);
+                        let mut previous: Option<(f32, f32)> = None;
+                        for category_index in 0..chart.categories.len() {
+                            let value = series
+                                .values
+                                .get(category_index)
+                                .copied()
+                                .filter(|value| value.is_finite())
+                                .unwrap_or(0.0);
+                            let point_x = plot_left + category_index as f32 * band_w + band_w * 0.5;
+                            let point_y = value_y(value).clamp(plot_top, plot_bottom);
+                            if let Some((prev_x, prev_y)) = previous {
+                                fill_line_segment(
+                                    surface, prev_x, prev_y, point_x, point_y, 1.6, color,
+                                );
+                            }
+                            fill_rect_color(surface, point_x - 2.0, point_y - 2.0, 4.0, 4.0, color);
+                            previous = Some((point_x, point_y));
+                        }
+                    }
+                }
+                ChartKind::Stock => {
+                    for category_index in 0..category_count {
+                        let point_x = plot_left + category_index as f32 * band_w + band_w * 0.5;
+                        let values: Vec<_> = chart
+                            .series
+                            .iter()
+                            .filter_map(|series| {
+                                series
+                                    .values
+                                    .get(category_index)
+                                    .copied()
+                                    .filter(|value| value.is_finite())
+                            })
+                            .collect();
+                        if values.is_empty() {
+                            continue;
+                        }
+                        let low = values.iter().copied().fold(f64::INFINITY, f64::min);
+                        let high = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+                        let y_low = value_y(low).clamp(plot_top, plot_bottom);
+                        let y_high = value_y(high).clamp(plot_top, plot_bottom);
+                        fill_rect_color(
+                            surface,
+                            point_x - 0.7,
+                            y_high,
+                            1.4,
+                            (y_low - y_high).abs().max(1.0),
+                            axis,
+                        );
+                        if let Some(open) = values.first().copied() {
+                            let y_open = value_y(open).clamp(plot_top, plot_bottom);
+                            fill_rect_color(
+                                surface,
+                                point_x - band_w * 0.18,
+                                y_open - 0.8,
+                                band_w * 0.18,
+                                1.6,
+                                chart_series_color(0),
+                            );
+                        }
+                        if let Some(close) = values.last().copied() {
+                            let y_close = value_y(close).clamp(plot_top, plot_bottom);
+                            fill_rect_color(
+                                surface,
+                                point_x,
+                                y_close - 0.8,
+                                band_w * 0.18,
+                                1.6,
+                                chart_series_color(3.min(chart.series.len().saturating_sub(1))),
+                            );
+                        }
+                    }
+                }
+                ChartKind::Scatter => {
+                    for (series_index, series) in chart.series.iter().enumerate() {
+                        let color = chart_series_color(series_index);
+                        let mut previous: Option<(f32, f32)> = None;
+                        for value_index in 0..series.values.len() {
+                            let value = series
+                                .values
+                                .get(value_index)
+                                .copied()
+                                .filter(|value| value.is_finite())
+                                .unwrap_or(0.0);
+                            let point_x = plot_left + value_index as f32 * band_w + band_w * 0.5;
+                            let point_y = value_y(value).clamp(plot_top, plot_bottom);
+                            if let Some((prev_x, prev_y)) = previous {
+                                fill_line_segment(
+                                    surface, prev_x, prev_y, point_x, point_y, 1.3, color,
+                                );
+                            }
+                            fill_rect_color(surface, point_x - 2.5, point_y - 2.5, 5.0, 5.0, color);
+                            previous = Some((point_x, point_y));
+                        }
+                    }
+                }
+                ChartKind::Bubble => {
+                    let (_, max_bubble_size) = chart_bubble_size_range(chart);
+                    let max_radius = (band_w.min(plot_h) * 0.22).clamp(3.5, 14.0);
+                    for (series_index, series) in chart.series.iter().enumerate() {
+                        let color = chart_series_color(series_index);
+                        for value_index in 0..series.values.len() {
+                            let value = series
+                                .values
+                                .get(value_index)
+                                .copied()
+                                .filter(|value| value.is_finite())
+                                .unwrap_or(0.0);
+                            let size = series
+                                .bubble_sizes
+                                .get(value_index)
+                                .copied()
+                                .filter(|size| size.is_finite() && *size > 0.0)
+                                .unwrap_or(1.0);
+                            let point_x = plot_left + value_index as f32 * band_w + band_w * 0.5;
+                            let point_y = value_y(value).clamp(plot_top, plot_bottom);
+                            let radius = ((size / max_bubble_size).sqrt() as f32 * max_radius)
+                                .clamp(2.5, max_radius);
+                            fill_circle_color(surface, point_x, point_y, radius, color);
+                        }
+                    }
+                }
+                ChartKind::Surface | ChartKind::Surface3D => {
+                    let row_count = chart.series.len().max(1);
+                    let cell_h = (plot_h / row_count as f32).max(2.0);
+                    for (series_index, series) in chart.series.iter().enumerate() {
+                        let row_top = plot_top + series_index as f32 * cell_h;
+                        draw_chart_text(
+                            surface,
+                            &series.name,
+                            x + 5.0,
+                            row_top + (cell_h - 8.0).max(0.0) * 0.5,
+                            label_w,
+                            7.5,
+                            false,
+                            Alignment::End,
+                            Color::rgb(0x25, 0x2D, 0x36),
+                            font_cx,
+                            layout_cx,
+                            font_cache,
+                        );
+                        for category_index in 0..category_count {
+                            let value = series
+                                .values
+                                .get(category_index)
+                                .copied()
+                                .filter(|value| value.is_finite())
+                                .unwrap_or(0.0);
+                            let intensity = ((value - min_value) / range).clamp(0.0, 1.0);
+                            let shade = (0xEA as f64 - intensity * 0x70 as f64) as u8;
+                            let color = rgb::Color::new(shade, (shade as f32 * 0.95) as u8, 0xF4);
+                            let cell_left = plot_left + category_index as f32 * band_w + 1.0;
+                            let cell_top = row_top + 1.0;
+                            let cell_w = (band_w - 2.0).max(1.0);
+                            let cell_h_inner = (cell_h - 2.0).max(1.0);
+                            if chart.wireframe {
+                                fill_rect_color(surface, cell_left, cell_top, cell_w, 0.45, color);
+                                fill_rect_color(
+                                    surface,
+                                    cell_left,
+                                    cell_top + cell_h_inner,
+                                    cell_w,
+                                    0.45,
+                                    color,
+                                );
+                                fill_rect_color(
+                                    surface,
+                                    cell_left,
+                                    cell_top,
+                                    0.45,
+                                    cell_h_inner,
+                                    color,
+                                );
+                                fill_rect_color(
+                                    surface,
+                                    cell_left + cell_w,
+                                    cell_top,
+                                    0.45,
+                                    cell_h_inner,
+                                    color,
+                                );
+                            } else {
+                                fill_rect_color(
+                                    surface,
+                                    cell_left,
+                                    cell_top,
+                                    cell_w,
+                                    cell_h_inner,
+                                    color,
+                                );
+                                fill_rect_color(surface, cell_left, cell_top, cell_w, 0.35, grid);
+                            }
+                        }
+                    }
+                }
+                ChartKind::Bar
+                | ChartKind::Bar3D
+                | ChartKind::Radar
+                | ChartKind::Pie
+                | ChartKind::Pie3D
+                | ChartKind::PieOfPie
+                | ChartKind::BarOfPie
+                | ChartKind::Doughnut => {}
+            }
+        }
+        ChartKind::Radar
+        | ChartKind::Pie
+        | ChartKind::Pie3D
+        | ChartKind::PieOfPie
+        | ChartKind::BarOfPie
+        | ChartKind::Doughnut => {}
+    }
+
+    let mut legend_x = plot_left;
+    let legend_y = y + h - 14.0;
+    for (index, series) in chart.series.iter().enumerate() {
+        if legend_x >= plot_right - 20.0 {
+            break;
+        }
+        fill_rect_color(
+            surface,
+            legend_x,
+            legend_y + 3.0,
+            6.0,
+            6.0,
+            chart_series_color(index),
+        );
+        let used = draw_chart_text(
+            surface,
+            &series.name,
+            legend_x + 9.0,
+            legend_y,
+            (plot_right - legend_x - 9.0).max(1.0),
+            8.0,
+            false,
+            Alignment::Start,
+            Color::rgb(0x25, 0x2D, 0x36),
+            font_cx,
+            layout_cx,
+            font_cache,
+        );
+        legend_x += 9.0 + (series.name.chars().count() as f32 * 4.8).max(used * 3.0) + 12.0;
+    }
 }
 
 /// Draw a run's glyphs at an absolute baseline position, in the run's color.
@@ -1034,7 +2987,54 @@ fn draw_run(surface: &mut Surface<'_>, run: RunDraw, x_abs: f32, baseline_y: f32
     );
 }
 
+#[allow(clippy::too_many_arguments)]
+fn draw_run_with_page_context(
+    surface: &mut Surface<'_>,
+    run: RunDraw,
+    x_abs: f32,
+    baseline_y: f32,
+    page_number: usize,
+    font_cx: &mut FontContext,
+    layout_cx: &mut LayoutContext<rgb::Color>,
+    font_cache: &mut HashMap<u64, Font>,
+) {
+    let Some(dynamic) = run.dynamic.clone() else {
+        draw_run(surface, run, x_abs, baseline_y);
+        return;
+    };
+
+    let text = match dynamic.kind {
+        DynamicTextKind::PageNumber => page_number.to_string(),
+    };
+    let Some(line) = shape(
+        &text,
+        &[(0, text.len(), dynamic.props)],
+        &[],
+        &[],
+        None,
+        Alignment::Start,
+        1024.0,
+        font_cx,
+        layout_cx,
+        font_cache,
+    )
+    .into_iter()
+    .next() else {
+        draw_run(surface, run, x_abs, baseline_y);
+        return;
+    };
+
+    for replacement in line.runs {
+        draw_run(surface, replacement, x_abs + run.x, baseline_y);
+    }
+}
+
 type Pages = Vec<Vec<(f32, FlowItem)>>;
+
+struct PdfRender {
+    pdf: Vec<u8>,
+    pages: usize,
+}
 
 fn page_nonempty(pages: &Pages) -> bool {
     pages.last().map(|p| !p.is_empty()).unwrap_or(false)
@@ -1133,9 +3133,24 @@ fn place_table(
     }
 }
 
+fn record_pending_block_page(
+    block_pages: &mut HashMap<usize, usize>,
+    pending_block: &mut Option<usize>,
+    page_index: usize,
+) {
+    if let Some(block_index) = pending_block.take() {
+        block_pages.entry(block_index).or_insert(page_index);
+    }
+}
+
 /// Render a [`DocModel`] to a single-column A4 PDF using system fonts.
 pub(crate) fn to_pdf(model: &DocModel) -> Vec<u8> {
     to_pdf_with_fonts(model, &[])
+}
+
+/// Fallible variant of [`to_pdf`].
+pub(crate) fn try_to_pdf(model: &DocModel) -> Result<Vec<u8>> {
+    try_to_pdf_with_fonts(model, &[])
 }
 
 /// Render a [`DocModel`] to PDF, first registering each blob in `extra_fonts` into
@@ -1144,6 +3159,94 @@ pub(crate) fn to_pdf(model: &DocModel) -> Vec<u8> {
 /// then available by its own family name and participates in script fallback.
 /// Undecodable font blobs are ignored.
 pub(crate) fn to_pdf_with_fonts(model: &DocModel, extra_fonts: &[Vec<u8>]) -> Vec<u8> {
+    try_to_pdf_with_fonts(model, extra_fonts).unwrap_or_default()
+}
+
+/// Fallible variant of [`to_pdf_with_fonts`].
+pub(crate) fn try_to_pdf_with_fonts(model: &DocModel, extra_fonts: &[Vec<u8>]) -> Result<Vec<u8>> {
+    Ok(render_pdf(model, extra_fonts, None, &[])?.pdf)
+}
+
+pub(crate) fn to_pdf_with_fonts_and_features_and_shapes(
+    model: &DocModel,
+    extra_fonts: &[Vec<u8>],
+    features: FeatureInventory,
+    floating_shapes: &[FloatingShape],
+) -> Vec<u8> {
+    try_to_pdf_with_fonts_and_features_and_shapes(model, extra_fonts, features, floating_shapes)
+        .unwrap_or_default()
+}
+
+pub(crate) fn try_to_pdf_with_fonts_and_features_and_shapes(
+    model: &DocModel,
+    extra_fonts: &[Vec<u8>],
+    features: FeatureInventory,
+    floating_shapes: &[FloatingShape],
+) -> Result<Vec<u8>> {
+    let unsupported = report::render_unsupported_features(&features);
+    Ok(render_pdf(model, extra_fonts, Some(&unsupported), floating_shapes)?.pdf)
+}
+
+pub(crate) fn to_pdf_with_fonts_and_report(
+    model: &DocModel,
+    extra_fonts: &[Vec<u8>],
+    features: FeatureInventory,
+) -> RenderedPdf {
+    to_pdf_with_fonts_and_report_and_shapes(model, extra_fonts, features, &[])
+}
+
+pub(crate) fn to_pdf_with_fonts_and_report_and_shapes(
+    model: &DocModel,
+    extra_fonts: &[Vec<u8>],
+    features: FeatureInventory,
+    floating_shapes: &[FloatingShape],
+) -> RenderedPdf {
+    let unsupported = report::render_unsupported_features(&features);
+    let fallback_unsupported = unsupported.clone();
+    try_to_pdf_with_fonts_and_report_and_shapes(model, extra_fonts, features, floating_shapes)
+        .unwrap_or_else(|_| RenderedPdf {
+            pdf: Vec::new(),
+            report: RenderReport {
+                pages: 0,
+                warnings: report::render_warnings_for(&fallback_unsupported),
+                unsupported: fallback_unsupported,
+            },
+        })
+}
+
+pub(crate) fn try_to_pdf_with_fonts_and_report(
+    model: &DocModel,
+    extra_fonts: &[Vec<u8>],
+    features: FeatureInventory,
+) -> Result<RenderedPdf> {
+    try_to_pdf_with_fonts_and_report_and_shapes(model, extra_fonts, features, &[])
+}
+
+pub(crate) fn try_to_pdf_with_fonts_and_report_and_shapes(
+    model: &DocModel,
+    extra_fonts: &[Vec<u8>],
+    features: FeatureInventory,
+    floating_shapes: &[FloatingShape],
+) -> Result<RenderedPdf> {
+    let unsupported = report::render_unsupported_features(&features);
+    let rendered = render_pdf(model, extra_fonts, Some(&unsupported), floating_shapes)?;
+    let warnings = report::render_warnings_for(&unsupported);
+    Ok(RenderedPdf {
+        pdf: rendered.pdf,
+        report: RenderReport {
+            pages: rendered.pages,
+            warnings,
+            unsupported,
+        },
+    })
+}
+
+fn render_pdf(
+    model: &DocModel,
+    extra_fonts: &[Vec<u8>],
+    unsupported_features: Option<&FeatureInventory>,
+    floating_shapes: &[FloatingShape],
+) -> Result<PdfRender> {
     use parley::fontique::Blob;
     let mut font_cx = FontContext::default();
     for f in extra_fonts {
@@ -1157,9 +3260,10 @@ pub(crate) fn to_pdf_with_fonts(model: &DocModel, extra_fonts: &[Vec<u8>]) -> Ve
     let mut font_cache: HashMap<u64, Font> = HashMap::new();
     // Page geometry from the document (Letter/A4/A3/landscape/custom margins).
     let geom = Geom::from_setup(&model.setup.page);
+    let floating_shape_overlay_count = floating_shapes.len().min(MAX_FLOATING_SHAPE_OVERLAYS);
 
     let mut items: Vec<FlowItem> = Vec::new();
-    collect_blocks(
+    collect_blocks_with_block_anchors(
         &model.blocks,
         &mut items,
         geom,
@@ -1167,53 +3271,137 @@ pub(crate) fn to_pdf_with_fonts(model: &DocModel, extra_fonts: &[Vec<u8>]) -> Ve
         &mut layout_cx,
         &mut font_cache,
     );
-    // Running header/footer, laid out once and drawn in every page's margins.
-    let header_lines = layout_lines(
-        &model.setup.header,
-        geom,
-        &mut font_cx,
-        &mut layout_cx,
-        &mut font_cache,
-    );
-    let footer_lines = layout_lines(
-        &model.setup.footer,
-        geom,
-        &mut font_cx,
-        &mut layout_cx,
-        &mut font_cache,
-    );
-
+    if let Some(features) = unsupported_features {
+        let placeholders = unsupported_placeholder_blocks(features, floating_shape_overlay_count);
+        if !placeholders.is_empty() {
+            if !items.is_empty() {
+                items.push(FlowItem::Gap(PARA_GAP));
+            }
+            collect_blocks(
+                &placeholders,
+                &mut items,
+                geom,
+                &mut font_cx,
+                &mut layout_cx,
+                &mut font_cache,
+            );
+        }
+    }
     // Paginate: flow items top-to-bottom onto pages sized by `geom`. Tables repeat
     // their header rows after each break and split rows taller than a page.
     let mut pages: Pages = vec![Vec::new()];
+    let mut page_sections: Vec<Option<RenderPageSection>> = vec![None];
+    let mut section_start_page_index = 0usize;
     let mut y = geom.top();
+    let mut block_pages = HashMap::new();
+    let mut pending_block = None;
     for item in items {
         match item {
+            FlowItem::BlockStart(block_index) => {
+                record_pending_block_page(
+                    &mut block_pages,
+                    &mut pending_block,
+                    pages.len().saturating_sub(1),
+                );
+                pending_block = Some(block_index);
+            }
             FlowItem::Gap(g) => y += g,
             FlowItem::Line(l) => {
                 let h = l.height;
                 ensure(&mut pages, &mut y, h, geom);
+                record_pending_block_page(
+                    &mut block_pages,
+                    &mut pending_block,
+                    pages.len().saturating_sub(1),
+                );
                 place_item(&mut pages, &mut y, FlowItem::Line(l), h);
             }
             FlowItem::Picture { image, w, h } => {
                 ensure(&mut pages, &mut y, h, geom);
+                record_pending_block_page(
+                    &mut block_pages,
+                    &mut pending_block,
+                    pages.len().saturating_sub(1),
+                );
                 place_item(&mut pages, &mut y, FlowItem::Picture { image, w, h }, h);
             }
+            FlowItem::Chart { chart, w, h } => {
+                ensure(&mut pages, &mut y, h, geom);
+                record_pending_block_page(
+                    &mut block_pages,
+                    &mut pending_block,
+                    pages.len().saturating_sub(1),
+                );
+                place_item(&mut pages, &mut y, FlowItem::Chart { chart, w, h }, h);
+            }
             FlowItem::Table { rows, header_rows } => {
+                record_pending_block_page(
+                    &mut block_pages,
+                    &mut pending_block,
+                    pages.len().saturating_sub(1),
+                );
                 place_table(&mut pages, &mut y, rows, header_rows, geom);
+            }
+            FlowItem::PageBreak => {
+                pages.push(Vec::new());
+                page_sections.push(None);
+                y = geom.top();
+                record_pending_block_page(
+                    &mut block_pages,
+                    &mut pending_block,
+                    pages.len().saturating_sub(1),
+                );
+            }
+            FlowItem::SectionBreak(section) => {
+                let section_end_page_index = pages.len().saturating_sub(1);
+                assign_section_to_render_pages(
+                    &mut page_sections,
+                    section_start_page_index,
+                    section_end_page_index,
+                    &section,
+                );
+                pages.push(Vec::new());
+                page_sections.push(None);
+                y = geom.top();
+                record_pending_block_page(
+                    &mut block_pages,
+                    &mut pending_block,
+                    pages.len().saturating_sub(1),
+                );
+                section_start_page_index = pages.len().saturating_sub(1);
             }
             // Rows reach pagination only inside a Table; place defensively.
             FlowItem::Row(r) => {
                 let h = r.height;
                 ensure(&mut pages, &mut y, h, geom);
+                record_pending_block_page(
+                    &mut block_pages,
+                    &mut pending_block,
+                    pages.len().saturating_sub(1),
+                );
                 place_item(&mut pages, &mut y, FlowItem::Row(r), h);
             }
         }
     }
+    record_pending_block_page(
+        &mut block_pages,
+        &mut pending_block,
+        pages.len().saturating_sub(1),
+    );
+    let final_section_setup = SectionSetup::from(&model.setup);
+    assign_section_to_render_pages(
+        &mut page_sections,
+        section_start_page_index,
+        pages.len().saturating_sub(1),
+        &final_section_setup,
+    );
+    let floating_shape_overlays =
+        floating_shape_overlays_for_pages(floating_shapes, geom, &block_pages);
 
     // Emit.
     let mut document = PdfDoc::new();
-    for page_items in pages {
+    let page_count = pages.len();
+    for (page_index, page_items) in pages.into_iter().enumerate() {
         let Some(settings) = PageSettings::from_wh(geom.page_w, geom.page_h) else {
             continue;
         };
@@ -1221,6 +3409,37 @@ pub(crate) fn to_pdf_with_fonts(model: &DocModel, extra_fonts: &[Vec<u8>]) -> Ve
         // Link rects collected while drawing (top-down coords); added as annotations
         // after the surface is finished (which releases its borrow on the page).
         let mut page_links: Vec<(f32, f32, f32, f32, Rc<str>)> = Vec::new();
+        let page_number = page_index + 1;
+        let fallback_page_section;
+        let page_section = match page_sections.get(page_index).and_then(Option::as_ref) {
+            Some(section) => section,
+            None => {
+                fallback_page_section = RenderPageSection {
+                    setup: final_section_setup.clone(),
+                    first_page_index: section_start_page_index,
+                };
+                &fallback_page_section
+            }
+        };
+        let (header_blocks, footer_blocks) = running_header_footer_blocks_for_page(
+            &page_section.setup,
+            page_number,
+            page_index == page_section.first_page_index,
+        );
+        let header_lines = layout_lines(
+            header_blocks,
+            geom,
+            &mut font_cx,
+            &mut layout_cx,
+            &mut font_cache,
+        );
+        let footer_lines = layout_lines(
+            footer_blocks,
+            geom,
+            &mut font_cx,
+            &mut layout_cx,
+            &mut font_cache,
+        );
         let mut surface = page.surface();
         // Running header (top margin) and footer (below the content box), on every
         // page. Lines are cloned because drawing consumes the glyph runs.
@@ -1234,7 +3453,16 @@ pub(crate) fn to_pdf_with_fonts(model: &DocModel, extra_fonts: &[Vec<u8>]) -> Ve
             let baseline = hy + line.baseline;
             let x0 = geom.left + line.x_indent;
             for run in &line.runs {
-                draw_run(&mut surface, run.clone(), x0, baseline);
+                draw_run_with_page_context(
+                    &mut surface,
+                    run.clone(),
+                    x0,
+                    baseline,
+                    page_index + 1,
+                    &mut font_cx,
+                    &mut layout_cx,
+                    &mut font_cache,
+                );
             }
             hy += line.height;
         }
@@ -1247,13 +3475,43 @@ pub(crate) fn to_pdf_with_fonts(model: &DocModel, extra_fonts: &[Vec<u8>]) -> Ve
             let baseline = fy + line.baseline;
             let x0 = geom.left + line.x_indent;
             for run in &line.runs {
-                draw_run(&mut surface, run.clone(), x0, baseline);
+                draw_run_with_page_context(
+                    &mut surface,
+                    run.clone(),
+                    x0,
+                    baseline,
+                    page_index + 1,
+                    &mut font_cx,
+                    &mut layout_cx,
+                    &mut font_cache,
+                );
             }
             fy += line.height;
         }
+        if page_section.setup.page_numbers {
+            if let Some(line) = layout_page_number_line(
+                page_index + 1,
+                geom,
+                &mut font_cx,
+                &mut layout_cx,
+                &mut font_cache,
+            ) {
+                if fy + line.height <= geom.page_h {
+                    let baseline = fy + line.baseline;
+                    let x0 = geom.left + line.x_indent;
+                    for run in line.runs {
+                        draw_run(&mut surface, run, x0, baseline);
+                    }
+                }
+            }
+        }
         for (top, item) in page_items {
             match item {
-                FlowItem::Gap(_) | FlowItem::Table { .. } => {}
+                FlowItem::BlockStart(_)
+                | FlowItem::Gap(_)
+                | FlowItem::PageBreak
+                | FlowItem::SectionBreak(_)
+                | FlowItem::Table { .. } => {}
                 FlowItem::Picture { image, w, h } => {
                     // Center horizontally within the content box.
                     let x = geom.left + ((geom.content_w() - w) * 0.5).max(0.0);
@@ -1262,6 +3520,20 @@ pub(crate) fn to_pdf_with_fonts(model: &DocModel, extra_fonts: &[Vec<u8>]) -> Ve
                         surface.draw_image(image, sz);
                         surface.pop();
                     }
+                }
+                FlowItem::Chart { chart, w, h } => {
+                    let x = geom.left + ((geom.content_w() - w) * 0.5).max(0.0);
+                    draw_authored_chart(
+                        &mut surface,
+                        &chart,
+                        x,
+                        top,
+                        w,
+                        h,
+                        &mut font_cx,
+                        &mut layout_cx,
+                        &mut font_cache,
+                    );
                 }
                 FlowItem::Line(line) => {
                     let baseline = top + line.baseline;
@@ -1272,7 +3544,16 @@ pub(crate) fn to_pdf_with_fonts(model: &DocModel, extra_fonts: &[Vec<u8>]) -> Ve
                             let l = x0 + run.x;
                             page_links.push((l, top, l + run.width(), top + lh, url));
                         }
-                        draw_run(&mut surface, run, x0, baseline);
+                        draw_run_with_page_context(
+                            &mut surface,
+                            run,
+                            x0,
+                            baseline,
+                            page_index + 1,
+                            &mut font_cx,
+                            &mut layout_cx,
+                            &mut font_cache,
+                        );
                     }
                 }
                 FlowItem::Row(row) => {
@@ -1299,13 +3580,34 @@ pub(crate) fn to_pdf_with_fonts(model: &DocModel, extra_fonts: &[Vec<u8>]) -> Ve
                                     let l = cx + CELL_PAD + run.x;
                                     page_links.push((l, ly, l + run.width(), ly + lh, url));
                                 }
-                                draw_run(&mut surface, run, cx + CELL_PAD, baseline);
+                                draw_run_with_page_context(
+                                    &mut surface,
+                                    run,
+                                    cx + CELL_PAD,
+                                    baseline,
+                                    page_index + 1,
+                                    &mut font_cx,
+                                    &mut layout_cx,
+                                    &mut font_cache,
+                                );
                             }
                             ly += lh;
                         }
                     }
                 }
             }
+        }
+        for overlay in floating_shape_overlays
+            .iter()
+            .filter(|overlay| overlay.page_index == page_index)
+        {
+            draw_floating_shape_overlay(
+                &mut surface,
+                overlay,
+                &mut font_cx,
+                &mut layout_cx,
+                &mut font_cache,
+            );
         }
         surface.finish();
         for (l, t, r, b, url) in page_links {
@@ -1319,12 +3621,30 @@ pub(crate) fn to_pdf_with_fonts(model: &DocModel, extra_fonts: &[Vec<u8>]) -> Ve
         }
         page.finish();
     }
-    document.finish().unwrap_or_default()
+    let pdf = document
+        .finish()
+        .map_err(|e| Error::Render(e.to_string()))?;
+    Ok(PdfRender {
+        pdf,
+        pages: page_count,
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::model::{Block, Cell, DocModel, ParaProps, Paragraph, Row, Run, Table};
+    use parley::{FontContext, LayoutContext};
+    use std::collections::HashMap;
+
+    use super::{
+        assign_section_to_render_pages, display_text, layout_page_number_line, page_field_text,
+        rgb, running_header_footer_blocks_for_page, unsupported_placeholder_texts, Geom,
+    };
+    use crate::model::{
+        Block, Cell, CharProps, Color, DocModel, FieldRole, PageSetup, ParaProps, Paragraph, Row,
+        Run, SectionSetup, Table,
+    };
+    use crate::report::FeatureInventory;
+    use crate::{FloatingShape, ShapeEffectExtent, ShapeExtent, ShapePoint, ShapePosition};
 
     #[test]
     fn color_and_link_lookup_are_correct_after_binary_search() {
@@ -1354,6 +3674,401 @@ mod tests {
         assert_eq!(link_at(&links, 5).as_deref(), Some("http://x"));
         assert_eq!(link_at(&links, 6), None); // end exclusive
         assert_eq!(link_at(&[], 0), None);
+    }
+
+    #[test]
+    fn maps_symbol_font_text_to_unicode_for_rendering() {
+        let symbol = CharProps {
+            font: Some("Symbol".to_string()),
+            ..CharProps::default()
+        };
+        assert_eq!(display_text(&symbol, "abg"), "αβγ");
+
+        let wingdings = CharProps {
+            font: Some("Wingdings".to_string()),
+            ..CharProps::default()
+        };
+        assert_eq!(display_text(&wingdings, "\u{00FC}"), "✓");
+    }
+
+    #[test]
+    fn page_field_text_uses_current_page_when_available() {
+        let field = FieldRole::Simple {
+            instruction: "PAGE".to_string(),
+        };
+        assert_eq!(
+            page_field_text(&CharProps::default(), "1", &field, Some(7)),
+            "7"
+        );
+        assert_eq!(
+            page_field_text(&CharProps::default(), "1", &field, None),
+            "1"
+        );
+
+        let filename = FieldRole::Simple {
+            instruction: "FILENAME \\p".to_string(),
+        };
+        assert_eq!(
+            page_field_text(&CharProps::default(), "report.docx", &filename, Some(7)),
+            "report.docx"
+        );
+    }
+
+    #[test]
+    fn unsupported_placeholder_texts_cover_preserved_objects_only() {
+        let features = FeatureInventory {
+            fields: 3,
+            floating_shapes: 2,
+            charts: 1,
+            ole_objects: 4,
+            unsupported_metafiles: 5,
+            ..FeatureInventory::default()
+        };
+
+        assert_eq!(
+            unsupported_placeholder_texts(&features),
+            vec![
+                "[rdoc preview placeholder: 2 floating shapes preserved but not positioned]",
+                "[rdoc preview placeholder: 1 chart preserved but not modeled]",
+                "[rdoc preview placeholder: 4 OLE objects preserved but not modeled]",
+                "[rdoc preview placeholder: 5 WMF/EMF images preserved but not rendered]",
+            ]
+        );
+    }
+
+    #[test]
+    fn known_floating_shape_overlays_reduce_aggregate_placeholder_count() {
+        let features = FeatureInventory {
+            floating_shapes: 3,
+            charts: 1,
+            ..FeatureInventory::default()
+        };
+
+        assert_eq!(
+            super::unsupported_placeholder_texts_with_known_shapes(&features, 2),
+            vec![
+                "[rdoc preview placeholder: 1 floating shape preserved but not positioned]",
+                "[rdoc preview placeholder: 1 chart preserved but not modeled]",
+            ]
+        );
+        assert_eq!(
+            super::unsupported_placeholder_texts_with_known_shapes(&features, 3),
+            vec!["[rdoc preview placeholder: 1 chart preserved but not modeled]"]
+        );
+    }
+
+    #[test]
+    fn floating_shape_overlays_use_anchor_geometry() {
+        let geom = Geom::from_setup(&PageSetup::default());
+        let overlays = super::floating_shape_overlays_for_pages(
+            &[FloatingShape {
+                id: "7".to_string(),
+                name: Some("Float one".to_string()),
+                description: Some("A floating object".to_string()),
+                text: Some("Shape body".to_string()),
+                preset_geometry: Some("roundRect".to_string()),
+                fill_color: Some(Color::rgb(0xFF, 0x88, 0x00)),
+                outline_color: Some(Color::rgb(0x00, 0x33, 0x66)),
+                simple_position_enabled: Some(true),
+                simple_position: Some(ShapePoint {
+                    x_emu: 182_880,
+                    y_emu: 274_320,
+                }),
+                effect_extent: Some(ShapeEffectExtent {
+                    left_emu: 9_144,
+                    top_emu: 18_288,
+                    right_emu: 27_432,
+                    bottom_emu: 36_576,
+                }),
+                anchor_block_index: Some(0),
+                anchor_text: Some("Before anchor After anchor".to_string()),
+                anchor_char_offset: Some("Before anchor ".chars().count()),
+                extent: Some(ShapeExtent {
+                    cx_emu: 914_400,
+                    cy_emu: 457_200,
+                }),
+                horizontal_position: Some(ShapePosition {
+                    relative_from: Some("column".to_string()),
+                    offset_emu: Some(91_440),
+                    align: None,
+                }),
+                vertical_position: Some(ShapePosition {
+                    relative_from: Some("paragraph".to_string()),
+                    offset_emu: None,
+                    align: Some("top".to_string()),
+                }),
+                relative_height: Some(251_659_264),
+                behind_doc: Some(false),
+                layout_in_cell: Some(true),
+                locked: Some(false),
+                allow_overlap: Some(true),
+                distance: crate::ShapeDistance::default(),
+                wrapping: Some(crate::ShapeWrapping {
+                    kind: "square".to_string(),
+                    text: Some("bothSides".to_string()),
+                    distance: crate::ShapeDistance {
+                        top_emu: Some(9_144),
+                        bottom_emu: Some(18_288),
+                        left_emu: Some(27_432),
+                        right_emu: Some(36_576),
+                    },
+                }),
+            }],
+            geom,
+            &HashMap::new(),
+        );
+
+        assert_eq!(overlays.len(), 1);
+        let overlay = &overlays[0];
+        assert!((overlay.x - 14.4).abs() < 0.01);
+        assert!((overlay.y - 21.6).abs() < 0.01);
+        assert!((overlay.w - 72.0).abs() < 0.01);
+        assert!((overlay.h - 36.0).abs() < 0.01);
+        assert_eq!(overlay.page_index, 0);
+        assert_eq!(
+            overlay.label,
+            "floating shape 1: Float one (72 x 36 pt, x simplePos 14.4 pt, y simplePos 21.6 pt, z 251659264, front, wrap square bothSides dist t 0.7 pt, b 1.4 pt, l 2.2 pt, r 2.9 pt, geometry roundRect, effect l 0.7 pt, t 1.4 pt, r 2.2 pt, b 2.9 pt, fill #FF8800, outline #003366, anchor Before anchor After anchor, text Shape body)"
+        );
+    }
+
+    #[test]
+    fn floating_shape_overlays_follow_anchor_z_order() {
+        let geom = Geom::from_setup(&PageSetup::default());
+        let overlays = super::floating_shape_overlays_for_pages(
+            &[
+                FloatingShape {
+                    id: "front".to_string(),
+                    name: Some("Front".to_string()),
+                    description: None,
+                    text: None,
+                    preset_geometry: None,
+                    fill_color: None,
+                    outline_color: None,
+                    simple_position_enabled: None,
+                    simple_position: None,
+                    effect_extent: None,
+                    anchor_block_index: None,
+                    anchor_text: None,
+                    anchor_char_offset: None,
+                    extent: None,
+                    horizontal_position: None,
+                    vertical_position: None,
+                    relative_height: Some(20),
+                    behind_doc: Some(false),
+                    layout_in_cell: None,
+                    locked: None,
+                    allow_overlap: None,
+                    distance: crate::ShapeDistance::default(),
+                    wrapping: None,
+                },
+                FloatingShape {
+                    id: "back".to_string(),
+                    name: Some("Back".to_string()),
+                    description: None,
+                    text: None,
+                    preset_geometry: None,
+                    fill_color: None,
+                    outline_color: None,
+                    simple_position_enabled: None,
+                    simple_position: None,
+                    effect_extent: None,
+                    anchor_block_index: None,
+                    anchor_text: None,
+                    anchor_char_offset: None,
+                    extent: None,
+                    horizontal_position: None,
+                    vertical_position: None,
+                    relative_height: Some(10),
+                    behind_doc: Some(true),
+                    layout_in_cell: None,
+                    locked: None,
+                    allow_overlap: None,
+                    distance: crate::ShapeDistance::default(),
+                    wrapping: None,
+                },
+            ],
+            geom,
+            &HashMap::new(),
+        );
+
+        assert_eq!(overlays.len(), 2);
+        assert!(overlays[0].label.contains("Back"));
+        assert!(overlays[1].label.contains("Front"));
+    }
+
+    #[test]
+    fn floating_shape_overlays_use_anchor_block_page() {
+        let geom = Geom::from_setup(&PageSetup::default());
+        let mut block_pages = HashMap::new();
+        block_pages.insert(2, 1);
+        let overlays = super::floating_shape_overlays_for_pages(
+            &[FloatingShape {
+                id: "late".to_string(),
+                name: Some("Late".to_string()),
+                description: None,
+                text: None,
+                preset_geometry: None,
+                fill_color: None,
+                outline_color: None,
+                simple_position_enabled: None,
+                simple_position: None,
+                effect_extent: None,
+                anchor_block_index: Some(2),
+                anchor_text: None,
+                anchor_char_offset: None,
+                extent: None,
+                horizontal_position: None,
+                vertical_position: None,
+                relative_height: None,
+                behind_doc: None,
+                layout_in_cell: None,
+                locked: None,
+                allow_overlap: None,
+                distance: crate::ShapeDistance::default(),
+                wrapping: None,
+            }],
+            geom,
+            &block_pages,
+        );
+
+        assert_eq!(overlays.len(), 1);
+        assert_eq!(overlays[0].page_index, 1);
+    }
+
+    #[test]
+    fn lays_out_dynamic_page_number_footer_line() {
+        let geom = Geom::from_setup(&PageSetup::default());
+        let mut font_cx = FontContext::default();
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+
+        let line = layout_page_number_line(7, geom, &mut font_cx, &mut layout_cx, &mut font_cache)
+            .expect("page number line");
+        let text: String = line.runs.iter().map(|run| run.text.as_ref()).collect();
+        assert_eq!(text, "7");
+        assert!(
+            line.runs.iter().any(|run| run.x > geom.content_w() * 0.4),
+            "page number should be centered in the content box"
+        );
+    }
+
+    #[test]
+    fn selects_first_even_and_default_running_surfaces_by_page() {
+        let setup = crate::model::DocSetup {
+            header: vec![para("default header", None)],
+            first_header: vec![para("first header", None)],
+            even_header: vec![para("even header", None)],
+            footer: vec![para("default footer", None)],
+            first_footer: vec![para("first footer", None)],
+            even_footer: vec![para("even footer", None)],
+            ..Default::default()
+        };
+
+        let (header, footer) = running_header_footer_blocks_for_page(&setup, 1, true);
+        assert_eq!(block_text(header), "first header");
+        assert_eq!(block_text(footer), "first footer");
+
+        let (header, footer) = running_header_footer_blocks_for_page(&setup, 2, false);
+        assert_eq!(block_text(header), "even header");
+        assert_eq!(block_text(footer), "even footer");
+
+        let (header, footer) = running_header_footer_blocks_for_page(&setup, 3, false);
+        assert_eq!(block_text(header), "default header");
+        assert_eq!(block_text(footer), "default footer");
+    }
+
+    #[test]
+    fn running_surface_selection_falls_back_to_default_when_variant_is_empty() {
+        let setup = crate::model::DocSetup {
+            header: vec![para("default header", None)],
+            footer: vec![para("default footer", None)],
+            even_header: vec![para("even header", None)],
+            ..Default::default()
+        };
+
+        let (header, footer) = running_header_footer_blocks_for_page(&setup, 1, true);
+        assert_eq!(block_text(header), "default header");
+        assert_eq!(block_text(footer), "default footer");
+
+        let (header, footer) = running_header_footer_blocks_for_page(&setup, 2, false);
+        assert_eq!(block_text(header), "even header");
+        assert_eq!(block_text(footer), "default footer");
+    }
+
+    #[test]
+    fn selects_first_running_surface_on_first_page_of_later_section() {
+        let setup = SectionSetup {
+            header: vec![para("section default header", None)],
+            first_header: vec![para("section first header", None)],
+            even_header: vec![para("section even header", None)],
+            footer: vec![para("section default footer", None)],
+            first_footer: vec![para("section first footer", None)],
+            even_footer: vec![para("section even footer", None)],
+            ..Default::default()
+        };
+
+        let (header, footer) = running_header_footer_blocks_for_page(&setup, 3, true);
+        assert_eq!(block_text(header), "section first header");
+        assert_eq!(block_text(footer), "section first footer");
+
+        let (header, footer) = running_header_footer_blocks_for_page(&setup, 4, false);
+        assert_eq!(block_text(header), "section even header");
+        assert_eq!(block_text(footer), "section even footer");
+    }
+
+    #[test]
+    fn section_page_assignment_tracks_section_start_page() {
+        let first = SectionSetup {
+            header: vec![para("first default header", None)],
+            first_header: vec![para("first first header", None)],
+            even_header: vec![para("first even header", None)],
+            ..Default::default()
+        };
+        let final_setup = SectionSetup {
+            header: vec![para("final default header", None)],
+            first_header: vec![para("final first header", None)],
+            even_header: vec![para("final even header", None)],
+            ..Default::default()
+        };
+        let mut page_sections = vec![None, None, None, None];
+
+        assign_section_to_render_pages(&mut page_sections, 0, 1, &first);
+        assign_section_to_render_pages(&mut page_sections, 2, 3, &final_setup);
+
+        let first_page = page_sections[0].as_ref().expect("first page section");
+        assert_eq!(first_page.first_page_index, 0);
+        let second_page = page_sections[1].as_ref().expect("second page section");
+        assert_eq!(second_page.first_page_index, 0);
+        let final_first_page = page_sections[2].as_ref().expect("final first page section");
+        assert_eq!(final_first_page.first_page_index, 2);
+
+        let (header, _) = running_header_footer_blocks_for_page(
+            &final_first_page.setup,
+            3,
+            final_first_page.first_page_index == 2,
+        );
+        assert_eq!(block_text(header), "final first header");
+
+        let final_second_page = page_sections[3]
+            .as_ref()
+            .expect("final second page section");
+        let (header, _) = running_header_footer_blocks_for_page(
+            &final_second_page.setup,
+            4,
+            final_second_page.first_page_index == 3,
+        );
+        assert_eq!(block_text(header), "final even header");
+    }
+
+    fn block_text(blocks: &[Block]) -> String {
+        blocks
+            .iter()
+            .filter_map(|block| match block {
+                Block::Paragraph(paragraph) => Some(paragraph.text()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     fn para(text: &str, heading: Option<u8>) -> Block {
@@ -1392,6 +4107,31 @@ mod tests {
             "PDF unexpectedly small: {} bytes",
             pdf.len()
         );
+    }
+
+    #[test]
+    fn opened_document_features_add_placeholder_content_to_pdf() {
+        let model = DocModel {
+            blocks: vec![para("body", None)],
+            ..DocModel::default()
+        };
+        let plain = super::to_pdf(&model);
+        let rendered = super::try_to_pdf_with_fonts_and_report(
+            &model,
+            &[],
+            FeatureInventory {
+                floating_shapes: 1,
+                ..FeatureInventory::default()
+            },
+        )
+        .expect("render with placeholders");
+
+        assert!(rendered.pdf.starts_with(b"%PDF"));
+        assert!(
+            rendered.pdf.len() > plain.len(),
+            "placeholder content should increase emitted PDF size"
+        );
+        assert_eq!(rendered.report.unsupported.floating_shapes, 1);
     }
 
     #[test]

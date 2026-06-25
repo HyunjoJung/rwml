@@ -16,8 +16,11 @@
 use super::opc::{Package, Rel};
 use super::{esc_attr, esc_text};
 use crate::model::{
-    Align, Block, CharProps, Color, FieldRole, Image, ParaProps, Paragraph, Table, VertAlign,
+    Align, AuthoredComment, AuthoredContentControl, AuthoredRevision, Block, CharProps, Chart,
+    ChartKind, ChartSeries, ChartShape, Color, FieldRole, Image, Indent, ParaProps, Paragraph,
+    ParagraphStyle, SectionSetup, Spacing, Table, VertAlign,
 };
+use crate::RevisionKind;
 
 /// `Color` → 6-hex `RRGGBB` for OOXML `w:val`.
 fn hex(c: Color) -> String {
@@ -54,12 +57,20 @@ fn image_extent_emu(w: Option<u32>, h: Option<u32>) -> (u32, u32) {
 const CT_STYLES: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml";
 const REL_STYLES: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";
+const CT_SETTINGS: &str =
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml";
+const REL_SETTINGS: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings";
 const CT_HEADER: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml";
 const CT_FOOTER: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml";
 const REL_HEADER: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header";
 const REL_FOOTER: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer";
+const CT_COMMENTS: &str =
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml";
+const REL_COMMENTS: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments";
 
 /// Build a `word/header1.xml` / `footer1.xml` part body from running paragraphs
 /// (text + run formatting + alignment; images/links/tables inside a header are
@@ -105,38 +116,155 @@ fn hf_part(tag: &str, body: &str) -> Vec<u8> {
     format!(r#"{XML_DECL}<w:{tag} xmlns:w="{W_NS}" xmlns:r="{R_NS}">{body}</w:{tag}>"#).into_bytes()
 }
 
-/// A `word/styles.xml` defining `Normal` + `Heading1..6` (so `w:pStyle` renders
-/// as a real heading in Word; the `outlineLvl` we also emit keeps round-trip
-/// robust). Heading sizes in half-points: 32/28/26/24/22/22.
-fn styles_xml() -> String {
+fn settings_xml(even_and_odd_headers: bool) -> String {
+    let even_odd = if even_and_odd_headers {
+        "<w:evenAndOddHeaders/>"
+    } else {
+        ""
+    };
+    format!(r#"{XML_DECL}<w:settings xmlns:w="{W_NS}">{even_odd}</w:settings>"#)
+}
+
+/// A `word/styles.xml` defining `Normal`, optional `Heading1..6`, and caller
+/// supplied paragraph styles.
+fn styles_xml(styles: &[ParagraphStyle], include_headings: bool) -> String {
     let mut s = String::new();
     s.push_str(XML_DECL);
     s.push_str(&format!(r#"<w:styles xmlns:w="{W_NS}">"#));
     s.push_str(
         r#"<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>"#,
     );
-    for (lvl, sz) in [(1u8, 32), (2, 28), (3, 26), (4, 24), (5, 22), (6, 22)] {
-        s.push_str(&format!(
-            concat!(
-                r#"<w:style w:type="paragraph" w:styleId="Heading{lvl}">"#,
-                r#"<w:name w:val="heading {lvl}"/><w:basedOn w:val="Normal"/>"#,
-                r#"<w:next w:val="Normal"/><w:qFormat/>"#,
-                r#"<w:pPr><w:outlineLvl w:val="{ol}"/></w:pPr>"#,
-                r#"<w:rPr><w:b/><w:sz w:val="{sz}"/><w:szCs w:val="{sz}"/></w:rPr></w:style>"#,
-            ),
-            lvl = lvl,
-            ol = lvl - 1,
-            sz = sz
-        ));
+    if include_headings {
+        for (lvl, sz) in [(1u8, 32), (2, 28), (3, 26), (4, 24), (5, 22), (6, 22)] {
+            s.push_str(&format!(
+                concat!(
+                    r#"<w:style w:type="paragraph" w:styleId="Heading{lvl}">"#,
+                    r#"<w:name w:val="heading {lvl}"/><w:basedOn w:val="Normal"/>"#,
+                    r#"<w:next w:val="Normal"/><w:qFormat/>"#,
+                    r#"<w:pPr><w:outlineLvl w:val="{ol}"/></w:pPr>"#,
+                    r#"<w:rPr><w:b/><w:sz w:val="{sz}"/><w:szCs w:val="{sz}"/></w:rPr></w:style>"#,
+                ),
+                lvl = lvl,
+                ol = lvl - 1,
+                sz = sz
+            ));
+        }
+    }
+    for style in styles {
+        write_paragraph_style(&mut s, style);
     }
     s.push_str("</w:styles>");
     s
+}
+
+fn write_paragraph_style(out: &mut String, style: &ParagraphStyle) {
+    if style.id.is_empty() || style.name.is_empty() {
+        return;
+    }
+    let id = esc_attr(&style.id);
+    let name = esc_attr(&style.name);
+    out.push_str(&format!(
+        r#"<w:style w:type="paragraph" w:styleId="{id}"><w:name w:val="{name}"/>"#
+    ));
+    if let Some(based_on) = style.based_on.as_deref().filter(|s| !s.is_empty()) {
+        out.push_str(&format!(r#"<w:basedOn w:val="{}"/>"#, esc_attr(based_on)));
+    }
+    if let Some(next) = style.next.as_deref().filter(|s| !s.is_empty()) {
+        out.push_str(&format!(r#"<w:next w:val="{}"/>"#, esc_attr(next)));
+    }
+    if style.q_format {
+        out.push_str("<w:qFormat/>");
+    }
+    write_style_ppr(out, style);
+    write_rpr(out, &style.run);
+    out.push_str("</w:style>");
+}
+
+fn write_style_ppr(out: &mut String, style: &ParagraphStyle) {
+    let jc = match style.align {
+        Align::Left => None,
+        Align::Center => Some("center"),
+        Align::Right => Some("right"),
+        Align::Justify => Some("both"),
+    };
+    let sp = style.spacing;
+    let ind = style.indent;
+    let has_spacing = sp.before_pt.is_some() || sp.after_pt.is_some() || sp.line_pct.is_some();
+    let has_indent = ind.left_pt.is_some()
+        || ind.right_pt.is_some()
+        || ind.first_line_pt.is_some()
+        || ind.hanging_pt.is_some();
+    let outline = style.heading_level.map(|level| level.clamp(1, 9) - 1);
+    if jc.is_none() && !has_spacing && !has_indent && style.shading.is_none() && outline.is_none() {
+        return;
+    }
+    out.push_str("<w:pPr>");
+    if let Some(c) = style.shading {
+        out.push_str(&format!(
+            r#"<w:shd w:val="clear" w:color="auto" w:fill="{}"/>"#,
+            hex(c)
+        ));
+    }
+    write_spacing(out, sp);
+    write_indent(out, ind);
+    if let Some(j) = jc {
+        out.push_str(&format!(r#"<w:jc w:val="{j}"/>"#));
+    }
+    if let Some(o) = outline {
+        out.push_str(&format!(r#"<w:outlineLvl w:val="{o}"/>"#));
+    }
+    out.push_str("</w:pPr>");
+}
+
+fn write_spacing(out: &mut String, sp: Spacing) {
+    if sp.before_pt.is_none() && sp.after_pt.is_none() && sp.line_pct.is_none() {
+        return;
+    }
+    let mut a = String::new();
+    if let Some(b) = sp.before_pt {
+        a += &format!(r#" w:before="{}""#, pt_twips(b));
+    }
+    if let Some(af) = sp.after_pt {
+        a += &format!(r#" w:after="{}""#, pt_twips(af));
+    }
+    if let Some(l) = sp.line_pct {
+        a += &format!(
+            r#" w:line="{}" w:lineRule="auto""#,
+            (l * 240.0).round() as i64
+        );
+    }
+    out.push_str(&format!("<w:spacing{a}/>"));
+}
+
+fn write_indent(out: &mut String, ind: Indent) {
+    if ind.left_pt.is_none()
+        && ind.right_pt.is_none()
+        && ind.first_line_pt.is_none()
+        && ind.hanging_pt.is_none()
+    {
+        return;
+    }
+    let mut a = String::new();
+    if let Some(l) = ind.left_pt {
+        a += &format!(r#" w:left="{}""#, pt_twips(l));
+    }
+    if let Some(r) = ind.right_pt {
+        a += &format!(r#" w:right="{}""#, pt_twips(r));
+    }
+    if let Some(f) = ind.first_line_pt {
+        a += &format!(r#" w:firstLine="{}""#, pt_twips(f));
+    }
+    if let Some(h) = ind.hanging_pt {
+        a += &format!(r#" w:hanging="{}""#, pt_twips(h));
+    }
+    out.push_str(&format!("<w:ind{a}/>"));
 }
 
 const W_NS: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const R_NS: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 const WP_NS: &str = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
 const A_NS: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
+const C_NS: &str = "http://schemas.openxmlformats.org/drawingml/2006/chart";
 const PIC_NS: &str = "http://schemas.openxmlformats.org/drawingml/2006/picture";
 const PIC_URI: &str = "http://schemas.openxmlformats.org/drawingml/2006/picture";
 
@@ -145,6 +273,16 @@ const CT_DOCUMENT: &str =
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml";
 const CT_NUMBERING: &str =
     "application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml";
+const CT_CHART: &str = "application/vnd.openxmlformats-officedocument.drawingml.chart+xml";
+const CT_EMBEDDED_XLSX: &str = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const CT_XLSX_WORKBOOK: &str =
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml";
+const CT_XLSX_WORKSHEET: &str =
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml";
+const CT_XLSX_STYLES: &str =
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml";
+const CT_XLSX_SHARED_STRINGS: &str =
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml";
 const REL_OFFICE_DOCUMENT: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument";
 const REL_NUMBERING: &str =
@@ -152,6 +290,16 @@ const REL_NUMBERING: &str =
 const REL_HYPERLINK: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink";
 const REL_IMAGE: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
+const REL_CHART: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart";
+const REL_PACKAGE: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/package";
+const REL_XLSX_WORKSHEET: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet";
+const REL_XLSX_STYLES: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";
+const REL_XLSX_SHARED_STRINGS: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings";
+const S_NS: &str = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 /// Hard cap on table columns / a cell's column or row span, so a hostile model
 /// (`col_span = u16::MAX`) cannot amplify into millions of `<w:gridCol>`/cells.
 const MAX_TABLE_COLS: usize = 1024;
@@ -163,14 +311,46 @@ struct Ctx {
     doc_rels: Vec<Rel>,
     /// Media parts to emit: `(part path, bytes, extension, content-type)`.
     media: Vec<(String, Vec<u8>, &'static str, &'static str)>,
+    /// Chart parts to emit: `(part path, bytes)`.
+    chart_parts: Vec<(String, Vec<u8>)>,
+    /// Chart relationship files to emit: `(rels path, relationships)`.
+    chart_rels: Vec<(String, Vec<Rel>)>,
+    /// Embedded XLSX workbooks backing authored chart data.
+    embedded_workbooks: Vec<(String, Vec<u8>)>,
+    /// Header/footer parts to emit: `(part path, content-type, bytes)`.
+    hf_parts: Vec<(String, &'static str, Vec<u8>)>,
     /// Next relationship id ordinal.
     next_rid: u32,
     /// Whether any list item was emitted (⇒ write `numbering.xml`).
     has_list: bool,
-    /// Whether any heading was emitted (⇒ write `styles.xml`).
+    /// Whether a generated heading style is needed in `styles.xml`.
     has_heading: bool,
+    /// Whether any paragraph style reference was emitted (⇒ write `styles.xml`).
+    has_styles: bool,
+    /// Whether authored even-page header/footer variants require settings.xml.
+    has_even_header_footer: bool,
     /// Image counter for unique `media/imageN` names + drawing ids.
     img_id: u32,
+    /// Chart counter for unique `charts/chartN.xml` names.
+    chart_id: u32,
+    /// Drawing counter for unique `wp:docPr` ids.
+    drawing_id: u32,
+    /// Next authored comment id.
+    comment_id: u32,
+    /// Next authored revision id.
+    revision_id: u32,
+    /// Authored comments emitted while writing body runs.
+    comments: Vec<WrittenComment>,
+    /// Next generated header part number.
+    header_id: u32,
+    /// Next generated footer part number.
+    footer_id: u32,
+}
+
+#[derive(Debug, Clone)]
+struct WrittenComment {
+    id: String,
+    comment: AuthoredComment,
 }
 
 impl Ctx {
@@ -178,10 +358,23 @@ impl Ctx {
         Ctx {
             doc_rels: Vec::new(),
             media: Vec::new(),
+            chart_parts: Vec::new(),
+            chart_rels: Vec::new(),
+            embedded_workbooks: Vec::new(),
+            hf_parts: Vec::new(),
             next_rid: 1,
             has_list: false,
             has_heading: false,
+            has_styles: false,
+            has_even_header_footer: false,
             img_id: 0,
+            chart_id: 0,
+            drawing_id: 0,
+            comment_id: 0,
+            revision_id: 0,
+            comments: Vec::new(),
+            header_id: 0,
+            footer_id: 0,
         }
     }
 
@@ -208,7 +401,101 @@ impl Ctx {
                 }
                 out.push_str("</w:p>");
             }
+            Block::Chart(chart) => self.write_chart(out, chart),
+            Block::PageBreak => out.push_str(r#"<w:p><w:r><w:br w:type="page"/></w:r></w:p>"#),
+            Block::SectionBreak(setup) => self.write_section_break(out, setup),
         }
+    }
+
+    fn write_section_break(&mut self, out: &mut String, setup: &SectionSetup) {
+        out.push_str("<w:p><w:pPr>");
+        self.write_sect_pr(out, setup, true);
+        out.push_str("</w:pPr></w:p>");
+    }
+
+    fn write_header_ref(&mut self, refs: &mut String, type_name: &str, blocks: &[Block]) {
+        if blocks.is_empty() {
+            return;
+        }
+        self.header_id += 1;
+        let path = format!("word/header{}.xml", self.header_id);
+        let target = format!("header{}.xml", self.header_id);
+        let rid = self.add_rel(REL_HEADER, &target, false);
+        self.hf_parts.push((
+            path,
+            CT_HEADER,
+            hf_part("hdr", &render_hf_body(blocks, false)),
+        ));
+        refs.push_str(&format!(
+            r#"<w:headerReference w:type="{type_name}" r:id="{rid}"/>"#
+        ));
+    }
+
+    fn write_footer_ref(
+        &mut self,
+        refs: &mut String,
+        type_name: &str,
+        blocks: &[Block],
+        page_numbers: bool,
+    ) {
+        if blocks.is_empty() && !page_numbers {
+            return;
+        }
+        self.footer_id += 1;
+        let path = format!("word/footer{}.xml", self.footer_id);
+        let target = format!("footer{}.xml", self.footer_id);
+        let rid = self.add_rel(REL_FOOTER, &target, false);
+        self.hf_parts.push((
+            path,
+            CT_FOOTER,
+            hf_part("ftr", &render_hf_body(blocks, page_numbers)),
+        ));
+        refs.push_str(&format!(
+            r#"<w:footerReference w:type="{type_name}" r:id="{rid}"/>"#
+        ));
+    }
+
+    fn write_sect_pr(&mut self, out: &mut String, setup: &SectionSetup, next_page: bool) {
+        let mut refs = String::new();
+        self.write_header_ref(&mut refs, "default", &setup.header);
+        self.write_header_ref(&mut refs, "first", &setup.first_header);
+        self.write_header_ref(&mut refs, "even", &setup.even_header);
+        self.write_footer_ref(&mut refs, "default", &setup.footer, setup.page_numbers);
+        self.write_footer_ref(&mut refs, "first", &setup.first_footer, false);
+        self.write_footer_ref(&mut refs, "even", &setup.even_footer, false);
+
+        let has_first_variant = !setup.first_header.is_empty() || !setup.first_footer.is_empty();
+        let has_even_variant = !setup.even_header.is_empty() || !setup.even_footer.is_empty();
+        if has_even_variant {
+            self.has_even_header_footer = true;
+        }
+
+        let page = &setup.page;
+        let (w, h) = (pt_twips(page.width_pt), pt_twips(page.height_pt));
+        let orient = if page.landscape {
+            " w:orient=\"landscape\""
+        } else {
+            ""
+        };
+        let (mt, mr, mb, ml) = (
+            pt_twips(page.top()),
+            pt_twips(page.right()),
+            pt_twips(page.bottom()),
+            pt_twips(page.left()),
+        );
+        let start = if next_page {
+            r#"<w:type w:val="nextPage"/>"#
+        } else {
+            ""
+        };
+        let title_pg = if has_first_variant {
+            "<w:titlePg/>"
+        } else {
+            ""
+        };
+        out.push_str(&format!(
+            r#"<w:sectPr>{start}{refs}{title_pg}<w:pgSz w:w="{w}" w:h="{h}"{orient}/><w:pgMar w:top="{mt}" w:right="{mr}" w:bottom="{mb}" w:left="{ml}" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr>"#
+        ));
     }
 
     fn write_paragraph(&mut self, out: &mut String, p: &Paragraph) {
@@ -231,7 +518,12 @@ impl Ctx {
             Align::Justify => Some("both"),
         };
         let outline = heading.map(|h| h.saturating_sub(1));
-        let style_id = heading.map(|h| format!("Heading{}", h.clamp(1, 6)));
+        let generated_heading_style = pr.style_id.is_none() && heading.is_some();
+        let style_id = pr
+            .style_id
+            .as_deref()
+            .map(str::to_string)
+            .or_else(|| heading.map(|h| format!("Heading{}", h.clamp(1, 6))));
         let sp = pr.spacing;
         let ind = pr.indent;
         let has_spacing = sp.before_pt.is_some() || sp.after_pt.is_some() || sp.line_pct.is_some();
@@ -252,8 +544,11 @@ impl Ctx {
         out.push_str("<w:pPr>");
         // Schema order: pStyle, numPr, shd, spacing, ind, jc, outlineLvl.
         if let Some(s) = &style_id {
-            self.has_heading = true;
-            out.push_str(&format!(r#"<w:pStyle w:val="{s}"/>"#));
+            self.has_styles = true;
+            if generated_heading_style {
+                self.has_heading = true;
+            }
+            out.push_str(&format!(r#"<w:pStyle w:val="{}"/>"#, esc_attr(s)));
         }
         if let Some(li) = list {
             self.has_list = true;
@@ -269,38 +564,8 @@ impl Ctx {
                 hex(c)
             ));
         }
-        if has_spacing {
-            let mut a = String::new();
-            if let Some(b) = sp.before_pt {
-                a += &format!(r#" w:before="{}""#, pt_twips(b));
-            }
-            if let Some(af) = sp.after_pt {
-                a += &format!(r#" w:after="{}""#, pt_twips(af));
-            }
-            if let Some(l) = sp.line_pct {
-                a += &format!(
-                    r#" w:line="{}" w:lineRule="auto""#,
-                    (l * 240.0).round() as i64
-                );
-            }
-            out.push_str(&format!("<w:spacing{a}/>"));
-        }
-        if has_indent {
-            let mut a = String::new();
-            if let Some(l) = ind.left_pt {
-                a += &format!(r#" w:left="{}""#, pt_twips(l));
-            }
-            if let Some(r) = ind.right_pt {
-                a += &format!(r#" w:right="{}""#, pt_twips(r));
-            }
-            if let Some(f) = ind.first_line_pt {
-                a += &format!(r#" w:firstLine="{}""#, pt_twips(f));
-            }
-            if let Some(h) = ind.hanging_pt {
-                a += &format!(r#" w:hanging="{}""#, pt_twips(h));
-            }
-            out.push_str(&format!("<w:ind{a}/>"));
-        }
+        write_spacing(out, sp);
+        write_indent(out, ind);
         if let Some(j) = jc {
             out.push_str(&format!(r#"<w:jc w:val="{j}"/>"#));
         }
@@ -311,18 +576,114 @@ impl Ctx {
     }
 
     fn write_run(&mut self, out: &mut String, r: &crate::model::Run) {
+        let comment_id = self.begin_comment(out, r.comment.as_ref());
+        let deleted = matches!(
+            r.revision.as_ref().map(|revision| revision.kind),
+            Some(RevisionKind::Deletion)
+        );
+        let mut run_xml = String::new();
         match &r.field {
             FieldRole::Hyperlink { url } => {
                 let rid = self.add_rel(REL_HYPERLINK, url, true);
-                out.push_str(&format!(r#"<w:hyperlink r:id="{rid}">"#));
-                self.write_run_inner(out, r);
-                out.push_str("</w:hyperlink>");
+                run_xml.push_str(&format!(r#"<w:hyperlink r:id="{rid}">"#));
+                self.write_run_inner(&mut run_xml, r, deleted);
+                run_xml.push_str("</w:hyperlink>");
             }
-            _ => self.write_run_inner(out, r),
+            FieldRole::Simple { instruction } => {
+                let instruction = normalize_field_instruction(instruction);
+                run_xml.push_str(&format!(
+                    r#"<w:fldSimple w:instr=" {} ">"#,
+                    esc_attr(&instruction)
+                ));
+                self.write_run_inner(&mut run_xml, r, deleted);
+                run_xml.push_str("</w:fldSimple>");
+            }
+            _ => self.write_run_inner(&mut run_xml, r, deleted),
+        }
+        let run_xml = self.content_control_wrapper(r.content_control.as_ref(), &run_xml);
+        self.write_revision_wrapper(out, r.revision.as_ref(), &run_xml);
+        self.end_comment(out, comment_id);
+    }
+
+    fn begin_comment(
+        &mut self,
+        out: &mut String,
+        comment: Option<&AuthoredComment>,
+    ) -> Option<String> {
+        let comment = comment.filter(|comment| !comment.text.is_empty())?;
+        let id = self.comment_id.to_string();
+        self.comment_id += 1;
+        self.comments.push(WrittenComment {
+            id: id.clone(),
+            comment: comment.clone(),
+        });
+        out.push_str(&format!(r#"<w:commentRangeStart w:id="{id}"/>"#));
+        Some(id)
+    }
+
+    fn end_comment(&mut self, out: &mut String, id: Option<String>) {
+        if let Some(id) = id {
+            out.push_str(&format!(
+                r#"<w:commentRangeEnd w:id="{id}"/><w:r><w:commentReference w:id="{id}"/></w:r>"#
+            ));
         }
     }
 
-    fn write_run_inner(&mut self, out: &mut String, r: &crate::model::Run) {
+    fn write_revision_wrapper(
+        &mut self,
+        out: &mut String,
+        revision: Option<&AuthoredRevision>,
+        run_xml: &str,
+    ) {
+        let Some(revision) = revision else {
+            out.push_str(run_xml);
+            return;
+        };
+        let tag = match revision.kind {
+            RevisionKind::Insertion => "ins",
+            RevisionKind::Deletion => "del",
+            _ => {
+                out.push_str(run_xml);
+                return;
+            }
+        };
+        let id = self.revision_id;
+        self.revision_id += 1;
+        let mut attrs = format!(r#" w:id="{id}""#);
+        if let Some(author) = revision.author.as_deref() {
+            attrs.push_str(&format!(r#" w:author="{}""#, esc_attr(author)));
+        }
+        if let Some(date) = revision.date.as_deref() {
+            attrs.push_str(&format!(r#" w:date="{}""#, esc_attr(date)));
+        }
+        out.push_str(&format!("<w:{tag}{attrs}>"));
+        out.push_str(run_xml);
+        out.push_str(&format!("</w:{tag}>"));
+    }
+
+    fn content_control_wrapper(
+        &mut self,
+        control: Option<&AuthoredContentControl>,
+        run_xml: &str,
+    ) -> String {
+        let Some(control) = control else {
+            return run_xml.to_string();
+        };
+        let mut xml = String::new();
+        xml.push_str("<w:sdt><w:sdtPr>");
+        if let Some(alias) = control.alias.as_deref().filter(|value| !value.is_empty()) {
+            xml.push_str(&format!(r#"<w:alias w:val="{}"/>"#, esc_attr(alias)));
+        }
+        if let Some(tag) = control.tag.as_deref().filter(|value| !value.is_empty()) {
+            xml.push_str(&format!(r#"<w:tag w:val="{}"/>"#, esc_attr(tag)));
+        }
+        xml.push_str("</w:sdtPr><w:sdtContent>");
+        xml.push_str(run_xml);
+        xml.push_str("</w:sdtContent></w:sdt>");
+        xml
+    }
+
+    fn write_run_inner(&mut self, out: &mut String, r: &crate::model::Run, deleted: bool) {
         if let Some(img) = &r.image {
             if img.bytes.is_some() {
                 self.write_image(out, img);
@@ -331,7 +692,11 @@ impl Ctx {
         }
         out.push_str("<w:r>");
         write_rpr(out, &r.props);
-        write_run_text(out, &r.text);
+        if deleted {
+            write_run_deleted_text(out, &r.text);
+        } else {
+            write_run_text(out, &r.text);
+        }
         out.push_str("</w:r>");
     }
 
@@ -342,6 +707,8 @@ impl Ctx {
         let (ext, ct) = img_ext_ct(img.mime.as_deref());
         self.img_id += 1;
         let n = self.img_id;
+        self.drawing_id += 1;
+        let drawing_id = self.drawing_id;
         let target = format!("media/image{n}.{ext}");
         let rid = self.add_rel(REL_IMAGE, &target, false);
         self.media.push((format!("word/{target}"), bytes, ext, ct));
@@ -349,10 +716,16 @@ impl Ctx {
         // EMU), clamped to the ~6in content width; falls back to 2in² if the
         // header had no dimensions.
         let (cx, cy) = image_extent_emu(img.width_px, img.height_px);
+        let descr = img
+            .alt
+            .as_deref()
+            .filter(|alt| !alt.is_empty())
+            .map(|alt| format!(r#" descr="{}""#, esc_attr(alt)))
+            .unwrap_or_default();
         out.push_str(&format!(
             concat!(
                 r#"<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">"#,
-                r#"<wp:extent cx="{cx}" cy="{cy}"/><wp:docPr id="{n}" name="Image{n}"/>"#,
+                r#"<wp:extent cx="{cx}" cy="{cy}"/><wp:docPr id="{drawing_id}" name="Image{n}"{descr}/>"#,
                 r#"<a:graphic><a:graphicData uri="{uri}"><pic:pic><pic:nvPicPr>"#,
                 r#"<pic:cNvPr id="{n}" name="Image{n}"/><pic:cNvPicPr/></pic:nvPicPr>"#,
                 r#"<pic:blipFill><a:blip r:embed="{rid}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>"#,
@@ -363,7 +736,60 @@ impl Ctx {
             cx = cx,
             cy = cy,
             n = n,
+            drawing_id = drawing_id,
+            descr = descr,
             uri = PIC_URI,
+            rid = rid
+        ));
+    }
+
+    fn write_chart(&mut self, out: &mut String, chart: &Chart) {
+        self.chart_id += 1;
+        let chart_id = self.chart_id;
+        self.drawing_id += 1;
+        let drawing_id = self.drawing_id;
+        let target = format!("charts/chart{chart_id}.xml");
+        let rid = self.add_rel(REL_CHART, &target, false);
+        let workbook_name = format!("Microsoft_Excel_Worksheet{chart_id}.xlsx");
+        let workbook_rid = "rId1".to_string();
+        self.chart_rels.push((
+            format!("word/charts/_rels/chart{chart_id}.xml.rels"),
+            vec![Rel {
+                id: workbook_rid.clone(),
+                rel_type: REL_PACKAGE.to_string(),
+                target: format!("../embeddings/{workbook_name}"),
+                external: false,
+            }],
+        ));
+        self.embedded_workbooks.push((
+            format!("word/embeddings/{workbook_name}"),
+            chart_workbook_xlsx(chart),
+        ));
+        self.chart_parts.push((
+            format!("word/{target}"),
+            chart_xml(chart, chart_id, Some(&workbook_rid)).into_bytes(),
+        ));
+
+        let (cx, cy) = image_extent_emu(chart.width_px, chart.height_px);
+        let descr = chart
+            .alt
+            .as_deref()
+            .filter(|alt| !alt.is_empty())
+            .map(|alt| format!(r#" descr="{}""#, esc_attr(alt)))
+            .unwrap_or_default();
+        out.push_str(&format!(
+            concat!(
+                r#"<w:p><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">"#,
+                r#"<wp:extent cx="{cx}" cy="{cy}"/><wp:docPr id="{drawing_id}" name="Chart{chart_id}"{descr}/>"#,
+                r#"<a:graphic><a:graphicData uri="{uri}"><c:chart r:id="{rid}"/></a:graphicData></a:graphic>"#,
+                r#"</wp:inline></w:drawing></w:r></w:p>"#,
+            ),
+            cx = cx,
+            cy = cy,
+            drawing_id = drawing_id,
+            chart_id = chart_id,
+            descr = descr,
+            uri = C_NS,
             rid = rid
         ));
     }
@@ -572,12 +998,20 @@ fn write_rpr(out: &mut String, p: &CharProps) {
 /// Write a run's text, mapping `\t` → `<w:tab/>` and `\n` → `<w:br/>` (the dual
 /// of the reader) and dropping XML-invalid control characters.
 fn write_run_text(out: &mut String, text: &str) {
+    write_run_text_element(out, text, "w:t");
+}
+
+fn write_run_deleted_text(out: &mut String, text: &str) {
+    write_run_text_element(out, text, "w:delText");
+}
+
+fn write_run_text_element(out: &mut String, text: &str, tag: &str) {
     let mut buf = String::new();
     let flush = |out: &mut String, buf: &mut String| {
         if !buf.is_empty() {
-            out.push_str(r#"<w:t xml:space="preserve">"#);
+            out.push_str(&format!(r#"<{tag} xml:space="preserve">"#));
             out.push_str(&esc_text(buf));
-            out.push_str("</w:t>");
+            out.push_str(&format!("</{tag}>"));
             buf.clear();
         }
     };
@@ -597,6 +1031,10 @@ fn write_run_text(out: &mut String, text: &str) {
         }
     }
     flush(out, &mut buf);
+}
+
+fn normalize_field_instruction(instruction: &str) -> String {
+    instruction.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// Extension + content type for an image MIME (reverse of the reader's
@@ -632,6 +1070,832 @@ fn numbering_xml() -> String {
     s
 }
 
+fn comments_xml(comments: &[WrittenComment]) -> Vec<u8> {
+    let mut s = String::new();
+    s.push_str(XML_DECL);
+    s.push_str(&format!(r#"<w:comments xmlns:w="{W_NS}">"#));
+    for comment in comments {
+        let mut attrs = format!(r#" w:id="{}""#, esc_attr(&comment.id));
+        if let Some(author) = comment.comment.author.as_deref() {
+            attrs.push_str(&format!(r#" w:author="{}""#, esc_attr(author)));
+        }
+        if let Some(initials) = comment.comment.initials.as_deref() {
+            attrs.push_str(&format!(r#" w:initials="{}""#, esc_attr(initials)));
+        }
+        if let Some(date) = comment.comment.date.as_deref() {
+            attrs.push_str(&format!(r#" w:date="{}""#, esc_attr(date)));
+        }
+        s.push_str(&format!(r#"<w:comment{attrs}><w:p><w:r>"#));
+        write_comment_text(&mut s, &comment.comment.text);
+        s.push_str("</w:r></w:p></w:comment>");
+    }
+    s.push_str("</w:comments>");
+    s.into_bytes()
+}
+
+fn write_comment_text(out: &mut String, text: &str) {
+    let mut buf = String::new();
+    let flush = |out: &mut String, buf: &mut String| {
+        if !buf.is_empty() {
+            let space = if needs_xml_space(buf) {
+                r#" xml:space="preserve""#
+            } else {
+                ""
+            };
+            out.push_str(&format!(r#"<w:t{space}>{}</w:t>"#, esc_text(buf)));
+            buf.clear();
+        }
+    };
+    for ch in text.chars() {
+        match ch {
+            '\t' => {
+                flush(out, &mut buf);
+                out.push_str("<w:tab/>");
+            }
+            '\n' => {
+                flush(out, &mut buf);
+                out.push_str("<w:br/>");
+            }
+            '\r' => {}
+            c if (c as u32) < 0x20 => {}
+            c => buf.push(c),
+        }
+    }
+    flush(out, &mut buf);
+}
+
+fn chart_workbook_xlsx(chart: &Chart) -> Vec<u8> {
+    let (sheet_xml, shared_strings_xml) = chart_workbook_sheet_xml(chart);
+    let mut pkg = Package::new();
+    pkg.add_part(
+        "xl/workbook.xml",
+        Some(CT_XLSX_WORKBOOK),
+        xlsx_workbook_xml().into_bytes(),
+    );
+    pkg.add_part(
+        "xl/worksheets/sheet1.xml",
+        Some(CT_XLSX_WORKSHEET),
+        sheet_xml.into_bytes(),
+    );
+    pkg.add_part(
+        "xl/sharedStrings.xml",
+        Some(CT_XLSX_SHARED_STRINGS),
+        shared_strings_xml.into_bytes(),
+    );
+    pkg.add_part(
+        "xl/styles.xml",
+        Some(CT_XLSX_STYLES),
+        xlsx_styles_xml().into_bytes(),
+    );
+    pkg.add_rels(
+        "_rels/.rels",
+        vec![Rel {
+            id: "rId1".to_string(),
+            rel_type: REL_OFFICE_DOCUMENT.to_string(),
+            target: "xl/workbook.xml".to_string(),
+            external: false,
+        }],
+    );
+    pkg.add_rels(
+        "xl/_rels/workbook.xml.rels",
+        vec![
+            Rel {
+                id: "rId1".to_string(),
+                rel_type: REL_XLSX_WORKSHEET.to_string(),
+                target: "worksheets/sheet1.xml".to_string(),
+                external: false,
+            },
+            Rel {
+                id: "rId2".to_string(),
+                rel_type: REL_XLSX_STYLES.to_string(),
+                target: "styles.xml".to_string(),
+                external: false,
+            },
+            Rel {
+                id: "rId3".to_string(),
+                rel_type: REL_XLSX_SHARED_STRINGS.to_string(),
+                target: "sharedStrings.xml".to_string(),
+                external: false,
+            },
+        ],
+    );
+    pkg.try_into_zip().unwrap_or_default()
+}
+
+fn xlsx_workbook_xml() -> String {
+    format!(
+        r#"{XML_DECL}<workbook xmlns="{S_NS}" xmlns:r="{R_NS}"><workbookPr/><sheets><sheet name="Chart Data" sheetId="1" r:id="rId1"/></sheets></workbook>"#
+    )
+}
+
+fn chart_workbook_sheet_xml(chart: &Chart) -> (String, String) {
+    let mut shared_strings = Vec::new();
+    let mut sheet = String::new();
+    sheet.push_str(XML_DECL);
+    sheet.push_str(&format!(
+        r#"<worksheet xmlns="{S_NS}" xmlns:r="{R_NS}"><sheetData>"#
+    ));
+
+    sheet.push_str(r#"<row r="1">"#);
+    let category_header = shared_string_index(&mut shared_strings, "Category");
+    write_xlsx_shared_cell(&mut sheet, 0, 1, category_header);
+    let mut next_col = 1usize;
+    for series in &chart.series {
+        let name = shared_string_index(&mut shared_strings, &series.name);
+        write_xlsx_shared_cell(&mut sheet, next_col, 1, name);
+        next_col += 1;
+        if chart.kind == ChartKind::Bubble {
+            let size_name =
+                shared_string_index(&mut shared_strings, &format!("{} size", series.name));
+            write_xlsx_shared_cell(&mut sheet, next_col, 1, size_name);
+            next_col += 1;
+        }
+    }
+    sheet.push_str("</row>");
+
+    let row_count = chart
+        .series
+        .iter()
+        .map(|series| series.values.len())
+        .max()
+        .unwrap_or(0)
+        .max(chart.categories.len());
+    for row_index in 0..row_count {
+        let row_number = row_index + 2;
+        sheet.push_str(&format!(r#"<row r="{row_number}">"#));
+        let category = chart
+            .categories
+            .get(row_index)
+            .map(String::as_str)
+            .unwrap_or("");
+        let category_index = shared_string_index(&mut shared_strings, category);
+        write_xlsx_shared_cell(&mut sheet, 0, row_number, category_index);
+        let mut next_col = 1usize;
+        for series in &chart.series {
+            let value = series.values.get(row_index).copied().unwrap_or(0.0);
+            write_xlsx_number_cell(&mut sheet, next_col, row_number, value);
+            next_col += 1;
+            if chart.kind == ChartKind::Bubble {
+                let bubble_size = series.bubble_sizes.get(row_index).copied().unwrap_or(1.0);
+                write_xlsx_number_cell(&mut sheet, next_col, row_number, bubble_size);
+                next_col += 1;
+            }
+        }
+        sheet.push_str("</row>");
+    }
+
+    sheet.push_str("</sheetData></worksheet>");
+    (sheet, shared_strings_xml(&shared_strings))
+}
+
+fn shared_string_index(shared_strings: &mut Vec<String>, value: &str) -> usize {
+    if let Some(index) = shared_strings.iter().position(|existing| existing == value) {
+        index
+    } else {
+        shared_strings.push(value.to_string());
+        shared_strings.len() - 1
+    }
+}
+
+fn write_xlsx_shared_cell(out: &mut String, col_index: usize, row_number: usize, value: usize) {
+    let cell_ref = xlsx_cell_ref(col_index, row_number);
+    out.push_str(&format!(r#"<c r="{cell_ref}" t="s"><v>{value}</v></c>"#));
+}
+
+fn write_xlsx_number_cell(out: &mut String, col_index: usize, row_number: usize, value: f64) {
+    let cell_ref = xlsx_cell_ref(col_index, row_number);
+    out.push_str(&format!(
+        r#"<c r="{cell_ref}"><v>{}</v></c>"#,
+        format_chart_number(value)
+    ));
+}
+
+fn xlsx_cell_ref(col_index: usize, row_number: usize) -> String {
+    format!("{}{}", xlsx_col_name(col_index), row_number)
+}
+
+fn xlsx_col_name(mut col_index: usize) -> String {
+    col_index += 1;
+    let mut name = Vec::new();
+    while col_index > 0 {
+        let rem = (col_index - 1) % 26;
+        name.push((b'A' + rem as u8) as char);
+        col_index = (col_index - 1) / 26;
+    }
+    name.iter().rev().collect()
+}
+
+fn shared_strings_xml(shared_strings: &[String]) -> String {
+    let mut out = String::new();
+    out.push_str(XML_DECL);
+    out.push_str(&format!(
+        r#"<sst xmlns="{S_NS}" count="{count}" uniqueCount="{count}">"#,
+        count = shared_strings.len()
+    ));
+    for value in shared_strings {
+        let space = if needs_xml_space(value) {
+            r#" xml:space="preserve""#
+        } else {
+            ""
+        };
+        out.push_str(&format!(r#"<si><t{space}>{}</t></si>"#, esc_text(value)));
+    }
+    out.push_str("</sst>");
+    out
+}
+
+fn xlsx_styles_xml() -> String {
+    format!(
+        concat!(
+            r#"{xml_decl}<styleSheet xmlns="{s_ns}">"#,
+            r#"<fonts count="1"><font><sz val="11"/><color theme="1"/><name val="Calibri"/><family val="2"/></font></fonts>"#,
+            r#"<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>"#,
+            r#"<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>"#,
+            r#"<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>"#,
+            r#"<cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs>"#,
+            r#"<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>"#,
+            r#"<dxfs count="0"/><tableStyles count="0" defaultTableStyle="TableStyleMedium2" defaultPivotStyle="PivotStyleLight16"/>"#,
+            r#"</styleSheet>"#
+        ),
+        xml_decl = XML_DECL,
+        s_ns = S_NS
+    )
+}
+
+fn chart_xml(chart: &Chart, chart_id: u32, workbook_rid: Option<&str>) -> String {
+    let cat_axis_id = 10_000u32.saturating_add(chart_id.saturating_mul(2));
+    let val_axis_id = cat_axis_id.saturating_add(1);
+    let ser_axis_id = val_axis_id.saturating_add(1);
+    let mut out = String::new();
+    out.push_str(XML_DECL);
+    out.push_str(&format!(
+        r#"<c:chartSpace xmlns:c="{C_NS}" xmlns:a="{A_NS}" xmlns:r="{R_NS}">"#
+    ));
+    out.push_str(
+        r#"<c:date1904 val="0"/><c:lang val="en-US"/><c:roundedCorners val="0"/><c:chart>"#,
+    );
+    if let Some(title) = chart.title.as_deref().filter(|title| !title.is_empty()) {
+        write_chart_title(&mut out, title);
+    }
+    out.push_str("<c:plotArea><c:layout/>");
+    match chart.kind {
+        ChartKind::Bar => {
+            write_bar_or_column_chart(&mut out, chart, cat_axis_id, val_axis_id, "bar")
+        }
+        ChartKind::Bar3D => {
+            write_bar_or_column_3d_chart(&mut out, chart, cat_axis_id, val_axis_id, "bar")
+        }
+        ChartKind::Column => {
+            write_bar_or_column_chart(&mut out, chart, cat_axis_id, val_axis_id, "col")
+        }
+        ChartKind::Column3D => {
+            write_bar_or_column_3d_chart(&mut out, chart, cat_axis_id, val_axis_id, "col")
+        }
+        ChartKind::Line => write_line_chart(&mut out, chart, cat_axis_id, val_axis_id),
+        ChartKind::Line3D => {
+            write_line_3d_chart(&mut out, chart, cat_axis_id, val_axis_id, ser_axis_id)
+        }
+        ChartKind::Area => write_area_chart(&mut out, chart, cat_axis_id, val_axis_id),
+        ChartKind::Area3D => {
+            write_area_3d_chart(&mut out, chart, cat_axis_id, val_axis_id, ser_axis_id)
+        }
+        ChartKind::Radar => write_radar_chart(&mut out, chart, cat_axis_id, val_axis_id),
+        ChartKind::Scatter => write_scatter_chart(&mut out, chart, cat_axis_id, val_axis_id),
+        ChartKind::Bubble => write_bubble_chart(&mut out, chart, cat_axis_id, val_axis_id),
+        ChartKind::Pie => write_pie_chart(&mut out, chart),
+        ChartKind::Pie3D => write_pie_3d_chart(&mut out, chart),
+        ChartKind::PieOfPie => write_of_pie_chart(&mut out, chart, "pie"),
+        ChartKind::BarOfPie => write_of_pie_chart(&mut out, chart, "bar"),
+        ChartKind::Doughnut => write_doughnut_chart(&mut out, chart),
+        ChartKind::Surface => {
+            write_surface_chart(&mut out, chart, cat_axis_id, val_axis_id, ser_axis_id)
+        }
+        ChartKind::Surface3D => {
+            write_surface_3d_chart(&mut out, chart, cat_axis_id, val_axis_id, ser_axis_id)
+        }
+        ChartKind::Stock => write_stock_chart(&mut out, chart, cat_axis_id, val_axis_id),
+    }
+    match chart.kind {
+        ChartKind::Pie
+        | ChartKind::Pie3D
+        | ChartKind::PieOfPie
+        | ChartKind::BarOfPie
+        | ChartKind::Doughnut => {}
+        ChartKind::Scatter | ChartKind::Bubble => {
+            write_scatter_axes(&mut out, cat_axis_id, val_axis_id)
+        }
+        ChartKind::Line3D | ChartKind::Area3D | ChartKind::Surface | ChartKind::Surface3D => {
+            write_surface_axes(&mut out, cat_axis_id, val_axis_id, ser_axis_id)
+        }
+        _ => write_chart_axes(&mut out, chart.kind, cat_axis_id, val_axis_id),
+    }
+    out.push_str("</c:plotArea>");
+    if chart.series.len() > 1 {
+        out.push_str(
+            r#"<c:legend><c:legendPos val="r"/><c:layout/><c:overlay val="0"/></c:legend>"#,
+        );
+    }
+    out.push_str(r#"<c:plotVisOnly val="1"/><c:dispBlanksAs val="gap"/></c:chart>"#);
+    if let Some(rid) = workbook_rid {
+        out.push_str(&format!(
+            r#"<c:externalData r:id="{}"><c:autoUpdate val="0"/></c:externalData>"#,
+            esc_attr(rid)
+        ));
+    }
+    out.push_str(r#"<c:printSettings><c:headerFooter/><c:pageMargins b="0.75" l="0.7" r="0.7" t="0.75" header="0.3" footer="0.3"/><c:pageSetup/></c:printSettings>"#);
+    out.push_str("</c:chartSpace>");
+    out
+}
+
+fn write_chart_title(out: &mut String, title: &str) {
+    out.push_str("<c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>");
+    out.push_str(&esc_text(title));
+    out.push_str("</a:t></a:r></a:p></c:rich></c:tx><c:layout/><c:overlay val=\"0\"/></c:title>");
+}
+
+fn write_bar_or_column_chart(
+    out: &mut String,
+    chart: &Chart,
+    cat_axis_id: u32,
+    val_axis_id: u32,
+    bar_dir: &str,
+) {
+    out.push_str(&format!(
+        r#"<c:barChart><c:barDir val="{bar_dir}"/><c:grouping val="clustered"/><c:varyColors val="0"/>"#
+    ));
+    for (index, series) in chart.series.iter().enumerate() {
+        out.push_str(&format!(
+            r#"<c:ser><c:idx val="{index}"/><c:order val="{index}"/><c:tx><c:v>{}</c:v></c:tx>"#,
+            esc_text(&series.name)
+        ));
+        write_chart_categories(out, &chart.categories);
+        write_chart_values(out, &series.values);
+        out.push_str("</c:ser>");
+    }
+    out.push_str(&format!(
+        r#"<c:axId val="{cat_axis_id}"/><c:axId val="{val_axis_id}"/></c:barChart>"#
+    ));
+}
+
+fn write_bar_or_column_3d_chart(
+    out: &mut String,
+    chart: &Chart,
+    cat_axis_id: u32,
+    val_axis_id: u32,
+    bar_dir: &str,
+) {
+    out.push_str(&format!(
+        r#"<c:bar3DChart><c:barDir val="{bar_dir}"/><c:grouping val="clustered"/><c:varyColors val="0"/>"#
+    ));
+    for (index, series) in chart.series.iter().enumerate() {
+        out.push_str(&format!(
+            r#"<c:ser><c:idx val="{index}"/><c:order val="{index}"/><c:tx><c:v>{}</c:v></c:tx>"#,
+            esc_text(&series.name)
+        ));
+        write_chart_categories(out, &chart.categories);
+        write_chart_values(out, &series.values);
+        out.push_str("</c:ser>");
+    }
+    let shape = chart_shape_value(chart.shape);
+    out.push_str(&format!(
+        r#"<c:gapWidth val="150"/><c:gapDepth val="150"/><c:shape val="{shape}"/><c:axId val="{cat_axis_id}"/><c:axId val="{val_axis_id}"/></c:bar3DChart>"#
+    ));
+}
+
+fn chart_shape_value(shape: ChartShape) -> &'static str {
+    match shape {
+        ChartShape::Box => "box",
+        ChartShape::Cylinder => "cylinder",
+        ChartShape::Cone => "cone",
+        ChartShape::ConeToMax => "coneToMax",
+        ChartShape::Pyramid => "pyramid",
+        ChartShape::PyramidToMax => "pyramidToMax",
+    }
+}
+
+fn write_line_chart(out: &mut String, chart: &Chart, cat_axis_id: u32, val_axis_id: u32) {
+    out.push_str(r#"<c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>"#);
+    for (index, series) in chart.series.iter().enumerate() {
+        out.push_str(&format!(
+            r#"<c:ser><c:idx val="{index}"/><c:order val="{index}"/><c:tx><c:v>{}</c:v></c:tx><c:marker><c:symbol val="circle"/></c:marker>"#,
+            esc_text(&series.name)
+        ));
+        write_chart_categories(out, &chart.categories);
+        write_chart_values(out, &series.values);
+        out.push_str("</c:ser>");
+    }
+    out.push_str(&format!(
+        r#"<c:axId val="{cat_axis_id}"/><c:axId val="{val_axis_id}"/></c:lineChart>"#
+    ));
+}
+
+fn write_line_3d_chart(
+    out: &mut String,
+    chart: &Chart,
+    cat_axis_id: u32,
+    val_axis_id: u32,
+    ser_axis_id: u32,
+) {
+    out.push_str(r#"<c:line3DChart><c:grouping val="standard"/><c:varyColors val="0"/>"#);
+    for (index, series) in chart.series.iter().enumerate() {
+        out.push_str(&format!(
+            r#"<c:ser><c:idx val="{index}"/><c:order val="{index}"/><c:tx><c:v>{}</c:v></c:tx><c:marker><c:symbol val="circle"/></c:marker>"#,
+            esc_text(&series.name)
+        ));
+        write_chart_categories(out, &chart.categories);
+        write_chart_values(out, &series.values);
+        out.push_str("</c:ser>");
+    }
+    out.push_str(&format!(
+        r#"<c:gapDepth val="150"/><c:axId val="{cat_axis_id}"/><c:axId val="{val_axis_id}"/><c:axId val="{ser_axis_id}"/></c:line3DChart>"#
+    ));
+}
+
+fn write_area_chart(out: &mut String, chart: &Chart, cat_axis_id: u32, val_axis_id: u32) {
+    out.push_str(r#"<c:areaChart><c:grouping val="standard"/><c:varyColors val="0"/>"#);
+    for (index, series) in chart.series.iter().enumerate() {
+        out.push_str(&format!(
+            r#"<c:ser><c:idx val="{index}"/><c:order val="{index}"/><c:tx><c:v>{}</c:v></c:tx>"#,
+            esc_text(&series.name)
+        ));
+        write_chart_categories(out, &chart.categories);
+        write_chart_values(out, &series.values);
+        out.push_str("</c:ser>");
+    }
+    out.push_str(&format!(
+        r#"<c:axId val="{cat_axis_id}"/><c:axId val="{val_axis_id}"/></c:areaChart>"#
+    ));
+}
+
+fn write_area_3d_chart(
+    out: &mut String,
+    chart: &Chart,
+    cat_axis_id: u32,
+    val_axis_id: u32,
+    ser_axis_id: u32,
+) {
+    out.push_str(r#"<c:area3DChart><c:grouping val="standard"/><c:varyColors val="0"/>"#);
+    for (index, series) in chart.series.iter().enumerate() {
+        out.push_str(&format!(
+            r#"<c:ser><c:idx val="{index}"/><c:order val="{index}"/><c:tx><c:v>{}</c:v></c:tx>"#,
+            esc_text(&series.name)
+        ));
+        write_chart_categories(out, &chart.categories);
+        write_chart_values(out, &series.values);
+        out.push_str("</c:ser>");
+    }
+    out.push_str(&format!(
+        r#"<c:gapDepth val="150"/><c:axId val="{cat_axis_id}"/><c:axId val="{val_axis_id}"/><c:axId val="{ser_axis_id}"/></c:area3DChart>"#
+    ));
+}
+
+fn write_radar_chart(out: &mut String, chart: &Chart, cat_axis_id: u32, val_axis_id: u32) {
+    out.push_str(r#"<c:radarChart><c:radarStyle val="standard"/><c:varyColors val="0"/>"#);
+    for (index, series) in chart.series.iter().enumerate() {
+        out.push_str(&format!(
+            r#"<c:ser><c:idx val="{index}"/><c:order val="{index}"/><c:tx><c:v>{}</c:v></c:tx><c:marker><c:symbol val="circle"/></c:marker>"#,
+            esc_text(&series.name)
+        ));
+        write_chart_categories(out, &chart.categories);
+        write_chart_values(out, &series.values);
+        out.push_str("</c:ser>");
+    }
+    out.push_str(&format!(
+        r#"<c:axId val="{cat_axis_id}"/><c:axId val="{val_axis_id}"/></c:radarChart>"#
+    ));
+}
+
+fn write_scatter_chart(out: &mut String, chart: &Chart, x_axis_id: u32, y_axis_id: u32) {
+    out.push_str(r#"<c:scatterChart><c:scatterStyle val="lineMarker"/><c:varyColors val="0"/>"#);
+    for (index, series) in chart.series.iter().enumerate() {
+        out.push_str(&format!(
+            r#"<c:ser><c:idx val="{index}"/><c:order val="{index}"/><c:tx><c:v>{}</c:v></c:tx><c:marker><c:symbol val="circle"/></c:marker>"#,
+            esc_text(&series.name)
+        ));
+        write_chart_x_values(out, series.values.len());
+        write_chart_y_values(out, &series.values);
+        out.push_str("</c:ser>");
+    }
+    out.push_str(&format!(
+        r#"<c:axId val="{x_axis_id}"/><c:axId val="{y_axis_id}"/></c:scatterChart>"#
+    ));
+}
+
+fn write_bubble_chart(out: &mut String, chart: &Chart, x_axis_id: u32, y_axis_id: u32) {
+    out.push_str(r#"<c:bubbleChart><c:varyColors val="0"/>"#);
+    for (index, series) in chart.series.iter().enumerate() {
+        out.push_str(&format!(
+            r#"<c:ser><c:idx val="{index}"/><c:order val="{index}"/><c:tx><c:v>{}</c:v></c:tx>"#,
+            esc_text(&series.name)
+        ));
+        write_chart_x_values(out, series.values.len());
+        write_chart_y_values(out, &series.values);
+        write_chart_bubble_sizes(out, series, series.values.len());
+        out.push_str("</c:ser>");
+    }
+    out.push_str(&format!(
+        r#"<c:bubbleScale val="100"/><c:showNegBubbles val="0"/><c:axId val="{x_axis_id}"/><c:axId val="{y_axis_id}"/></c:bubbleChart>"#
+    ));
+}
+
+fn write_pie_chart(out: &mut String, chart: &Chart) {
+    out.push_str(r#"<c:pieChart><c:varyColors val="1"/>"#);
+    for (index, series) in chart.series.iter().take(1).enumerate() {
+        out.push_str(&format!(
+            r#"<c:ser><c:idx val="{index}"/><c:order val="{index}"/><c:tx><c:v>{}</c:v></c:tx>"#,
+            esc_text(&series.name)
+        ));
+        write_chart_categories(out, &chart.categories);
+        write_chart_values(out, &series.values);
+        out.push_str("</c:ser>");
+    }
+    out.push_str(r#"<c:firstSliceAng val="0"/></c:pieChart>"#);
+}
+
+fn write_pie_3d_chart(out: &mut String, chart: &Chart) {
+    out.push_str(r#"<c:pie3DChart><c:varyColors val="1"/>"#);
+    for (index, series) in chart.series.iter().take(1).enumerate() {
+        out.push_str(&format!(
+            r#"<c:ser><c:idx val="{index}"/><c:order val="{index}"/><c:tx><c:v>{}</c:v></c:tx>"#,
+            esc_text(&series.name)
+        ));
+        write_chart_categories(out, &chart.categories);
+        write_chart_values(out, &series.values);
+        out.push_str("</c:ser>");
+    }
+    out.push_str(r#"<c:firstSliceAng val="0"/></c:pie3DChart>"#);
+}
+
+fn write_of_pie_chart(out: &mut String, chart: &Chart, of_pie_type: &str) {
+    out.push_str(&format!(
+        r#"<c:ofPieChart><c:ofPieType val="{of_pie_type}"/><c:varyColors val="1"/>"#
+    ));
+    for (index, series) in chart.series.iter().take(1).enumerate() {
+        out.push_str(&format!(
+            r#"<c:ser><c:idx val="{index}"/><c:order val="{index}"/><c:tx><c:v>{}</c:v></c:tx>"#,
+            esc_text(&series.name)
+        ));
+        write_chart_categories(out, &chart.categories);
+        write_chart_values(out, &series.values);
+        out.push_str("</c:ser>");
+    }
+    out.push_str(
+        r#"<c:gapWidth val="150"/><c:splitType val="auto"/><c:secondPieSize val="75"/><c:serLines/></c:ofPieChart>"#,
+    );
+}
+
+fn write_doughnut_chart(out: &mut String, chart: &Chart) {
+    out.push_str(r#"<c:doughnutChart><c:varyColors val="1"/>"#);
+    for (index, series) in chart.series.iter().take(1).enumerate() {
+        out.push_str(&format!(
+            r#"<c:ser><c:idx val="{index}"/><c:order val="{index}"/><c:tx><c:v>{}</c:v></c:tx>"#,
+            esc_text(&series.name)
+        ));
+        write_chart_categories(out, &chart.categories);
+        write_chart_values(out, &series.values);
+        out.push_str("</c:ser>");
+    }
+    out.push_str(r#"<c:firstSliceAng val="0"/><c:holeSize val="50"/></c:doughnutChart>"#);
+}
+
+fn write_surface_chart(
+    out: &mut String,
+    chart: &Chart,
+    cat_axis_id: u32,
+    val_axis_id: u32,
+    ser_axis_id: u32,
+) {
+    let wireframe = u8::from(chart.wireframe);
+    out.push_str(&format!(
+        r#"<c:surfaceChart><c:wireframe val="{wireframe}"/>"#
+    ));
+    for (index, series) in chart.series.iter().enumerate() {
+        out.push_str(&format!(
+            r#"<c:ser><c:idx val="{index}"/><c:order val="{index}"/><c:tx><c:v>{}</c:v></c:tx>"#,
+            esc_text(&series.name)
+        ));
+        write_chart_categories(out, &chart.categories);
+        write_chart_values(out, &series.values);
+        out.push_str("</c:ser>");
+    }
+    out.push_str(&format!(
+        r#"<c:bandFmts/><c:axId val="{cat_axis_id}"/><c:axId val="{val_axis_id}"/><c:axId val="{ser_axis_id}"/></c:surfaceChart>"#
+    ));
+}
+
+fn write_surface_3d_chart(
+    out: &mut String,
+    chart: &Chart,
+    cat_axis_id: u32,
+    val_axis_id: u32,
+    ser_axis_id: u32,
+) {
+    let wireframe = u8::from(chart.wireframe);
+    out.push_str(&format!(
+        r#"<c:surface3DChart><c:wireframe val="{wireframe}"/>"#
+    ));
+    for (index, series) in chart.series.iter().enumerate() {
+        out.push_str(&format!(
+            r#"<c:ser><c:idx val="{index}"/><c:order val="{index}"/><c:tx><c:v>{}</c:v></c:tx>"#,
+            esc_text(&series.name)
+        ));
+        write_chart_categories(out, &chart.categories);
+        write_chart_values(out, &series.values);
+        out.push_str("</c:ser>");
+    }
+    out.push_str(&format!(
+        r#"<c:bandFmts/><c:axId val="{cat_axis_id}"/><c:axId val="{val_axis_id}"/><c:axId val="{ser_axis_id}"/></c:surface3DChart>"#
+    ));
+}
+
+fn write_stock_chart(out: &mut String, chart: &Chart, cat_axis_id: u32, val_axis_id: u32) {
+    out.push_str(r#"<c:stockChart>"#);
+    for (index, series) in chart.series.iter().enumerate() {
+        out.push_str(&format!(
+            r#"<c:ser><c:idx val="{index}"/><c:order val="{index}"/><c:tx><c:v>{}</c:v></c:tx>"#,
+            esc_text(&series.name)
+        ));
+        write_chart_categories(out, &chart.categories);
+        write_chart_values(out, &series.values);
+        out.push_str("</c:ser>");
+    }
+    out.push_str(&format!(
+        r#"<c:hiLowLines/><c:upDownBars><c:gapWidth val="150"/></c:upDownBars><c:axId val="{cat_axis_id}"/><c:axId val="{val_axis_id}"/></c:stockChart>"#
+    ));
+}
+
+fn write_chart_categories(out: &mut String, categories: &[String]) {
+    out.push_str(&format!(
+        r#"<c:cat><c:strLit><c:ptCount val="{}"/>"#,
+        categories.len()
+    ));
+    for (index, category) in categories.iter().enumerate() {
+        out.push_str(&format!(
+            r#"<c:pt idx="{index}"><c:v>{}</c:v></c:pt>"#,
+            esc_text(category)
+        ));
+    }
+    out.push_str("</c:strLit></c:cat>");
+}
+
+fn write_chart_values(out: &mut String, values: &[f64]) {
+    out.push_str(&format!(
+        r#"<c:val><c:numLit><c:formatCode>General</c:formatCode><c:ptCount val="{}"/>"#,
+        values.len()
+    ));
+    for (index, value) in values.iter().enumerate() {
+        out.push_str(&format!(
+            r#"<c:pt idx="{index}"><c:v>{}</c:v></c:pt>"#,
+            format_chart_number(*value)
+        ));
+    }
+    out.push_str("</c:numLit></c:val>");
+}
+
+fn write_chart_x_values(out: &mut String, count: usize) {
+    out.push_str(&format!(
+        r#"<c:xVal><c:numLit><c:formatCode>General</c:formatCode><c:ptCount val="{count}"/>"#
+    ));
+    for index in 0..count {
+        out.push_str(&format!(
+            r#"<c:pt idx="{index}"><c:v>{}</c:v></c:pt>"#,
+            format_chart_number((index + 1) as f64)
+        ));
+    }
+    out.push_str("</c:numLit></c:xVal>");
+}
+
+fn write_chart_y_values(out: &mut String, values: &[f64]) {
+    out.push_str(&format!(
+        r#"<c:yVal><c:numLit><c:formatCode>General</c:formatCode><c:ptCount val="{}"/>"#,
+        values.len()
+    ));
+    for (index, value) in values.iter().enumerate() {
+        out.push_str(&format!(
+            r#"<c:pt idx="{index}"><c:v>{}</c:v></c:pt>"#,
+            format_chart_number(*value)
+        ));
+    }
+    out.push_str("</c:numLit></c:yVal>");
+}
+
+fn write_chart_bubble_sizes(out: &mut String, series: &ChartSeries, count: usize) {
+    out.push_str(&format!(
+        r#"<c:bubbleSize><c:numLit><c:formatCode>General</c:formatCode><c:ptCount val="{count}"/>"#
+    ));
+    for index in 0..count {
+        let size = series.bubble_sizes.get(index).copied().unwrap_or(1.0);
+        out.push_str(&format!(
+            r#"<c:pt idx="{index}"><c:v>{}</c:v></c:pt>"#,
+            format_chart_number(size)
+        ));
+    }
+    out.push_str("</c:numLit></c:bubbleSize>");
+}
+
+fn format_chart_number(value: f64) -> String {
+    if value.is_finite() {
+        value.to_string()
+    } else {
+        "0".to_string()
+    }
+}
+
+fn write_chart_axes(out: &mut String, kind: ChartKind, cat_axis_id: u32, val_axis_id: u32) {
+    let (cat_pos, val_pos) = match kind {
+        ChartKind::Bar | ChartKind::Bar3D => ("l", "b"),
+        ChartKind::Column
+        | ChartKind::Column3D
+        | ChartKind::Line
+        | ChartKind::Line3D
+        | ChartKind::Area
+        | ChartKind::Area3D
+        | ChartKind::Radar => ("b", "l"),
+        ChartKind::Scatter
+        | ChartKind::Bubble
+        | ChartKind::Pie
+        | ChartKind::Pie3D
+        | ChartKind::PieOfPie
+        | ChartKind::BarOfPie
+        | ChartKind::Doughnut
+        | ChartKind::Surface
+        | ChartKind::Surface3D
+        | ChartKind::Stock => ("b", "l"),
+    };
+    out.push_str(&format!(
+        concat!(
+            r#"<c:catAx><c:axId val="{cat_axis_id}"/>"#,
+            r#"<c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/>"#,
+            r#"<c:axPos val="{cat_pos}"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/>"#,
+            r#"<c:tickLblPos val="nextTo"/><c:crossAx val="{val_axis_id}"/>"#,
+            r#"<c:crosses val="autoZero"/><c:auto val="1"/><c:lblAlgn val="ctr"/>"#,
+            r#"<c:lblOffset val="100"/></c:catAx>"#
+        ),
+        cat_axis_id = cat_axis_id,
+        val_axis_id = val_axis_id,
+        cat_pos = cat_pos
+    ));
+    out.push_str(&format!(
+        concat!(
+            r#"<c:valAx><c:axId val="{val_axis_id}"/>"#,
+            r#"<c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/>"#,
+            r#"<c:axPos val="{val_pos}"/><c:majorGridlines/><c:numFmt formatCode="General" sourceLinked="1"/>"#,
+            r#"<c:majorTickMark val="out"/><c:minorTickMark val="none"/>"#,
+            r#"<c:tickLblPos val="nextTo"/><c:crossAx val="{cat_axis_id}"/>"#,
+            r#"<c:crosses val="autoZero"/><c:crossBetween val="between"/></c:valAx>"#
+        ),
+        cat_axis_id = cat_axis_id,
+        val_axis_id = val_axis_id,
+        val_pos = val_pos
+    ));
+}
+
+fn write_surface_axes(out: &mut String, cat_axis_id: u32, val_axis_id: u32, ser_axis_id: u32) {
+    write_chart_axes(out, ChartKind::Surface, cat_axis_id, val_axis_id);
+    out.push_str(&format!(
+        concat!(
+            r#"<c:serAx><c:axId val="{ser_axis_id}"/>"#,
+            r#"<c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/>"#,
+            r#"<c:axPos val="r"/><c:majorTickMark val="none"/><c:minorTickMark val="none"/>"#,
+            r#"<c:tickLblPos val="nextTo"/><c:crossAx val="{val_axis_id}"/>"#,
+            r#"<c:crosses val="autoZero"/></c:serAx>"#
+        ),
+        ser_axis_id = ser_axis_id,
+        val_axis_id = val_axis_id
+    ));
+}
+
+fn write_scatter_axes(out: &mut String, x_axis_id: u32, y_axis_id: u32) {
+    out.push_str(&format!(
+        concat!(
+            r#"<c:valAx><c:axId val="{x_axis_id}"/>"#,
+            r#"<c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/>"#,
+            r#"<c:axPos val="b"/><c:numFmt formatCode="General" sourceLinked="1"/>"#,
+            r#"<c:majorTickMark val="out"/><c:minorTickMark val="none"/>"#,
+            r#"<c:tickLblPos val="nextTo"/><c:crossAx val="{y_axis_id}"/>"#,
+            r#"<c:crosses val="autoZero"/><c:crossBetween val="between"/></c:valAx>"#
+        ),
+        x_axis_id = x_axis_id,
+        y_axis_id = y_axis_id
+    ));
+    out.push_str(&format!(
+        concat!(
+            r#"<c:valAx><c:axId val="{y_axis_id}"/>"#,
+            r#"<c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/>"#,
+            r#"<c:axPos val="l"/><c:majorGridlines/><c:numFmt formatCode="General" sourceLinked="1"/>"#,
+            r#"<c:majorTickMark val="out"/><c:minorTickMark val="none"/>"#,
+            r#"<c:tickLblPos val="nextTo"/><c:crossAx val="{x_axis_id}"/>"#,
+            r#"<c:crosses val="autoZero"/><c:crossBetween val="between"/></c:valAx>"#
+        ),
+        x_axis_id = x_axis_id,
+        y_axis_id = y_axis_id
+    ));
+}
+
+fn needs_xml_space(text: &str) -> bool {
+    text != text.trim_matches([' ', '\t', '\n', '\r'])
+}
+
 /// Serialize a [`crate::DocModel`] to `.docx` bytes.
 /// Infallible generator (the original contract): yields an empty buffer on the
 /// unreachable in-memory ZIP error rather than panicking.
@@ -647,7 +1911,10 @@ pub(crate) fn try_to_docx(model: &crate::DocModel) -> crate::Result<Vec<u8>> {
     let mut pkg = Package::new();
     pkg.add_part("word/document.xml", Some(CT_DOCUMENT), br.document_xml);
     for (path, ct, bytes) in br.hf_parts {
-        pkg.add_part(path, Some(ct), bytes);
+        pkg.add_part(&path, Some(ct), bytes);
+    }
+    if let Some(comments) = br.comments_xml {
+        pkg.add_part("word/comments.xml", Some(CT_COMMENTS), comments);
     }
     if br.has_list {
         pkg.add_part(
@@ -656,16 +1923,32 @@ pub(crate) fn try_to_docx(model: &crate::DocModel) -> crate::Result<Vec<u8>> {
             numbering_xml().into_bytes(),
         );
     }
-    if br.has_heading {
+    if br.has_styles {
         pkg.add_part(
             "word/styles.xml",
             Some(CT_STYLES),
-            styles_xml().into_bytes(),
+            styles_xml(&model.setup.styles, br.has_heading).into_bytes(),
+        );
+    }
+    if br.has_even_header_footer {
+        pkg.add_part(
+            "word/settings.xml",
+            Some(CT_SETTINGS),
+            settings_xml(true).into_bytes(),
         );
     }
     for (path, bytes, ext, ct) in br.media {
         pkg.add_default(ext, ct);
         pkg.add_part(&path, None, bytes);
+    }
+    for (path, bytes) in br.chart_parts {
+        pkg.add_part(&path, Some(CT_CHART), bytes);
+    }
+    for (path, bytes) in br.embedded_workbooks {
+        pkg.add_part(&path, Some(CT_EMBEDDED_XLSX), bytes);
+    }
+    for (path, rels) in br.chart_rels {
+        pkg.add_rels(&path, rels);
     }
 
     if !br.doc_rels.is_empty() {
@@ -694,11 +1977,21 @@ pub(crate) struct BodyRender {
     /// the `styles.xml`/`numbering.xml` type-links, with `rId`s minted from 1.
     pub doc_rels: Vec<Rel>,
     /// `(part path, content-type, bytes)` for any header/footer parts.
-    pub hf_parts: Vec<(&'static str, &'static str, Vec<u8>)>,
+    pub hf_parts: Vec<(String, &'static str, Vec<u8>)>,
+    /// Serialized comments part, if authored comments were emitted.
+    pub comments_xml: Option<Vec<u8>>,
     /// `(part path, bytes, extension, content-type)` for inline/block images.
     pub media: Vec<(String, Vec<u8>, &'static str, &'static str)>,
+    /// `(part path, bytes)` for authored chart parts.
+    pub chart_parts: Vec<(String, Vec<u8>)>,
+    /// `(rels path, relationships)` for authored chart package relationships.
+    pub chart_rels: Vec<(String, Vec<Rel>)>,
+    /// `(part path, bytes)` for embedded XLSX chart data workbooks.
+    pub embedded_workbooks: Vec<(String, Vec<u8>)>,
     pub has_list: bool,
+    pub has_styles: bool,
     pub has_heading: bool,
+    pub has_even_header_footer: bool,
 }
 
 /// Render the body parts from the model. List items reference the synthetic
@@ -715,81 +2008,33 @@ fn render_body(model: &crate::DocModel) -> BodyRender {
     let mut doc = String::new();
     doc.push_str(XML_DECL);
     doc.push_str(&format!(
-        r#"<w:document xmlns:w="{W_NS}" xmlns:r="{R_NS}" xmlns:wp="{WP_NS}" xmlns:a="{A_NS}" xmlns:pic="{PIC_NS}"><w:body>"#
+        r#"<w:document xmlns:w="{W_NS}" xmlns:r="{R_NS}" xmlns:wp="{WP_NS}" xmlns:a="{A_NS}" xmlns:c="{C_NS}" xmlns:pic="{PIC_NS}"><w:body>"#
     ));
     doc.push_str(&body);
 
-    // Header/footer parts + their section references (computed before the sectPr,
-    // which references them by relationship id).
-    let mut doc_rels = std::mem::take(&mut ctx.doc_rels);
-    let mut hf_parts: Vec<(&'static str, &'static str, Vec<u8>)> = Vec::new();
-    let mut sect_refs = String::new();
-    if !model.setup.header.is_empty() {
-        let rid = format!("rId{}", ctx.next_rid);
-        ctx.next_rid += 1;
-        hf_parts.push((
-            "word/header1.xml",
-            CT_HEADER,
-            hf_part("hdr", &render_hf_body(&model.setup.header, false)),
-        ));
-        doc_rels.push(Rel {
-            id: rid.clone(),
-            rel_type: REL_HEADER.to_string(),
-            target: "header1.xml".to_string(),
-            external: false,
-        });
-        sect_refs.push_str(&format!(
-            r#"<w:headerReference w:type="default" r:id="{rid}"/>"#
-        ));
-    }
-    if !model.setup.footer.is_empty() || model.setup.page_numbers {
-        let rid = format!("rId{}", ctx.next_rid);
-        ctx.next_rid += 1;
-        hf_parts.push((
-            "word/footer1.xml",
-            CT_FOOTER,
-            hf_part(
-                "ftr",
-                &render_hf_body(&model.setup.footer, model.setup.page_numbers),
-            ),
-        ));
-        doc_rels.push(Rel {
-            id: rid.clone(),
-            rel_type: REL_FOOTER.to_string(),
-            target: "footer1.xml".to_string(),
-            external: false,
-        });
-        sect_refs.push_str(&format!(
-            r#"<w:footerReference w:type="default" r:id="{rid}"/>"#
-        ));
-    }
-
-    // Section: header/footer refs (schema order: before pgSz) then page geometry
-    // from DocSetup. width_pt/height_pt are the already-oriented dimensions; the
-    // landscape flag is emitted as `w:orient` (no swap).
-    let page = &model.setup.page;
-    let (w, h) = (pt_twips(page.width_pt), pt_twips(page.height_pt));
-    let orient = if page.landscape {
-        " w:orient=\"landscape\""
+    // Final section properties describe the last section in the body. Earlier
+    // section breaks were emitted while folding blocks.
+    ctx.write_sect_pr(&mut doc, &SectionSetup::from(&model.setup), false);
+    let comments_xml = if ctx.comments.is_empty() {
+        None
     } else {
-        ""
+        let rid = format!("rId{}", ctx.next_rid);
+        ctx.next_rid += 1;
+        ctx.doc_rels.push(Rel {
+            id: rid,
+            rel_type: REL_COMMENTS.to_string(),
+            target: "comments.xml".to_string(),
+            external: false,
+        });
+        Some(comments_xml(&ctx.comments))
     };
-    let (mt, mr, mb, ml) = (
-        pt_twips(page.top()),
-        pt_twips(page.right()),
-        pt_twips(page.bottom()),
-        pt_twips(page.left()),
-    );
-    doc.push_str(&format!(
-        r#"<w:sectPr>{sect_refs}<w:pgSz w:w="{w}" w:h="{h}"{orient}/><w:pgMar w:top="{mt}" w:right="{mr}" w:bottom="{mb}" w:left="{ml}" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr>"#
-    ));
     doc.push_str("</w:body></w:document>");
 
     // Type-link rels for the styles/numbering parts (read-by-path doesn't need
     // them, but strict consumers like Word expect the relationship to exist). Minted
     // after the hf rels so ids match the previous single-pass writer exactly.
     if ctx.has_list {
-        doc_rels.push(Rel {
+        ctx.doc_rels.push(Rel {
             id: format!("rId{}", ctx.next_rid),
             rel_type: REL_NUMBERING.to_string(),
             target: "numbering.xml".to_string(),
@@ -797,8 +2042,9 @@ fn render_body(model: &crate::DocModel) -> BodyRender {
         });
         ctx.next_rid += 1;
     }
-    if ctx.has_heading {
-        doc_rels.push(Rel {
+    let has_styles = ctx.has_styles || !model.setup.styles.is_empty();
+    if has_styles {
+        ctx.doc_rels.push(Rel {
             id: format!("rId{}", ctx.next_rid),
             rel_type: REL_STYLES.to_string(),
             target: "styles.xml".to_string(),
@@ -806,14 +2052,29 @@ fn render_body(model: &crate::DocModel) -> BodyRender {
         });
         ctx.next_rid += 1;
     }
+    if ctx.has_even_header_footer {
+        ctx.doc_rels.push(Rel {
+            id: format!("rId{}", ctx.next_rid),
+            rel_type: REL_SETTINGS.to_string(),
+            target: "settings.xml".to_string(),
+            external: false,
+        });
+        ctx.next_rid += 1;
+    }
 
     BodyRender {
         document_xml: doc.into_bytes(),
-        doc_rels,
-        hf_parts,
+        doc_rels: ctx.doc_rels,
+        hf_parts: ctx.hf_parts,
+        comments_xml,
         media: ctx.media,
+        chart_parts: ctx.chart_parts,
+        chart_rels: ctx.chart_rels,
+        embedded_workbooks: ctx.embedded_workbooks,
         has_list: ctx.has_list,
+        has_styles,
         has_heading: ctx.has_heading,
+        has_even_header_footer: ctx.has_even_header_footer,
     }
 }
 

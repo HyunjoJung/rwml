@@ -14,13 +14,17 @@ use std::collections::HashMap;
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 
+use super::fields::TocEntry;
 use super::numbering::Numbering;
 use super::styles::Styles;
 use super::{attr_local, local, toggle_on};
+use crate::annotation::FieldKind;
 use crate::model::{
     Align, Block, Cell, CharProps, Color, FieldRole, Image, Indent, ListInfo, ParaProps, Paragraph,
-    Row, Run, Spacing, Table, VCell, VertAlign,
+    Row, Run, SectionSetup, Spacing, Table, VCell, VertAlign,
 };
+use crate::text;
+use crate::CoreProperties;
 
 /// Parse an OOXML hex color (`"RRGGBB"`); `"auto"`/invalid → `None`.
 fn parse_hex_color(s: &str) -> Option<Color> {
@@ -55,6 +59,7 @@ type Xml<'a> = Reader<&'a [u8]>;
 /// descent's stack — a process abort that breaks the panic-free contract. Past
 /// this depth the subtree is skipped rather than recursed into.
 const MAX_DEPTH: u32 = 128;
+const PAGE_BREAK_MARKER: char = '\u{000C}';
 
 /// Resolved supplementary tables, passed down the descent.
 pub(crate) struct Ctx<'a> {
@@ -62,6 +67,33 @@ pub(crate) struct Ctx<'a> {
     pub numbering: &'a Numbering,
     pub rels: &'a HashMap<String, (String, bool)>,
     pub media: &'a HashMap<String, Image>,
+    pub ref_targets: &'a HashMap<String, String>,
+    pub ref_position_context: &'a super::fields::RefPositionContext,
+    pub ref_number_context: &'a super::fields::RefNumberContext,
+    pub page_ref_context: &'a super::fields::PageRefContext,
+    pub note_ref_context: &'a super::fields::NoteRefContext,
+    pub section_context: &'a super::fields::SectionContext,
+    pub style_ref_context: &'a super::fields::StyleRefContext,
+    pub legacy_form_context: &'a super::fields::LegacyFormContext,
+    pub table_formula_context: &'a super::fields::TableFormulaContext,
+    pub toc_entries: &'a [TocEntry],
+    pub core_properties: &'a CoreProperties,
+    pub custom_properties: &'a HashMap<String, String>,
+    pub document_variables: &'a HashMap<String, String>,
+    pub extended_properties: &'a HashMap<String, String>,
+    pub file_size_bytes: Option<usize>,
+    pub ref_field_cursor: std::cell::RefCell<usize>,
+    pub page_field_cursor: std::cell::RefCell<usize>,
+    pub page_ref_field_cursor: std::cell::RefCell<usize>,
+    pub note_ref_field_cursor: std::cell::RefCell<usize>,
+    pub section_field_cursor: std::cell::RefCell<usize>,
+    pub style_ref_field_cursor: std::cell::RefCell<usize>,
+    pub form_field_cursor: std::cell::RefCell<usize>,
+    pub formula_field_cursor: std::cell::RefCell<usize>,
+    pub sequence_counters: std::cell::RefCell<HashMap<String, i64>>,
+    pub autonum_counter: std::cell::RefCell<i64>,
+    pub listnum_counter: std::cell::RefCell<i64>,
+    pub field_bookmarks: std::cell::RefCell<HashMap<String, String>>,
     /// Live per-`numId` level counters for autonumber labels, advanced in document
     /// order as list paragraphs are finalized (interior-mutable: parsing is
     /// single-threaded and `finalize_paragraph` runs in reading order).
@@ -82,32 +114,105 @@ pub(crate) fn parse_document(xml: &str, ctx: &Ctx<'_>) -> Vec<Block> {
     }
 }
 
+/// A header/footer reference declared by a body `sectPr`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct HeaderFooterRef {
+    /// Relationship id from `r:id`.
+    pub rel_id: String,
+    /// WordprocessingML reference type: `default`, `first`, or `even`.
+    pub type_name: String,
+}
+
+/// Header/footer references declared by one body `sectPr`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct HeaderFooterRefs {
+    pub headers: Vec<HeaderFooterRef>,
+    pub footers: Vec<HeaderFooterRef>,
+}
+
 /// Scan `word/document.xml` for every `<w:headerReference>` / `<w:footerReference>`
-/// relationship id (in document order, across all `w:sectPr`). Returns
-/// `(header r:ids, footer r:ids)`; the caller resolves and de-duplicates them.
-pub(crate) fn scan_hf_refs(xml: &str) -> (Vec<String>, Vec<String>) {
+/// relationship id and reference type (in document order, across all `w:sectPr`).
+/// Returns `(header refs, footer refs)`; the caller resolves and de-duplicates
+/// them.
+#[cfg(test)]
+pub(crate) fn scan_hf_refs(xml: &str) -> (Vec<HeaderFooterRef>, Vec<HeaderFooterRef>) {
+    let sections = scan_hf_ref_sections(xml);
+    let mut headers = Vec::new();
+    let mut footers = Vec::new();
+    for section in sections {
+        headers.extend(section.headers);
+        footers.extend(section.footers);
+    }
+    (headers, footers)
+}
+
+/// Scan `word/document.xml` for header/footer references grouped by each
+/// `sectPr` in document order. Paragraph-level groups correspond to emitted
+/// `Block::SectionBreak` nodes; the trailing body-level group describes the
+/// final document setup.
+pub(crate) fn scan_hf_ref_sections(xml: &str) -> Vec<HeaderFooterRefs> {
     let mut r = Reader::from_str(xml);
-    let (mut headers, mut footers) = (Vec::new(), Vec::new());
+    let mut sections = Vec::new();
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
-                b"headerReference" => {
-                    if let Some(id) = attr_local(&e, b"id") {
-                        headers.push(id);
-                    }
-                }
-                b"footerReference" => {
-                    if let Some(id) = attr_local(&e, b"id") {
-                        footers.push(id);
-                    }
-                }
-                _ => {}
-            },
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"sectPr" => {
+                sections.push(read_hf_ref_section(&mut r));
+            }
+            Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"sectPr" => {
+                sections.push(HeaderFooterRefs::default());
+            }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
     }
-    (headers, footers)
+    sections
+}
+
+fn read_hf_ref_section(r: &mut Xml<'_>) -> HeaderFooterRefs {
+    let mut refs = HeaderFooterRefs::default();
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
+                b"headerReference" => {
+                    if let Some(reference) = header_footer_ref(&e) {
+                        refs.headers.push(reference);
+                    }
+                    skip_subtree(r);
+                }
+                b"footerReference" => {
+                    if let Some(reference) = header_footer_ref(&e) {
+                        refs.footers.push(reference);
+                    }
+                    skip_subtree(r);
+                }
+                _ => skip_subtree(r),
+            },
+            Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
+                b"headerReference" => {
+                    if let Some(reference) = header_footer_ref(&e) {
+                        refs.headers.push(reference);
+                    }
+                }
+                b"footerReference" => {
+                    if let Some(reference) = header_footer_ref(&e) {
+                        refs.footers.push(reference);
+                    }
+                }
+                _ => {}
+            },
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"sectPr" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    refs
+}
+
+fn header_footer_ref(e: &BytesStart<'_>) -> Option<HeaderFooterRef> {
+    attr_local(e, b"id").map(|rel_id| HeaderFooterRef {
+        rel_id,
+        type_name: attr_local(e, b"type").unwrap_or_else(|| "default".to_string()),
+    })
 }
 
 /// Scan the body's section properties for page geometry (`<w:pgSz>` size +
@@ -180,9 +285,24 @@ pub(crate) fn parse_hdrftr(xml: &str, ctx: &Ctx<'_>) -> Vec<Block> {
 /// Parse `word/footnotes.xml` / `endnotes.xml`: the real notes' block content,
 /// skipping the `separator`/`continuationSeparator`/`continuationNotice`
 /// boilerplate notes. `tag` is `b"footnote"` or `b"endnote"`.
+#[cfg(test)]
 pub(crate) fn parse_notes(xml: &str, ctx: &Ctx<'_>, tag: &[u8]) -> Vec<Block> {
+    parse_note_entries(xml, ctx, tag)
+        .into_iter()
+        .flat_map(|(_, blocks)| blocks)
+        .collect()
+}
+
+/// Parse `word/footnotes.xml` / `endnotes.xml` into individual real note
+/// entries. Each entry keeps the OOXML note id plus the block content parsed
+/// with the same grammar as the flattened note reader.
+pub(crate) fn parse_note_entries(
+    xml: &str,
+    ctx: &Ctx<'_>,
+    tag: &[u8],
+) -> Vec<(String, Vec<Block>)> {
     let mut r = Reader::from_str(xml);
-    let mut blocks = Vec::new();
+    let mut entries = Vec::new();
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == tag => {
@@ -193,19 +313,260 @@ pub(crate) fn parse_notes(xml: &str, ctx: &Ctx<'_>, tag: &[u8]) -> Vec<Block> {
                 if boilerplate {
                     skip_subtree(&mut r);
                 } else {
-                    blocks.extend(read_blocks(&mut r, ctx, 0));
+                    let id = attr_local(&e, b"id").unwrap_or_default();
+                    entries.push((id, read_blocks(&mut r, ctx, 0)));
                 }
             }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
     }
-    blocks
+    entries
+}
+
+/// Scan `word/document.xml` for note reference ids and the containing top-level
+/// body block text. `tag` is `b"footnoteReference"` or `b"endnoteReference"`.
+pub(crate) fn scan_note_ref_anchors(xml: &str, tag: &[u8]) -> HashMap<String, String> {
+    let mut r = Reader::from_str(xml);
+    let mut anchors = HashMap::new();
+    let mut in_body = false;
+    let mut body_depth = 0usize;
+    let mut body_block_candidate_depths = vec![0usize];
+    let mut current_block_depth = None;
+    let mut current_block_text = String::new();
+    let mut current_block_refs = Vec::new();
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if name == b"body" {
+                    in_body = true;
+                    body_depth = 0;
+                    body_block_candidate_depths.clear();
+                    body_block_candidate_depths.push(0);
+                    current_block_depth = None;
+                    current_block_text.clear();
+                    current_block_refs.clear();
+                    continue;
+                }
+                if in_body {
+                    if current_block_depth.is_none()
+                        && body_block_candidate_depths.contains(&body_depth)
+                        && is_note_anchor_transparent_body_container(name)
+                    {
+                        body_block_candidate_depths.push(body_depth + 1);
+                    }
+                    if current_block_depth.is_none()
+                        && body_block_candidate_depths.contains(&body_depth)
+                        && is_note_anchor_body_block(name)
+                    {
+                        current_block_depth = Some(body_depth + 1);
+                        current_block_text.clear();
+                        current_block_refs.clear();
+                    }
+                    body_depth += 1;
+                }
+                if current_block_depth.is_some() {
+                    if name == tag {
+                        if let Some(id) = attr_local(&e, b"id") {
+                            current_block_refs.push(id);
+                        }
+                        skip_subtree(&mut r);
+                        body_depth = body_depth.saturating_sub(1);
+                    } else if name == b"t" {
+                        current_block_text.push_str(&read_text(&mut r));
+                        body_depth = body_depth.saturating_sub(1);
+                    } else if is_note_anchor_embedded_body(name) {
+                        skip_subtree(&mut r);
+                        body_depth = body_depth.saturating_sub(1);
+                    }
+                }
+            }
+            Ok(Event::Empty(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if current_block_depth.is_some() {
+                    if name == tag {
+                        if let Some(id) = attr_local(&e, b"id") {
+                            current_block_refs.push(id);
+                        }
+                    } else {
+                        append_note_anchor_empty_marker(&mut current_block_text, name);
+                    }
+                }
+            }
+            Ok(Event::End(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if name == b"body" {
+                    in_body = false;
+                    body_depth = 0;
+                    body_block_candidate_depths.clear();
+                    body_block_candidate_depths.push(0);
+                    current_block_depth = None;
+                    current_block_text.clear();
+                    current_block_refs.clear();
+                    continue;
+                }
+                if in_body {
+                    let ending_current_block = current_block_depth == Some(body_depth);
+                    if ending_current_block {
+                        insert_note_anchor_block(
+                            &mut anchors,
+                            &current_block_refs,
+                            &current_block_text,
+                        );
+                    }
+                    if body_block_candidate_depths.last().copied() == Some(body_depth) {
+                        body_block_candidate_depths.pop();
+                    }
+                    body_depth = body_depth.saturating_sub(1);
+                    if ending_current_block {
+                        current_block_depth = None;
+                        current_block_text.clear();
+                        current_block_refs.clear();
+                    }
+                }
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    anchors
+}
+
+fn is_note_anchor_body_block(name: &[u8]) -> bool {
+    matches!(name, b"p" | b"tbl")
+}
+
+fn is_note_anchor_transparent_body_container(name: &[u8]) -> bool {
+    matches!(
+        name,
+        b"sdt" | b"sdtContent" | b"customXml" | b"smartTag" | b"ins" | b"moveTo"
+    )
+}
+
+fn is_note_anchor_embedded_body(name: &[u8]) -> bool {
+    matches!(name, b"drawing" | b"pict" | b"object" | b"AlternateContent")
+}
+
+fn append_note_anchor_empty_marker(out: &mut String, name: &[u8]) {
+    match name {
+        b"tab" => out.push('\t'),
+        b"br" | b"cr" => out.push('\n'),
+        b"noBreakHyphen" => out.push('-'),
+        _ => {}
+    }
+}
+
+fn insert_note_anchor_block(
+    anchors: &mut HashMap<String, String>,
+    refs: &[String],
+    raw_text: &str,
+) {
+    if refs.is_empty() {
+        return;
+    }
+    let text = text::finalize(raw_text);
+    for id in refs {
+        anchors.entry(id.clone()).or_insert_with(|| text.clone());
+    }
+}
+
+/// Parse visible `w:txbxContent` text boxes from `word/document.xml`, using the
+/// same block parser and `mc:AlternateContent` first-branch policy as the flat
+/// body reader.
+pub(crate) fn parse_text_boxes(xml: &str, ctx: &Ctx<'_>) -> Vec<String> {
+    let mut r = Reader::from_str(xml);
+    let mut text_boxes = Vec::new();
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
+                b"drawing" | b"pict" | b"object" => {
+                    walk_text_box_drawing(&mut r, ctx, &mut text_boxes, 0)
+                }
+                b"AlternateContent" => {
+                    walk_text_box_alternate_content(&mut r, ctx, &mut text_boxes, 0)
+                }
+                b"txbxContent" => {
+                    let blocks = read_blocks(&mut r, ctx, 1);
+                    let text = blocks_text(&blocks);
+                    if !text.trim().is_empty() {
+                        text_boxes.push(text);
+                    }
+                }
+                _ => {}
+            },
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    text_boxes
+}
+
+fn walk_text_box_drawing(r: &mut Xml<'_>, ctx: &Ctx<'_>, text_boxes: &mut Vec<String>, depth: u32) {
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
+                b"txbxContent" => {
+                    if depth < MAX_DEPTH {
+                        let blocks = read_blocks(r, ctx, depth + 1);
+                        let text = blocks_text(&blocks);
+                        if !text.trim().is_empty() {
+                            text_boxes.push(text);
+                        }
+                    } else {
+                        skip_subtree(r);
+                    }
+                }
+                b"AlternateContent" => {
+                    walk_text_box_alternate_content(r, ctx, text_boxes, depth + 1)
+                }
+                _ => {
+                    if depth < MAX_DEPTH {
+                        walk_text_box_drawing(r, ctx, text_boxes, depth + 1);
+                    } else {
+                        skip_subtree(r);
+                    }
+                }
+            },
+            Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+}
+
+fn walk_text_box_alternate_content(
+    r: &mut Xml<'_>,
+    ctx: &Ctx<'_>,
+    text_boxes: &mut Vec<String>,
+    depth: u32,
+) {
+    let mut took = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
+                b"Choice" | b"Fallback" if !took => {
+                    took = true;
+                    if depth < MAX_DEPTH {
+                        walk_text_box_drawing(r, ctx, text_boxes, depth + 1);
+                    } else {
+                        skip_subtree(r);
+                    }
+                }
+                _ => skip_subtree(r),
+            },
+            Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
 }
 
 /// Read block-level children (`w:p`, `w:tbl`) until the enclosing `End`. Block
-/// content controls (`w:sdt`/`w:sdtContent`) and `w:customXml` are transparent
-/// wrappers — descended into so their paragraphs/tables aren't lost.
+/// content controls (`w:sdt`/`w:sdtContent`), `w:customXml`, `w:smartTag`, and
+/// accepted-current revision wrappers (`w:ins`/`w:moveTo`) are transparent
+/// containers — descended into so their paragraphs/tables aren't lost.
 fn read_blocks(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Vec<Block> {
     if depth > MAX_DEPTH {
         skip_subtree(r);
@@ -215,19 +576,14 @@ fn read_blocks(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Vec<Block> {
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
-                b"p" => {
-                    let p = read_paragraph(r, ctx, depth + 1);
-                    if !p.is_blank() {
-                        blocks.push(Block::Paragraph(p));
-                    }
-                }
+                b"p" => blocks.extend(read_paragraph_blocks(r, ctx, depth + 1)),
                 b"tbl" => {
                     let t = read_table(r, ctx, depth + 1);
                     if !t.rows.is_empty() {
                         blocks.push(Block::Table(t));
                     }
                 }
-                b"sdt" | b"sdtContent" | b"customXml" => {
+                b"sdt" | b"sdtContent" | b"customXml" | b"smartTag" | b"ins" | b"moveTo" => {
                     blocks.extend(read_blocks(r, ctx, depth + 1))
                 }
                 _ => skip_subtree(r),
@@ -240,22 +596,41 @@ fn read_blocks(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Vec<Block> {
 }
 
 /// Read a `<w:p>`: its `w:pPr` properties and inline runs.
-fn read_paragraph(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Paragraph {
+fn read_paragraph(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Paragraph, Option<SectionSetup>) {
     if depth > MAX_DEPTH {
         skip_subtree(r);
-        return Paragraph::default();
+        return (Paragraph::default(), None);
     }
     let mut runs: Vec<Run> = Vec::new();
     let mut pp = PPr::default();
+    let mut complex_field = ComplexFieldTracker::default();
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
                 b"pPr" => pp = read_ppr(r),
-                b"r" => runs.extend(read_run(r, ctx, None, depth + 1)),
+                b"r" => {
+                    let next = read_run(
+                        r,
+                        ctx,
+                        None,
+                        depth + 1,
+                        Some(&mut complex_field),
+                        runs.len(),
+                    );
+                    runs.extend(next);
+                    complex_field.apply_pending(&mut runs);
+                }
                 b"hyperlink" => runs.extend(read_hyperlink(r, &e, ctx, depth)),
                 b"fldSimple" => runs.extend(read_fldsimple(r, &e, ctx, depth)),
-                b"ins" | b"smartTag" | b"sdtContent" | b"sdt" | b"bdo" | b"dir" => {
-                    runs.extend(read_runs_container(r, ctx, None, depth + 1))
+                b"ins" | b"moveTo" | b"smartTag" | b"sdtContent" | b"sdt" | b"bdo" | b"dir" => {
+                    append_runs_container_with_complex(
+                        r,
+                        ctx,
+                        None,
+                        depth + 1,
+                        &mut runs,
+                        &mut complex_field,
+                    )
                 }
                 // `w:del` = tracked deletion (removed text) → drop.
                 _ => skip_subtree(r),
@@ -264,7 +639,196 @@ fn read_paragraph(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Paragraph {
             _ => {}
         }
     }
-    finalize_paragraph(runs, pp, ctx)
+    let section = pp.section.take();
+    (finalize_paragraph(runs, pp, ctx), section)
+}
+
+fn read_paragraph_blocks(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Vec<Block> {
+    let (paragraph, section) = read_paragraph(r, ctx, depth);
+    let mut blocks = split_page_breaks(paragraph);
+    if let Some(section) = section {
+        blocks.push(Block::SectionBreak(section));
+    }
+    blocks
+}
+
+fn split_page_breaks(paragraph: Paragraph) -> Vec<Block> {
+    if !paragraph
+        .runs
+        .iter()
+        .any(|run| run.text.contains(PAGE_BREAK_MARKER))
+    {
+        return if paragraph.is_blank() {
+            Vec::new()
+        } else {
+            vec![Block::Paragraph(paragraph)]
+        };
+    }
+
+    let props = paragraph.props;
+    let mut blocks = Vec::new();
+    let mut current = Paragraph {
+        props: props.clone(),
+        runs: Vec::new(),
+    };
+    for run in paragraph.runs {
+        if !run.text.contains(PAGE_BREAK_MARKER) {
+            current.runs.push(run);
+            continue;
+        }
+        let parts: Vec<_> = run
+            .text
+            .split(PAGE_BREAK_MARKER)
+            .map(str::to_owned)
+            .collect();
+        for (index, part) in parts.into_iter().enumerate() {
+            if index > 0 {
+                if !current.is_blank() {
+                    blocks.push(Block::Paragraph(std::mem::replace(
+                        &mut current,
+                        Paragraph {
+                            props: props.clone(),
+                            runs: Vec::new(),
+                        },
+                    )));
+                } else {
+                    current.runs.clear();
+                }
+                blocks.push(Block::PageBreak);
+            }
+            if !part.is_empty() {
+                let mut split_run = run.clone();
+                split_run.text = part;
+                current.runs.push(split_run);
+            }
+        }
+    }
+    if !current.is_blank() {
+        blocks.push(Block::Paragraph(current));
+    }
+    blocks
+}
+
+#[derive(Default)]
+struct ComplexFieldTracker {
+    instruction: String,
+    phase: Option<ComplexFieldPhase>,
+    result_runs: Vec<usize>,
+    result_start: Option<usize>,
+    pending: Option<PendingComplexField>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ComplexFieldPhase {
+    Instruction,
+    Result,
+}
+
+struct PendingComplexField {
+    instruction: String,
+    text: Option<String>,
+    result_runs: Vec<usize>,
+    insert_at: usize,
+}
+
+impl ComplexFieldTracker {
+    fn begin(&mut self) {
+        self.instruction.clear();
+        self.result_runs.clear();
+        self.result_start = None;
+        self.phase = Some(ComplexFieldPhase::Instruction);
+        self.pending = None;
+    }
+
+    fn separate(&mut self, index: usize) {
+        if self.phase.is_some() {
+            self.phase = Some(ComplexFieldPhase::Result);
+            self.result_start = Some(index);
+        }
+    }
+
+    fn end(&mut self, ctx: &Ctx<'_>, index: usize) {
+        if self.phase.is_some() {
+            let instruction = normalize_field_instruction(&self.instruction);
+            if !instruction.is_empty() {
+                let has_result_runs = !self.result_runs.is_empty();
+                let current_result = if has_result_runs { "\u{0}" } else { "" };
+                let text = computed_simple_field_result(&instruction, ctx, current_result);
+                let insert_at = self.result_start.unwrap_or(index);
+                let should_apply = has_result_runs || text.is_some();
+                self.pending = Some(PendingComplexField {
+                    text,
+                    instruction,
+                    result_runs: std::mem::take(&mut self.result_runs),
+                    insert_at,
+                })
+                .filter(|_| should_apply);
+            }
+        }
+        self.instruction.clear();
+        self.result_runs.clear();
+        self.result_start = None;
+        self.phase = None;
+    }
+
+    fn push_instruction(&mut self, text: &str) {
+        if self.phase == Some(ComplexFieldPhase::Instruction) {
+            self.instruction.push_str(text);
+        }
+    }
+
+    fn in_result(&self) -> bool {
+        self.phase == Some(ComplexFieldPhase::Result)
+    }
+
+    fn push_result_run(&mut self, index: usize) {
+        if self.in_result() {
+            self.result_runs.push(index);
+        }
+    }
+
+    fn apply_pending(&mut self, runs: &mut Vec<Run>) {
+        let Some(computed) = self.pending.take() else {
+            return;
+        };
+        if computed.result_runs.is_empty() {
+            if let Some(text) = computed.text {
+                runs.insert(computed.insert_at.min(runs.len()), computed_field_run(text));
+            }
+            return;
+        }
+        for (offset, index) in computed.result_runs.iter().copied().enumerate() {
+            let Some(run) = runs.get_mut(index) else {
+                continue;
+            };
+            if computed.text.is_some() {
+                run.field = FieldRole::Other;
+            } else if offset == 0 {
+                run.field = FieldRole::Simple {
+                    instruction: computed.instruction.clone(),
+                };
+            }
+            if let Some(text) = computed.text.as_deref() {
+                run.text = if offset == 0 {
+                    text.to_string()
+                } else {
+                    String::new()
+                };
+            }
+        }
+    }
+}
+
+fn computed_field_run(text: String) -> Run {
+    Run {
+        text,
+        props: CharProps::default(),
+        field: FieldRole::Other,
+        image: None,
+        comment: None,
+        revision: None,
+        content_control: None,
+    }
 }
 
 /// Collected `<w:pPr>` properties.
@@ -277,6 +841,7 @@ struct PPr {
     spacing: Spacing,
     indent: Indent,
     shading: Option<Color>,
+    section: Option<SectionSetup>,
 }
 
 /// Collect runs from a run-bearing wrapper (`w:hyperlink`, `w:ins`, `w:sdt`, …)
@@ -290,10 +855,10 @@ fn read_runs_container(r: &mut Xml<'_>, ctx: &Ctx<'_>, link: Option<&str>, depth
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
-                b"r" => runs.extend(read_run(r, ctx, link, depth + 1)),
+                b"r" => runs.extend(read_run(r, ctx, link, depth + 1, None, 0)),
                 b"hyperlink" => runs.extend(read_hyperlink(r, &e, ctx, depth)),
                 b"fldSimple" => runs.extend(read_fldsimple(r, &e, ctx, depth)),
-                b"ins" | b"smartTag" | b"sdtContent" | b"sdt" | b"bdo" | b"dir" => {
+                b"ins" | b"moveTo" | b"smartTag" | b"sdtContent" | b"sdt" | b"bdo" | b"dir" => {
                     runs.extend(read_runs_container(r, ctx, link, depth + 1))
                 }
                 _ => skip_subtree(r),
@@ -305,6 +870,39 @@ fn read_runs_container(r: &mut Xml<'_>, ctx: &Ctx<'_>, link: Option<&str>, depth
     runs
 }
 
+fn append_runs_container_with_complex(
+    r: &mut Xml<'_>,
+    ctx: &Ctx<'_>,
+    link: Option<&str>,
+    depth: u32,
+    runs: &mut Vec<Run>,
+    complex_field: &mut ComplexFieldTracker,
+) {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return;
+    }
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
+                b"r" => {
+                    let next = read_run(r, ctx, link, depth + 1, Some(complex_field), runs.len());
+                    runs.extend(next);
+                    complex_field.apply_pending(runs);
+                }
+                b"hyperlink" => runs.extend(read_hyperlink(r, &e, ctx, depth)),
+                b"fldSimple" => runs.extend(read_fldsimple(r, &e, ctx, depth)),
+                b"ins" | b"moveTo" | b"smartTag" | b"sdtContent" | b"sdt" | b"bdo" | b"dir" => {
+                    append_runs_container_with_complex(r, ctx, link, depth + 1, runs, complex_field)
+                }
+                _ => skip_subtree(r),
+            },
+            Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+}
+
 /// Read `<w:pPr>` properties (flattening `w:numPr`'s `w:ilvl`/`w:numId`).
 fn read_ppr(r: &mut Xml<'_>) -> PPr {
     let mut pp = PPr::default();
@@ -312,44 +910,20 @@ fn read_ppr(r: &mut Xml<'_>) -> PPr {
     let mut ilvl: u8 = 0;
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
-                b"pStyle" => pp.style_id = attr_local(&e, b"val"),
-                b"ilvl" => {
-                    if let Some(v) = attr_local(&e, b"val").and_then(|v| v.parse().ok()) {
-                        ilvl = v;
-                    }
+            Ok(Event::Start(e)) => {
+                if local(e.name().as_ref()) == b"sectPr" {
+                    pp.section = Some(read_sect_pr(r));
+                } else {
+                    read_ppr_item(&mut pp, &e, &mut num_id, &mut ilvl);
                 }
-                b"numId" => num_id = attr_local(&e, b"val"),
-                b"jc" => pp.jc = attr_local(&e, b"val"),
-                b"outlineLvl" => pp.outline = attr_local(&e, b"val").and_then(|v| v.parse().ok()),
-                b"spacing" => {
-                    pp.spacing.before_pt = attr_local(&e, b"before").and_then(|v| twips_to_pt(&v));
-                    pp.spacing.after_pt = attr_local(&e, b"after").and_then(|v| twips_to_pt(&v));
-                    // `w:line` is 240ths of a line when lineRule is auto/absent.
-                    let exact = matches!(
-                        attr_local(&e, b"lineRule").as_deref(),
-                        Some("exact") | Some("atLeast")
-                    );
-                    if !exact {
-                        pp.spacing.line_pct = attr_local(&e, b"line")
-                            .and_then(|v| v.trim().parse::<f32>().ok())
-                            .map(|l| l / 240.0);
-                    }
+            }
+            Ok(Event::Empty(e)) => {
+                if local(e.name().as_ref()) == b"sectPr" {
+                    pp.section = Some(SectionSetup::default());
+                } else {
+                    read_ppr_item(&mut pp, &e, &mut num_id, &mut ilvl);
                 }
-                b"ind" => {
-                    pp.indent.left_pt = attr_local(&e, b"left")
-                        .or_else(|| attr_local(&e, b"start"))
-                        .and_then(|v| twips_to_pt(&v));
-                    pp.indent.right_pt = attr_local(&e, b"right")
-                        .or_else(|| attr_local(&e, b"end"))
-                        .and_then(|v| twips_to_pt(&v));
-                    pp.indent.first_line_pt =
-                        attr_local(&e, b"firstLine").and_then(|v| twips_to_pt(&v));
-                    pp.indent.hanging_pt = attr_local(&e, b"hanging").and_then(|v| twips_to_pt(&v));
-                }
-                b"shd" => pp.shading = attr_local(&e, b"fill").and_then(|v| parse_hex_color(&v)),
-                _ => {}
-            },
+            }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"pPr" => break,
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
@@ -359,6 +933,85 @@ fn read_ppr(r: &mut Xml<'_>) -> PPr {
         pp.num = Some((id, ilvl));
     }
     pp
+}
+
+fn read_ppr_item(pp: &mut PPr, e: &BytesStart<'_>, num_id: &mut Option<String>, ilvl: &mut u8) {
+    match local(e.name().as_ref()) {
+        b"pStyle" => pp.style_id = attr_local(e, b"val"),
+        b"ilvl" => {
+            if let Some(v) = attr_local(e, b"val").and_then(|v| v.parse().ok()) {
+                *ilvl = v;
+            }
+        }
+        b"numId" => *num_id = attr_local(e, b"val"),
+        b"jc" => pp.jc = attr_local(e, b"val"),
+        b"outlineLvl" => pp.outline = attr_local(e, b"val").and_then(|v| v.parse().ok()),
+        b"spacing" => {
+            pp.spacing.before_pt = attr_local(e, b"before").and_then(|v| twips_to_pt(&v));
+            pp.spacing.after_pt = attr_local(e, b"after").and_then(|v| twips_to_pt(&v));
+            // `w:line` is 240ths of a line when lineRule is auto/absent.
+            let exact = matches!(
+                attr_local(e, b"lineRule").as_deref(),
+                Some("exact") | Some("atLeast")
+            );
+            if !exact {
+                pp.spacing.line_pct = attr_local(e, b"line")
+                    .and_then(|v| v.trim().parse::<f32>().ok())
+                    .map(|l| l / 240.0);
+            }
+        }
+        b"ind" => {
+            pp.indent.left_pt = attr_local(e, b"left")
+                .or_else(|| attr_local(e, b"start"))
+                .and_then(|v| twips_to_pt(&v));
+            pp.indent.right_pt = attr_local(e, b"right")
+                .or_else(|| attr_local(e, b"end"))
+                .and_then(|v| twips_to_pt(&v));
+            pp.indent.first_line_pt = attr_local(e, b"firstLine").and_then(|v| twips_to_pt(&v));
+            pp.indent.hanging_pt = attr_local(e, b"hanging").and_then(|v| twips_to_pt(&v));
+        }
+        b"shd" => pp.shading = attr_local(e, b"fill").and_then(|v| parse_hex_color(&v)),
+        _ => {}
+    }
+}
+
+fn read_sect_pr(r: &mut Xml<'_>) -> SectionSetup {
+    let mut section = SectionSetup::default();
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
+                b"pgSz" => {
+                    if let (Some(w), Some(h)) = (
+                        attr_local(&e, b"w").and_then(|v| twips_to_pt(&v)),
+                        attr_local(&e, b"h").and_then(|v| twips_to_pt(&v)),
+                    ) {
+                        section.page.width_pt = w;
+                        section.page.height_pt = h;
+                        section.page.landscape =
+                            attr_local(&e, b"orient").as_deref() == Some("landscape");
+                    }
+                }
+                b"pgMar" => {
+                    let l = attr_local(&e, b"left").and_then(|v| twips_to_pt(&v));
+                    let rr = attr_local(&e, b"right").and_then(|v| twips_to_pt(&v));
+                    let t = attr_local(&e, b"top").and_then(|v| twips_to_pt(&v));
+                    let b = attr_local(&e, b"bottom").and_then(|v| twips_to_pt(&v));
+                    if let Some(l) = l {
+                        section.page.margin_pt = l;
+                    }
+                    section.page.margin_left_pt = l;
+                    section.page.margin_right_pt = rr;
+                    section.page.margin_top_pt = t;
+                    section.page.margin_bottom_pt = b;
+                }
+                _ => {}
+            },
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"sectPr" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    section
 }
 
 /// Read a `<w:r>`: its `w:rPr` formatting plus text / breaks / drawings. Returns
@@ -372,6 +1025,9 @@ fn push_drawing_runs(images: &mut Vec<Run>, img: Option<Image>, txbx: String) {
             props: CharProps::default(),
             field: FieldRole::None,
             image: Some(img),
+            comment: None,
+            revision: None,
+            content_control: None,
         });
     }
     if !txbx.trim().is_empty() {
@@ -380,11 +1036,21 @@ fn push_drawing_runs(images: &mut Vec<Run>, img: Option<Image>, txbx: String) {
             props: CharProps::default(),
             field: FieldRole::None,
             image: None,
+            comment: None,
+            revision: None,
+            content_control: None,
         });
     }
 }
 
-fn read_run(r: &mut Xml<'_>, ctx: &Ctx<'_>, link: Option<&str>, depth: u32) -> Vec<Run> {
+fn read_run(
+    r: &mut Xml<'_>,
+    ctx: &Ctx<'_>,
+    link: Option<&str>,
+    depth: u32,
+    mut complex_field: Option<&mut ComplexFieldTracker>,
+    base_index: usize,
+) -> Vec<Run> {
     // A run can recurse back into block content through a drawing's text box
     // (drawing → txbxContent → paragraph → run → drawing …); `depth` threads the
     // structural recursion budget across that boundary so MAX_DEPTH bounds it.
@@ -394,12 +1060,32 @@ fn read_run(r: &mut Xml<'_>, ctx: &Ctx<'_>, link: Option<&str>, depth: u32) -> V
     }
     let mut props = CharProps::default();
     let mut text = String::new();
+    let mut text_is_field_result = false;
     let mut images: Vec<Run> = Vec::new();
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
                 b"rPr" => props = read_rpr(r),
-                b"t" => text.push_str(&read_text(r)),
+                b"fldChar" => {
+                    apply_complex_field_char(&e, ctx, complex_field.as_deref_mut(), base_index);
+                    skip_subtree(r);
+                }
+                b"instrText" => {
+                    let instruction = read_text(r);
+                    if let Some(tracker) = complex_field.as_deref_mut() {
+                        tracker.push_instruction(&instruction);
+                    }
+                }
+                b"t" => {
+                    let in_result = complex_field
+                        .as_deref()
+                        .map(ComplexFieldTracker::in_result)
+                        .unwrap_or(false);
+                    if in_result {
+                        text_is_field_result = true;
+                    }
+                    text.push_str(&read_text(r));
+                }
                 b"drawing" | b"pict" | b"object" => {
                     let (img, txbx) = read_drawing(r, ctx, depth);
                     push_drawing_runs(&mut images, img, txbx);
@@ -417,8 +1103,18 @@ fn read_run(r: &mut Xml<'_>, ctx: &Ctx<'_>, link: Option<&str>, depth: u32) -> V
                 _ => skip_subtree(r),
             },
             Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
+                b"fldChar" => {
+                    apply_complex_field_char(&e, ctx, complex_field.as_deref_mut(), base_index)
+                }
                 b"tab" => text.push('\t'),
-                b"br" | b"cr" => text.push('\n'),
+                b"br" => {
+                    if matches!(attr_local(&e, b"type").as_deref(), Some("page")) {
+                        text.push(PAGE_BREAK_MARKER);
+                    } else {
+                        text.push('\n');
+                    }
+                }
+                b"cr" => text.push('\n'),
                 b"noBreakHyphen" => text.push('-'),
                 _ => {}
             },
@@ -428,6 +1124,11 @@ fn read_run(r: &mut Xml<'_>, ctx: &Ctx<'_>, link: Option<&str>, depth: u32) -> V
     }
     let mut runs = Vec::new();
     if !text.is_empty() {
+        if text_is_field_result {
+            if let Some(tracker) = complex_field {
+                tracker.push_result_run(base_index + runs.len());
+            }
+        }
         runs.push(Run {
             text,
             props,
@@ -435,10 +1136,30 @@ fn read_run(r: &mut Xml<'_>, ctx: &Ctx<'_>, link: Option<&str>, depth: u32) -> V
                 .map(|u| FieldRole::Hyperlink { url: u.to_string() })
                 .unwrap_or(FieldRole::None),
             image: None,
+            comment: None,
+            revision: None,
+            content_control: None,
         });
     }
     runs.extend(images);
     runs
+}
+
+fn apply_complex_field_char(
+    e: &BytesStart<'_>,
+    ctx: &Ctx<'_>,
+    tracker: Option<&mut ComplexFieldTracker>,
+    index: usize,
+) {
+    let Some(tracker) = tracker else {
+        return;
+    };
+    match attr_local(e, b"fldCharType").as_deref() {
+        Some("begin") => tracker.begin(),
+        Some("separate") => tracker.separate(index),
+        Some("end") => tracker.end(ctx, index),
+        _ => {}
+    }
 }
 
 /// Read `<w:rPr>` formatting toggles (bold/italic/underline/strike/hidden).
@@ -591,6 +1312,12 @@ fn walk_alternate_content(
 
 /// Append the flattened text of block-level nodes (a text box's paragraphs/tables)
 /// to `out`, newline-separated.
+fn blocks_text(blocks: &[Block]) -> String {
+    let mut text = String::new();
+    append_blocks_text(&mut text, blocks);
+    text
+}
+
 fn append_blocks_text(out: &mut String, blocks: &[Block]) {
     for b in blocks {
         let chunk = match b {
@@ -602,7 +1329,9 @@ fn append_blocks_text(out: &mut String, blocks: &[Block]) {
                 .filter(|c| !c.is_empty())
                 .collect::<Vec<_>>()
                 .join("\n"),
-            Block::Image(_) => String::new(),
+            Block::Image(_) | Block::Chart(_) | Block::PageBreak | Block::SectionBreak(_) => {
+                String::new()
+            }
         };
         if !chunk.is_empty() {
             if !out.is_empty() {
@@ -640,10 +1369,294 @@ fn hyperlink_url(start: &BytesStart<'_>, ctx: &Ctx<'_>) -> Option<String> {
     attr_local(start, b"anchor").map(|a| format!("#{a}"))
 }
 
-/// Read `<w:fldSimple>`: if its `w:instr` is a HYPERLINK field, link its runs.
+/// Read `<w:fldSimple>`: hyperlinks keep link semantics; other simple fields
+/// keep their normalized instruction on the cached result runs.
 fn read_fldsimple(r: &mut Xml<'_>, start: &BytesStart<'_>, ctx: &Ctx<'_>, depth: u32) -> Vec<Run> {
-    let url = attr_local(start, b"instr").and_then(|i| hyperlink_instr_url(&i));
-    read_runs_container(r, ctx, url.as_deref(), depth + 1)
+    let instruction = attr_local(start, b"instr").unwrap_or_default();
+    let url = hyperlink_instr_url(&instruction);
+    let mut runs = read_runs_container(r, ctx, url.as_deref(), depth + 1);
+    if url.is_none() {
+        let instruction = normalize_field_instruction(&instruction);
+        if !instruction.is_empty() {
+            let current_result = runs.iter().map(|run| run.text.as_str()).collect::<String>();
+            let computed = computed_simple_field_result(&instruction, ctx, &current_result);
+            if runs.is_empty() {
+                if let Some(text) = computed {
+                    runs.push(computed_field_run(text));
+                }
+                return runs;
+            }
+            for (index, run) in runs.iter_mut().enumerate() {
+                if let Some(text) = computed.as_deref() {
+                    run.field = FieldRole::Other;
+                    run.text = if index == 0 {
+                        text.to_string()
+                    } else {
+                        String::new()
+                    };
+                } else {
+                    run.field = FieldRole::Simple {
+                        instruction: instruction.clone(),
+                    };
+                }
+            }
+        }
+    }
+    runs
+}
+
+fn computed_simple_field_result(
+    instruction: &str,
+    ctx: &Ctx<'_>,
+    current_result: &str,
+) -> Option<String> {
+    let (ref_position, note_ref_position) = ref_field_positions(instruction, ctx);
+    let ref_result = {
+        let field_bookmarks = ctx.field_bookmarks.borrow();
+        let ref_ctx = super::fields::RefResultContext {
+            bookmarks: ctx.ref_targets,
+            ref_positions: ctx.ref_position_context,
+            ref_numbers: ctx.ref_number_context,
+            note_refs: ctx.note_ref_context,
+            field_bookmarks: &field_bookmarks,
+        };
+        super::fields::computed_ref_result(instruction, &ref_ctx, ref_position, note_ref_position)
+    };
+    ref_result
+        .or_else(|| {
+            let position = if FieldKind::from_instruction(instruction) == FieldKind::Page {
+                let index = {
+                    let mut cursor = ctx.page_field_cursor.borrow_mut();
+                    let index = *cursor;
+                    *cursor += 1;
+                    index
+                };
+                ctx.page_ref_context.page_field_position(index)
+            } else {
+                None
+            };
+            super::fields::computed_page_result(instruction, position)
+        })
+        .or_else(|| {
+            let position = if FieldKind::from_instruction(instruction) == FieldKind::PageRef {
+                let index = {
+                    let mut cursor = ctx.page_ref_field_cursor.borrow_mut();
+                    let index = *cursor;
+                    *cursor += 1;
+                    index
+                };
+                ctx.page_ref_context.field_position(index)
+            } else {
+                None
+            };
+            super::fields::computed_page_ref_result(instruction, ctx.page_ref_context, position)
+        })
+        .or_else(|| {
+            let position = if FieldKind::from_instruction(instruction) == FieldKind::NoteRef {
+                let index = {
+                    let mut cursor = ctx.note_ref_field_cursor.borrow_mut();
+                    let index = *cursor;
+                    *cursor += 1;
+                    index
+                };
+                ctx.note_ref_context.field_position(index)
+            } else {
+                None
+            };
+            super::fields::computed_note_ref_result(instruction, ctx.note_ref_context, position)
+        })
+        .or_else(|| {
+            if FieldKind::from_instruction(instruction) == FieldKind::Sequence {
+                let mut counters = ctx.sequence_counters.borrow_mut();
+                super::fields::computed_sequence_result(instruction, &mut counters)
+            } else {
+                None
+            }
+        })
+        .or_else(|| super::fields::computed_toc_entry_result(instruction))
+        .or_else(|| {
+            if matches!(
+                FieldKind::from_instruction(instruction),
+                FieldKind::Numbering(kind)
+                    if kind == "AUTONUM" || kind == "AUTONUMLGL" || kind == "AUTONUMOUT"
+            ) {
+                let mut counter = ctx.autonum_counter.borrow_mut();
+                super::fields::computed_numbering_result(instruction, &mut counter)
+            } else {
+                None
+            }
+        })
+        .or_else(|| {
+            if matches!(
+                FieldKind::from_instruction(instruction),
+                FieldKind::Numbering(kind) if kind == "LISTNUM"
+            ) {
+                let mut counter = ctx.listnum_counter.borrow_mut();
+                super::fields::computed_listnum_result(instruction, &mut counter)
+            } else {
+                None
+            }
+        })
+        .or_else(|| {
+            let position = if super::fields::is_section_field_instruction(instruction) {
+                let index = {
+                    let mut cursor = ctx.section_field_cursor.borrow_mut();
+                    let index = *cursor;
+                    *cursor += 1;
+                    index
+                };
+                ctx.section_context.field_position(index)
+            } else {
+                None
+            };
+            super::fields::computed_section_result(instruction, position)
+        })
+        .or_else(|| {
+            super::fields::computed_revision_number_result(instruction, ctx.core_properties)
+        })
+        .or_else(|| {
+            let position = if super::fields::is_style_ref_field_instruction(instruction) {
+                let index = {
+                    let mut cursor = ctx.style_ref_field_cursor.borrow_mut();
+                    let index = *cursor;
+                    *cursor += 1;
+                    index
+                };
+                ctx.style_ref_context.field_position(index)
+            } else {
+                None
+            };
+            super::fields::computed_style_ref_result(instruction, ctx.style_ref_context, position)
+        })
+        .or_else(|| computed_dynamic_field_result(instruction, ctx))
+        .or_else(|| {
+            if matches!(
+                FieldKind::from_instruction(instruction),
+                FieldKind::Dynamic(kind) if kind == "ASK"
+            ) {
+                let mut field_bookmarks = ctx.field_bookmarks.borrow_mut();
+                super::fields::computed_ask_result(instruction, &mut field_bookmarks)
+            } else {
+                None
+            }
+        })
+        .or_else(|| {
+            if matches!(
+                FieldKind::from_instruction(instruction),
+                FieldKind::Dynamic(kind) if kind == "SET"
+            ) {
+                let mut field_bookmarks = ctx.field_bookmarks.borrow_mut();
+                super::fields::computed_set_result(instruction, &mut field_bookmarks)
+            } else {
+                None
+            }
+        })
+        .or_else(|| {
+            super::fields::computed_document_info_result(
+                instruction,
+                ctx.core_properties,
+                ctx.custom_properties,
+                ctx.document_variables,
+                ctx.extended_properties,
+                ctx.file_size_bytes,
+            )
+        })
+        .or_else(|| super::fields::computed_reference_index_result(instruction))
+        .or_else(|| super::fields::computed_display_result(instruction))
+        .or_else(|| super::fields::computed_action_result(instruction))
+        .or_else(|| {
+            if matches!(
+                FieldKind::from_instruction(instruction),
+                FieldKind::FormField(_)
+            ) {
+                let index = {
+                    let mut cursor = ctx.form_field_cursor.borrow_mut();
+                    let index = *cursor;
+                    *cursor += 1;
+                    index
+                };
+                super::fields::computed_legacy_form_result(
+                    instruction,
+                    current_result,
+                    ctx.legacy_form_context,
+                    index,
+                )
+            } else {
+                None
+            }
+        })
+        .or_else(|| {
+            let (position, note_ref_position) =
+                if super::fields::is_direct_bookmark_ref_field_instruction(instruction) {
+                    let index = {
+                        let mut cursor = ctx.ref_field_cursor.borrow_mut();
+                        let index = *cursor;
+                        *cursor += 1;
+                        index
+                    };
+                    (
+                        ctx.ref_position_context.field_position(index),
+                        ctx.note_ref_context.ref_field_position(index),
+                    )
+                } else {
+                    (None, None)
+                };
+            let field_bookmarks = ctx.field_bookmarks.borrow();
+            let ref_ctx = super::fields::RefResultContext {
+                bookmarks: ctx.ref_targets,
+                ref_positions: ctx.ref_position_context,
+                ref_numbers: ctx.ref_number_context,
+                note_refs: ctx.note_ref_context,
+                field_bookmarks: &field_bookmarks,
+            };
+            super::fields::computed_direct_bookmark_ref_result(
+                instruction,
+                &ref_ctx,
+                position,
+                note_ref_position,
+            )
+        })
+        .or_else(|| super::fields::computed_toc_result(instruction, ctx.toc_entries))
+}
+
+fn computed_dynamic_field_result(instruction: &str, ctx: &Ctx<'_>) -> Option<String> {
+    if matches!(
+        FieldKind::from_instruction(instruction),
+        FieldKind::Dynamic(kind) if kind == "="
+    ) {
+        let index = {
+            let mut cursor = ctx.formula_field_cursor.borrow_mut();
+            let index = *cursor;
+            *cursor += 1;
+            index
+        };
+        if let Some(result) = ctx.table_formula_context.field_result(index) {
+            return Some(result);
+        }
+    }
+    super::fields::computed_dynamic_result(instruction)
+}
+
+fn ref_field_positions(
+    instruction: &str,
+    ctx: &Ctx<'_>,
+) -> (
+    Option<super::fields::RefFieldPosition>,
+    Option<super::fields::NoteRefFieldPosition>,
+) {
+    if FieldKind::from_instruction(instruction) != FieldKind::Ref {
+        return (None, None);
+    }
+    let index = {
+        let mut cursor = ctx.ref_field_cursor.borrow_mut();
+        let index = *cursor;
+        *cursor += 1;
+        index
+    };
+    (
+        ctx.ref_position_context.field_position(index),
+        ctx.note_ref_context.ref_field_position(index),
+    )
 }
 
 /// Extract a URL from a `HYPERLINK "…"` field instruction (matches the `.doc`
@@ -658,6 +1671,28 @@ fn hyperlink_instr_url(instr: &str) -> Option<String> {
     (!url.is_empty()).then(|| url.to_string())
 }
 
+fn normalize_field_instruction(instruction: &str) -> String {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+    for ch in instruction.chars() {
+        if ch == '"' {
+            in_quotes = !in_quotes;
+            current.push(ch);
+        } else if ch.is_whitespace() && !in_quotes {
+            if !current.is_empty() {
+                parts.push(std::mem::take(&mut current));
+            }
+        } else {
+            current.push(ch);
+        }
+    }
+    if !current.is_empty() {
+        parts.push(current);
+    }
+    parts.join(" ")
+}
+
 /// Resolve paragraph-level properties (heading level, alignment, list) from the
 /// collected `w:pPr` fields — mirroring `assemble.rs::take_paragraph` precedence
 /// (explicit outline level wins; a heading suppresses list rendering).
@@ -670,6 +1705,7 @@ fn finalize_paragraph(runs: Vec<Run>, pp: PPr, ctx: &Ctx<'_>) -> Paragraph {
         spacing,
         indent,
         shading,
+        section: _,
     } = pp;
     let heading_level = match outline {
         Some(o) if o <= 8 => Some(o + 1),
@@ -713,6 +1749,7 @@ fn finalize_paragraph(runs: Vec<Run>, pp: PPr, ctx: &Ctx<'_>) -> Paragraph {
     };
     Paragraph {
         props: ParaProps {
+            style_id,
             style_name,
             heading_level,
             align,
@@ -818,14 +1855,14 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
         match r.read_event() {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
                 b"tcPr" => tc = Some(read_tcpr(r)),
-                b"p" => blocks.push(Block::Paragraph(read_paragraph(r, ctx, depth + 1))),
+                b"p" => blocks.extend(read_paragraph_blocks(r, ctx, depth + 1)),
                 b"tbl" => {
                     let t = read_table(r, ctx, depth + 1);
                     if !t.rows.is_empty() {
                         blocks.push(Block::Table(t));
                     }
                 }
-                b"sdt" | b"sdtContent" | b"customXml" => {
+                b"sdt" | b"sdtContent" | b"customXml" | b"smartTag" | b"ins" | b"moveTo" => {
                     blocks.extend(read_blocks(r, ctx, depth + 1))
                 }
                 _ => skip_subtree(r),
@@ -1029,11 +2066,52 @@ mod tests {
         let numbering = Numbering::default();
         let rels = HashMap::new();
         let media = HashMap::new();
+        let ref_targets = HashMap::new();
+        let ref_position_context = super::super::fields::RefPositionContext::default();
+        let ref_number_context = super::super::fields::RefNumberContext::empty();
+        let page_ref_context = super::super::fields::PageRefContext::empty();
+        let note_ref_context = super::super::fields::NoteRefContext::empty();
+        let section_context = super::super::fields::SectionContext::empty();
+        let style_ref_context = super::super::fields::StyleRefContext::empty();
+        let legacy_form_context = super::super::fields::LegacyFormContext::empty();
+        let table_formula_context = super::super::fields::TableFormulaContext::empty();
+        let toc_entries = Vec::new();
+        let core_properties = crate::CoreProperties::default();
+        let custom_properties = HashMap::new();
+        let document_variables = HashMap::new();
+        let extended_properties = HashMap::new();
         let ctx = Ctx {
             styles: &styles,
             numbering: &numbering,
             rels: &rels,
             media: &media,
+            ref_targets: &ref_targets,
+            ref_position_context: &ref_position_context,
+            ref_number_context: &ref_number_context,
+            page_ref_context: &page_ref_context,
+            note_ref_context: &note_ref_context,
+            section_context: &section_context,
+            style_ref_context: &style_ref_context,
+            legacy_form_context: &legacy_form_context,
+            table_formula_context: &table_formula_context,
+            toc_entries: &toc_entries,
+            core_properties: &core_properties,
+            custom_properties: &custom_properties,
+            document_variables: &document_variables,
+            extended_properties: &extended_properties,
+            file_size_bytes: None,
+            ref_field_cursor: Default::default(),
+            page_field_cursor: Default::default(),
+            page_ref_field_cursor: Default::default(),
+            note_ref_field_cursor: Default::default(),
+            section_field_cursor: Default::default(),
+            style_ref_field_cursor: Default::default(),
+            form_field_cursor: Default::default(),
+            formula_field_cursor: Default::default(),
+            sequence_counters: Default::default(),
+            autonum_counter: Default::default(),
+            listnum_counter: Default::default(),
+            field_bookmarks: Default::default(),
             counters: Default::default(),
         };
         parse_document(xml, &ctx)
@@ -1140,8 +2218,26 @@ mod tests {
             </w:sectPr>
         </w:body></w:document>"#;
         let (headers, footers) = scan_hf_refs(xml);
-        assert_eq!(headers, vec!["rIdH".to_string(), "rIdH1".to_string()]);
-        assert_eq!(footers, vec!["rIdF".to_string()]);
+        assert_eq!(
+            headers,
+            vec![
+                HeaderFooterRef {
+                    rel_id: "rIdH".to_string(),
+                    type_name: "default".to_string()
+                },
+                HeaderFooterRef {
+                    rel_id: "rIdH1".to_string(),
+                    type_name: "first".to_string()
+                }
+            ]
+        );
+        assert_eq!(
+            footers,
+            vec![HeaderFooterRef {
+                rel_id: "rIdF".to_string(),
+                type_name: "default".to_string()
+            }]
+        );
     }
 
     #[test]
@@ -1150,11 +2246,52 @@ mod tests {
         let numbering = Numbering::default();
         let rels = HashMap::new();
         let media = HashMap::new();
+        let ref_targets = HashMap::new();
+        let ref_position_context = super::super::fields::RefPositionContext::default();
+        let ref_number_context = super::super::fields::RefNumberContext::empty();
+        let page_ref_context = super::super::fields::PageRefContext::empty();
+        let note_ref_context = super::super::fields::NoteRefContext::empty();
+        let section_context = super::super::fields::SectionContext::empty();
+        let style_ref_context = super::super::fields::StyleRefContext::empty();
+        let legacy_form_context = super::super::fields::LegacyFormContext::empty();
+        let table_formula_context = super::super::fields::TableFormulaContext::empty();
+        let toc_entries = Vec::new();
+        let core_properties = crate::CoreProperties::default();
+        let custom_properties = HashMap::new();
+        let document_variables = HashMap::new();
+        let extended_properties = HashMap::new();
         let ctx = Ctx {
             styles: &styles,
             numbering: &numbering,
             rels: &rels,
             media: &media,
+            ref_targets: &ref_targets,
+            ref_position_context: &ref_position_context,
+            ref_number_context: &ref_number_context,
+            page_ref_context: &page_ref_context,
+            note_ref_context: &note_ref_context,
+            section_context: &section_context,
+            style_ref_context: &style_ref_context,
+            legacy_form_context: &legacy_form_context,
+            table_formula_context: &table_formula_context,
+            toc_entries: &toc_entries,
+            core_properties: &core_properties,
+            custom_properties: &custom_properties,
+            document_variables: &document_variables,
+            extended_properties: &extended_properties,
+            file_size_bytes: None,
+            ref_field_cursor: Default::default(),
+            page_field_cursor: Default::default(),
+            page_ref_field_cursor: Default::default(),
+            note_ref_field_cursor: Default::default(),
+            section_field_cursor: Default::default(),
+            style_ref_field_cursor: Default::default(),
+            form_field_cursor: Default::default(),
+            formula_field_cursor: Default::default(),
+            sequence_counters: Default::default(),
+            autonum_counter: Default::default(),
+            listnum_counter: Default::default(),
+            field_bookmarks: Default::default(),
             counters: Default::default(),
         };
         let xml = r#"<w:footnotes>
@@ -1180,11 +2317,52 @@ mod tests {
         let numbering = Numbering::default();
         let rels = HashMap::new();
         let media = HashMap::new();
+        let ref_targets = HashMap::new();
+        let ref_position_context = super::super::fields::RefPositionContext::default();
+        let ref_number_context = super::super::fields::RefNumberContext::empty();
+        let page_ref_context = super::super::fields::PageRefContext::empty();
+        let note_ref_context = super::super::fields::NoteRefContext::empty();
+        let section_context = super::super::fields::SectionContext::empty();
+        let style_ref_context = super::super::fields::StyleRefContext::empty();
+        let legacy_form_context = super::super::fields::LegacyFormContext::empty();
+        let table_formula_context = super::super::fields::TableFormulaContext::empty();
+        let toc_entries = Vec::new();
+        let core_properties = crate::CoreProperties::default();
+        let custom_properties = HashMap::new();
+        let document_variables = HashMap::new();
+        let extended_properties = HashMap::new();
         let ctx = Ctx {
             styles: &styles,
             numbering: &numbering,
             rels: &rels,
             media: &media,
+            ref_targets: &ref_targets,
+            ref_position_context: &ref_position_context,
+            ref_number_context: &ref_number_context,
+            page_ref_context: &page_ref_context,
+            note_ref_context: &note_ref_context,
+            section_context: &section_context,
+            style_ref_context: &style_ref_context,
+            legacy_form_context: &legacy_form_context,
+            table_formula_context: &table_formula_context,
+            toc_entries: &toc_entries,
+            core_properties: &core_properties,
+            custom_properties: &custom_properties,
+            document_variables: &document_variables,
+            extended_properties: &extended_properties,
+            file_size_bytes: None,
+            ref_field_cursor: Default::default(),
+            page_field_cursor: Default::default(),
+            page_ref_field_cursor: Default::default(),
+            note_ref_field_cursor: Default::default(),
+            section_field_cursor: Default::default(),
+            style_ref_field_cursor: Default::default(),
+            form_field_cursor: Default::default(),
+            formula_field_cursor: Default::default(),
+            sequence_counters: Default::default(),
+            autonum_counter: Default::default(),
+            listnum_counter: Default::default(),
+            field_bookmarks: Default::default(),
             counters: Default::default(),
         };
         let xml = r#"<w:hdr><w:p><w:r><w:t>헤더 텍스트</w:t></w:r></w:p></w:hdr>"#;
@@ -1318,7 +2496,9 @@ mod tests {
                         _ => None,
                     })
                     .collect(),
-                Block::Image(_) => String::new(),
+                Block::Image(_) | Block::Chart(_) | Block::PageBreak | Block::SectionBreak(_) => {
+                    String::new()
+                }
             })
             .collect::<Vec<_>>()
             .join("|");

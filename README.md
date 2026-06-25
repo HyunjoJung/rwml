@@ -34,33 +34,109 @@ let text = rdoc::extract_text(&bytes)?;
 let doc   = rdoc::Document::open(&bytes)?;
 let md    = doc.to_markdown();   // # headings, **bold**, | tables |, lists, links
 let html  = doc.to_html();       // <h1>, <strong>, <table colspan>, <img>, <a>
-let model = doc.model();         // typed IR: Vec<Block> (Paragraph | Table | Image)
+let model = doc.model();         // typed IR: Vec<Block> (Paragraph | Table | Image | PageBreak | SectionBreak)
+let hregs = model.source_regions(rdoc::SourceRegionKind::HeaderFooter);
 let imgs  = doc.images();        // extracted PNG/JPEG bytes (like POI getAllPictures)
+let info  = doc.report();        // format, stats, edit state, feature inventory incl. notes/text boxes/metafiles
+let json  = info.to_json();      // compact diagnostics JSON for scripts/CLI
+let edit  = doc.edit_capability(); // package-preserving edit availability
+let props = doc.core_properties(); // title/creator/etc. from docProps/core.xml when present
+let comments = doc.comments();   // .docx comments + recovered .doc annotations
+let notes = doc.notes();         // .docx + recovered .doc footnote/endnote records with anchors
+let boxes = doc.text_boxes();    // .docx + recovered .doc text-box records
+let shapes = doc.floating_shapes(); // .docx wp:anchor geometry/layout/anchor/preset/color/simplePos/effect/wrap-distance records
+let hfs   = doc.header_footers(); // .docx part/type records + recovered .doc regions
+let flds  = doc.fields();        // .docx + recovered .doc fields
+let revs  = doc.revisions();     // .docx tracked changes (kind, metadata, text)
+let hdr   = doc.header_text();   // running header/footer text when modeled
+let orig  = doc.main_text_with_revision_view(rdoc::RevisionView::Original);
 ```
 
 ## Write — author a styled `.docx`
 
-Build a [`DocModel`] from your data and serialize it to a clean, Office-openable
-`.docx`. Character formatting (font, size, color, bold/italic, highlight,
-super/subscript), paragraph styles (named headings, alignment, spacing, indent,
-shading), lists, **bordered tables with per-cell shading / width / vertical
-alignment**, images, page setup, and running headers/footers with page numbers all
-round-trip. See [`examples/report.rs`](examples/report.rs).
+Build a document with [`DocBuilder`] or the lower-level [`DocModel`] structs, then
+serialize it to a clean, Office-openable `.docx`. Character formatting (font,
+size, color, bold/italic, highlight, super/subscript), paragraph layout
+(named styles, headings, alignment, spacing, indent, shading), leveled lists,
+**bordered tables with per-cell shading / width / vertical alignment**, images
+with alt text and explicit pixel size, simple fields with cached results,
+run-anchored comments, tracked insertion/deletion runs, run-level content
+controls, page setup, explicit page/section breaks, and running headers/footers
+with page numbers all round-trip. See
+[`examples/report.rs`](examples/report.rs).
 
 ```rust
-use rdoc::{Block, DocModel, Paragraph, ParaProps, Run, CharProps, Color};
+let model = rdoc::DocBuilder::new()
+    .title("분기 운영 리포트")
+    .creator("rdoc")
+    .margins_pt(54.0)
+    .header_runs([rdoc::RunBuilder::new("분기 운영 리포트").bold().build()])
+    .footer_runs([rdoc::RunBuilder::new("Page ").italic().build()])
+    .page_numbers()
+    .paragraph_style(
+        rdoc::ParagraphStyleBuilder::new("RiskCallout", "Risk callout")
+            .based_on("Normal")
+            .shading(rdoc::Color::rgb(0xFE, 0xF2, 0xF2))
+            .run_bold()
+            .run_color(rdoc::Color::rgb(0xC0, 0x00, 0x00)),
+    )
+    .heading(1, "분기 운영 리포트")
+    .paragraph("작성일 2026-06-22")
+    .rich_paragraph(rdoc::ParagraphBuilder::new().runs([
+        rdoc::RunBuilder::new("주의 필요")
+            .comment(
+                rdoc::CommentBuilder::new("담당자 확인 필요")
+                    .author("Reviewer")
+                    .initials("RV"),
+            )
+            .build(),
+        rdoc::RunBuilder::new(" - ").build(),
+        rdoc::RunBuilder::new("가이드")
+            .hyperlink("https://example.com/guide")
+            .underline()
+            .build(),
+        rdoc::RunBuilder::new("추가 문장")
+            .revision(
+                rdoc::RevisionBuilder::insertion()
+                    .author("Reviewer")
+                    .date("2026-06-24T01:00:00Z"),
+            )
+            .build(),
+        rdoc::RunBuilder::new("승인 필요")
+            .content_control(
+                rdoc::ContentControlBuilder::new()
+                    .alias("Approval")
+                    .tag("approval-required"),
+            )
+            .build(),
+    ]).style("RiskCallout"))
+    .numbered_list(["문서 변환 점검", "릴리스 노트 작성"])
+    .bullet_list_level(1, ["담당자 확인"])
+    .field("FILENAME \\p", "report.docx") // writes a simple field cached result
+    .hyperlink("프로젝트 링크", "https://example.com/")
+    .rich_table(
+        rdoc::TableBuilder::new()
+            .header_rows(1)
+            .col_widths_pct([0.7, 0.3])
+            .row([
+                rdoc::CellBuilder::text("작업")
+                    .shading(rdoc::Color::rgb(0x1F, 0x38, 0x64)),
+                rdoc::CellBuilder::text("담당 부서")
+                    .shading(rdoc::Color::rgb(0x1F, 0x38, 0x64)),
+            ])
+            .row([
+                rdoc::CellBuilder::text("문서 변환 점검"),
+                rdoc::CellBuilder::text("플랫폼팀"),
+            ]),
+    )
+    .section_break()
+    .clear_header()
+    .page_size_pt(792.0, 612.0)
+    .landscape()
+    .header_runs([rdoc::RunBuilder::new("후속 조치").bold().build()])
+    .heading(2, "후속 조치")
+    .build();
 
-let model = DocModel {
-    blocks: vec![Block::Paragraph(Paragraph {
-        props: ParaProps { heading_level: Some(1), ..Default::default() },
-        runs: vec![Run {
-            text: "분기 운영 리포트".into(),
-            props: CharProps { color: Some(Color { r: 0x1F, g: 0x38, b: 0x64 }), ..Default::default() },
-            ..Default::default()
-        }],
-    })],
-    ..Default::default()
-};
 std::fs::write("out.docx", rdoc::write_docx(&model))?;   // opens in Word & LibreOffice
 ```
 
@@ -78,18 +154,63 @@ let mut doc = rdoc::Document::open(&std::fs::read("in.docx")?)?;
 
 // Element-tree edit: preserves fields, content controls, shapes, comments…
 doc.replace_body_text("DRAFT", "FINAL")?;
+doc.set_field_result(0, "7")?;                  // cached result for doc.fields()[0]
+doc.fill_content_controls_by_tag([
+    ("client-name", "Acme & Co"),
+    ("project-name", "Roadmap"),
+])?;
+doc.fill_template_fields([
+    ("client-name", "Acme & Co"),
+    ("project-name", "Roadmap"),
+])?; // body/header/footer content controls + MERGEFIELD cached results
+doc.accept_all_revisions()?;                    // accept tracked body changes
+// doc.reject_all_revisions()?;                 // or reject tracked body changes
+doc.set_hyperlink_target(0, "https://example.com/final")?; // body hyperlink rel
+doc.set_comment_text("7", "Updated note")?;     // existing comment body text
+doc.add_comment_on_text("Clause", "Check this", "Reviewer")?; // exact body run anchor
+doc.set_table_cell_text(0, 0, 1, "Updated")?;   // top-level table/row/logical column
+doc.replace_header_footer_text("DRAFT", "FINAL")?;
+doc.replace_text_in_part("word/header2.xml", "DRAFT", "FINAL")?; // explicit WML part
+doc.add_footnote_on_text("Clause", "Source note")?; // exact body run anchor
+doc.add_endnote_on_text("Clause", "Appendix note")?; // exact body run anchor
+doc.replace_note_text("DRAFT", "FINAL")?;       // existing footnote/endnote text
 doc.add_image_png(&png_bytes, "image1.png")?;   // media + content-type + rId, atomic
+doc.replace_image_png(&new_png, "image1.png")?; // existing word/media/*.png bytes
+doc.add_image_jpeg(&jpg_bytes, "photo.jpg")?;   // validated JPEG media insert
+doc.replace_image_jpeg(&new_jpg, "photo.jpg")?; // existing word/media/*.jpg bytes
+doc.set_core_property(rdoc::CoreProperty::Title, "Final report")?;
 
-std::fs::write("out.docx", doc.save()?)?;        // only document.xml changed
+let touched = doc.edited_parts();               // package parts dirtied by edits
+std::fs::write("out.docx", doc.save()?)?;        // untouched parts preserved
 ```
 
-Edits mutate the live `document.xml` **element tree** in place
-(`replace_body_text` / `add_image_png`), so everything they don't touch — including
-content the lossy model can't represent (fields, content controls, shapes, comments,
-tracked changes) — is preserved byte-for-byte; `save()` re-serializes only the parts
-you changed. `Document::new()` starts from a bundled blank template. To *author* a
+Preservation edits mutate live WordprocessingML **element trees** or media parts
+in place
+(`replace_body_text` / `set_field_result` / `replace_header_footer_text` /
+`fill_content_control_by_tag` / `fill_content_controls_by_tag` /
+`fill_template_fields` /
+`accept_all_revisions` / `reject_all_revisions` / `add_footnote_on_text` /
+`add_endnote_on_text` / `replace_note_text` / `set_hyperlink_target` /
+`set_comment_text` / `add_comment_on_text` /
+`replace_text_in_part` / `set_table_cell_text` / `add_image_png` /
+`replace_image_png` / `add_image_jpeg` / `replace_image_jpeg` /
+`set_core_property`),
+so everything they don't touch — including content the lossy model can't represent
+(fields, content controls, shapes, comments, tracked changes) — is preserved
+byte-for-byte; `save()` re-serializes only the parts you changed.
+Regenerated relationship parts are validated before save, so internal
+relationship targets must point at retained package parts unless they are
+explicitly external.
+`Document::new()` starts from a bundled
+blank template. To *author* a
 document from data (or convert a `.doc`), build a `DocModel` and use
 [`write_docx`](#author--build-a-styled-docx) instead.
+Call `edit_capability()` or inspect `report().edit` before editing if you need
+machine-readable read-only reasons such as legacy `.doc`, incomplete retained
+packages, or lossy OPC metadata. Call `edited_parts()` after edits to inspect
+the sorted package part names that will be reserialized or regenerated; the same
+list is included in `report().edited_parts` and diagnostics JSON. Core metadata
+from `core_properties()` is also included in `report().core_properties`.
 
 ## Render — typeset to PDF
 
@@ -105,10 +226,18 @@ the `render` feature.
 
 > **Scope:** this is a fast, in-process **preview / report** renderer, not a Word
 > layout engine. It is faithful to the *model* and selectable, but it does **not**
-> match LibreOffice fidelity — exact pagination, floating-shape positioning, field
-> page numbers, and pixel layout differ. Measured against LibreOffice on a real
-> corpus it reaches ~0.93 text recall with close page counts; for archival or
-> Word-exact PDF, render via LibreOffice. (See *Scope & parity*.)
+> match LibreOffice fidelity — exact pagination, exact floating-object layout,
+> unknown fields, unresolved or unsupported remaining value-changing REF cases such as
+> comment/annotation insertion, remaining advanced
+> TOC/REF computed field evaluation, and pixel layout differ. Opened-document
+> renders draw bounded approximate overlay boxes for recovered `.docx`
+> floating-shape geometry on the recovered top-level body block page when
+> available, and compact placeholder lines for preserved charts,
+> OLE objects, WMF/EMF/EMZ/WMZ images, and any floating-shape markers without
+> recovered geometry rather than drawing those objects exactly.
+> Measured against LibreOffice on a real corpus it reaches ~0.93 text recall with
+> close page counts; for archival or Word-exact PDF, render via LibreOffice.
+> (See *Scope & parity*.)
 
 ```toml
 rdoc = { version = "0.1", features = ["render"] }
@@ -116,29 +245,69 @@ rdoc = { version = "0.1", features = ["render"] }
 
 ```rust
 let pdf = rdoc::render_pdf(&model);                 // uses system fonts
+let pdf = rdoc::try_render_pdf(&model)?;             // fallible variant
 // On a headless host without CJK fonts, supply your own:
 let kr  = std::fs::read("NotoSansKR-Regular.otf")?;
 let pdf = rdoc::render_pdf_with_fonts(&model, &[kr]);
+
+let rendered = rdoc::render_pdf_with_report(&model);
+eprintln!(
+    "pages={} render_warnings={}",
+    rendered.report.pages,
+    rendered.report.warnings.len()
+);
 ```
 
-You can also convert a parsed document straight to PDF: `Document::open(&bytes)?.to_pdf()`.
+You can also convert a parsed document straight to PDF:
+`Document::open(&bytes)?.to_pdf()` / `try_to_pdf()`, pass font blobs with
+`to_pdf_with_fonts()` / `try_to_pdf_with_fonts()`, or use
+`to_pdf_with_report()` / `to_pdf_with_fonts_and_report()` when you want page
+count and renderer warnings tied to the opened document's feature inventory. The
+opened-document paths use that inventory for visible placeholder lines when
+unsupported preserved objects are present.
 
 ## CLI (examples)
 
 ```text
-cargo run --example extract  -- file.docx              # plain text
-cargo run --example convert  -- file.doc  md           # Markdown / html
-cargo run --example to_docx  -- legacy.doc out.docx    # .doc → clean .docx
+rdoc extract  file.docx                                # plain text
+rdoc convert  file.doc md                              # Markdown / html / txt
+rdoc diagnose file.docx                                # JSON feature report
+rdoc to-docx legacy.doc out.docx                       # .doc → clean .docx
+rdoc to-pdf file.docx out.pdf --report-json render.json # PDF + render report
+
+cargo run --bin rdoc -- diagnose file.docx             # same CLI from source
+cargo run --features render --bin rdoc -- to-pdf file.docx out.pdf --report-json render.json
 cargo run --example report   -- report.docx            # author a styled report
 cargo run --features render --example to_pdf -- file.docx out.pdf
+cargo run --features render --example to_pdf -- file.docx out.pdf --report-json render.json
+python scripts/render_validate.py --json --min-mean-recall 0.90 --max-skipped 0 corpus/*.docx
+python scripts/bench_vs_mature.py --corpus "$RDOC_BENCH_CORPUS" --json \
+  --version 0.1.0 --git-rev "$(git rev-parse HEAD)" \
+  --min-poi-recall-mean 0.95 --min-poi-f1-mean 0.95 --max-errors 0 \
+  --output dist/extract-benchmark.json
+python scripts/public_hygiene_audit.py --json > dist/public-hygiene.json
+python scripts/release_manifest.py --version 0.1.0 --git-rev "$(git rev-parse HEAD)" \
+  --release-policy public-release \
+  --enforce-policy-inputs \
+  --hygiene-report dist/public-hygiene.json \
+  --corpus-manifest corpus/public/MANIFEST.tsv --corpus-manifest corpus/public/RENDER_MANIFEST.tsv \
+  --validation-report render.json --benchmark-report dist/extract-benchmark.json \
+  --output dist/rdoc-release-manifest.json dist/*
 ```
 
 ## Cargo features
 
 | feature | default | pulls in | enables |
 |---|:--:|---|---|
-| `docx`   | ✅ | `zip`, `quick-xml` | `.docx` read, `write_docx`, **and package-preserving edit/`save`** |
+| `docx`   | ✅ | `zip`, `quick-xml`, `flate2` | `.docx` read, `write_docx`, **and package-preserving edit/`save`** |
 | `render` |    | `parley`, `krilla` | `render_pdf` / `to_pdf` (MSRV 1.88) |
+
+The library also emits an `rlib` plus `cdylib`; on `wasm32` it uses a
+target-specific `wasm-bindgen` dependency for the thin `rdoc::wasm` read/report
+adapter (`extractText`, `markdown`, `html`, `reportJson`).
+[`examples/wasm-demo`](examples/wasm-demo) is a static browser inspector over
+that adapter: it opens local files, shows text/Markdown/HTML preview, and exposes
+the same diagnostics JSON without adding an editing UI.
 
 For a dependency-light, legacy-only build (just `cfb` + `encoding_rs` +
 `thiserror`): `rdoc = { version = "0.1", default-features = false }` (reads `.doc`,
@@ -162,8 +331,10 @@ by recursive descent (paragraphs → runs with `w:rPr`; tables `w:tbl` with
 `word/numbering.xml`, and hyperlink targets + image bytes from
 `word/_rels/document.xml.rels` + `word/media/*`. Running headers/footers are
 resolved from the `sectPr` references (`word/header*.xml` / `footer*.xml`, each
-with its own rels) into `DocSetup`, and text-box text (`w:txbxContent`, DrawingML
-or VML, single-branch on `mc:AlternateContent`) is folded back into the body.
+with its own rels) into section-break setup plus the final `DocSetup`, including
+default, first-page, and even-page variants where present, and text-box text
+(`w:txbxContent`, DrawingML or VML, single-branch on `mc:AlternateContent`) is
+folded back into the body.
 Recursion is depth-capped, XML external entities are never resolved (XXE-safe), and
 per-entry decompression is size-capped (zip-bomb guard).
 
@@ -207,9 +378,20 @@ authored report opens in Word and LibreOffice.
 **Editing (package-preserving).** `Document::open` retains the whole package and
 `save()` re-emits it with every unmodeled part preserved verbatim — a no-op
 open→save is **part-payload** byte-stable (the ZIP container metadata is normalized).
-Edits go through the live `document.xml` **element tree** (`replace_body_text` /
-`add_image_png`), so unmodeled body content (fields, shapes, content controls,
-comments, tracked changes) survives. Validated on the 127-file corpus with python-docx
+Edits go through live WordprocessingML **element trees** or media-part replacement (`replace_body_text` /
+`set_field_result` / `fill_content_control_by_tag` /
+`fill_content_controls_by_tag` / `fill_template_fields` / `accept_all_revisions` /
+`reject_all_revisions` / `set_hyperlink_target` / `set_comment_text` /
+`add_comment_on_text` / `replace_header_footer_text` /
+`replace_text_in_part` / `add_footnote_on_text` / `add_endnote_on_text` / `replace_note_text` /
+`set_table_cell_text` / `add_image_png` / `replace_image_png` /
+`add_image_jpeg` / `replace_image_jpeg` /
+`set_core_property`), so unmodeled body content (fields, shapes, content controls,
+comments, tracked changes) survives.
+`edited_parts()` reports touched package parts, and `Document::report()` includes
+core metadata, edit capability, and edited part names; it emits
+`PackageReadOnly` when preservation edits are refused.
+Validated on the 127-file corpus with python-docx
 as the strict external checker: passthrough is part-payload byte-stable; the
 element-tree image insert produces a package python-docx opens with the inline image
 present on every openable file; both fail cleanly (no panic) on a pathologically-deep
@@ -219,66 +401,585 @@ file and a structurally-broken original. To author/convert from a `DocModel`, us
 
 **Rendering.** [`scripts/render_validate.py`](scripts/render_validate.py) compares
 the renderer to LibreOffice per document on three metrics (text recall, page-count
-ratio, average-hash visual similarity). rdoc is a **preview-grade**
-renderer, faithful to the model but **not** a LibreOffice replacement. On a real
+ratio, average-hash visual similarity) plus rdoc render-warning counts/kinds, and
+can emit a JSON report for release tracking. The public synthetic corpus also includes a render manifest checked by
+`cargo test --features render`. rdoc is a **preview-grade**
+renderer, faithful to the model but **not** a LibreOffice replacement. Generated
+running footer page numbers and body `PAGE` fields are computed from the emitted
+PDF page list; section-aware default/first/even running header/footer variants
+are selected with first-page variants scoped to each section and even variants
+based on emitted page parity; field-code `HYPERLINK` runs render as link annotations; cached
+body `FILENAME`/`MERGEFIELD`, deterministic simple source-order `SEQ`,
+metadata-backed document-info/date
+fields (`AUTHOR`, `TITLE`, `SUBJECT`, `KEYWORDS`, `COMMENTS`, `LASTSAVEDBY`,
+`CATEGORY`, `CONTENTSTATUS`, `VERSION`, core aliases such as `CREATOR`,
+`DESCRIPTION`, `KEYWORD`, and `LASTMODIFIEDBY`, mapped `DOCPROPERTY` names from
+`docProps/core.xml`, `docProps/custom.xml`, or
+`docProps/app.xml`, mapped `INFO` package-property subfields, mapped
+`DOCVARIABLE` names from `word/settings.xml`, and timestamp-shaped custom
+`DOCPROPERTY` values with simple numeric `\@` pictures, plus `CREATEDATE`,
+`SAVEDATE`, and `PRINTDATE` when backed by core-property timestamps with simple
+numeric `\@` pictures for
+`y`/`M`/`d`/`H`/`h`/`m`/`s`, English `MMM`/`MMMM` month names,
+English `ddd`/`dddd` weekday names, and `AM/PM`, plus `docProps/app.xml`-backed
+stat/template fields (`NUMPAGES`, `NUMWORDS`, `NUMCHARS`, `EDITTIME`,
+`TEMPLATE`) and scalar built-ins such as `Company`, `Manager`,
+`HyperlinkBase`, `DocSecurity`, and `LinksUpToDate`, including direct scalar
+app-property field names such as `APPLICATION`, `APPVERSION`, `COMPANY`,
+`MANAGER`, `HYPERLINKBASE`, `DOCSECURITY`, and `LINKSUPTODATE`), and
+`FILESIZE` from the opened `.docx` package byte length with raw byte output
+plus rounded `\k` kilobyte and `\m` megabyte switches,
+direct `USERNAME`/`USERINITIALS`/`USERADDRESS` fields with explicit quoted
+literal overrides,
+plus cached
+date/user/unmapped document-info fields
+(`DATE`, `TIME`, `USERNAME`, `USERINITIALS`, `USERADDRESS`,
+unmapped `DOCPROPERTY` names, unmapped `INFO` subfields, unmapped
+`DOCVARIABLE` names, unmapped core date fields, and app stat/template fields
+when backing app properties are absent)
+render without unsupported-field warnings;
+named dynamic/control fields (`=`, `IF`, `QUOTE`, `FILLIN`, `ASK`, `COMPARE`,
+`SET`, `NEXT`, `NEXTIF`, `SKIPIF`) are distinguished from unknown fields,
+deterministic literal arithmetic formula fields compute finite decimal/scientific numeric constants,
+literal scalar numeric/logical functions (`ABS`, `AND`, `AVERAGE`, `COUNT`,
+`DEFINED`, `FALSE`, `IF`, `INT`, `MAX`, `MIN`, `MOD`, `NOT`, `OR`, `PRODUCT`,
+`ROUND`, `SIGN`, `SUM`, `TRUE`) with comma or semicolon argument separators,
+literal `DEFINED(expr)` checks for parser-local literal expressions, `+`, `-`, `*`, `/`, `^`, parentheses, unary signs,
+literal comparison operators (`=`, `<>`, `<`, `<=`, `>`, `>=`), simple
+non-spanning table aggregate formulas over existing plain numeric positional
+`LEFT`/`RIGHT`/`ABOVE`/`BELOW`, current `R`/`C`, A1 cell/range, and RnCn
+cell/range references, skipping absent cells in ragged rows and including nested
+aggregate calls inside literal formula expressions, and simple
+separated or compact `\#` numeric pictures using `0`/`#`/`x` placeholders, decimal places,
+grouping commas, literal
+prefix/suffix characters such as `$` or `%`, single-section leading `+`/`-`
+sign-control items, and `x` digit-drop/rounding positions, plus two- and
+three-section positive/negative/zero numeric pictures separated by semicolons,
+with optional neutral `\* MERGEFORMAT`/`\* CHARFORMAT` formula tails,
+deterministic literal `QUOTE` fields render quoted or unquoted computed text with general
+text-format switches, deterministic literal `IF` fields compute finite
+decimal/scientific numeric comparisons and quoted string equality/inequality,
+deterministic literal `COMPARE` fields compute `1`/`0` results for finite
+decimal/scientific numeric operands and quoted `?`/`*` wildcard
+equality/inequality, deterministic `FILLIN` fields with explicit `\d`
+default responses render those defaults without simulating prompts,
+deterministic `ASK name "prompt" \d "default"` fields seed later plain
+`REF`/direct bookmark references as hidden output, and deterministic literal
+`SET name "value"` or single-token `SET name value` fields with
+optional neutral `\* MERGEFORMAT`/`\* CHARFORMAT` switches render as hidden
+output while feeding later plain `REF`/direct bookmark references in
+source order, plus literal `NEXT`, `NEXTIF`, and `SKIPIF` merge-control fields
+render as hidden output without running a mail merge; remaining dynamic/control fields preserve cached result text and report
+`NoComputedResult` diagnostics;
+inserted/external-content fields (`INCLUDETEXT`, `INCLUDEPICTURE`, `LINK`,
+`EMBED`, `DATABASE`, `DDE`, `DDEAUTO`, `IMPORT`, `INCLUDE`, `AUTOTEXT`,
+`AUTOTEXTLIST`) are also named separately from unknown fields, preserve cached
+result text, and report
+`NoComputedResult` diagnostics;
+mail-merge helper fields (`ADDRESSBLOCK`, `GREETINGLINE`, `MERGEREC`,
+`MERGESEQ`) are named separately from unknown fields, preserve cached result
+text, and report `NoComputedResult` diagnostics;
+reference/index fields (`BIBLIOGRAPHY`, `CITATION`, `INDEX`, `RD`, `TA`,
+`TOA`, `XE`) are named separately from unknown fields, deterministic simple
+literal `RD`/`TA`/`XE` marker fields render as hidden output, and remaining
+reference/index fields preserve cached result text and report `NoComputedResult`
+diagnostics;
+numbering/list fields compute deterministic source-order plain `AUTONUM`
+values with common number-format switches and the documented `\s` separator
+switch, including unquoted or quoted one-character separators, standalone
+plain/neutral `AUTONUMLGL` and `AUTONUMOUT` values on the same source-order
+counter, plus level-1 `LISTNUM NumberDefault` values with common number-format
+switches, neutral field-format switches, and `\s` starts/resets, while richer `AUTONUMOUT` outline formatting,
+`BIDIOUTLINE`, and richer `LISTNUM` levels/named lists are named separately
+from unknown fields, preserve cached result text, and report
+`NoComputedResult` diagnostics;
+document-structure fields (`REVNUM`, `SECTION`, `SECTIONPAGES`, `STYLEREF`) are
+named separately from unknown fields, `REVNUM` computes from `cp:revision`,
+`SECTION` computes the current structural section number, `SECTIONPAGES`
+computes structurally bounded section page counts when no layout inference is
+needed, deterministic body paragraph- and
+character-style `STYLEREF` computes nearest styled paragraph/run text by style id
+or style name with backward-then-forward source-order search, source-order `\p`
+above/below results, and numbered paragraph `\n`, `\r`, `\w`, and numeric-text
+`\t` switches, and remaining
+document-structure cases preserve cached result text with `NoComputedResult`
+diagnostics;
+display/layout fields (`ADVANCE`, `EQ`, `SYMBOL`) are named separately from
+unknown fields, deterministic `ADVANCE` fields with validated point movement
+switches (`\d`, `\u`, `\l`, `\r`, `\x`, `\y`) render as hidden output without
+applying layout offsets, validated `EQ \d` displacement controls render as empty
+output without applying visual offsets or underlines, deterministic `EQ \f(n,d)` simple fractions with literal,
+spaced, quoted, comma- or semicolon-separated operands plus documented escaped
+comma/open-parenthesis/backslash characters compute plain `n/d` text, nested
+simple `EQ \f`/`\r` operands are parenthesized in plain text, simple
+`EQ \r(radicand)`/`\r(degree,radicand)` radicals compute plain root text,
+default/custom `EQ \b(element)` brackets with documented `\lc`, `\rc`, or
+`\bc` options compute bracketed plain text, and `EQ \x(element)` boxed
+operands, including documented border-side options,
+compute the enclosed operand plain text,
+simple `EQ \l(...)` lists compute comma-joined operand plain text,
+simple `EQ \a(...)` arrays compute tab-separated columns and newline-separated
+rows for supported row-major operands,
+simple `EQ \s` superscript/subscript controls compute `^`/`_` marker plain text
+while accepting empty `\ai n()`/`\di n()` layout controls,
+simple `EQ \i(...)` integrals/summations/products compute symbol plus `_`/`^`
+limit marker plain text,
+simple `EQ \o(...)` overstrike controls with documented alignment options compute
+source-order overlay operand plain text,
+deterministic `SYMBOL` fields compute decimal/hex/default ANSI, Unicode
+`\u`, neutral `\h`, separated or compact font `\f` switches and quoted or
+unquoted separated/compact size `\s` switches, and common Symbol/Wingdings character
+insertions including Symbol `0xB7` bullet, and remaining display/layout cases preserve cached result text
+with `NoComputedResult` diagnostics;
+action/automation fields (`GOTOBUTTON`, `MACROBUTTON`, `PRINT`) are named
+separately from unknown fields, deterministic `GOTOBUTTON`/`MACROBUTTON`
+quoted or unquoted display text with field text-format switches renders without
+executing actions, validated `PRINT` direct instructions and separated or
+compact `\p` printer-control groups render as hidden output without executing
+printer/PostScript instructions, and remaining action/automation fields preserve
+cached result text and report `NoComputedResult` diagnostics;
+compatibility/private fields (`PRIVATE`, `ADDIN`, `DATA`, `GLOSSARY`,
+`HTMLACTIVEX`) are named separately from unknown fields, preserve cached result
+text, and report `NoComputedResult` diagnostics while leaving opaque payloads
+uninterpreted;
+barcode fields (`BARCODE`, `DISPLAYBARCODE`, `MERGEBARCODE`) are named
+separately from unknown fields, preserve cached result text, and report
+`NoComputedResult` diagnostics until native barcode generation is implemented;
+legacy form fields (`FORMTEXT`, `FORMCHECKBOX`, `FORMDROPDOWN`) are named
+separately from unknown fields; deterministic `w:ffData` `FORMCHECKBOX`
+checked/default states and `FORMDROPDOWN` result/default selections compute and
+materialize, and `FORMTEXT` fields materialize explicit non-empty current
+results or empty-current `w:textInput` default text, while broader
+protected-form behavior preserves cached result text with `NoComputedResult`
+diagnostics;
+authored
+bar/3-D bar/column/3-D column/line/3-D line/area/3-D area/radar/scatter/bubble/pie/3-D pie/doughnut/surface/3-D surface/stock/pie-of-pie/bar-of-pie
+charts render as native vector preview charts, with wireframe styling available
+for authored surface-family charts and `ChartShape` styling available for authored
+3-D bar/column charts; unambiguous `.docx` `REF`
+bookmark fields, including Word-generated
+hidden bookmark targets, multi-paragraph bookmark ranges, and simple inline
+tabs, line breaks, no-break hyphens, and deterministic `REF \* Upper`/`REF \* Lower`/
+`REF \* Caps`/`REF \* FirstCap` text format switches, source-order `REF \p`
+relative-position results, explicit numbered-paragraph `REF \n` labels from
+single-branch source paragraphs and `word/numbering.xml` including `\n \p`
+relative suffixes and `\n \t` numeric-text suppression, `REF \r`
+relative-context labels including `\r \p`
+relative suffixes and `\r \t` numeric-text suppression when the REF field paragraph
+also has unambiguous numbering context, and `REF \w` full-context labels including `\w \p`
+relative suffixes and `\w \t` numeric-text suppression, and `REF \f`
+note-reference marks for bookmarks around body footnote/endnote references
+with generated REF note marks counted in source order, and `REF \d "separator"`
+sequence/page separator syntax recognized while preserving cached text until
+sequence/page separator semantics are modeled, plus direct bookmark-name fields when the bookmark
+exists using the same supported text-format switches, neutral `\h`,
+explicit-number `\n`, `\n \t`, `\r`, `\r \t`, `\w`, `\w \t`, note-reference `\f`, sequence-separator `\d`, and source-order `\p`,
+bookmarked `NOTEREF`/legacy `FTNREF` footnote/endnote reference marks with
+neutral `\h`, note-reference-style `\f`, and source-order `\p` above/below
+results plus common field-result format switches, bare default `TOC`,
+standalone bookmark-scoped default `TOC \b`, explicit `TOC \o`
+heading-outline fields including omitted all-level ranges and common `\o`/`\u` combinations, with
+value-neutral TOC `\h`/`\z` switches, text-preserving `\w`/`\x` switches
+normalized to plain text, and text-neutral `\n` no-page-number,
+`\p` entry/page separator, `\s` sequence-number page prefix, and `\d`
+sequence/page separator switches, quoted `TOC \t` custom-style entries,
+`TOC \f` entries from matching `TC "Text"` markers with optional `\f` type
+identifiers and `\l` levels, with supported `TC` marker fields themselves
+rendering as hidden output and unsupported `TC` marker syntax preserving cached
+text with `NoComputedResult` diagnostics,
+`TOC \c` full-caption entries and `TOC \a` label/number-omitted caption-text
+entries from paragraphs containing matching cached `SEQ Identifier` fields,
+deterministic TOC `\* Upper`/`\* Lower`/`\* Caps`/`\* FirstCap` field-result
+format switches, neutral TOC `\* MERGEFORMAT`/`\* CHARFORMAT`, and standalone `TOC \u` fields over explicit paragraph outline levels, plus
+`TOC \b` bookmark-scoped variants when the bookmark range is recoverable,
+normalize simple inline heading tabs, line breaks, and no-break hyphens and
+expose computed results for simple and common complex begin/separate/end fields
+and render/read as computed text; deterministic body paragraph- and
+character-style `STYLEREF` fields compute nearest styled paragraph/run text by
+style id or style name for simple and common complex fields with neutral/general
+text format switches, plus source-order `\p` above/below and deterministic
+numbered source paragraphs with `\n`, `\r`, `\w`, and numeric-text `\t`
+switches, while page-aware/header-footer
+lookup and layout-dependent variants preserve cached text; body `PAGE` fields
+compute current page numbers from trusted leading structural or source-rendered
+current-page context, including section `w:pgNumType` displayed page-number
+restarts/styles, deterministic page-number format switches, and common
+field-result format switches, while broader layout-derived current-page cases
+preserve cached text with `NoComputedResult`
+diagnostics; `PAGEREF` fields are named, compute page numbers only when leading
+explicit page breaks before any visible body content,
+enabled paragraph `w:pageBreakBefore`, explicit or default `nextPage`, and
+explicit `evenPage`/`oddPage` section starts in leading or trusted rendered
+context, including trusted `w:pgNumType w:start` displayed page-number
+restarts and supported `w:pgNumType w:fmt` styles (`decimal`, `decimalZero`,
+lower/upper letter, lower/upper roman, ordinal/cardinal text) on those section
+starts, source-persisted `w:lastRenderedPageBreak` markers scanned with the same
+single-branch `mc:AlternateContent` policy as flat text, or explicit hard breaks
+after a trusted leading/rendered page context make the target bookmark page
+structural, apply deterministic `\* Arabic`,
+`\* alphabetic`/`\* ALPHABETIC`,
+`\* roman`/`\* ROMAN`, `\* Ordinal`, `\* CardText`, `\* OrdText`, and
+page-number-only `\* ArabicDash`
+number-format switches plus common field-result format switches, compute `\p`
+relative results (`above`, `below`, or `on page N`) when trusted leading
+structural page context or source page markers provide both target and field
+page/order, and keep cached page-reference text for remaining layout-dependent
+cases; remaining unsupported section page-number formats for unformatted
+`PAGEREF` report as `UnsupportedSwitch`;
+remaining unknown fields beyond named document-info/date/stat fields,
+dynamic/control fields beyond deterministic literal arithmetic/comparison/scalar-function
+formula fields,
+literal `QUOTE`, literal `IF` comparisons, literal `COMPARE` results,
+explicit-default `FILLIN`/`ASK` prompt fields, and
+literal quoted or single-token `SET` bookmark assignments feeding later plain `REF`/direct bookmark references, inserted-content
+fields, mail-merge helper fields, reference/index fields beyond hidden simple
+`RD`/`TA`/`XE` markers, numbering/list fields,
+document-structure fields beyond computed `SECTION`, structurally bounded
+`SECTIONPAGES`, deterministic body paragraph- and character-style `STYLEREF`,
+deterministic literal `EQ \f(n,d)` simple fractions with supported operand
+separators/escapes and parenthesized nested simple `EQ` operands, simple
+`EQ \r` radicals, default/custom `EQ \b` brackets, boxed `EQ \x` operands,
+`EQ \l` lists, `EQ \a` arrays, `EQ \s` scripts, `EQ \i` integrals/sums/products,
+`EQ \o` overstrikes, hidden `EQ \d` displacement controls,
+deterministic `SYMBOL`, and unsupported section
+page-number styles for unformatted `PAGEREF`,
+remaining display/layout fields beyond hidden validated `ADVANCE`, action/automation fields beyond deterministic quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms,
+compatibility/private fields,
+barcode fields, and legacy form fields beyond deterministic `w:ffData`
+checkbox checked/default states, dropdown result/default selections, explicit
+non-empty text-input current results, and empty-current text-input default
+results, plus unresolved bookmark, unsupported remaining value-changing REF cases such as
+comment/annotation insertion and broader REF semantics,
+unresolved or unsupported NOTEREF switches, existing `NOTEREF` bookmark targets
+without a body note-reference mark, or remaining advanced TOC/REF cases
+still render cached text, including simple inline tabs, line
+breaks, and no-break hyphens, and remain reported as unsupported in diagnostics
+with both field-kind counts and reason counts (`UnknownField`,
+`UnresolvedBookmark`, `UnsupportedSwitch`, `NoComputedResult`), including
+separate missing `PAGEREF` bookmark targets, remaining unsupported section
+page-number formats for unformatted `PAGEREF`, explicit and direct bookmark-name
+`REF \d` supported-syntax/no-computed-result, missing explicit or direct
+`REF \f` bookmark targets, and existing explicit or direct non-note `REF \f`
+unsupported-switch reasons, plus separate missing `NOTEREF`
+bookmark targets, existing non-note `NOTEREF` bookmark targets, and unsupported
+`NOTEREF` switch reasons, plus missing `TOC \b` scopes and existing `TOC \b`
+scopes with no matching entries. On a real
 `.docx` corpus it reaches **~0.93 mean text recall** (extracting headers/footers,
 text boxes, nested tables, real list labels, caps; model-driven page geometry makes
 `.doc` page counts line up — mean `.doc` render recall ~0.96). It still trails
-LibreOffice on exact pagination, floating-shape placement, computed field/page
-numbers, and pixel-level visual fidelity; those are inherent to a compact native
+LibreOffice on exact pagination, exact floating-object layout, remaining
+layout-derived `PAGEREF` page-reference computation beyond trusted source markers,
+advanced TOC/REF/NOTEREF computed fields, and
+pixel-level visual fidelity; those are inherent to a compact native
 renderer, not bugs to be closed to parity. For Word-exact or archival PDF, render
 via LibreOffice. rdoc aims to match specialist extractors on text/model recovery
 while staying dependency-light; render fidelity remains below LibreOffice.
+`render_pdf_with_report` / `to_pdf_with_report` expose the emitted page count and
+renderer warnings for unsupported fields, floating shapes, charts, OLE objects,
+and WMF/EMF/EMZ/WMZ images. `Document::report().features.metafiles` exposes
+metafile part path, format, stored byte size, compression flag, and header-derived
+dimensions when a raw or gzip-wrapped EMF header or placeable WMF header makes
+that cheap to recover. Floating-shape feature counts use the same accepted/current
+revision and single-branch `mc:AlternateContent` policies as `floating_shapes()`,
+so direct, inserted, and moved-to shapes count, deleted and moved-from old-only
+anchors or markers are omitted, Choice/Fallback serializations of one shape
+count once, and unrecovered alternate-content shape markers still count as one
+marker.
+Opened-document PDF rendering draws approximate overlay boxes for recovered
+`.docx` `wp:anchor` geometry and anchor layout metadata,
+including enabled `wp:simplePos` absolute placement, relative z-order,
+behind/in-front flags, anchor `dist*` margins, `wp:effectExtent` bounds,
+wrap-element `dist*` margins, wrap policy, and a best-effort visible top-level
+body block anchor page, including body blocks wrapped by transparent content
+controls, custom XML, smart tags, single-branch `mc:AlternateContent`, or
+accepted/current revision wrappers, while omitting deleted and moved-from
+old-only shape anchors. It
+surfaces recovered containing-block anchor text, zero-width anchor character offsets inside that text, DrawingML preset geometry
+names, simple sRGB solid fill/outline colors, wrap-distance labels, and
+text-bearing shape body text in preview labels.
+It appends compact placeholder lines for
+preserved-but-unmodeled chart parts, OLE objects, unsupported metafile images,
+and shape markers without recovered geometry. Exact body-page anchoring beyond
+that best-effort block page, real text-wrap reflow, and non-text Office-Art
+drawing contents remain out of scope.
+[`scripts/bench_vs_mature.py`](scripts/bench_vs_mature.py) emits a schema-tagged
+JSON extraction benchmark report against local Apache POI and LibreOffice
+goldens and can enforce release thresholds for mean POI recall/F1, mean
+LibreOffice recall, scored-file counts, and extractor errors. Render-validation
+JSON also carries a compact `gate` section for per-document recall plus optional
+mean recall, page-ratio, aHash, warning, and skipped-file thresholds. Release
+manifests embed public corpus manifest totals plus public hygiene,
+render-validation, and benchmark summaries/gates without copying row data, plus
+the named `public-release` policy: required public hygiene audit,
+fmt/clippy/default/render test gates, and selected optional local thresholds
+(`0.95` POI recall/F1, `0.90` render mean recall, `0` extractor errors/skips).
+The same manifest records a compact `release_evidence` section so consumers can
+tell whether strict local evidence was enforced, which report inputs were
+provided, and which strict public-release inputs are still missing.
+The hygiene audit covers normal text files, bounded decoded byte text views from
+legacy `.doc` files, and textual Office package parts from `.docx`, `.xlsx`, and
+related OPC packages, including core metadata, relationships, content types,
+WordprocessingML XML, and embedded Office package XML such as chart workbooks,
+while leaving binary media payloads opaque. Oversized legacy binary documents
+block the audit instead of passing uninspected.
+Add `--enforce-policy-inputs` when generating a strict public manifest from local
+evidence: the command then requires a passing public hygiene report, render
+validation, extraction benchmark, and exactly the public `MANIFEST.tsv` plus
+`RENDER_MANIFEST.tsv` corpus manifests, and rejects hygiene, validation, or
+benchmark reports whose compact gates failed or were generated with weaker
+thresholds than the named `public-release` policy. The release workflow runs the
+required gates, generates `dist/rdoc-release-manifest.json` from the packaged
+`.crate` artifact, public hygiene report, and public
+corpus manifests, then uploads the manifest and crate package as
+workflow artifacts before publishing.
+The renderer also maps a small common Symbol/Wingdings display subset to Unicode,
+including the Symbol `0xB7` bullet, before PDF shaping; text extraction and exporters still preserve the source
+code points.
 
 **Still out of scope:**
 
-- *Both formats (read):* metafile images (WMF/EMF), OLE-embedded objects and
-  floating Office-Art shapes (placeholders only); fields' *computed* values
-  (cached result text is kept; instruction text may surface for some fields like
-  `PAGE`/`TOC`); symbol-font (Symbol/Wingdings) glyph mapping; encrypted files
+- *Both formats (read/render):* metafile images (WMF/EMF/EMZ/WMZ), OLE-embedded objects,
+  and exact floating Office-Art layout (`.docx` `wp:anchor` geometry, z-order
+  metadata, enabled `wp:simplePos` absolute points, `wp:effectExtent` visual
+  bounds, anchor `dist*` margins, wrap-element `dist*` margins, wrap policy,
+  best-effort visible top-level body block page including transparent body
+  content-control, custom XML, smart-tag, single-branch `mc:AlternateContent`,
+  and accepted/current revision wrappers, omitting deleted and moved-from
+  old-only shape anchors,
+  containing-block anchor text plus zero-width anchor character
+  offsets, DrawingML preset geometry names, simple sRGB solid fill/outline
+  colors, and text-bearing shape body text are exposed through
+  `floating_shapes()` and rendered as approximate preview overlays, not
+  Word-exact anchored/wrapped Office-Art content; metafile metadata is exposed
+  in diagnostics with bounded header inflation only, but metafile payloads are
+  not rendered);
+  unknown or broader fields' *computed* values
+  (cached result text is kept, including simple inline tabs, line breaks, and
+  no-break hyphens; `.docx` REF/TOC cases listed above plus
+  recovered `.doc` field instructions are exposed through `fields()`/diagnostics);
+  symbol-font (Symbol/Wingdings) glyph mapping; encrypted files
   (detected and rejected).
 - *`.doc` read only:* per-instance list overrides (`LFOLVL` start-at); Word 6/95.
-  Header/footnote/text-box text appears in `text()` but the `.doc` *model* still
-  flattens it into the body (no `DocSetup.header`/`footer` split yet).
-- *`.docx` read only:* comments and tracked-change *original* views; style-*inherited*
-  emphasis (only direct `w:rPr` is read, matching the `.doc` CHPX behavior).
+  Header, footnote/endnote, annotation, and text-box text appears in `text()` and
+  dedicated region text APIs backed by `DocModel::regions`, with
+  `DocModel::source_region_kind_text()` available for model-level region text.
+  Non-empty annotation regions are exposed through `comments()` as best-effort
+  recovered comments with source-region anchors, and footnote/endnote regions
+  are exposed through `notes()` as best-effort recovered note records with
+  source-region anchors. Text-box regions are exposed through `text_boxes()` as
+  best-effort recovered text-box records with source-region anchors.
+  Header/footer regions are exposed through `header_footers()` as best-effort
+  recovered records; when legacy `PlcfHdd` story boundaries are available, rdoc
+  splits stories and classifies exact even-page, odd-page, and first-page
+  header/footer variants, otherwise it falls back to `Unknown` kind.
+  `DocSetup.header` mirrors the first recovered header story when available.
+  Exact note reference markers and exact text-box shape anchors are not yet
+  fully promoted, so non-body regions still remain in the flat block stream;
+  `Document::report()` emits `LegacyDocFlattenedSubdocuments` when FIB
+  subdocument counts show that promotion is still incomplete.
+- *`.docx` read only:* comments and tracked-change *original* views; accepted
+  `main_text()`/`DocModel` content includes inline and block-level
+  `w:ins`/`w:moveTo` current-content wrappers while omitting `w:del`/`w:moveFrom`
+  old-content wrappers. Comment anchors plus `fields()`/`floating_shapes()` follow
+  that same accepted-current policy, and `fields()` also uses the single-branch
+  `mc:AlternateContent` policy so redundant Choice/Fallback field serializations
+  do not duplicate side-table fields; style-*inherited* emphasis (only direct
+  `w:rPr` is read,
+  matching the `.doc` CHPX behavior).
   Headers/footers, text boxes, footnotes/endnotes, and per-level numbering labels
-  **are** now extracted; `text()` includes headers/footers, `main_text()` is body-only.
+  **are** now extracted; `header_footers()` exposes `.docx` referenced
+  header/footer part records with `part#type` ids and default/even/first-page
+  variants, while `DocSetup`/`SectionSetup` model default, first-page, and
+  even-page variants for paragraph section breaks and the final section,
+  including inherited defaults when a later section omits them;
+  `notes()` exposes `.docx` footnote/endnote side-table records with
+  Word ids, reference-id anchors, and normalized containing body block text for
+  matched direct or accepted-current wrapped references; `text_boxes()` exposes
+  `.docx` accepted-current text-box side-table records from `w:txbxContent`;
+  `text()` includes headers/footers, `main_text()` is
+  body-only; `core_properties()` exposes supported `docProps/core.xml` metadata
+  fields including category, content status, and version.
 - *Write/edit:* rdoc now **does** preserve arbitrary OOXML parts when editing an
   opened `.docx` (`save()` keeps comments, revisions, charts, content controls, custom
-  XML, themes, fonts verbatim). The remaining gaps are *authoring* APIs for those
-  constructs (no high-level builder for comments/revisions/charts yet — they survive
-  but rdoc won't create them), and a *structural* editing surface (the element-tree
-  edit exposes text-replace + image-insert; richer in-place mutations are future work).
+  XML, themes, fonts verbatim). The remaining gaps are broader *authoring* APIs for those
+  constructs (run-anchored comments, tracked insertion/deletion runs, run-level
+  content controls, and
+  bar/3-D bar/column/3-D column/line/3-D line/area/3-D area/radar/scatter/bubble/pie/3-D pie/doughnut/surface/3-D surface/stock/pie-of-pie/bar-of-pie
+  charts with embedded workbook-backed source data, including wireframe
+  surface-chart styling and `ChartShape` styling for 3-D bar/column charts, can
+  be generated; remaining chart families beyond these are future work), and broader *structural*
+  editing surfaces (the element-tree edit exposes focused body/header/footer/note
+  text, tagged body/header/footer content-control and MERGEFIELD template filling,
+  tracked body revision acceptance,
+  field/comment/image operations, adjacent-run comment/note anchors, and
+  `gridSpan`/`vMerge`-aware body-table cell replacement;
+  richer in-place mutations are future work).
 - *Render:* preview-grade vs LibreOffice (see above); right-to-left scripts; no
   embedded CJK font is bundled — install a system CJK font or pass one to
   `render_pdf_with_fonts`.
 
 ## Roadmap
 
+The long-term native Word engine plan is split into the
+[PRD](docs/prd-rdoc-native-word-engine.md),
+[TRD](docs/trd-rdoc-native-word-engine.md), and
+[maturity roadmap](docs/roadmap-rdoc-native-word-engine.md).
+
 - [x] Codepage-aware `.doc` text; encryption / Word 6/95 detection gates
 - [x] Full read model: runs (CHPX incl. font/size/color), headings (STSH), tables
       (`sprmTDefTable`), list autonumbers, hyperlinks, inline images
 - [x] Unified `.docx` reader into the same model (98.6% recall vs python-docx)
-- [x] **`.docx` writer** — styled authoring (named styles, rich tables, page setup,
-      headers/footers + page numbers, images) via `write_docx`
+- [x] **`.docx` writer** — styled authoring (named styles, rich tables with typed nested cell blocks, page setup,
+      styled runs, leveled lists, simple fields, run-anchored comments,
+      tracked insertion/deletion runs, run-level content controls, inline/standalone hyperlinks,
+      headers/footers + page numbers, images,
+      bar/3-D bar/column/3-D column/line/3-D line/area/3-D area/radar/scatter/bubble/pie/3-D pie/doughnut/surface/3-D surface/stock/pie-of-pie/bar-of-pie
+      charts with embedded workbook-backed data) via `DocBuilder`,
+      `ParagraphBuilder`, `RunBuilder`, `CommentBuilder`, `RevisionBuilder`,
+      `ContentControlBuilder`, `TableBuilder`, `CellBuilder`, `ImageBuilder`,
+      `ChartBuilder`, `DocModel`, and
+      `write_docx`
 - [x] **PDF renderer** — `parley` + `krilla` with rich text/tables/images/lists/
       hyperlinks, header-row repeat, oversized-row split, font registration
 - [x] Reader: `.docx` headers/footers, text boxes (`w:txbxContent` incl. run-level
-      `mc:AlternateContent`), footnotes/endnotes, per-level numbering labels, caps
+      `mc:AlternateContent`) including `text_boxes()` records, footnotes/endnotes
+      including `notes()` records, per-level numbering labels, caps
 - [x] Renderer: model-driven page geometry (size/orientation/per-side margins);
-      running headers/footers; nested-table-cell text
-- [ ] Reader: `.docx` comments & tracked-change views; field evaluation
-      (`PAGE`/`TOC`/`FILENAME`); Symbol/Wingdings glyph mapping; `.doc` header/
-      text-box model split (currently flattened into the body)
+      running headers/footers; nested-table-cell text; common Symbol/Wingdings
+      display mapping
+- [x] Reader: `.docx` comments, tracked-change views, core document metadata,
+      field detection, floating-shape geometry and containing-block anchor text
+      capture, trusted body `PAGE` computation plus `FILENAME`/`MERGEFIELD`
+      render support, document-info/date/stat
+      cached-display support, deterministic literal arithmetic formula fields,
+      literal `QUOTE`, literal `IF`, literal `COMPARE`, explicit-default
+      `FILLIN`/`ASK`, and literal `SET`
+      bookmark assignments feeding later plain `REF`/direct bookmark references,
+      dynamic/control,
+      inserted-content, and mail-merge helper field diagnostics, reference/index field diagnostics,
+      numbering/list field diagnostics, document-structure field diagnostics,
+      display/layout field diagnostics, action/automation field diagnostics,
+      compatibility/private field diagnostics, barcode field diagnostics,
+      legacy form field diagnostics plus deterministic checkbox checked/default
+      states, dropdown result/default selections, explicit non-empty text-input
+      current results, and empty-current text-input default results,
+      unambiguous `.docx` `REF`
+      bookmark text computation
+      including Word-generated hidden bookmark targets and multi-paragraph
+      bookmark ranges plus simple inline tabs, line breaks, and no-break
+      hyphens plus deterministic `REF \* Upper`/`REF \* Lower`/`REF \* Caps`/
+      `REF \* FirstCap` text format switches, source-order `REF \p`
+      relative-position results, explicit numbered-paragraph `REF \n` labels
+      from single-branch source paragraphs including `\n \p` relative suffixes
+      and `\n \t` numeric-text suppression, `REF \r` relative-context labels
+      including `\r \p` relative suffixes and `\r \t` numeric-text
+      suppression, `REF \w` full-context labels including `\w \p` relative
+      suffixes and `\w \t` numeric-text suppression, `REF \f` note-reference
+      marks for bookmarks around body footnote/endnote references with
+      generated REF note marks counted in source order, `REF \d "separator"`
+      sequence/page separator syntax recognized while preserving cached text,
+      direct bookmark-name field computation with
+      supported text-format switches, neutral `\h`, explicit-number `\n`, `\n \t`, `\r`, `\r \t`, `\w`, `\w \t`, note-reference `\f`, sequence-separator `\d`, and source-order `\p`,
+      bookmarked `NOTEREF`/legacy `FTNREF` footnote/endnote reference marks with
+      neutral `\h`, note-reference-style `\f`, source-order `\p` above/below
+      results, and common field-result format switches, bare default `TOC`,
+      standalone bookmark-scoped default `TOC \b`,
+      plus explicit `TOC \o` heading-outline computation, including omitted all-level ranges and common
+      `\o`/`\u` combinations, with neutral `\h`/`\z` switches,
+      text-preserving `\w`/`\x` switches normalized to plain text, text-neutral
+      `\n` no-page-number, `\p` entry/page separator, and `\d`
+      sequence/page separator switches, `\s` sequence-number page prefixes,
+      deterministic TOC `\* Upper`/`\* Lower`/
+      `\* Caps`/`\* FirstCap` field-result format switches, neutral TOC
+      `\* MERGEFORMAT`/`\* CHARFORMAT`, plus
+      quoted `TOC \t` custom-style entries, `TOC \f` entries from matching
+      `TC "Text"` markers with optional `\f` type identifiers and `\l` levels,
+      `TOC \c` full-caption entries and `TOC \a` label/number-omitted
+      caption-text entries from paragraphs containing matching cached
+      `SEQ Identifier` fields,
+      standalone `TOC \u` explicit paragraph
+      outline-level computation and `TOC \b` bookmark-scoped computation when
+      the bookmark range is recoverable, with normalized simple inline heading
+      tabs, line breaks, and no-break hyphens for simple and common complex
+      fields, body `PAGE` trusted current-page computation with page-number and
+      field-result format switches, named `PAGEREF` classification with leading
+      hard-break,
+      paragraph page-break-before, structural section-start, default next-page
+      section-start, trusted section page-number restart and supported section
+      page-number format styles, source rendered page-break, and trusted
+      rendered-context hard-break target computation,
+      deterministic page-number and field-result format switches, trusted
+      leading-structural and source-marker `\p` relative-position computation,
+      plus cached page-reference result preservation for remaining
+      layout-dependent cases, cached field result preservation for simple inline tabs, line
+      breaks, and no-break hyphens, `.docx` running header/footer
+      default selection/inheritance, first/even-page variant modeling and
+      authoring, plus section-aware first/even-page render selection, and
+      Symbol/Wingdings glyph mapping
+- [ ] Reader: full layout-derived `PAGE` current-page and `PAGEREF`
+      page-number/relative-position computation, unknown fields beyond named document-info/date/stat fields,
+      dynamic/control fields beyond deterministic literal arithmetic/comparison/scalar-function formula
+      fields, literal `QUOTE`, literal `IF` comparisons, literal `COMPARE`
+      results, explicit-default `FILLIN`/`ASK` prompt fields, and literal quoted or single-token `SET` bookmark assignments feeding later plain
+      `REF`/direct bookmark references,
+      inserted-content fields, mail-merge helper fields, reference/index fields beyond hidden simple `RD`/`TA`/`XE` markers,
+      numbering/list fields, document-structure fields beyond computed `SECTION`,
+      structurally bounded `SECTIONPAGES`, and
+      deterministic body paragraph- and character-style `STYLEREF`, display/layout fields beyond hidden validated `ADVANCE`, deterministic simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, hidden displacement controls, and `SYMBOL`, action/automation fields beyond deterministic quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms,
+      compatibility/private fields, barcode fields, legacy form fields beyond
+      deterministic `w:ffData` checkbox checked/default states, dropdown
+      result/default selections, explicit non-empty text-input current results,
+      and empty-current text-input default results, and
+      `NOTEREF`/`FTNREF`, remaining unsupported value-changing REF cases such as
+      comment/annotation insertion and broader REF semantics outside body
+      note-reference marks, unresolved or unsupported NOTEREF switches beyond
+      body note-reference marks, and remaining broader TOC/REF field
+      evaluation; exact legacy `.doc` note/text-box/body anchors and richer legacy
+      section-level header/footer application semantics beyond recovered/default
+      running stories
 - [x] **Package-preserving edit layer** — `Document::open`→edit→`save` keeps every
       unmodeled part verbatim; element-tree edits (`replace_body_text`,
-      `add_image_png`) preserve fields/shapes/content-controls/comments; `opc` +
-      `xmltree` internals; fallible `try_write_docx`
-- [ ] Renderer: exact pagination & floating-shape placement; field page numbers;
+      `set_field_result`, `fill_content_control_by_tag`,
+      `fill_content_controls_by_tag`, `fill_template_fields`, `accept_all_revisions`,
+      `reject_all_revisions`,
+      `set_hyperlink_target`, `set_comment_text`, `add_comment_on_text`,
+      `set_table_cell_text`, `replace_header_footer_text`,
+      `replace_text_in_part`,
+      `add_footnote_on_text`, `add_endnote_on_text`, `replace_note_text`,
+      `add_image_png`, `replace_image_png`, `add_image_jpeg`,
+      `replace_image_jpeg`, `set_core_property`) preserve fields/shapes/
+      content-controls/comments/revisions;
+      `edited_parts` exposes touched package parts; `edit_capability` /
+      `report().edit` expose read-only reasons; `opc` + `xmltree` internals;
+      fallible `try_write_docx`
+- [ ] Renderer: exact pagination & floating-shape page anchoring/wrap reflow;
+      full layout-derived `PAGE` current-page and `PAGEREF`
+      page-number/relative-position computation,
+      unknown fields beyond named document-info/date/stat fields,
+      dynamic/control fields beyond deterministic literal arithmetic/comparison/scalar-function formula
+      fields, literal `QUOTE`, literal `IF` comparisons, literal `COMPARE`
+      results, explicit-default `FILLIN`/`ASK` prompt fields, and literal quoted or single-token `SET` bookmark assignments feeding later plain
+      `REF`/direct bookmark references,
+      inserted-content fields, mail-merge helper fields, reference/index fields beyond hidden simple `RD`/`TA`/`XE` markers,
+      numbering/list fields, document-structure fields beyond computed `SECTION`,
+      structurally bounded `SECTIONPAGES`, and
+      deterministic body paragraph- and character-style `STYLEREF`, display/layout fields beyond hidden validated `ADVANCE`, deterministic simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, hidden displacement controls, and `SYMBOL`, action/automation fields beyond deterministic quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms,
+      compatibility/private fields, barcode fields, legacy form fields beyond
+      deterministic `w:ffData` checkbox checked/default states, dropdown
+      result/default selections, explicit non-empty text-input current results,
+      and empty-current text-input default results, and
+      `NOTEREF`/`FTNREF`, remaining unsupported value-changing REF
+      cases such as comment/annotation insertion and broader REF semantics,
+      unresolved or unsupported NOTEREF switches beyond body
+      note-reference marks, and remaining broader TOC/REF body field evaluation;
       bundled-font feature; RTL
-- [ ] Authoring APIs for comments/revisions/charts (they round-trip on edit today,
-      but rdoc can't yet *create* them); metafile (WMF/EMF) inflate; `try_render_pdf`
+- [x] Basic authoring API for bar/3-D bar/column/3-D column/line/3-D line/area/3-D area/radar/scatter/bubble/pie/3-D pie/doughnut/surface/3-D surface/stock/pie-of-pie/bar-of-pie charts
+- [x] Native PDF preview rendering for authored bar/3-D bar/column/3-D column/line/3-D line/area/3-D area/radar/scatter/bubble/pie/3-D pie/doughnut/surface/3-D surface/stock/pie-of-pie/bar-of-pie charts
+- [x] Workbook-backed chart data for authored bar/3-D bar/column/3-D column/line/3-D line/area/3-D area/radar/scatter/bubble/pie/3-D pie/doughnut/surface/3-D surface/stock/pie-of-pie/bar-of-pie charts
+- [x] Wireframe styling for authored surface and 3-D surface charts
+- [x] Shape styling for authored 3-D bar and 3-D column charts
+- [x] Metafile diagnostics for WMF/EMF/EMZ/WMZ path, format, byte size, compression flag, and raw/gzip-wrapped header dimensions
+- [ ] Remaining chart families beyond current authored charts; metafile rendering beyond bounded header diagnostics
 
 ## Contributing
 

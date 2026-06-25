@@ -39,7 +39,9 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs, missing_debug_implementations, rust_2018_idioms)]
 
+mod annotation;
 mod assemble;
+mod builder;
 mod chpx;
 mod clx;
 #[cfg(feature = "docx")]
@@ -58,19 +60,37 @@ mod opc;
 mod papx;
 #[cfg(feature = "render")]
 mod render;
+mod report;
 mod stsh;
 mod table;
 mod text;
 mod util;
+pub mod wasm;
 #[cfg(feature = "docx")]
 mod write;
 #[cfg(feature = "docx")]
 mod xmltree;
 
+pub use annotation::{
+    Comment, Field, FieldKind, FloatingShape, HeaderFooter, HeaderFooterKind, Note, NoteKind,
+    Revision, RevisionKind, RevisionView, ShapeDistance, ShapeEffectExtent, ShapeExtent,
+    ShapePoint, ShapePosition, ShapeWrapping, TextAnchor, TextBox,
+};
+pub use builder::{
+    CellBuilder, ChartBuilder, CommentBuilder, ContentControlBuilder, DocBuilder, ImageBuilder,
+    ParagraphBuilder, ParagraphStyleBuilder, RevisionBuilder, RunBuilder, TableBuilder,
+};
 pub use error::{Error, Result};
 pub use model::{
-    Align, Block, Cell, CharProps, Color, DocMeta, DocModel, DocSetup, FieldRole, Image, Indent,
-    ListInfo, PageSetup, ParaProps, Paragraph, Row, Run, Spacing, Stats, Table, VCell, VertAlign,
+    Align, AuthoredComment, AuthoredContentControl, AuthoredRevision, Block, Cell, CharProps,
+    Chart, ChartKind, ChartSeries, ChartShape, Color, DocMeta, DocModel, DocSetup, FieldRole,
+    Image, Indent, ListInfo, PageSetup, ParaProps, Paragraph, ParagraphStyle, Row, Run,
+    SectionSetup, SourceRegion, SourceRegionKind, Spacing, Stats, Table, VCell, VertAlign,
+};
+pub use report::{
+    DocumentFormat, DocumentReport, DocumentWarning, EditCapability, EditReadOnlyReason,
+    FeatureInventory, FieldEvaluationReason, FieldEvaluationReasonCount, FieldKindCount,
+    MetafileFormat, MetafileInfo, RenderReport, RenderWarning, RenderedPdf,
 };
 
 use fib::Fib;
@@ -88,17 +108,19 @@ pub fn extract_text(bytes: &[u8]) -> Result<String> {
     }
 }
 
-/// Serialize a [`DocModel`] — one you built from data, or read from a `.doc`/
-/// `.docx` — to a clean, Office-openable **`.docx`** byte buffer. This is the
-/// authoring entry point: construct a `DocModel` (paragraphs/runs with fonts,
-/// sizes, colors; headings; styled/sized/shaded tables; images; page setup) and
-/// write a styled Word document. Available with the default `docx` feature.
+/// Serialize a [`DocModel`] — one you built from data, built with [`DocBuilder`],
+/// or read from a `.doc`/`.docx` — to a clean, Office-openable **`.docx`** byte
+/// buffer. This is the authoring entry point: construct a model (paragraphs/runs
+/// with fonts, sizes, colors; headings; styled/sized/shaded tables; images; page
+/// setup) and write a styled Word document. Available with the default `docx`
+/// feature.
 ///
 /// **Image bytes are trusted as-is:** an embedded [`Image`]'s `bytes` are written
 /// verbatim under a part typed from its `mime` — the writer does not transcode or
 /// validate the raster, so the caller must ensure `bytes` really are that format (a
 /// mismatch produces a part Word can't render). The element-tree editor's
-/// [`Document::add_image_png`] does validate, since it accepts arbitrary caller input.
+/// [`Document::add_image_png`] / [`Document::replace_image_png`] and JPEG
+/// counterparts do validate, since they accept arbitrary caller input.
 #[cfg(feature = "docx")]
 pub fn write_docx(model: &DocModel) -> Vec<u8> {
     write::to_docx(model)
@@ -122,6 +144,14 @@ pub fn render_pdf(model: &DocModel) -> Vec<u8> {
     render::to_pdf(model)
 }
 
+/// Fallible variant of [`render_pdf`]: returns PDF serialization errors instead
+/// of collapsing them to an empty byte buffer. Available with the `render`
+/// feature.
+#[cfg(feature = "render")]
+pub fn try_render_pdf(model: &DocModel) -> Result<Vec<u8>> {
+    render::try_to_pdf(model)
+}
+
 /// Render a [`DocModel`] to PDF after registering caller-supplied fonts (e.g. a
 /// bundled Korean face via `include_bytes!`). Use this in headless/server
 /// environments that lack system CJK fonts: each blob is added to the layout font
@@ -130,6 +160,47 @@ pub fn render_pdf(model: &DocModel) -> Vec<u8> {
 #[cfg(feature = "render")]
 pub fn render_pdf_with_fonts(model: &DocModel, fonts: &[Vec<u8>]) -> Vec<u8> {
     render::to_pdf_with_fonts(model, fonts)
+}
+
+/// Fallible variant of [`render_pdf_with_fonts`]. Available with the `render`
+/// feature.
+#[cfg(feature = "render")]
+pub fn try_render_pdf_with_fonts(model: &DocModel, fonts: &[Vec<u8>]) -> Result<Vec<u8>> {
+    render::try_to_pdf_with_fonts(model, fonts)
+}
+
+/// Render a [`DocModel`] to PDF and return renderer metrics/warnings produced by
+/// the same pagination pass. Available with the `render` feature.
+#[cfg(feature = "render")]
+pub fn render_pdf_with_report(model: &DocModel) -> RenderedPdf {
+    render_pdf_with_fonts_and_report(model, &[])
+}
+
+/// Fallible variant of [`render_pdf_with_report`]. Available with the `render`
+/// feature.
+#[cfg(feature = "render")]
+pub fn try_render_pdf_with_report(model: &DocModel) -> Result<RenderedPdf> {
+    try_render_pdf_with_fonts_and_report(model, &[])
+}
+
+/// Render a [`DocModel`] to PDF with caller-supplied fonts and return renderer
+/// metrics/warnings produced by the same pagination pass. Available with the
+/// `render` feature.
+#[cfg(feature = "render")]
+pub fn render_pdf_with_fonts_and_report(model: &DocModel, fonts: &[Vec<u8>]) -> RenderedPdf {
+    let features = report::render_inventory_for_model(&model.blocks);
+    render::to_pdf_with_fonts_and_report(model, fonts, features)
+}
+
+/// Fallible variant of [`render_pdf_with_fonts_and_report`]. Available with the
+/// `render` feature.
+#[cfg(feature = "render")]
+pub fn try_render_pdf_with_fonts_and_report(
+    model: &DocModel,
+    fonts: &[Vec<u8>],
+) -> Result<RenderedPdf> {
+    let features = report::render_inventory_for_model(&model.blocks);
+    render::try_to_pdf_with_fonts_and_report(model, fonts, features)
 }
 
 /// A parsed Word document — either legacy `.doc` (OLE2/[MS-DOC]) or modern
@@ -141,6 +212,101 @@ pub struct Document {
     backend: Backend,
 }
 
+/// Editable `.docx` core document properties supported by
+/// [`Document::set_core_property`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CoreProperty {
+    /// Dublin Core `dc:title`.
+    Title,
+    /// Dublin Core `dc:subject`.
+    Subject,
+    /// Dublin Core `dc:creator`.
+    Creator,
+    /// Dublin Core `dc:description`.
+    Description,
+    /// Core-properties `cp:keywords`.
+    Keywords,
+    /// Core-properties `cp:lastModifiedBy`.
+    LastModifiedBy,
+}
+
+/// Core document properties extracted from `docProps/core.xml` or generated
+/// document setup metadata.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CoreProperties {
+    /// Dublin Core `dc:title`.
+    pub title: Option<String>,
+    /// Dublin Core `dc:subject`.
+    pub subject: Option<String>,
+    /// Dublin Core `dc:creator`.
+    pub creator: Option<String>,
+    /// Dublin Core `dc:description`.
+    pub description: Option<String>,
+    /// Core-properties `cp:keywords`.
+    pub keywords: Option<String>,
+    /// Core-properties `cp:category`.
+    pub category: Option<String>,
+    /// Core-properties `cp:contentStatus`.
+    pub content_status: Option<String>,
+    /// Core-properties `cp:lastModifiedBy`.
+    pub last_modified_by: Option<String>,
+    /// Dublin Core Terms `dcterms:created`, typically an ISO-8601 timestamp.
+    pub created: Option<String>,
+    /// Dublin Core Terms `dcterms:modified`, typically an ISO-8601 timestamp.
+    pub modified: Option<String>,
+    /// Core-properties `cp:lastPrinted`, typically an ISO-8601 timestamp.
+    pub last_printed: Option<String>,
+    /// Core-properties `cp:revision`.
+    pub revision: Option<String>,
+    /// Core-properties `cp:version`.
+    pub version: Option<String>,
+}
+
+impl CoreProperties {
+    fn from_doc_setup(setup: &DocSetup) -> Self {
+        CoreProperties {
+            title: setup.title.clone(),
+            creator: setup.creator.clone(),
+            ..CoreProperties::default()
+        }
+    }
+}
+
+#[cfg(feature = "docx")]
+impl CoreProperty {
+    fn ns(self) -> &'static [u8] {
+        match self {
+            CoreProperty::Title
+            | CoreProperty::Subject
+            | CoreProperty::Creator
+            | CoreProperty::Description => DC_NS,
+            CoreProperty::Keywords | CoreProperty::LastModifiedBy => CORE_PROPERTIES_NS,
+        }
+    }
+
+    fn local(self) -> &'static [u8] {
+        match self {
+            CoreProperty::Title => b"title",
+            CoreProperty::Subject => b"subject",
+            CoreProperty::Creator => b"creator",
+            CoreProperty::Description => b"description",
+            CoreProperty::Keywords => b"keywords",
+            CoreProperty::LastModifiedBy => b"lastModifiedBy",
+        }
+    }
+
+    fn qname(self) -> &'static str {
+        match self {
+            CoreProperty::Title => "dc:title",
+            CoreProperty::Subject => "dc:subject",
+            CoreProperty::Creator => "dc:creator",
+            CoreProperty::Description => "dc:description",
+            CoreProperty::Keywords => "cp:keywords",
+            CoreProperty::LastModifiedBy => "cp:lastModifiedBy",
+        }
+    }
+}
+
 /// The format-specific state behind a [`Document`]. Boxed so the enum isn't
 /// dominated by the larger `.doc` variant.
 enum Backend {
@@ -149,18 +315,16 @@ enum Backend {
     Docx(Box<docx::DocxState>),
 }
 
-/// Legacy `.doc` state: the decoded character stream plus the FIB and the
-/// retained structures for the lazy rich-model build.
+/// Legacy `.doc` state: decoded text plus the FIB and retained structures for
+/// the lazy rich-model build.
 struct DocState {
-    /// CP-aligned char stream (all sub-docs, control marks embedded) — sliced by
-    /// the sub-document accessors, which work in Word's CP space.
-    raw: String,
     /// Full render with reconstructed list autonumbers (used by `text()`).
     labeled: String,
     fib: Fib,
     // Retained for the lazy rich-model build ([`Document::model`]); none of this
     // is touched by the fast `text()` path.
     word: Vec<u8>,
+    table: Vec<u8>,
     pieces: Vec<clx::Piece>,
     papx: papx::PapxTable,
     chpx: chpx::ChpxTable,
@@ -232,15 +396,21 @@ impl Document {
     /// **Stale after an in-place edit.** This (and everything derived from it —
     /// [`Document::to_markdown`], [`Document::to_html`], [`Document::images`],
     /// [`Document::to_docx`], [`Document::to_pdf`]) reflects the document **as opened**.
-    /// Element-tree edits ([`Document::replace_body_text`] / [`Document::add_image_png`])
-    /// mutate the package's `document.xml` directly, not this model, so they are not
-    /// visible here until you [`Document::save`] and re-[`Document::open`] the result.
+    /// Preservation edits ([`Document::replace_body_text`], [`Document::set_field_result`],
+    /// [`Document::fill_content_control_by_tag`], [`Document::fill_content_controls_by_tag`],
+    /// [`Document::fill_template_fields`],
+    /// [`Document::accept_all_revisions`], [`Document::reject_all_revisions`],
+    /// [`Document::set_hyperlink_target`], [`Document::add_image_png`],
+    /// [`Document::replace_image_png`]) mutate the package
+    /// directly, not this model, so they are not visible here until you [`Document::save`]
+    /// and re-[`Document::open`] the result.
     pub fn model(&self) -> DocModel {
         match &self.backend {
             Backend::Doc(d) => {
                 let mut numberer = list::Numberer::new(&d.lists);
                 assemble::build_model(
                     &d.word,
+                    &d.table,
                     &d.pieces,
                     d.enc,
                     &d.papx,
@@ -292,6 +462,7 @@ impl Document {
                         }
                     }
                     Block::Image(img) if img.bytes.is_some() => out.push(img.clone()),
+                    Block::Chart(_) | Block::PageBreak | Block::SectionBreak(_) => {}
                     Block::Table(t) => {
                         for row in &t.rows {
                             for c in &row.cells {
@@ -308,6 +479,227 @@ impl Document {
         out
     }
 
+    /// Return whether package-preserving edit APIs are available for this opened
+    /// document, with typed read-only reasons when they are not.
+    ///
+    /// This is the non-mutating counterpart to the edit APIs' own preflight
+    /// checks: `.doc` sources, incomplete retained packages, and lossy OPC
+    /// metadata are reported here before a caller attempts
+    /// [`Document::replace_body_text`], [`Document::add_image_png`], or related
+    /// preservation edits.
+    pub fn edit_capability(&self) -> EditCapability {
+        match &self.backend {
+            Backend::Doc(_) => report::doc_edit_capability(),
+            #[cfg(feature = "docx")]
+            Backend::Docx(d) => report::docx_edit_capability(d),
+        }
+    }
+
+    /// Return package part names touched by preservation edits since this
+    /// document was opened or created.
+    ///
+    /// The list is sorted, has no leading slash, and reflects the retained OPC
+    /// package's authoritative dirty set: edited XML parts, replaced media parts,
+    /// regenerated relationship parts, and regenerated `[Content_Types].xml` all
+    /// appear when an edit dirties them. A freshly opened package returns an
+    /// empty list. Legacy `.doc` documents are read-only for preservation edits
+    /// and return an empty list.
+    pub fn edited_parts(&self) -> Vec<String> {
+        match &self.backend {
+            Backend::Doc(_) => Vec::new(),
+            #[cfg(feature = "docx")]
+            Backend::Docx(d) => d.package.touched_parts(),
+        }
+    }
+
+    /// Return a machine-readable summary of the document's source format,
+    /// visible model statistics, observed Word feature markers, and warnings.
+    ///
+    /// Feature counts are conservative: they mean rdoc observed markers for a
+    /// construct, not that every behavior of that construct is fully modeled,
+    /// editable, or renderable.
+    pub fn report(&self) -> DocumentReport {
+        match &self.backend {
+            Backend::Doc(d) => {
+                let model = self.model();
+                let features = report::feature_inventory_for_model(&model.blocks);
+                let edit = self.edit_capability();
+                let mut warnings = report::warnings_for(&features, &edit);
+                if let Some(warning) = report::legacy_doc_flattened_subdocuments_warning(
+                    d.fib.ccp_ftn as usize,
+                    d.fib.ccp_hdd as usize,
+                    d.fib.ccp_atn as usize,
+                    d.fib.ccp_edn as usize,
+                    d.fib.ccp_txbx as usize,
+                ) {
+                    warnings.push(warning);
+                }
+                DocumentReport {
+                    format: DocumentFormat::Doc,
+                    stats: model.meta.stats,
+                    core_properties: CoreProperties::from_doc_setup(&model.setup),
+                    edit,
+                    edited_parts: Vec::new(),
+                    features,
+                    warnings,
+                }
+            }
+            #[cfg(feature = "docx")]
+            Backend::Docx(d) => {
+                let features = report::docx_features(d);
+                let edit = self.edit_capability();
+                let edited_parts = self.edited_parts();
+                let warnings = report::warnings_for(&features, &edit);
+                DocumentReport {
+                    format: DocumentFormat::Docx,
+                    stats: d.model.meta.stats,
+                    core_properties: d.core_properties.clone(),
+                    edit,
+                    edited_parts,
+                    features,
+                    warnings,
+                }
+            }
+        }
+    }
+
+    /// Extract core document metadata.
+    ///
+    /// For `.docx`, this reads `docProps/core.xml` when present and returns the
+    /// supported Dublin Core/core-properties fields. For model-backed legacy
+    /// documents, this surfaces the title and creator metadata available through
+    /// [`DocSetup`].
+    pub fn core_properties(&self) -> CoreProperties {
+        match &self.backend {
+            Backend::Doc(_) => CoreProperties::from_doc_setup(&self.model().setup),
+            #[cfg(feature = "docx")]
+            Backend::Docx(d) => d.core_properties.clone(),
+        }
+    }
+
+    /// Extract comments from a `.docx` comments part or recoverable legacy
+    /// `.doc` annotation subdocument.
+    ///
+    /// The returned comments are a side table. `.docx` comments include
+    /// metadata and body anchors when present; legacy `.doc` annotation regions
+    /// expose stable synthetic ids, visible comment text, and best-effort
+    /// source-region anchors. Legacy `.doc` author metadata is not recovered
+    /// yet.
+    pub fn comments(&self) -> Vec<Comment> {
+        match &self.backend {
+            Backend::Doc(_) => legacy_doc_comments_from_model(&self.model()),
+            #[cfg(feature = "docx")]
+            Backend::Docx(d) => d.comments.clone(),
+        }
+    }
+
+    /// Extract recovered footnote/endnote records where rdoc has a semantic note
+    /// side table.
+    ///
+    /// Legacy `.doc` notes are recovered from exact FIB footnote/endnote
+    /// subdocument regions with synthetic ids, visible note text, and
+    /// best-effort source-region anchors. Exact body reference markers are not
+    /// recovered yet. `.docx` notes are recovered from
+    /// `word/footnotes.xml` and `word/endnotes.xml` with their Word ids, note
+    /// kind, visible text, and reference id anchors when the body references
+    /// them.
+    pub fn notes(&self) -> Vec<Note> {
+        match &self.backend {
+            Backend::Doc(_) => legacy_doc_notes_from_model(&self.model()),
+            #[cfg(feature = "docx")]
+            Backend::Docx(d) => d.note_records.clone(),
+        }
+    }
+
+    /// Extract recovered text-box records where rdoc has a semantic text-box
+    /// side table.
+    ///
+    /// Legacy `.doc` text boxes are recovered from exact FIB text-box
+    /// subdocument regions with synthetic ids, visible text, and best-effort
+    /// source-region anchors. Exact shape anchors are not recovered yet.
+    /// `.docx` text boxes are recovered from body `w:txbxContent` shapes with
+    /// synthetic ids and visible text.
+    pub fn text_boxes(&self) -> Vec<TextBox> {
+        match &self.backend {
+            Backend::Doc(_) => legacy_doc_text_boxes_from_model(&self.model()),
+            #[cfg(feature = "docx")]
+            Backend::Docx(d) => d.text_boxes.clone(),
+        }
+    }
+
+    /// Extract recovered floating-shape geometry records.
+    ///
+    /// `.docx` records are recovered from `wp:anchor` drawing markup with
+    /// `wp:extent`, `wp:docPr`, and simple `wp:positionH`/`wp:positionV`
+    /// metadata when present. Legacy `.doc` floating shape geometry is not
+    /// decoded yet and returns an empty side table.
+    pub fn floating_shapes(&self) -> Vec<FloatingShape> {
+        match &self.backend {
+            Backend::Doc(_) => Vec::new(),
+            #[cfg(feature = "docx")]
+            Backend::Docx(d) => d.floating_shapes.clone(),
+        }
+    }
+
+    /// Extract recovered running header/footer records.
+    ///
+    /// `.docx` records use the referenced package part plus `default`, `first`,
+    /// or `even` reference type as stable ids, and distinguish default, even-page,
+    /// and first-page header/footer variants where present. Legacy `.doc` records
+    /// are recovered from the combined FIB header/footer subdocument region with
+    /// synthetic ids, using `PlcfHdd` story indexes for exact even/odd/first-page
+    /// variants when available.
+    pub fn header_footers(&self) -> Vec<HeaderFooter> {
+        match &self.backend {
+            Backend::Doc(_) => legacy_doc_header_footers_from_model(&self.model()),
+            #[cfg(feature = "docx")]
+            Backend::Docx(d) => d.header_footers.clone(),
+        }
+    }
+
+    /// Extract fields from the document body.
+    ///
+    /// For `.docx`, the returned side table includes simple fields and common
+    /// complex fields with their normalized instruction text and cached visible
+    /// result. For legacy `.doc`, fields are reconstructed from the rich model's
+    /// field-marked result runs where the binary field instruction was recoverable.
+    pub fn fields(&self) -> Vec<Field> {
+        match &self.backend {
+            Backend::Doc(_) => report::fields_for_model(&self.model().blocks),
+            #[cfg(feature = "docx")]
+            Backend::Docx(d) => d.fields.clone(),
+        }
+    }
+
+    /// Extract tracked revisions from a `.docx` body.
+    ///
+    /// The returned side table includes insertion, deletion, and move markers
+    /// with metadata and visible subtree text. Legacy `.doc` revisions are not
+    /// exposed through this API yet.
+    pub fn revisions(&self) -> Vec<Revision> {
+        match &self.backend {
+            Backend::Doc(_) => Vec::new(),
+            #[cfg(feature = "docx")]
+            Backend::Docx(d) => d.revisions.clone(),
+        }
+    }
+
+    /// Normalized main-body text under a tracked-revision view policy.
+    ///
+    /// For `.docx`, [`RevisionView::Accepted`] includes insertions and move
+    /// destinations, [`RevisionView::Original`] includes deletions and move
+    /// sources, and [`RevisionView::Annotated`] emits compact textual markers
+    /// for both sides. Legacy `.doc` revision views are not modeled yet and
+    /// return [`Document::main_text`].
+    pub fn main_text_with_revision_view(&self, view: RevisionView) -> String {
+        let _ = view;
+        match &self.backend {
+            Backend::Doc(_) => self.main_text(),
+            #[cfg(feature = "docx")]
+            Backend::Docx(d) => docx::main_text_with_revision_view(d, view),
+        }
+    }
+
     /// Serialize this document to a modern **`.docx`** (OOXML WordprocessingML)
     /// byte buffer — the inverse of the reader. `read → DocModel → write → read`
     /// preserves the structure (text, character runs, headings, alignment, lists,
@@ -322,12 +714,19 @@ impl Document {
     /// **Package-preserving save** — re-emit this document's `.docx` with every part
     /// it doesn't model preserved verbatim (themes, settings, fonts, comments,
     /// custom XML, charts, embeddings, unknown parts). A no-op `open → save` is
-    /// byte-stable per part. Element-tree edits ([`Document::replace_body_text`] /
-    /// [`Document::add_image_png`]) mutate `word/document.xml` in place, so untouched
-    /// **non-metadata** parts stay byte-for-byte; `[Content_Types].xml` is rewritten
-    /// only when the edit must *repair* the document's content typing (e.g. the source
-    /// lacked or mistyped the `word/document.xml` override) so the output stays
-    /// Word-openable. This is distinct
+    /// byte-stable per part. Preservation edits ([`Document::replace_body_text`],
+    /// [`Document::set_field_result`], [`Document::replace_header_footer_text`],
+    /// [`Document::replace_text_in_part`], [`Document::add_footnote_on_text`],
+    /// [`Document::add_endnote_on_text`], [`Document::add_image_png`],
+    /// [`Document::fill_content_control_by_tag`], [`Document::fill_content_controls_by_tag`],
+    /// [`Document::fill_template_fields`],
+    /// [`Document::accept_all_revisions`], [`Document::reject_all_revisions`],
+    /// [`Document::set_hyperlink_target`], [`Document::replace_image_png`]) mutate only
+    /// their target XML/media/relationship parts, so
+    /// untouched **non-metadata** parts stay byte-for-byte;
+    /// `[Content_Types].xml` is rewritten only when an edit must *repair* a touched
+    /// part's content typing (e.g. the source lacked or mistyped the `word/document.xml`
+    /// override) so the output stays Word-openable. This is distinct
     /// from [`Document::to_docx`], which regenerates a fresh package from the lossy
     /// model (use that to *convert* a `.doc`). `save()` requires a `.docx`-backed
     /// document (one from [`Document::open`] on a `.docx`, or [`Document::new`]); a
@@ -355,6 +754,50 @@ impl Document {
                     .into(),
             )),
         }
+    }
+
+    /// **Package-preserving edit: set a `.docx` core document property.**
+    /// Updates or creates `docProps/core.xml`, ensures the package-root
+    /// core-properties relationship and content type, and writes the selected
+    /// property as text.
+    ///
+    /// This edits package metadata only; `word/document.xml` and other content parts
+    /// remain untouched. Read views are stale until the saved bytes are reopened.
+    /// Available with the default `docx` feature.
+    #[cfg(feature = "docx")]
+    pub fn set_core_property(&mut self, property: CoreProperty, value: &str) -> Result<()> {
+        let d = self.docx_tree_editable()?;
+        let mut pkg = d.package.clone();
+        if !pkg.has_part("docProps/core.xml") {
+            pkg.set_part(
+                "docProps/core.xml",
+                core_properties_skeleton().to_vec(),
+                Some(CT_CORE_PROPERTIES),
+            );
+        } else {
+            pkg.ensure_content_type("docProps/core.xml", CT_CORE_PROPERTIES);
+        }
+        pkg.ensure_relationship("", REL_CORE_PROPERTIES, "docProps/core.xml");
+        {
+            let tree = pkg.part_tree_mut("docProps/core.xml")?;
+            let root = tree.part_root_strict_ns(
+                "docProps/core.xml",
+                CORE_PROPERTIES_NS,
+                b"coreProperties",
+                "cp",
+            )?;
+            tree.set_child_text_ns_local(
+                root,
+                property.ns(),
+                property.local(),
+                property.qname(),
+                value,
+            )?;
+        }
+        pkg.ensure_content_type("docProps/core.xml", CT_CORE_PROPERTIES);
+        pkg.to_zip()?;
+        d.package = pkg;
+        Ok(())
     }
 
     /// **Element-tree editing: replace body text in place.** Finds
@@ -403,10 +846,7 @@ impl Document {
         // new node; preflight that against the node budget so the commit can't exceed it.
         // Count against the LIVE arena (which includes any detached nodes a prior edit
         // left) — the throwaway `probe` re-parses the serialized form and would undercount.
-        let new_nodes = matched
-            .iter()
-            .filter(|&&id| !probe.has_text_carrier(id))
-            .count();
+        let new_nodes = wml_single_text_run_replacement_new_nodes(&probe, &matched, new)?;
         let live_count = d
             .package
             .part_tree_ref("word/document.xml")
@@ -420,8 +860,7 @@ impl Document {
         // `set_element_text` will add `xml:space="preserve"`. Reject up front (so the
         // commit stays transactional — never edits some runs then fails) any matched run
         // that is already at the attribute cap and lacks that attribute.
-        let needs_space = new != new.trim_matches([' ', '\t', '\n', '\r']);
-        if needs_space
+        if wml_replacement_needs_space_attr_preflight(new)
             && matched
                 .iter()
                 .any(|&id| !probe.can_set_attr(id, b"xml:space"))
@@ -442,13 +881,1181 @@ impl Document {
             if tree.text_of(id) == old {
                 // Preflighted above (node budget + attribute budget), so this only ever
                 // surfaces a genuine out-of-memory condition rather than a logic failure.
-                tree.set_element_text(id, new)?;
+                set_wml_text_runs(tree, [id], new)?;
                 changed += 1;
             }
         }
         // We've edited (touched) document.xml — guarantee the saved package types it as
         // the WML main document, so `save()` can't fail on a missing/generic override.
         pkg.ensure_content_type("word/document.xml", CT_DOCUMENT_MAIN);
+        d.package = pkg;
+        Ok(changed)
+    }
+
+    /// **Package-preserving edit: accept tracked body revisions.** In
+    /// `word/document.xml`'s body, this unwraps accepted current-content revision
+    /// containers (`w:ins`, `w:moveTo`), removes rejected old-content containers
+    /// (`w:del`, `w:moveFrom`), and drops tracked property-change history such as
+    /// `w:pPrChange`/`w:rPrChange` while preserving the current properties.
+    ///
+    /// This is a focused body edit, not a full Word review engine for every
+    /// package part. It is transactional and returns the number of revision
+    /// elements removed or unwrapped. Read views are stale until the saved bytes
+    /// are reopened. Available with the default `docx` feature.
+    #[cfg(feature = "docx")]
+    pub fn accept_all_revisions(&mut self) -> Result<usize> {
+        let d = self.docx_tree_editable()?;
+        let raw = d
+            .package
+            .part("word/document.xml")
+            .ok_or_else(|| Error::Docx("missing word/document.xml".into()))?;
+        let mut probe = xmltree::XmlTree::parse(&raw)?;
+        let probe_body = probe.wml_body_strict()?;
+        let changed = probe.accept_wml_revisions_under(probe_body);
+        if changed == 0 {
+            return Ok(0);
+        }
+
+        let mut pkg = d.package.clone();
+        {
+            let tree = pkg.part_tree_mut("word/document.xml")?;
+            let body = tree.wml_body_strict()?;
+            tree.accept_wml_revisions_under(body);
+        }
+        pkg.ensure_content_type("word/document.xml", CT_DOCUMENT_MAIN);
+        d.package = pkg;
+        Ok(changed)
+    }
+
+    /// **Package-preserving edit: reject tracked body revisions.** In
+    /// `word/document.xml`'s body, this removes inserted current-content revision
+    /// containers (`w:ins`, `w:moveTo`), unwraps rejected old-content containers
+    /// (`w:del`, `w:moveFrom`), normalizes kept `w:delText` nodes back to `w:t`,
+    /// and drops tracked property-change history such as `w:pPrChange`/
+    /// `w:rPrChange` while preserving the current properties.
+    ///
+    /// This is a focused body edit, not a full Word review engine for every
+    /// package part. It is transactional and returns the number of revision or
+    /// revision-text elements removed, unwrapped, or normalized. Read views are
+    /// stale until the saved bytes are reopened. Available with the default
+    /// `docx` feature.
+    #[cfg(feature = "docx")]
+    pub fn reject_all_revisions(&mut self) -> Result<usize> {
+        let d = self.docx_tree_editable()?;
+        let raw = d
+            .package
+            .part("word/document.xml")
+            .ok_or_else(|| Error::Docx("missing word/document.xml".into()))?;
+        let mut probe = xmltree::XmlTree::parse(&raw)?;
+        let probe_body = probe.wml_body_strict()?;
+        let changed = probe.reject_wml_revisions_under(probe_body);
+        if changed == 0 {
+            return Ok(0);
+        }
+
+        let mut pkg = d.package.clone();
+        {
+            let tree = pkg.part_tree_mut("word/document.xml")?;
+            let body = tree.wml_body_strict()?;
+            tree.reject_wml_revisions_under(body);
+        }
+        pkg.ensure_content_type("word/document.xml", CT_DOCUMENT_MAIN);
+        d.package = pkg;
+        Ok(changed)
+    }
+
+    /// **Element-tree editing: rewrite a field's cached visible result.** The
+    /// zero-based `field_index` is the same order returned by [`Document::fields`].
+    /// Simple fields (`w:fldSimple`) and common complex fields (`begin` /
+    /// `separate` / `end`) are supported; only cached result `w:t` nodes are
+    /// changed, never the field instruction.
+    ///
+    /// This is a preservation edit: unmodeled field markup and surrounding package
+    /// parts are kept, and the edit is transactional. Like other element-tree edits,
+    /// read views are stale until the saved bytes are reopened. Available with the
+    /// default `docx` feature.
+    #[cfg(feature = "docx")]
+    pub fn set_field_result(&mut self, field_index: usize, result: &str) -> Result<()> {
+        let d = self.docx_tree_editable()?;
+        let mut pkg = d.package.clone();
+        {
+            let tree = pkg.part_tree_mut("word/document.xml")?;
+            let body = tree.wml_body_strict()?;
+            let runs = tree
+                .wml_field_result_runs_under(body, field_index)
+                .ok_or_else(|| Error::Docx(format!("field index {field_index} out of range")))?;
+            if runs.is_empty() {
+                return Err(Error::Docx(format!(
+                    "field index {field_index} has no cached result text"
+                )));
+            }
+
+            let needs_markers = result.contains('\t') || result.contains('\n');
+            let new_nodes = if needs_markers {
+                let first_replacement_nodes = xmltree::wml_text_run_content_node_count(result)?;
+                first_replacement_nodes.saturating_add(
+                    runs.iter()
+                        .skip(1)
+                        .filter(|&&id| !tree.has_text_carrier(id))
+                        .count(),
+                )
+            } else {
+                runs.iter()
+                    .filter(|&&id| !tree.has_text_carrier(id))
+                    .count()
+            };
+            if tree.node_count().saturating_add(new_nodes) > xmltree::node_budget() {
+                return Err(Error::Docx(
+                    "set_field_result: edit would exceed the node budget".into(),
+                ));
+            }
+
+            let needs_space = result != result.trim_matches([' ', '\t', '\n', '\r']);
+            if !needs_markers && needs_space && !tree.can_set_attr(runs[0], b"xml:space") {
+                return Err(Error::Docx(
+                    "set_field_result: edit would exceed an element's attribute budget".into(),
+                ));
+            }
+
+            for (i, id) in runs.into_iter().enumerate() {
+                if i == 0 && needs_markers {
+                    tree.replace_wml_text_element_with_run_content(id, result)?;
+                } else {
+                    tree.set_element_text(id, if i == 0 { result } else { "" })?;
+                }
+            }
+        }
+        pkg.ensure_content_type("word/document.xml", CT_DOCUMENT_MAIN);
+        d.package = pkg;
+        Ok(())
+    }
+
+    /// **Template-fill edit: replace body content-control text by tag.** Finds
+    /// body `w:sdt` content controls whose `w:sdtPr/w:tag/@w:val` exactly equals
+    /// `tag`, replaces each matching control's visible WordprocessingML `w:t`
+    /// content with `text`, and preserves the content-control metadata and
+    /// surrounding package. Returns the number of content controls filled.
+    ///
+    /// This is intentionally focused on plain-text template fields represented by
+    /// content controls. It does not remove the controls, alter aliases/tags, or
+    /// evaluate data binding. For a record of tag/value pairs, use
+    /// [`Document::fill_content_controls_by_tag`]. Read views are stale until the
+    /// saved bytes are reopened. Available with the default `docx` feature.
+    #[cfg(feature = "docx")]
+    pub fn fill_content_control_by_tag(&mut self, tag: &str, text: &str) -> Result<usize> {
+        self.fill_content_controls_by_tag_impl(
+            vec![(tag.to_string(), text.to_string())],
+            "fill_content_control_by_tag",
+        )
+    }
+
+    /// **Template-fill edit: replace multiple body content controls by tag.**
+    /// Each `(tag, text)` pair fills every body `w:sdt` content control whose
+    /// `w:sdtPr/w:tag/@w:val` exactly equals `tag`. All fills are validated first
+    /// and then committed as one package-preserving edit. Missing tags are
+    /// ignored, and the return value is the number of content controls filled.
+    ///
+    /// Duplicate input tags are rejected so callers do not accidentally depend on
+    /// ordering. Use repeated content controls with the same tag when one value
+    /// should populate several template locations. Available with the default
+    /// `docx` feature.
+    #[cfg(feature = "docx")]
+    pub fn fill_content_controls_by_tag<I, K, V>(&mut self, values: I) -> Result<usize>
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
+        let entries = values
+            .into_iter()
+            .map(|(tag, text)| (tag.as_ref().to_string(), text.as_ref().to_string()))
+            .collect();
+        self.fill_content_controls_by_tag_impl(entries, "fill_content_controls_by_tag")
+    }
+
+    /// **Template-fill edit: fill logical template fields by name.** Each
+    /// `(name, text)` pair fills every body or referenced header/footer content
+    /// control whose `w:sdtPr/w:tag/@w:val` exactly equals `name` and every body
+    /// or referenced header/footer `MERGEFIELD` field whose instruction names
+    /// the same merge field. Cached merge-field result text is replaced while
+    /// the field instruction markup is preserved.
+    ///
+    /// All fills are validated first and then committed as one
+    /// package-preserving edit. Missing names are ignored, and the return value is
+    /// the number of template locations filled. Duplicate input names are
+    /// rejected so callers do not accidentally depend on ordering. Read views are
+    /// stale until the saved bytes are reopened. Available with the default
+    /// `docx` feature.
+    #[cfg(feature = "docx")]
+    pub fn fill_template_fields<I, K, V>(&mut self, values: I) -> Result<usize>
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: AsRef<str>,
+        V: AsRef<str>,
+    {
+        let entries = values
+            .into_iter()
+            .map(|(name, text)| (name.as_ref().to_string(), text.as_ref().to_string()))
+            .collect();
+        self.fill_template_fields_impl(entries, "fill_template_fields")
+    }
+
+    #[cfg(feature = "docx")]
+    fn fill_content_controls_by_tag_impl(
+        &mut self,
+        entries: Vec<(String, String)>,
+        caller: &str,
+    ) -> Result<usize> {
+        if entries.is_empty() {
+            return Ok(0);
+        }
+
+        let mut seen_tags = std::collections::HashSet::new();
+        for (tag, _) in &entries {
+            if tag.is_empty() {
+                return Err(Error::Docx(format!("{caller}: tag must not be empty")));
+            }
+            if !seen_tags.insert(tag.as_str()) {
+                return Err(Error::Docx(format!("{caller}: duplicate tag {tag:?}")));
+            }
+        }
+
+        let d = self.docx_tree_editable()?;
+        let raw = d
+            .package
+            .part("word/document.xml")
+            .ok_or_else(|| Error::Docx("missing word/document.xml".into()))?;
+        let probe = xmltree::XmlTree::parse(&raw)?;
+        let probe_body = probe.wml_body_strict()?;
+        let mut matched = Vec::new();
+        for (entry_index, (tag, _)) in entries.iter().enumerate() {
+            for runs in probe.wml_content_control_text_runs_by_tag_under(probe_body, tag) {
+                if runs.is_empty() {
+                    return Err(Error::Docx(format!(
+                        "{caller}: content control tag {tag:?} has no visible text"
+                    )));
+                }
+                matched.push((entry_index, runs));
+            }
+        }
+        if matched.is_empty() {
+            return Ok(0);
+        }
+
+        let mut seen_runs = std::collections::HashSet::new();
+        for (_, runs) in &matched {
+            for &id in runs {
+                if !seen_runs.insert(id) {
+                    return Err(Error::Docx(format!(
+                        "{caller}: requested tags overlap in nested content controls"
+                    )));
+                }
+            }
+        }
+
+        let new_nodes = matched
+            .iter()
+            .flat_map(|(_, runs)| runs)
+            .filter(|&&id| !probe.has_text_carrier(id))
+            .count();
+        let live_count = d
+            .package
+            .part_tree_ref("word/document.xml")
+            .map_or(probe.node_count(), |t| t.node_count());
+        if live_count.saturating_add(new_nodes) > xmltree::node_budget() {
+            return Err(Error::Docx(format!(
+                "{caller}: edit would exceed the node budget"
+            )));
+        }
+
+        if matched.iter().any(|(entry_index, runs)| {
+            let text = &entries[*entry_index].1;
+            text != text.trim_matches([' ', '\t', '\n', '\r'])
+                && runs
+                    .first()
+                    .is_some_and(|&id| !probe.can_set_attr(id, b"xml:space"))
+        }) {
+            return Err(Error::Docx(format!(
+                "{caller}: edit would exceed an element's attribute budget"
+            )));
+        }
+
+        let mut pkg = d.package.clone();
+        {
+            let tree = pkg.part_tree_mut("word/document.xml")?;
+            let body = tree.wml_body_strict()?;
+            for (tag, text) in &entries {
+                for runs in tree.wml_content_control_text_runs_by_tag_under(body, tag) {
+                    if runs.is_empty() {
+                        return Err(Error::Docx(format!(
+                            "{caller}: content control tag {tag:?} has no visible text"
+                        )));
+                    }
+                    for (i, id) in runs.into_iter().enumerate() {
+                        tree.set_element_text(id, if i == 0 { text } else { "" })?;
+                    }
+                }
+            }
+        }
+        pkg.ensure_content_type("word/document.xml", CT_DOCUMENT_MAIN);
+        let changed = matched.len();
+        d.package = pkg;
+        Ok(changed)
+    }
+
+    #[cfg(feature = "docx")]
+    fn fill_template_fields_impl(
+        &mut self,
+        entries: Vec<(String, String)>,
+        caller: &str,
+    ) -> Result<usize> {
+        if entries.is_empty() {
+            return Ok(0);
+        }
+
+        let mut seen_names = std::collections::HashSet::new();
+        for (name, _) in &entries {
+            if name.is_empty() {
+                return Err(Error::Docx(format!(
+                    "{caller}: field name must not be empty"
+                )));
+            }
+            if !seen_names.insert(name.as_str()) {
+                return Err(Error::Docx(format!(
+                    "{caller}: duplicate field name {name:?}"
+                )));
+            }
+        }
+
+        let d = self.docx_tree_editable()?;
+        let raw = d
+            .package
+            .part("word/document.xml")
+            .ok_or_else(|| Error::Docx("missing word/document.xml".into()))?;
+        let probe = xmltree::XmlTree::parse(&raw)?;
+        let probe_body = probe.wml_body_strict()?;
+
+        let mut matched_runs = Vec::new();
+        for (entry_index, (name, _)) in entries.iter().enumerate() {
+            for runs in probe.wml_content_control_text_runs_by_tag_under(probe_body, name) {
+                if runs.is_empty() {
+                    return Err(Error::Docx(format!(
+                        "{caller}: template field {name:?} has no visible text"
+                    )));
+                }
+                matched_runs.push((entry_index, runs));
+            }
+        }
+
+        let mut matched_fields = Vec::new();
+        for (field_index, field) in d.fields.iter().enumerate() {
+            let Some(name) = merge_field_name(&field.instruction) else {
+                continue;
+            };
+            let Some(entry_index) = entries
+                .iter()
+                .position(|(entry_name, _)| entry_name == &name)
+            else {
+                continue;
+            };
+            let runs = probe
+                .wml_field_result_runs_under(probe_body, field_index)
+                .ok_or_else(|| {
+                    Error::Docx(format!(
+                        "{caller}: merge field {name:?} has no cached result"
+                    ))
+                })?;
+            if runs.is_empty() {
+                return Err(Error::Docx(format!(
+                    "{caller}: merge field {name:?} has no cached result text"
+                )));
+            }
+            matched_fields.push((field_index, entry_index));
+            matched_runs.push((entry_index, runs));
+        }
+
+        let mut matched_header_footer_content_targets = Vec::new();
+        let mut matched_header_footer_content_count = 0usize;
+        let mut matched_header_footer_fields = Vec::new();
+        for target in header_footer_targets(&d.package) {
+            let Some(raw) = d.package.part(&target.part) else {
+                continue;
+            };
+            let probe = xmltree::XmlTree::parse(&raw)?;
+            let root = probe.wml_part_root_strict(&target.part, target.root_local)?;
+            let raw_xml = String::from_utf8_lossy(&raw);
+            let fields = docx::parse_fields(&raw_xml);
+            let mut part_matches = Vec::new();
+            let mut part_content_count = 0usize;
+            let mut part_fields = Vec::new();
+
+            for (entry_index, (name, _)) in entries.iter().enumerate() {
+                for runs in probe.wml_content_control_text_runs_by_tag_under(root, name) {
+                    if runs.is_empty() {
+                        return Err(Error::Docx(format!(
+                            "{caller}: template field {name:?} has no visible text"
+                        )));
+                    }
+                    part_content_count += 1;
+                    part_matches.push((entry_index, runs));
+                }
+            }
+
+            for (field_index, field) in fields.iter().enumerate() {
+                let Some(name) = merge_field_name(&field.instruction) else {
+                    continue;
+                };
+                let Some(entry_index) = entries
+                    .iter()
+                    .position(|(entry_name, _)| entry_name == &name)
+                else {
+                    continue;
+                };
+                let runs = probe
+                    .wml_field_result_runs_under(root, field_index)
+                    .ok_or_else(|| {
+                        Error::Docx(format!(
+                            "{caller}: merge field {name:?} has no cached result"
+                        ))
+                    })?;
+                if runs.is_empty() {
+                    return Err(Error::Docx(format!(
+                        "{caller}: merge field {name:?} has no cached result text"
+                    )));
+                }
+                part_fields.push((field_index, entry_index));
+                part_matches.push((entry_index, runs));
+            }
+
+            if part_matches.is_empty() {
+                continue;
+            }
+
+            let mut seen_runs = std::collections::HashSet::new();
+            for (_, runs) in &part_matches {
+                for &id in runs {
+                    if !seen_runs.insert(id) {
+                        return Err(Error::Docx(format!(
+                            "{caller}: requested template fields overlap"
+                        )));
+                    }
+                }
+            }
+
+            let new_nodes = part_matches
+                .iter()
+                .flat_map(|(_, runs)| runs)
+                .filter(|&&id| !probe.has_text_carrier(id))
+                .count();
+            let live_count = d
+                .package
+                .part_tree_ref(&target.part)
+                .map_or(probe.node_count(), |t| t.node_count());
+            if live_count.saturating_add(new_nodes) > xmltree::node_budget() {
+                return Err(Error::Docx(format!(
+                    "{caller}: edit would exceed the node budget"
+                )));
+            }
+
+            if part_matches.iter().any(|(entry_index, runs)| {
+                let text = &entries[*entry_index].1;
+                text != text.trim_matches([' ', '\t', '\n', '\r'])
+                    && runs
+                        .first()
+                        .is_some_and(|&id| !probe.can_set_attr(id, b"xml:space"))
+            }) {
+                return Err(Error::Docx(format!(
+                    "{caller}: edit would exceed an element's attribute budget"
+                )));
+            }
+
+            if part_content_count > 0 {
+                matched_header_footer_content_targets.push(target.clone());
+                matched_header_footer_content_count += part_content_count;
+            }
+            for (field_index, entry_index) in part_fields {
+                matched_header_footer_fields.push((target.clone(), field_index, entry_index));
+            }
+        }
+
+        let changed = matched_runs.len()
+            + matched_header_footer_content_count
+            + matched_header_footer_fields.len();
+        if changed == 0 {
+            return Ok(0);
+        }
+
+        if !matched_runs.is_empty() {
+            let mut seen_runs = std::collections::HashSet::new();
+            for (_, runs) in &matched_runs {
+                for &id in runs {
+                    if !seen_runs.insert(id) {
+                        return Err(Error::Docx(format!(
+                            "{caller}: requested template fields overlap"
+                        )));
+                    }
+                }
+            }
+
+            let new_nodes = matched_runs
+                .iter()
+                .flat_map(|(_, runs)| runs)
+                .filter(|&&id| !probe.has_text_carrier(id))
+                .count();
+            let live_count = d
+                .package
+                .part_tree_ref("word/document.xml")
+                .map_or(probe.node_count(), |t| t.node_count());
+            if live_count.saturating_add(new_nodes) > xmltree::node_budget() {
+                return Err(Error::Docx(format!(
+                    "{caller}: edit would exceed the node budget"
+                )));
+            }
+
+            if matched_runs.iter().any(|(entry_index, runs)| {
+                let text = &entries[*entry_index].1;
+                text != text.trim_matches([' ', '\t', '\n', '\r'])
+                    && runs
+                        .first()
+                        .is_some_and(|&id| !probe.can_set_attr(id, b"xml:space"))
+            }) {
+                return Err(Error::Docx(format!(
+                    "{caller}: edit would exceed an element's attribute budget"
+                )));
+            }
+        }
+
+        let mut pkg = d.package.clone();
+        if !matched_runs.is_empty() {
+            {
+                let tree = pkg.part_tree_mut("word/document.xml")?;
+                let body = tree.wml_body_strict()?;
+                for (name, text) in &entries {
+                    for runs in tree.wml_content_control_text_runs_by_tag_under(body, name) {
+                        if runs.is_empty() {
+                            return Err(Error::Docx(format!(
+                                "{caller}: template field {name:?} has no visible text"
+                            )));
+                        }
+                        for (i, id) in runs.into_iter().enumerate() {
+                            tree.set_element_text(id, if i == 0 { text } else { "" })?;
+                        }
+                    }
+                }
+                for (field_index, entry_index) in &matched_fields {
+                    let name = &entries[*entry_index].0;
+                    let text = &entries[*entry_index].1;
+                    let runs = tree
+                        .wml_field_result_runs_under(body, *field_index)
+                        .ok_or_else(|| {
+                            Error::Docx(format!(
+                                "{caller}: merge field {name:?} has no cached result"
+                            ))
+                        })?;
+                    if runs.is_empty() {
+                        return Err(Error::Docx(format!(
+                            "{caller}: merge field {name:?} has no cached result text"
+                        )));
+                    }
+                    for (i, id) in runs.into_iter().enumerate() {
+                        tree.set_element_text(id, if i == 0 { text } else { "" })?;
+                    }
+                }
+            }
+            pkg.ensure_content_type("word/document.xml", CT_DOCUMENT_MAIN);
+        }
+
+        for target in &matched_header_footer_content_targets {
+            {
+                let tree = pkg.part_tree_mut(&target.part)?;
+                let root = tree.wml_part_root_strict(&target.part, target.root_local)?;
+                for (name, text) in &entries {
+                    for runs in tree.wml_content_control_text_runs_by_tag_under(root, name) {
+                        if runs.is_empty() {
+                            return Err(Error::Docx(format!(
+                                "{caller}: template field {name:?} has no visible text"
+                            )));
+                        }
+                        for (i, id) in runs.into_iter().enumerate() {
+                            tree.set_element_text(id, if i == 0 { text } else { "" })?;
+                        }
+                    }
+                }
+            }
+            pkg.ensure_content_type(&target.part, target.content_type);
+        }
+
+        for (target, field_index, entry_index) in &matched_header_footer_fields {
+            {
+                let tree = pkg.part_tree_mut(&target.part)?;
+                let root = tree.wml_part_root_strict(&target.part, target.root_local)?;
+                let name = &entries[*entry_index].0;
+                let text = &entries[*entry_index].1;
+                let runs = tree
+                    .wml_field_result_runs_under(root, *field_index)
+                    .ok_or_else(|| {
+                        Error::Docx(format!(
+                            "{caller}: merge field {name:?} has no cached result"
+                        ))
+                    })?;
+                if runs.is_empty() {
+                    return Err(Error::Docx(format!(
+                        "{caller}: merge field {name:?} has no cached result text"
+                    )));
+                }
+                for (i, id) in runs.into_iter().enumerate() {
+                    tree.set_element_text(id, if i == 0 { text } else { "" })?;
+                }
+            }
+            pkg.ensure_content_type(&target.part, target.content_type);
+        }
+        d.package = pkg;
+        Ok(changed)
+    }
+
+    /// **Package-preserving edit: retarget a body hyperlink.** The zero-based
+    /// `hyperlink_index` is the order of `w:hyperlink r:id="..."` elements in
+    /// `word/document.xml` body order. Only relationship-backed external hyperlinks
+    /// are supported; field-code hyperlinks and internal anchors are left untouched.
+    ///
+    /// This rewrites the matching external hyperlink relationship target in
+    /// `word/_rels/document.xml.rels` and leaves `word/document.xml` byte-preserved.
+    /// If multiple body hyperlinks share the same relationship id, updating any one
+    /// of those indexes updates the shared relationship. Read views are stale until
+    /// the saved bytes are reopened. Available with the default `docx` feature.
+    #[cfg(feature = "docx")]
+    pub fn set_hyperlink_target(&mut self, hyperlink_index: usize, target: &str) -> Result<()> {
+        let d = self.docx_tree_editable()?;
+        let rids = body_hyperlink_rids(&d.package)?;
+        let rid = rids.get(hyperlink_index).ok_or_else(|| {
+            Error::Docx(format!("hyperlink index {hyperlink_index} out of range"))
+        })?;
+
+        let mut pkg = d.package.clone();
+        pkg.set_external_relationship_target(
+            "word/document.xml",
+            REL_HYPERLINK,
+            rid.as_str(),
+            target,
+        )?;
+        pkg.to_zip()?;
+        d.package = pkg;
+        Ok(())
+    }
+
+    /// **Element-tree editing: rewrite an existing `.docx` comment body.**
+    /// Locates the `w:comment` with `w:id == comment_id` in `word/comments.xml`,
+    /// replaces its cached visible `w:t` text with `text`, and preserves the
+    /// comment's metadata, body anchors, and all other comments.
+    ///
+    /// This updates existing comments only. Creating a new comment requires
+    /// coordinated body markers and relationships and is a separate edit surface.
+    /// Read views are stale until the saved bytes are reopened. Available with the
+    /// default `docx` feature.
+    #[cfg(feature = "docx")]
+    pub fn set_comment_text(&mut self, comment_id: &str, text: &str) -> Result<()> {
+        let d = self.docx_tree_editable()?;
+        let mut pkg = d.package.clone();
+        {
+            let tree = pkg.part_tree_mut("word/comments.xml")?;
+            let root = tree.wml_part_root_strict("word/comments.xml", b"comments")?;
+            tree.set_wml_comment_text_under(root, comment_id, text)?;
+        }
+        pkg.ensure_content_type("word/comments.xml", CT_COMMENTS);
+        d.package = pkg;
+        Ok(())
+    }
+
+    /// **Package-preserving edit: add a `.docx` comment anchored to body text.**
+    /// Finds the first body `w:r` or adjacent body `w:r` sequence whose visible
+    /// `w:t` text equals `anchor_text`, inserts comment range/reference markup
+    /// around those runs, appends a new `w:comment` to `word/comments.xml`, and
+    /// creates the comments part and document relationship if they are missing.
+    ///
+    /// This is intentionally conservative: it anchors whole adjacent runs, not an
+    /// arbitrary character range inside a run. The returned string is the allocated
+    /// comment id. Read views are stale until the saved bytes are reopened.
+    /// Available with the default `docx` feature.
+    #[cfg(feature = "docx")]
+    pub fn add_comment_on_text(
+        &mut self,
+        anchor_text: &str,
+        comment_text: &str,
+        author: &str,
+    ) -> Result<String> {
+        if anchor_text.is_empty() {
+            return Err(Error::Docx(
+                "add_comment_on_text: anchor text must not be empty".into(),
+            ));
+        }
+        let d = self.docx_tree_editable()?;
+        let id = next_comment_id(&d.package)?;
+        let mut pkg = d.package.clone();
+
+        if !pkg.has_part("word/comments.xml") {
+            pkg.set_part(
+                "word/comments.xml",
+                comments_part_skeleton().to_vec(),
+                Some(CT_COMMENTS),
+            );
+        } else {
+            pkg.ensure_content_type("word/comments.xml", CT_COMMENTS);
+        }
+        pkg.ensure_relationship("word/document.xml", REL_COMMENTS, "word/comments.xml");
+
+        {
+            let tree = pkg.part_tree_mut("word/document.xml")?;
+            let body = tree.wml_body_strict()?;
+            tree.add_wml_comment_anchor_on_text(body, anchor_text, &id)?;
+        }
+        {
+            let tree = pkg.part_tree_mut("word/comments.xml")?;
+            let root = tree.wml_part_root_strict("word/comments.xml", b"comments")?;
+            tree.append_wml_comment(root, &id, comment_text, author)?;
+        }
+        pkg.ensure_content_type("word/document.xml", CT_DOCUMENT_MAIN);
+        pkg.ensure_content_type("word/comments.xml", CT_COMMENTS);
+        pkg.to_zip()?;
+        d.package = pkg;
+        Ok(id)
+    }
+
+    /// **Element-tree editing: rewrite one existing `.docx` body table cell.**
+    /// `table_index` and `row_index` are zero-based indexes into top-level `w:tbl`
+    /// elements in `word/document.xml`; `cell_index` is a zero-based logical column
+    /// that accounts for horizontal `w:gridSpan`. A `row_index` inside a vertical
+    /// `w:vMerge` continuation resolves to the restart/origin cell. The target
+    /// cell's visible `w:t` content is replaced by `text`; surrounding table
+    /// structure and other cells are preserved.
+    ///
+    /// This is intentionally a focused body-table edit surface. Parent cells
+    /// containing nested tables are rejected before mutation. Read views are stale
+    /// until the saved bytes are reopened.
+    /// Available with the default `docx` feature.
+    #[cfg(feature = "docx")]
+    pub fn set_table_cell_text(
+        &mut self,
+        table_index: usize,
+        row_index: usize,
+        cell_index: usize,
+        text: &str,
+    ) -> Result<()> {
+        let d = self.docx_tree_editable()?;
+        let mut pkg = d.package.clone();
+        {
+            let tree = pkg.part_tree_mut("word/document.xml")?;
+            let body = tree.wml_body_strict()?;
+            let index_error = || {
+                Error::Docx(format!(
+                    "table cell index out of range: table={table_index} row={row_index} cell={cell_index}"
+                ))
+            };
+            if tree
+                .wml_table_cell_has_nested_table_under(body, table_index, row_index, cell_index)
+                .ok_or_else(index_error)?
+            {
+                return Err(Error::Docx(format!(
+                    "set_table_cell_text: table={table_index} row={row_index} cell={cell_index} contains a nested table"
+                )));
+            }
+            let runs = tree
+                .wml_table_cell_text_runs_under(body, table_index, row_index, cell_index)
+                .expect("table cell was already located");
+            if runs.is_empty() {
+                return Err(Error::Docx(format!(
+                    "table={table_index} row={row_index} cell={cell_index} has no visible text"
+                )));
+            }
+
+            let new_nodes = wml_grouped_text_run_replacement_new_nodes(tree, &runs, text)?;
+            if tree.node_count().saturating_add(new_nodes) > xmltree::node_budget() {
+                return Err(Error::Docx(
+                    "set_table_cell_text: edit would exceed the node budget".into(),
+                ));
+            }
+
+            if wml_replacement_needs_space_attr_preflight(text)
+                && !tree.can_set_attr(runs[0], b"xml:space")
+            {
+                return Err(Error::Docx(
+                    "set_table_cell_text: edit would exceed an element's attribute budget".into(),
+                ));
+            }
+
+            set_wml_text_runs(tree, runs, text)?;
+        }
+        pkg.ensure_content_type("word/document.xml", CT_DOCUMENT_MAIN);
+        d.package = pkg;
+        Ok(())
+    }
+
+    /// **Package-preserving edit: add a `.docx` footnote anchored to body text.**
+    /// Finds the first body `w:r` or adjacent body `w:r` sequence whose visible
+    /// `w:t` text equals `anchor_text`, inserts a `w:footnoteReference` run after
+    /// the matched runs, appends a new real `w:footnote` to `word/footnotes.xml`,
+    /// and creates the footnotes part, relationship, and content type if they are
+    /// missing.
+    ///
+    /// This is intentionally conservative: it anchors whole adjacent runs, not an
+    /// arbitrary character range inside a run. The returned string is the allocated
+    /// footnote id. Read views are stale until the saved bytes are reopened.
+    /// Available with the default `docx` feature.
+    #[cfg(feature = "docx")]
+    pub fn add_footnote_on_text(&mut self, anchor_text: &str, note_text: &str) -> Result<String> {
+        if anchor_text.is_empty() {
+            return Err(Error::Docx(
+                "add_footnote_on_text: anchor text must not be empty".into(),
+            ));
+        }
+        let d = self.docx_tree_editable()?;
+        let id = next_footnote_id(&d.package)?;
+        let mut pkg = d.package.clone();
+
+        if !pkg.has_part("word/footnotes.xml") {
+            pkg.set_part(
+                "word/footnotes.xml",
+                footnotes_part_skeleton().to_vec(),
+                Some(CT_FOOTNOTES),
+            );
+        } else {
+            pkg.ensure_content_type("word/footnotes.xml", CT_FOOTNOTES);
+        }
+        pkg.ensure_relationship("word/document.xml", REL_FOOTNOTES, "word/footnotes.xml");
+
+        {
+            let tree = pkg.part_tree_mut("word/document.xml")?;
+            let body = tree.wml_body_strict()?;
+            tree.add_wml_footnote_reference_on_text(body, anchor_text, &id)?;
+        }
+        {
+            let tree = pkg.part_tree_mut("word/footnotes.xml")?;
+            let root = tree.wml_part_root_strict("word/footnotes.xml", b"footnotes")?;
+            tree.append_wml_footnote(root, &id, note_text)?;
+        }
+        pkg.ensure_content_type("word/document.xml", CT_DOCUMENT_MAIN);
+        pkg.ensure_content_type("word/footnotes.xml", CT_FOOTNOTES);
+        pkg.to_zip()?;
+        d.package = pkg;
+        Ok(id)
+    }
+
+    /// **Package-preserving edit: add a `.docx` endnote anchored to body text.**
+    /// Finds the first body `w:r` or adjacent body `w:r` sequence whose visible
+    /// `w:t` text equals `anchor_text`, inserts a `w:endnoteReference` run after
+    /// the matched runs, appends a new real `w:endnote` to `word/endnotes.xml`,
+    /// and creates the endnotes part, relationship, and content type if they are
+    /// missing.
+    ///
+    /// This is intentionally conservative: it anchors whole adjacent runs, not an
+    /// arbitrary character range inside a run. The returned string is the allocated
+    /// endnote id. Read views are stale until the saved bytes are reopened.
+    /// Available with the default `docx` feature.
+    #[cfg(feature = "docx")]
+    pub fn add_endnote_on_text(&mut self, anchor_text: &str, note_text: &str) -> Result<String> {
+        if anchor_text.is_empty() {
+            return Err(Error::Docx(
+                "add_endnote_on_text: anchor text must not be empty".into(),
+            ));
+        }
+        let d = self.docx_tree_editable()?;
+        let id = next_endnote_id(&d.package)?;
+        let mut pkg = d.package.clone();
+
+        if !pkg.has_part("word/endnotes.xml") {
+            pkg.set_part(
+                "word/endnotes.xml",
+                endnotes_part_skeleton().to_vec(),
+                Some(CT_ENDNOTES),
+            );
+        } else {
+            pkg.ensure_content_type("word/endnotes.xml", CT_ENDNOTES);
+        }
+        pkg.ensure_relationship("word/document.xml", REL_ENDNOTES, "word/endnotes.xml");
+
+        {
+            let tree = pkg.part_tree_mut("word/document.xml")?;
+            let body = tree.wml_body_strict()?;
+            tree.add_wml_endnote_reference_on_text(body, anchor_text, &id)?;
+        }
+        {
+            let tree = pkg.part_tree_mut("word/endnotes.xml")?;
+            let root = tree.wml_part_root_strict("word/endnotes.xml", b"endnotes")?;
+            tree.append_wml_endnote(root, &id, note_text)?;
+        }
+        pkg.ensure_content_type("word/document.xml", CT_DOCUMENT_MAIN);
+        pkg.ensure_content_type("word/endnotes.xml", CT_ENDNOTES);
+        pkg.to_zip()?;
+        d.package = pkg;
+        Ok(id)
+    }
+
+    /// **Element-tree editing: replace text in existing `.docx` footnotes and
+    /// endnotes.** Finds visible `w:t` runs whose full text equals `old` in
+    /// `word/footnotes.xml` and `word/endnotes.xml`, skips separator boilerplate
+    /// notes, rewrites matches to `new`, and returns the number of runs changed.
+    ///
+    /// This edits existing notes only; creating notes and inserting body references
+    /// is a separate structural edit surface. Read views are stale until the saved
+    /// bytes are reopened. Available with the default `docx` feature.
+    #[cfg(feature = "docx")]
+    pub fn replace_note_text(&mut self, old: &str, new: &str) -> Result<usize> {
+        let d = self.docx_tree_editable()?;
+        if old == new {
+            return Ok(0);
+        }
+
+        let targets = [
+            NotePartTarget {
+                part: "word/footnotes.xml",
+                root_local: b"footnotes",
+                note_local: b"footnote",
+                content_type: CT_FOOTNOTES,
+            },
+            NotePartTarget {
+                part: "word/endnotes.xml",
+                root_local: b"endnotes",
+                note_local: b"endnote",
+                content_type: CT_ENDNOTES,
+            },
+        ];
+        let needs_space = new != new.trim_matches([' ', '\t', '\n', '\r']);
+        let needs_markers = new.contains('\t') || new.contains('\n');
+        let marker_node_count = if needs_markers {
+            xmltree::wml_text_run_content_node_count(new)?
+        } else {
+            0
+        };
+        let mut editable_targets = Vec::new();
+        let mut total_matches = 0usize;
+
+        for target in targets {
+            let Some(raw) = d.package.part(target.part) else {
+                continue;
+            };
+            let probe = xmltree::XmlTree::parse(&raw)?;
+            let root = probe.wml_part_root_strict(target.part, target.root_local)?;
+            let matched: Vec<_> = probe
+                .wml_note_text_runs_under(root, target.note_local)
+                .into_iter()
+                .filter(|&id| probe.text_of(id) == old)
+                .collect();
+            if matched.is_empty() {
+                continue;
+            }
+
+            let new_nodes = if needs_markers {
+                marker_node_count.saturating_mul(matched.len())
+            } else {
+                matched
+                    .iter()
+                    .filter(|&&id| !probe.has_text_carrier(id))
+                    .count()
+            };
+            let live_count = d
+                .package
+                .part_tree_ref(target.part)
+                .map_or(probe.node_count(), |t| t.node_count());
+            if live_count.saturating_add(new_nodes) > xmltree::node_budget() {
+                return Err(Error::Docx(
+                    "replace_note_text: edit would exceed the node budget".into(),
+                ));
+            }
+            if !needs_markers
+                && needs_space
+                && matched
+                    .iter()
+                    .any(|&id| !probe.can_set_attr(id, b"xml:space"))
+            {
+                return Err(Error::Docx(
+                    "replace_note_text: edit would exceed an element's attribute budget".into(),
+                ));
+            }
+
+            total_matches += matched.len();
+            editable_targets.push(target);
+        }
+
+        if total_matches == 0 {
+            return Ok(0);
+        }
+
+        let mut pkg = d.package.clone();
+        let mut changed = 0usize;
+        for target in editable_targets {
+            {
+                let tree = pkg.part_tree_mut(target.part)?;
+                let root = tree.wml_part_root_strict(target.part, target.root_local)?;
+                for id in tree.wml_note_text_runs_under(root, target.note_local) {
+                    if tree.text_of(id) == old {
+                        if needs_markers {
+                            tree.replace_wml_text_element_with_run_content(id, new)?;
+                        } else {
+                            tree.set_element_text(id, new)?;
+                        }
+                        changed += 1;
+                    }
+                }
+            }
+            pkg.ensure_content_type(target.part, target.content_type);
+        }
+        d.package = pkg;
+        Ok(changed)
+    }
+
+    /// **Element-tree editing: replace text in referenced headers and footers.**
+    /// Finds `w:t` runs whose full text equals `old` in the header/footer parts
+    /// referenced from `word/document.xml`, rewrites them to `new`, and returns the
+    /// number of runs changed. The main body and unreferenced header/footer parts are
+    /// not touched.
+    ///
+    /// This uses the same package-preserving, transactional edit path as
+    /// [`Document::replace_body_text`]. Read views such as [`Document::header_text`]
+    /// are stale until the saved bytes are reopened. Available with the default
+    /// `docx` feature.
+    #[cfg(feature = "docx")]
+    pub fn replace_header_footer_text(&mut self, old: &str, new: &str) -> Result<usize> {
+        let d = self.docx_tree_editable()?;
+        if old == new {
+            return Ok(0);
+        }
+
+        let targets = header_footer_targets(&d.package);
+        if targets.is_empty() {
+            return Ok(0);
+        }
+        let mut editable_targets = Vec::new();
+        let mut total_matches = 0usize;
+
+        for target in &targets {
+            let Some(raw) = d.package.part(&target.part) else {
+                continue;
+            };
+            let probe = xmltree::XmlTree::parse(&raw)?;
+            let root = probe.wml_part_root_strict(&target.part, target.root_local)?;
+            let matched: Vec<_> = probe
+                .wml_text_runs_under(root)
+                .into_iter()
+                .filter(|&id| probe.text_of(id) == old)
+                .collect();
+            if matched.is_empty() {
+                continue;
+            }
+
+            let new_nodes = wml_single_text_run_replacement_new_nodes(&probe, &matched, new)?;
+            let live_count = d
+                .package
+                .part_tree_ref(&target.part)
+                .map_or(probe.node_count(), |t| t.node_count());
+            if live_count.saturating_add(new_nodes) > xmltree::node_budget() {
+                return Err(Error::Docx(
+                    "replace_header_footer_text: edit would exceed the node budget".into(),
+                ));
+            }
+            if wml_replacement_needs_space_attr_preflight(new)
+                && matched
+                    .iter()
+                    .any(|&id| !probe.can_set_attr(id, b"xml:space"))
+            {
+                return Err(Error::Docx(
+                    "replace_header_footer_text: edit would exceed an element's attribute budget"
+                        .into(),
+                ));
+            }
+
+            total_matches += matched.len();
+            editable_targets.push(target.clone());
+        }
+
+        if total_matches == 0 {
+            return Ok(0);
+        }
+
+        let mut pkg = d.package.clone();
+        let mut changed = 0usize;
+        for target in editable_targets {
+            {
+                let tree = pkg.part_tree_mut(&target.part)?;
+                let root = tree.wml_part_root_strict(&target.part, target.root_local)?;
+                for id in tree.wml_text_runs_under(root) {
+                    if tree.text_of(id) == old {
+                        set_wml_text_runs(tree, [id], new)?;
+                        changed += 1;
+                    }
+                }
+            }
+            pkg.ensure_content_type(&target.part, target.content_type);
+        }
+        d.package = pkg;
+        Ok(changed)
+    }
+
+    /// **Element-tree editing: replace text in one explicit existing
+    /// WordprocessingML XML part.** `part_name` must be an existing conservative
+    /// package path under `word/` ending in `.xml` and outside relationship parts
+    /// (for example `word/header2.xml` or `word/styles.xml`). The method rewrites
+    /// descendant WordprocessingML `w:t` runs whose full text equals `old` and returns
+    /// the number of runs changed.
+    ///
+    /// Prefer specialized APIs such as [`Document::replace_body_text`] and
+    /// [`Document::replace_header_footer_text`] when they match the job; this is an
+    /// explicit escape hatch for parts the model does not yet expose semantically.
+    /// The edit is transactional and does not infer or repair a part-specific content
+    /// type. Read views are stale until the saved bytes are reopened. Available with
+    /// the default `docx` feature.
+    #[cfg(feature = "docx")]
+    pub fn replace_text_in_part(&mut self, part_name: &str, old: &str, new: &str) -> Result<usize> {
+        let d = self.docx_tree_editable()?;
+        wml_xml_part_name(part_name, "replace_text_in_part")?;
+        let raw = d.package.part(part_name).ok_or_else(|| {
+            Error::Docx(format!("replace_text_in_part: missing part {part_name}"))
+        })?;
+        let probe = xmltree::XmlTree::parse(&raw)?;
+        let root = probe.wml_any_part_root_strict(part_name)?;
+        if old == new {
+            return Ok(0);
+        }
+
+        let matched: Vec<_> = probe
+            .wml_text_runs_under(root)
+            .into_iter()
+            .filter(|&id| probe.text_of(id) == old)
+            .collect();
+        if matched.is_empty() {
+            return Ok(0);
+        }
+
+        let new_nodes = wml_single_text_run_replacement_new_nodes(&probe, &matched, new)?;
+        let live_count = d
+            .package
+            .part_tree_ref(part_name)
+            .map_or(probe.node_count(), |t| t.node_count());
+        if live_count.saturating_add(new_nodes) > xmltree::node_budget() {
+            return Err(Error::Docx(
+                "replace_text_in_part: edit would exceed the node budget".into(),
+            ));
+        }
+
+        if wml_replacement_needs_space_attr_preflight(new)
+            && matched
+                .iter()
+                .any(|&id| !probe.can_set_attr(id, b"xml:space"))
+        {
+            return Err(Error::Docx(
+                "replace_text_in_part: edit would exceed an element's attribute budget".into(),
+            ));
+        }
+
+        let mut pkg = d.package.clone();
+        let tree = pkg.part_tree_mut(part_name)?;
+        let root = tree.wml_any_part_root_strict(part_name)?;
+        let mut changed = 0usize;
+        for id in tree.wml_text_runs_under(root) {
+            if tree.text_of(id) == old {
+                set_wml_text_runs(tree, [id], new)?;
+                changed += 1;
+            }
+        }
+        pkg.to_zip()?;
         d.package = pkg;
         Ok(changed)
     }
@@ -472,50 +2079,76 @@ impl Document {
     /// reopened. Available with the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn add_image_png(&mut self, png: &[u8], name: &str) -> Result<()> {
-        const REL_IMAGE: &str =
-            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
-        // Restrict to a conservative, URI-safe segment so the name can be written
-        // verbatim into a relationship target without OPC pack-URI escaping issues:
-        // `[A-Za-z0-9._-]+` ending in `.png`, no `..`.
-        let stem_ok = !name.is_empty()
-            && name
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
-            && !name.contains("..")
-            && name.to_ascii_lowercase().ends_with(".png");
-        if !stem_ok {
+        self.add_image_media(png, name, ImageMediaKind::Png, "add_image_png")
+    }
+
+    /// **Element-tree editing: append an inline JPEG image** to the body,
+    /// reconciling the media part, `image/jpeg` content type, relationship, and
+    /// drawing markup transactionally. This mirrors [`Document::add_image_png`]
+    /// for plain `*.jpg`/`*.jpeg` names and structurally validated JPEG bytes.
+    ///
+    /// The validation is a bounded container check (SOI/EOI, segment framing,
+    /// dimensions in a SOF marker, and an SOS scan start), not a full JPEG decode.
+    /// Read views are stale until the saved bytes are reopened. Available with the
+    /// default `docx` feature.
+    #[cfg(feature = "docx")]
+    pub fn add_image_jpeg(&mut self, jpeg: &[u8], name: &str) -> Result<()> {
+        self.add_image_media(jpeg, name, ImageMediaKind::Jpeg, "add_image_jpeg")
+    }
+
+    /// **Package-preserving edit: replace an existing PNG media part.** `name`
+    /// is the plain file name of an existing part under `word/media/` (for example
+    /// `image1.png`). The new bytes must be a structurally valid PNG container; the
+    /// existing body markup and relationships keep pointing at the same part.
+    ///
+    /// This is intentionally a media-part replacement, not a layout rewrite: drawing
+    /// extents, alt text, captions, and relationship ids are preserved. Read views
+    /// such as [`Document::images`] are stale until the saved bytes are reopened.
+    /// Available with the default `docx` feature.
+    #[cfg(feature = "docx")]
+    pub fn replace_image_png(&mut self, png: &[u8], name: &str) -> Result<()> {
+        self.replace_image_media(png, name, ImageMediaKind::Png, "replace_image_png")
+    }
+
+    /// **Package-preserving edit: replace an existing JPEG media part.** `name`
+    /// is the plain file name of an existing part under `word/media/` (for example
+    /// `photo.jpg` or `photo.jpeg`). The new bytes must be a structurally valid
+    /// JPEG container; existing drawing markup and relationships keep pointing at
+    /// the same part. Available with the default `docx` feature.
+    #[cfg(feature = "docx")]
+    pub fn replace_image_jpeg(&mut self, jpeg: &[u8], name: &str) -> Result<()> {
+        self.replace_image_media(jpeg, name, ImageMediaKind::Jpeg, "replace_image_jpeg")
+    }
+
+    #[cfg(feature = "docx")]
+    fn add_image_media(
+        &mut self,
+        bytes: &[u8],
+        name: &str,
+        kind: ImageMediaKind,
+        op: &str,
+    ) -> Result<()> {
+        // Reject an oversized image FIRST — a cheap length check before the linear
+        // format scan, matching the per-part budget `save()` enforces.
+        if bytes.len() as u64 > opc::max_part() {
             return Err(Error::Docx(format!(
-                "invalid image name {name:?}: expected a plain [A-Za-z0-9._-]+.png file name"
+                "{op}: image exceeds the per-part size budget"
             )));
         }
-        // Reject an oversized image FIRST — a cheap length check before the linear
-        // PNG/CRC scan (so a hostile caller can't force a CRC walk over a huge slice),
-        // matching the per-part budget `save()` enforces.
-        if png.len() as u64 > opc::max_part() {
-            return Err(Error::Docx(
-                "add_image_png: image exceeds the per-part size budget".into(),
-            ));
-        }
-        // Then validate the bytes are a structurally well-formed PNG container, so the
-        // declared `image/png` content type isn't a lie.
-        if !is_png(png) {
-            return Err(Error::Docx(
-                "add_image_png: bytes are not a structurally-valid PNG container".into(),
-            ));
+        // Then validate the bytes are a structurally well-formed container, so the
+        // declared image content type is not a lie.
+        if !kind.is_valid(bytes) {
+            return Err(Error::Docx(format!(
+                "{op}: bytes are not a structurally-valid {} container",
+                kind.label()
+            )));
         }
         let d = self.docx_tree_editable()?;
-        let part = format!("word/media/{name}");
-        // Enforce the same part-name length limit the open path enforces, so the edit
-        // can't produce a package `Document::open` would later reject.
-        if part.len() > opc::MAX_NAME_LEN {
-            return Err(Error::Docx(
-                "add_image_png: image part name too long".into(),
-            ));
-        }
+        let part = image_media_part_name(name, kind, op)?;
         if d.package.has_part(&part) {
             return Err(Error::Docx(format!("media part {part} already exists")));
         }
-        let (cx, cy) = png_extent_emu(png);
+        let (cx, cy) = kind.extent_emu(bytes);
         // Preflight WITHOUT promoting: read the live tree if `document.xml` is already
         // promoted (a prior edit) so the node count includes any detached nodes; else
         // parse a throwaway copy (a still-`Raw` part was never edited, so a fresh parse
@@ -543,9 +2176,9 @@ impl Document {
         let frag_probe = image_paragraph_xml("rIdPENDING", cx, cy, draw_id);
         let frag_nodes = xmltree::XmlTree::parse(frag_probe.as_bytes())?.node_count();
         if live_count.saturating_add(frag_nodes) > xmltree::node_budget() {
-            return Err(Error::Docx(
-                "add_image_png: edit would exceed the node budget".into(),
-            ));
+            return Err(Error::Docx(format!(
+                "{op}: edit would exceed the node budget"
+            )));
         }
 
         // Commit on a CLONE, swapped in only after every step succeeds. The budget is
@@ -558,8 +2191,8 @@ impl Document {
             "word/document.xml",
             REL_IMAGE,
             &part,
-            Some("image/png"),
-            png.to_vec(),
+            Some(kind.content_type()),
+            bytes.to_vec(),
         );
         let frag = image_paragraph_xml(&rid, cx, cy, draw_id);
         let tree = pkg.part_tree_mut("word/document.xml")?;
@@ -567,6 +2200,40 @@ impl Document {
         tree.insert_fragment_before_ns_local(body, frag.as_bytes(), xmltree::WML_NS, b"sectPr")?;
         // Guarantee the edited document.xml is typed as the WML main document on save.
         pkg.ensure_content_type("word/document.xml", CT_DOCUMENT_MAIN);
+        d.package = pkg;
+        Ok(())
+    }
+
+    #[cfg(feature = "docx")]
+    fn replace_image_media(
+        &mut self,
+        bytes: &[u8],
+        name: &str,
+        kind: ImageMediaKind,
+        op: &str,
+    ) -> Result<()> {
+        if bytes.len() as u64 > opc::max_part() {
+            return Err(Error::Docx(format!(
+                "{op}: image exceeds the per-part size budget"
+            )));
+        }
+        if !kind.is_valid(bytes) {
+            return Err(Error::Docx(format!(
+                "{op}: bytes are not a structurally-valid {} container",
+                kind.label()
+            )));
+        }
+        let d = self.docx_tree_editable()?;
+        let part = image_media_part_name(name, kind, op)?;
+        if !d.package.has_part(&part) {
+            return Err(Error::Docx(format!("media part {part} does not exist")));
+        }
+
+        let mut pkg = d.package.clone();
+        pkg.set_part(&part, bytes.to_vec(), Some(kind.content_type()));
+        // Validate the touched part's content type and write-side budgets before the
+        // clone becomes authoritative, so a failed replacement leaves the document unchanged.
+        pkg.to_zip()?;
         d.package = pkg;
         Ok(())
     }
@@ -623,7 +2290,83 @@ impl Document {
     /// (which raises the MSRV to 1.88).
     #[cfg(feature = "render")]
     pub fn to_pdf(&self) -> Vec<u8> {
-        render::to_pdf(&self.model())
+        let features = self.report().features;
+        let shapes = self.floating_shapes();
+        render::to_pdf_with_fonts_and_features_and_shapes(&self.model(), &[], features, &shapes)
+    }
+
+    /// Fallible variant of [`Document::to_pdf`]. Available with the `render`
+    /// feature.
+    #[cfg(feature = "render")]
+    pub fn try_to_pdf(&self) -> Result<Vec<u8>> {
+        let features = self.report().features;
+        let shapes = self.floating_shapes();
+        render::try_to_pdf_with_fonts_and_features_and_shapes(&self.model(), &[], features, &shapes)
+    }
+
+    /// Render this document to PDF after registering caller-supplied font blobs.
+    /// This is the opened-document counterpart to [`render_pdf_with_fonts`]: it
+    /// keeps the same parsed-document model and lets callers provide fonts for
+    /// headless/server environments. Available with the `render` feature.
+    #[cfg(feature = "render")]
+    pub fn to_pdf_with_fonts(&self, fonts: &[Vec<u8>]) -> Vec<u8> {
+        let features = self.report().features;
+        let shapes = self.floating_shapes();
+        render::to_pdf_with_fonts_and_features_and_shapes(&self.model(), fonts, features, &shapes)
+    }
+
+    /// Fallible variant of [`Document::to_pdf_with_fonts`]. Available with the
+    /// `render` feature.
+    #[cfg(feature = "render")]
+    pub fn try_to_pdf_with_fonts(&self, fonts: &[Vec<u8>]) -> Result<Vec<u8>> {
+        let features = self.report().features;
+        let shapes = self.floating_shapes();
+        render::try_to_pdf_with_fonts_and_features_and_shapes(
+            &self.model(),
+            fonts,
+            features,
+            &shapes,
+        )
+    }
+
+    /// Render this document to PDF and return renderer metrics/warnings produced
+    /// by the same pagination pass. Uses the opened document's feature inventory
+    /// so warnings can include unsupported preserved features that are not fully
+    /// represented in [`DocModel`]. Available with the `render` feature.
+    #[cfg(feature = "render")]
+    pub fn to_pdf_with_report(&self) -> RenderedPdf {
+        let features = self.report().features;
+        let shapes = self.floating_shapes();
+        render::to_pdf_with_fonts_and_report_and_shapes(&self.model(), &[], features, &shapes)
+    }
+
+    /// Render this document to PDF with caller-supplied fonts and return
+    /// renderer metrics/warnings produced by the same pagination pass. Uses the
+    /// opened document's feature inventory for unsupported preserved constructs.
+    /// Available with the `render` feature.
+    #[cfg(feature = "render")]
+    pub fn to_pdf_with_fonts_and_report(&self, fonts: &[Vec<u8>]) -> RenderedPdf {
+        let features = self.report().features;
+        let shapes = self.floating_shapes();
+        render::to_pdf_with_fonts_and_report_and_shapes(&self.model(), fonts, features, &shapes)
+    }
+
+    /// Fallible variant of [`Document::to_pdf_with_report`]. Available with the
+    /// `render` feature.
+    #[cfg(feature = "render")]
+    pub fn try_to_pdf_with_report(&self) -> Result<RenderedPdf> {
+        let features = self.report().features;
+        let shapes = self.floating_shapes();
+        render::try_to_pdf_with_fonts_and_report_and_shapes(&self.model(), &[], features, &shapes)
+    }
+
+    /// Fallible variant of [`Document::to_pdf_with_fonts_and_report`].
+    /// Available with the `render` feature.
+    #[cfg(feature = "render")]
+    pub fn try_to_pdf_with_fonts_and_report(&self, fonts: &[Vec<u8>]) -> Result<RenderedPdf> {
+        let features = self.report().features;
+        let shapes = self.floating_shapes();
+        render::try_to_pdf_with_fonts_and_report_and_shapes(&self.model(), fonts, features, &shapes)
     }
 
     /// Normalized plain text of the entire document (all sub-documents), with
@@ -636,46 +2379,82 @@ impl Document {
         }
     }
 
-    /// Normalized text of just the main document body. For `.doc` this is the
-    /// first `ccpText` characters (excluding footnotes/headers); for `.docx` it is
-    /// the body part, excluding the running headers/footers that [`Document::text`]
-    /// also includes.
+    /// Normalized text of just the main document body. For `.doc` this is
+    /// derived from the model's `Main` source region; for `.docx` it is the body
+    /// part, excluding the running headers/footers that [`Document::text`] also
+    /// includes.
     pub fn main_text(&self) -> String {
         match &self.backend {
-            Backend::Doc(d) => text::finalize(&d.region(0, d.fib.ccp_text as usize)),
+            Backend::Doc(_) => self.model().source_region_kind_text(SourceRegionKind::Main),
             #[cfg(feature = "docx")]
             Backend::Docx(d) => d.main_text.clone(),
         }
     }
 
-    /// Normalized footnote + endnote text (`.doc` only; empty for `.docx`, whose
-    /// notes live in separate parts not yet parsed).
+    /// Normalized footnote + endnote text. For `.doc`, this combines the exact
+    /// `ccpFtn` and `ccpEdn` regions even though other subdocuments sit between
+    /// them in the FIB CP stream; for `.docx`, this combines parsed footnote
+    /// side-table records.
     pub fn footnote_text(&self) -> String {
         match &self.backend {
-            Backend::Doc(d) => {
-                // ccp_* are unbounded attacker-controlled FIB u32s — add in usize with
-                // saturating math so a crafted .doc can't overflow (panic) / wrap here.
-                let start = d.fib.ccp_text as usize;
-                let len = (d.fib.ccp_ftn as usize).saturating_add(d.fib.ccp_edn as usize);
-                text::finalize(&d.region(start, len))
+            Backend::Doc(_) => {
+                let model = self.model();
+                let mut text = model.source_region_kind_text(SourceRegionKind::Footnote);
+                text.push_str(&model.source_region_kind_text(SourceRegionKind::Endnote));
+                text
             }
+            #[cfg(feature = "docx")]
+            Backend::Docx(d) => note_kind_text(&d.note_records, NoteKind::Footnote),
+        }
+    }
+
+    /// Normalized endnote text. `.doc` uses the model's `Endnote` source region;
+    /// `.docx` uses parsed endnote side-table records.
+    pub fn endnote_text(&self) -> String {
+        match &self.backend {
+            Backend::Doc(_) => self
+                .model()
+                .source_region_kind_text(SourceRegionKind::Endnote),
+            #[cfg(feature = "docx")]
+            Backend::Docx(d) => note_kind_text(&d.note_records, NoteKind::Endnote),
+        }
+    }
+
+    /// Normalized header/footer text. `.doc` uses the model's `HeaderFooter`
+    /// source region; `.docx` flattens the running header/footer parts resolved
+    /// from the section refs.
+    pub fn header_text(&self) -> String {
+        match &self.backend {
+            Backend::Doc(_) => self
+                .model()
+                .source_region_kind_text(SourceRegionKind::HeaderFooter),
+            #[cfg(feature = "docx")]
+            Backend::Docx(d) => crate::docx::header_footer_text(&d.model),
+        }
+    }
+
+    /// Normalized annotation/comment subdocument text. `.doc` uses the model's
+    /// `Annotation` source region; `.docx` comments are available through
+    /// [`Document::comments`].
+    pub fn annotation_text(&self) -> String {
+        match &self.backend {
+            Backend::Doc(_) => self
+                .model()
+                .source_region_kind_text(SourceRegionKind::Annotation),
             #[cfg(feature = "docx")]
             Backend::Docx(_) => String::new(),
         }
     }
 
-    /// Normalized header/footer text. `.doc` slices the `ccpHdd` region; `.docx`
-    /// flattens the running header/footer parts resolved from the section refs.
-    pub fn header_text(&self) -> String {
+    /// Normalized text-box text. `.doc` uses the model's `TextBox` source region;
+    /// `.docx` uses parsed body text-box side-table records.
+    pub fn text_box_text(&self) -> String {
         match &self.backend {
-            Backend::Doc(d) => {
-                // Saturating usize sum: ccp_text/ccp_ftn are unbounded FIB u32s (a plain
-                // u32 + u32 panics on overflow-checks / wraps for a crafted .doc).
-                let start = (d.fib.ccp_text as usize).saturating_add(d.fib.ccp_ftn as usize);
-                text::finalize(&d.region(start, d.fib.ccp_hdd as usize))
-            }
+            Backend::Doc(_) => self
+                .model()
+                .source_region_kind_text(SourceRegionKind::TextBox),
             #[cfg(feature = "docx")]
-            Backend::Docx(d) => crate::docx::header_footer_text(&d.model),
+            Backend::Docx(d) => text_box_records_text(&d.text_boxes),
         }
     }
 
@@ -700,6 +2479,156 @@ impl Document {
 }
 
 #[cfg(feature = "docx")]
+fn note_kind_text(notes: &[Note], kind: NoteKind) -> String {
+    let mut raw = String::new();
+    for note in notes.iter().filter(|note| note.kind == kind) {
+        raw.push_str(&note.text);
+        raw.push('\n');
+    }
+    text::finalize(&raw)
+}
+
+#[cfg(feature = "docx")]
+fn text_box_records_text(text_boxes: &[TextBox]) -> String {
+    let mut raw = String::new();
+    for text_box in text_boxes {
+        raw.push_str(&text_box.text);
+        raw.push('\n');
+    }
+    text::finalize(&raw)
+}
+
+fn legacy_doc_comments_from_model(model: &DocModel) -> Vec<Comment> {
+    model
+        .source_regions(SourceRegionKind::Annotation)
+        .enumerate()
+        .filter_map(|(index, region)| {
+            let text = model.source_region_text(region);
+            (!text.is_empty()).then(|| Comment {
+                id: format!("legacy-doc-annotation-{index}"),
+                anchor: Some(legacy_doc_region_anchor(
+                    "legacy-doc-annotation",
+                    index,
+                    region,
+                    &text,
+                )),
+                text,
+                ..Comment::default()
+            })
+        })
+        .collect()
+}
+
+fn legacy_doc_notes_from_model(model: &DocModel) -> Vec<Note> {
+    let mut notes = Vec::new();
+    push_legacy_doc_notes(
+        model,
+        SourceRegionKind::Footnote,
+        NoteKind::Footnote,
+        "legacy-doc-footnote",
+        &mut notes,
+    );
+    push_legacy_doc_notes(
+        model,
+        SourceRegionKind::Endnote,
+        NoteKind::Endnote,
+        "legacy-doc-endnote",
+        &mut notes,
+    );
+    notes
+}
+
+fn legacy_doc_text_boxes_from_model(model: &DocModel) -> Vec<TextBox> {
+    model
+        .source_regions(SourceRegionKind::TextBox)
+        .enumerate()
+        .filter_map(|(index, region)| {
+            let text = model.source_region_text(region);
+            (!text.is_empty()).then(|| TextBox {
+                id: format!("legacy-doc-text-box-{index}"),
+                anchor: Some(legacy_doc_region_anchor(
+                    "legacy-doc-text-box",
+                    index,
+                    region,
+                    &text,
+                )),
+                text,
+            })
+        })
+        .collect()
+}
+
+fn legacy_doc_header_footers_from_model(model: &DocModel) -> Vec<HeaderFooter> {
+    model
+        .source_regions(SourceRegionKind::HeaderFooter)
+        .enumerate()
+        .filter_map(|(index, region)| {
+            let text = model.source_region_text(region);
+            (!text.is_empty()).then(|| HeaderFooter {
+                id: format!("legacy-doc-header-footer-{index}"),
+                kind: legacy_doc_header_footer_kind(region.source_story_index),
+                text,
+            })
+        })
+        .collect()
+}
+
+fn legacy_doc_header_footer_kind(story_index: Option<usize>) -> HeaderFooterKind {
+    let Some(story_index) = story_index else {
+        return HeaderFooterKind::Unknown;
+    };
+    let Some(position) = story_index.checked_sub(6).map(|index| index % 6) else {
+        return HeaderFooterKind::Unknown;
+    };
+    match position {
+        0 => HeaderFooterKind::EvenPageHeader,
+        1 => HeaderFooterKind::OddPageHeader,
+        2 => HeaderFooterKind::EvenPageFooter,
+        3 => HeaderFooterKind::OddPageFooter,
+        4 => HeaderFooterKind::FirstPageHeader,
+        _ => HeaderFooterKind::FirstPageFooter,
+    }
+}
+
+fn push_legacy_doc_notes(
+    model: &DocModel,
+    region_kind: SourceRegionKind,
+    note_kind: NoteKind,
+    id_prefix: &str,
+    out: &mut Vec<Note>,
+) {
+    let mut index = 0usize;
+    for region in model.source_regions(region_kind) {
+        let text = model.source_region_text(region);
+        if text.is_empty() {
+            continue;
+        }
+        out.push(Note {
+            id: format!("{id_prefix}-{index}"),
+            kind: note_kind,
+            anchor: Some(legacy_doc_region_anchor(id_prefix, index, region, &text)),
+            text,
+        });
+        index += 1;
+    }
+}
+
+fn legacy_doc_region_anchor(
+    id_prefix: &str,
+    index: usize,
+    region: &SourceRegion,
+    text: &str,
+) -> TextAnchor {
+    TextAnchor {
+        id: format!(
+            "{id_prefix}-{index}@cp{}+{}",
+            region.source_start_cp, region.source_len_cp
+        ),
+        text: text.to_string(),
+    }
+}
+
+#[cfg(feature = "docx")]
 impl Default for Document {
     /// Equivalent to [`Document::new`] — a blank `.docx`-backed document.
     fn default() -> Self {
@@ -712,6 +2641,479 @@ impl Default for Document {
 #[cfg(feature = "docx")]
 const CT_DOCUMENT_MAIN: &str =
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml";
+
+#[cfg(feature = "docx")]
+const CT_COMMENTS: &str =
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml";
+
+#[cfg(feature = "docx")]
+const CT_CORE_PROPERTIES: &str = "application/vnd.openxmlformats-package.core-properties+xml";
+
+#[cfg(feature = "docx")]
+const CT_FOOTNOTES: &str =
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml";
+#[cfg(feature = "docx")]
+const CT_ENDNOTES: &str =
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml";
+
+#[cfg(feature = "docx")]
+const CT_HEADER: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml";
+#[cfg(feature = "docx")]
+const CT_FOOTER: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml";
+#[cfg(feature = "docx")]
+const CT_IMAGE_PNG: &str = "image/png";
+#[cfg(feature = "docx")]
+const CT_IMAGE_JPEG: &str = "image/jpeg";
+
+#[cfg(feature = "docx")]
+const REL_HEADER: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header";
+#[cfg(feature = "docx")]
+const REL_FOOTER: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer";
+#[cfg(feature = "docx")]
+const REL_COMMENTS: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments";
+#[cfg(feature = "docx")]
+const REL_FOOTNOTES: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes";
+#[cfg(feature = "docx")]
+const REL_ENDNOTES: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes";
+#[cfg(feature = "docx")]
+const REL_IMAGE: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
+#[cfg(feature = "docx")]
+const REL_HYPERLINK: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink";
+#[cfg(feature = "docx")]
+const REL_CORE_PROPERTIES: &str =
+    "http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties";
+
+#[cfg(feature = "docx")]
+const CORE_PROPERTIES_NS: &[u8] =
+    b"http://schemas.openxmlformats.org/package/2006/metadata/core-properties";
+#[cfg(feature = "docx")]
+const DC_NS: &[u8] = b"http://purl.org/dc/elements/1.1/";
+
+#[cfg(feature = "docx")]
+#[derive(Clone, Debug)]
+struct HeaderFooterTarget {
+    part: String,
+    root_local: &'static [u8],
+    content_type: &'static str,
+}
+
+#[cfg(feature = "docx")]
+#[derive(Clone, Copy, Debug)]
+struct NotePartTarget {
+    part: &'static str,
+    root_local: &'static [u8],
+    note_local: &'static [u8],
+    content_type: &'static str,
+}
+
+#[cfg(feature = "docx")]
+fn wml_text_needs_run_markers(text: &str) -> bool {
+    text.contains('\t') || text.contains('\n')
+}
+
+#[cfg(feature = "docx")]
+fn wml_replacement_needs_space_attr_preflight(text: &str) -> bool {
+    !wml_text_needs_run_markers(text) && text != text.trim_matches([' ', '\t', '\n', '\r'])
+}
+
+#[cfg(feature = "docx")]
+fn wml_single_text_run_replacement_new_nodes(
+    tree: &xmltree::XmlTree,
+    runs: &[xmltree::NodeId],
+    text: &str,
+) -> Result<usize> {
+    if wml_text_needs_run_markers(text) {
+        Ok(xmltree::wml_text_run_content_node_count(text)?.saturating_mul(runs.len()))
+    } else {
+        Ok(runs
+            .iter()
+            .filter(|&&id| !tree.has_text_carrier(id))
+            .count())
+    }
+}
+
+#[cfg(feature = "docx")]
+fn wml_grouped_text_run_replacement_new_nodes(
+    tree: &xmltree::XmlTree,
+    runs: &[xmltree::NodeId],
+    text: &str,
+) -> Result<usize> {
+    if wml_text_needs_run_markers(text) {
+        Ok(
+            xmltree::wml_text_run_content_node_count(text)?.saturating_add(
+                runs.iter()
+                    .skip(1)
+                    .filter(|&&id| !tree.has_text_carrier(id))
+                    .count(),
+            ),
+        )
+    } else {
+        Ok(runs
+            .iter()
+            .filter(|&&id| !tree.has_text_carrier(id))
+            .count())
+    }
+}
+
+#[cfg(feature = "docx")]
+fn set_wml_text_runs<I>(tree: &mut xmltree::XmlTree, runs: I, text: &str) -> Result<()>
+where
+    I: IntoIterator<Item = xmltree::NodeId>,
+{
+    let needs_markers = wml_text_needs_run_markers(text);
+    for (i, id) in runs.into_iter().enumerate() {
+        if i == 0 && needs_markers {
+            tree.replace_wml_text_element_with_run_content(id, text)?;
+        } else {
+            tree.set_element_text(id, if i == 0 { text } else { "" })?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(feature = "docx")]
+fn header_footer_targets(package: &opc::Package) -> Vec<HeaderFooterTarget> {
+    let mut seen = std::collections::HashSet::new();
+    let mut targets = Vec::new();
+    for rel in package.rels_for("word/document.xml") {
+        if rel.external {
+            continue;
+        }
+        let (root_local, content_type) = match rel.rel_type.as_str() {
+            REL_HEADER => (b"hdr".as_slice(), CT_HEADER),
+            REL_FOOTER => (b"ftr".as_slice(), CT_FOOTER),
+            _ => continue,
+        };
+        let part = opc::resolve_rel_target("word/document.xml", &rel.target);
+        if seen.insert(part.to_ascii_lowercase()) {
+            targets.push(HeaderFooterTarget {
+                part,
+                root_local,
+                content_type,
+            });
+        }
+    }
+    targets
+}
+
+#[cfg(feature = "docx")]
+fn body_hyperlink_rids(package: &opc::Package) -> Result<Vec<String>> {
+    if let Some(tree) = package.part_tree_ref("word/document.xml") {
+        let body = tree.wml_body_strict()?;
+        return Ok(tree.wml_hyperlink_rids_under(body));
+    }
+
+    let raw = package
+        .part("word/document.xml")
+        .ok_or_else(|| Error::Docx("missing word/document.xml".into()))?;
+    let tree = xmltree::XmlTree::parse(&raw)?;
+    let body = tree.wml_body_strict()?;
+    Ok(tree.wml_hyperlink_rids_under(body))
+}
+
+#[cfg(feature = "docx")]
+fn wml_xml_part_name(part_name: &str, op: &str) -> Result<()> {
+    let valid_chars = part_name
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'/' | b'.' | b'_' | b'-'));
+    let valid_segments = part_name
+        .split('/')
+        .all(|s| !s.is_empty() && s != "." && s != ".." && !s.eq_ignore_ascii_case("_rels"));
+    let valid = part_name.starts_with("word/")
+        && part_name.ends_with(".xml")
+        && valid_chars
+        && valid_segments
+        && part_name.len() <= opc::MAX_NAME_LEN;
+    if valid {
+        Ok(())
+    } else {
+        Err(Error::Docx(format!(
+            "{op}: invalid WordprocessingML part name {part_name:?}: expected an existing word/*.xml part outside relationship directories"
+        )))
+    }
+}
+
+#[cfg(feature = "docx")]
+#[derive(Clone, Copy, Debug)]
+enum ImageMediaKind {
+    Png,
+    Jpeg,
+}
+
+#[cfg(feature = "docx")]
+impl ImageMediaKind {
+    fn label(self) -> &'static str {
+        match self {
+            ImageMediaKind::Png => "PNG",
+            ImageMediaKind::Jpeg => "JPEG",
+        }
+    }
+
+    fn content_type(self) -> &'static str {
+        match self {
+            ImageMediaKind::Png => CT_IMAGE_PNG,
+            ImageMediaKind::Jpeg => CT_IMAGE_JPEG,
+        }
+    }
+
+    fn extensions(self) -> &'static [&'static str] {
+        match self {
+            ImageMediaKind::Png => &[".png"],
+            ImageMediaKind::Jpeg => &[".jpg", ".jpeg"],
+        }
+    }
+
+    fn expected_extension(self) -> &'static str {
+        match self {
+            ImageMediaKind::Png => ".png",
+            ImageMediaKind::Jpeg => ".jpg or .jpeg",
+        }
+    }
+
+    fn is_valid(self, bytes: &[u8]) -> bool {
+        match self {
+            ImageMediaKind::Png => is_png(bytes),
+            ImageMediaKind::Jpeg => jpeg_dimensions(bytes).is_some(),
+        }
+    }
+
+    fn extent_emu(self, bytes: &[u8]) -> (u32, u32) {
+        match self {
+            ImageMediaKind::Png => png_extent_emu(bytes),
+            ImageMediaKind::Jpeg => jpeg_dimensions(bytes)
+                .map(|(w, h)| extent_emu_from_pixels(w, h))
+                .unwrap_or((FALLBACK_IMAGE_EMU, FALLBACK_IMAGE_EMU)),
+        }
+    }
+}
+
+#[cfg(feature = "docx")]
+fn image_media_part_name(name: &str, kind: ImageMediaKind, op: &str) -> Result<String> {
+    // Restrict to a conservative, URI-safe segment so the name can be written
+    // verbatim into relationship targets without OPC pack-URI escaping issues:
+    // `[A-Za-z0-9._-]+` ending in the expected extension, no `..`.
+    let lower = name.to_ascii_lowercase();
+    let stem_ok = !name.is_empty()
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+        && !name.contains("..")
+        && kind.extensions().iter().any(|ext| lower.ends_with(ext));
+    if !stem_ok {
+        return Err(Error::Docx(format!(
+            "{op}: invalid image name {name:?}: expected a plain [A-Za-z0-9._-]+{} file name",
+            kind.expected_extension()
+        )));
+    }
+    let part = format!("word/media/{name}");
+    if part.len() > opc::MAX_NAME_LEN {
+        return Err(Error::Docx(format!("{op}: image part name too long")));
+    }
+    Ok(part)
+}
+
+#[cfg(feature = "docx")]
+fn comments_part_skeleton() -> &'static [u8] {
+    br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"></w:comments>"#
+}
+
+#[cfg(feature = "docx")]
+fn footnotes_part_skeleton() -> &'static [u8] {
+    br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:footnote><w:footnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:footnote></w:footnotes>"#
+}
+
+#[cfg(feature = "docx")]
+fn endnotes_part_skeleton() -> &'static [u8] {
+    br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:endnote><w:endnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:endnote></w:endnotes>"#
+}
+
+#[cfg(feature = "docx")]
+fn core_properties_skeleton() -> &'static [u8] {
+    br#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"></cp:coreProperties>"#
+}
+
+#[cfg(feature = "docx")]
+fn next_comment_id(package: &opc::Package) -> Result<String> {
+    let mut max_id = None;
+    for part in ["word/document.xml", "word/comments.xml"] {
+        if let Some(bytes) = package.part(part) {
+            if let Some(found) = max_comment_id_in_xml(&bytes) {
+                max_id = Some(max_id.map_or(found, |current: u64| current.max(found)));
+            }
+        }
+    }
+    let next = max_id.map_or(0, |id| id.saturating_add(1));
+    if next == u64::MAX {
+        return Err(Error::Docx(
+            "add_comment_on_text: no available comment id".into(),
+        ));
+    }
+    Ok(next.to_string())
+}
+
+#[cfg(feature = "docx")]
+fn next_footnote_id(package: &opc::Package) -> Result<String> {
+    let mut max_id = None;
+    for part in ["word/document.xml", "word/footnotes.xml"] {
+        if let Some(bytes) = package.part(part) {
+            if let Some(found) = max_footnote_id_in_xml(&bytes) {
+                max_id = Some(max_id.map_or(found, |current: u64| current.max(found)));
+            }
+        }
+    }
+    let next = max_id.map_or(1, |id| id.saturating_add(1));
+    if next == u64::MAX {
+        return Err(Error::Docx(
+            "add_footnote_on_text: no available footnote id".into(),
+        ));
+    }
+    Ok(next.to_string())
+}
+
+#[cfg(feature = "docx")]
+fn next_endnote_id(package: &opc::Package) -> Result<String> {
+    let mut max_id = None;
+    for part in ["word/document.xml", "word/endnotes.xml"] {
+        if let Some(bytes) = package.part(part) {
+            if let Some(found) = max_endnote_id_in_xml(&bytes) {
+                max_id = Some(max_id.map_or(found, |current: u64| current.max(found)));
+            }
+        }
+    }
+    let next = max_id.map_or(1, |id| id.saturating_add(1));
+    if next == u64::MAX {
+        return Err(Error::Docx(
+            "add_endnote_on_text: no available endnote id".into(),
+        ));
+    }
+    Ok(next.to_string())
+}
+
+#[cfg(feature = "docx")]
+fn max_comment_id_in_xml(xml: &[u8]) -> Option<u64> {
+    use quick_xml::events::{BytesStart, Event};
+    use quick_xml::Reader;
+
+    fn local(name: &[u8]) -> &[u8] {
+        name.iter()
+            .position(|&b| b == b':')
+            .map_or(name, |i| &name[i + 1..])
+    }
+
+    fn attr_id(e: &BytesStart<'_>) -> Option<u64> {
+        e.attributes().flatten().find_map(|attr| {
+            (local(attr.key.as_ref()) == b"id")
+                .then(|| std::str::from_utf8(attr.value.as_ref()).ok()?.parse().ok())
+                .flatten()
+        })
+    }
+
+    let mut reader = Reader::from_reader(xml);
+    let mut buf = Vec::new();
+    let mut max_id = None;
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if matches!(
+                    local(e.name().as_ref()),
+                    b"comment" | b"commentRangeStart" | b"commentRangeEnd" | b"commentReference"
+                ) =>
+            {
+                if let Some(id) = attr_id(&e) {
+                    max_id = Some(max_id.map_or(id, |current: u64| current.max(id)));
+                }
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+    max_id
+}
+
+#[cfg(feature = "docx")]
+fn max_footnote_id_in_xml(xml: &[u8]) -> Option<u64> {
+    use quick_xml::events::{BytesStart, Event};
+    use quick_xml::Reader;
+
+    fn local(name: &[u8]) -> &[u8] {
+        name.iter()
+            .position(|&b| b == b':')
+            .map_or(name, |i| &name[i + 1..])
+    }
+
+    fn attr_id(e: &BytesStart<'_>) -> Option<u64> {
+        e.attributes().flatten().find_map(|attr| {
+            (local(attr.key.as_ref()) == b"id")
+                .then(|| std::str::from_utf8(attr.value.as_ref()).ok()?.parse().ok())
+                .flatten()
+        })
+    }
+
+    let mut reader = Reader::from_reader(xml);
+    let mut buf = Vec::new();
+    let mut max_id = None;
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if matches!(local(e.name().as_ref()), b"footnote" | b"footnoteReference") =>
+            {
+                if let Some(id) = attr_id(&e) {
+                    max_id = Some(max_id.map_or(id, |current: u64| current.max(id)));
+                }
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+    max_id
+}
+
+#[cfg(feature = "docx")]
+fn max_endnote_id_in_xml(xml: &[u8]) -> Option<u64> {
+    use quick_xml::events::{BytesStart, Event};
+    use quick_xml::Reader;
+
+    fn local(name: &[u8]) -> &[u8] {
+        name.iter()
+            .position(|&b| b == b':')
+            .map_or(name, |i| &name[i + 1..])
+    }
+
+    fn attr_id(e: &BytesStart<'_>) -> Option<u64> {
+        e.attributes().flatten().find_map(|attr| {
+            (local(attr.key.as_ref()) == b"id")
+                .then(|| std::str::from_utf8(attr.value.as_ref()).ok()?.parse().ok())
+                .flatten()
+        })
+    }
+
+    let mut reader = Reader::from_reader(xml);
+    let mut buf = Vec::new();
+    let mut max_id = None;
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if matches!(local(e.name().as_ref()), b"endnote" | b"endnoteReference") =>
+            {
+                if let Some(id) = attr_id(&e) {
+                    max_id = Some(max_id.map_or(id, |current: u64| current.max(id)));
+                }
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+        buf.clear();
+    }
+    max_id
+}
 
 /// CRC-32 (ISO-HDLC / the variant PNG uses) of `data`, computed bitwise so no lookup
 /// table or dependency is needed. Used to verify each PNG chunk's integrity.
@@ -856,14 +3258,37 @@ fn is_png(bytes: &[u8]) -> bool {
     false // ran out of bytes without a terminating IEND
 }
 
+#[cfg(feature = "docx")]
+const EMU_PER_PX: u64 = 9525;
+#[cfg(feature = "docx")]
+const MAX_IMAGE_W_EMU: u64 = 5_486_400; // 6 in
+#[cfg(feature = "docx")]
+const FALLBACK_IMAGE_EMU: u32 = 1_828_800; // 2 in
+
+#[cfg(feature = "docx")]
+fn extent_emu_from_pixels(width_px: u32, height_px: u32) -> (u32, u32) {
+    let (w, h) = (u64::from(width_px), u64::from(height_px));
+    if w == 0 || h == 0 {
+        return (FALLBACK_IMAGE_EMU, FALLBACK_IMAGE_EMU);
+    }
+    // u128 intermediates: a huge header can make `h * EMU_PER_PX * MAX_IMAGE_W_EMU`
+    // overflow u64 even though the final clamped dimensions fit comfortably.
+    let (mut cx, mut cy) = (w * EMU_PER_PX, h * EMU_PER_PX);
+    if cx > MAX_IMAGE_W_EMU {
+        cy = ((cy as u128 * MAX_IMAGE_W_EMU as u128) / cx as u128).max(1) as u64;
+        cx = MAX_IMAGE_W_EMU;
+    }
+    (
+        cx.min(u32::MAX as u64) as u32,
+        cy.min(u32::MAX as u64) as u32,
+    )
+}
+
 /// Inline-image extent in EMU from a PNG's `IHDR` dimensions (96 dpi → 9525
 /// EMU/px), width clamped to ~6 in with aspect preserved; 2 in² fallback if the
 /// PNG header can't be read.
 #[cfg(feature = "docx")]
 fn png_extent_emu(png: &[u8]) -> (u32, u32) {
-    const EMU_PER_PX: u64 = 9525;
-    const MAX_W: u64 = 5_486_400; // 6 in
-    const FALLBACK: u32 = 1_828_800; // 2 in
     if png.len() >= 24
         && png[..8] == [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]
         && &png[12..16] == b"IHDR"
@@ -871,20 +3296,102 @@ fn png_extent_emu(png: &[u8]) -> (u32, u32) {
         let w = u32::from_be_bytes([png[16], png[17], png[18], png[19]]) as u64;
         let h = u32::from_be_bytes([png[20], png[21], png[22], png[23]]) as u64;
         if w > 0 && h > 0 {
-            // u128 intermediates: a huge IHDR (w,h up to u32::MAX) makes
-            // `h * EMU_PER_PX * MAX_W` ≈ 2.2e20, which overflows u64.
-            let (mut cx, mut cy) = (w * EMU_PER_PX, h * EMU_PER_PX);
-            if cx > MAX_W {
-                cy = ((cy as u128 * MAX_W as u128) / cx as u128).max(1) as u64;
-                cx = MAX_W;
-            }
-            return (
-                cx.min(u32::MAX as u64) as u32,
-                cy.min(u32::MAX as u64) as u32,
-            );
+            return extent_emu_from_pixels(w as u32, h as u32);
         }
     }
-    (FALLBACK, FALLBACK)
+    (FALLBACK_IMAGE_EMU, FALLBACK_IMAGE_EMU)
+}
+
+/// JPEG validation and intrinsic dimensions from a bounded marker walk. It enforces:
+/// SOI, well-framed pre-scan segments, one SOF marker with non-zero dimensions and
+/// coherent component table, one SOS marker with coherent selector table, and a final
+/// EOI with no trailing bytes. It intentionally does not decode entropy-coded scan
+/// data.
+#[cfg(feature = "docx")]
+fn jpeg_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
+    if bytes.len() < 4 || bytes[0] != 0xFF || bytes[1] != 0xD8 {
+        return None;
+    }
+    let mut i = 2usize;
+    let mut dims = None;
+    while i < bytes.len() {
+        if bytes[i] != 0xFF {
+            return None;
+        }
+        while i < bytes.len() && bytes[i] == 0xFF {
+            i += 1;
+        }
+        if i >= bytes.len() {
+            return None;
+        }
+        let marker = bytes[i];
+        i += 1;
+        match marker {
+            0xD8 => return None,            // nested SOI
+            0xD9 => return None,            // EOI before a scan
+            0x01 | 0xD0..=0xD7 => continue, // standalone markers
+            _ => {}
+        }
+
+        if i + 2 > bytes.len() {
+            return None;
+        }
+        let seg_len = u16::from_be_bytes([bytes[i], bytes[i + 1]]) as usize;
+        if seg_len < 2 {
+            return None;
+        }
+        let data_start = i + 2;
+        let data_end = i.checked_add(seg_len)?;
+        if data_end > bytes.len() {
+            return None;
+        }
+        let data = &bytes[data_start..data_end];
+
+        if is_jpeg_sof(marker) {
+            dims = Some(jpeg_sof_dimensions(data)?);
+        } else if marker == 0xDA {
+            jpeg_sos_is_well_formed(data)?;
+            let (w, h) = dims?;
+            return jpeg_scan_has_final_eoi(&bytes[data_end..]).then_some((w, h));
+        }
+        i = data_end;
+    }
+    None
+}
+
+#[cfg(feature = "docx")]
+fn is_jpeg_sof(marker: u8) -> bool {
+    (0xC0..=0xCF).contains(&marker) && !matches!(marker, 0xC4 | 0xC8 | 0xCC)
+}
+
+#[cfg(feature = "docx")]
+fn jpeg_sof_dimensions(data: &[u8]) -> Option<(u32, u32)> {
+    if data.len() < 6 {
+        return None;
+    }
+    let precision = data[0];
+    let h = u16::from_be_bytes([data[1], data[2]]) as u32;
+    let w = u16::from_be_bytes([data[3], data[4]]) as u32;
+    let components = data[5] as usize;
+    let precision_ok = matches!(precision, 8 | 12 | 16);
+    let component_len = 6usize.checked_add(components.checked_mul(3)?)?;
+    (precision_ok && w > 0 && h > 0 && (1..=4).contains(&components) && data.len() == component_len)
+        .then_some((w, h))
+}
+
+#[cfg(feature = "docx")]
+fn jpeg_sos_is_well_formed(data: &[u8]) -> Option<()> {
+    let (&components, rest) = data.split_first()?;
+    let components = components as usize;
+    let expected = 1usize
+        .checked_add(components.checked_mul(2)?)?
+        .checked_add(3)?;
+    ((1..=4).contains(&components) && rest.len() + 1 == expected).then_some(())
+}
+
+#[cfg(feature = "docx")]
+fn jpeg_scan_has_final_eoi(scan: &[u8]) -> bool {
+    scan.len() >= 3 && scan[scan.len() - 2..] == [0xFF, 0xD9]
 }
 
 /// A self-contained inline-image paragraph fragment referencing relationship `rid`,
@@ -971,10 +3478,10 @@ impl DocState {
             text::decode_pieces(&word, &pieces, enc, &papx, &mut numberer)
         };
         Ok(DocState {
-            raw: decoded.raw,
             labeled: decoded.labeled,
             fib,
             word,
+            table,
             pieces,
             papx,
             chpx,
@@ -985,17 +3492,52 @@ impl DocState {
             enc,
         })
     }
+}
 
-    /// Slice the raw stream by character position (clamped). Word CP counts are
-    /// in **UTF-16 code units**, so a supplementary-plane character counts as
-    /// two — slice on units, not Rust `char`s, to keep sub-document boundaries
-    /// aligned with the FIB `ccp*` counts.
-    fn region(&self, start_cp: usize, len: usize) -> String {
-        let units: Vec<u16> = self.raw.encode_utf16().collect();
-        let start = start_cp.min(units.len());
-        let end = start_cp.saturating_add(len).min(units.len());
-        String::from_utf16_lossy(&units[start..end])
+#[cfg(feature = "docx")]
+fn merge_field_name(instruction: &str) -> Option<String> {
+    let mut parts = field_instruction_parts(instruction).into_iter();
+    let kind = parts.next()?;
+    if !kind.eq_ignore_ascii_case("MERGEFIELD") {
+        return None;
     }
+    while let Some(part) = parts.next() {
+        if part == "\\*" {
+            let _ = parts.next();
+            continue;
+        }
+        if part.starts_with("\\*") || part.starts_with('\\') {
+            continue;
+        }
+        let name = part.trim_matches('"');
+        if !name.is_empty() {
+            return Some(name.to_string());
+        }
+    }
+    None
+}
+
+#[cfg(feature = "docx")]
+fn field_instruction_parts(instruction: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+    for ch in instruction.chars() {
+        if ch == '"' {
+            in_quotes = !in_quotes;
+            current.push(ch);
+        } else if ch.is_whitespace() && !in_quotes {
+            if !current.is_empty() {
+                parts.push(std::mem::take(&mut current));
+            }
+        } else {
+            current.push(ch);
+        }
+    }
+    if !current.is_empty() {
+        parts.push(current);
+    }
+    parts
 }
 
 impl std::fmt::Debug for Document {
@@ -1027,6 +3569,39 @@ mod tests {
         lid: u16,
         extra_flags: u16,
     ) -> Vec<u8> {
+        let ccp_text = (text_utf16.chars().count() + ansi_tail.chars().count()) as u32;
+        synth_doc_with_ccp(
+            text_utf16,
+            ansi_tail,
+            nfib,
+            lid,
+            extra_flags,
+            [ccp_text, 0, 0, 0, 0, 0],
+        )
+    }
+
+    /// As [`synth_doc_ex`] but with explicit FIB `ccpText`, `ccpFtn`,
+    /// `ccpHdd`, `ccpAtn`, `ccpEdn`, and `ccpTxbx` counts.
+    fn synth_doc_with_ccp(
+        text_utf16: &str,
+        ansi_tail: &str,
+        nfib: u16,
+        lid: u16,
+        extra_flags: u16,
+        ccp: [u32; 6],
+    ) -> Vec<u8> {
+        synth_doc_with_ccp_and_plcfhdd(text_utf16, ansi_tail, nfib, lid, extra_flags, ccp, None)
+    }
+
+    fn synth_doc_with_ccp_and_plcfhdd(
+        text_utf16: &str,
+        ansi_tail: &str,
+        nfib: u16,
+        lid: u16,
+        extra_flags: u16,
+        ccp: [u32; 6],
+        plcf_hdd_cps: Option<&[u32]>,
+    ) -> Vec<u8> {
         // --- WordDocument stream ---
         let mut word = vec![0u8; 0x200];
         word[0] = 0xEC; // wIdent 0xA5EC
@@ -1040,9 +3615,17 @@ mod tests {
         word[34 + 28] = 22;
         let rglw = 34 + 28 + 2;
         let fclcb = rglw + 22 * 4 + 2;
-        // ccpText (field 3) = number of main-doc chars.
-        let ccp_text = (text_utf16.chars().count() + ansi_tail.chars().count()) as u32;
-        word[rglw + 12..rglw + 16].copy_from_slice(&ccp_text.to_le_bytes());
+        // Character counts partitioning the CP stream by subdocument.
+        for (idx, count) in [
+            (3usize, ccp[0]),
+            (4, ccp[1]),
+            (5, ccp[2]),
+            (7, ccp[3]),
+            (8, ccp[4]),
+            (9, ccp[5]),
+        ] {
+            word[rglw + idx * 4..rglw + idx * 4 + 4].copy_from_slice(&count.to_le_bytes());
+        }
 
         // Piece 1 text (UTF-16LE) at offset 0x200; piece 2 (cp1252) right after.
         let utf16: Vec<u8> = text_utf16
@@ -1074,6 +3657,17 @@ mod tests {
         let mut clx = vec![0x02u8];
         clx.extend_from_slice(&(plc.len() as u32).to_le_bytes());
         clx.extend_from_slice(&plc);
+
+        let plcf_hdd_offset = clx.len() as u32;
+        if let Some(cps) = plcf_hdd_cps {
+            for cp in cps {
+                clx.extend_from_slice(&cp.to_le_bytes());
+            }
+            word[fclcb + 11 * 8..fclcb + 11 * 8 + 4]
+                .copy_from_slice(&plcf_hdd_offset.to_le_bytes());
+            word[fclcb + 11 * 8 + 4..fclcb + 11 * 8 + 8]
+                .copy_from_slice(&((cps.len() as u32) * 4).to_le_bytes());
+        }
 
         // fcClx = 0, lcbClx = clx.len() (CLX at start of 1Table).
         word[fclcb + 33 * 8..fclcb + 33 * 8 + 4].copy_from_slice(&0u32.to_le_bytes());
@@ -1112,6 +3706,384 @@ mod tests {
         assert_eq!(doc.main_text(), "본문X");
         assert_eq!(doc.char_count(), 3);
         assert!(!doc.is_complex());
+    }
+
+    #[test]
+    fn report_warns_when_doc_subdocuments_are_flattened_into_model() {
+        let bytes = synth_doc_with_ccp("MAINHEAD", "", 0x00C1, 0, 0, [4, 0, 4, 0, 0, 0]);
+        let doc = Document::open(&bytes).unwrap();
+
+        assert_eq!(doc.main_text(), "MAIN");
+        assert_eq!(doc.header_text(), "HEAD");
+        let model = doc.model();
+        assert_eq!(model.regions.len(), 2);
+        assert_eq!(model.regions[0].kind, SourceRegionKind::Main);
+        assert_eq!(model.regions[1].kind, SourceRegionKind::HeaderFooter);
+        let Block::Paragraph(main) = &model.blocks[model.regions[0].block_start] else {
+            panic!("expected main paragraph");
+        };
+        let Block::Paragraph(header) = &model.blocks[model.regions[1].block_start] else {
+            panic!("expected header/footer paragraph");
+        };
+        assert_eq!(main.text(), "MAIN");
+        assert_eq!(header.text(), "HEAD");
+
+        let report = doc.report();
+        assert!(report.warnings.iter().any(|warning| matches!(
+            warning,
+            DocumentWarning::LegacyDocFlattenedSubdocuments {
+                footnotes: 0,
+                headers_footers: 4,
+                annotations: 0,
+                endnotes: 0,
+                text_boxes: 0,
+            }
+        )));
+        assert!(report.to_json().contains(
+            r#"{"kind":"LegacyDocFlattenedSubdocuments","footnotes":0,"headers_footers":4,"annotations":0,"endnotes":0,"text_boxes":0}"#
+        ));
+    }
+
+    #[test]
+    fn doc_region_text_uses_exact_fib_subdocument_boundaries() {
+        let bytes =
+            synth_doc_with_ccp("BODYFTNHEADANNENDBOX", "", 0x00C1, 0, 0, [4, 3, 4, 3, 3, 3]);
+        let doc = Document::open(&bytes).unwrap();
+
+        assert_eq!(doc.main_text(), "BODY");
+        assert_eq!(doc.footnote_text(), "FTNEND");
+        assert_eq!(doc.header_text(), "HEAD");
+        assert_eq!(doc.annotation_text(), "ANN");
+        assert_eq!(doc.endnote_text(), "END");
+        assert_eq!(doc.text_box_text(), "BOX");
+    }
+
+    #[test]
+    fn doc_model_exposes_legacy_subdocument_regions() {
+        let bytes =
+            synth_doc_with_ccp("BODYFTNHEADANNENDBOX", "", 0x00C1, 0, 0, [4, 3, 4, 3, 3, 3]);
+        let doc = Document::open(&bytes).unwrap();
+        let model = doc.model();
+
+        assert_eq!(model.regions.len(), 6);
+        let expected = [
+            (SourceRegionKind::Main, "BODY", 0, 4),
+            (SourceRegionKind::Footnote, "FTN", 4, 3),
+            (SourceRegionKind::HeaderFooter, "HEAD", 7, 4),
+            (SourceRegionKind::Annotation, "ANN", 11, 3),
+            (SourceRegionKind::Endnote, "END", 14, 3),
+            (SourceRegionKind::TextBox, "BOX", 17, 3),
+        ];
+        for (region, (kind, text, source_start_cp, source_len_cp)) in
+            model.regions.iter().zip(expected)
+        {
+            assert_eq!(region.kind, kind);
+            assert_eq!(region.source_start_cp, source_start_cp);
+            assert_eq!(region.source_len_cp, source_len_cp);
+            assert_eq!(region.block_end, region.block_start + 1);
+            let Block::Paragraph(paragraph) = &model.blocks[region.block_start] else {
+                panic!("expected region paragraph for {kind:?}");
+            };
+            assert_eq!(paragraph.text(), text);
+            assert_eq!(region.text_len, text.chars().count());
+        }
+    }
+
+    #[test]
+    fn doc_model_promotes_legacy_header_footer_region_into_setup_header() {
+        let bytes = synth_doc_with_ccp("BODYHEAD", "", 0x00C1, 0, 0, [4, 0, 4, 0, 0, 0]);
+        let doc = Document::open(&bytes).unwrap();
+        let model = doc.model();
+
+        assert_eq!(doc.main_text(), "BODY");
+        assert_eq!(doc.header_text(), "HEAD");
+        assert_eq!(model.setup.footer.len(), 0);
+        assert_eq!(model.setup.header.len(), 1);
+        let Block::Paragraph(header) = &model.setup.header[0] else {
+            panic!("expected promoted header paragraph");
+        };
+        assert_eq!(header.text(), "HEAD");
+        assert_eq!(
+            model
+                .source_regions(SourceRegionKind::HeaderFooter)
+                .next()
+                .map(|region| model.source_region_text(region)),
+            Some("HEAD".to_string())
+        );
+    }
+
+    #[test]
+    fn doc_model_queries_legacy_source_regions() {
+        let bytes =
+            synth_doc_with_ccp("BODYFTNHEADANNENDBOX", "", 0x00C1, 0, 0, [4, 3, 4, 3, 3, 3]);
+        let doc = Document::open(&bytes).unwrap();
+        let model = doc.model();
+
+        let header = model
+            .source_regions(SourceRegionKind::HeaderFooter)
+            .next()
+            .expect("header/footer region");
+        assert_eq!(model.source_region_text(header), "HEAD");
+        assert_eq!(model.source_region_blocks(header).len(), 1);
+        assert_eq!(model.source_regions(SourceRegionKind::Footnote).count(), 1);
+        assert_eq!(model.source_regions(SourceRegionKind::TextBox).count(), 1);
+    }
+
+    #[test]
+    fn doc_region_text_apis_use_model_region_text() {
+        let bytes =
+            synth_doc_with_ccp("BODYFTNHEADANNENDBOX", "", 0x00C1, 0, 0, [4, 3, 4, 3, 3, 3]);
+        let doc = Document::open(&bytes).unwrap();
+        let model = doc.model();
+
+        assert_eq!(
+            model.source_region_kind_text(SourceRegionKind::Main),
+            "BODY"
+        );
+        assert_eq!(
+            model.source_region_kind_text(SourceRegionKind::HeaderFooter),
+            "HEAD"
+        );
+        assert_eq!(
+            model.source_region_kind_text(SourceRegionKind::Annotation),
+            "ANN"
+        );
+        assert_eq!(
+            model.source_region_kind_text(SourceRegionKind::Endnote),
+            "END"
+        );
+        assert_eq!(
+            model.source_region_kind_text(SourceRegionKind::TextBox),
+            "BOX"
+        );
+        assert_eq!(
+            doc.main_text(),
+            model.source_region_kind_text(SourceRegionKind::Main)
+        );
+        assert_eq!(
+            doc.footnote_text(),
+            format!(
+                "{}{}",
+                model.source_region_kind_text(SourceRegionKind::Footnote),
+                model.source_region_kind_text(SourceRegionKind::Endnote)
+            )
+        );
+        assert_eq!(
+            doc.header_text(),
+            model.source_region_kind_text(SourceRegionKind::HeaderFooter)
+        );
+        assert_eq!(
+            doc.annotation_text(),
+            model.source_region_kind_text(SourceRegionKind::Annotation)
+        );
+        assert_eq!(
+            doc.endnote_text(),
+            model.source_region_kind_text(SourceRegionKind::Endnote)
+        );
+        assert_eq!(
+            doc.text_box_text(),
+            model.source_region_kind_text(SourceRegionKind::TextBox)
+        );
+    }
+
+    #[test]
+    fn legacy_doc_annotation_region_is_exposed_as_comment_side_table() {
+        let bytes = synth_doc_with_ccp("BODYANN", "", 0x00C1, 0, 0, [4, 0, 0, 3, 0, 0]);
+        let doc = Document::open(&bytes).unwrap();
+
+        assert_eq!(doc.main_text(), "BODY");
+        assert_eq!(doc.annotation_text(), "ANN");
+        let comments = doc.comments();
+        assert_eq!(comments.len(), 1);
+        assert_eq!(comments[0].id, "legacy-doc-annotation-0");
+        assert_eq!(comments[0].text, "ANN");
+        assert_eq!(comments[0].author, None);
+        assert_eq!(
+            comments[0].anchor.as_ref().map(|anchor| anchor.id.as_str()),
+            Some("legacy-doc-annotation-0@cp4+3")
+        );
+        assert_eq!(
+            comments[0]
+                .anchor
+                .as_ref()
+                .map(|anchor| anchor.text.as_str()),
+            Some("ANN")
+        );
+    }
+
+    #[test]
+    fn legacy_doc_note_regions_are_exposed_as_note_side_table() {
+        let bytes = synth_doc_with_ccp("BODYFTNHEADEND", "", 0x00C1, 0, 0, [4, 3, 4, 0, 3, 0]);
+        let doc = Document::open(&bytes).unwrap();
+
+        assert_eq!(doc.main_text(), "BODY");
+        assert_eq!(doc.footnote_text(), "FTNEND");
+        assert_eq!(doc.endnote_text(), "END");
+        let notes = doc.notes();
+        assert_eq!(notes.len(), 2);
+        assert_eq!(notes[0].id, "legacy-doc-footnote-0");
+        assert_eq!(notes[0].kind, NoteKind::Footnote);
+        assert_eq!(notes[0].text, "FTN");
+        assert_eq!(
+            notes[0].anchor.as_ref().map(|anchor| anchor.id.as_str()),
+            Some("legacy-doc-footnote-0@cp4+3")
+        );
+        assert_eq!(
+            notes[0].anchor.as_ref().map(|anchor| anchor.text.as_str()),
+            Some("FTN")
+        );
+        assert_eq!(notes[1].id, "legacy-doc-endnote-0");
+        assert_eq!(notes[1].kind, NoteKind::Endnote);
+        assert_eq!(notes[1].text, "END");
+        assert_eq!(
+            notes[1].anchor.as_ref().map(|anchor| anchor.id.as_str()),
+            Some("legacy-doc-endnote-0@cp11+3")
+        );
+        assert_eq!(
+            notes[1].anchor.as_ref().map(|anchor| anchor.text.as_str()),
+            Some("END")
+        );
+    }
+
+    #[test]
+    fn legacy_doc_text_box_region_is_exposed_as_text_box_side_table() {
+        let bytes = synth_doc_with_ccp("BODYBOX", "", 0x00C1, 0, 0, [4, 0, 0, 0, 0, 3]);
+        let doc = Document::open(&bytes).unwrap();
+
+        assert_eq!(doc.main_text(), "BODY");
+        assert_eq!(doc.text_box_text(), "BOX");
+        let text_boxes = doc.text_boxes();
+        assert_eq!(text_boxes.len(), 1);
+        assert_eq!(text_boxes[0].id, "legacy-doc-text-box-0");
+        assert_eq!(text_boxes[0].text, "BOX");
+        assert_eq!(
+            text_boxes[0]
+                .anchor
+                .as_ref()
+                .map(|anchor| anchor.id.as_str()),
+            Some("legacy-doc-text-box-0@cp4+3")
+        );
+        assert_eq!(
+            text_boxes[0]
+                .anchor
+                .as_ref()
+                .map(|anchor| anchor.text.as_str()),
+            Some("BOX")
+        );
+    }
+
+    #[test]
+    fn legacy_doc_header_footer_region_is_exposed_as_header_footer_side_table() {
+        let bytes = synth_doc_with_ccp("BODYHEAD", "", 0x00C1, 0, 0, [4, 0, 4, 0, 0, 0]);
+        let doc = Document::open(&bytes).unwrap();
+
+        assert_eq!(doc.main_text(), "BODY");
+        assert_eq!(doc.header_text(), "HEAD");
+        let header_footers = doc.header_footers();
+        assert_eq!(header_footers.len(), 1);
+        assert_eq!(header_footers[0].id, "legacy-doc-header-footer-0");
+        assert_eq!(header_footers[0].kind, HeaderFooterKind::Unknown);
+        assert_eq!(header_footers[0].text, "HEAD");
+    }
+
+    #[test]
+    fn legacy_doc_plcfhdd_splits_header_footer_stories() {
+        // First six PlcfHdd stories are footnote/endnote separators. In the
+        // first section group, story 7 is odd-page header and story 9 is
+        // odd-page footer.
+        let plcf_hdd = [0, 0, 0, 0, 0, 0, 0, 0, 4, 4, 8, 8, 8, 8];
+        let bytes = synth_doc_with_ccp_and_plcfhdd(
+            "BODYHEADFOOT",
+            "",
+            0x00C1,
+            0,
+            0,
+            [4, 0, 8, 0, 0, 0],
+            Some(&plcf_hdd),
+        );
+        let doc = Document::open(&bytes).unwrap();
+
+        let header_footers = doc.header_footers();
+        assert_eq!(header_footers.len(), 2);
+        assert_eq!(header_footers[0].kind, HeaderFooterKind::OddPageHeader);
+        assert_eq!(header_footers[0].text, "HEAD");
+        assert_eq!(header_footers[1].kind, HeaderFooterKind::OddPageFooter);
+        assert_eq!(header_footers[1].text, "FOOT");
+
+        let model = doc.model();
+        let regions: Vec<_> = model
+            .source_regions(SourceRegionKind::HeaderFooter)
+            .collect();
+        assert_eq!(regions.len(), 2);
+        assert_eq!(regions[0].source_start_cp, 4);
+        assert_eq!(regions[0].source_len_cp, 4);
+        assert_eq!(regions[0].source_story_index, Some(7));
+        assert_eq!(regions[1].source_start_cp, 8);
+        assert_eq!(regions[1].source_len_cp, 4);
+        assert_eq!(regions[1].source_story_index, Some(9));
+        assert_eq!(model.source_region_text(regions[0]), "HEAD");
+    }
+
+    #[test]
+    fn legacy_doc_plcfhdd_maps_all_header_footer_story_variants() {
+        let plcf_hdd = [0, 0, 0, 0, 0, 0, 0, 2, 4, 6, 8, 10, 12, 12];
+        let bytes = synth_doc_with_ccp_and_plcfhdd(
+            "BODYEHOHEFOFFHFF",
+            "",
+            0x00C1,
+            0,
+            0,
+            [4, 0, 12, 0, 0, 0],
+            Some(&plcf_hdd),
+        );
+        let doc = Document::open(&bytes).unwrap();
+
+        let header_footers = doc.header_footers();
+        let variants: Vec<_> = header_footers
+            .iter()
+            .map(|record| (record.kind, record.text.as_str()))
+            .collect();
+        assert_eq!(
+            variants,
+            vec![
+                (HeaderFooterKind::EvenPageHeader, "EH"),
+                (HeaderFooterKind::OddPageHeader, "OH"),
+                (HeaderFooterKind::EvenPageFooter, "EF"),
+                (HeaderFooterKind::OddPageFooter, "OF"),
+                (HeaderFooterKind::FirstPageHeader, "FH"),
+                (HeaderFooterKind::FirstPageFooter, "FF"),
+            ]
+        );
+        let model = doc.model();
+        assert_eq!(
+            model.source_region_text(
+                model
+                    .source_regions(SourceRegionKind::HeaderFooter)
+                    .next()
+                    .unwrap()
+            ),
+            "EH"
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn docx_header_footer_parts_are_exposed_with_exact_kinds() {
+        let model = DocBuilder::new()
+            .header("DOCX HEAD")
+            .footer("DOCX FOOT")
+            .paragraph("Body")
+            .build();
+        let doc = Document::open(&write_docx(&model)).unwrap();
+
+        let header_footers = doc.header_footers();
+        assert_eq!(header_footers.len(), 2);
+        assert_eq!(header_footers[0].id, "word/header1.xml#default");
+        assert_eq!(header_footers[0].kind, HeaderFooterKind::Header);
+        assert_eq!(header_footers[0].text, "DOCX HEAD");
+        assert_eq!(header_footers[1].id, "word/footer1.xml#default");
+        assert_eq!(header_footers[1].kind, HeaderFooterKind::Footer);
+        assert_eq!(header_footers[1].text, "DOCX FOOT");
     }
 
     #[test]

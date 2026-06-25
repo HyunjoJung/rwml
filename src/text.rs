@@ -218,15 +218,29 @@ pub(crate) fn normalize_lines(text: &str) -> String {
         if trimmed.is_empty() {
             continue;
         }
-        // Drop consecutive duplicates, but NEVER collapse table rows: a row is
-        // one tab-joined line, and repeated rows (e.g. `0 / 0`, `해당없음`) are
-        // real tabular data, not noise.
-        if !trimmed.contains('\t') && lines.last() == Some(&trimmed) {
+        // Drop consecutive duplicate prose, but never collapse table rows or
+        // numeric-only lines such as repeated PAGE/PAGEREF field results.
+        if !trimmed.contains('\t')
+            && !is_numeric_field_line(trimmed)
+            && lines.last() == Some(&trimmed)
+        {
             continue;
         }
         lines.push(trimmed);
     }
     lines.join("\n")
+}
+
+fn is_numeric_field_line(line: &str) -> bool {
+    let mut saw_digit = false;
+    for ch in line.chars() {
+        if ch.is_ascii_digit() {
+            saw_digit = true;
+        } else if !matches!(ch, ' ' | '\t' | '-' | '\u{2010}' | '\u{2011}' | '/' | '\\') {
+            return false;
+        }
+    }
+    saw_digit
 }
 
 /// A run of decoded text → final normalized plain text.
@@ -247,6 +261,8 @@ mod tests {
     fn keeps_duplicate_table_rows_but_collapses_prose() {
         // Repeated table rows are real data — never dropped.
         assert_eq!(normalize_lines("X\tY\nX\tY\n"), "X\tY\nX\tY");
+        // Repeated numeric field-result lines are also real content.
+        assert_eq!(normalize_lines("2\n2\n"), "2\n2");
         // Repeated prose lines still collapse.
         assert_eq!(normalize_lines("hi\nhi\n"), "hi");
     }

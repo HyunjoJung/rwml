@@ -5,8 +5,8 @@ Every file here is authored from scratch (raw OOXML) by this script, so the outp
 trivially license-clean (you own it) and can be committed to the public repo. The files
 deliberately carry the *unmodeled* content a package-preserving editor must round-trip
 intact: tracked changes (w:ins/w:del), content controls (w:sdt), text boxes
-(mc:AlternateContent + w:txbxContent), footnotes, comments, headers/footers, tables, and
-an inline PNG image.
+(mc:AlternateContent + w:txbxContent), footnotes, comments, headers/footers, fields,
+hyperlinks, unsupported object markers, tables, and an inline PNG image.
 
 Usage:
     python scripts/gen_public_corpus.py            # writes corpus/public/synthetic/*.docx
@@ -24,6 +24,9 @@ OUT_DIR = os.path.join(os.path.dirname(__file__), "..", "corpus", "public", "syn
 
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+C = "http://schemas.openxmlformats.org/drawingml/2006/chart"
+MC = "http://schemas.openxmlformats.org/markup-compatibility/2006"
+O = "urn:schemas-microsoft-com:office:office"
 
 XML_DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 
@@ -67,15 +70,51 @@ def _content_types(overrides: list[tuple[str, str]], defaults: list[tuple[str, s
     )
 
 
-def _rels(entries: list[tuple[str, str, str]]) -> bytes:
-    body = "".join(
-        f'<Relationship Id="{i}" Type="{t}" Target="{tg}"/>' for i, t, tg in entries
-    )
+def _rels(entries: list[tuple[str, str, str] | tuple[str, str, str, str]]) -> bytes:
+    rels = []
+    for entry in entries:
+        if len(entry) == 4:
+            i, t, tg, mode = entry
+            rels.append(f'<Relationship Id="{i}" Type="{t}" Target="{tg}" TargetMode="{mode}"/>')
+        else:
+            i, t, tg = entry
+            rels.append(f'<Relationship Id="{i}" Type="{t}" Target="{tg}"/>')
+    body = "".join(rels)
     return _b(
         XML_DECL
         + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
         + body + "</Relationships>"
     )
+
+
+def _minimal_docx(
+    document: bytes,
+    *,
+    doc_rels: list[tuple[str, str, str] | tuple[str, str, str, str]] | None = None,
+    overrides: list[tuple[str, str]] | None = None,
+    defaults: list[tuple[str, str]] | None = None,
+    extra_parts: list[tuple[str, bytes]] | None = None,
+) -> bytes:
+    doc_rels = doc_rels or []
+    overrides = overrides or []
+    defaults = defaults or []
+    extra_parts = extra_parts or []
+    ct = _content_types(
+        overrides=[("/word/document.xml", MAIN_CT)] + overrides,
+        defaults=[
+            ("rels", RELS_CT),
+            ("xml", "application/xml"),
+        ] + defaults,
+    )
+    parts = [
+        ("[Content_Types].xml", ct),
+        ("_rels/.rels", _rels([("rId1", f"{R}/officeDocument", "word/document.xml")])),
+        ("word/document.xml", document),
+    ]
+    if doc_rels:
+        parts.append(("word/_rels/document.xml.rels", _rels(doc_rels)))
+    parts.extend(extra_parts)
+    return _zip(parts)
 
 
 def kitchen_sink() -> bytes:
@@ -192,8 +231,147 @@ def kitchen_sink() -> bytes:
     ])
 
 
+def comments() -> bytes:
+    document = _b(
+        XML_DECL
+        + f'<w:document xmlns:w="{W}"><w:body>'
+        '<w:p><w:commentRangeStart w:id="7"/><w:r><w:t>Alpha</w:t></w:r>'
+        '<w:commentRangeEnd w:id="7"/><w:r><w:commentReference w:id="7"/></w:r></w:p>'
+        '<w:p><w:commentRangeStart w:id="8"/><w:r><w:t>Beta</w:t></w:r>'
+        '<w:commentRangeEnd w:id="8"/><w:r><w:commentReference w:id="8"/></w:r></w:p>'
+        "</w:body></w:document>"
+    )
+    comments_part = _b(
+        XML_DECL
+        + f'<w:comments xmlns:w="{W}">'
+        '<w:comment w:id="7" w:author="Reviewer" w:initials="RV" w:date="2026-06-24T00:00:00Z">'
+        '<w:p><w:r><w:t>First note.</w:t></w:r></w:p></w:comment>'
+        '<w:comment w:id="8" w:author="Reviewer" w:initials="RV" w:date="2026-06-24T00:00:00Z">'
+        '<w:p><w:r><w:t>Second note.</w:t></w:r></w:p></w:comment>'
+        "</w:comments>"
+    )
+    return _minimal_docx(
+        document,
+        doc_rels=[("rId1", f"{R}/comments", "comments.xml")],
+        overrides=[
+            ("/word/comments.xml", "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"),
+        ],
+        extra_parts=[("word/comments.xml", comments_part)],
+    )
+
+
+def revisions() -> bytes:
+    document = _b(
+        XML_DECL
+        + f'<w:document xmlns:w="{W}"><w:body><w:p>'
+        '<w:r><w:t>Stable </w:t></w:r>'
+        '<w:ins w:id="1" w:author="Alice" w:date="2026-06-24T01:00:00Z"><w:r><w:t>Added</w:t></w:r></w:ins>'
+        '<w:del w:id="2" w:author="Bob" w:date="2026-06-24T02:00:00Z"><w:r><w:delText>Removed</w:delText></w:r></w:del>'
+        '<w:moveFrom w:id="3" w:author="Carol"><w:r><w:delText>Moved from</w:delText></w:r></w:moveFrom>'
+        '<w:moveTo w:id="4" w:author="Carol"><w:r><w:t>Moved to</w:t></w:r></w:moveTo>'
+        '</w:p><w:p><w:pPr><w:pPrChange w:id="5" w:author="Dana" w:date="2026-06-24T03:00:00Z">'
+        '<w:pPr><w:jc w:val="center"/></w:pPr></w:pPrChange></w:pPr>'
+        '<w:r><w:t>Property change</w:t></w:r></w:p></w:body></w:document>'
+    )
+    return _minimal_docx(document)
+
+
+def fields() -> bytes:
+    document = _b(
+        XML_DECL
+        + f'<w:document xmlns:w="{W}"><w:body>'
+        '<w:p><w:fldSimple w:instr=" PAGE "><w:r><w:t>3</w:t></w:r></w:fldSimple></w:p>'
+        '<w:p><w:fldSimple w:instr=" TOC \\o &quot;1-3&quot; "><w:r><w:t>Contents</w:t></w:r></w:fldSimple></w:p>'
+        '<w:p><w:fldSimple w:instr=" REF Figure1 "><w:r><w:t>Figure 1</w:t></w:r></w:fldSimple></w:p>'
+        '<w:p><w:fldSimple w:instr=" HYPERLINK &quot;https://example.com&quot; "><w:r><w:t>Example</w:t></w:r></w:fldSimple></w:p>'
+        '<w:p><w:fldSimple w:instr=" CUSTOM value "><w:r><w:t>custom</w:t></w:r></w:fldSimple></w:p>'
+        '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+        '<w:r><w:instrText> FILENAME \\p </w:instrText></w:r>'
+        '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+        '<w:r><w:t>report.docx</w:t></w:r>'
+        '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>'
+        "</w:body></w:document>"
+    )
+    return _minimal_docx(document)
+
+
+def hyperlinks() -> bytes:
+    document = _b(
+        XML_DECL
+        + f'<w:document xmlns:w="{W}" xmlns:r="{R}"><w:body>'
+        '<w:p><w:hyperlink r:id="rIdLink"><w:r><w:t>Relationship link</w:t></w:r></w:hyperlink></w:p>'
+        "</w:body></w:document>"
+    )
+    return _minimal_docx(
+        document,
+        doc_rels=[("rIdLink", f"{R}/hyperlink", "https://example.com/relationship", "External")],
+    )
+
+
+def nested_tables() -> bytes:
+    document = _b(
+        XML_DECL
+        + f'<w:document xmlns:w="{W}"><w:body>'
+        '<w:tbl><w:tr><w:tc>'
+        '<w:p><w:r><w:t>Outer cell text</w:t></w:r></w:p>'
+        '<w:tbl><w:tr><w:tc><w:p><w:r><w:t>Inner cell text</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+        '</w:tc></w:tr></w:tbl>'
+        '</w:body></w:document>'
+    )
+    return _minimal_docx(document)
+
+
+def unsupported_objects() -> bytes:
+    document = _b(
+        XML_DECL
+        + f'<w:document xmlns:w="{W}" xmlns:r="{R}" xmlns:c="{C}" xmlns:mc="{MC}" xmlns:o="{O}" '
+        'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
+        'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+        'xmlns:v="urn:schemas-microsoft-com:vml" mc:Ignorable="v o wp a c"><w:body>'
+        '<w:p><w:r><w:drawing><wp:anchor distT="0" distB="0" distL="0" distR="0">'
+        '<wp:extent cx="1000000" cy="500000"/><wp:docPr id="1" name="Chart"/>'
+        '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart">'
+        '<c:chart r:id="rId1"/></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r></w:p>'
+        '<w:p><w:r><mc:AlternateContent><mc:Choice Requires="v"><w:pict><v:shape id="_x0000_s1"/></w:pict></mc:Choice>'
+        '<mc:Fallback><w:r><w:t>[shape]</w:t></w:r></mc:Fallback></mc:AlternateContent></w:r></w:p>'
+        '<w:p><w:r><w:object><o:OLEObject r:id="rId2"/></w:object></w:r></w:p>'
+        '<w:p><w:r><w:t>Unsupported media is related but intentionally not rendered.</w:t></w:r></w:p>'
+        "</w:body></w:document>"
+    )
+    chart = _b(XML_DECL + f'<c:chartSpace xmlns:c="{C}"><c:chart/></c:chartSpace>')
+    return _minimal_docx(
+        document,
+        doc_rels=[
+            ("rId1", f"{R}/chart", "charts/chart1.xml"),
+            ("rId2", f"{R}/oleObject", "embeddings/oleObject1.bin"),
+            ("rId3", f"{R}/image", "media/vector1.emf"),
+            ("rId4", f"{R}/image", "media/vector2.wmf"),
+        ],
+        overrides=[
+            ("/word/charts/chart1.xml", "application/vnd.openxmlformats-officedocument.drawingml.chart+xml"),
+            ("/word/embeddings/oleObject1.bin", "application/vnd.openxmlformats-officedocument.oleObject"),
+        ],
+        defaults=[
+            ("emf", "image/x-emf"),
+            ("wmf", "image/x-wmf"),
+        ],
+        extra_parts=[
+            ("word/charts/chart1.xml", chart),
+            ("word/embeddings/oleObject1.bin", b"rdoc synthetic ole placeholder"),
+            ("word/media/vector1.emf", b"rdoc synthetic emf placeholder"),
+            ("word/media/vector2.wmf", b"rdoc synthetic wmf placeholder"),
+        ],
+    )
+
+
 CORPUS = {
     "kitchen_sink.docx": kitchen_sink,
+    "comments.docx": comments,
+    "revisions.docx": revisions,
+    "fields.docx": fields,
+    "hyperlinks.docx": hyperlinks,
+    "nested_tables.docx": nested_tables,
+    "unsupported_objects.docx": unsupported_objects,
 }
 
 

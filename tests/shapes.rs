@@ -1,0 +1,415 @@
+#![cfg(feature = "docx")]
+
+use std::io::Write;
+
+use rdoc::{
+    Block, Color, Document, ShapeDistance, ShapeEffectExtent, ShapeExtent, ShapePoint,
+    ShapePosition, ShapeWrapping,
+};
+
+fn docx_fixture(parts: &[(&str, &str)]) -> Vec<u8> {
+    let mut out = Vec::new();
+    {
+        let cursor = std::io::Cursor::new(&mut out);
+        let mut zip = zip::ZipWriter::new(cursor);
+        let opt = zip::write::SimpleFileOptions::default();
+        for (name, body) in parts {
+            zip.start_file(*name, opt).unwrap();
+            zip.write_all(body.as_bytes()).unwrap();
+        }
+        zip.finish().unwrap();
+    }
+    out
+}
+
+fn floating_shape_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:body><w:p><w:r><w:t>Before anchor </w:t></w:r><w:r><w:drawing><wp:anchor simplePos="0" relativeHeight="251659264" behindDoc="0" layoutInCell="1" locked="0" allowOverlap="1" distT="120" distB="240" distL="360" distR="480"><wp:positionH relativeFrom="column"><wp:posOffset>91440</wp:posOffset></wp:positionH><wp:positionV relativeFrom="paragraph"><wp:align>top</wp:align></wp:positionV><wp:extent cx="914400" cy="457200"/><wp:wrapSquare wrapText="bothSides" distT="9144" distB="18288" distL="27432" distR="36576"/><wp:docPr id="7" name="Float one" descr="A floating object"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>Shape body</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:t>After anchor</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn sdt_wrapped_floating_shape_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:body><w:p><w:r><w:t>Before block</w:t></w:r></w:p><w:sdt><w:sdtPr></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Wrapped before </w:t></w:r><w:r><w:drawing><wp:anchor relativeHeight="1" behindDoc="0"><wp:extent cx="914400" cy="457200"/><wp:docPr id="11" name="Wrapped float"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>Wrapped shape body</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:t>Wrapped after</w:t></w:r></w:p></w:sdtContent></w:sdt><w:p><w:r><w:t>After block</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn smart_tag_wrapped_floating_shape_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:body><w:p><w:r><w:t>Before block</w:t></w:r></w:p><w:smartTag><w:p><w:r><w:t>Smart before </w:t></w:r><w:r><w:drawing><wp:anchor relativeHeight="2" behindDoc="0"><wp:extent cx="914400" cy="457200"/><wp:docPr id="12" name="Smart float"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>Smart shape body</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:t>Smart after</w:t></w:r></w:p></w:smartTag><w:p><w:r><w:t>After block</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn inserted_wrapped_floating_shape_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:body><w:p><w:r><w:t>Before block</w:t></w:r></w:p><w:ins w:id="20" w:author="Editor"><w:p><w:r><w:t>Inserted before </w:t></w:r><w:r><w:drawing><wp:anchor relativeHeight="3" behindDoc="0"><wp:extent cx="914400" cy="457200"/><wp:docPr id="13" name="Inserted float"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>Inserted shape body</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:t>Inserted after</w:t></w:r></w:p></w:ins><w:p><w:r><w:t>After block</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn revision_wrapped_floating_shapes_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:body><w:p><w:r><w:t>Direct before </w:t></w:r><w:r><w:drawing><wp:anchor relativeHeight="1"><wp:extent cx="914400" cy="457200"/><wp:docPr id="31" name="Direct float"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>Direct body</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:t>Direct after</w:t></w:r></w:p><w:ins w:id="32" w:author="Editor"><w:p><w:r><w:t>Inserted before </w:t></w:r><w:r><w:drawing><wp:anchor relativeHeight="2"><wp:extent cx="914400" cy="457200"/><wp:docPr id="32" name="Inserted float"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>Inserted body</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:t>Inserted after</w:t></w:r></w:p></w:ins><w:moveTo w:id="33" w:author="Editor"><w:p><w:r><w:t>Moved-to before </w:t></w:r><w:r><w:drawing><wp:anchor relativeHeight="3"><wp:extent cx="914400" cy="457200"/><wp:docPr id="33" name="Moved-to float"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>Moved-to body</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:t>Moved-to after</w:t></w:r></w:p></w:moveTo><w:del w:id="34" w:author="Editor"><w:p><w:r><w:delText>Deleted before </w:delText></w:r><w:r><w:drawing><wp:anchor relativeHeight="4"><wp:extent cx="914400" cy="457200"/><wp:docPr id="34" name="Deleted float"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>Deleted body</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:delText>Deleted after</w:delText></w:r></w:p></w:del><w:moveFrom w:id="35" w:author="Editor"><w:p><w:r><w:delText>Moved-from before </w:delText></w:r><w:r><w:drawing><wp:anchor relativeHeight="5"><wp:extent cx="914400" cy="457200"/><wp:docPr id="35" name="Moved-from float"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>Moved-from body</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:delText>Moved-from after</w:delText></w:r></w:p></w:moveFrom></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn alternate_content_floating_shape_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:body><w:p><w:r><w:t>Before alternate </w:t></w:r><w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing><wp:anchor relativeHeight="41"><wp:extent cx="914400" cy="457200"/><wp:docPr id="41" name="Choice float"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>Choice shape body</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></mc:Choice><mc:Fallback><w:drawing><wp:anchor relativeHeight="42"><wp:extent cx="914400" cy="457200"/><wp:docPr id="42" name="Fallback float"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>Fallback shape body</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></mc:Fallback></mc:AlternateContent></w:r><w:r><w:t>After alternate</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn preset_geometry_floating_shape_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><w:body><w:p><w:r><w:t>Shape before </w:t></w:r><w:r><w:drawing><wp:anchor simplePos="1" relativeHeight="42" behindDoc="0"><wp:simplePos x="182880" y="274320"/><wp:extent cx="914400" cy="457200"/><wp:effectExtent l="9144" t="18288" r="27432" b="36576"/><wp:docPr id="21" name="Rounded box"/><wps:wsp><wps:spPr><a:solidFill><a:srgbClr val="FF8800"/></a:solidFill><a:ln><a:solidFill><a:srgbClr val="003366"/></a:solidFill></a:ln><a:prstGeom prst="roundRect"><a:avLst/></a:prstGeom></wps:spPr></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:t>Shape after</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[test]
+fn docx_floating_shape_geometry_is_extracted() {
+    let doc = Document::open(&floating_shape_docx()).expect("fixture opens");
+    let shapes = doc.floating_shapes();
+
+    assert_eq!(shapes.len(), 1);
+    assert_eq!(shapes[0].id, "7");
+    assert_eq!(shapes[0].name.as_deref(), Some("Float one"));
+    assert_eq!(shapes[0].description.as_deref(), Some("A floating object"));
+    assert_eq!(shapes[0].text.as_deref(), Some("Shape body"));
+    assert_eq!(shapes[0].anchor_block_index, Some(0));
+    assert_eq!(
+        shapes[0].anchor_text.as_deref(),
+        Some("Before anchor After anchor")
+    );
+    assert_eq!(
+        shapes[0].anchor_char_offset,
+        Some("Before anchor ".chars().count())
+    );
+    assert_eq!(
+        shapes[0].extent,
+        Some(ShapeExtent {
+            cx_emu: 914400,
+            cy_emu: 457200,
+        })
+    );
+    assert_eq!(
+        shapes[0].horizontal_position,
+        Some(ShapePosition {
+            relative_from: Some("column".to_string()),
+            offset_emu: Some(91440),
+            align: None,
+        })
+    );
+    assert_eq!(
+        shapes[0].vertical_position,
+        Some(ShapePosition {
+            relative_from: Some("paragraph".to_string()),
+            offset_emu: None,
+            align: Some("top".to_string()),
+        })
+    );
+    assert_eq!(shapes[0].relative_height, Some(251_659_264));
+    assert_eq!(shapes[0].behind_doc, Some(false));
+    assert_eq!(shapes[0].layout_in_cell, Some(true));
+    assert_eq!(shapes[0].locked, Some(false));
+    assert_eq!(shapes[0].allow_overlap, Some(true));
+    assert_eq!(
+        shapes[0].distance,
+        ShapeDistance {
+            top_emu: Some(120),
+            bottom_emu: Some(240),
+            left_emu: Some(360),
+            right_emu: Some(480),
+        }
+    );
+    assert_eq!(
+        shapes[0].wrapping,
+        Some(ShapeWrapping {
+            kind: "square".to_string(),
+            text: Some("bothSides".to_string()),
+            distance: ShapeDistance {
+                top_emu: Some(9_144),
+                bottom_emu: Some(18_288),
+                left_emu: Some(27_432),
+                right_emu: Some(36_576),
+            },
+        })
+    );
+    assert_eq!(doc.report().features.floating_shapes, 1);
+}
+
+#[test]
+fn docx_floating_shape_recovers_textless_preset_geometry() {
+    let doc = Document::open(&preset_geometry_floating_shape_docx()).expect("fixture opens");
+    let shape = doc
+        .floating_shapes()
+        .into_iter()
+        .next()
+        .expect("floating shape extracted");
+
+    assert_eq!(shape.name.as_deref(), Some("Rounded box"));
+    assert_eq!(shape.text, None);
+    assert_eq!(shape.preset_geometry.as_deref(), Some("roundRect"));
+    assert_eq!(shape.fill_color, Some(Color::rgb(0xFF, 0x88, 0x00)));
+    assert_eq!(shape.outline_color, Some(Color::rgb(0x00, 0x33, 0x66)));
+    assert_eq!(shape.simple_position_enabled, Some(true));
+    assert_eq!(
+        shape.simple_position,
+        Some(ShapePoint {
+            x_emu: 182_880,
+            y_emu: 274_320,
+        })
+    );
+    assert_eq!(
+        shape.effect_extent,
+        Some(ShapeEffectExtent {
+            left_emu: 9_144,
+            top_emu: 18_288,
+            right_emu: 27_432,
+            bottom_emu: 36_576,
+        })
+    );
+    assert_eq!(
+        shape.anchor_text.as_deref(),
+        Some("Shape before Shape after")
+    );
+    assert_eq!(
+        shape.anchor_char_offset,
+        Some("Shape before ".chars().count())
+    );
+}
+
+#[test]
+fn docx_floating_shape_anchor_survives_body_level_content_control() {
+    let doc = Document::open(&sdt_wrapped_floating_shape_docx()).expect("fixture opens");
+    let model = doc.model();
+    let shape = doc
+        .floating_shapes()
+        .into_iter()
+        .next()
+        .expect("floating shape extracted");
+
+    assert_eq!(model.blocks.len(), 3);
+    let Block::Paragraph(wrapped) = &model.blocks[1] else {
+        panic!("wrapped content-control paragraph should become a body block");
+    };
+    assert!(
+        wrapped.text().contains("Wrapped shape body"),
+        "body parser should still expose text-bearing shape body: {:?}",
+        wrapped.text()
+    );
+    assert_eq!(shape.anchor_block_index, Some(1));
+    assert_eq!(
+        shape.anchor_text.as_deref(),
+        Some("Wrapped before Wrapped after")
+    );
+    assert_eq!(
+        shape.anchor_char_offset,
+        Some("Wrapped before ".chars().count())
+    );
+}
+
+#[test]
+fn docx_floating_shape_anchor_survives_body_level_smart_tag() {
+    let doc = Document::open(&smart_tag_wrapped_floating_shape_docx()).expect("fixture opens");
+    let model = doc.model();
+    let shape = doc
+        .floating_shapes()
+        .into_iter()
+        .next()
+        .expect("floating shape extracted");
+
+    assert_eq!(model.blocks.len(), 3);
+    let Block::Paragraph(wrapped) = &model.blocks[1] else {
+        panic!("smartTag paragraph should become a body block");
+    };
+    assert!(
+        wrapped.text().contains("Smart shape body"),
+        "body parser should still expose text-bearing smartTag shape body: {:?}",
+        wrapped.text()
+    );
+    assert_eq!(shape.anchor_block_index, Some(1));
+    assert_eq!(
+        shape.anchor_text.as_deref(),
+        Some("Smart before Smart after")
+    );
+    assert_eq!(
+        shape.anchor_char_offset,
+        Some("Smart before ".chars().count())
+    );
+}
+
+#[test]
+fn docx_floating_shape_anchor_survives_body_level_insertion() {
+    let doc = Document::open(&inserted_wrapped_floating_shape_docx()).expect("fixture opens");
+    let model = doc.model();
+    let shape = doc
+        .floating_shapes()
+        .into_iter()
+        .next()
+        .expect("floating shape extracted");
+
+    assert_eq!(model.blocks.len(), 3);
+    let Block::Paragraph(inserted) = &model.blocks[1] else {
+        panic!("inserted paragraph should become an accepted body block");
+    };
+    assert!(
+        inserted.text().contains("Inserted shape body"),
+        "body parser should still expose text-bearing inserted shape body: {:?}",
+        inserted.text()
+    );
+    assert_eq!(shape.anchor_block_index, Some(1));
+    assert_eq!(
+        shape.anchor_text.as_deref(),
+        Some("Inserted before Inserted after")
+    );
+    assert_eq!(
+        shape.anchor_char_offset,
+        Some("Inserted before ".chars().count())
+    );
+}
+
+#[test]
+fn docx_floating_shapes_follow_accepted_revision_view() {
+    let doc = Document::open(&revision_wrapped_floating_shapes_docx()).expect("fixture opens");
+    let shapes = doc.floating_shapes();
+
+    assert_eq!(
+        doc.main_text(),
+        "Direct before Direct bodyDirect after\nInserted before Inserted bodyInserted after\nMoved-to before Moved-to bodyMoved-to after"
+    );
+    assert_eq!(shapes.len(), 3);
+    assert_eq!(shapes[0].name.as_deref(), Some("Direct float"));
+    assert_eq!(
+        shapes[0].anchor_text.as_deref(),
+        Some("Direct before Direct after")
+    );
+    assert_eq!(shapes[1].name.as_deref(), Some("Inserted float"));
+    assert_eq!(
+        shapes[1].anchor_text.as_deref(),
+        Some("Inserted before Inserted after")
+    );
+    assert_eq!(shapes[2].name.as_deref(), Some("Moved-to float"));
+    assert_eq!(
+        shapes[2].anchor_text.as_deref(),
+        Some("Moved-to before Moved-to after")
+    );
+}
+
+#[test]
+fn docx_floating_shape_alternate_content_uses_single_branch() {
+    let doc = Document::open(&alternate_content_floating_shape_docx()).expect("fixture opens");
+    let shapes = doc.floating_shapes();
+
+    assert_eq!(
+        doc.main_text(),
+        "Before alternate Choice shape bodyAfter alternate"
+    );
+    assert_eq!(shapes.len(), 1);
+    assert_eq!(shapes[0].id, "41");
+    assert_eq!(shapes[0].name.as_deref(), Some("Choice float"));
+    assert_eq!(shapes[0].text.as_deref(), Some("Choice shape body"));
+    assert_eq!(shapes[0].relative_height, Some(41));
+    assert_eq!(
+        shapes[0].anchor_text.as_deref(),
+        Some("Before alternate After alternate")
+    );
+    assert_eq!(
+        shapes[0].anchor_char_offset,
+        Some("Before alternate ".chars().count())
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn docx_floating_shape_render_draws_preview_overlay_and_keeps_warning() {
+    let doc = Document::open(&floating_shape_docx()).expect("fixture opens");
+    let plain = rdoc::render_pdf(&doc.model());
+    let rendered = doc.to_pdf_with_report();
+
+    assert!(rendered.pdf.starts_with(b"%PDF"));
+    assert!(
+        rendered.pdf.len() > plain.len(),
+        "floating-shape overlay should add visible preview content"
+    );
+    assert_eq!(rendered.report.unsupported.floating_shapes, 1);
+    assert!(rendered.report.warnings.iter().any(|warning| matches!(
+        warning,
+        rdoc::RenderWarning::FloatingShapePlaceholderOnly { count: 1 }
+    )));
+}

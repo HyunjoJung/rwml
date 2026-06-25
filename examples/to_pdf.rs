@@ -3,6 +3,7 @@
 //!
 //! ```text
 //! cargo run --example to_pdf --features render -- input.doc [output.pdf]
+//! cargo run --example to_pdf --features render -- input.doc output.pdf --report-json report.json
 //! ```
 
 use std::path::PathBuf;
@@ -10,17 +11,32 @@ use std::process::ExitCode;
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
-    let Some(input) = args.next() else {
-        eprintln!("usage: to_pdf <input.doc|.docx> [output.pdf]");
+    let mut positional = Vec::new();
+    let mut report_json: Option<PathBuf> = None;
+    while let Some(arg) = args.next() {
+        if arg == "--report-json" {
+            let Some(path) = args.next() else {
+                eprintln!(
+                    "usage: to_pdf <input.doc|.docx> [output.pdf] [--report-json report.json]"
+                );
+                return ExitCode::from(2);
+            };
+            report_json = Some(PathBuf::from(path));
+        } else {
+            positional.push(arg);
+        }
+    }
+    let Some(input) = positional.first() else {
+        eprintln!("usage: to_pdf <input.doc|.docx> [output.pdf] [--report-json report.json]");
         return ExitCode::from(2);
     };
-    let out = args.next().map(PathBuf::from).unwrap_or_else(|| {
-        let mut p = PathBuf::from(&input);
+    let out = positional.get(1).map(PathBuf::from).unwrap_or_else(|| {
+        let mut p = PathBuf::from(input);
         p.set_extension("pdf");
         p
     });
 
-    let bytes = match std::fs::read(&input) {
+    let bytes = match std::fs::read(input) {
         Ok(b) => b,
         Err(e) => {
             eprintln!("read {input}: {e}");
@@ -34,10 +50,32 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let pdf = doc.to_pdf();
+    let (pdf, report) = if report_json.is_some() {
+        match doc.try_to_pdf_with_report() {
+            Ok(rendered) => (rendered.pdf, Some(rendered.report)),
+            Err(e) => {
+                eprintln!("render {input}: {e}");
+                return ExitCode::FAILURE;
+            }
+        }
+    } else {
+        match doc.try_to_pdf() {
+            Ok(pdf) => (pdf, None),
+            Err(e) => {
+                eprintln!("render {input}: {e}");
+                return ExitCode::FAILURE;
+            }
+        }
+    };
     if let Err(e) = std::fs::write(&out, &pdf) {
         eprintln!("write {}: {e}", out.display());
         return ExitCode::FAILURE;
+    }
+    if let (Some(path), Some(report)) = (report_json, report) {
+        if let Err(e) = std::fs::write(&path, report.to_json()) {
+            eprintln!("write {}: {e}", path.display());
+            return ExitCode::FAILURE;
+        }
     }
     eprintln!("wrote {} ({} bytes)", out.display(), pdf.len());
     ExitCode::SUCCESS
