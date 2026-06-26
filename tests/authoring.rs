@@ -777,6 +777,48 @@ fn run_builder_adds_authored_comment() {
 }
 
 #[test]
+fn run_builder_adds_comment_reply_parent_id() {
+    let model = DocBuilder::new()
+        .paragraph_runs([RunBuilder::new("Original clause")
+            .comment(CommentBuilder::new("Original note").author("Reviewer"))
+            .build()])
+        .paragraph_runs([RunBuilder::new("Reply clause")
+            .comment(
+                CommentBuilder::new("Reply note")
+                    .author("Approver")
+                    .parent_comment_id("0"),
+            )
+            .build()])
+        .build();
+
+    let Block::Paragraph(paragraph) = &model.blocks[1] else {
+        panic!("expected reply paragraph");
+    };
+    assert_eq!(
+        paragraph.runs[0]
+            .comment
+            .as_ref()
+            .and_then(|comment| comment.parent_comment_id.as_deref()),
+        Some("0")
+    );
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let comments_xml = String::from_utf8(parts["word/comments.xml"].clone()).unwrap();
+    assert!(
+        comments_xml.contains(r#"<w:comment w:id="1" w:author="Approver" w:parentId="0">"#)
+            && comments_xml.contains(r#"<w:t>Reply note</w:t>"#),
+        "reply parent id missing: {comments_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("comment reply .docx reopens");
+    let comments = reopened.comments();
+    assert_eq!(comments.len(), 2);
+    assert_eq!(comments[1].id, "1");
+    assert_eq!(comments[1].parent_comment_id.as_deref(), Some("0"));
+}
+
+#[test]
 fn run_builder_authored_comment_writes_tabs_and_breaks() {
     let model = DocBuilder::new()
         .paragraph_runs([RunBuilder::new("Reviewed clause")

@@ -35,6 +35,7 @@ fn comment_shell(e: &BytesStart<'_>) -> Comment {
         author: attr_local(e, b"author"),
         initials: attr_local(e, b"initials"),
         date: attr_local(e, b"date"),
+        parent_comment_id: attr_local(e, b"parentId"),
         text: String::new(),
         anchor: None,
     }

@@ -295,6 +295,8 @@ pub struct AuthoredComment {
     pub initials: Option<String>,
     /// Comment timestamp, if any.
     pub date: Option<String>,
+    /// Parent comment id for authored replies, if any.
+    pub parent_comment_id: Option<String>,
 }
 
 /// Tracked revision metadata to author on a generated run.

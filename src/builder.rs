@@ -460,6 +460,12 @@ impl CommentBuilder {
         self
     }
 
+    /// Set the parent comment id for a generated reply.
+    pub fn parent_comment_id(mut self, id: impl Into<String>) -> Self {
+        self.comment.parent_comment_id = Some(id.into());
+        self
+    }
+
     /// Finish and return the generated comment metadata.
     pub fn build(self) -> AuthoredComment {
         self.comment

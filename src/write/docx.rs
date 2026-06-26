@@ -1205,6 +1205,9 @@ fn comments_xml(comments: &[WrittenComment]) -> Vec<u8> {
         if let Some(date) = comment.comment.date.as_deref() {
             attrs.push_str(&format!(r#" w:date="{}""#, esc_attr(date)));
         }
+        if let Some(parent_id) = comment.comment.parent_comment_id.as_deref() {
+            attrs.push_str(&format!(r#" w:parentId="{}""#, esc_attr(parent_id)));
+        }
         s.push_str(&format!(r#"<w:comment{attrs}><w:p><w:r>"#));
         write_comment_text(&mut s, &comment.comment.text);
         s.push_str("</w:r></w:p></w:comment>");

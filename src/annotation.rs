@@ -23,6 +23,8 @@ pub struct Comment {
     pub initials: Option<String>,
     /// Comment timestamp (`w:date`), if present.
     pub date: Option<String>,
+    /// Parent comment id (`w:parentId`) for replies, if present.
+    pub parent_comment_id: Option<String>,
     /// Visible text contained in the comment body.
     pub text: String,
     /// Main-document range this comment is anchored to, if rdoc found one.
