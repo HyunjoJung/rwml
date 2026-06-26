@@ -514,7 +514,7 @@ fn malformed_ref_diagnostics_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" REF &quot;MissingBookmark "><w:r><w:t>cached malformed ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" REF &quot;MissingBookmark "><w:r><w:t>cached malformed ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF &quot;Figure List&quot; "><w:r><w:t>cached whitespace ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF &quot;Figure List&quot; "><w:r><w:t>cached whitespace page ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NOTEREF &quot;Figure List&quot; "><w:r><w:t>cached whitespace note ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TOC \b &quot;Figure List&quot; "><w:r><w:t>cached whitespace toc</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -2253,7 +2253,7 @@ fn report_malformed_ref_targets_are_unsupported_switches() {
         report.features.unsupported_field_reasons,
         vec![FieldEvaluationReasonCount {
             reason: FieldEvaluationReason::UnsupportedSwitch,
-            count: 1,
+            count: 5,
         }]
     );
 }

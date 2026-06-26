@@ -1635,7 +1635,7 @@ fn supported_ref_syntax_parts<'a>(
             }
             return None;
         }
-        let candidate = diagnostic_name_token(part)?;
+        let candidate = diagnostic_identifier_token(part)?;
         if target.replace(candidate.to_string()).is_some() {
             return None;
         }
@@ -1703,7 +1703,7 @@ fn supported_page_ref_syntax(instruction: &str) -> Option<PageRefDiagnosticSynta
             }
             return None;
         }
-        let candidate = diagnostic_name_token(part)?;
+        let candidate = diagnostic_identifier_token(part)?;
         if target.replace(candidate.to_string()).is_some() {
             return None;
         }
@@ -1805,7 +1805,7 @@ fn supported_note_ref_target(instruction: &str) -> Option<String> {
             }
             return None;
         }
-        let candidate = diagnostic_name_token(part)?;
+        let candidate = diagnostic_identifier_token(part)?;
         if target.replace(candidate.to_string()).is_some() {
             return None;
         }
@@ -2030,14 +2030,15 @@ fn supported_toc_bookmark_scope(instruction: &str) -> Option<Option<String>> {
             continue;
         }
         if part.eq_ignore_ascii_case("\\b") {
-            let target = diagnostic_name_token(parts.next_if(|next| !next.starts_with('\\'))?)?;
+            let target =
+                diagnostic_identifier_token(parts.next_if(|next| !next.starts_with('\\'))?)?;
             if bookmark.replace(target.to_string()).is_some() {
                 return None;
             }
             continue;
         }
         if let Some(target) = strip_ascii_switch_prefix(part, "\\b") {
-            let target = diagnostic_name_token(target)?;
+            let target = diagnostic_identifier_token(target)?;
             if bookmark.replace(target.to_string()).is_some() {
                 return None;
             }
