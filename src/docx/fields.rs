@@ -1947,125 +1947,168 @@ pub(crate) fn section_context(xml: &str) -> SectionContext {
     let mut section_type_seen = false;
     let mut section_properties_depth = 0usize;
     let mut current: Option<SectionScanField> = None;
+    let mut xml_depth = 0usize;
+    let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
-                b"del" | b"moveFrom" => skip_subtree(&mut r),
-                b"pPr" => paragraph_properties_depth += 1,
-                b"sectPr" if paragraph_properties_depth > 0 => {
-                    section_properties_depth += 1;
-                    section_break_pending = true;
-                    section_break_kind = Some(PageRefSectionBreak::Next);
-                    section_type_seen = false;
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    skip_subtree(&mut r);
+                    continue;
                 }
-                b"type" if section_properties_depth > 0 && !section_type_seen => {
-                    section_type_seen = true;
-                    section_break_kind = page_ref_section_break(&e);
+                if matches!(name, b"del" | b"moveFrom") {
+                    skip_subtree(&mut r);
+                    continue;
                 }
-                b"pageBreakBefore"
-                    if paragraph_properties_depth > 0 && page_ref_on_off_enabled(&e) =>
-                {
-                    current_page += 1;
-                }
-                b"fldSimple" => record_section_field(
-                    attr_local(&e, b"instr").as_deref(),
-                    current_section,
-                    &mut field_sections,
-                ),
-                b"fldChar" => {
-                    apply_section_scan_fld_char(
-                        &e,
+                let mut consumed_element = false;
+                match name {
+                    b"AlternateContent" => {
+                        alternate_content_stack.push(AlternateContentBranchState {
+                            branch_depth: xml_depth + 1,
+                            took_branch: false,
+                        });
+                    }
+                    b"pPr" => paragraph_properties_depth += 1,
+                    b"sectPr" if paragraph_properties_depth > 0 => {
+                        section_properties_depth += 1;
+                        section_break_pending = true;
+                        section_break_kind = Some(PageRefSectionBreak::Next);
+                        section_type_seen = false;
+                    }
+                    b"type" if section_properties_depth > 0 && !section_type_seen => {
+                        section_type_seen = true;
+                        section_break_kind = page_ref_section_break(&e);
+                    }
+                    b"pageBreakBefore"
+                        if paragraph_properties_depth > 0 && page_ref_on_off_enabled(&e) =>
+                    {
+                        current_page += 1;
+                    }
+                    b"fldSimple" => record_section_field(
+                        attr_local(&e, b"instr").as_deref(),
                         current_section,
-                        &mut current,
                         &mut field_sections,
-                    );
-                }
-                b"instrText" => {
-                    let text = read_text(&mut r);
-                    if let Some(field) = current.as_mut() {
-                        if field.phase == FieldPhase::Instruction {
-                            field.instruction.push_str(&text);
+                    ),
+                    b"fldChar" => {
+                        apply_section_scan_fld_char(
+                            &e,
+                            current_section,
+                            &mut current,
+                            &mut field_sections,
+                        );
+                    }
+                    b"instrText" => {
+                        let text = read_text(&mut r);
+                        consumed_element = true;
+                        if let Some(field) = current.as_mut() {
+                            if field.phase == FieldPhase::Instruction {
+                                field.instruction.push_str(&text);
+                            }
                         }
                     }
+                    b"t" => {
+                        consumed_element = true;
+                        if !read_text(&mut r).is_empty() {
+                            section_has_visible_content = true;
+                        }
+                    }
+                    b"br" if matches!(attr_local(&e, b"type").as_deref(), Some("page")) => {
+                        current_page += 1;
+                    }
+                    b"lastRenderedPageBreak" => {
+                        current_page += 1;
+                    }
+                    b"tab" | b"cr" | b"noBreakHyphen" | b"drawing" | b"pict" | b"object" => {
+                        section_has_visible_content = true;
+                    }
+                    b"br" => {
+                        section_has_visible_content = true;
+                    }
+                    _ => {}
                 }
-                b"t" if !read_text(&mut r).is_empty() => {
-                    section_has_visible_content = true;
+                if !consumed_element {
+                    xml_depth = xml_depth.saturating_add(1);
                 }
-                b"br" if matches!(attr_local(&e, b"type").as_deref(), Some("page")) => {
-                    current_page += 1;
+            }
+            Ok(Event::Empty(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    continue;
                 }
-                b"lastRenderedPageBreak" => {
-                    current_page += 1;
+                match name {
+                    b"sectPr" if paragraph_properties_depth > 0 => {
+                        section_break_pending = true;
+                        section_break_kind = Some(PageRefSectionBreak::Next);
+                        section_type_seen = false;
+                    }
+                    b"type" if section_properties_depth > 0 && !section_type_seen => {
+                        section_type_seen = true;
+                        section_break_kind = page_ref_section_break(&e);
+                    }
+                    b"pageBreakBefore"
+                        if paragraph_properties_depth > 0 && page_ref_on_off_enabled(&e) =>
+                    {
+                        current_page += 1;
+                    }
+                    b"fldSimple" => record_section_field(
+                        attr_local(&e, b"instr").as_deref(),
+                        current_section,
+                        &mut field_sections,
+                    ),
+                    b"fldChar" => {
+                        apply_section_scan_fld_char(
+                            &e,
+                            current_section,
+                            &mut current,
+                            &mut field_sections,
+                        );
+                    }
+                    b"br" if matches!(attr_local(&e, b"type").as_deref(), Some("page")) => {
+                        current_page += 1;
+                    }
+                    b"lastRenderedPageBreak" => {
+                        current_page += 1;
+                    }
+                    b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"drawing" | b"pict"
+                    | b"object" => {
+                        section_has_visible_content = true;
+                    }
+                    _ => {}
                 }
-                b"tab" | b"cr" | b"noBreakHyphen" | b"drawing" | b"pict" | b"object" => {
-                    section_has_visible_content = true;
+            }
+            Ok(Event::End(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if name == b"AlternateContent" {
+                    alternate_content_stack.pop();
                 }
-                b"br" => {
-                    section_has_visible_content = true;
+                if name == b"sectPr" {
+                    section_properties_depth = section_properties_depth.saturating_sub(1);
                 }
-                _ => {}
-            },
-            Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
-                b"sectPr" if paragraph_properties_depth > 0 => {
-                    section_break_pending = true;
+                if name == b"pPr" {
+                    paragraph_properties_depth = paragraph_properties_depth.saturating_sub(1);
+                }
+                if name == b"p" && section_break_pending {
+                    push_section_page_count(
+                        &mut section_page_counts,
+                        current_page,
+                        section_start_page,
+                        section_has_visible_content,
+                    );
+                    if let Some(section_break) = section_break_kind {
+                        current_page = page_after_section_break(current_page, section_break);
+                    }
+                    current_section += 1;
+                    section_start_page = current_page;
+                    section_has_visible_content = false;
+                    section_break_pending = false;
                     section_break_kind = Some(PageRefSectionBreak::Next);
                     section_type_seen = false;
                 }
-                b"type" if section_properties_depth > 0 && !section_type_seen => {
-                    section_type_seen = true;
-                    section_break_kind = page_ref_section_break(&e);
-                }
-                b"pageBreakBefore"
-                    if paragraph_properties_depth > 0 && page_ref_on_off_enabled(&e) =>
-                {
-                    current_page += 1;
-                }
-                b"fldSimple" => record_section_field(
-                    attr_local(&e, b"instr").as_deref(),
-                    current_section,
-                    &mut field_sections,
-                ),
-                b"fldChar" => {
-                    apply_section_scan_fld_char(
-                        &e,
-                        current_section,
-                        &mut current,
-                        &mut field_sections,
-                    );
-                }
-                b"br" if matches!(attr_local(&e, b"type").as_deref(), Some("page")) => {
-                    current_page += 1;
-                }
-                b"lastRenderedPageBreak" => {
-                    current_page += 1;
-                }
-                b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"drawing" | b"pict" | b"object" => {
-                    section_has_visible_content = true;
-                }
-                _ => {}
-            },
-            Ok(Event::End(e)) if local(e.name().as_ref()) == b"sectPr" => {
-                section_properties_depth = section_properties_depth.saturating_sub(1);
-            }
-            Ok(Event::End(e)) if local(e.name().as_ref()) == b"pPr" => {
-                paragraph_properties_depth = paragraph_properties_depth.saturating_sub(1);
-            }
-            Ok(Event::End(e)) if local(e.name().as_ref()) == b"p" && section_break_pending => {
-                push_section_page_count(
-                    &mut section_page_counts,
-                    current_page,
-                    section_start_page,
-                    section_has_visible_content,
-                );
-                if let Some(section_break) = section_break_kind {
-                    current_page = page_after_section_break(current_page, section_break);
-                }
-                current_section += 1;
-                section_start_page = current_page;
-                section_has_visible_content = false;
-                section_break_pending = false;
-                section_break_kind = Some(PageRefSectionBreak::Next);
-                section_type_seen = false;
+                xml_depth = xml_depth.saturating_sub(1);
             }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}

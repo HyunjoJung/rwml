@@ -716,6 +716,23 @@ fn section_field_docx() -> Vec<u8> {
     ])
 }
 
+fn section_alternate_content_break_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="wps"><w:body><mc:AlternateContent><mc:Choice Requires="wps"><w:p><w:pPr><w:sectPr/></w:pPr></w:p></mc:Choice><mc:Fallback><w:p><w:pPr><w:sectPr/></w:pPr></w:p></mc:Fallback></mc:AlternateContent><w:p><w:fldSimple w:instr=" SECTION "><w:r><w:t>stale alternate section</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn section_pages_field_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -4972,6 +4989,19 @@ fn docx_section_field_computes_current_structural_section_number() {
     assert!(main_text.contains("1"), "{main_text:?}");
     assert!(main_text.contains("2"), "{main_text:?}");
     assert!(main_text.contains("3"), "{main_text:?}");
+}
+
+#[test]
+fn docx_section_context_uses_single_alternate_content_branch() {
+    let doc = Document::open(&section_alternate_content_break_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(
+        fields[0].kind,
+        FieldKind::DocumentStructure("SECTION".to_string())
+    );
+    assert_eq!(fields[0].computed_result.as_deref(), Some("2"));
 }
 
 #[test]
