@@ -304,6 +304,24 @@ fn merge_field_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn split_complex_field_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> MERGE</w:instrText></w:r><w:r><w:instrText>FIELD &quot;client-name&quot; \* MERGEFORMAT </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Acme</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn page_ref_field_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -1684,6 +1702,23 @@ fn report_treats_merge_fields_as_supported_cached_display_fields() {
     );
     assert!(json.contains(r#""unsupported_field_kinds":[]"#), "{json}");
     assert!(json.contains(r#""unsupported_field_reasons":[]"#), "{json}");
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_counts_split_complex_field_instruction_once() {
+    let doc = Document::open(&split_complex_field_diagnostics_docx()).expect("fixture opens");
+    let report = doc.report();
+
+    assert_eq!(doc.fields().len(), 1);
+    assert_eq!(report.features.fields, 1);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::MergeField,
+            count: 1,
+        }]
+    );
 }
 
 #[cfg(feature = "docx")]

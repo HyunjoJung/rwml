@@ -2331,8 +2331,12 @@ fn scan_docx_xml(xml: &str, features: &mut FeatureInventory) {
                     name if is_revision_property_change(name) => {
                         features.tracked_property_changes += 1;
                     }
-                    b"fldSimple" | b"instrText" if old_revision_depth == 0 => features.fields += 1,
-                    b"fldSimple" | b"instrText" => {}
+                    b"fldSimple" if old_revision_depth == 0 => features.fields += 1,
+                    b"fldSimple" => {}
+                    b"fldChar" if old_revision_depth == 0 && is_complex_field_begin(&e) => {
+                        features.fields += 1;
+                    }
+                    b"fldChar" => {}
                     b"hyperlink" if old_revision_depth == 0 => features.hyperlinks += 1,
                     b"hyperlink" => {}
                     b"sdt" if old_revision_depth == 0 => features.content_controls += 1,
@@ -2391,8 +2395,12 @@ fn scan_docx_xml(xml: &str, features: &mut FeatureInventory) {
                     name if is_revision_property_change(name) => {
                         features.tracked_property_changes += 1;
                     }
-                    b"fldSimple" | b"instrText" if old_revision_depth == 0 => features.fields += 1,
-                    b"fldSimple" | b"instrText" => {}
+                    b"fldSimple" if old_revision_depth == 0 => features.fields += 1,
+                    b"fldSimple" => {}
+                    b"fldChar" if old_revision_depth == 0 && is_complex_field_begin(&e) => {
+                        features.fields += 1;
+                    }
+                    b"fldChar" => {}
                     b"hyperlink" if old_revision_depth == 0 => features.hyperlinks += 1,
                     b"hyperlink" => {}
                     b"sdt" if old_revision_depth == 0 => features.content_controls += 1,
@@ -2454,6 +2462,11 @@ fn scan_docx_xml(xml: &str, features: &mut FeatureInventory) {
             _ => {}
         }
     }
+}
+
+#[cfg(feature = "docx")]
+fn is_complex_field_begin(e: &quick_xml::events::BytesStart<'_>) -> bool {
+    crate::docx::attr_local(e, b"fldCharType").as_deref() == Some("begin")
 }
 
 #[cfg(feature = "docx")]
