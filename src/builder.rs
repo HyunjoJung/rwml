@@ -1128,6 +1128,12 @@ impl TableBuilder {
         self
     }
 
+    /// Set table indentation in twips.
+    pub fn indent_twips(mut self, indent_twips: i32) -> Self {
+        self.table.indent_twips = Some(indent_twips);
+        self
+    }
+
     /// Append a row of cells.
     pub fn row<I, C>(mut self, cells: I) -> Self
     where

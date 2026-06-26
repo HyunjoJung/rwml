@@ -119,6 +119,7 @@ fn report() -> DocModel {
         header_rows: 1,
         col_widths_pct: vec![0.7, 0.3],
         fixed_layout: false,
+        indent_twips: None,
     };
     DocModel {
         blocks: vec![title, Block::Table(table)],
@@ -1630,6 +1631,36 @@ fn table_builder_adds_fixed_layout() {
         panic!("expected reopened table");
     };
     assert!(reopened_table.fixed_layout);
+}
+
+#[test]
+fn table_builder_adds_table_indent() {
+    let model = DocBuilder::new()
+        .rich_table(
+            TableBuilder::new()
+                .indent_twips(720)
+                .row([CellBuilder::text("Indented")]),
+        )
+        .build();
+
+    let Block::Table(table) = &model.blocks[0] else {
+        panic!("expected builder to add a table block");
+    };
+    assert_eq!(table.indent_twips, Some(720));
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    assert!(
+        document_xml.contains(r#"<w:tblInd w:w="720" w:type="dxa"/>"#),
+        "table indent XML missing: {document_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("indented table .docx reopens");
+    let Block::Table(reopened_table) = &reopened.model().blocks[0] else {
+        panic!("expected reopened table");
+    };
+    assert_eq!(reopened_table.indent_twips, Some(720));
 }
 
 #[test]

@@ -1047,6 +1047,9 @@ impl Ctx {
 
         let ncols = ncols.max(1);
         out.push_str(r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>"#);
+        if let Some(indent) = t.indent_twips {
+            out.push_str(&format!(r#"<w:tblInd w:w="{indent}" w:type="dxa"/>"#));
+        }
         out.push_str(concat!(
             r#"<w:tblBorders>"#,
             r#"<w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#,

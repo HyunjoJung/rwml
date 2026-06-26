@@ -487,6 +487,8 @@ pub struct Table {
     pub col_widths_pct: Vec<f32>,
     /// Use Word's fixed table layout algorithm instead of autofit.
     pub fixed_layout: bool,
+    /// Table indentation in twips, if explicitly set.
+    pub indent_twips: Option<i32>,
 }
 
 impl Table {

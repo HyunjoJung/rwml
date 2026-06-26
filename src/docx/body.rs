@@ -1820,10 +1820,15 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Table {
     }
     let mut rows: Vec<(Vec<CellRaw>, bool)> = Vec::new();
     let mut fixed_layout = false;
+    let mut indent_twips = None;
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
-                b"tblPr" => fixed_layout = read_tblpr(r),
+                b"tblPr" => {
+                    let tblpr = read_tblpr(r);
+                    fixed_layout = tblpr.0;
+                    indent_twips = tblpr.1;
+                }
                 b"tr" => rows.push(read_row(r, ctx, depth)),
                 _ => skip_subtree(r), // tblGrid, …
             },
@@ -1831,12 +1836,13 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Table {
             _ => {}
         }
     }
-    build_table(rows, fixed_layout)
+    build_table(rows, fixed_layout, indent_twips)
 }
 
-/// Read a `<w:tr>` → its cells and whether it is a repeated header row.
-fn read_tblpr(r: &mut Xml<'_>) -> bool {
+/// Read `<w:tblPr>` layout metadata.
+fn read_tblpr(r: &mut Xml<'_>) -> (bool, Option<i32>) {
     let mut fixed_layout = false;
+    let mut indent_twips = None;
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
@@ -1844,14 +1850,20 @@ fn read_tblpr(r: &mut Xml<'_>) -> bool {
             {
                 fixed_layout = attr_local(&e, b"type").as_deref() == Some("fixed");
             }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"tblInd" => {
+                if matches!(attr_local(&e, b"type").as_deref(), None | Some("dxa")) {
+                    indent_twips = attr_local(&e, b"w").and_then(|v| v.trim().parse().ok());
+                }
+            }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"tblPr" => break,
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
     }
-    fixed_layout
+    (fixed_layout, indent_twips)
 }
 
+/// Read a `<w:tr>` and whether it is a repeated header row.
 fn read_row(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Vec<CellRaw>, bool) {
     let mut cells = Vec::new();
     let mut header = false;
@@ -2050,7 +2062,11 @@ fn apply_tc_mar_side(margins: &mut CellMargins, seen: &mut bool, e: &BytesStart<
 /// (`vMerge="restart"` opens a span, a later `vMerge` continuation at the same
 /// starting column grows the owner's `row_span` and is dropped) — the OOXML
 /// analogue of `table.rs` Phase B.
-fn build_table(raw_rows: Vec<(Vec<CellRaw>, bool)>, fixed_layout: bool) -> Table {
+fn build_table(
+    raw_rows: Vec<(Vec<CellRaw>, bool)>,
+    fixed_layout: bool,
+    indent_twips: Option<i32>,
+) -> Table {
     let header_rows = raw_rows.iter().take_while(|(_, h)| *h).count();
 
     struct Placed {
@@ -2138,6 +2154,7 @@ fn build_table(raw_rows: Vec<(Vec<CellRaw>, bool)>, fixed_layout: bool) -> Table
         rows,
         header_rows,
         fixed_layout,
+        indent_twips,
         ..Default::default()
     }
 }
@@ -2572,7 +2589,7 @@ mod tests {
             (0..u16::MAX as usize).map(|_| (vec![raw_merge_cell(VMerge::Continue)], false)),
         );
 
-        let table = build_table(rows, false);
+        let table = build_table(rows, false, None);
 
         assert_eq!(table.rows[0].cells[0].row_span, u16::MAX);
     }
