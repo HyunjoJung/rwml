@@ -664,6 +664,24 @@ fn ref_field_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn ref_non_current_bookmark_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="wps"><w:body><w:del><w:bookmarkStart w:id="10" w:name="DeletedOnly"/><w:r><w:t>old target</w:t></w:r><w:bookmarkEnd w:id="10"/></w:del><mc:AlternateContent><mc:Choice Requires="wps"><w:p/></mc:Choice><mc:Fallback><w:p><w:bookmarkStart w:id="11" w:name="FallbackOnly"/><w:r><w:t>fallback target</w:t></w:r><w:bookmarkEnd w:id="11"/></w:p></mc:Fallback></mc:AlternateContent><w:p><w:fldSimple w:instr=" REF DeletedOnly \f "><w:r><w:t>deleted note mark</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF FallbackOnly \d- "><w:r><w:t>fallback sequence separator</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn malformed_ref_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -2720,6 +2738,33 @@ fn report_ref_field_warning_ignores_computed_bookmark_refs() {
         "{json}"
     );
     assert!(json.contains(r#""kind":"UnsupportedFieldEvaluation","count":4,"field_kinds":[{"kind":"REF","count":4}]"#), "{json}");
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_ref_bookmark_names_follow_accepted_single_branch_view() {
+    let doc = Document::open(&ref_non_current_bookmark_diagnostics_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert!(fields.iter().all(|field| field.kind == FieldKind::Ref));
+    assert!(fields.iter().all(|field| field.computed_result.is_none()));
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Ref,
+            count: 2,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnresolvedBookmark,
+            count: 2,
+        }]
+    );
 }
 
 #[cfg(feature = "docx")]

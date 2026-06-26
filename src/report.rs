@@ -2494,14 +2494,64 @@ fn docx_bookmark_names(xml: &str) -> HashSet<String> {
 
     let mut reader = Reader::from_str(xml);
     let mut names = HashSet::new();
+    let mut xml_depth = 0usize;
+    let mut alternate_content_stack = Vec::new();
     loop {
         match reader.read_event() {
-            Ok(Event::Start(e)) | Ok(Event::Empty(e))
-                if local(e.name().as_ref()) == b"bookmarkStart" =>
-            {
-                if let Some(name) = crate::docx::attr_local(&e, b"name") {
-                    names.insert(name);
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_report_alternate_branch(
+                    &mut alternate_content_stack,
+                    xml_depth,
+                    name,
+                ) {
+                    skip_report_subtree(&mut reader);
+                    continue;
                 }
+                match name {
+                    b"del" | b"moveFrom" => {
+                        skip_report_subtree(&mut reader);
+                        continue;
+                    }
+                    b"AlternateContent" => {
+                        alternate_content_stack.push(ReportAlternateContentState {
+                            branch_depth: xml_depth + 1,
+                            anchor_seen: false,
+                            shape_marker_seen: false,
+                            took_branch: false,
+                        });
+                    }
+                    b"bookmarkStart" => {
+                        if let Some(name) = crate::docx::attr_local(&e, b"name") {
+                            names.insert(name);
+                        }
+                    }
+                    _ => {}
+                }
+                xml_depth = xml_depth.saturating_add(1);
+            }
+            Ok(Event::Empty(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_report_alternate_branch(
+                    &mut alternate_content_stack,
+                    xml_depth,
+                    name,
+                ) {
+                    continue;
+                }
+                if name == b"bookmarkStart" {
+                    if let Some(name) = crate::docx::attr_local(&e, b"name") {
+                        names.insert(name);
+                    }
+                }
+            }
+            Ok(Event::End(e)) => {
+                if local(e.name().as_ref()) == b"AlternateContent" {
+                    alternate_content_stack.pop();
+                }
+                xml_depth = xml_depth.saturating_sub(1);
             }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
