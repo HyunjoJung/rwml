@@ -693,6 +693,17 @@ impl CellBuilder {
         self
     }
 
+    /// Set explicit per-cell margins in twips (top, right, bottom, left).
+    pub fn margins_twips(mut self, top: u32, right: u32, bottom: u32, left: u32) -> Self {
+        self.cell.margins = Some(crate::model::CellMargins {
+            top,
+            right,
+            bottom,
+            left,
+        });
+        self
+    }
+
     /// Finish and return the cell.
     pub fn build(self) -> Cell {
         self.cell

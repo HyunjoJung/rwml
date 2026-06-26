@@ -17,8 +17,8 @@ use super::opc::{Package, Rel};
 use super::{esc_attr, esc_text};
 use crate::model::{
     Align, AuthoredComment, AuthoredContentControl, AuthoredNote, AuthoredRevision, Block,
-    CharProps, Chart, ChartKind, ChartSeries, ChartShape, Color, FieldRole, Image, Indent,
-    ParaProps, Paragraph, ParagraphStyle, SectionSetup, Spacing, Table, VertAlign,
+    CellMargins, CharProps, Chart, ChartKind, ChartSeries, ChartShape, Color, FieldRole, Image,
+    Indent, ParaProps, Paragraph, ParagraphStyle, SectionSetup, Spacing, Table, VertAlign,
 };
 use crate::{NoteKind, RevisionKind};
 
@@ -929,6 +929,21 @@ impl Ctx {
         }
     }
 
+    fn write_cell_margins(out: &mut String, margins: CellMargins) {
+        out.push_str("<w:tcMar>");
+        out.push_str(&format!(r#"<w:top w:w="{}" w:type="dxa"/>"#, margins.top));
+        out.push_str(&format!(
+            r#"<w:right w:w="{}" w:type="dxa"/>"#,
+            margins.right
+        ));
+        out.push_str(&format!(
+            r#"<w:bottom w:w="{}" w:type="dxa"/>"#,
+            margins.bottom
+        ));
+        out.push_str(&format!(r#"<w:left w:w="{}" w:type="dxa"/>"#, margins.left));
+        out.push_str("</w:tcMar>");
+    }
+
     /// Write a table, reconstructing the full grid (re-inserting the `vMerge`
     /// continuation cells the reader dropped) so merges round-trip.
     fn write_table(&mut self, out: &mut String, t: &Table) {
@@ -999,6 +1014,9 @@ impl Ctx {
                             r#"<w:shd w:val="clear" w:color="auto" w:fill="{}"/>"#,
                             hex(col)
                         ));
+                    }
+                    if let Some(margins) = c.margins {
+                        Self::write_cell_margins(&mut row_xml, margins);
                     }
                     row_xml.push_str("</w:tcPr>");
                     self.write_cell_blocks(&mut row_xml, &c.blocks);

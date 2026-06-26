@@ -20,8 +20,8 @@ use super::styles::Styles;
 use super::{attr_local, local, toggle_on};
 use crate::annotation::FieldKind;
 use crate::model::{
-    Align, Block, Cell, CharProps, Color, FieldRole, Image, Indent, ListInfo, ParaProps, Paragraph,
-    Row, Run, SectionSetup, Spacing, Table, VCell, VertAlign,
+    Align, Block, Cell, CellMargins, CharProps, Color, FieldRole, Image, Indent, ListInfo,
+    ParaProps, Paragraph, Row, Run, SectionSetup, Spacing, Table, VCell, VertAlign,
 };
 use crate::text;
 use crate::CoreProperties;
@@ -1802,6 +1802,7 @@ struct CellRaw {
     shading: Option<Color>,
     valign: VCell,
     width_pct: Option<f32>,
+    margins: Option<CellMargins>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -1878,6 +1879,7 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
             shading: None,
             valign: VCell::Top,
             width_pct: None,
+            margins: None,
         };
     }
     let mut blocks = Vec::new();
@@ -1908,6 +1910,7 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
         shading: None,
         valign: VCell::Top,
         width_pct: None,
+        margins: None,
     });
     CellRaw {
         blocks,
@@ -1916,6 +1919,7 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
         shading: tc.shading,
         valign: tc.valign,
         width_pct: tc.width_pct,
+        margins: tc.margins,
     }
 }
 
@@ -1926,6 +1930,7 @@ struct TcPr {
     shading: Option<Color>,
     valign: VCell,
     width_pct: Option<f32>,
+    margins: Option<CellMargins>,
 }
 
 /// Read `<w:tcPr>` → gridSpan / vMerge / shading / vAlign / width.
@@ -1936,44 +1941,90 @@ fn read_tcpr(r: &mut Xml<'_>) -> TcPr {
         shading: None,
         valign: VCell::Top,
         width_pct: None,
+        margins: None,
     };
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
-                b"gridSpan" => {
-                    if let Some(v) = attr_local(&e, b"val").and_then(|v| v.parse::<u16>().ok()) {
-                        t.gs = v.max(1);
-                    }
-                }
-                b"vMerge" => {
-                    t.vm = match attr_local(&e, b"val").as_deref() {
-                        Some("restart") => VMerge::Restart,
-                        _ => VMerge::Continue, // present with "continue"/no val
-                    };
-                }
-                b"shd" => t.shading = attr_local(&e, b"fill").and_then(|v| parse_hex_color(&v)),
-                b"vAlign" => {
-                    t.valign = match attr_local(&e, b"val").as_deref() {
-                        Some("center") => VCell::Center,
-                        Some("bottom") => VCell::Bottom,
-                        _ => VCell::Top,
-                    };
-                }
-                // `type="pct"` w:w is in fiftieths of a percent (5000 = 100%);
-                // `dxa` (twips) is absolute and left as auto here.
-                b"tcW" if attr_local(&e, b"type").as_deref() == Some("pct") => {
-                    t.width_pct = attr_local(&e, b"w")
-                        .and_then(|v| v.trim().parse::<f32>().ok())
-                        .map(|p| p / 5000.0);
-                }
-                _ => {}
-            },
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tcMar" => {
+                t.margins = read_tc_mar(r);
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => apply_tcpr_child(&mut t, &e),
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"tcPr" => break,
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
     }
     t
+}
+
+fn apply_tcpr_child(t: &mut TcPr, e: &BytesStart<'_>) {
+    match local(e.name().as_ref()) {
+        b"gridSpan" => {
+            if let Some(v) = attr_local(e, b"val").and_then(|v| v.parse::<u16>().ok()) {
+                t.gs = v.max(1);
+            }
+        }
+        b"vMerge" => {
+            t.vm = match attr_local(e, b"val").as_deref() {
+                Some("restart") => VMerge::Restart,
+                _ => VMerge::Continue, // present with "continue"/no val
+            };
+        }
+        b"shd" => t.shading = attr_local(e, b"fill").and_then(|v| parse_hex_color(&v)),
+        b"vAlign" => {
+            t.valign = match attr_local(e, b"val").as_deref() {
+                Some("center") => VCell::Center,
+                Some("bottom") => VCell::Bottom,
+                _ => VCell::Top,
+            };
+        }
+        // `type="pct"` w:w is in fiftieths of a percent (5000 = 100%);
+        // `dxa` (twips) is absolute and left as auto here.
+        b"tcW" if attr_local(e, b"type").as_deref() == Some("pct") => {
+            t.width_pct = attr_local(e, b"w")
+                .and_then(|v| v.trim().parse::<f32>().ok())
+                .map(|p| p / 5000.0);
+        }
+        _ => {}
+    }
+}
+
+fn read_tc_mar(r: &mut Xml<'_>) -> Option<CellMargins> {
+    let mut margins = CellMargins::default();
+    let mut seen = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
+                apply_tc_mar_side(&mut margins, &mut seen, &e);
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"tcMar" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    seen.then_some(margins)
+}
+
+fn apply_tc_mar_side(margins: &mut CellMargins, seen: &mut bool, e: &BytesStart<'_>) {
+    let name = e.name();
+    let side = local(name.as_ref());
+    if !matches!(side, b"top" | b"right" | b"bottom" | b"left") {
+        return;
+    }
+    if !matches!(attr_local(e, b"type").as_deref(), None | Some("dxa")) {
+        return;
+    }
+    let Some(value) = attr_local(e, b"w").and_then(|v| v.trim().parse::<u32>().ok()) else {
+        return;
+    };
+    match side {
+        b"top" => margins.top = value,
+        b"right" => margins.right = value,
+        b"bottom" => margins.bottom = value,
+        b"left" => margins.left = value,
+        _ => {}
+    }
+    *seen = true;
 }
 
 /// Place cells over a running column index and resolve vertical merges
@@ -1994,6 +2045,7 @@ fn build_table(raw_rows: Vec<(Vec<CellRaw>, bool)>) -> Table {
         shading: Option<Color>,
         valign: VCell,
         width_pct: Option<f32>,
+        margins: Option<CellMargins>,
     }
 
     let mut grid: Vec<Vec<Placed>> = Vec::with_capacity(raw_rows.len());
@@ -2013,6 +2065,7 @@ fn build_table(raw_rows: Vec<(Vec<CellRaw>, bool)>) -> Table {
                 shading: c.shading,
                 valign: c.valign,
                 width_pct: c.width_pct,
+                margins: c.margins,
             });
             col += cs as usize;
         }
@@ -2057,6 +2110,7 @@ fn build_table(raw_rows: Vec<(Vec<CellRaw>, bool)>) -> Table {
                 shading: p.shading,
                 valign: p.valign,
                 width_pct: p.width_pct,
+                margins: p.margins,
             })
             .collect();
         rows.push(Row { cells });
@@ -2156,6 +2210,7 @@ mod tests {
             shading: None,
             valign: VCell::Top,
             width_pct: None,
+            margins: None,
         }
     }
 

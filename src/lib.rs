@@ -83,9 +83,10 @@ pub use builder::{
 pub use error::{Error, Result};
 pub use model::{
     Align, AuthoredComment, AuthoredContentControl, AuthoredNote, AuthoredRevision, Block, Cell,
-    CharProps, Chart, ChartKind, ChartSeries, ChartShape, Color, DocMeta, DocModel, DocSetup,
-    FieldRole, Image, Indent, ListInfo, PageSetup, ParaProps, Paragraph, ParagraphStyle, Row, Run,
-    SectionSetup, SourceRegion, SourceRegionKind, Spacing, Stats, Table, VCell, VertAlign,
+    CellMargins, CharProps, Chart, ChartKind, ChartSeries, ChartShape, Color, DocMeta, DocModel,
+    DocSetup, FieldRole, Image, Indent, ListInfo, PageSetup, ParaProps, Paragraph, ParagraphStyle,
+    Row, Run, SectionSetup, SourceRegion, SourceRegionKind, Spacing, Stats, Table, VCell,
+    VertAlign,
 };
 pub use report::{
     DocumentFormat, DocumentReport, DocumentWarning, EditCapability, EditReadOnlyReason,

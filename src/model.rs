@@ -524,6 +524,19 @@ pub enum VCell {
     Bottom,
 }
 
+/// Table-cell margins in twips (1/20 point), ordered by physical side.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct CellMargins {
+    /// Top margin in twips.
+    pub top: u32,
+    /// Right margin in twips.
+    pub right: u32,
+    /// Bottom margin in twips.
+    pub bottom: u32,
+    /// Left margin in twips.
+    pub left: u32,
+}
+
 /// A table cell — may hold block content and span rows/columns.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Cell {
@@ -541,6 +554,8 @@ pub struct Cell {
     pub valign: VCell,
     /// Cell width as a fraction of the table width, if set (`None` = auto).
     pub width_pct: Option<f32>,
+    /// Per-cell margins in twips, if explicitly set.
+    pub margins: Option<CellMargins>,
 }
 
 impl Default for Cell {
@@ -553,6 +568,7 @@ impl Default for Cell {
             shading: None,
             valign: VCell::Top,
             width_pct: None,
+            margins: None,
         }
     }
 }

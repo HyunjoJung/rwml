@@ -5,8 +5,8 @@
 use std::io::Read;
 
 use rdoc::{
-    Align, Block, Cell, CellBuilder, CharProps, ChartBuilder, ChartKind, ChartShape, Color,
-    CommentBuilder, ContentControlBuilder, DocBuilder, DocModel, DocSetup, Document,
+    Align, Block, Cell, CellBuilder, CellMargins, CharProps, ChartBuilder, ChartKind, ChartShape,
+    Color, CommentBuilder, ContentControlBuilder, DocBuilder, DocModel, DocSetup, Document,
     DocumentWarning, FieldKind, FieldRole, ImageBuilder, NoteKind, PageSetup, ParaProps, Paragraph,
     ParagraphBuilder, ParagraphStyleBuilder, RevisionBuilder, RevisionKind, RevisionView, Row,
     RunBuilder, Table, TableBuilder, VCell,
@@ -1598,6 +1598,47 @@ fn table_builder_adds_rich_table_cells() {
     assert_eq!(reopened_table.rows[1].cells[0].row_span, 2);
     assert_eq!(reopened_table.rows[1].cells[0].valign, VCell::Bottom);
     assert_eq!(reopened_table.rows[1].cells[1].text(), "Q1");
+}
+
+#[test]
+fn cell_builder_adds_cell_margins() {
+    let margins = CellMargins {
+        top: 120,
+        right: 240,
+        bottom: 360,
+        left: 480,
+    };
+    let model = DocBuilder::new()
+        .rich_table(
+            TableBuilder::new().row([CellBuilder::text("Padded").margins_twips(
+                margins.top,
+                margins.right,
+                margins.bottom,
+                margins.left,
+            )]),
+        )
+        .build();
+
+    let Block::Table(table) = &model.blocks[0] else {
+        panic!("expected builder to add a table block");
+    };
+    assert_eq!(table.rows[0].cells[0].margins, Some(margins));
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    assert!(
+        document_xml.contains(
+            r#"<w:tcMar><w:top w:w="120" w:type="dxa"/><w:right w:w="240" w:type="dxa"/><w:bottom w:w="360" w:type="dxa"/><w:left w:w="480" w:type="dxa"/></w:tcMar>"#
+        ),
+        "cell margin XML missing: {document_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("cell margins .docx reopens");
+    let Block::Table(reopened_table) = &reopened.model().blocks[0] else {
+        panic!("expected reopened table");
+    };
+    assert_eq!(reopened_table.rows[0].cells[0].margins, Some(margins));
 }
 
 #[test]
