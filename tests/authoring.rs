@@ -442,6 +442,29 @@ fn doc_builder_adds_section_breaks_with_section_setup() {
 }
 
 #[test]
+fn doc_builder_adds_number_in_dash_page_number_format() {
+    let model = DocBuilder::new()
+        .page_number_start(5)
+        .page_number_format(PageNumberFormat::NumberInDash)
+        .paragraph("Dashed numbering")
+        .build();
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    assert!(
+        document_xml.contains(r#"<w:pgNumType w:start="5" w:fmt="numberInDash"/>"#),
+        "numberInDash page-number format missing: {document_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("numberInDash .docx reopens");
+    assert_eq!(
+        reopened.model().setup.page_number_format,
+        Some(PageNumberFormat::NumberInDash)
+    );
+}
+
+#[test]
 fn write_docx_emits_first_even_header_footer_variants() {
     let model = DocModel {
         blocks: vec![Block::Paragraph(plain_paragraph("Body"))],
