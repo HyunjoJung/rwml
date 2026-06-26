@@ -1165,6 +1165,12 @@ impl TableBuilder {
         self
     }
 
+    /// Set the uniform table border width in eighths of a point.
+    pub fn border_size_eighths(mut self, size: u16) -> Self {
+        self.table.border_size_eighths = Some(size.max(1));
+        self
+    }
+
     /// Append a row of cells.
     pub fn row<I, C>(mut self, cells: I) -> Self
     where

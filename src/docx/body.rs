@@ -2290,6 +2290,7 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Table {
     let mut width_pct = None;
     let mut border_color = None;
     let mut border_colors = TableBorderColors::default();
+    let mut border_size_eighths = None;
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
@@ -2301,6 +2302,7 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Table {
                     width_pct = tblpr.3;
                     border_color = tblpr.4;
                     border_colors = tblpr.5;
+                    border_size_eighths = tblpr.6;
                 }
                 b"tr" => rows.push(read_row(r, ctx, depth)),
                 _ => skip_subtree(r), // tblGrid, …
@@ -2317,6 +2319,7 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Table {
         width_pct,
         border_color,
         border_colors,
+        border_size_eighths,
     )
 }
 
@@ -2330,6 +2333,7 @@ fn read_tblpr(
     Option<f32>,
     Option<Color>,
     TableBorderColors,
+    Option<u16>,
 ) {
     let mut fixed_layout = false;
     let mut indent_twips = None;
@@ -2337,6 +2341,7 @@ fn read_tblpr(
     let mut width_pct = None;
     let mut border_color = None;
     let mut border_colors = TableBorderColors::default();
+    let mut border_size_eighths = None;
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
@@ -2370,6 +2375,7 @@ fn read_tblpr(
                 let borders = read_tbl_border_colors(r);
                 border_color = borders.0;
                 border_colors = borders.1;
+                border_size_eighths = borders.2;
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"tblPr" => break,
             Ok(Event::Eof) | Err(_) => break,
@@ -2383,14 +2389,18 @@ fn read_tblpr(
         width_pct,
         border_color,
         border_colors,
+        border_size_eighths,
     )
 }
 
-fn read_tbl_border_colors(r: &mut Xml<'_>) -> (Option<Color>, TableBorderColors) {
+fn read_tbl_border_colors(r: &mut Xml<'_>) -> (Option<Color>, TableBorderColors, Option<u16>) {
     let mut color = None;
     let mut colors = TableBorderColors::default();
-    let mut seen = false;
-    let mut consistent = true;
+    let mut color_seen = false;
+    let mut color_consistent = true;
+    let mut size = None;
+    let mut size_seen = false;
+    let mut size_consistent = true;
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
@@ -2399,10 +2409,21 @@ fn read_tbl_border_colors(r: &mut Xml<'_>) -> (Option<Color>, TableBorderColors)
                 };
                 if let Some(next) = attr_local(&e, b"color").and_then(|v| parse_hex_color(&v)) {
                     colors.set(side, next);
-                    seen = true;
+                    color_seen = true;
                     match color {
-                        Some(current) if current != next => consistent = false,
+                        Some(current) if current != next => color_consistent = false,
                         None => color = Some(next),
+                        _ => {}
+                    }
+                }
+                if let Some(next) = attr_local(&e, b"sz")
+                    .and_then(|v| v.trim().parse::<u16>().ok())
+                    .filter(|v| *v > 0)
+                {
+                    size_seen = true;
+                    match size {
+                        Some(current) if current != next => size_consistent = false,
+                        None => size = Some(next),
                         _ => {}
                     }
                 }
@@ -2412,8 +2433,17 @@ fn read_tbl_border_colors(r: &mut Xml<'_>) -> (Option<Color>, TableBorderColors)
             _ => {}
         }
     }
-    let uniform = if seen && consistent { color } else { None };
-    (uniform, colors)
+    let uniform_color = if color_seen && color_consistent {
+        color
+    } else {
+        None
+    };
+    let uniform_size = if size_seen && size_consistent {
+        size
+    } else {
+        None
+    };
+    (uniform_color, colors, uniform_size)
 }
 
 fn table_border_side(e: &BytesStart<'_>) -> Option<TableBorderSide> {
@@ -2635,6 +2665,7 @@ fn build_table(
     width_pct: Option<f32>,
     border_color: Option<Color>,
     border_colors: TableBorderColors,
+    border_size_eighths: Option<u16>,
 ) -> Table {
     let header_rows = raw_rows.iter().take_while(|(_, h)| *h).count();
 
@@ -2728,6 +2759,7 @@ fn build_table(
         width_pct,
         border_color,
         border_colors,
+        border_size_eighths,
         ..Default::default()
     }
 }
@@ -3190,6 +3222,7 @@ mod tests {
             None,
             None,
             TableBorderColors::default(),
+            None,
         );
 
         assert_eq!(table.rows[0].cells[0].row_span, u16::MAX);

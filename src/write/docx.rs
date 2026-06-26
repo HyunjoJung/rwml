@@ -37,6 +37,10 @@ fn table_border_color(table: &Table, side: TableBorderSide) -> String {
         .unwrap_or_else(|| "auto".to_string())
 }
 
+fn table_border_size(table: &Table) -> u16 {
+    table.border_size_eighths.unwrap_or(4).max(1)
+}
+
 /// Points → twips (1/20 pt), the OOXML measurement unit.
 fn pt_twips(pt: f32) -> i64 {
     (pt * 20.0).round() as i64
@@ -1131,17 +1135,19 @@ impl Ctx {
         let right_border_color = table_border_color(t, TableBorderSide::Right);
         let inside_h_border_color = table_border_color(t, TableBorderSide::InsideHorizontal);
         let inside_v_border_color = table_border_color(t, TableBorderSide::InsideVertical);
+        let border_size = table_border_size(t);
         out.push_str(&format!(
             concat!(
                 r#"<w:tblBorders>"#,
-                r#"<w:top w:val="single" w:sz="4" w:space="0" w:color="{top_border_color}"/>"#,
-                r#"<w:left w:val="single" w:sz="4" w:space="0" w:color="{left_border_color}"/>"#,
-                r#"<w:bottom w:val="single" w:sz="4" w:space="0" w:color="{bottom_border_color}"/>"#,
-                r#"<w:right w:val="single" w:sz="4" w:space="0" w:color="{right_border_color}"/>"#,
-                r#"<w:insideH w:val="single" w:sz="4" w:space="0" w:color="{inside_h_border_color}"/>"#,
-                r#"<w:insideV w:val="single" w:sz="4" w:space="0" w:color="{inside_v_border_color}"/>"#,
+                r#"<w:top w:val="single" w:sz="{border_size}" w:space="0" w:color="{top_border_color}"/>"#,
+                r#"<w:left w:val="single" w:sz="{border_size}" w:space="0" w:color="{left_border_color}"/>"#,
+                r#"<w:bottom w:val="single" w:sz="{border_size}" w:space="0" w:color="{bottom_border_color}"/>"#,
+                r#"<w:right w:val="single" w:sz="{border_size}" w:space="0" w:color="{right_border_color}"/>"#,
+                r#"<w:insideH w:val="single" w:sz="{border_size}" w:space="0" w:color="{inside_h_border_color}"/>"#,
+                r#"<w:insideV w:val="single" w:sz="{border_size}" w:space="0" w:color="{inside_v_border_color}"/>"#,
                 r#"</w:tblBorders>"#,
             ),
+            border_size = border_size,
             top_border_color = top_border_color,
             left_border_color = left_border_color,
             bottom_border_color = bottom_border_color,

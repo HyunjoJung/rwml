@@ -617,7 +617,7 @@ Initial status:
   setup, headings, plain paragraphs, simple text tables with optional header rows,
   layout-aware paragraphs through `ParagraphBuilder`, styled runs through
   `RunBuilder`, named paragraph style definitions through
-  `ParagraphStyleBuilder`, width-aware, aligned, fixed-layout, indented, and border-colored
+  `ParagraphStyleBuilder`, width-aware, aligned, fixed-layout, indented, border-width-aware, and border-colored
   rich tables through `TableBuilder` and `CellBuilder`,
   typed cell paragraphs, explicit cell margins, and nested cell tables through
   `CellBuilder`, list

@@ -559,6 +559,8 @@ pub struct Table {
     pub border_color: Option<Color>,
     /// Side-specific table border colors, overriding `border_color` per side.
     pub border_colors: TableBorderColors,
+    /// Uniform table border width in eighths of a point, if explicitly set.
+    pub border_size_eighths: Option<u16>,
 }
 
 impl Table {
