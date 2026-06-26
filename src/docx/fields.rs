@@ -1573,164 +1573,207 @@ pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
     let mut footnote_number = 0usize;
     let mut endnote_number = 0usize;
     let mut current: Option<NoteRefScanField> = None;
+    let mut xml_depth = 0usize;
+    let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
-                b"del" | b"moveFrom" => skip_subtree(&mut r),
-                b"fldSimple" => record_note_ref_scan_field_position(
-                    attr_local(&e, b"instr").as_deref(),
-                    &mut source_order,
-                    &mut field_positions,
-                    &mut ref_field_positions,
-                    &mut generated_ref_note_fields,
-                ),
-                b"fldChar" => apply_note_ref_scan_fld_char(
-                    &e,
-                    &mut source_order,
-                    &mut current,
-                    &mut field_positions,
-                    &mut ref_field_positions,
-                    &mut generated_ref_note_fields,
-                ),
-                b"instrText" => {
-                    let text = read_text(&mut r);
-                    if let Some(field) = current.as_mut() {
-                        if field.phase == FieldPhase::Instruction {
-                            field.instruction.push_str(&text);
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    skip_subtree(&mut r);
+                    continue;
+                }
+                match name {
+                    b"del" | b"moveFrom" => {
+                        skip_subtree(&mut r);
+                        continue;
+                    }
+                    b"AlternateContent" => {
+                        alternate_content_stack.push(AlternateContentBranchState {
+                            branch_depth: xml_depth + 1,
+                            took_branch: false,
+                        });
+                    }
+                    b"fldSimple" => record_note_ref_scan_field_position(
+                        attr_local(&e, b"instr").as_deref(),
+                        &mut source_order,
+                        &mut field_positions,
+                        &mut ref_field_positions,
+                        &mut generated_ref_note_fields,
+                    ),
+                    b"fldChar" => apply_note_ref_scan_fld_char(
+                        &e,
+                        &mut source_order,
+                        &mut current,
+                        &mut field_positions,
+                        &mut ref_field_positions,
+                        &mut generated_ref_note_fields,
+                    ),
+                    b"instrText" => {
+                        let text = read_text(&mut r);
+                        if let Some(field) = current.as_mut() {
+                            if field.phase == FieldPhase::Instruction {
+                                field.instruction.push_str(&text);
+                            }
+                        }
+                        continue;
+                    }
+                    b"bookmarkStart" => {
+                        if let (Some(id), Some(name)) =
+                            (attr_local(&e, b"id"), attr_local(&e, b"name"))
+                        {
+                            active_bookmarks.push(NoteRefActiveBookmark {
+                                id,
+                                name,
+                                start: source_order,
+                            });
+                            source_order += 1;
                         }
                     }
-                }
-                b"bookmarkStart" => {
-                    if let (Some(id), Some(name)) = (attr_local(&e, b"id"), attr_local(&e, b"name"))
-                    {
-                        active_bookmarks.push(NoteRefActiveBookmark {
-                            id,
-                            name,
-                            start: source_order,
-                        });
+                    b"bookmarkEnd" => {
+                        close_note_ref_bookmark(
+                            attr_local(&e, b"id").as_deref(),
+                            source_order,
+                            &mut active_bookmarks,
+                            &mut targets,
+                        );
                         source_order += 1;
                     }
-                }
-                b"bookmarkEnd" => {
-                    close_note_ref_bookmark(
-                        attr_local(&e, b"id").as_deref(),
-                        source_order,
-                        &mut active_bookmarks,
-                        &mut targets,
-                    );
-                    source_order += 1;
-                }
-                b"footnoteReference" => {
-                    footnote_number += 1;
-                    markers.push(NoteRefMarker {
-                        kind: NoteRefKind::Footnote,
-                        order: source_order,
-                    });
-                    record_note_ref_target(
-                        &active_bookmarks,
-                        NoteRefKind::Footnote,
-                        footnote_number,
-                        source_order,
-                        &mut targets,
-                    );
-                    source_order += 1;
-                    skip_subtree(&mut r);
-                }
-                b"endnoteReference" => {
-                    endnote_number += 1;
-                    markers.push(NoteRefMarker {
-                        kind: NoteRefKind::Endnote,
-                        order: source_order,
-                    });
-                    record_note_ref_target(
-                        &active_bookmarks,
-                        NoteRefKind::Endnote,
-                        endnote_number,
-                        source_order,
-                        &mut targets,
-                    );
-                    source_order += 1;
-                    skip_subtree(&mut r);
-                }
-                b"t" if !read_text(&mut r).is_empty() => {
-                    source_order += 1;
-                }
-                b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"drawing" | b"pict" | b"object" => {
-                    source_order += 1;
-                }
-                _ => {}
-            },
-            Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
-                b"fldSimple" => record_note_ref_scan_field_position(
-                    attr_local(&e, b"instr").as_deref(),
-                    &mut source_order,
-                    &mut field_positions,
-                    &mut ref_field_positions,
-                    &mut generated_ref_note_fields,
-                ),
-                b"fldChar" => apply_note_ref_scan_fld_char(
-                    &e,
-                    &mut source_order,
-                    &mut current,
-                    &mut field_positions,
-                    &mut ref_field_positions,
-                    &mut generated_ref_note_fields,
-                ),
-                b"bookmarkStart" => {
-                    if let (Some(id), Some(name)) = (attr_local(&e, b"id"), attr_local(&e, b"name"))
-                    {
-                        active_bookmarks.push(NoteRefActiveBookmark {
-                            id,
-                            name,
-                            start: source_order,
+                    b"footnoteReference" => {
+                        footnote_number += 1;
+                        markers.push(NoteRefMarker {
+                            kind: NoteRefKind::Footnote,
+                            order: source_order,
                         });
+                        record_note_ref_target(
+                            &active_bookmarks,
+                            NoteRefKind::Footnote,
+                            footnote_number,
+                            source_order,
+                            &mut targets,
+                        );
+                        source_order += 1;
+                        skip_subtree(&mut r);
+                        continue;
+                    }
+                    b"endnoteReference" => {
+                        endnote_number += 1;
+                        markers.push(NoteRefMarker {
+                            kind: NoteRefKind::Endnote,
+                            order: source_order,
+                        });
+                        record_note_ref_target(
+                            &active_bookmarks,
+                            NoteRefKind::Endnote,
+                            endnote_number,
+                            source_order,
+                            &mut targets,
+                        );
+                        source_order += 1;
+                        skip_subtree(&mut r);
+                        continue;
+                    }
+                    b"t" => {
+                        if !read_text(&mut r).is_empty() {
+                            source_order += 1;
+                        }
+                        continue;
+                    }
+                    b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"drawing" | b"pict"
+                    | b"object" => {
                         source_order += 1;
                     }
+                    _ => {}
                 }
-                b"bookmarkEnd" => {
-                    close_note_ref_bookmark(
-                        attr_local(&e, b"id").as_deref(),
-                        source_order,
-                        &mut active_bookmarks,
-                        &mut targets,
-                    );
-                    source_order += 1;
+                xml_depth = xml_depth.saturating_add(1);
+            }
+            Ok(Event::Empty(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    continue;
                 }
-                b"footnoteReference" => {
-                    footnote_number += 1;
-                    markers.push(NoteRefMarker {
-                        kind: NoteRefKind::Footnote,
-                        order: source_order,
-                    });
-                    record_note_ref_target(
-                        &active_bookmarks,
-                        NoteRefKind::Footnote,
-                        footnote_number,
-                        source_order,
-                        &mut targets,
-                    );
-                    source_order += 1;
+                match name {
+                    b"fldSimple" => record_note_ref_scan_field_position(
+                        attr_local(&e, b"instr").as_deref(),
+                        &mut source_order,
+                        &mut field_positions,
+                        &mut ref_field_positions,
+                        &mut generated_ref_note_fields,
+                    ),
+                    b"fldChar" => apply_note_ref_scan_fld_char(
+                        &e,
+                        &mut source_order,
+                        &mut current,
+                        &mut field_positions,
+                        &mut ref_field_positions,
+                        &mut generated_ref_note_fields,
+                    ),
+                    b"bookmarkStart" => {
+                        if let (Some(id), Some(name)) =
+                            (attr_local(&e, b"id"), attr_local(&e, b"name"))
+                        {
+                            active_bookmarks.push(NoteRefActiveBookmark {
+                                id,
+                                name,
+                                start: source_order,
+                            });
+                            source_order += 1;
+                        }
+                    }
+                    b"bookmarkEnd" => {
+                        close_note_ref_bookmark(
+                            attr_local(&e, b"id").as_deref(),
+                            source_order,
+                            &mut active_bookmarks,
+                            &mut targets,
+                        );
+                        source_order += 1;
+                    }
+                    b"footnoteReference" => {
+                        footnote_number += 1;
+                        markers.push(NoteRefMarker {
+                            kind: NoteRefKind::Footnote,
+                            order: source_order,
+                        });
+                        record_note_ref_target(
+                            &active_bookmarks,
+                            NoteRefKind::Footnote,
+                            footnote_number,
+                            source_order,
+                            &mut targets,
+                        );
+                        source_order += 1;
+                    }
+                    b"endnoteReference" => {
+                        endnote_number += 1;
+                        markers.push(NoteRefMarker {
+                            kind: NoteRefKind::Endnote,
+                            order: source_order,
+                        });
+                        record_note_ref_target(
+                            &active_bookmarks,
+                            NoteRefKind::Endnote,
+                            endnote_number,
+                            source_order,
+                            &mut targets,
+                        );
+                        source_order += 1;
+                    }
+                    b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"drawing" | b"pict"
+                    | b"object" => {
+                        source_order += 1;
+                    }
+                    _ => {}
                 }
-                b"endnoteReference" => {
-                    endnote_number += 1;
-                    markers.push(NoteRefMarker {
-                        kind: NoteRefKind::Endnote,
-                        order: source_order,
-                    });
-                    record_note_ref_target(
-                        &active_bookmarks,
-                        NoteRefKind::Endnote,
-                        endnote_number,
-                        source_order,
-                        &mut targets,
-                    );
-                    source_order += 1;
+            }
+            Ok(Event::End(e)) => {
+                if local(e.name().as_ref()) == b"AlternateContent" {
+                    alternate_content_stack.pop();
                 }
-                b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"drawing" | b"pict" | b"object" => {
-                    source_order += 1;
-                }
-                _ => {}
-            },
+                xml_depth = xml_depth.saturating_sub(1);
+            }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
