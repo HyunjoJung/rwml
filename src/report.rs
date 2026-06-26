@@ -1823,10 +1823,9 @@ fn accept_page_number_format_switch(part: &str, number_format: &mut bool) -> boo
     if is_neutral_field_format_switch(part) {
         return true;
     }
-    let supported_number_format = matches!(
-        part,
-        "Arabic" | "arabic" | "alphabetic" | "ALPHABETIC" | "roman" | "ROMAN"
-    ) || part.eq_ignore_ascii_case("Ordinal")
+    let supported_number_format = part.eq_ignore_ascii_case("Arabic")
+        || matches!(part, "alphabetic" | "ALPHABETIC" | "roman" | "ROMAN")
+        || part.eq_ignore_ascii_case("Ordinal")
         || part.eq_ignore_ascii_case("CardText")
         || part.eq_ignore_ascii_case("OrdText")
         || part.eq_ignore_ascii_case("ArabicDash");
@@ -2619,6 +2618,11 @@ mod tests {
     use super::fields_for_model;
     use crate::annotation::FieldKind;
     use crate::model::{Block, FieldRole, Paragraph, Run};
+
+    #[test]
+    fn supported_page_ref_syntax_accepts_mixed_case_arabic() {
+        assert!(super::supported_page_ref_syntax(r"PAGEREF Figure1 \* ArAbIc").is_some());
+    }
 
     #[test]
     fn model_fields_coalesce_contiguous_result_runs() {
