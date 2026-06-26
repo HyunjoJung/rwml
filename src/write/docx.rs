@@ -1050,6 +1050,15 @@ impl Ctx {
         if let Some(indent) = t.indent_twips {
             out.push_str(&format!(r#"<w:tblInd w:w="{indent}" w:type="dxa"/>"#));
         }
+        if let Some(align) = t.align {
+            let val = match align {
+                Align::Left => "left",
+                Align::Center => "center",
+                Align::Right => "right",
+                Align::Justify => "both",
+            };
+            out.push_str(&format!(r#"<w:jc w:val="{val}"/>"#));
+        }
         out.push_str(concat!(
             r#"<w:tblBorders>"#,
             r#"<w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#,

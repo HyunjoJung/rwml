@@ -489,6 +489,8 @@ pub struct Table {
     pub fixed_layout: bool,
     /// Table indentation in twips, if explicitly set.
     pub indent_twips: Option<i32>,
+    /// Table alignment, if explicitly set.
+    pub align: Option<Align>,
 }
 
 impl Table {

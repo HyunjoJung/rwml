@@ -1134,6 +1134,12 @@ impl TableBuilder {
         self
     }
 
+    /// Set table alignment.
+    pub fn align(mut self, align: Align) -> Self {
+        self.table.align = Some(align);
+        self
+    }
+
     /// Append a row of cells.
     pub fn row<I, C>(mut self, cells: I) -> Self
     where
