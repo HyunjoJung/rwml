@@ -163,13 +163,21 @@ fn hf_part(tag: &str, body: &str) -> Vec<u8> {
     format!(r#"{XML_DECL}<w:{tag} xmlns:w="{W_NS}" xmlns:r="{R_NS}">{body}</w:{tag}>"#).into_bytes()
 }
 
-fn settings_xml(even_and_odd_headers: bool) -> String {
+fn settings_xml(even_and_odd_headers: bool, document_id: Option<&str>) -> String {
     let even_odd = if even_and_odd_headers {
         "<w:evenAndOddHeaders/>"
     } else {
         ""
     };
-    format!(r#"{XML_DECL}<w:settings xmlns:w="{W_NS}">{even_odd}</w:settings>"#)
+    let w14 = if document_id.is_some() {
+        format!(r#" xmlns:w14="{W14_NS}""#)
+    } else {
+        String::new()
+    };
+    let doc_id = document_id
+        .map(|id| format!(r#"<w14:docId w14:val="{}"/>"#, esc_attr(id)))
+        .unwrap_or_default();
+    format!(r#"{XML_DECL}<w:settings xmlns:w="{W_NS}"{w14}>{even_odd}{doc_id}</w:settings>"#)
 }
 
 /// A `word/styles.xml` defining `Normal`, optional `Heading1..6`, and caller
@@ -2361,12 +2369,8 @@ pub(crate) fn try_to_docx(model: &crate::DocModel) -> crate::Result<Vec<u8>> {
             styles_xml(&model.setup.styles, br.has_heading).into_bytes(),
         );
     }
-    if br.has_even_header_footer {
-        pkg.add_part(
-            "word/settings.xml",
-            Some(CT_SETTINGS),
-            settings_xml(true).into_bytes(),
-        );
+    if let Some(settings_xml) = br.settings_xml {
+        pkg.add_part("word/settings.xml", Some(CT_SETTINGS), settings_xml);
     }
     for (path, bytes, ext, ct) in br.media {
         pkg.add_default(ext, ct);
@@ -2423,6 +2427,8 @@ pub(crate) struct BodyRender {
     pub footnotes_xml: Option<Vec<u8>>,
     /// Serialized endnotes part, if authored endnotes were emitted.
     pub endnotes_xml: Option<Vec<u8>>,
+    /// Serialized settings part, if document settings were emitted.
+    pub settings_xml: Option<Vec<u8>>,
     /// `(part path, bytes, extension, content-type)` for inline/block images.
     pub media: Vec<(String, Vec<u8>, &'static str, &'static str)>,
     /// `(part path, bytes)` for authored chart parts.
@@ -2434,7 +2440,6 @@ pub(crate) struct BodyRender {
     pub has_list: bool,
     pub has_styles: bool,
     pub has_heading: bool,
-    pub has_even_header_footer: bool,
 }
 
 /// Render the body parts from the model. List items reference the synthetic
@@ -2505,6 +2510,17 @@ fn render_body(model: &crate::DocModel) -> BodyRender {
         ctx.next_rid += 1;
         Some(notes_xml("endnotes", "endnote", &ctx.endnotes))
     };
+    let settings_xml = if ctx.has_even_header_footer || model.setup.document_id.is_some() {
+        Some(
+            settings_xml(
+                ctx.has_even_header_footer,
+                model.setup.document_id.as_deref(),
+            )
+            .into_bytes(),
+        )
+    } else {
+        None
+    };
     doc.push_str("</w:body></w:document>");
 
     // Type-link rels for the styles/numbering parts (read-by-path doesn't need
@@ -2529,7 +2545,7 @@ fn render_body(model: &crate::DocModel) -> BodyRender {
         });
         ctx.next_rid += 1;
     }
-    if ctx.has_even_header_footer {
+    if settings_xml.is_some() {
         ctx.doc_rels.push(Rel {
             id: format!("rId{}", ctx.next_rid),
             rel_type: REL_SETTINGS.to_string(),
@@ -2547,6 +2563,7 @@ fn render_body(model: &crate::DocModel) -> BodyRender {
         comments_ext_xml,
         footnotes_xml,
         endnotes_xml,
+        settings_xml,
         media: ctx.media,
         chart_parts: ctx.chart_parts,
         chart_rels: ctx.chart_rels,
@@ -2554,7 +2571,6 @@ fn render_body(model: &crate::DocModel) -> BodyRender {
         has_list: ctx.has_list,
         has_styles,
         has_heading: ctx.has_heading,
-        has_even_header_footer: ctx.has_even_header_footer,
     }
 }
 

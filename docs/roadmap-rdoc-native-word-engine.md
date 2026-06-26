@@ -635,7 +635,7 @@ Initial status:
   through `ImageBuilder`, bar/3-D bar/column/3-D column/line/3-D line/area/3-D area/radar/scatter/bubble/3-D bubble/pie/3-D pie/doughnut/surface/3-D surface/stock/pie-of-pie/bar-of-pie
   charts with embedded workbook-backed data, 3-D bar/column shape styling, and
   surface-family wireframe styling through `ChartBuilder`, page
-  size/orientation/margins/columns/document grids/text direction/title pages, page-number restarts/formats, explicit page breaks, next/even/odd section breaks that snapshot
+  size/orientation/margins/columns/document grids/text direction/title pages, page-number restarts/formats, explicit Word document ids, explicit page breaks, next/even/odd section breaks that snapshot
   page/header/footer setup, default/first/even running headers/footers, page numbers, and
   direct `Block` escape hatches.
 - Lower-level `DocModel` remains the path for complex nested layouts until the

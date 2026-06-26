@@ -1264,6 +1264,8 @@ pub struct DocSetup {
     pub text_direction: Option<TextDirection>,
     /// Document grid settings for the final/current section, if explicitly set.
     pub doc_grid: Option<DocGrid>,
+    /// Optional document identifier emitted to `word/settings.xml` as `w14:docId`.
+    pub document_id: Option<String>,
     /// Document title metadata.
     pub title: Option<String>,
     /// Document author metadata.

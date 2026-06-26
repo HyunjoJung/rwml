@@ -1063,6 +1063,32 @@ fn doc_builder_adds_string_custom_properties() {
 }
 
 #[test]
+fn doc_builder_adds_document_id_setting() {
+    let model = DocBuilder::new()
+        .document_id("6ECD4467")
+        .paragraph("Body")
+        .build();
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let settings_xml = String::from_utf8(parts["word/settings.xml"].clone()).unwrap();
+    let rels = String::from_utf8(parts["word/_rels/document.xml.rels"].clone()).unwrap();
+
+    assert!(
+        settings_xml.contains(r#"<w14:docId w14:val="6ECD4467"/>"#),
+        "document id setting missing: {settings_xml}"
+    );
+    assert!(
+        rels.contains(
+            r#"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings" Target="settings.xml""#
+        ),
+        "settings relationship missing: {rels}"
+    );
+
+    Document::open(&bytes).expect("document-id .docx reopens");
+}
+
+#[test]
 fn run_builder_adds_bookmark_for_ref_fields() {
     let model = DocBuilder::new()
         .paragraph_runs([RunBuilder::new("Figure 1").bookmark("Figure1").build()])

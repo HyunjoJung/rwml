@@ -1290,6 +1290,13 @@ impl DocBuilder {
         self
     }
 
+    /// Set the Word 2010 document id emitted in `word/settings.xml`.
+    pub fn document_id(mut self, id: impl Into<String>) -> Self {
+        let id = id.into();
+        self.model.setup.document_id = (!id.is_empty()).then_some(id);
+        self
+    }
+
     /// Set page geometry and margins.
     pub fn page_setup(mut self, page: PageSetup) -> Self {
         self.model.setup.page = page;
