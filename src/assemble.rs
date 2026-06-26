@@ -54,6 +54,7 @@ pub(crate) fn build_model(
             stats,
         },
         custom_properties: Default::default(),
+        custom_xml_items: Vec::new(),
         setup,
     }
 }

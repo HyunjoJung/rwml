@@ -1059,6 +1059,57 @@ fn content_control_builder_adds_data_binding_metadata() {
 }
 
 #[test]
+fn doc_builder_adds_custom_xml_item() {
+    let store_item_id = "{11111111-2222-3333-4444-555555555555}";
+    let xml = r#"<root><client code="A&amp;B">ACME</client></root>"#;
+    let model = DocBuilder::new()
+        .custom_xml_item(store_item_id, xml)
+        .paragraph_runs([RunBuilder::new("Bound value")
+            .content_control(
+                ContentControlBuilder::new()
+                    .tag("client-name")
+                    .data_binding("/root/client", store_item_id),
+            )
+            .build()])
+        .build();
+
+    assert_eq!(model.custom_xml_items[0].store_item_id, store_item_id);
+    assert_eq!(model.custom_xml_items[0].xml, xml);
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    assert_eq!(
+        String::from_utf8(parts["customXml/item1.xml"].clone()).unwrap(),
+        xml
+    );
+    let content_types = String::from_utf8(parts["[Content_Types].xml"].clone()).unwrap();
+    assert!(
+        content_types.contains(
+            r#"<Override PartName="/customXml/itemProps1.xml" ContentType="application/vnd.openxmlformats-officedocument.customXmlProperties+xml"/>"#
+        ),
+        "custom XML properties content type missing: {content_types}"
+    );
+    let item_rels = String::from_utf8(parts["customXml/_rels/item1.xml.rels"].clone()).unwrap();
+    assert!(
+        item_rels.contains(
+            r#"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXmlProps" Target="itemProps1.xml""#
+        ),
+        "custom XML item relationship missing: {item_rels}"
+    );
+    let item_props = String::from_utf8(parts["customXml/itemProps1.xml"].clone()).unwrap();
+    assert!(
+        item_props
+            .contains(r#"<ds:datastoreItem ds:itemID="{11111111-2222-3333-4444-555555555555}""#)
+            && item_props.contains("<ds:schemaRefs/>"),
+        "custom XML item properties missing: {item_props}"
+    );
+
+    let reopened = Document::open(&bytes).expect("custom XML .docx reopens");
+    assert_eq!(reopened.text(), "Bound value");
+    assert_eq!(reopened.report().features.content_controls, 1);
+}
+
+#[test]
 fn run_builder_adds_styled_paragraph_and_heading_runs() {
     let model = DocBuilder::new()
         .paragraph_runs([

@@ -2,9 +2,9 @@
 
 use crate::model::{
     Align, AuthoredComment, AuthoredContentControl, AuthoredNote, AuthoredRevision, Block, Cell,
-    CharProps, Chart, ChartKind, ChartSeries, ChartShape, Color, DocModel, FieldRole, Image,
-    ListInfo, PageSetup, ParaProps, Paragraph, ParagraphStyle, Row, Run, SectionSetup, Table,
-    VCell,
+    CharProps, Chart, ChartKind, ChartSeries, ChartShape, Color, CustomXmlItem, DocModel,
+    FieldRole, Image, ListInfo, PageSetup, ParaProps, Paragraph, ParagraphStyle, Row, Run,
+    SectionSetup, Table, VCell,
 };
 use crate::{NoteKind, RevisionKind};
 
@@ -1169,6 +1169,19 @@ impl DocBuilder {
         self.model
             .custom_properties
             .insert(name.into(), value.into());
+        self
+    }
+
+    /// Add a raw custom XML data-store item.
+    pub fn custom_xml_item(
+        mut self,
+        store_item_id: impl Into<String>,
+        xml: impl Into<String>,
+    ) -> Self {
+        self.model.custom_xml_items.push(CustomXmlItem {
+            store_item_id: store_item_id.into(),
+            xml: xml.into(),
+        });
         self
     }
 

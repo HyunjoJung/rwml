@@ -83,6 +83,11 @@ const CT_CUSTOM_PROPERTIES: &str =
     "application/vnd.openxmlformats-officedocument.custom-properties+xml";
 const REL_CUSTOM_PROPERTIES: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties";
+const CT_XML: &str = "application/xml";
+const CT_CUSTOM_XML_PROPERTIES: &str =
+    "application/vnd.openxmlformats-officedocument.customXmlProperties+xml";
+const REL_CUSTOM_XML_PROPERTIES: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXmlProps";
 
 /// Build a `word/header1.xml` / `footer1.xml` part body from running paragraphs
 /// (text + run formatting + alignment; images/links/tables inside a header are
@@ -1248,6 +1253,14 @@ fn custom_properties_xml(properties: &std::collections::BTreeMap<String, String>
     s.into_bytes()
 }
 
+fn custom_xml_item_props_xml(store_item_id: &str) -> Vec<u8> {
+    format!(
+        r#"{XML_DECL}<ds:datastoreItem ds:itemID="{}" xmlns:ds="http://schemas.openxmlformats.org/officeDocument/2006/customXml"><ds:schemaRefs/></ds:datastoreItem>"#,
+        esc_attr(store_item_id)
+    )
+    .into_bytes()
+}
+
 fn chart_workbook_xlsx(chart: &Chart) -> Vec<u8> {
     let (sheet_xml, shared_strings_xml) = chart_workbook_sheet_xml(chart);
     let mut pkg = Package::new();
@@ -2051,6 +2064,28 @@ pub(crate) fn try_to_docx(model: &crate::DocModel) -> crate::Result<Vec<u8>> {
             "docProps/custom.xml",
             Some(CT_CUSTOM_PROPERTIES),
             custom_properties_xml(&model.custom_properties),
+        );
+    }
+    for (index, item) in model.custom_xml_items.iter().enumerate() {
+        let n = index + 1;
+        pkg.add_part(
+            &format!("customXml/item{n}.xml"),
+            Some(CT_XML),
+            item.xml.as_bytes().to_vec(),
+        );
+        pkg.add_part(
+            &format!("customXml/itemProps{n}.xml"),
+            Some(CT_CUSTOM_XML_PROPERTIES),
+            custom_xml_item_props_xml(&item.store_item_id),
+        );
+        pkg.add_rels(
+            &format!("customXml/_rels/item{n}.xml.rels"),
+            vec![Rel {
+                id: "rId1".to_string(),
+                rel_type: REL_CUSTOM_XML_PROPERTIES.to_string(),
+                target: format!("itemProps{n}.xml"),
+                external: false,
+            }],
         );
     }
     if br.has_list {

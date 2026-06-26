@@ -28,9 +28,20 @@ pub struct DocModel {
     pub meta: DocMeta,
     /// Authored string custom document properties.
     pub custom_properties: BTreeMap<String, String>,
+    /// Authored custom XML data-store items.
+    pub custom_xml_items: Vec<CustomXmlItem>,
     /// Document-level layout for authoring/rendering (page size, header/footer,
     /// metadata). Defaults to A4 portrait with no running header/footer.
     pub setup: DocSetup,
+}
+
+/// A generated custom XML data-store item.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CustomXmlItem {
+    /// Custom XML store item ID.
+    pub store_item_id: String,
+    /// Raw XML payload for `customXml/itemN.xml`.
+    pub xml: String,
 }
 
 /// A coarse source subdocument region from the original Word file.

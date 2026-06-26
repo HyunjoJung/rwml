@@ -274,6 +274,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
             stats,
         },
         custom_properties: Default::default(),
+        custom_xml_items: Vec::new(),
         setup: crate::model::DocSetup {
             page: body::scan_page_setup(&doc_xml),
             header: final_header_footer.header,
