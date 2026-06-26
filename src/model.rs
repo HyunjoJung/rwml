@@ -493,6 +493,8 @@ pub struct Table {
     pub indent_twips: Option<i32>,
     /// Table alignment, if explicitly set.
     pub align: Option<Align>,
+    /// Uniform table border color, if explicitly set.
+    pub border_color: Option<Color>,
 }
 
 impl Table {

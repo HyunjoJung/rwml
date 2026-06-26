@@ -122,6 +122,7 @@ fn report() -> DocModel {
         fixed_layout: false,
         indent_twips: None,
         align: None,
+        border_color: None,
     };
     DocModel {
         blocks: vec![title, Block::Table(table)],
@@ -1760,6 +1761,37 @@ fn table_builder_adds_table_width() {
         panic!("expected reopened table");
     };
     assert_eq!(reopened_table.width_pct, Some(0.8));
+}
+
+#[test]
+fn table_builder_adds_table_border_color() {
+    let border = Color::rgb(0x22, 0x66, 0xAA);
+    let model = DocBuilder::new()
+        .rich_table(
+            TableBuilder::new()
+                .border_color(border)
+                .row([CellBuilder::text("Bordered")]),
+        )
+        .build();
+
+    let Block::Table(table) = &model.blocks[0] else {
+        panic!("expected builder to add a table block");
+    };
+    assert_eq!(table.border_color, Some(border));
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    assert!(
+        document_xml.contains(r#"<w:top w:val="single" w:sz="4" w:space="0" w:color="2266AA"/>"#),
+        "table border color XML missing: {document_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("border-color table .docx reopens");
+    let Block::Table(reopened_table) = &reopened.model().blocks[0] else {
+        panic!("expected reopened table");
+    };
+    assert_eq!(reopened_table.border_color, Some(border));
 }
 
 #[test]

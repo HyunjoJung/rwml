@@ -1069,15 +1069,22 @@ impl Ctx {
             };
             out.push_str(&format!(r#"<w:jc w:val="{val}"/>"#));
         }
-        out.push_str(concat!(
-            r#"<w:tblBorders>"#,
-            r#"<w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#,
-            r#"<w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#,
-            r#"<w:bottom w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#,
-            r#"<w:right w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#,
-            r#"<w:insideH w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#,
-            r#"<w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#,
-            r#"</w:tblBorders>"#,
+        let border_color = t
+            .border_color
+            .map(hex)
+            .unwrap_or_else(|| "auto".to_string());
+        out.push_str(&format!(
+            concat!(
+                r#"<w:tblBorders>"#,
+                r#"<w:top w:val="single" w:sz="4" w:space="0" w:color="{border_color}"/>"#,
+                r#"<w:left w:val="single" w:sz="4" w:space="0" w:color="{border_color}"/>"#,
+                r#"<w:bottom w:val="single" w:sz="4" w:space="0" w:color="{border_color}"/>"#,
+                r#"<w:right w:val="single" w:sz="4" w:space="0" w:color="{border_color}"/>"#,
+                r#"<w:insideH w:val="single" w:sz="4" w:space="0" w:color="{border_color}"/>"#,
+                r#"<w:insideV w:val="single" w:sz="4" w:space="0" w:color="{border_color}"/>"#,
+                r#"</w:tblBorders>"#,
+            ),
+            border_color = border_color
         ));
         if t.fixed_layout {
             out.push_str(r#"<w:tblLayout w:type="fixed"/>"#);

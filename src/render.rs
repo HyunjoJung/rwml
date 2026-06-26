@@ -4233,6 +4233,7 @@ mod tests {
             ],
             header_rows: 1,
             col_widths_pct: vec![0.3, 0.7],
+            ..Default::default()
         };
         let pdf = super::to_pdf(&DocModel {
             blocks: vec![Block::Table(table)],

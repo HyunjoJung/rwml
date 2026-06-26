@@ -1865,6 +1865,7 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Table {
     let mut indent_twips = None;
     let mut align = None;
     let mut width_pct = None;
+    let mut border_color = None;
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
@@ -1874,6 +1875,7 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Table {
                     indent_twips = tblpr.1;
                     align = tblpr.2;
                     width_pct = tblpr.3;
+                    border_color = tblpr.4;
                 }
                 b"tr" => rows.push(read_row(r, ctx, depth)),
                 _ => skip_subtree(r), // tblGrid, …
@@ -1882,15 +1884,23 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Table {
             _ => {}
         }
     }
-    build_table(rows, fixed_layout, indent_twips, align, width_pct)
+    build_table(
+        rows,
+        fixed_layout,
+        indent_twips,
+        align,
+        width_pct,
+        border_color,
+    )
 }
 
 /// Read `<w:tblPr>` layout metadata.
-fn read_tblpr(r: &mut Xml<'_>) -> (bool, Option<i32>, Option<Align>, Option<f32>) {
+fn read_tblpr(r: &mut Xml<'_>) -> (bool, Option<i32>, Option<Align>, Option<f32>, Option<Color>) {
     let mut fixed_layout = false;
     let mut indent_twips = None;
     let mut align = None;
     let mut width_pct = None;
+    let mut border_color = None;
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
@@ -1920,12 +1930,50 @@ fn read_tblpr(r: &mut Xml<'_>) -> (bool, Option<i32>, Option<Align>, Option<f32>
                     _ => None,
                 };
             }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblBorders" => {
+                border_color = read_tbl_border_color(r);
+            }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"tblPr" => break,
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
     }
-    (fixed_layout, indent_twips, align, width_pct)
+    (fixed_layout, indent_twips, align, width_pct, border_color)
+}
+
+fn read_tbl_border_color(r: &mut Xml<'_>) -> Option<Color> {
+    let mut color = None;
+    let mut seen = false;
+    let mut consistent = true;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if is_table_border_side(&e) => {
+                if let Some(next) = attr_local(&e, b"color").and_then(|v| parse_hex_color(&v)) {
+                    seen = true;
+                    match color {
+                        Some(current) if current != next => consistent = false,
+                        None => color = Some(next),
+                        _ => {}
+                    }
+                }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"tblBorders" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    if seen && consistent {
+        color
+    } else {
+        None
+    }
+}
+
+fn is_table_border_side(e: &BytesStart<'_>) -> bool {
+    matches!(
+        local(e.name().as_ref()),
+        b"top" | b"left" | b"bottom" | b"right" | b"insideH" | b"insideV"
+    )
 }
 
 /// Read a `<w:tr>` and whether it is a repeated header row.
@@ -2133,6 +2181,7 @@ fn build_table(
     indent_twips: Option<i32>,
     align: Option<Align>,
     width_pct: Option<f32>,
+    border_color: Option<Color>,
 ) -> Table {
     let header_rows = raw_rows.iter().take_while(|(_, h)| *h).count();
 
@@ -2224,6 +2273,7 @@ fn build_table(
         indent_twips,
         align,
         width_pct,
+        border_color,
         ..Default::default()
     }
 }
@@ -2658,7 +2708,7 @@ mod tests {
             (0..u16::MAX as usize).map(|_| (vec![raw_merge_cell(VMerge::Continue)], false)),
         );
 
-        let table = build_table(rows, false, None, None, None);
+        let table = build_table(rows, false, None, None, None, None);
 
         assert_eq!(table.rows[0].cells[0].row_span, u16::MAX);
     }

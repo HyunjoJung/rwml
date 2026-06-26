@@ -1146,6 +1146,12 @@ impl TableBuilder {
         self
     }
 
+    /// Set a uniform table border color.
+    pub fn border_color(mut self, color: Color) -> Self {
+        self.table.border_color = Some(color);
+        self
+    }
+
     /// Append a row of cells.
     pub fn row<I, C>(mut self, cells: I) -> Self
     where
