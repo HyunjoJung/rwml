@@ -828,6 +828,7 @@ fn computed_field_run(text: String) -> Run {
         comment: None,
         revision: None,
         content_control: None,
+        bookmark: None,
         note: None,
     }
 }
@@ -1029,6 +1030,7 @@ fn push_drawing_runs(images: &mut Vec<Run>, img: Option<Image>, txbx: String) {
             comment: None,
             revision: None,
             content_control: None,
+            bookmark: None,
             note: None,
         });
     }
@@ -1041,6 +1043,7 @@ fn push_drawing_runs(images: &mut Vec<Run>, img: Option<Image>, txbx: String) {
             comment: None,
             revision: None,
             content_control: None,
+            bookmark: None,
             note: None,
         });
     }
@@ -1142,6 +1145,7 @@ fn read_run(
             comment: None,
             revision: None,
             content_control: None,
+            bookmark: None,
             note: None,
         });
     }

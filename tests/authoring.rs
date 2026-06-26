@@ -6,10 +6,10 @@ use std::io::Read;
 
 use rdoc::{
     Align, Block, Cell, CellBuilder, CharProps, ChartBuilder, ChartKind, ChartShape, Color,
-    CommentBuilder, ContentControlBuilder, DocBuilder, DocModel, DocSetup, Document, FieldKind,
-    FieldRole, ImageBuilder, NoteKind, PageSetup, ParaProps, Paragraph, ParagraphBuilder,
-    ParagraphStyleBuilder, RevisionBuilder, RevisionKind, RevisionView, Row, RunBuilder, Table,
-    TableBuilder, VCell,
+    CommentBuilder, ContentControlBuilder, DocBuilder, DocModel, DocSetup, Document,
+    DocumentWarning, FieldKind, FieldRole, ImageBuilder, NoteKind, PageSetup, ParaProps, Paragraph,
+    ParagraphBuilder, ParagraphStyleBuilder, RevisionBuilder, RevisionKind, RevisionView, Row,
+    RunBuilder, Table, TableBuilder, VCell,
 };
 
 fn run(text: &str, props: CharProps) -> rdoc::Run {
@@ -464,6 +464,56 @@ fn run_builder_adds_simple_field_runs() {
         &reopened_paragraph.runs[1].field,
         FieldRole::Simple { instruction } if instruction == "FILENAME \\p"
     ));
+}
+
+#[test]
+fn run_builder_adds_bookmark_for_ref_fields() {
+    let model = DocBuilder::new()
+        .paragraph_runs([RunBuilder::new("Figure 1").bookmark("Figure1").build()])
+        .field("REF Figure1", "stale")
+        .build();
+
+    let Block::Paragraph(paragraph) = &model.blocks[0] else {
+        panic!("expected bookmark paragraph");
+    };
+    assert_eq!(paragraph.runs[0].bookmark.as_deref(), Some("Figure1"));
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let start = document_xml
+        .find(r#"<w:bookmarkStart w:id="0" w:name="Figure1"/>"#)
+        .unwrap_or(usize::MAX);
+    let text = document_xml
+        .find(r#"<w:t xml:space="preserve">Figure 1</w:t>"#)
+        .unwrap_or(usize::MAX);
+    let end = document_xml
+        .find(r#"<w:bookmarkEnd w:id="0"/>"#)
+        .unwrap_or(usize::MAX);
+    let field = document_xml
+        .find(r#"<w:fldSimple w:instr=" REF Figure1 ">"#)
+        .unwrap_or(usize::MAX);
+    assert!(
+        start < text && text < end && end < field,
+        "bookmark XML missing or out of order: {document_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("bookmark-authored .docx reopens");
+    let fields = reopened.fields();
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::Ref);
+    assert_eq!(fields[0].instruction, "REF Figure1");
+    assert_eq!(fields[0].result, "stale");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("Figure 1"));
+    assert!(
+        !reopened.main_text().contains("stale"),
+        "resolved REF should display computed bookmark text"
+    );
+    assert!(reopened
+        .report()
+        .warnings
+        .iter()
+        .all(|warning| !matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })));
 }
 
 #[test]

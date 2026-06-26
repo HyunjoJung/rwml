@@ -350,6 +350,8 @@ pub struct Run {
     pub revision: Option<AuthoredRevision>,
     /// Authored plain text content-control metadata for this run.
     pub content_control: Option<AuthoredContentControl>,
+    /// Authored bookmark name wrapping this run.
+    pub bookmark: Option<String>,
     /// Authored footnote/endnote anchored after this run.
     pub note: Option<AuthoredNote>,
 }

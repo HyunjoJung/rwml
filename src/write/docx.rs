@@ -349,6 +349,8 @@ struct Ctx {
     revision_id: u32,
     /// Authored comments emitted while writing body runs.
     comments: Vec<WrittenComment>,
+    /// Next authored bookmark id.
+    bookmark_id: u32,
     /// Authored footnotes emitted while writing body runs.
     footnotes: Vec<WrittenNote>,
     /// Authored endnotes emitted while writing body runs.
@@ -391,6 +393,7 @@ impl Ctx {
             comment_id: 0,
             revision_id: 0,
             comments: Vec::new(),
+            bookmark_id: 0,
             footnotes: Vec::new(),
             endnotes: Vec::new(),
             header_id: 0,
@@ -621,6 +624,7 @@ impl Ctx {
             _ => self.write_run_inner(&mut run_xml, r, deleted),
         }
         let run_xml = self.content_control_wrapper(r.content_control.as_ref(), &run_xml);
+        let run_xml = self.bookmark_wrapper(r.bookmark.as_deref(), &run_xml);
         self.write_revision_wrapper(out, r.revision.as_ref(), &run_xml);
         self.end_comment(out, comment_id);
         self.write_note_reference(out, r.note.as_ref());
@@ -664,6 +668,18 @@ impl Ctx {
             text: note.text.clone(),
         });
         out.push_str(&format!(r#"<w:r><w:{tag} w:id="{id}"/></w:r>"#));
+    }
+
+    fn bookmark_wrapper(&mut self, name: Option<&str>, run_xml: &str) -> String {
+        let Some(name) = name.filter(|name| !name.is_empty()) else {
+            return run_xml.to_string();
+        };
+        let id = self.bookmark_id;
+        self.bookmark_id += 1;
+        format!(
+            r#"<w:bookmarkStart w:id="{id}" w:name="{}"/>{run_xml}<w:bookmarkEnd w:id="{id}"/>"#,
+            esc_attr(name)
+        )
     }
 
     fn write_revision_wrapper(

@@ -120,6 +120,12 @@ impl RunBuilder {
         self
     }
 
+    /// Wrap this run in a generated bookmark.
+    pub fn bookmark(mut self, name: impl Into<String>) -> Self {
+        self.run.bookmark = Some(name.into());
+        self
+    }
+
     /// Anchor an authored footnote after this run.
     pub fn footnote(mut self, text: impl Into<String>) -> Self {
         self.run.note = Some(AuthoredNote {
