@@ -498,7 +498,8 @@ document-structure fields (`REVNUM`, `SECTION`, `SECTIONPAGES`, `STYLEREF`) are
 named separately from unknown fields, `REVNUM` computes from `cp:revision`,
 `SECTION` computes the current structural section number, `SECTIONPAGES`
 computes structurally bounded section page counts when no layout inference is
-needed, deterministic body paragraph- and
+needed, both with page-number and general field-result format switches,
+deterministic body paragraph- and
 character-style `STYLEREF` computes nearest styled paragraph/run text by style id
 or style name with backward-then-forward source-order search, source-order `\p`
 above/below results, and numbered paragraph `\n`, `\r`, `\w`, and numeric-text

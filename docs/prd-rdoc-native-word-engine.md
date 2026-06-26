@@ -344,7 +344,8 @@ The first public maturity release should meet these requirements.
   `STYLEREF`) are named diagnostics, with `REVNUM` computed from
   `cp:revision`, `SECTION` computed from structural section breaks,
   `SECTIONPAGES` computed for structurally bounded section page counts that do
-  not require layout inference, and deterministic body paragraph-
+  not require layout inference, both with page-number and general field-result
+  format switches, and deterministic body paragraph-
   and character-style `STYLEREF` computed by style id/name nearest paragraph/run
   lookup, including source-order `\p` above/below and deterministic numbered
   source paragraphs with `\n`, `\r`, `\w`, and numeric-text `\t` switches;

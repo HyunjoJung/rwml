@@ -21,6 +21,14 @@ rendering moving toward one coherent Rust-native document model.
   files that belong to the task.
 - Keep comments rare and useful. Mark intentional ceilings with a short comment
   that names the limit and the upgrade path.
+- Avoid duplicate process ceremony. For roadmap work that already has PRD/TRD
+  approval, skip fresh brainstorming/spec gates unless the user asks for them;
+  keep minimal-diff discipline, TDD for behavior changes, and fresh verification.
+- Keep agent-token output small: prefer `rg` plus narrow file windows, avoid full
+  `git diff` dumps, cap broad search output, and summarize long test logs by
+  exit status plus failures.
+- Keep diffs small by closing focused, verified batches frequently. When asked
+  to commit, stage only task-owned files and commit after the batch gate passes.
 
 ## Ultracode / Spark
 

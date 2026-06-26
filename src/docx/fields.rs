@@ -67,7 +67,7 @@ pub(crate) fn parse(
     let table_formulas = table_formula_context(xml);
     let mut r = Reader::from_str(xml);
     let mut fields = Vec::new();
-    let mut current: Option<ComplexField> = None;
+    let mut current = Vec::new();
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
     loop {
@@ -92,7 +92,11 @@ pub(crate) fn parse(
                         });
                     }
                     b"fldSimple" => {
-                        fields.push(read_simple_field(&mut r, &e));
+                        record_simple_field(
+                            read_simple_field(&mut r, &e),
+                            &mut current,
+                            &mut fields,
+                        );
                         consumed_element = true;
                     }
                     b"fldChar" => {
@@ -101,7 +105,7 @@ pub(crate) fn parse(
                     b"instrText" => {
                         let text = read_text(&mut r);
                         consumed_element = true;
-                        if let Some(field) = current.as_mut() {
+                        if let Some(field) = current.last_mut() {
                             if field.phase == FieldPhase::Instruction {
                                 field.instruction.push_str(&text);
                             }
@@ -110,7 +114,7 @@ pub(crate) fn parse(
                     b"t" => {
                         let text = read_text(&mut r);
                         consumed_element = true;
-                        if let Some(field) = current.as_mut() {
+                        if let Some(field) = current.last_mut() {
                             if field.phase == FieldPhase::Result {
                                 field.result.push_str(&text);
                             }
@@ -118,7 +122,7 @@ pub(crate) fn parse(
                     }
                     _ => {
                         if let Some(text) = inline_marker_text(&e) {
-                            if let Some(field) = current.as_mut() {
+                            if let Some(field) = current.last_mut() {
                                 if field.phase == FieldPhase::Result {
                                     field.result.push_str(text);
                                 }
@@ -138,17 +142,18 @@ pub(crate) fn parse(
                 }
                 match name {
                     b"fldSimple" => {
-                        fields.push(make_field(
-                            attr_local(&e, b"instr").unwrap_or_default(),
-                            String::new(),
-                        ));
+                        record_simple_field(
+                            make_field(attr_local(&e, b"instr").unwrap_or_default(), String::new()),
+                            &mut current,
+                            &mut fields,
+                        );
                     }
                     b"fldChar" => {
                         apply_fld_char(&e, &mut current, &mut fields);
                     }
                     _ => {
                         if let Some(text) = inline_marker_text(&e) {
-                            if let Some(field) = current.as_mut() {
+                            if let Some(field) = current.last_mut() {
                                 if field.phase == FieldPhase::Result {
                                     field.result.push_str(text);
                                 }
@@ -219,7 +224,7 @@ impl TableFormulaContext {
 pub(crate) fn table_formula_context(xml: &str) -> TableFormulaContext {
     let mut r = Reader::from_str(xml);
     let mut results = Vec::new();
-    let mut current: Option<ComplexField> = None;
+    let mut current = Vec::new();
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tbl" => {
@@ -242,7 +247,7 @@ pub(crate) fn table_formula_context(xml: &str) -> TableFormulaContext {
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"instrText" => {
                 let text = read_text(&mut r);
-                if let Some(field) = current.as_mut() {
+                if let Some(field) = current.last_mut() {
                     if field.phase == FieldPhase::Instruction {
                         field.instruction.push_str(&text);
                     }
@@ -329,7 +334,7 @@ fn read_table_formula_row(r: &mut Xml<'_>, row_index: usize) -> Vec<TableFormula
 
 fn read_table_formula_cell(r: &mut Xml<'_>, row: usize, col: usize) -> TableFormulaCell {
     let mut cell = TableFormulaCell::default();
-    let mut current: Option<ComplexField> = None;
+    let mut current = Vec::new();
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tcPr" => {
@@ -388,7 +393,7 @@ fn read_table_formula_cell(r: &mut Xml<'_>, row: usize, col: usize) -> TableForm
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"instrText" => {
                 let text = read_text(r);
-                if let Some(field) = current.as_mut() {
+                if let Some(field) = current.last_mut() {
                     if field.phase == FieldPhase::Instruction {
                         field.instruction.push_str(&text);
                     }
@@ -451,32 +456,15 @@ fn read_field_result_text(r: &mut Xml<'_>) -> String {
 
 fn apply_table_formula_scan_fld_char(
     e: &BytesStart<'_>,
-    current: &mut Option<ComplexField>,
+    current: &mut Vec<ComplexField>,
     mut record: impl FnMut(&str, &str),
 ) {
-    match attr_local(e, b"fldCharType").as_deref() {
-        Some("begin") => {
-            *current = Some(ComplexField {
-                instruction: String::new(),
-                result: String::new(),
-                phase: FieldPhase::Instruction,
-            });
+    apply_complex_field_scan_fld_char(e, current, |field| {
+        let instruction = normalize_instruction(&field.instruction);
+        if is_formula_instruction(Some(&instruction)) {
+            record(&instruction, &field.result);
         }
-        Some("separate") => {
-            if let Some(field) = current.as_mut() {
-                field.phase = FieldPhase::Result;
-            }
-        }
-        Some("end") => {
-            if let Some(field) = current.take() {
-                let instruction = normalize_instruction(&field.instruction);
-                if is_formula_instruction(Some(&instruction)) {
-                    record(&instruction, &field.result);
-                }
-            }
-        }
-        _ => {}
-    }
+    });
 }
 
 fn is_formula_instruction(instruction: Option<&str>) -> bool {
@@ -486,6 +474,15 @@ fn is_formula_instruction(instruction: Option<&str>) -> bool {
         .is_some_and(|instruction| {
             FieldKind::from_instruction(instruction) == FieldKind::Dynamic("=".to_string())
         })
+}
+
+fn record_simple_field(field: Field, current: &mut [ComplexField], fields: &mut Vec<Field>) {
+    if let Some(parent) = current.last_mut() {
+        if parent.phase == FieldPhase::Result {
+            parent.result.push_str(&field.result);
+        }
+    }
+    fields.push(field);
 }
 
 fn read_simple_field(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Field {
@@ -512,23 +509,38 @@ fn read_simple_field(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Field {
     make_field(instruction, result)
 }
 
-fn apply_fld_char(e: &BytesStart<'_>, current: &mut Option<ComplexField>, out: &mut Vec<Field>) {
+fn apply_fld_char(e: &BytesStart<'_>, current: &mut Vec<ComplexField>, out: &mut Vec<Field>) {
+    apply_complex_field_scan_fld_char(e, current, |field| {
+        out.push(make_field(field.instruction, field.result));
+    });
+}
+
+fn apply_complex_field_scan_fld_char(
+    e: &BytesStart<'_>,
+    current: &mut Vec<ComplexField>,
+    mut finish: impl FnMut(ComplexField),
+) {
     match attr_local(e, b"fldCharType").as_deref() {
         Some("begin") => {
-            *current = Some(ComplexField {
+            current.push(ComplexField {
                 instruction: String::new(),
                 result: String::new(),
                 phase: FieldPhase::Instruction,
             });
         }
         Some("separate") => {
-            if let Some(field) = current.as_mut() {
+            if let Some(field) = current.last_mut() {
                 field.phase = FieldPhase::Result;
             }
         }
         Some("end") => {
-            if let Some(field) = current.take() {
-                out.push(make_field(field.instruction, field.result));
+            if let Some(field) = current.pop() {
+                if let Some(parent) = current.last_mut() {
+                    if parent.phase == FieldPhase::Result {
+                        parent.result.push_str(&field.result);
+                    }
+                }
+                finish(field);
             }
         }
         _ => {}
@@ -3247,7 +3259,7 @@ fn read_toc_paragraph(
     let mut outline: Option<u8> = None;
     let mut text = String::new();
     let mut bookmarks = active_bookmark_names(active_bookmarks);
-    let mut current: Option<ComplexField> = None;
+    let mut current = Vec::new();
     let mut sequence_identifiers = Vec::new();
     loop {
         match r.read_event() {
@@ -3294,7 +3306,7 @@ fn read_toc_paragraph(
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"instrText" => {
                 let field_text = read_text(r);
-                if let Some(field) = current.as_mut() {
+                if let Some(field) = current.last_mut() {
                     if field.phase == FieldPhase::Instruction {
                         field.instruction.push_str(&field_text);
                     }
@@ -3302,7 +3314,7 @@ fn read_toc_paragraph(
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"t" => {
                 let run_text = read_text(r);
-                let hidden_tc_result = current.as_ref().is_some_and(|field| {
+                let hidden_tc_result = current.iter().rev().any(|field| {
                     field.phase == FieldPhase::Result
                         && tc_instruction(&field.instruction).is_some()
                 });
@@ -3396,37 +3408,18 @@ fn skip_element(r: &mut Xml<'_>, element: &[u8]) {
 
 fn apply_toc_fld_char(
     e: &BytesStart<'_>,
-    current: &mut Option<ComplexField>,
+    current: &mut Vec<ComplexField>,
     bookmarks: &[String],
     sequence_identifiers: &mut Vec<String>,
     entries: &mut Vec<TocEntry>,
 ) {
-    match attr_local(e, b"fldCharType").as_deref() {
-        Some("begin") => {
-            *current = Some(ComplexField {
-                instruction: String::new(),
-                result: String::new(),
-                phase: FieldPhase::Instruction,
-            });
-        }
-        Some("separate") => {
-            if let Some(field) = current.as_mut() {
-                field.phase = FieldPhase::Result;
+    apply_complex_field_scan_fld_char(e, current, |field| {
+        if !push_tc_entry(&field.instruction, bookmarks, entries) {
+            if let Some(identifier) = seq_identifier_from_instruction(Some(&field.instruction)) {
+                push_unique(sequence_identifiers, identifier);
             }
         }
-        Some("end") => {
-            if let Some(field) = current.take() {
-                if !push_tc_entry(&field.instruction, bookmarks, entries) {
-                    if let Some(identifier) =
-                        seq_identifier_from_instruction(Some(&field.instruction))
-                    {
-                        push_unique(sequence_identifiers, identifier);
-                    }
-                }
-            }
-        }
-        _ => {}
-    }
+    });
 }
 
 fn push_tc_entry_from_instruction(
@@ -3481,7 +3474,7 @@ fn tc_instruction(instruction: &str) -> Option<TcInstruction> {
     if !kind.eq_ignore_ascii_case("TC") {
         return None;
     }
-    let text = parts.next()?.trim_matches('"').to_string();
+    let text = field_name_token(parts.next()?)?.to_string();
     if text.is_empty() {
         return None;
     }
@@ -3530,15 +3523,37 @@ fn tc_instruction(instruction: &str) -> Option<TcInstruction> {
 }
 
 fn set_tc_entry_type(slot: &mut Option<String>, value: &str) -> Option<()> {
-    let value = value.trim_matches('"');
-    if value.is_empty() || slot.replace(value.to_string()).is_some() {
+    let value = tc_type_identifier(value)?;
+    if slot.replace(value).is_some() {
         return None;
     }
     Some(())
 }
 
+fn tc_type_identifier(value: &str) -> Option<String> {
+    Some(field_identifier_token(value)?.to_string())
+}
+
+fn field_identifier_token(value: &str) -> Option<&str> {
+    let value = value.trim();
+    let value = match (value.starts_with('"'), value.ends_with('"')) {
+        (true, true) if value.len() >= 2 => &value[1..value.len() - 1],
+        (true, _) | (_, true) => return None,
+        (false, false) => value,
+    }
+    .trim();
+    if value.is_empty()
+        || value.starts_with('\\')
+        || value.contains('"')
+        || value.chars().any(char::is_whitespace)
+    {
+        return None;
+    }
+    Some(value)
+}
+
 fn parse_toc_level(value: &str) -> Option<u8> {
-    let level = value.trim_matches('"').parse::<u8>().ok()?;
+    let level = field_name_token(value)?.parse::<u8>().ok()?;
     (1..=9).contains(&level).then_some(level)
 }
 
@@ -3555,10 +3570,7 @@ fn seq_identifier_from_instruction(instruction: Option<&str>) -> Option<String> 
     if !kind.eq_ignore_ascii_case("SEQ") {
         return None;
     }
-    let identifier = parts.next()?.trim_matches('"');
-    if identifier.is_empty() || identifier.starts_with('\\') {
-        return None;
-    }
+    let identifier = field_identifier_token(parts.next()?)?;
     Some(identifier.to_string())
 }
 
@@ -4072,6 +4084,7 @@ fn computed_relative_note_ref_result(
 struct SectionInstruction {
     result: SectionResult,
     number_format: Option<PageNumberFormat>,
+    text_format: Option<FieldTextFormat>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -4094,7 +4107,10 @@ pub(crate) fn computed_section_result(
         SectionResult::Number => position.section,
         SectionResult::Pages => position.section_pages?,
     };
-    format_page_number(value, spec.number_format)
+    Some(apply_field_text_format(
+        format_page_number(value, spec.number_format)?,
+        spec.text_format,
+    ))
 }
 
 fn section_instruction(instruction: &str) -> Option<SectionInstruction> {
@@ -4109,15 +4125,17 @@ fn section_instruction(instruction: &str) -> Option<SectionInstruction> {
         return None;
     };
     let mut number_format = None;
+    let mut text_format = None;
     while let Some(part) = parts.next() {
         if part == "\\*" {
-            if !accept_page_number_format_switch(parts.next()?, &mut number_format) {
+            if !accept_page_field_format_switch(parts.next()?, &mut number_format, &mut text_format)
+            {
                 return None;
             }
             continue;
         }
         if let Some(format) = part.strip_prefix("\\*") {
-            if !accept_page_number_format_switch(format, &mut number_format) {
+            if !accept_page_field_format_switch(format, &mut number_format, &mut text_format) {
                 return None;
             }
             continue;
@@ -4127,6 +4145,7 @@ fn section_instruction(instruction: &str) -> Option<SectionInstruction> {
     Some(SectionInstruction {
         result,
         number_format,
+        text_format,
     })
 }
 
@@ -4223,10 +4242,7 @@ fn set_instruction(instruction: &str) -> Option<SetInstruction> {
     if !kind.eq_ignore_ascii_case("SET") {
         return None;
     }
-    let name = parts.next()?.trim_matches('"');
-    if name.is_empty() || name.starts_with('\\') {
-        return None;
-    }
+    let name = field_identifier_token(parts.next()?)?;
     let value = set_value_literal(parts.next()?)?;
     accept_neutral_field_format_tail(&mut parts)?;
     Some(SetInstruction {
@@ -4239,7 +4255,8 @@ fn set_value_literal(token: &str) -> Option<String> {
     if let Some(value) = quoted_literal_text(token) {
         return Some(value);
     }
-    (!token.is_empty() && !token.starts_with('\\')).then(|| token.to_string())
+    (!token.is_empty() && !token.starts_with('\\') && !token.contains('"'))
+        .then(|| token.to_string())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -4330,12 +4347,12 @@ fn document_info_instruction(instruction: &str) -> Option<DocumentInfoInstructio
     let mut file_size_unit_seen = false;
     let mut user_override = None;
     let property = if kind.eq_ignore_ascii_case("DOCPROPERTY") {
-        doc_property_instruction_property(parts.next()?.trim_matches('"'))?
+        doc_property_instruction_property(field_name_token(parts.next()?)?)?
     } else if kind.eq_ignore_ascii_case("DOCVARIABLE") {
-        let name = parts.next()?.trim_matches('"');
+        let name = field_name_token(parts.next()?)?;
         (!name.is_empty()).then(|| DocumentInfoProperty::Variable(document_property_key(name)))?
     } else if kind.eq_ignore_ascii_case("INFO") {
-        document_info_property(parts.next()?.trim_matches('"'))?
+        document_info_property(field_name_token(parts.next()?)?)?
     } else if let Some(property) = user_info_property(kind) {
         property
     } else {
@@ -4358,7 +4375,7 @@ fn document_info_instruction(instruction: &str) -> Option<DocumentInfoInstructio
             if date_format.is_some() {
                 return None;
             }
-            let format = parts.next()?.trim_matches('"');
+            let format = field_literal_token(parts.next()?)?;
             if format.is_empty() {
                 return None;
             }
@@ -4366,7 +4383,7 @@ fn document_info_instruction(instruction: &str) -> Option<DocumentInfoInstructio
             continue;
         }
         if let Some(format) = strip_ascii_switch_prefix(part, "\\@") {
-            let format = format.trim_matches('"');
+            let format = field_literal_token(format)?;
             if format.is_empty() || date_format.is_some() {
                 return None;
             }
@@ -4397,6 +4414,30 @@ fn document_info_instruction(instruction: &str) -> Option<DocumentInfoInstructio
         file_size_unit,
         user_override,
     })
+}
+
+fn field_name_token(value: &str) -> Option<&str> {
+    let value = value.trim();
+    let value = match (value.starts_with('"'), value.ends_with('"')) {
+        (true, true) if value.len() >= 2 => &value[1..value.len() - 1],
+        (true, _) | (_, true) => return None,
+        (false, false) => value,
+    }
+    .trim();
+    if value.is_empty() || value.starts_with('\\') || value.contains('"') {
+        return None;
+    }
+    Some(value)
+}
+
+fn field_literal_token(value: &str) -> Option<&str> {
+    let value = value.trim();
+    let value = match (value.starts_with('"'), value.ends_with('"')) {
+        (true, true) if value.len() >= 2 => &value[1..value.len() - 1],
+        (true, _) | (_, true) => return None,
+        (false, false) => value,
+    };
+    (!value.contains('"')).then_some(value)
 }
 
 fn file_size_unit_switch(part: &str) -> Option<FileSizeUnit> {
@@ -5838,7 +5879,8 @@ fn quote_instruction(instruction: &str) -> Option<QuoteInstruction> {
         }
         text_parts.push(part);
     }
-    let text = unquote_field_text(&text_parts.join(" "));
+    let text = text_parts.join(" ");
+    let text = field_literal_token(&text)?.to_string();
     if text.is_empty() {
         return None;
     }
@@ -5914,13 +5956,7 @@ fn ask_instruction(instruction: &str) -> Option<AskInstruction> {
     if !kind.eq_ignore_ascii_case("ASK") {
         return None;
     }
-    let bookmark = parts.next()?.trim_matches('"');
-    if bookmark.is_empty()
-        || bookmark.starts_with('\\')
-        || bookmark.chars().any(char::is_whitespace)
-    {
-        return None;
-    }
+    let bookmark = field_identifier_token(parts.next()?)?;
     let prompt = quoted_literal_text(parts.next()?)?;
     if prompt.is_empty() {
         return None;
@@ -5981,7 +6017,8 @@ fn quoted_literal_text(token: &str) -> Option<String> {
     if bytes.len() < 2 || bytes[0] != b'"' || *bytes.last()? != b'"' {
         return None;
     }
-    Some(token[1..token.len() - 1].to_string())
+    let text = &token[1..token.len() - 1];
+    (!text.contains('"')).then(|| text.to_string())
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -6122,7 +6159,7 @@ fn if_operand(token: &str) -> Option<IfOperand> {
 
 fn compact_if_comparison(token: &str) -> Option<(IfOperand, IfOperator, IfOperand)> {
     for operator in [">=", "<=", "<>", "=", ">", "<"] {
-        let Some(index) = token.find(operator) else {
+        let Some(index) = find_unquoted_operator(token, operator) else {
             continue;
         };
         let (left, right_with_operator) = token.split_at(index);
@@ -6139,8 +6176,20 @@ fn compact_if_comparison(token: &str) -> Option<(IfOperand, IfOperator, IfOperan
     None
 }
 
+fn find_unquoted_operator(token: &str, operator: &str) -> Option<usize> {
+    let mut in_quotes = false;
+    for (index, ch) in token.char_indices() {
+        if ch == '"' {
+            in_quotes = !in_quotes;
+        } else if !in_quotes && token[index..].starts_with(operator) {
+            return Some(index);
+        }
+    }
+    None
+}
+
 fn if_result_text(token: &str) -> Option<String> {
-    (!token.starts_with('\\')).then(|| unquote_field_text(token))
+    (!token.starts_with('\\')).then(|| field_literal_token(token).map(str::to_string))?
 }
 
 fn if_operator(token: &str) -> Option<IfOperator> {
@@ -6223,6 +6272,16 @@ fn reference_index_ta_instruction<'a>(mut parts: impl Iterator<Item = &'a str>) 
             has_entry_text = true;
             continue;
         }
+        if let Some(value) = strip_ascii_switch_prefix(part, "\\l")
+            .or_else(|| strip_ascii_switch_prefix(part, "\\s"))
+        {
+            if value.is_empty() {
+                return None;
+            }
+            reference_index_literal(value)?;
+            has_entry_text = true;
+            continue;
+        }
         if part.eq_ignore_ascii_case("\\c") {
             parse_reference_index_category(parts.next()?)?;
             continue;
@@ -6252,8 +6311,24 @@ fn reference_index_xe_instruction<'a>(mut parts: impl Iterator<Item = &'a str>) 
             reference_index_plain_value(parts.next()?)?;
             continue;
         }
+        if let Some(value) = strip_ascii_switch_prefix(part, "\\f")
+            .or_else(|| strip_ascii_switch_prefix(part, "\\r"))
+        {
+            if value.is_empty() {
+                return None;
+            }
+            reference_index_plain_value(value)?;
+            continue;
+        }
         if part.eq_ignore_ascii_case("\\t") {
             reference_index_literal(parts.next()?)?;
+            continue;
+        }
+        if let Some(value) = strip_ascii_switch_prefix(part, "\\t") {
+            if value.is_empty() {
+                return None;
+            }
+            reference_index_literal(value)?;
             continue;
         }
         if accept_reference_index_neutral_format(part, &mut parts).is_some() {
@@ -6277,7 +6352,7 @@ fn reference_index_plain_value(token: &str) -> Option<String> {
 }
 
 fn parse_reference_index_category(value: &str) -> Option<u8> {
-    let value = value.trim_matches('"').parse::<u8>().ok()?;
+    let value = field_name_token(value)?.parse::<u8>().ok()?;
     (1..=16).contains(&value).then_some(value)
 }
 
@@ -6354,19 +6429,13 @@ fn print_instruction(instruction: &str) -> Option<()> {
     }
     let first = parts.next()?;
     if first.eq_ignore_ascii_case("\\p") {
-        let group = parts.next()?.trim_matches('"');
-        if group.is_empty() || group.starts_with('\\') {
-            return None;
-        }
+        field_identifier_token(parts.next()?)?;
         let codes = quoted_literal_text(parts.next()?)?;
         if codes.is_empty() {
             return None;
         }
     } else if let Some(group) = strip_ascii_switch_prefix(first, "\\p") {
-        let group = group.trim_matches('"');
-        if group.is_empty() || group.starts_with('\\') {
-            return None;
-        }
+        field_identifier_token(group)?;
         let codes = quoted_literal_text(parts.next()?)?;
         if codes.is_empty() {
             return None;
@@ -6401,10 +6470,7 @@ fn action_instruction(instruction: &str) -> Option<ActionInstruction> {
     if !kind.eq_ignore_ascii_case("GOTOBUTTON") && !kind.eq_ignore_ascii_case("MACROBUTTON") {
         return None;
     }
-    let action_target = parts.next()?;
-    if action_target.trim_matches('"').is_empty() || action_target.starts_with('\\') {
-        return None;
-    }
+    field_identifier_token(parts.next()?)?;
     let mut display_parts = Vec::new();
     let mut text_format = None;
     while let Some(part) = parts.next() {
@@ -6425,7 +6491,8 @@ fn action_instruction(instruction: &str) -> Option<ActionInstruction> {
         }
         display_parts.push(part);
     }
-    let display_text = unquote_field_text(&display_parts.join(" "));
+    let display_text = display_parts.join(" ");
+    let display_text = field_literal_token(&display_text)?.to_string();
     (!display_text.is_empty()).then_some(ActionInstruction {
         display_text,
         text_format,
@@ -6505,8 +6572,7 @@ fn accept_advance_switch<'a>(part: &str, parts: &mut impl Iterator<Item = &'a st
 }
 
 fn parse_advance_points(value: &str) -> Option<f32> {
-    value
-        .trim_matches('"')
+    field_name_token(value)?
         .parse::<f32>()
         .ok()
         .filter(|value| value.is_finite())
@@ -6682,7 +6748,8 @@ fn eq_script_segment(mut body: &str) -> Option<(String, &str)> {
         {
             text.push_str(&eq_script_marker(marker, eq_operand_text(segment)?));
             body = rest.trim_start();
-            return Some((text, body));
+            saw_option = true;
+            continue;
         }
         if let Some(rest) = consume_eq_script_empty_option(body, "\\ai")
             .or_else(|| consume_eq_script_empty_option(body, "\\di"))
@@ -6808,7 +6875,7 @@ fn eq_bracket_text(expression: &str) -> Option<String> {
             break;
         }
     }
-    let inner = body.strip_prefix('(')?.strip_suffix(')')?;
+    let inner = take_eq_enclosed_operand(body)?;
     Some(format!(
         "{}{}{}",
         brackets.left,
@@ -6896,7 +6963,7 @@ fn eq_enclosed_operand_with_prefix_switches<'a>(
             break;
         }
     }
-    body.strip_prefix('(')?.strip_suffix(')')
+    take_eq_enclosed_operand(body)
 }
 
 fn consume_eq_prefix_switch<'a>(value: &'a str, switch: &str) -> Option<&'a str> {
@@ -6966,6 +7033,11 @@ fn take_eq_parenthesized_operand(value: &str) -> Option<(&str, &str)> {
         }
     }
     None
+}
+
+fn take_eq_enclosed_operand(value: &str) -> Option<&str> {
+    let (inner, rest) = take_eq_parenthesized_operand(value)?;
+    rest.trim().is_empty().then_some(inner)
 }
 
 fn split_eq_fraction_operands(inner: &str) -> Option<(&str, &str)> {
@@ -7133,14 +7205,14 @@ fn symbol_instruction(instruction: &str) -> Option<SymbolInstruction> {
             return None;
         }
         if part.eq_ignore_ascii_case("\\f") {
-            font = Some(parts.next()?.trim_matches('"').to_string());
+            font = Some(field_name_token(parts.next()?)?.to_string());
             continue;
         }
         if let Some(value) = strip_ascii_switch_prefix(part, "\\f") {
             if value.is_empty() {
                 return None;
             }
-            font = Some(value.trim_matches('"').to_string());
+            font = Some(field_name_token(value)?.to_string());
             continue;
         }
         if part.eq_ignore_ascii_case("\\s") {
@@ -7182,15 +7254,14 @@ fn symbol_instruction(instruction: &str) -> Option<SymbolInstruction> {
 }
 
 fn parse_symbol_size(token: &str) -> Option<f32> {
-    token
-        .trim_matches('"')
+    field_name_token(token)?
         .parse::<f32>()
         .ok()
         .filter(|value| value.is_finite() && *value > 0.0)
 }
 
 fn parse_symbol_code(token: &str) -> Option<u32> {
-    let token = token.trim_matches('"');
+    let token = field_name_token(token)?;
     if let Some(hex) = token
         .strip_prefix("0x")
         .or_else(|| token.strip_prefix("0X"))
@@ -7433,8 +7504,8 @@ fn style_ref_instruction(instruction: &str) -> Option<StyleRefInstruction> {
             }
             return None;
         }
-        let candidate = part.trim_matches('"');
-        if candidate.is_empty() || style_identifier.replace(candidate.to_string()).is_some() {
+        let candidate = field_name_token(part)?;
+        if style_identifier.replace(candidate.to_string()).is_some() {
             return None;
         }
     }
@@ -7501,10 +7572,7 @@ pub(crate) fn computed_sequence_result(
     if !kind.eq_ignore_ascii_case("SEQ") {
         return None;
     }
-    let identifier = parts.next()?.trim_matches('"');
-    if identifier.is_empty() || identifier.starts_with('\\') {
-        return None;
-    }
+    let identifier = field_identifier_token(parts.next()?)?;
     let mut action = SequenceAction::Next;
     let mut action_seen = false;
     let mut hidden = false;
@@ -7549,7 +7617,7 @@ pub(crate) fn computed_sequence_result(
             if action_seen {
                 return None;
             }
-            let reset = parts.next()?.trim_matches('"').parse::<i64>().ok()?;
+            let reset = field_name_token(parts.next()?)?.parse::<i64>().ok()?;
             action_seen = true;
             action = SequenceAction::Reset(reset);
             continue;
@@ -7559,7 +7627,7 @@ pub(crate) fn computed_sequence_result(
                 return None;
             }
             action_seen = true;
-            action = SequenceAction::Reset(reset.trim_matches('"').parse::<i64>().ok()?);
+            action = SequenceAction::Reset(field_name_token(reset)?.parse::<i64>().ok()?);
             continue;
         }
         return None;
@@ -7629,12 +7697,12 @@ pub(crate) fn computed_numbering_result(
             continue;
         }
         if accepts_separator_switch {
-            if let Some(value) = part.strip_prefix("\\s") {
+            if let Some(value) = strip_ascii_switch_prefix(part, "\\s") {
                 accept_autonum_separator_switch(value, &mut separator)?;
                 continue;
             }
         }
-        if part.strip_prefix("\\s").is_some() || part.eq_ignore_ascii_case("\\s") {
+        if strip_ascii_switch_prefix(part, "\\s").is_some() || part.eq_ignore_ascii_case("\\s") {
             return None;
         }
         return None;
@@ -7716,7 +7784,7 @@ fn accept_listnum_level_switch(part: &str, level_seen: &mut bool) -> Option<()> 
     if *level_seen {
         return None;
     }
-    let level = part.trim_matches('"').parse::<u8>().ok()?;
+    let level = field_name_token(part)?.parse::<u8>().ok()?;
     if level != 1 {
         return None;
     }
@@ -7725,7 +7793,7 @@ fn accept_listnum_level_switch(part: &str, level_seen: &mut bool) -> Option<()> 
 }
 
 fn accept_listnum_start_switch(part: &str, reset_start: &mut Option<i64>) -> Option<()> {
-    let start = part.trim_matches('"').parse::<i64>().ok()?;
+    let start = field_name_token(part)?.parse::<i64>().ok()?;
     if start < 0 || reset_start.replace(start).is_some() {
         return None;
     }
@@ -7733,7 +7801,7 @@ fn accept_listnum_start_switch(part: &str, reset_start: &mut Option<i64>) -> Opt
 }
 
 fn accept_autonum_separator_switch(part: &str, separator: &mut Option<char>) -> Option<()> {
-    let value = unquote_field_text(part);
+    let value = field_literal_token(part)?;
     let mut chars = value.chars();
     let ch = chars.next()?;
     if chars.next().is_some() || separator.replace(ch).is_some() {
@@ -7811,8 +7879,8 @@ fn page_ref_instruction(instruction: &str) -> Option<PageRefInstruction> {
             }
             return None;
         }
-        let candidate = part.trim_matches('"');
-        if candidate.is_empty() || target.replace(candidate.to_string()).is_some() {
+        let candidate = bookmark_target_identifier(part)?;
+        if target.replace(candidate.to_string()).is_some() {
             return None;
         }
     }
@@ -7884,8 +7952,8 @@ fn note_ref_instruction(instruction: &str) -> Option<NoteRefInstruction> {
             }
             return None;
         }
-        let candidate = part.trim_matches('"');
-        if candidate.is_empty() || target.replace(candidate.to_string()).is_some() {
+        let candidate = bookmark_target_identifier(part)?;
+        if target.replace(candidate.to_string()).is_some() {
             return None;
         }
     }
@@ -8255,7 +8323,18 @@ fn parse_ref_instruction_parts<'a>(
                 if sequence_separator {
                     return None;
                 }
-                let separator = parts.next()?.trim_matches('"');
+                let separator = field_literal_token(parts.next()?)?;
+                if separator.is_empty() || separator.starts_with('\\') {
+                    return None;
+                }
+                sequence_separator = true;
+                continue;
+            }
+            if let Some(separator) = strip_ascii_switch_prefix(part, "\\d") {
+                if sequence_separator {
+                    return None;
+                }
+                let separator = field_literal_token(separator)?;
                 if separator.is_empty() || separator.starts_with('\\') {
                     return None;
                 }
@@ -8295,8 +8374,8 @@ fn parse_ref_instruction_parts<'a>(
             }
             return None;
         }
-        let candidate = part.trim_matches('"');
-        if candidate.is_empty() || target.replace(candidate.to_string()).is_some() {
+        let candidate = bookmark_target_identifier(part)?;
+        if target.replace(candidate.to_string()).is_some() {
             return None;
         }
     }
@@ -8325,6 +8404,10 @@ fn parse_ref_instruction_parts<'a>(
         relative_context_number,
         suppress_non_numeric,
     })
+}
+
+fn bookmark_target_identifier(value: &str) -> Option<&str> {
+    field_identifier_token(value)
 }
 
 fn ref_note_field_target(instruction: &str) -> Option<String> {
@@ -8552,7 +8635,7 @@ fn toc_spec(instruction: &str) -> Option<TocSpec> {
         }
         if part.eq_ignore_ascii_case("\\f") {
             let filter = match parts.next_if(|next| !next.starts_with('\\')) {
-                Some(value) => TcFilter::EntryType(value.trim_matches('"').to_string()),
+                Some(value) => TcFilter::EntryType(tc_type_identifier(value)?),
                 None => TcFilter::All,
             };
             if !accept_tc_filter(&mut tc_filter, filter) {
@@ -8564,7 +8647,7 @@ fn toc_spec(instruction: &str) -> Option<TocSpec> {
             let filter = if value.is_empty() {
                 TcFilter::All
             } else {
-                TcFilter::EntryType(value.trim_matches('"').to_string())
+                TcFilter::EntryType(tc_type_identifier(value)?)
             };
             if !accept_tc_filter(&mut tc_filter, filter) {
                 return None;
@@ -8670,17 +8753,14 @@ fn toc_spec(instruction: &str) -> Option<TocSpec> {
         }
         if part.eq_ignore_ascii_case("\\s") {
             let identifier = parts.next_if(|next| !next.starts_with('\\'))?;
-            if saw_page_number_sequence_prefix || identifier.trim_matches('"').is_empty() {
+            if saw_page_number_sequence_prefix || toc_sequence_identifier(identifier).is_none() {
                 return None;
             }
             saw_page_number_sequence_prefix = true;
             continue;
         }
         if let Some(identifier) = strip_ascii_switch_prefix(part, "\\s") {
-            if identifier.is_empty()
-                || saw_page_number_sequence_prefix
-                || identifier.trim_matches('"').is_empty()
-            {
+            if saw_page_number_sequence_prefix || toc_sequence_identifier(identifier).is_none() {
                 return None;
             }
             saw_page_number_sequence_prefix = true;
@@ -8688,20 +8768,15 @@ fn toc_spec(instruction: &str) -> Option<TocSpec> {
         }
         if part.eq_ignore_ascii_case("\\b") {
             let target = parts.next_if(|next| !next.starts_with('\\'))?;
-            if bookmark
-                .replace(target.trim_matches('"').to_string())
-                .is_some()
-            {
+            let target = field_identifier_token(target)?;
+            if bookmark.replace(target.to_string()).is_some() {
                 return None;
             }
             continue;
         }
         if let Some(target) = strip_ascii_switch_prefix(part, "\\b") {
-            if target.is_empty()
-                || bookmark
-                    .replace(target.trim_matches('"').to_string())
-                    .is_some()
-            {
+            let target = field_identifier_token(target)?;
+            if bookmark.replace(target.to_string()).is_some() {
                 return None;
             }
             continue;
@@ -8769,9 +8844,6 @@ fn toc_spec(instruction: &str) -> Option<TocSpec> {
 }
 
 fn accept_tc_filter(slot: &mut Option<TcFilter>, filter: TcFilter) -> bool {
-    if matches!(&filter, TcFilter::EntryType(value) if value.is_empty()) {
-        return false;
-    }
     slot.replace(filter).is_none()
 }
 
@@ -8780,23 +8852,39 @@ fn accept_sequence_filter(
     value: &str,
     filter: fn(String) -> TocSequenceFilter,
 ) -> bool {
-    let value = value.trim_matches('"');
-    if value.is_empty() || slot.replace(filter(value.to_string())).is_some() {
+    let Some(value) = toc_sequence_identifier(value) else {
+        return false;
+    };
+    if slot.replace(filter(value.to_string())).is_some() {
         return false;
     }
     true
 }
 
+fn toc_sequence_identifier(value: &str) -> Option<&str> {
+    field_identifier_token(value)
+}
+
 fn parse_toc_style_specs(value: &str) -> Option<Vec<TocStyleSpec>> {
-    let parts: Vec<_> = value.trim_matches('"').split(',').map(str::trim).collect();
+    let value = value.trim();
+    let value = match (value.starts_with('"'), value.ends_with('"')) {
+        (true, true) if value.len() >= 2 => &value[1..value.len() - 1],
+        (true, _) | (_, true) => return None,
+        (false, false) => value,
+    };
+    let parts: Vec<_> = value.split(',').map(str::trim).collect();
     if parts.is_empty() || parts.len() % 2 != 0 {
         return None;
     }
     let mut specs = Vec::new();
     for pair in parts.chunks_exact(2) {
-        let name = pair[0].trim_matches('"');
-        let level = pair[1].trim_matches('"').parse::<u8>().ok()?;
-        if name.is_empty() || !(1..=9).contains(&level) {
+        let name = pair[0];
+        let level = pair[1];
+        if name.is_empty() || name.starts_with('\\') || name.contains('"') || level.contains('"') {
+            return None;
+        }
+        let level = level.parse::<u8>().ok()?;
+        if !(1..=9).contains(&level) {
             return None;
         }
         specs.push(TocStyleSpec {
@@ -8822,7 +8910,7 @@ fn strip_ascii_switch_prefix<'a>(part: &'a str, switch: &str) -> Option<&'a str>
 }
 
 fn parse_toc_outline_range(range: &str) -> Option<(u8, u8)> {
-    let range = range.trim_matches('"');
+    let range = field_name_token(range)?;
     let (start, end) = range.split_once('-')?;
     let start = start.parse::<u8>().ok()?;
     let end = end.parse::<u8>().ok()?;
@@ -8878,9 +8966,16 @@ fn read_text(r: &mut Xml<'_>) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        cardinal_page_number_text, computed_ask_result, computed_dynamic_result,
-        format_page_number, ordinal_page_number_text, PageNumberFormat,
+        cardinal_page_number_text, computed_action_result, computed_ask_result,
+        computed_display_result, computed_dynamic_result, computed_listnum_result,
+        computed_numbering_result, computed_reference_index_result, computed_sequence_result,
+        computed_set_result, computed_toc_entry_result, direct_bookmark_ref_instruction,
+        document_info_instruction, format_page_number, note_ref_instruction,
+        ordinal_page_number_text, page_ref_instruction, ref_instruction,
+        seq_identifier_from_instruction, style_ref_instruction, table_formula_context, toc_entries,
+        toc_spec, PageNumberFormat, TocEntrySource,
     };
+    use crate::docx::styles::Styles;
     use std::collections::HashMap;
 
     #[test]
@@ -8929,6 +9024,588 @@ mod tests {
         );
         assert_eq!(
             computed_dynamic_result(r#"ASK ClientCode "Client code?" \d "ac-42" \o"#),
+            None
+        );
+    }
+
+    #[test]
+    fn ask_bookmarks_reject_unbalanced_and_embedded_quotes() {
+        let mut field_bookmarks = HashMap::new();
+
+        assert_eq!(
+            computed_ask_result(
+                r#"ASK Client"Code" "Client code?" \d "ac-42""#,
+                &mut field_bookmarks,
+            ),
+            None
+        );
+        assert_eq!(
+            computed_ask_result(
+                r#"ASK "ClientCode"x "Client code?" \d "ac-42""#,
+                &mut field_bookmarks,
+            ),
+            None
+        );
+        assert!(field_bookmarks.is_empty());
+    }
+
+    #[test]
+    fn quoted_field_literals_reject_embedded_quotes() {
+        assert_eq!(
+            computed_dynamic_result(r#"FILLIN "Client?" \d "Acme""#).as_deref(),
+            Some("Acme")
+        );
+        assert_eq!(
+            computed_action_result(r#"PRINT "page \p""#).as_deref(),
+            Some("")
+        );
+        assert_eq!(
+            computed_dynamic_result(r#"FILLIN "Cli"ent?" \d "Acme""#),
+            None
+        );
+        assert_eq!(
+            computed_dynamic_result(r#"FILLIN "Client?" \d "Ac"me""#),
+            None
+        );
+        assert_eq!(computed_action_result(r#"PRINT "page "p""#), None);
+    }
+
+    #[test]
+    fn set_bookmarks_reject_quoted_switch_names() {
+        let mut field_bookmarks = HashMap::new();
+
+        assert_eq!(
+            computed_set_result(r#"SET " \r" "Acme""#, &mut field_bookmarks),
+            None
+        );
+        assert!(field_bookmarks.is_empty());
+    }
+
+    #[test]
+    fn set_values_reject_unbalanced_quotes() {
+        let mut field_bookmarks = HashMap::new();
+
+        assert_eq!(
+            computed_set_result(r#"SET ClientName "Acme"#, &mut field_bookmarks),
+            None
+        );
+        assert!(field_bookmarks.is_empty());
+    }
+
+    #[test]
+    fn document_info_names_reject_malformed_quotes() {
+        assert!(document_info_instruction(r#"DOCPROPERTY "Client Name""#).is_some());
+        assert!(document_info_instruction(r#"DOCPROPERTY "Client Name"#).is_none());
+        assert!(document_info_instruction(r#"INFO "Title"#).is_none());
+        assert!(document_info_instruction(r#"DOCVARIABLE Client"Code""#).is_none());
+    }
+
+    #[test]
+    fn document_info_date_formats_reject_malformed_quotes() {
+        assert!(document_info_instruction(r#"CREATEDATE \@ "yyyy-MM-dd""#).is_some());
+        assert!(document_info_instruction(r#"CREATEDATE \@"yyyy-MM-dd""#).is_some());
+        assert!(document_info_instruction(r#"CREATEDATE \@ yyyy-MM-dd"#).is_some());
+        assert!(document_info_instruction(r#"CREATEDATE \@ "yyyy-MM-dd"#).is_none());
+        assert!(document_info_instruction(r#"CREATEDATE \@ yyyy-MM-dd""#).is_none());
+        assert!(document_info_instruction(r#"CREATEDATE \@"yyyy-MM-dd"#).is_none());
+    }
+
+    #[test]
+    fn style_ref_names_reject_malformed_quotes() {
+        assert!(style_ref_instruction(r#"STYLEREF "Heading 1""#).is_some());
+        assert!(style_ref_instruction(r#"STYLEREF "Heading 1"#).is_none());
+        assert!(style_ref_instruction(r#"STYLEREF Heading"1""#).is_none());
+        assert!(style_ref_instruction(r#"STYLEREF "\Heading 1""#).is_none());
+    }
+
+    #[test]
+    fn compact_autonum_separator_switches_are_case_insensitive() {
+        let mut counter = 0;
+
+        assert_eq!(
+            computed_numbering_result(r#"AUTONUM \S":" "#, &mut counter).as_deref(),
+            Some("1:")
+        );
+        assert_eq!(counter, 1);
+    }
+
+    #[test]
+    fn autonum_separator_switches_reject_malformed_quotes() {
+        let mut counter = 0;
+        assert_eq!(
+            computed_numbering_result(r#"AUTONUM \s ")""#, &mut counter).as_deref(),
+            Some("1)")
+        );
+
+        let mut counter = 0;
+        assert_eq!(
+            computed_numbering_result(r#"AUTONUM \s ""#, &mut counter),
+            None
+        );
+        assert_eq!(counter, 0);
+
+        let mut counter = 0;
+        assert_eq!(
+            computed_numbering_result(r#"AUTONUM \s"""#, &mut counter),
+            None
+        );
+        assert_eq!(counter, 0);
+    }
+
+    #[test]
+    fn listnum_numeric_switches_reject_malformed_quotes() {
+        let mut counter = 0;
+        assert_eq!(
+            computed_listnum_result(r#"LISTNUM NumberDefault \l "1""#, &mut counter).as_deref(),
+            Some("1")
+        );
+
+        let mut counter = 0;
+        assert_eq!(
+            computed_listnum_result(r#"LISTNUM NumberDefault \l1"#, &mut counter).as_deref(),
+            Some("1")
+        );
+
+        let mut counter = 0;
+        assert_eq!(
+            computed_listnum_result(r#"LISTNUM NumberDefault \s "4""#, &mut counter).as_deref(),
+            Some("4")
+        );
+
+        let mut counter = 0;
+        assert_eq!(
+            computed_listnum_result(r#"LISTNUM NumberDefault \s4"#, &mut counter).as_deref(),
+            Some("4")
+        );
+
+        let mut counter = 0;
+        assert_eq!(
+            computed_listnum_result(r#"LISTNUM NumberDefault \l "1"#, &mut counter),
+            None
+        );
+        assert_eq!(counter, 0);
+
+        let mut counter = 0;
+        assert_eq!(
+            computed_listnum_result(r#"LISTNUM NumberDefault \s 4""#, &mut counter),
+            None
+        );
+        assert_eq!(counter, 0);
+    }
+
+    #[test]
+    fn table_formula_scan_keeps_outer_field_across_nested_result_field() {
+        let xml = r#"<w:document>
+            <w:body>
+                <w:tbl>
+                    <w:tr>
+                        <w:tc><w:p><w:r><w:t>5</w:t></w:r></w:p></w:tc>
+                    </w:tr>
+                    <w:tr>
+                        <w:tc><w:p>
+                            <w:r><w:fldChar w:fldCharType="begin"/></w:r>
+                            <w:r><w:instrText>= SUM(ABOVE)</w:instrText></w:r>
+                            <w:r><w:fldChar w:fldCharType="separate"/></w:r>
+                            <w:r><w:fldChar w:fldCharType="begin"/></w:r>
+                            <w:r><w:instrText>PAGE</w:instrText></w:r>
+                            <w:r><w:fldChar w:fldCharType="separate"/></w:r>
+                            <w:r><w:t>1</w:t></w:r>
+                            <w:r><w:fldChar w:fldCharType="end"/></w:r>
+                            <w:r><w:fldChar w:fldCharType="end"/></w:r>
+                        </w:p></w:tc>
+                    </w:tr>
+                </w:tbl>
+            </w:body>
+        </w:document>"#;
+
+        assert_eq!(
+            table_formula_context(xml).field_result(0).as_deref(),
+            Some("5")
+        );
+    }
+
+    #[test]
+    fn toc_sequence_scan_keeps_outer_field_across_nested_result_field() {
+        let xml = r#"<w:document>
+            <w:body>
+                <w:p>
+                    <w:r><w:t>Figure </w:t></w:r>
+                    <w:r><w:fldChar w:fldCharType="begin"/></w:r>
+                    <w:r><w:instrText>SEQ Figure</w:instrText></w:r>
+                    <w:r><w:fldChar w:fldCharType="separate"/></w:r>
+                    <w:r><w:fldChar w:fldCharType="begin"/></w:r>
+                    <w:r><w:instrText>PAGE</w:instrText></w:r>
+                    <w:r><w:fldChar w:fldCharType="separate"/></w:r>
+                    <w:r><w:t>1</w:t></w:r>
+                    <w:r><w:fldChar w:fldCharType="end"/></w:r>
+                    <w:r><w:fldChar w:fldCharType="end"/></w:r>
+                    <w:r><w:t>: Nested</w:t></w:r>
+                </w:p>
+            </w:body>
+        </w:document>"#;
+
+        let entries = toc_entries(xml, &Styles::default());
+        let sequence = entries
+            .iter()
+            .find(|entry| entry.source == TocEntrySource::SequenceField)
+            .expect("sequence entry");
+
+        assert_eq!(sequence.sequence_identifier.as_deref(), Some("Figure"));
+        assert_eq!(sequence.text, "Figure 1: Nested");
+        assert_eq!(sequence.sequence_caption_text.as_deref(), Some("Nested"));
+    }
+
+    #[test]
+    fn sequence_identifiers_reject_quoted_switch_names() {
+        let mut counters = HashMap::new();
+
+        assert_eq!(
+            computed_sequence_result(r#"SEQ " \r""#, &mut counters),
+            None
+        );
+        assert!(counters.is_empty());
+        assert_eq!(seq_identifier_from_instruction(Some(r#"SEQ " \r""#)), None);
+    }
+
+    #[test]
+    fn sequence_identifiers_reject_whitespace_names() {
+        let mut counters = HashMap::new();
+
+        assert_eq!(
+            computed_sequence_result(r#"SEQ "Figure List""#, &mut counters),
+            None
+        );
+        assert!(counters.is_empty());
+        assert_eq!(
+            seq_identifier_from_instruction(Some(r#"SEQ "Figure List""#)),
+            None
+        );
+    }
+
+    #[test]
+    fn sequence_identifiers_reject_unbalanced_quotes() {
+        let mut counters = HashMap::new();
+
+        assert_eq!(
+            computed_sequence_result(r##"SEQ "Figure"##, &mut counters),
+            None
+        );
+        assert!(counters.is_empty());
+        assert_eq!(
+            seq_identifier_from_instruction(Some(r##"SEQ "Figure"##)),
+            None
+        );
+    }
+
+    #[test]
+    fn sequence_resets_reject_malformed_quotes() {
+        let mut counters = HashMap::new();
+        assert_eq!(
+            computed_sequence_result(r#"SEQ Figure \r "7""#, &mut counters).as_deref(),
+            Some("7")
+        );
+
+        let mut counters = HashMap::new();
+        assert_eq!(
+            computed_sequence_result(r#"SEQ Figure \r 7"#, &mut counters).as_deref(),
+            Some("7")
+        );
+
+        let mut counters = HashMap::new();
+        assert_eq!(
+            computed_sequence_result(r#"SEQ Figure \r "7"#, &mut counters),
+            None
+        );
+        assert!(counters.is_empty());
+
+        let mut counters = HashMap::new();
+        assert_eq!(
+            computed_sequence_result(r#"SEQ Figure \r 7""#, &mut counters),
+            None
+        );
+        assert!(counters.is_empty());
+    }
+
+    #[test]
+    fn reference_targets_reject_quoted_switch_names() {
+        assert!(ref_instruction(r#"REF " \p""#).is_none());
+        assert!(direct_bookmark_ref_instruction(r#"" \p""#).is_none());
+        assert!(page_ref_instruction(r#"PAGEREF " \p""#).is_none());
+        assert!(note_ref_instruction(r#"NOTEREF " \p""#).is_none());
+    }
+
+    #[test]
+    fn reference_targets_reject_whitespace_names() {
+        assert!(ref_instruction(r#"REF "Figure List""#).is_none());
+        assert!(direct_bookmark_ref_instruction(r#""Figure List""#).is_none());
+        assert!(page_ref_instruction(r#"PAGEREF "Figure List""#).is_none());
+        assert!(note_ref_instruction(r#"NOTEREF "Figure List""#).is_none());
+    }
+
+    #[test]
+    fn reference_targets_reject_unbalanced_quotes() {
+        assert!(ref_instruction(r#"REF "Figure1"#).is_none());
+        assert!(direct_bookmark_ref_instruction(r#""Figure1"#).is_none());
+        assert!(page_ref_instruction(r#"PAGEREF "Figure1"#).is_none());
+        assert!(note_ref_instruction(r#"NOTEREF "Figure1"#).is_none());
+    }
+
+    #[test]
+    fn ref_sequence_separators_accept_compact_values() {
+        assert!(ref_instruction(r#"REF Figure1 \d-"#).is_some());
+        assert!(direct_bookmark_ref_instruction(r#"Figure1 \d-"#).is_some());
+        assert!(ref_instruction(r#"REF Figure1 \d\p"#).is_none());
+    }
+
+    #[test]
+    fn ref_sequence_separators_reject_malformed_quotes() {
+        assert!(ref_instruction(r#"REF Figure1 \d "-""#).is_some());
+        assert!(direct_bookmark_ref_instruction(r#"Figure1 \d-"#).is_some());
+        assert!(ref_instruction(r#"REF Figure1 \d "-"#).is_none());
+        assert!(ref_instruction(r#"REF Figure1 \d -""#).is_none());
+        assert!(direct_bookmark_ref_instruction(r#"Figure1 \d"-"#).is_none());
+    }
+
+    #[test]
+    fn reference_index_categories_reject_malformed_quotes() {
+        assert!(computed_reference_index_result(r#"TA \l "Case" \c "1""#).is_some());
+        assert!(computed_reference_index_result(r#"TA \l "Case" \c "1"#).is_none());
+        assert!(computed_reference_index_result(r#"TA \l "Case" \c"1"#).is_none());
+    }
+
+    #[test]
+    fn toc_bookmark_targets_reject_empty_and_quoted_switch_names() {
+        assert!(toc_spec(r#"TOC \b """#).is_none());
+        assert!(toc_spec(r#"TOC \b " \o""#).is_none());
+        assert!(toc_spec(r#"TOC \b" \o""#).is_none());
+    }
+
+    #[test]
+    fn toc_bookmark_targets_reject_unbalanced_quotes() {
+        assert!(toc_spec(r#"TOC \b "ChapterList"#).is_none());
+        assert!(toc_spec(r#"TOC \b"ChapterList"#).is_none());
+    }
+
+    #[test]
+    fn toc_type_identifiers_reject_quoted_switch_names() {
+        assert_eq!(computed_toc_entry_result(r#"TC "Entry" \f " \l""#), None);
+        assert!(toc_spec(r#"TOC \f " \l""#).is_none());
+        assert!(toc_spec(r#"TOC \f" \l""#).is_none());
+    }
+
+    #[test]
+    fn toc_entry_text_rejects_malformed_quotes() {
+        assert!(computed_toc_entry_result(r#"TC "Entry""#).is_some());
+        assert!(computed_toc_entry_result(r#"TC Entry"#).is_some());
+        assert!(computed_toc_entry_result(r#"TC "Entry"#).is_none());
+        assert!(computed_toc_entry_result(r#"TC Entry""#).is_none());
+        assert!(computed_toc_entry_result(r#"TC En"try""#).is_none());
+    }
+
+    #[test]
+    fn toc_sequence_filters_reject_invalid_identifiers() {
+        assert!(toc_spec(r#"TOC \c "Figure List""#).is_none());
+        assert!(toc_spec(r#"TOC \a " \o""#).is_none());
+        assert!(toc_spec(r#"TOC \c" \o""#).is_none());
+    }
+
+    #[test]
+    fn toc_page_number_sequence_prefixes_reject_invalid_identifiers() {
+        assert!(toc_spec(r#"TOC \o "1-2" \s "\o""#).is_none());
+        assert!(toc_spec(r#"TOC \o "1-2" \s"\o""#).is_none());
+    }
+
+    #[test]
+    fn toc_numeric_levels_reject_malformed_quotes() {
+        assert!(computed_toc_entry_result(r#"TC "Entry" \l "2"#).is_none());
+        assert!(toc_spec(r#"TOC \o "1-2"#).is_none());
+        assert!(toc_spec(r#"TOC \o "1-2" \l "2-3"#).is_none());
+    }
+
+    #[test]
+    fn toc_style_specs_reject_malformed_style_names() {
+        assert!(toc_spec(r#"TOC \o "1-2" \t "Custom Heading,2""#).is_some());
+        assert!(toc_spec(r#"TOC \o "1-2" \t "Custom Heading,2"#).is_none());
+        assert!(toc_spec(r#"TOC \o "1-2" \t "Custom"Heading,2""#).is_none());
+        assert!(toc_spec(r#"TOC \o "1-2" \t "\Bad,2""#).is_none());
+    }
+
+    #[test]
+    fn compact_if_comparisons_ignore_operators_inside_quotes() {
+        assert_eq!(
+            computed_dynamic_result(r#"IF "A=B"="A=B" "yes" "no""#).as_deref(),
+            Some("yes")
+        );
+        assert_eq!(
+            computed_dynamic_result(r#"COMPARE "A>B"<>"A?B""#).as_deref(),
+            Some("0")
+        );
+    }
+
+    #[test]
+    fn if_result_text_rejects_malformed_quotes() {
+        assert_eq!(
+            computed_dynamic_result(r#"IF 1 = 1 "yes" "no""#).as_deref(),
+            Some("yes")
+        );
+        assert_eq!(
+            computed_dynamic_result(r#"IF 1 = 1 yes no"#).as_deref(),
+            Some("yes")
+        );
+        assert_eq!(computed_dynamic_result(r#"IF 1 = 1 "yes no"#), None);
+        assert_eq!(computed_dynamic_result(r#"IF 1 = 0 yes "no"#), None);
+    }
+
+    #[test]
+    fn quote_text_rejects_malformed_quotes() {
+        assert_eq!(
+            computed_dynamic_result(r#"QUOTE "literal text""#).as_deref(),
+            Some("literal text")
+        );
+        assert_eq!(
+            computed_dynamic_result(r#"QUOTE plain words"#).as_deref(),
+            Some("plain words")
+        );
+        assert_eq!(computed_dynamic_result(r#"QUOTE "literal text"#), None);
+        assert_eq!(computed_dynamic_result(r#"QUOTE literal text""#), None);
+    }
+
+    #[test]
+    fn eq_script_segments_accept_multiple_visible_and_empty_options() {
+        assert_eq!(
+            computed_display_result(r#"EQ \s\up8(UB)\ai4()\do8(2)\di3()"#).as_deref(),
+            Some("^{UB}_2")
+        );
+    }
+
+    #[test]
+    fn eq_enclosed_operands_reject_malformed_quotes() {
+        assert_eq!(
+            computed_display_result(r#"EQ \b("Chapter One")"#).as_deref(),
+            Some("(Chapter One)")
+        );
+        assert!(computed_display_result(r#"EQ \b("Chapter One)"#).is_none());
+        assert!(computed_display_result(r#"EQ \x \to("Chapter One)"#).is_none());
+    }
+
+    #[test]
+    fn advance_points_reject_malformed_quotes() {
+        assert_eq!(
+            computed_display_result(r#"ADVANCE \r "2""#).as_deref(),
+            Some("")
+        );
+        assert_eq!(
+            computed_display_result(r#"ADVANCE \r2"#).as_deref(),
+            Some("")
+        );
+        assert!(computed_display_result(r#"ADVANCE \r "2"#).is_none());
+        assert!(computed_display_result(r#"ADVANCE \r2""#).is_none());
+    }
+
+    #[test]
+    fn symbol_values_reject_malformed_quotes() {
+        assert_eq!(
+            computed_display_result(r#"SYMBOL "65""#).as_deref(),
+            Some("A")
+        );
+        assert!(computed_display_result(r#"SYMBOL "65"#).is_none());
+        assert_eq!(
+            computed_display_result(r#"SYMBOL 65 \s "12""#).as_deref(),
+            Some("A")
+        );
+        assert!(computed_display_result(r#"SYMBOL 65 \s "12"#).is_none());
+        assert!(computed_display_result(r#"SYMBOL 183 \f "Symbol""#).is_some());
+        assert!(computed_display_result(r#"SYMBOL 183 \f "Symbol"#).is_none());
+    }
+
+    #[test]
+    fn action_targets_reject_quoted_backslash_names() {
+        assert_eq!(
+            computed_action_result(r#"GOTOBUTTON "\BadTarget" "Jump""#),
+            None
+        );
+        assert_eq!(
+            computed_action_result(r#"GOTOBUTTON " \BadTarget" "Jump""#),
+            None
+        );
+    }
+
+    #[test]
+    fn action_targets_reject_whitespace_names() {
+        assert_eq!(
+            computed_action_result(r#"GOTOBUTTON "Bad Target" "Jump""#),
+            None
+        );
+        assert_eq!(
+            computed_action_result(r#"MACROBUTTON "Run Report" "Run""#),
+            None
+        );
+    }
+
+    #[test]
+    fn action_targets_reject_embedded_quotes() {
+        assert_eq!(
+            computed_action_result(r#"GOTOBUTTON ""BadTarget"" "Jump""#),
+            None
+        );
+        assert_eq!(
+            computed_action_result(r#"MACROBUTTON ""RunReport"" "Run""#),
+            None
+        );
+    }
+
+    #[test]
+    fn action_display_text_rejects_malformed_quotes() {
+        assert_eq!(
+            computed_action_result(r#"GOTOBUTTON TargetBookmark "Jump Now""#).as_deref(),
+            Some("Jump Now")
+        );
+        assert_eq!(
+            computed_action_result(r#"MACROBUTTON RunReport Run Now"#).as_deref(),
+            Some("Run Now")
+        );
+        assert_eq!(
+            computed_action_result(r#"GOTOBUTTON TargetBookmark "Jump Now"#),
+            None
+        );
+        assert_eq!(
+            computed_action_result(r#"MACROBUTTON RunReport Run Now""#),
+            None
+        );
+    }
+
+    #[test]
+    fn print_groups_reject_quoted_backslash_names() {
+        assert_eq!(
+            computed_action_result(r#"PRINT \p " \BadGroup" "0 0 moveto""#),
+            None
+        );
+        assert_eq!(
+            computed_action_result(r#"PRINT \p" \BadGroup" "0 0 moveto""#),
+            None
+        );
+    }
+
+    #[test]
+    fn print_groups_reject_embedded_quotes() {
+        assert_eq!(
+            computed_action_result(r#"PRINT \p ""BadGroup"" "0 0 moveto""#),
+            None
+        );
+        assert_eq!(
+            computed_action_result(r#"PRINT \p""BadGroup"" "0 0 moveto""#),
+            None
+        );
+    }
+
+    #[test]
+    fn print_groups_reject_whitespace_names() {
+        assert_eq!(
+            computed_action_result(r#"PRINT \p "Bad Group" "0 0 moveto""#),
+            None
+        );
+        assert_eq!(
+            computed_action_result(r#"PRINT \p"Bad Group" "0 0 moveto""#),
             None
         );
     }

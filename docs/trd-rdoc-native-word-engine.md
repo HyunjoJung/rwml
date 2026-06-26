@@ -512,8 +512,8 @@ Implementation:
   page count comes only from source page/section structure and does not require
   layout inference, exposing the result as `Field::computed_result` and using
   that text in the read/render model for simple and common complex fields with
-  neutral/general numeric format switches; keep cached text for layout-derived
-  section page counts;
+  page-number and general field-result format switches; keep cached text for
+  layout-derived section page counts;
 - compute deterministic `.docx` `EQ \f(n,d)` simple fraction fields with comma
   or semicolon separators, literal/spaced/quoted operands, documented escaped
   comma/open-parenthesis/backslash operand characters, and parenthesized nested

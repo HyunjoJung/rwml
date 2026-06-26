@@ -588,7 +588,7 @@ fn reference_index_field_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" BIBLIOGRAPHY \l 1033 "><w:r><w:t>Works cited</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" CITATION Smith2026 \l 1033 "><w:r><w:t>(Smith, 2026)</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" INDEX \e &quot; - &quot; "><w:r><w:t>Index preview</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TOA \c &quot;1&quot; "><w:r><w:t>Authorities</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TA \l &quot;Case v. Example&quot; \c 1 "><w:r><w:t>Case v. Example</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" XE &quot;Term&quot; "><w:r><w:t>Term</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" RD &quot;appendix.docx&quot; "><w:r><w:t>Referenced doc</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" BIBLIOGRAPHY \l 1033 "><w:r><w:t>Works cited</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" CITATION Smith2026 \l 1033 "><w:r><w:t>(Smith, 2026)</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" INDEX \e &quot; - &quot; "><w:r><w:t>Index preview</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TOA \c &quot;1&quot; "><w:r><w:t>Authorities</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TA \l &quot;Case v. Example&quot; \c 1 "><w:r><w:t>Case v. Example</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" XE &quot;Term&quot; "><w:r><w:t>Term</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" RD &quot;appendix.docx&quot; "><w:r><w:t>Referenced doc</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TA \l&quot;Compact Case&quot; \c2 "><w:r><w:t>Compact Case</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TA \sShortEntry \c3 "><w:r><w:t>Short Entry</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" XE &quot;See Term&quot; \t&quot;See Also&quot; "><w:r><w:t>See Term</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -677,7 +677,7 @@ fn section_pages_field_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SECTIONPAGES "></w:fldSimple></w:p><w:p><w:r><w:br w:type="page"/></w:r></w:p><w:p><w:fldSimple w:instr=" SECTIONPAGES \* ROMAN "></w:fldSimple></w:p><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/></w:sectPr></w:pPr></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> SECTIONPAGES \* Ordinal </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:sectPr/></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SECTIONPAGES "></w:fldSimple></w:p><w:p><w:r><w:br w:type="page"/></w:r></w:p><w:p><w:fldSimple w:instr=" SECTIONPAGES \* ROMAN "></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SECTIONPAGES \* CardText \* Upper "></w:fldSimple></w:p><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/></w:sectPr></w:pPr></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> SECTIONPAGES \* Ordinal </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:sectPr/></w:body></w:document>"#,
         ),
     ])
 }
@@ -881,6 +881,40 @@ fn complex_cached_result_inline_marker_docx() -> Vec<u8> {
         (
             "word/document.xml",
             r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> CUSTOM value </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>One</w:t><w:tab/><w:t>Two</w:t><w:br/><w:t>Three</w:t><w:noBreakHyphen/><w:t>Four</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn nested_complex_field_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> CUSTOM outer </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Before </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> MERGEFIELD InnerName </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Inner Value</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> After</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn nested_complex_with_simple_field_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> CUSTOM outer </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Before </w:t></w:r><w:fldSimple w:instr=" MERGEFIELD InnerName "><w:r><w:t>Inner Value</w:t></w:r></w:fldSimple><w:r><w:t> After</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -4093,7 +4127,7 @@ fn docx_reference_index_fields_are_named_noncomputed_fields() {
     let doc = Document::open(&reference_index_field_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 7);
+    assert_eq!(fields.len(), 10);
     assert_eq!(
         fields[0].kind,
         FieldKind::ReferenceIndex("BIBLIOGRAPHY".to_string())
@@ -4125,6 +4159,18 @@ fn docx_reference_index_fields_are_named_noncomputed_fields() {
     assert_eq!(fields[6].kind, FieldKind::ReferenceIndex("RD".to_string()));
     assert_eq!(fields[6].result, "Referenced doc");
     assert_eq!(fields[6].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[7].kind, FieldKind::ReferenceIndex("TA".to_string()));
+    assert_eq!(fields[7].instruction, "TA \\l\"Compact Case\" \\c2");
+    assert_eq!(fields[7].result, "Compact Case");
+    assert_eq!(fields[7].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[8].kind, FieldKind::ReferenceIndex("TA".to_string()));
+    assert_eq!(fields[8].instruction, "TA \\sShortEntry \\c3");
+    assert_eq!(fields[8].result, "Short Entry");
+    assert_eq!(fields[8].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[9].kind, FieldKind::ReferenceIndex("XE".to_string()));
+    assert_eq!(fields[9].instruction, "XE \"See Term\" \\t\"See Also\"");
+    assert_eq!(fields[9].result, "See Term");
+    assert_eq!(fields[9].computed_result.as_deref(), Some(""));
 
     let report = doc.report();
     assert_eq!(
@@ -4167,7 +4213,10 @@ fn docx_reference_index_fields_are_named_noncomputed_fields() {
     assert!(
         !main_text.contains("Case v. Example")
             && !main_text.contains("Term")
-            && !main_text.contains("Referenced doc"),
+            && !main_text.contains("Referenced doc")
+            && !main_text.contains("Compact Case")
+            && !main_text.contains("Short Entry")
+            && !main_text.contains("See Term"),
         "computed RD/TA/XE marker fields should be hidden in main text: {main_text:?}"
     );
 }
@@ -4487,7 +4536,7 @@ fn docx_section_pages_field_computes_structural_section_page_count() {
     let doc = Document::open(&section_pages_field_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 3);
+    assert_eq!(fields.len(), 4);
     for field in &fields {
         assert_eq!(
             field.kind,
@@ -4498,8 +4547,10 @@ fn docx_section_pages_field_computes_structural_section_page_count() {
     assert_eq!(fields[0].computed_result.as_deref(), Some("2"));
     assert_eq!(fields[1].instruction, "SECTIONPAGES \\* ROMAN");
     assert_eq!(fields[1].computed_result.as_deref(), Some("II"));
-    assert_eq!(fields[2].instruction, "SECTIONPAGES \\* Ordinal");
-    assert_eq!(fields[2].computed_result.as_deref(), Some("1st"));
+    assert_eq!(fields[2].instruction, "SECTIONPAGES \\* CardText \\* Upper");
+    assert_eq!(fields[2].computed_result.as_deref(), Some("TWO"));
+    assert_eq!(fields[3].instruction, "SECTIONPAGES \\* Ordinal");
+    assert_eq!(fields[3].computed_result.as_deref(), Some("1st"));
 
     let report = doc.report();
     assert!(report.features.unsupported_field_kinds.is_empty());
@@ -4508,6 +4559,7 @@ fn docx_section_pages_field_computes_structural_section_page_count() {
     let main_text = doc.main_text();
     assert!(main_text.contains("2"), "{main_text:?}");
     assert!(main_text.contains("II"), "{main_text:?}");
+    assert!(main_text.contains("TWO"), "{main_text:?}");
     assert!(main_text.contains("1st"), "{main_text:?}");
 }
 
@@ -5234,6 +5286,34 @@ fn docx_complex_field_result_preserves_cached_inline_markers() {
         "{:?}",
         doc.main_text()
     );
+}
+
+#[test]
+fn docx_nested_complex_fields_preserve_outer_cached_result() {
+    let doc = Document::open(&nested_complex_field_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::MergeField);
+    assert_eq!(fields[0].instruction, "MERGEFIELD InnerName");
+    assert_eq!(fields[0].result, "Inner Value");
+    assert_eq!(fields[1].kind, FieldKind::Unknown("CUSTOM".to_string()));
+    assert_eq!(fields[1].instruction, "CUSTOM outer");
+    assert_eq!(fields[1].result, "Before Inner Value After");
+}
+
+#[test]
+fn docx_nested_complex_with_nested_simple_field_preserves_outer_cached_result() {
+    let doc = Document::open(&nested_complex_with_simple_field_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::MergeField);
+    assert_eq!(fields[0].instruction, "MERGEFIELD InnerName");
+    assert_eq!(fields[0].result, "Inner Value");
+    assert_eq!(fields[1].kind, FieldKind::Unknown("CUSTOM".to_string()));
+    assert_eq!(fields[1].instruction, "CUSTOM outer");
+    assert_eq!(fields[1].result, "Before Inner Value After");
 }
 
 #[test]
@@ -7036,6 +7116,22 @@ fn set_field_result_updates_simple_and_complex_cached_results() {
     assert_eq!(fields[5].instruction, "FILENAME \\p");
     assert_eq!(fields[5].result, "renamed.docx");
     assert!(reopened.set_field_result(6, "missing").is_err());
+}
+
+#[test]
+fn set_field_result_uses_fields_order_for_nested_complex_fields() {
+    let mut doc = Document::open(&nested_complex_field_docx()).expect("fixture opens");
+
+    doc.set_field_result(1, "Outer Updated")
+        .expect("update outer nested field result");
+
+    let saved = doc.save().expect("save edited docx");
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    let fields = reopened.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[1].instruction, "CUSTOM outer");
+    assert_eq!(fields[1].result, "Outer Updated");
 }
 
 #[test]

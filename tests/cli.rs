@@ -73,7 +73,7 @@ fn temp_output_path_with_ext(name: &str, ext: &str) -> std::path::PathBuf {
 }
 
 fn run_rdoc(args: &[&str]) -> std::process::Output {
-    Command::new(std::env::var("CARGO_BIN_EXE_rdoc").expect("rdoc binary path"))
+    Command::new(env!("CARGO_BIN_EXE_rdoc"))
         .args(args)
         .output()
         .expect("run rdoc cli")

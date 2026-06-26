@@ -616,7 +616,7 @@ struct FieldScan {
     wanted: usize,
     seen: usize,
     target: Option<Vec<NodeId>>,
-    complex: Option<ComplexFieldScan>,
+    complex: Vec<ComplexFieldScan>,
 }
 
 #[derive(Debug)]
@@ -1134,7 +1134,7 @@ impl XmlTree {
             wanted: field_index,
             seen: 0,
             target: None,
-            complex: None,
+            complex: Vec::new(),
         };
         let mut scope = self.ns_scope_at(body);
         for i in 0..self.nodes[body.0 as usize].children.len() {
@@ -2140,7 +2140,7 @@ impl XmlTree {
             if self.resolves_to(id, WML_NS, b"fldChar", scope) {
                 fld_char_type = attr_value_local(attrs, b"fldCharType").map(Vec::from);
             } else if self.resolves_to(id, WML_NS, b"t", scope) {
-                if let Some(complex) = scan.complex.as_mut() {
+                if let Some(complex) = scan.complex.last_mut() {
                     if complex.result_phase {
                         complex.result_runs.push(id);
                     }
@@ -2150,18 +2150,25 @@ impl XmlTree {
 
         match fld_char_type.as_deref() {
             Some(b"begin") => {
-                scan.complex = Some(ComplexFieldScan {
+                scan.complex.push(ComplexFieldScan {
                     result_phase: false,
                     result_runs: Vec::new(),
                 });
             }
             Some(b"separate") => {
-                if let Some(complex) = scan.complex.as_mut() {
+                if let Some(complex) = scan.complex.last_mut() {
                     complex.result_phase = true;
                 }
             }
             Some(b"end") => {
-                if let Some(complex) = scan.complex.take() {
+                if let Some(complex) = scan.complex.pop() {
+                    if let Some(parent) = scan.complex.last_mut() {
+                        if parent.result_phase {
+                            parent
+                                .result_runs
+                                .extend(complex.result_runs.iter().copied());
+                        }
+                    }
                     if scan.seen == scan.wanted {
                         scan.target = Some(complex.result_runs);
                     }
