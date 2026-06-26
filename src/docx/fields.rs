@@ -3750,23 +3750,68 @@ pub(crate) fn toc_entries(xml: &str, styles: &Styles) -> Vec<TocEntry> {
     let mut r = Reader::from_str(xml);
     let mut entries = Vec::new();
     let mut active_bookmarks = Vec::new();
+    let mut xml_depth = 0usize;
+    let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
-                skip_subtree(&mut r);
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    skip_subtree(&mut r);
+                    continue;
+                }
+                if matches!(name, b"del" | b"moveFrom") {
+                    skip_subtree(&mut r);
+                    continue;
+                }
+                let mut consumed_element = false;
+                match name {
+                    b"AlternateContent" => {
+                        alternate_content_stack.push(AlternateContentBranchState {
+                            branch_depth: xml_depth + 1,
+                            took_branch: false,
+                        });
+                    }
+                    b"p" => {
+                        read_toc_paragraph(&mut r, styles, &mut active_bookmarks, &mut entries);
+                        consumed_element = true;
+                    }
+                    b"bookmarkStart" => {
+                        push_active_bookmark(&mut active_bookmarks, &e);
+                    }
+                    b"bookmarkEnd" => {
+                        remove_active_bookmark(&mut active_bookmarks, &e);
+                    }
+                    _ => {}
+                }
+                if !consumed_element {
+                    xml_depth = xml_depth.saturating_add(1);
+                }
             }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"p" => {
-                read_toc_paragraph(&mut r, styles, &mut active_bookmarks, &mut entries);
+            Ok(Event::Empty(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    continue;
+                }
+                match name {
+                    b"bookmarkStart" => {
+                        push_active_bookmark(&mut active_bookmarks, &e);
+                    }
+                    b"bookmarkEnd" => {
+                        remove_active_bookmark(&mut active_bookmarks, &e);
+                    }
+                    _ => {}
+                }
             }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e))
-                if local(e.name().as_ref()) == b"bookmarkStart" =>
-            {
-                push_active_bookmark(&mut active_bookmarks, &e);
-            }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e))
-                if local(e.name().as_ref()) == b"bookmarkEnd" =>
-            {
-                remove_active_bookmark(&mut active_bookmarks, &e);
+            Ok(Event::End(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if name == b"AlternateContent" {
+                    alternate_content_stack.pop();
+                }
+                xml_depth = xml_depth.saturating_sub(1);
             }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
@@ -3787,82 +3832,135 @@ fn read_toc_paragraph(
     let mut bookmarks = active_bookmark_names(active_bookmarks);
     let mut current = Vec::new();
     let mut sequence_identifiers = Vec::new();
+    let mut xml_depth = 0usize;
+    let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
-                skip_subtree(r);
-            }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"pPr" => {
-                read_toc_ppr(r, &mut style_id, &mut outline);
-            }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"fldSimple" => {
-                let instruction = attr_local(&e, b"instr");
-                if push_tc_entry_from_instruction(instruction.clone(), &bookmarks, entries) {
-                    skip_element(r, b"fldSimple");
-                } else if let Some(identifier) =
-                    seq_identifier_from_instruction(instruction.as_deref())
-                {
-                    push_unique(&mut sequence_identifiers, identifier);
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    skip_subtree(r);
+                    continue;
                 }
-            }
-            Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"fldSimple" => {
-                let instruction = attr_local(&e, b"instr");
-                if !push_tc_entry_from_instruction(instruction.clone(), &bookmarks, entries) {
-                    if let Some(identifier) =
-                        seq_identifier_from_instruction(instruction.as_deref())
-                    {
-                        push_unique(&mut sequence_identifiers, identifier);
+                if matches!(name, b"del" | b"moveFrom") {
+                    skip_subtree(r);
+                    continue;
+                }
+                let mut consumed_element = false;
+                match name {
+                    b"AlternateContent" => {
+                        alternate_content_stack.push(AlternateContentBranchState {
+                            branch_depth: xml_depth + 1,
+                            took_branch: false,
+                        });
                     }
-                }
-            }
-            Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"fldChar" => {
-                apply_toc_fld_char(
-                    &e,
-                    &mut current,
-                    &bookmarks,
-                    &mut sequence_identifiers,
-                    entries,
-                );
-            }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"fldChar" => {
-                apply_toc_fld_char(
-                    &e,
-                    &mut current,
-                    &bookmarks,
-                    &mut sequence_identifiers,
-                    entries,
-                );
-            }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"instrText" => {
-                let field_text = read_text(r);
-                if let Some(field) = current.last_mut() {
-                    if field.phase == FieldPhase::Instruction {
-                        field.instruction.push_str(&field_text);
+                    b"pPr" => {
+                        read_toc_ppr(r, &mut style_id, &mut outline);
+                        consumed_element = true;
                     }
-                }
-            }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"t" => {
-                let run_text = read_text(r);
-                let hidden_tc_result = current.iter().rev().any(|field| {
-                    field.phase == FieldPhase::Result
-                        && tc_instruction(&field.instruction).is_some()
-                });
-                if !hidden_tc_result {
-                    text.push_str(&run_text);
-                }
-            }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
-                b"tab" | b"br" | b"cr" => text.push(' '),
-                b"noBreakHyphen" => text.push('-'),
-                b"bookmarkStart" => {
-                    if let Some(name) = push_active_bookmark(active_bookmarks, &e) {
-                        push_unique(&mut bookmarks, name);
+                    b"fldSimple" => {
+                        let instruction = attr_local(&e, b"instr");
+                        if push_tc_entry_from_instruction(instruction.clone(), &bookmarks, entries)
+                        {
+                            skip_element(r, b"fldSimple");
+                            consumed_element = true;
+                        } else if let Some(identifier) =
+                            seq_identifier_from_instruction(instruction.as_deref())
+                        {
+                            push_unique(&mut sequence_identifiers, identifier);
+                        }
                     }
+                    b"fldChar" => {
+                        apply_toc_fld_char(
+                            &e,
+                            &mut current,
+                            &bookmarks,
+                            &mut sequence_identifiers,
+                            entries,
+                        );
+                    }
+                    b"instrText" => {
+                        let field_text = read_text(r);
+                        consumed_element = true;
+                        if let Some(field) = current.last_mut() {
+                            if field.phase == FieldPhase::Instruction {
+                                field.instruction.push_str(&field_text);
+                            }
+                        }
+                    }
+                    b"t" => {
+                        let run_text = read_text(r);
+                        consumed_element = true;
+                        let hidden_tc_result = current.iter().rev().any(|field| {
+                            field.phase == FieldPhase::Result
+                                && tc_instruction(&field.instruction).is_some()
+                        });
+                        if !hidden_tc_result {
+                            text.push_str(&run_text);
+                        }
+                    }
+                    b"tab" | b"br" | b"cr" => text.push(' '),
+                    b"noBreakHyphen" => text.push('-'),
+                    b"bookmarkStart" => {
+                        if let Some(name) = push_active_bookmark(active_bookmarks, &e) {
+                            push_unique(&mut bookmarks, name);
+                        }
+                    }
+                    b"bookmarkEnd" => remove_active_bookmark(active_bookmarks, &e),
+                    _ => {}
                 }
-                b"bookmarkEnd" => remove_active_bookmark(active_bookmarks, &e),
-                _ => {}
-            },
+                if !consumed_element {
+                    xml_depth = xml_depth.saturating_add(1);
+                }
+            }
+            Ok(Event::Empty(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    continue;
+                }
+                match name {
+                    b"fldSimple" => {
+                        let instruction = attr_local(&e, b"instr");
+                        if !push_tc_entry_from_instruction(instruction.clone(), &bookmarks, entries)
+                        {
+                            if let Some(identifier) =
+                                seq_identifier_from_instruction(instruction.as_deref())
+                            {
+                                push_unique(&mut sequence_identifiers, identifier);
+                            }
+                        }
+                    }
+                    b"fldChar" => {
+                        apply_toc_fld_char(
+                            &e,
+                            &mut current,
+                            &bookmarks,
+                            &mut sequence_identifiers,
+                            entries,
+                        );
+                    }
+                    b"tab" | b"br" | b"cr" => text.push(' '),
+                    b"noBreakHyphen" => text.push('-'),
+                    b"bookmarkStart" => {
+                        if let Some(name) = push_active_bookmark(active_bookmarks, &e) {
+                            push_unique(&mut bookmarks, name);
+                        }
+                    }
+                    b"bookmarkEnd" => remove_active_bookmark(active_bookmarks, &e),
+                    _ => {}
+                }
+            }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"p" => break,
+            Ok(Event::End(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if name == b"AlternateContent" {
+                    alternate_content_stack.pop();
+                }
+                xml_depth = xml_depth.saturating_sub(1);
+            }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }

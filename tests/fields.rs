@@ -2125,6 +2125,27 @@ fn toc_deleted_tc_field_switch_docx() -> Vec<u8> {
     ])
 }
 
+fn toc_alternate_content_heading_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="wps"><w:body><mc:AlternateContent><mc:Choice Requires="wps"><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Choice </w:t><mc:AlternateContent><mc:Choice Requires="wps"><w:t>Inline</w:t></mc:Choice><mc:Fallback><w:t>Fallback Inline</w:t></mc:Fallback></mc:AlternateContent></w:r></w:p></mc:Choice><mc:Fallback><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Fallback Heading</w:t></w:r></w:p></mc:Fallback></mc:AlternateContent><w:p><w:fldSimple w:instr=" TOC \o &quot;1-1&quot; "><w:r><w:t>stale alternate toc</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn invalid_toc_entry_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -6270,6 +6291,26 @@ fn docx_toc_entries_ignore_deleted_tc_fields() {
             && !main_text.contains("Deleted Entry")
             && !main_text.contains("Moved Entry"),
         "TOC entries must follow accepted-current revision wrappers: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_toc_entries_use_single_alternate_content_branch() {
+    let doc = Document::open(&toc_alternate_content_heading_docx()).expect("fixture opens");
+    let fields = doc.fields();
+    let toc = fields
+        .iter()
+        .find(|field| field.kind == FieldKind::Toc)
+        .expect("TOC field is parsed");
+
+    assert_eq!(toc.computed_result.as_deref(), Some("Choice Inline"));
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Choice Inline")
+            && !main_text.contains("Fallback Heading")
+            && !main_text.contains("Fallback Inline"),
+        "TOC entries must use one AlternateContent branch: {main_text:?}"
     );
 }
 
