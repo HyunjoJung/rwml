@@ -9484,6 +9484,7 @@ mod tests {
             computed_display_result(r#"EQ \b("Chapter One")"#).as_deref(),
             Some("(Chapter One)")
         );
+        assert!(computed_display_result(r#"EQ \b("A"B")"#).is_none());
         assert!(computed_display_result(r#"EQ \b("Chapter One)"#).is_none());
         assert!(computed_display_result(r#"EQ \x \to("Chapter One)"#).is_none());
     }
