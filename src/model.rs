@@ -825,6 +825,48 @@ impl PageNumberFormat {
     }
 }
 
+/// Text flow direction for generated `.docx` section properties.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextDirection {
+    /// Left-to-right lines flowing from top to bottom (`lrTb`).
+    LeftToRightTopToBottom,
+    /// Top-to-bottom columns flowing from right to left (`tbRl`).
+    TopToBottomRightToLeft,
+    /// Bottom-to-top columns flowing from left to right (`btLr`).
+    BottomToTopLeftToRight,
+    /// Vertically oriented left-to-right text flowing from top to bottom (`lrTbV`).
+    LeftToRightTopToBottomVertical,
+    /// Vertically oriented top-to-bottom text flowing from right to left (`tbRlV`).
+    TopToBottomRightToLeftVertical,
+    /// Vertically oriented top-to-bottom text flowing from left to right (`tbLrV`).
+    TopToBottomLeftToRightVertical,
+}
+
+impl TextDirection {
+    pub(crate) fn wml_value(self) -> &'static str {
+        match self {
+            TextDirection::LeftToRightTopToBottom => "lrTb",
+            TextDirection::TopToBottomRightToLeft => "tbRl",
+            TextDirection::BottomToTopLeftToRight => "btLr",
+            TextDirection::LeftToRightTopToBottomVertical => "lrTbV",
+            TextDirection::TopToBottomRightToLeftVertical => "tbRlV",
+            TextDirection::TopToBottomLeftToRightVertical => "tbLrV",
+        }
+    }
+
+    pub(crate) fn from_wml_value(value: &str) -> Option<Self> {
+        match value {
+            "lrTb" => Some(TextDirection::LeftToRightTopToBottom),
+            "tbRl" => Some(TextDirection::TopToBottomRightToLeft),
+            "btLr" => Some(TextDirection::BottomToTopLeftToRight),
+            "lrTbV" => Some(TextDirection::LeftToRightTopToBottomVertical),
+            "tbRlV" => Some(TextDirection::TopToBottomRightToLeftVertical),
+            "tbLrV" => Some(TextDirection::TopToBottomLeftToRightVertical),
+            _ => None,
+        }
+    }
+}
+
 /// Section-level layout recovered from or generated into `.docx` section
 /// properties.
 ///
@@ -856,6 +898,8 @@ pub struct SectionSetup {
     pub page_number_format: Option<PageNumberFormat>,
     /// Number of text columns in this section, if explicitly set.
     pub columns: Option<u16>,
+    /// Text flow direction for this section, if explicitly set.
+    pub text_direction: Option<TextDirection>,
 }
 
 /// Document-level layout + metadata, for authoring and rendering. All fields are
@@ -886,6 +930,8 @@ pub struct DocSetup {
     pub page_number_format: Option<PageNumberFormat>,
     /// Number of text columns in the final/current section, if explicitly set.
     pub columns: Option<u16>,
+    /// Text flow direction for the final/current section, if explicitly set.
+    pub text_direction: Option<TextDirection>,
     /// Document title metadata.
     pub title: Option<String>,
     /// Document author metadata.
@@ -906,6 +952,7 @@ impl From<&DocSetup> for SectionSetup {
             page_number_start: setup.page_number_start,
             page_number_format: setup.page_number_format,
             columns: setup.columns,
+            text_direction: setup.text_direction,
         }
     }
 }

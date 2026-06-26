@@ -4,7 +4,7 @@ use crate::model::{
     Align, AuthoredComment, AuthoredContentControl, AuthoredNote, AuthoredRevision, Block, Cell,
     CharProps, Chart, ChartKind, ChartSeries, ChartShape, Color, CustomXmlItem, DocModel,
     FieldRole, Image, ListInfo, PageNumberFormat, PageSetup, ParaProps, Paragraph, ParagraphStyle,
-    Row, Run, SectionSetup, Table, VCell,
+    Row, Run, SectionSetup, Table, TextDirection, VCell,
 };
 use crate::{NoteKind, RevisionKind};
 
@@ -1314,6 +1314,12 @@ impl DocBuilder {
     /// Set the number of text columns for the current/final section.
     pub fn columns(mut self, columns: u16) -> Self {
         self.model.setup.columns = Some(columns.max(1));
+        self
+    }
+
+    /// Set the text flow direction for the current/final section.
+    pub fn text_direction(mut self, direction: TextDirection) -> Self {
+        self.model.setup.text_direction = Some(direction);
         self
     }
 

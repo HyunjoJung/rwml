@@ -286,6 +286,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
             page_number_start: body::scan_page_number_start(&doc_xml),
             page_number_format: body::scan_page_number_format(&doc_xml),
             columns: body::scan_section_columns(&doc_xml),
+            text_direction: body::scan_section_text_direction(&doc_xml),
             title: core_properties.title.clone(),
             creator: core_properties.creator.clone(),
             ..crate::model::DocSetup::default()

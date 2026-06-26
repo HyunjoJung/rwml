@@ -534,6 +534,10 @@ impl Ctx {
             .columns
             .map(|columns| format!(r#"<w:cols w:num="{}"/>"#, columns.max(1)))
             .unwrap_or_default();
+        let text_direction = setup
+            .text_direction
+            .map(|direction| format!(r#"<w:textDirection w:val="{}"/>"#, direction.wml_value()))
+            .unwrap_or_default();
         let page_number_type = page_number_type_xml(setup);
         let start = if next_page {
             r#"<w:type w:val="nextPage"/>"#
@@ -546,7 +550,7 @@ impl Ctx {
             ""
         };
         out.push_str(&format!(
-            r#"<w:sectPr>{start}{refs}{title_pg}<w:pgSz w:w="{w}" w:h="{h}"{orient}/><w:pgMar w:top="{mt}" w:right="{mr}" w:bottom="{mb}" w:left="{ml}" w:header="708" w:footer="708" w:gutter="0"/>{page_number_type}{columns}</w:sectPr>"#
+            r#"<w:sectPr>{start}{refs}{title_pg}<w:pgSz w:w="{w}" w:h="{h}"{orient}/><w:pgMar w:top="{mt}" w:right="{mr}" w:bottom="{mb}" w:left="{ml}" w:header="708" w:footer="708" w:gutter="0"/>{text_direction}{page_number_type}{columns}</w:sectPr>"#
         ));
     }
 

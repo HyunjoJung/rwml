@@ -9,7 +9,7 @@ use rdoc::{
     Color, CommentBuilder, ContentControlBuilder, DocBuilder, DocModel, DocSetup, Document,
     DocumentWarning, FieldKind, FieldRole, ImageBuilder, NoteKind, PageNumberFormat, PageSetup,
     ParaProps, Paragraph, ParagraphBuilder, ParagraphStyleBuilder, RevisionBuilder, RevisionKind,
-    RevisionView, Row, RunBuilder, Table, TableBuilder, VCell,
+    RevisionView, Row, RunBuilder, Table, TableBuilder, TextDirection, VCell,
 };
 
 fn run(text: &str, props: CharProps) -> rdoc::Run {
@@ -319,6 +319,7 @@ fn doc_builder_adds_section_breaks_with_section_setup() {
         .columns(2)
         .page_number_start(3)
         .page_number_format(PageNumberFormat::UpperRoman)
+        .text_direction(TextDirection::TopToBottomRightToLeft)
         .header("Cover header")
         .paragraph("Cover")
         .section_break()
@@ -327,6 +328,7 @@ fn doc_builder_adds_section_breaks_with_section_setup() {
         .columns(3)
         .page_number_start(7)
         .page_number_format(PageNumberFormat::DecimalZero)
+        .text_direction(TextDirection::LeftToRightTopToBottomVertical)
         .header("Detail header")
         .paragraph("Detail")
         .build();
@@ -342,6 +344,10 @@ fn doc_builder_adds_section_breaks_with_section_setup() {
         section.page_number_format,
         Some(PageNumberFormat::UpperRoman)
     );
+    assert_eq!(
+        section.text_direction,
+        Some(TextDirection::TopToBottomRightToLeft)
+    );
     assert_eq!(section.header.len(), 1);
     assert_eq!(model.setup.page.width_pt, 792.0);
     assert_eq!(model.setup.columns, Some(3));
@@ -349,6 +355,10 @@ fn doc_builder_adds_section_breaks_with_section_setup() {
     assert_eq!(
         model.setup.page_number_format,
         Some(PageNumberFormat::DecimalZero)
+    );
+    assert_eq!(
+        model.setup.text_direction,
+        Some(TextDirection::LeftToRightTopToBottomVertical)
     );
     assert_eq!(model.setup.header.len(), 1);
 
@@ -370,6 +380,8 @@ fn doc_builder_adds_section_breaks_with_section_setup() {
             && document_xml.contains(r#"<w:pgSz w:w="15840" w:h="12240" w:orient="landscape"/>"#)
             && document_xml.contains(r#"<w:pgNumType w:start="3" w:fmt="upperRoman"/>"#)
             && document_xml.contains(r#"<w:pgNumType w:start="7" w:fmt="decimalZero"/>"#)
+            && document_xml.contains(r#"<w:textDirection w:val="tbRl"/>"#)
+            && document_xml.contains(r#"<w:textDirection w:val="lrTbV"/>"#)
             && document_xml.contains(r#"<w:cols w:num="2"/>"#)
             && document_xml.contains(r#"<w:cols w:num="3"/>"#),
         "section page setup missing: {document_xml}"
@@ -399,6 +411,10 @@ fn doc_builder_adds_section_breaks_with_section_setup() {
         reopened_model.setup.page_number_format,
         Some(PageNumberFormat::DecimalZero)
     );
+    assert_eq!(
+        reopened_model.setup.text_direction,
+        Some(TextDirection::LeftToRightTopToBottomVertical)
+    );
     let Some(Block::SectionBreak(reopened_section)) = reopened_model
         .blocks
         .iter()
@@ -411,6 +427,10 @@ fn doc_builder_adds_section_breaks_with_section_setup() {
     assert_eq!(
         reopened_section.page_number_format,
         Some(PageNumberFormat::UpperRoman)
+    );
+    assert_eq!(
+        reopened_section.text_direction,
+        Some(TextDirection::TopToBottomRightToLeft)
     );
     let text = reopened.text();
     assert!(

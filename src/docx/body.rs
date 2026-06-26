@@ -21,8 +21,8 @@ use super::{attr_local, local, toggle_on};
 use crate::annotation::FieldKind;
 use crate::model::{
     Align, Block, Cell, CellMargins, CharProps, Color, FieldRole, Image, Indent, ListInfo,
-    PageNumberFormat, ParaProps, Paragraph, Row, Run, SectionSetup, Spacing, Table, VCell,
-    VertAlign,
+    PageNumberFormat, ParaProps, Paragraph, Row, Run, SectionSetup, Spacing, Table, TextDirection,
+    VCell, VertAlign,
 };
 use crate::text;
 use crate::CoreProperties;
@@ -287,6 +287,25 @@ pub(crate) fn scan_section_columns(xml: &str) -> Option<u16> {
     columns
 }
 
+/// Scan the final/body section properties for text flow direction.
+pub(crate) fn scan_section_text_direction(xml: &str) -> Option<TextDirection> {
+    let mut r = Reader::from_str(xml);
+    let mut text_direction = None;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"sectPr" => {
+                text_direction = read_section_text_direction(&mut r);
+            }
+            Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"sectPr" => {
+                text_direction = None;
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    text_direction
+}
+
 /// Scan the final/body section properties for a displayed page-number restart.
 pub(crate) fn scan_page_number_start(xml: &str) -> Option<u32> {
     let mut r = Reader::from_str(xml);
@@ -341,6 +360,25 @@ fn read_section_columns(r: &mut Xml<'_>) -> Option<u16> {
         }
     }
     columns
+}
+
+fn read_section_text_direction(r: &mut Xml<'_>) -> Option<TextDirection> {
+    let mut text_direction = None;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if local(e.name().as_ref()) == b"textDirection" =>
+            {
+                text_direction =
+                    attr_local(&e, b"val").and_then(|value| TextDirection::from_wml_value(&value));
+            }
+            Ok(Event::Start(_)) => skip_subtree(r),
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"sectPr" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    text_direction
 }
 
 fn read_section_page_number_start(r: &mut Xml<'_>) -> Option<u32> {
@@ -1133,6 +1171,10 @@ fn read_sect_pr(r: &mut Xml<'_>) -> SectionSetup {
                     section.columns = attr_local(&e, b"num")
                         .and_then(|v| v.trim().parse::<u16>().ok())
                         .map(|value| value.max(1));
+                }
+                b"textDirection" => {
+                    section.text_direction = attr_local(&e, b"val")
+                        .and_then(|value| TextDirection::from_wml_value(&value));
                 }
                 _ => {}
             },

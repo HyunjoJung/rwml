@@ -64,7 +64,7 @@ offsets, simple fields with cached results, `PAGEREF` helper runs, dirty TOC
 heading-range fields, run-anchored comments with reply parent ids, tracked
 insertion/deletion runs, run-level content controls, bookmarked runs, authored
 footnotes/endnotes, string custom document properties, raw custom XML data-store
-items, page setup with section columns and page-number restarts/formats, explicit page/section breaks,
+items, page setup with section columns, text direction, and page-number restarts/formats, explicit page/section breaks,
 and default/first/even running headers/footers with page numbers all round-trip. Content controls can include tag/alias and
 data-binding metadata. See
 [`examples/report.rs`](examples/report.rs).
@@ -838,7 +838,7 @@ The long-term native Word engine plan is split into the
       styled runs, leveled lists, simple fields, `PAGEREF` helper runs, dirty TOC heading-range fields,
       run-anchored comments with reply parent ids, tracked insertion/deletion runs, run-level content
       controls with data-binding metadata, bookmarked runs, authored footnotes/endnotes, inline/standalone hyperlinks,
-      string custom document properties, raw custom XML data-store items, default/first/even headers/footers + page numbers, section columns, page-number restarts/formats, images with inline rotation and page-relative floating offsets,
+      string custom document properties, raw custom XML data-store items, default/first/even headers/footers + page numbers, section columns, text direction, page-number restarts/formats, images with inline rotation and page-relative floating offsets,
       table width, fixed-layout tables, table alignment, indentation, border color, per-cell table margins,
       bar/3-D bar/column/3-D column/line/3-D line/area/3-D area/radar/scatter/bubble/pie/3-D pie/doughnut/surface/3-D surface/stock/pie-of-pie/bar-of-pie
       charts with embedded workbook-backed data) via `DocBuilder`,
