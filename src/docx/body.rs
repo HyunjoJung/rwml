@@ -819,7 +819,8 @@ fn read_blocks(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Vec<Block> {
                         blocks.push(Block::Table(t));
                     }
                 }
-                b"sdt" | b"sdtContent" | b"customXml" | b"smartTag" | b"ins" | b"moveTo" => {
+                b"sdt" => blocks.extend(read_content_control_blocks(r, ctx, depth + 1)),
+                b"sdtContent" | b"customXml" | b"smartTag" | b"ins" | b"moveTo" => {
                     blocks.extend(read_blocks(r, ctx, depth + 1))
                 }
                 _ => skip_subtree(r),
@@ -829,6 +830,60 @@ fn read_blocks(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Vec<Block> {
         }
     }
     blocks
+}
+
+fn read_content_control_blocks(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Vec<Block> {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return Vec::new();
+    }
+    let mut control = None;
+    let mut blocks = Vec::new();
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
+                b"sdtPr" => control = read_content_control_pr(r),
+                b"sdtContent" => blocks.extend(read_blocks(r, ctx, depth + 1)),
+                b"p" => blocks.extend(read_paragraph_blocks(r, ctx, depth + 1)),
+                b"tbl" => {
+                    let table = read_table(r, ctx, depth + 1);
+                    if !table.rows.is_empty() {
+                        blocks.push(Block::Table(table));
+                    }
+                }
+                b"sdt" => blocks.extend(read_content_control_blocks(r, ctx, depth + 1)),
+                b"customXml" | b"smartTag" | b"ins" | b"moveTo" => {
+                    blocks.extend(read_blocks(r, ctx, depth + 1))
+                }
+                _ => skip_subtree(r),
+            },
+            Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    apply_content_control_to_blocks(&mut blocks, control);
+    blocks
+}
+
+fn apply_content_control_to_blocks(blocks: &mut [Block], control: Option<AuthoredContentControl>) {
+    let Some(control) = control else {
+        return;
+    };
+    for block in blocks {
+        match block {
+            Block::Paragraph(paragraph) => {
+                apply_content_control(&mut paragraph.runs, Some(control.clone()));
+            }
+            Block::Table(table) => {
+                for row in &mut table.rows {
+                    for cell in &mut row.cells {
+                        apply_content_control_to_blocks(&mut cell.blocks, Some(control.clone()));
+                    }
+                }
+            }
+            Block::Image(_) | Block::Chart(_) | Block::PageBreak | Block::SectionBreak(_) => {}
+        }
+    }
 }
 
 /// Read a `<w:p>`: its `w:pPr` properties and inline runs.

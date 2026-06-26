@@ -2,7 +2,7 @@
 
 use std::io::{Read, Write};
 
-use rdoc::{CoreProperty, Document, NoteKind};
+use rdoc::{Block, CoreProperty, Document, NoteKind};
 
 fn docx_fixture(parts: &[(&str, &str)]) -> Vec<u8> {
     let mut out = Vec::new();
@@ -451,6 +451,33 @@ fn content_control_docx() -> Vec<u8> {
             r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Before</w:t></w:r></w:p><w:sdt><w:sdtPr><w:alias w:val="Client name"/><w:tag w:val="client-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Old</w:t></w:r><w:r><w:t> Client</w:t></w:r></w:p></w:sdtContent></w:sdt><w:sdt><w:sdtPr><w:alias w:val="Project"/><w:tag w:val="project-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Keep Project</w:t></w:r></w:p></w:sdtContent></w:sdt><w:sdt><w:sdtPr><w:tag w:val="client-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Old Again</w:t></w:r></w:p></w:sdtContent></w:sdt><w:p><w:r><w:t>After</w:t></w:r></w:p></w:body></w:document>"#,
         ),
     ])
+}
+
+#[test]
+fn body_level_content_controls_keep_metadata_in_model() {
+    let doc = Document::open(&content_control_docx()).expect("fixture opens");
+    let model = doc.model();
+    let Block::Paragraph(client) = &model.blocks[1] else {
+        panic!("expected client content-control paragraph");
+    };
+    for run in &client.runs {
+        let control = run
+            .content_control
+            .as_ref()
+            .expect("client run carries content-control metadata");
+        assert_eq!(control.alias.as_deref(), Some("Client name"));
+        assert_eq!(control.tag.as_deref(), Some("client-name"));
+    }
+    let Block::Paragraph(tag_only) = &model.blocks[3] else {
+        panic!("expected tag-only content-control paragraph");
+    };
+    assert_eq!(
+        tag_only.runs[0]
+            .content_control
+            .as_ref()
+            .and_then(|control| control.tag.as_deref()),
+        Some("client-name")
+    );
 }
 
 fn merge_template_docx() -> Vec<u8> {
