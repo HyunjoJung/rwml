@@ -1823,9 +1823,14 @@ fn chart_xml(chart: &Chart, chart_id: u32, workbook_rid: Option<&str>) -> String
             "bar",
             "percentStacked",
         ),
-        ChartKind::Bar3D => {
-            write_bar_or_column_3d_chart(&mut out, chart, cat_axis_id, val_axis_id, "bar")
-        }
+        ChartKind::Bar3D => write_bar_or_column_3d_chart(
+            &mut out,
+            chart,
+            cat_axis_id,
+            val_axis_id,
+            "bar",
+            "clustered",
+        ),
         ChartKind::Column => write_bar_or_column_chart(
             &mut out,
             chart,
@@ -1845,9 +1850,22 @@ fn chart_xml(chart: &Chart, chart_id: u32, workbook_rid: Option<&str>) -> String
             "col",
             "percentStacked",
         ),
-        ChartKind::Column3D => {
-            write_bar_or_column_3d_chart(&mut out, chart, cat_axis_id, val_axis_id, "col")
-        }
+        ChartKind::Column3D => write_bar_or_column_3d_chart(
+            &mut out,
+            chart,
+            cat_axis_id,
+            val_axis_id,
+            "col",
+            "clustered",
+        ),
+        ChartKind::StackedColumn3D => write_bar_or_column_3d_chart(
+            &mut out,
+            chart,
+            cat_axis_id,
+            val_axis_id,
+            "col",
+            "stacked",
+        ),
         ChartKind::Line => write_line_chart(
             &mut out,
             chart,
@@ -2043,9 +2061,10 @@ fn write_bar_or_column_3d_chart(
     cat_axis_id: u32,
     val_axis_id: u32,
     bar_dir: &str,
+    grouping: &str,
 ) {
     out.push_str(&format!(
-        r#"<c:bar3DChart><c:barDir val="{bar_dir}"/><c:grouping val="clustered"/><c:varyColors val="0"/>"#
+        r#"<c:bar3DChart><c:barDir val="{bar_dir}"/><c:grouping val="{grouping}"/><c:varyColors val="0"/>"#
     ));
     for (index, series) in chart.series.iter().enumerate() {
         out.push_str(&format!(
@@ -2057,6 +2076,9 @@ fn write_bar_or_column_3d_chart(
         out.push_str("</c:ser>");
     }
     let shape = chart_shape_value(chart.shape);
+    if matches!(grouping, "stacked" | "percentStacked") {
+        out.push_str(r#"<c:overlap val="100"/>"#);
+    }
     out.push_str(&format!(
         r#"<c:gapWidth val="150"/><c:gapDepth val="150"/><c:shape val="{shape}"/><c:axId val="{cat_axis_id}"/><c:axId val="{val_axis_id}"/></c:bar3DChart>"#
     ));
@@ -2461,6 +2483,7 @@ fn write_chart_axes(out: &mut String, kind: ChartKind, cat_axis_id: u32, val_axi
         | ChartKind::StackedColumn
         | ChartKind::PercentStackedColumn
         | ChartKind::Column3D
+        | ChartKind::StackedColumn3D
         | ChartKind::Line
         | ChartKind::LineNoMarkers
         | ChartKind::SmoothLine

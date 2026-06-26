@@ -2583,6 +2583,7 @@ fn draw_authored_chart(
         chart.kind,
         ChartKind::StackedBar
             | ChartKind::StackedColumn
+            | ChartKind::StackedColumn3D
             | ChartKind::StackedLine
             | ChartKind::StackedArea
     ) {
@@ -2753,6 +2754,7 @@ fn draw_authored_chart(
         | ChartKind::StackedColumn
         | ChartKind::PercentStackedColumn
         | ChartKind::Column3D
+        | ChartKind::StackedColumn3D
         | ChartKind::Line
         | ChartKind::LineNoMarkers
         | ChartKind::SmoothLine
@@ -2818,7 +2820,9 @@ fn draw_authored_chart(
             }
 
             match chart.kind {
-                ChartKind::StackedColumn | ChartKind::PercentStackedColumn => {
+                ChartKind::StackedColumn
+                | ChartKind::PercentStackedColumn
+                | ChartKind::StackedColumn3D => {
                     let percent = chart.kind == ChartKind::PercentStackedColumn;
                     let column_w = (band_w * 0.62).max(2.0);
                     for (category_index, _) in chart.categories.iter().enumerate() {
@@ -2841,14 +2845,27 @@ fn draw_authored_chart(
                             let end = if percent { offset / total } else { offset };
                             let segment_bottom = value_y(start).clamp(plot_top, plot_bottom);
                             let segment_top = value_y(end).clamp(plot_top, plot_bottom);
-                            fill_rect_color(
-                                surface,
-                                column_left,
-                                segment_top,
-                                column_w,
-                                (segment_bottom - segment_top).max(1.0),
-                                chart_series_color(series_index),
-                            );
+                            let color = chart_series_color(series_index);
+                            if chart.kind == ChartKind::StackedColumn3D {
+                                fill_chart_column_shape(
+                                    surface,
+                                    column_left,
+                                    segment_top,
+                                    column_w,
+                                    (segment_bottom - segment_top).max(1.0),
+                                    chart.shape,
+                                    color,
+                                );
+                            } else {
+                                fill_rect_color(
+                                    surface,
+                                    column_left,
+                                    segment_top,
+                                    column_w,
+                                    (segment_bottom - segment_top).max(1.0),
+                                    color,
+                                );
+                            }
                         }
                     }
                 }

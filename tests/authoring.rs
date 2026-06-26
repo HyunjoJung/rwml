@@ -3572,6 +3572,73 @@ fn doc_builder_adds_3d_bar_and_column_charts() {
 }
 
 #[test]
+fn doc_builder_adds_stacked_3d_column_chart() {
+    let model = DocBuilder::new()
+        .chart(
+            ChartBuilder::stacked_column_3d()
+                .shape(ChartShape::Pyramid)
+                .title("Quarterly stack")
+                .categories(["Q1", "Q2", "Q3"])
+                .series("Committed", [10.0, 14.5, 18.0])
+                .series("Upside", [4.0, 6.5, 7.0])
+                .size_px(460, 300)
+                .alt("Quarterly stacked 3-D column chart"),
+        )
+        .build();
+
+    let Block::Chart(chart) = &model.blocks[0] else {
+        panic!("expected chart block");
+    };
+    assert_eq!(chart.kind, ChartKind::StackedColumn3D);
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let chart_xml = String::from_utf8(parts["word/charts/chart1.xml"].clone()).unwrap();
+    let chart_rels = String::from_utf8(parts["word/charts/_rels/chart1.xml.rels"].clone())
+        .expect("chart rels utf8");
+    let workbook_bytes = parts
+        .get("word/embeddings/Microsoft_Excel_Worksheet1.xlsx")
+        .expect("embedded stacked 3-D column chart workbook");
+    let workbook_parts = unzip_parts(workbook_bytes);
+    let sheet_xml = String::from_utf8(workbook_parts["xl/worksheets/sheet1.xml"].clone()).unwrap();
+
+    assert!(
+        document_xml.contains(
+            r#"<wp:docPr id="1" name="Chart1" descr="Quarterly stacked 3-D column chart"/>"#
+        ),
+        "stacked 3-D column chart drawing missing: {document_xml}"
+    );
+    assert!(
+        chart_rels.contains("relationships/package")
+            && chart_rels.contains(r#"Target="../embeddings/Microsoft_Excel_Worksheet1.xlsx""#),
+        "stacked 3-D column chart workbook relationship missing: {chart_rels}"
+    );
+    assert!(
+        chart_xml.contains("<c:bar3DChart>")
+            && chart_xml.contains(r#"<c:barDir val="col"/>"#)
+            && chart_xml.contains(r#"<c:grouping val="stacked"/>"#)
+            && chart_xml.contains(r#"<c:overlap val="100"/>"#)
+            && chart_xml.contains(r#"<c:shape val="pyramid"/>"#)
+            && chart_xml.contains("<a:t>Quarterly stack</a:t>")
+            && chart_xml.contains("<c:v>Committed</c:v>")
+            && chart_xml.contains("<c:v>Upside</c:v>")
+            && chart_xml.contains("<c:v>Q3</c:v>")
+            && chart_xml.contains("<c:v>18</c:v>")
+            && chart_xml.contains("<c:v>7</c:v>"),
+        "stacked 3-D column chart payload missing: {chart_xml}"
+    );
+    assert!(
+        sheet_xml.contains(r#"<c r="B2"><v>10</v></c>"#)
+            && sheet_xml.contains(r#"<c r="C4"><v>7</v></c>"#),
+        "stacked 3-D column chart workbook values missing: {sheet_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("stacked 3-D column chart .docx reopens");
+    assert_eq!(reopened.report().features.charts, 1);
+}
+
+#[test]
 fn doc_builder_adds_3d_bar_and_column_shape_styling() {
     let model = DocBuilder::new()
         .chart(
@@ -6096,6 +6163,38 @@ fn render_pdf_draws_authored_3d_bar_and_column_charts() {
     assert!(
         rendered.pdf.len() > empty.pdf.len() + 100,
         "3-D bar/column chart drawings should add visible PDF content"
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn render_pdf_draws_authored_stacked_3d_column_chart() {
+    let model = DocBuilder::new()
+        .chart(
+            ChartBuilder::stacked_column_3d()
+                .title("Quarterly stack")
+                .categories(["Q1", "Q2", "Q3"])
+                .series("Committed", [10.0, 14.5, 18.0])
+                .series("Upside", [4.0, 6.5, 7.0]),
+        )
+        .build();
+
+    let empty = rdoc::render_pdf_with_report(&DocModel::default());
+    let rendered = rdoc::render_pdf_with_report(&model);
+
+    assert!(rendered.pdf.starts_with(b"%PDF"));
+    assert_eq!(rendered.report.pages, 1);
+    assert_eq!(rendered.report.unsupported.charts, 0);
+    assert!(
+        !rendered.report.warnings.iter().any(|warning| matches!(
+            warning,
+            rdoc::RenderWarning::ChartsPreservedButNotModeled { .. }
+        )),
+        "authored stacked 3-D column chart should render without preserved-only warnings"
+    );
+    assert!(
+        rendered.pdf.len() > empty.pdf.len() + 100,
+        "stacked 3-D column chart drawing should add visible PDF content"
     );
 }
 

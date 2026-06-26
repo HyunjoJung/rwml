@@ -882,6 +882,16 @@ impl ChartBuilder {
         }
     }
 
+    /// Start a stacked 3-D vertical column chart.
+    pub fn stacked_column_3d() -> Self {
+        Self {
+            chart: Chart {
+                kind: ChartKind::StackedColumn3D,
+                ..Chart::default()
+            },
+        }
+    }
+
     /// Start a line chart.
     pub fn line() -> Self {
         Self {

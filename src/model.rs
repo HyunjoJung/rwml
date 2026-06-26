@@ -887,6 +887,8 @@ pub enum ChartKind {
     PercentStackedColumn,
     /// A clustered 3-D vertical column chart.
     Column3D,
+    /// A stacked 3-D vertical column chart.
+    StackedColumn3D,
     /// A line chart with category labels on the horizontal axis.
     Line,
     /// A line chart without point markers.
