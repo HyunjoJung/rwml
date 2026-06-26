@@ -3316,6 +3316,9 @@ pub(crate) fn toc_entries(xml: &str, styles: &Styles) -> Vec<TocEntry> {
     let mut active_bookmarks = Vec::new();
     loop {
         match r.read_event() {
+            Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
+                skip_subtree(&mut r);
+            }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"p" => {
                 read_toc_paragraph(&mut r, styles, &mut active_bookmarks, &mut entries);
             }
@@ -3350,6 +3353,9 @@ fn read_toc_paragraph(
     let mut sequence_identifiers = Vec::new();
     loop {
         match r.read_event() {
+            Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
+                skip_subtree(r);
+            }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"pPr" => {
                 read_toc_ppr(r, &mut style_id, &mut outline);
             }

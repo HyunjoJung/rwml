@@ -1977,6 +1977,23 @@ fn toc_tc_field_switch_docx() -> Vec<u8> {
     ])
 }
 
+fn toc_deleted_tc_field_switch_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:del><w:p><w:fldSimple w:instr=" TC &quot;Deleted Entry&quot; \f m \l 1 "/></w:p></w:del><w:moveFrom><w:p><w:fldSimple w:instr=" TC &quot;Moved Entry&quot; \f m \l 1 "/></w:p></w:moveFrom><w:p><w:fldSimple w:instr=" TC &quot;Visible Entry&quot; \f m \l 1 "><w:r><w:t>stale visible marker</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TOC \f m "><w:r><w:t>stale deleted tc toc</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn invalid_toc_entry_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -6033,6 +6050,31 @@ fn docx_toc_field_with_tc_switch_computes_matching_tc_entries() {
     assert!(
         !main_text.contains("Other Entry"),
         "TOC \\f identifier should filter non-matching TC entries: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_toc_entries_ignore_deleted_tc_fields() {
+    let doc = Document::open(&toc_deleted_tc_field_switch_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::TocEntry);
+    assert_eq!(fields[0].instruction, "TC \"Visible Entry\" \\f m \\l 1");
+    assert_eq!(fields[0].computed_result.as_deref(), Some(""));
+    let toc = fields
+        .iter()
+        .find(|field| field.kind == FieldKind::Toc)
+        .expect("TOC field is parsed");
+
+    assert_eq!(toc.computed_result.as_deref(), Some("Visible Entry"));
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Visible Entry")
+            && !main_text.contains("Deleted Entry")
+            && !main_text.contains("Moved Entry"),
+        "TOC entries must follow accepted-current revision wrappers: {main_text:?}"
     );
 }
 
