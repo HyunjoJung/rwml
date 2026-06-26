@@ -1046,7 +1046,13 @@ impl Ctx {
         }
 
         let ncols = ncols.max(1);
-        out.push_str(r#"<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/>"#);
+        out.push_str("<w:tbl><w:tblPr>");
+        if let Some(width_pct) = t.width_pct {
+            let w = (width_pct.clamp(0.0, 1.0) * 5000.0).round() as i64;
+            out.push_str(&format!(r#"<w:tblW w:w="{w}" w:type="pct"/>"#));
+        } else {
+            out.push_str(r#"<w:tblW w:w="0" w:type="auto"/>"#);
+        }
         if let Some(indent) = t.indent_twips {
             out.push_str(&format!(r#"<w:tblInd w:w="{indent}" w:type="dxa"/>"#));
         }

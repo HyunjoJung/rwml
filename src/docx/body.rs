@@ -1822,6 +1822,7 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Table {
     let mut fixed_layout = false;
     let mut indent_twips = None;
     let mut align = None;
+    let mut width_pct = None;
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
@@ -1830,6 +1831,7 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Table {
                     fixed_layout = tblpr.0;
                     indent_twips = tblpr.1;
                     align = tblpr.2;
+                    width_pct = tblpr.3;
                 }
                 b"tr" => rows.push(read_row(r, ctx, depth)),
                 _ => skip_subtree(r), // tblGrid, …
@@ -1838,16 +1840,25 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Table {
             _ => {}
         }
     }
-    build_table(rows, fixed_layout, indent_twips, align)
+    build_table(rows, fixed_layout, indent_twips, align, width_pct)
 }
 
 /// Read `<w:tblPr>` layout metadata.
-fn read_tblpr(r: &mut Xml<'_>) -> (bool, Option<i32>, Option<Align>) {
+fn read_tblpr(r: &mut Xml<'_>) -> (bool, Option<i32>, Option<Align>, Option<f32>) {
     let mut fixed_layout = false;
     let mut indent_twips = None;
     let mut align = None;
+    let mut width_pct = None;
     loop {
         match r.read_event() {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if local(e.name().as_ref()) == b"tblW"
+                    && attr_local(&e, b"type").as_deref() == Some("pct") =>
+            {
+                width_pct = attr_local(&e, b"w")
+                    .and_then(|v| v.trim().parse::<f32>().ok())
+                    .map(|p| p / 5000.0);
+            }
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"tblLayout" =>
             {
@@ -1872,7 +1883,7 @@ fn read_tblpr(r: &mut Xml<'_>) -> (bool, Option<i32>, Option<Align>) {
             _ => {}
         }
     }
-    (fixed_layout, indent_twips, align)
+    (fixed_layout, indent_twips, align, width_pct)
 }
 
 /// Read a `<w:tr>` and whether it is a repeated header row.
@@ -2079,6 +2090,7 @@ fn build_table(
     fixed_layout: bool,
     indent_twips: Option<i32>,
     align: Option<Align>,
+    width_pct: Option<f32>,
 ) -> Table {
     let header_rows = raw_rows.iter().take_while(|(_, h)| *h).count();
 
@@ -2169,6 +2181,7 @@ fn build_table(
         fixed_layout,
         indent_twips,
         align,
+        width_pct,
         ..Default::default()
     }
 }
@@ -2603,7 +2616,7 @@ mod tests {
             (0..u16::MAX as usize).map(|_| (vec![raw_merge_cell(VMerge::Continue)], false)),
         );
 
-        let table = build_table(rows, false, None, None);
+        let table = build_table(rows, false, None, None, None);
 
         assert_eq!(table.rows[0].cells[0].row_span, u16::MAX);
     }

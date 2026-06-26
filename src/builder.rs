@@ -1122,6 +1122,12 @@ impl TableBuilder {
         self
     }
 
+    /// Set the table width as a fraction of the available width.
+    pub fn width_pct(mut self, width_pct: f32) -> Self {
+        self.table.width_pct = Some(width_pct);
+        self
+    }
+
     /// Use Word's fixed table layout algorithm.
     pub fn fixed_layout(mut self) -> Self {
         self.table.fixed_layout = true;

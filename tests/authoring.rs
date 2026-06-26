@@ -118,6 +118,7 @@ fn report() -> DocModel {
         ],
         header_rows: 1,
         col_widths_pct: vec![0.7, 0.3],
+        width_pct: None,
         fixed_layout: false,
         indent_twips: None,
         align: None,
@@ -1692,6 +1693,36 @@ fn table_builder_adds_table_alignment() {
         panic!("expected reopened table");
     };
     assert_eq!(reopened_table.align, Some(Align::Center));
+}
+
+#[test]
+fn table_builder_adds_table_width() {
+    let model = DocBuilder::new()
+        .rich_table(
+            TableBuilder::new()
+                .width_pct(0.8)
+                .row([CellBuilder::text("Wide")]),
+        )
+        .build();
+
+    let Block::Table(table) = &model.blocks[0] else {
+        panic!("expected builder to add a table block");
+    };
+    assert_eq!(table.width_pct, Some(0.8));
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    assert!(
+        document_xml.contains(r#"<w:tblW w:w="4000" w:type="pct"/>"#),
+        "table width XML missing: {document_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("width table .docx reopens");
+    let Block::Table(reopened_table) = &reopened.model().blocks[0] else {
+        panic!("expected reopened table");
+    };
+    assert_eq!(reopened_table.width_pct, Some(0.8));
 }
 
 #[test]
