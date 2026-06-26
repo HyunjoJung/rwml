@@ -1112,6 +1112,16 @@ impl ChartBuilder {
         }
     }
 
+    /// Start an exploded 3-D pie chart using the first series as slice values.
+    pub fn exploded_pie_3d() -> Self {
+        Self {
+            chart: Chart {
+                kind: ChartKind::ExplodedPie3D,
+                ..Chart::default()
+            },
+        }
+    }
+
     /// Start a pie-of-pie chart using the first series as slice values.
     pub fn pie_of_pie() -> Self {
         Self {

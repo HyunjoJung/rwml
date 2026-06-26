@@ -4770,6 +4770,64 @@ fn doc_builder_adds_3d_pie_chart() {
 }
 
 #[test]
+fn doc_builder_adds_exploded_3d_pie_chart() {
+    let model = DocBuilder::new()
+        .chart(
+            ChartBuilder::exploded_pie_3d()
+                .title("Revenue 3-D breakout")
+                .categories(["Cloud", "Services", "Support"])
+                .series("Share", [65.0, 25.0, 10.0])
+                .size_px(420, 280)
+                .alt("Revenue exploded 3-D pie chart"),
+        )
+        .build();
+
+    let Block::Chart(chart) = &model.blocks[0] else {
+        panic!("expected chart block");
+    };
+    assert_eq!(chart.kind, ChartKind::ExplodedPie3D);
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let rels = String::from_utf8(parts["word/_rels/document.xml.rels"].clone()).unwrap();
+    let chart_xml = String::from_utf8(parts["word/charts/chart1.xml"].clone()).unwrap();
+    let workbook_bytes = parts
+        .get("word/embeddings/Microsoft_Excel_Worksheet1.xlsx")
+        .expect("embedded exploded 3-D pie chart workbook");
+    let workbook_parts = unzip_parts(workbook_bytes);
+    let sheet_xml = String::from_utf8(workbook_parts["xl/worksheets/sheet1.xml"].clone()).unwrap();
+
+    assert!(
+        document_xml
+            .contains(r#"<wp:docPr id="1" name="Chart1" descr="Revenue exploded 3-D pie chart"/>"#)
+            && document_xml.contains(r#"<c:chart r:id="rId1"/>"#),
+        "exploded 3-D pie chart drawing missing: {document_xml}"
+    );
+    assert!(
+        rels.contains("relationships/chart") && rels.contains(r#"Target="charts/chart1.xml""#),
+        "exploded 3-D pie chart relationship missing: {rels}"
+    );
+    assert!(
+        chart_xml.contains("<c:pie3DChart>")
+            && chart_xml.contains(r#"<c:explosion val="25"/>"#)
+            && chart_xml.contains("<a:t>Revenue 3-D breakout</a:t>")
+            && chart_xml.contains("<c:v>Share</c:v>")
+            && chart_xml.contains("<c:v>Cloud</c:v>")
+            && chart_xml.contains("<c:v>65</c:v>"),
+        "exploded 3-D pie chart payload missing: {chart_xml}"
+    );
+    assert!(
+        sheet_xml.contains(r#"<c r="B2"><v>65</v></c>"#)
+            && sheet_xml.contains(r#"<c r="B4"><v>10</v></c>"#),
+        "exploded 3-D pie chart workbook values missing: {sheet_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("exploded 3-D pie chart .docx reopens");
+    assert_eq!(reopened.report().features.charts, 1);
+}
+
+#[test]
 fn doc_builder_adds_doughnut_chart() {
     let model = DocBuilder::new()
         .chart(
@@ -6117,6 +6175,37 @@ fn render_pdf_draws_authored_3d_line_and_area_charts() {
     assert!(
         rendered.pdf.len() > empty.pdf.len() + 100,
         "3-D line/area chart drawings should add visible PDF content"
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn render_pdf_draws_authored_exploded_3d_pie_chart() {
+    let model = DocBuilder::new()
+        .chart(
+            ChartBuilder::exploded_pie_3d()
+                .title("Revenue 3-D breakout")
+                .categories(["Cloud", "Services", "Support"])
+                .series("Share", [65.0, 25.0, 10.0]),
+        )
+        .build();
+
+    let empty = rdoc::render_pdf_with_report(&DocModel::default());
+    let rendered = rdoc::render_pdf_with_report(&model);
+
+    assert!(rendered.pdf.starts_with(b"%PDF"));
+    assert_eq!(rendered.report.pages, 1);
+    assert_eq!(rendered.report.unsupported.charts, 0);
+    assert!(
+        !rendered.report.warnings.iter().any(|warning| matches!(
+            warning,
+            rdoc::RenderWarning::ChartsPreservedButNotModeled { .. }
+        )),
+        "authored exploded 3-D pie chart should render without preserved-only warnings"
+    );
+    assert!(
+        rendered.pdf.len() > empty.pdf.len() + 100,
+        "exploded 3-D pie chart drawing should add visible PDF content"
     );
 }
 

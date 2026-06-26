@@ -632,7 +632,7 @@ Initial status:
   tracked insertion/deletion runs through
   `RevisionBuilder`, run-level content controls through `ContentControlBuilder`,
   standalone hyperlink paragraphs, image blocks with alt text and explicit sizing
-  through `ImageBuilder`, bar/stacked bar/100% stacked bar/3-D bar/column/stacked column/100% stacked column/3-D column/line/markerless line/smooth line/stacked line/100% stacked line/3-D line/area/stacked area/100% stacked area/3-D area/radar/radar-with-markers/filled radar/scatter/line-only scatter/smooth scatter/smooth markerless scatter/marker-only scatter/bubble/3-D bubble/pie/exploded pie/3-D pie/doughnut/exploded doughnut/surface/3-D surface/stock/pie-of-pie/bar-of-pie
+  through `ImageBuilder`, bar/stacked bar/100% stacked bar/3-D bar/column/stacked column/100% stacked column/3-D column/line/markerless line/smooth line/stacked line/100% stacked line/3-D line/area/stacked area/100% stacked area/3-D area/radar/radar-with-markers/filled radar/scatter/line-only scatter/smooth scatter/smooth markerless scatter/marker-only scatter/bubble/3-D bubble/pie/exploded pie/3-D pie/exploded 3-D pie/doughnut/exploded doughnut/surface/3-D surface/stock/pie-of-pie/bar-of-pie
   charts with embedded workbook-backed data, 3-D bar/column shape styling, and
   surface-family wireframe styling through `ChartBuilder`, page
   size/orientation/margins/columns/document grids/text direction/title pages, page-number restarts/formats, explicit Word document ids, web-extension task pane package shells, explicit page breaks, next/even/odd section breaks that snapshot

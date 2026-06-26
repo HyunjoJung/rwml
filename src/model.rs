@@ -933,6 +933,8 @@ pub enum ChartKind {
     ExplodedPie,
     /// A 3-D pie chart using the first series as slice values.
     Pie3D,
+    /// An exploded 3-D pie chart using the first series as slice values.
+    ExplodedPie3D,
     /// A pie-of-pie chart using the first series as slice values.
     PieOfPie,
     /// A bar-of-pie chart using the first series as slice values.

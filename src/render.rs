@@ -2468,6 +2468,7 @@ fn draw_authored_chart(
         ChartKind::Pie
             | ChartKind::ExplodedPie
             | ChartKind::Pie3D
+            | ChartKind::ExplodedPie3D
             | ChartKind::PieOfPie
             | ChartKind::BarOfPie
             | ChartKind::Doughnut
@@ -2486,7 +2487,7 @@ fn draw_authored_chart(
             ),
             matches!(
                 chart.kind,
-                ChartKind::ExplodedPie | ChartKind::ExplodedDoughnut
+                ChartKind::ExplodedPie | ChartKind::ExplodedPie3D | ChartKind::ExplodedDoughnut
             ),
         );
         let mut legend_x = plot_left;
@@ -3221,6 +3222,7 @@ fn draw_authored_chart(
                 | ChartKind::Pie
                 | ChartKind::ExplodedPie
                 | ChartKind::Pie3D
+                | ChartKind::ExplodedPie3D
                 | ChartKind::PieOfPie
                 | ChartKind::BarOfPie
                 | ChartKind::Doughnut
@@ -3233,6 +3235,7 @@ fn draw_authored_chart(
         | ChartKind::Pie
         | ChartKind::ExplodedPie
         | ChartKind::Pie3D
+        | ChartKind::ExplodedPie3D
         | ChartKind::PieOfPie
         | ChartKind::BarOfPie
         | ChartKind::Doughnut
