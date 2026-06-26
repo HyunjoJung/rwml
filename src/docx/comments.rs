@@ -29,6 +29,36 @@ pub(crate) fn parse(xml: &str) -> Vec<Comment> {
     comments
 }
 
+pub(crate) fn apply_extended_parent_ids(
+    comments: &mut [Comment],
+    comments_xml: &str,
+    ex_xml: &str,
+) {
+    let id_to_para = comment_para_ids(comments_xml);
+    if id_to_para.is_empty() {
+        return;
+    }
+    let para_to_id: HashMap<String, String> = id_to_para
+        .iter()
+        .map(|(id, para_id)| (para_id.clone(), id.clone()))
+        .collect();
+    let parent_para_by_child_para = extended_parent_para_ids(ex_xml);
+    for comment in comments {
+        if comment.parent_comment_id.is_some() {
+            continue;
+        }
+        let Some(child_para_id) = id_to_para.get(&comment.id) else {
+            continue;
+        };
+        let Some(parent_para_id) = parent_para_by_child_para.get(child_para_id) else {
+            continue;
+        };
+        if let Some(parent_id) = para_to_id.get(parent_para_id) {
+            comment.parent_comment_id = Some(parent_id.clone());
+        }
+    }
+}
+
 fn comment_shell(e: &BytesStart<'_>) -> Comment {
     Comment {
         id: attr_local(e, b"id").unwrap_or_default(),
@@ -39,6 +69,56 @@ fn comment_shell(e: &BytesStart<'_>) -> Comment {
         text: String::new(),
         anchor: None,
     }
+}
+
+fn comment_para_ids(xml: &str) -> HashMap<String, String> {
+    let mut r = Reader::from_str(xml);
+    let mut current_comment_id: Option<String> = None;
+    let mut ids = HashMap::new();
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"comment" => {
+                current_comment_id = attr_local(&e, b"id");
+            }
+            Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"comment" => {
+                current_comment_id = None;
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"p" => {
+                if let (Some(comment_id), Some(para_id)) =
+                    (current_comment_id.as_ref(), attr_local(&e, b"paraId"))
+                {
+                    ids.insert(comment_id.clone(), para_id);
+                }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"comment" => {
+                current_comment_id = None;
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    ids
+}
+
+fn extended_parent_para_ids(xml: &str) -> HashMap<String, String> {
+    let mut r = Reader::from_str(xml);
+    let mut ids = HashMap::new();
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if local(e.name().as_ref()) == b"commentEx" =>
+            {
+                if let (Some(para_id), Some(parent_para_id)) =
+                    (attr_local(&e, b"paraId"), attr_local(&e, b"paraIdParent"))
+                {
+                    ids.insert(para_id, parent_para_id);
+                }
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    ids
 }
 
 pub(crate) fn parse_anchors(xml: &str) -> HashMap<String, TextAnchor> {

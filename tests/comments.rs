@@ -91,6 +91,35 @@ fn commented_docx() -> Vec<u8> {
     ])
 }
 
+fn threaded_comments_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/><Override PartName="/word/commentsExtended.xml" ContentType="application/vnd.ms-word.commentsExt+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="comments.xml"/><Relationship Id="rId2" Type="http://schemas.microsoft.com/office/2011/relationships/commentsExtended" Target="commentsExtended.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:commentRangeStart w:id="1"/><w:r><w:t>Reviewed clause</w:t></w:r><w:commentRangeEnd w:id="1"/><w:r><w:commentReference w:id="1"/></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/comments.xml",
+            r#"<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"><w:comment w:id="1" w:author="Reviewer"><w:p w14:paraId="11111111"><w:r><w:t>Original note</w:t></w:r></w:p></w:comment><w:comment w:id="2" w:author="Approver"><w:p w14:paraId="22222222"><w:r><w:t>Reply note</w:t></w:r></w:p></w:comment></w:comments>"#,
+        ),
+        (
+            "word/commentsExtended.xml",
+            r#"<w15:commentsEx xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml"><w15:commentEx w15:paraId="11111111" w15:done="0"/><w15:commentEx w15:paraId="22222222" w15:paraIdParent="11111111" w15:done="0"/></w15:commentsEx>"#,
+        ),
+    ])
+}
+
 fn revision_wrapped_commented_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -114,6 +143,19 @@ fn revision_wrapped_commented_docx() -> Vec<u8> {
             r#"<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:comment w:id="7" w:author="Reviewer"><w:p><w:r><w:t>Direct note</w:t></w:r></w:p></w:comment><w:comment w:id="8" w:author="Reviewer"><w:p><w:r><w:t>Inserted note</w:t></w:r></w:p></w:comment><w:comment w:id="9" w:author="Reviewer"><w:p><w:r><w:t>Moved-to note</w:t></w:r></w:p></w:comment><w:comment w:id="10" w:author="Reviewer"><w:p><w:r><w:t>Deleted note</w:t></w:r></w:p></w:comment><w:comment w:id="11" w:author="Reviewer"><w:p><w:r><w:t>Moved-from note</w:t></w:r></w:p></w:comment></w:comments>"#,
         ),
     ])
+}
+
+#[test]
+fn docx_comment_replies_use_comments_extended_parent_ids() {
+    let doc = Document::open(&threaded_comments_docx()).expect("fixture opens");
+    let comments = doc.comments();
+
+    assert_eq!(comments.len(), 2);
+    assert_eq!(comments[0].id, "1");
+    assert_eq!(comments[0].parent_comment_id, None);
+    assert_eq!(comments[1].id, "2");
+    assert_eq!(comments[1].parent_comment_id.as_deref(), Some("1"));
+    assert_eq!(comments[1].text, "Reply note");
 }
 
 #[test]

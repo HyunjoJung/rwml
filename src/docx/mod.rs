@@ -236,9 +236,17 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         document_properties,
     );
     apply_section_header_footers(&mut blocks, &section_header_footers);
-    let mut comments = part(&mut zip, "word/comments.xml")
-        .map(|s| comments::parse(&s))
+    let comments_xml = part(&mut zip, "word/comments.xml");
+    let comments_ext_xml = part(&mut zip, "word/commentsExtended.xml");
+    let mut comments = comments_xml
+        .as_deref()
+        .map(comments::parse)
         .unwrap_or_default();
+    if let (Some(comments_xml), Some(comments_ext_xml)) =
+        (comments_xml.as_deref(), comments_ext_xml.as_deref())
+    {
+        comments::apply_extended_parent_ids(&mut comments, comments_xml, comments_ext_xml);
+    }
     let comment_anchors = comments::parse_anchors(&doc_xml);
     for comment in &mut comments {
         comment.anchor = comment_anchors.get(&comment.id).cloned();
