@@ -448,6 +448,24 @@ fn page_ref_number_in_dash_section_page_number_format_diagnostics_docx() -> Vec<
 }
 
 #[cfg(feature = "docx")]
+fn page_ref_decimal_full_width_section_page_number_format_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgNumType w:start="12" w:fmt="decimalFullWidth"/></w:sectPr></w:pPr></w:p><w:p><w:bookmarkStart w:id="10" w:name="FullWidthSection"/><w:r><w:t>Full-width target</w:t></w:r><w:bookmarkEnd w:id="10"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF FullWidthSection \h "><w:r><w:t>stale fullwidth</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF FullWidthSection \* Arabic "><w:r><w:t>stale fullwidth arabic</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn page_ref_visible_manual_break_before_rendered_hint_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -1737,6 +1755,41 @@ fn report_page_ref_number_in_dash_section_page_number_format_is_supported() {
     let fields = doc.fields();
     assert_eq!(fields[0].computed_result.as_deref(), Some("- 5 -"));
     assert_eq!(fields[1].computed_result.as_deref(), Some("5"));
+
+    let report = doc.report();
+    assert_eq!(report.features.fields, 2);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::PageRef,
+            count: 2,
+        }]
+    );
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+    assert!(
+        report
+            .warnings
+            .iter()
+            .all(|warning| !matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })),
+        "{:?}",
+        report.warnings
+    );
+
+    let json = report.to_json();
+    assert!(json.contains(r#""unsupported_field_kinds":[]"#), "{json}");
+    assert!(json.contains(r#""unsupported_field_reasons":[]"#), "{json}");
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_page_ref_decimal_full_width_section_page_number_format_is_supported() {
+    let doc =
+        Document::open(&page_ref_decimal_full_width_section_page_number_format_diagnostics_docx())
+            .expect("fixture opens");
+    let fields = doc.fields();
+    assert_eq!(fields[0].computed_result.as_deref(), Some("１２"));
+    assert_eq!(fields[1].computed_result.as_deref(), Some("12"));
 
     let report = doc.report();
     assert_eq!(report.features.fields, 2);

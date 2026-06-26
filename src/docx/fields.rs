@@ -6,7 +6,7 @@ use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 
 use crate::annotation::{Field, FieldKind};
-use crate::CoreProperties;
+use crate::{numfmt, CoreProperties};
 
 use super::numbering::Numbering;
 use super::styles::Styles;
@@ -3061,6 +3061,7 @@ fn page_ref_section_page_number_format(e: &BytesStart<'_>) -> Option<PageRefDisp
         "decimal" => PageNumberFormat::Arabic,
         "decimalZero" => PageNumberFormat::DecimalZero,
         "numberInDash" => PageNumberFormat::ArabicDash,
+        "decimalFullWidth" => PageNumberFormat::DecimalFullWidth,
         "lowerLetter" => PageNumberFormat::AlphabeticLower,
         "upperLetter" => PageNumberFormat::AlphabeticUpper,
         "lowerRoman" => PageNumberFormat::RomanLower,
@@ -7547,6 +7548,7 @@ enum PageNumberFormat {
     Arabic,
     ArabicDash,
     DecimalZero,
+    DecimalFullWidth,
     AlphabeticLower,
     AlphabeticUpper,
     RomanLower,
@@ -8000,6 +8002,9 @@ fn format_page_number(page: usize, format: Option<PageNumberFormat>) -> Option<S
         PageNumberFormat::Arabic => Some(page.to_string()),
         PageNumberFormat::ArabicDash => Some(format!("- {page} -")),
         PageNumberFormat::DecimalZero => Some(format!("{page:02}")),
+        PageNumberFormat::DecimalFullWidth => u32::try_from(page)
+            .ok()
+            .map(|page| numfmt::format(page, 0x0E)),
         PageNumberFormat::AlphabeticLower => alphabetic_page_number(page, false),
         PageNumberFormat::AlphabeticUpper => alphabetic_page_number(page, true),
         PageNumberFormat::RomanLower => roman_page_number(page).map(|value| value.to_lowercase()),

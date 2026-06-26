@@ -618,10 +618,11 @@ enabled paragraph `w:pageBreakBefore`, explicit or default `nextPage`, and
 explicit `evenPage`/`oddPage` section starts in leading or trusted rendered
 context, including trusted `w:pgNumType w:start` displayed page-number
 restarts and supported `w:pgNumType w:fmt` styles (`decimal`, `decimalZero`,
-`numberInDash`, lower/upper letter, lower/upper roman, ordinal/cardinal text) on
-those section starts, source-persisted `w:lastRenderedPageBreak` markers scanned
-with the same single-branch `mc:AlternateContent` policy as flat text, or
-explicit hard breaks after a trusted leading/rendered page context make the
+`numberInDash`, `decimalFullWidth`, lower/upper letter, lower/upper roman,
+ordinal/cardinal text) on those section starts, source-persisted
+`w:lastRenderedPageBreak` markers scanned with the same single-branch
+`mc:AlternateContent` policy as flat text, or explicit hard breaks after a
+trusted leading/rendered page context make the
 target bookmark page structural, apply deterministic `\* Arabic`,
 `\* alphabetic`/`\* ALPHABETIC`,
 `\* roman`/`\* ROMAN`, `\* Ordinal`, `\* CardText`, `\* OrdText`, and
