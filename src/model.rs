@@ -493,6 +493,50 @@ impl TableBorderColors {
     }
 }
 
+/// Optional table border widths by physical side, in eighths of a point.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TableBorderSizes {
+    /// Top border width.
+    pub top: Option<u16>,
+    /// Left border width.
+    pub left: Option<u16>,
+    /// Bottom border width.
+    pub bottom: Option<u16>,
+    /// Right border width.
+    pub right: Option<u16>,
+    /// Horizontal inside border width.
+    pub inside_h: Option<u16>,
+    /// Vertical inside border width.
+    pub inside_v: Option<u16>,
+}
+
+impl TableBorderSizes {
+    /// Return the width for a side, if one was set.
+    pub fn get(&self, side: TableBorderSide) -> Option<u16> {
+        match side {
+            TableBorderSide::Top => self.top,
+            TableBorderSide::Left => self.left,
+            TableBorderSide::Bottom => self.bottom,
+            TableBorderSide::Right => self.right,
+            TableBorderSide::InsideHorizontal => self.inside_h,
+            TableBorderSide::InsideVertical => self.inside_v,
+        }
+    }
+
+    /// Set the width for a side.
+    pub fn set(&mut self, side: TableBorderSide, size: u16) {
+        let size = size.max(1);
+        match side {
+            TableBorderSide::Top => self.top = Some(size),
+            TableBorderSide::Left => self.left = Some(size),
+            TableBorderSide::Bottom => self.bottom = Some(size),
+            TableBorderSide::Right => self.right = Some(size),
+            TableBorderSide::InsideHorizontal => self.inside_h = Some(size),
+            TableBorderSide::InsideVertical => self.inside_v = Some(size),
+        }
+    }
+}
+
 /// Optional table border line styles by physical side.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct TableBorderStyles {
@@ -638,6 +682,8 @@ pub struct Table {
     pub border_colors: TableBorderColors,
     /// Uniform table border width in eighths of a point, if explicitly set.
     pub border_size_eighths: Option<u16>,
+    /// Side-specific table border widths, overriding `border_size_eighths` per side.
+    pub border_sizes: TableBorderSizes,
     /// Uniform table border style, if explicitly set.
     pub border_style: Option<TableBorderStyle>,
     /// Side-specific table border styles, overriding `border_style` per side.

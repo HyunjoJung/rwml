@@ -1171,6 +1171,12 @@ impl TableBuilder {
         self
     }
 
+    /// Set a table border width for one physical side, in eighths of a point.
+    pub fn border_side_size_eighths(mut self, side: TableBorderSide, size: u16) -> Self {
+        self.table.border_sizes.set(side, size);
+        self
+    }
+
     /// Set the uniform table border style.
     pub fn border_style(mut self, style: TableBorderStyle) -> Self {
         self.table.border_style = Some(style);

@@ -126,6 +126,7 @@ fn report() -> DocModel {
         border_color: None,
         border_colors: Default::default(),
         border_size_eighths: None,
+        border_sizes: Default::default(),
         border_style: None,
         border_styles: Default::default(),
     };
@@ -2371,6 +2372,46 @@ fn table_builder_adds_side_specific_border_styles() {
         reopened_table.border_styles.inside_v,
         Some(TableBorderStyle::Dotted)
     );
+}
+
+#[test]
+fn table_builder_adds_side_specific_border_sizes() {
+    let model = DocBuilder::new()
+        .rich_table(
+            TableBuilder::new()
+                .border_size_eighths(4)
+                .border_side_size_eighths(TableBorderSide::Top, 12)
+                .border_side_size_eighths(TableBorderSide::InsideHorizontal, 8)
+                .row([CellBuilder::text("Sized")]),
+        )
+        .build();
+
+    let Block::Table(table) = &model.blocks[0] else {
+        panic!("expected builder to add a table block");
+    };
+    assert_eq!(table.border_size_eighths, Some(4));
+    assert_eq!(table.border_sizes.top, Some(12));
+    assert_eq!(table.border_sizes.inside_h, Some(8));
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    assert!(
+        document_xml.contains(r#"<w:top w:val="single" w:sz="12" w:space="0" w:color="auto"/>"#)
+            && document_xml
+                .contains(r#"<w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#)
+            && document_xml
+                .contains(r#"<w:insideH w:val="single" w:sz="8" w:space="0" w:color="auto"/>"#),
+        "side-specific table border size XML missing: {document_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("side-border-size table .docx reopens");
+    let Block::Table(reopened_table) = &reopened.model().blocks[0] else {
+        panic!("expected reopened table");
+    };
+    assert_eq!(reopened_table.border_sizes.top, Some(12));
+    assert_eq!(reopened_table.border_sizes.left, Some(4));
+    assert_eq!(reopened_table.border_sizes.inside_h, Some(8));
 }
 
 #[test]
