@@ -1585,6 +1585,24 @@ impl DocBuilder {
         self
     }
 
+    /// Add a first-page running header paragraph.
+    pub fn first_header(mut self, text: impl Into<String>) -> Self {
+        self.model
+            .setup
+            .first_header
+            .push(plain_paragraph(text.into()));
+        self
+    }
+
+    /// Add an even-page running header paragraph.
+    pub fn even_header(mut self, text: impl Into<String>) -> Self {
+        self.model
+            .setup
+            .even_header
+            .push(plain_paragraph(text.into()));
+        self
+    }
+
     /// Add a running header paragraph from already-built runs.
     pub fn header_runs<I>(mut self, runs: I) -> Self
     where
@@ -1612,6 +1630,24 @@ impl DocBuilder {
     /// Add a plain running footer paragraph.
     pub fn footer(mut self, text: impl Into<String>) -> Self {
         self.model.setup.footer.push(plain_paragraph(text.into()));
+        self
+    }
+
+    /// Add a first-page running footer paragraph.
+    pub fn first_footer(mut self, text: impl Into<String>) -> Self {
+        self.model
+            .setup
+            .first_footer
+            .push(plain_paragraph(text.into()));
+        self
+    }
+
+    /// Add an even-page running footer paragraph.
+    pub fn even_footer(mut self, text: impl Into<String>) -> Self {
+        self.model
+            .setup
+            .even_footer
+            .push(plain_paragraph(text.into()));
         self
     }
 

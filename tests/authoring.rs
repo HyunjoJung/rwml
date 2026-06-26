@@ -464,6 +464,63 @@ fn write_docx_emits_first_even_header_footer_variants() {
 }
 
 #[test]
+fn doc_builder_adds_first_even_header_footer_variants() {
+    let model = DocBuilder::new()
+        .header("Default header")
+        .first_header("First header")
+        .even_header("Even header")
+        .footer("Default footer")
+        .first_footer("First footer")
+        .even_footer("Even footer")
+        .paragraph("Body")
+        .build();
+
+    assert_eq!(single_paragraph_text(&model.setup.header), "Default header");
+    assert_eq!(
+        single_paragraph_text(&model.setup.first_header),
+        "First header"
+    );
+    assert_eq!(
+        single_paragraph_text(&model.setup.even_header),
+        "Even header"
+    );
+    assert_eq!(single_paragraph_text(&model.setup.footer), "Default footer");
+    assert_eq!(
+        single_paragraph_text(&model.setup.first_footer),
+        "First footer"
+    );
+    assert_eq!(
+        single_paragraph_text(&model.setup.even_footer),
+        "Even footer"
+    );
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let settings_xml = String::from_utf8(parts["word/settings.xml"].clone()).unwrap();
+
+    assert!(
+        document_xml.contains("<w:titlePg/>")
+            && document_xml.contains(r#"<w:headerReference w:type="first""#)
+            && document_xml.contains(r#"<w:headerReference w:type="even""#)
+            && document_xml.contains(r#"<w:footerReference w:type="first""#)
+            && document_xml.contains(r#"<w:footerReference w:type="even""#),
+        "builder first/even references missing: {document_xml}"
+    );
+    assert!(
+        settings_xml.contains("<w:evenAndOddHeaders/>"),
+        "builder even/odd settings missing: {settings_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("builder variant header/footer .docx reopens");
+    let setup = &reopened.model().setup;
+    assert_eq!(single_paragraph_text(&setup.first_header), "First header");
+    assert_eq!(single_paragraph_text(&setup.even_header), "Even header");
+    assert_eq!(single_paragraph_text(&setup.first_footer), "First footer");
+    assert_eq!(single_paragraph_text(&setup.even_footer), "Even footer");
+}
+
+#[test]
 fn doc_builder_adds_section_columns() {
     let model = DocBuilder::new()
         .columns(2)
