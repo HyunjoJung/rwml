@@ -818,9 +818,9 @@ code points.
   insertion/deletion runs, run-level content controls with data-binding
   metadata, authored footnotes/endnotes, bookmarks,
   custom properties, raw custom XML data stores, explicit Word document ids, web-extension task pane package shells, section layout, rotated/floating
-  images, rich tables, and the currently listed chart families with embedded
+  images, rich tables, and the current core OOXML chart families with embedded
   workbook-backed source data. Remaining gaps are broader structural editing
-  surfaces and chart families beyond the current authored set; the element-tree
+  surfaces and newer extension chart families beyond the current authored set; the element-tree
   edit exposes focused body/header/footer/note text, tagged body/header/footer
   content-control and MERGEFIELD template filling, tracked body revision
   acceptance, field/comment/image operations, adjacent-run comment/note anchors,
@@ -992,7 +992,7 @@ The long-term native Word engine plan is split into the
 - [x] Wireframe styling for authored surface and 3-D surface charts
 - [x] Shape styling for authored 3-D bar and 3-D column-family charts
 - [x] Metafile diagnostics for WMF/EMF/EMZ/WMZ path, format, byte size, compression flag, and raw/gzip-wrapped header dimensions
-- [ ] Remaining chart families beyond current authored charts; metafile rendering beyond bounded header diagnostics
+- [ ] Newer extension chart families beyond current core OOXML authored charts; metafile rendering beyond bounded header diagnostics
 
 ## Contributing
 

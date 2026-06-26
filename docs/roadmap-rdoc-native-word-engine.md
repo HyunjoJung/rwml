@@ -638,7 +638,7 @@ Initial status:
   direct `Block` escape hatches.
 - Lower-level `DocModel` remains the path for complex nested layouts until the
   builder gains more typed sub-builders.
-- Remaining chart families beyond the current authored set and exact chart styling beyond
+- Newer extension chart families beyond the current core OOXML authored set and exact chart styling beyond
   3-D bar/column-family shapes and surface-family wireframes remain future
   authoring/rendering work.
 
@@ -1067,7 +1067,7 @@ The next useful implementation batch is:
    range/page resolution beyond best-effort top-level block pages, real
    text-wrap reflow, deeper z-order semantics beyond recovered
    `relativeHeight`/`behindDoc`, and non-text Office-Art drawing contents.
-4. Remaining chart families and metafile rendering strategy beyond the current
+4. Newer extension chart families and metafile rendering strategy beyond the current
    bounded diagnostics/header metadata, with public fixtures before broad claims.
 5. Release validation policy: keep tightening which external, locally configured
    render/extraction benchmark reports are required for public releases. The

@@ -85,7 +85,7 @@ Required direction:
   surface, 3-D surface, high-low-close stock, stock, pie-of-pie, and bar-of-pie charts with literal chart caches plus embedded
   workbook-backed source data, plus shape styling for 3-D bar/column-family charts and
   wireframe styling for surface-family charts;
-  remaining chart families can mature separately;
+  newer extension chart families can mature separately;
 - predictable output that opens in Word and LibreOffice;
 - readable examples that behave like realistic reports, not toy snippets.
 
