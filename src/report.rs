@@ -1974,6 +1974,7 @@ fn supported_toc_bookmark_scope(instruction: &str) -> Option<Option<String>> {
     let mut saw_tc_level_switch = false;
     let mut saw_sequence_switch = false;
     let mut saw_page_number_sequence_prefix = false;
+    let mut saw_default_toc_neutral_switch = false;
     let mut text_format = false;
     while let Some(part) = parts.next() {
         saw_switch = true;
@@ -1990,6 +1991,7 @@ fn supported_toc_bookmark_scope(instruction: &str) -> Option<Option<String>> {
             continue;
         }
         if is_toc_value_neutral_switch_for_report(part) {
+            saw_default_toc_neutral_switch = true;
             continue;
         }
         if part.eq_ignore_ascii_case("\\f") {
@@ -2167,6 +2169,7 @@ fn supported_toc_bookmark_scope(instruction: &str) -> Option<Option<String>> {
         && !saw_tc_switch
         && !saw_tc_level_switch
         && !saw_sequence_switch
+        && !saw_default_toc_neutral_switch
         && bookmark.is_none()
     {
         return None;

@@ -9527,6 +9527,7 @@ fn toc_spec(instruction: &str) -> Option<TocSpec> {
     let mut sequence_filter = None;
     let mut text_format = None;
     let mut saw_page_number_sequence_prefix = false;
+    let mut saw_default_toc_neutral_switch = false;
     while let Some(part) = parts.next() {
         saw_switch = true;
         if part == "\\*" {
@@ -9542,6 +9543,7 @@ fn toc_spec(instruction: &str) -> Option<TocSpec> {
             continue;
         }
         if is_toc_value_neutral_switch(part) {
+            saw_default_toc_neutral_switch = true;
             continue;
         }
         if part.eq_ignore_ascii_case("\\f") {
@@ -9731,6 +9733,7 @@ fn toc_spec(instruction: &str) -> Option<TocSpec> {
             }
             None if sequence_filter.is_some() => (1, 9, false, false),
             None if bookmark.is_some() => (1, 3, false, true),
+            None if saw_default_toc_neutral_switch => (1, 3, false, true),
             None => return None,
         }
     } else {
