@@ -1562,6 +1562,23 @@ fn page_ref_decimal_enclosed_circle_section_page_number_format_docx() -> Vec<u8>
     ])
 }
 
+fn page_ref_decimal_enclosed_punctuation_section_page_number_format_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgNumType w:start="12" w:fmt="decimalEnclosedFullstop"/></w:sectPr></w:pPr></w:p><w:p><w:bookmarkStart w:id="12" w:name="FullstopSection"/><w:r><w:t>Fullstop target</w:t></w:r><w:bookmarkEnd w:id="12"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF FullstopSection \h "><w:r><w:t>stale fullstop</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF FullstopSection \* Arabic "><w:r><w:t>stale fullstop arabic</w:t></w:r></w:fldSimple></w:p><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgNumType w:start="11" w:fmt="decimalEnclosedParen"/></w:sectPr></w:pPr></w:p><w:p><w:r><w:lastRenderedPageBreak/><w:t>Paren page lead.</w:t></w:r></w:p><w:p><w:bookmarkStart w:id="13" w:name="ParenSection"/><w:r><w:t>Paren target</w:t></w:r><w:bookmarkEnd w:id="13"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF ParenSection \h "><w:r><w:t>stale paren</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF ParenSection \* Arabic "><w:r><w:t>stale paren arabic</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn page_ref_final_section_page_number_format_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -6845,6 +6862,39 @@ fn docx_page_ref_applies_decimal_enclosed_circle_section_page_number_format() {
     assert!(
         !main_text.contains("stale circle"),
         "computed decimalEnclosedCircle PAGEREF fields should replace stale cached text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_page_ref_applies_decimal_enclosed_punctuation_section_page_number_formats() {
+    let doc =
+        Document::open(&page_ref_decimal_enclosed_punctuation_section_page_number_format_docx())
+            .expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 4);
+    assert_eq!(fields[0].kind, FieldKind::PageRef);
+    assert_eq!(fields[0].instruction, "PAGEREF FullstopSection \\h");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("\u{2493}"));
+    assert_eq!(fields[1].kind, FieldKind::PageRef);
+    assert_eq!(fields[1].instruction, "PAGEREF FullstopSection \\* Arabic");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("12"));
+    assert_eq!(fields[2].kind, FieldKind::PageRef);
+    assert_eq!(fields[2].instruction, "PAGEREF ParenSection \\h");
+    assert_eq!(fields[2].computed_result.as_deref(), Some("\u{2480}"));
+    assert_eq!(fields[3].kind, FieldKind::PageRef);
+    assert_eq!(fields[3].instruction, "PAGEREF ParenSection \\* Arabic");
+    assert_eq!(fields[3].computed_result.as_deref(), Some("13"));
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains(&format!("{}\n12", "\u{2493}"))
+            && main_text.contains(&format!("{}\n13", "\u{2480}")),
+        "decimal enclosed punctuation section page-number formats should drive supported PAGEREF text: {main_text:?}"
+    );
+    assert!(
+        !main_text.contains("stale fullstop") && !main_text.contains("stale paren"),
+        "computed decimal enclosed punctuation PAGEREF fields should replace stale cached text: {main_text:?}"
     );
 }
 

@@ -19,6 +19,8 @@ pub(crate) fn format(n: u32, nfc: u8) -> String {
         0x0E => fullwidth(n),                 // decimalFullWidth: １, ２, ３
         0x12 => circled(n),                   // ①②③
         0x16 => format!("{n:02}"),            // decimalZero: 01, 02 … 10
+        0x1A => fullstop(n),                  // decimalEnclosedFullstop: ⒈⒉⒊
+        0x1B => parenthesized(n),             // decimalEnclosedParen: ⑴⑵⑶
         0x18 => korean_ganada(n),             // 가, 나, 다 …
         0x19 => korean_chosung(n),            // ㄱ, ㄴ, ㄷ …
         0x29 | 0x2B | 0x2C => sino_korean(n), // koreanDigital / Legal / Digital2: 일이삼
@@ -127,8 +129,22 @@ fn fullwidth(n: u32) -> String {
 
 /// Circled numbers ①②③ … (U+2460..U+2473 for 1..20), else decimal.
 fn circled(n: u32) -> String {
+    enclosed_1_to_20(n, 0x2460)
+}
+
+/// Numbers followed by a full stop ⒈⒉⒊ … (U+2488..U+249B), else decimal.
+fn fullstop(n: u32) -> String {
+    enclosed_1_to_20(n, 0x2488)
+}
+
+/// Parenthesized numbers ⑴⑵⑶ … (U+2474..U+2487), else decimal.
+fn parenthesized(n: u32) -> String {
+    enclosed_1_to_20(n, 0x2474)
+}
+
+fn enclosed_1_to_20(n: u32, base: u32) -> String {
     if (1..=20).contains(&n) {
-        char::from_u32(0x2460 + n - 1)
+        char::from_u32(base + n - 1)
             .map(String::from)
             .unwrap_or_else(|| n.to_string())
     } else {
@@ -220,6 +236,8 @@ mod tests {
         assert_eq!(format(3, 0x16), "03"); // decimalZero
         assert_eq!(format(23, 0x0E), "２３"); // decimalFullWidth
         assert_eq!(format(1, 0x12), "①"); // circled
+        assert_eq!(format(12, 0x1A), "⒓"); // decimalEnclosedFullstop
+        assert_eq!(format(12, 0x1B), "⑿"); // decimalEnclosedParen
         assert_eq!(format(5, 0x17), ""); // bullet
         assert_eq!(format(5, 0xFF), ""); // none
     }

@@ -848,6 +848,10 @@ pub enum PageNumberFormat {
     DecimalFullWidth,
     /// Circled decimal digits for one through twenty, then decimal fallback.
     DecimalEnclosedCircle,
+    /// Decimal digits followed by full-stop glyphs for one through twenty.
+    DecimalEnclosedFullstop,
+    /// Parenthesized decimal digits for one through twenty.
+    DecimalEnclosedParen,
     /// Lowercase letters (`a`, `b`, `c`).
     LowerLetter,
     /// Uppercase letters (`A`, `B`, `C`).
@@ -872,6 +876,8 @@ impl PageNumberFormat {
             PageNumberFormat::NumberInDash => "numberInDash",
             PageNumberFormat::DecimalFullWidth => "decimalFullWidth",
             PageNumberFormat::DecimalEnclosedCircle => "decimalEnclosedCircle",
+            PageNumberFormat::DecimalEnclosedFullstop => "decimalEnclosedFullstop",
+            PageNumberFormat::DecimalEnclosedParen => "decimalEnclosedParen",
             PageNumberFormat::LowerLetter => "lowerLetter",
             PageNumberFormat::UpperLetter => "upperLetter",
             PageNumberFormat::LowerRoman => "lowerRoman",
@@ -889,6 +895,8 @@ impl PageNumberFormat {
             "numberInDash" => Some(PageNumberFormat::NumberInDash),
             "decimalFullWidth" => Some(PageNumberFormat::DecimalFullWidth),
             "decimalEnclosedCircle" => Some(PageNumberFormat::DecimalEnclosedCircle),
+            "decimalEnclosedFullstop" => Some(PageNumberFormat::DecimalEnclosedFullstop),
+            "decimalEnclosedParen" => Some(PageNumberFormat::DecimalEnclosedParen),
             "lowerLetter" => Some(PageNumberFormat::LowerLetter),
             "upperLetter" => Some(PageNumberFormat::UpperLetter),
             "lowerRoman" => Some(PageNumberFormat::LowerRoman),
