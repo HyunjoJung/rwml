@@ -902,6 +902,16 @@ impl ChartBuilder {
         }
     }
 
+    /// Start a 100% stacked 3-D vertical column chart.
+    pub fn percent_stacked_column_3d() -> Self {
+        Self {
+            chart: Chart {
+                kind: ChartKind::PercentStackedColumn3D,
+                ..Chart::default()
+            },
+        }
+    }
+
     /// Start a line chart.
     pub fn line() -> Self {
         Self {

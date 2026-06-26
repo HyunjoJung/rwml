@@ -264,7 +264,7 @@ metadata, and authored tab/newline markers,
 tracked insertion/deletion runs through
 `RevisionBuilder`, run-level content controls through `ContentControlBuilder`,
 hyperlinks, image blocks with alt text and explicit pixel sizing via
-`ImageBuilder`, bar/stacked bar/100% stacked bar/3-D bar/stacked 3-D bar/column/stacked column/100% stacked column/3-D column/stacked 3-D column/line/markerless line/smooth line/stacked line/100% stacked line/3-D line/area/stacked area/100% stacked area/3-D area/radar/radar-with-markers/filled radar/scatter/line-only scatter/smooth scatter/smooth markerless scatter/marker-only scatter/bubble/3-D bubble/pie/exploded pie/3-D pie/exploded 3-D pie/doughnut/exploded doughnut/surface/3-D surface/stock/pie-of-pie/bar-of-pie
+`ImageBuilder`, bar/stacked bar/100% stacked bar/3-D bar/stacked 3-D bar/column/stacked column/100% stacked column/3-D column/stacked 3-D column/100% stacked 3-D column/line/markerless line/smooth line/stacked line/100% stacked line/3-D line/area/stacked area/100% stacked area/3-D area/radar/radar-with-markers/filled radar/scatter/line-only scatter/smooth scatter/smooth markerless scatter/marker-only scatter/bubble/3-D bubble/pie/exploded pie/3-D pie/exploded 3-D pie/doughnut/exploded doughnut/surface/3-D surface/stock/pie-of-pie/bar-of-pie
 charts with embedded workbook-backed source data through `ChartBuilder`,
 3-D bar/column-family shape styling through `ChartBuilder::shape(ChartShape::...)`,
 surface-family wireframe styling through `ChartBuilder::wireframe()`,
@@ -952,7 +952,7 @@ Authoring grows in stages:
     shared chart data path;
 14. add pie-of-pie and bar-of-pie chart XML/render support on the shared
     chart data path;
-15. add 3-D bar, stacked 3-D bar, 3-D column, stacked 3-D column, 3-D line, and 3-D area chart XML/render support on the shared chart data path;
+15. add 3-D bar, stacked 3-D bar, 3-D column, stacked 3-D column, 100% stacked 3-D column, 3-D line, and 3-D area chart XML/render support on the shared chart data path;
 16. add template fill/mail-merge style helpers.
 
 Step 16 now includes `Document::fill_template_fields()`, a package-preserving
@@ -1025,7 +1025,7 @@ size, compression flag, and raw-header dimensions when a raw or gzip-wrapped EMF
 or placeable WMF header makes that recoverable without full rendering.
 
 Authored `Block::Chart` values are different from preserved foreign chart parts:
-the model renderer draws bar, stacked bar, 100% stacked bar, 3-D bar, stacked 3-D bar, column, stacked column, 100% stacked column, 3-D column, stacked 3-D column, line, markerless line, smooth line, stacked line, 100% stacked line, 3-D line, area,
+the model renderer draws bar, stacked bar, 100% stacked bar, 3-D bar, stacked 3-D bar, column, stacked column, 100% stacked column, 3-D column, stacked 3-D column, 100% stacked 3-D column, line, markerless line, smooth line, stacked line, 100% stacked line, 3-D line, area,
 stacked area, 100% stacked area, 3-D area, radar, radar-with-markers, filled radar, scatter, line-only scatter, smooth scatter, smooth markerless scatter, marker-only scatter, bubble, 3-D bubble, pie, exploded pie, 3-D pie, exploded 3-D pie, doughnut, exploded doughnut, surface, 3-D surface,
 stock, pie-of-pie, and bar-of-pie charts as native vector preview charts and does not
 report them as unsupported. Chart parts

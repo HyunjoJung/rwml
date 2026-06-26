@@ -2575,6 +2575,7 @@ fn draw_authored_chart(
         chart.kind,
         ChartKind::PercentStackedBar
             | ChartKind::PercentStackedColumn
+            | ChartKind::PercentStackedColumn3D
             | ChartKind::PercentStackedLine
             | ChartKind::PercentStackedArea
     ) {
@@ -2769,6 +2770,7 @@ fn draw_authored_chart(
         | ChartKind::PercentStackedColumn
         | ChartKind::Column3D
         | ChartKind::StackedColumn3D
+        | ChartKind::PercentStackedColumn3D
         | ChartKind::Line
         | ChartKind::LineNoMarkers
         | ChartKind::SmoothLine
@@ -2836,8 +2838,12 @@ fn draw_authored_chart(
             match chart.kind {
                 ChartKind::StackedColumn
                 | ChartKind::PercentStackedColumn
-                | ChartKind::StackedColumn3D => {
-                    let percent = chart.kind == ChartKind::PercentStackedColumn;
+                | ChartKind::StackedColumn3D
+                | ChartKind::PercentStackedColumn3D => {
+                    let percent = matches!(
+                        chart.kind,
+                        ChartKind::PercentStackedColumn | ChartKind::PercentStackedColumn3D
+                    );
                     let column_w = (band_w * 0.62).max(2.0);
                     for (category_index, _) in chart.categories.iter().enumerate() {
                         let column_left =
@@ -2860,7 +2866,10 @@ fn draw_authored_chart(
                             let segment_bottom = value_y(start).clamp(plot_top, plot_bottom);
                             let segment_top = value_y(end).clamp(plot_top, plot_bottom);
                             let color = chart_series_color(series_index);
-                            if chart.kind == ChartKind::StackedColumn3D {
+                            if matches!(
+                                chart.kind,
+                                ChartKind::StackedColumn3D | ChartKind::PercentStackedColumn3D
+                            ) {
                                 fill_chart_column_shape(
                                     surface,
                                     column_left,
