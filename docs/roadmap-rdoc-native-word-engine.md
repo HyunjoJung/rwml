@@ -302,8 +302,10 @@ Initial status:
   field-result format switches render as hidden output while
   feeding later plain `REF`/direct bookmark references in source order, plus
   literal `NEXT`, `NEXTIF`, and `SKIPIF` merge-control fields with
-  field-result format switches render as hidden output without running a mail merge; remaining dynamic/control fields report
-  `NoComputedResult` until native evaluation is implemented. The
+  field-result format switches render as hidden output without running a mail
+  merge; invalid literal `COMPARE` syntax reports `UnsupportedSwitch`, while
+  remaining dynamic/control fields report `NoComputedResult` until native
+  evaluation is implemented. The
   inserted/external-content fields (`INCLUDETEXT`, `INCLUDEPICTURE`, `LINK`,
   `EMBED`, `DATABASE`, `DDE`, `DDEAUTO`, `IMPORT`, `INCLUDE`, `AUTOTEXT`,
   `AUTOTEXTLIST`) are named separately from unknown fields and report
@@ -763,7 +765,8 @@ Initial status:
   feeding later plain `REF`/direct bookmark references in source order,
   plus literal `NEXT`, `NEXTIF`, and `SKIPIF` merge-control fields with
   field-result format switches render as hidden output without running a mail merge;
-  remaining dynamic/control fields preserve cached text with `NoComputedResult`
+  invalid literal `COMPARE` syntax reports `UnsupportedSwitch`; remaining
+  dynamic/control fields preserve cached text with `NoComputedResult`
   diagnostics.
   Inserted/external-content fields are likewise named separately
   from unknown fields and preserve cached text with `NoComputedResult`

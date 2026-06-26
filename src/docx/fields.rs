@@ -6944,6 +6944,10 @@ fn computed_compare_result(instruction: &str) -> Option<String> {
     ))
 }
 
+pub(crate) fn supports_compare_field_syntax(instruction: &str) -> bool {
+    compare_instruction(instruction).is_some()
+}
+
 fn compare_instruction(instruction: &str) -> Option<IfInstruction> {
     let tokens = instruction_parts(instruction);
     let mut parts = tokens.iter().map(String::as_str);

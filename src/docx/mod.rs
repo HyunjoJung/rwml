@@ -73,6 +73,10 @@ pub(crate) fn supports_numbering_field_syntax(instruction: &str) -> bool {
     fields::supports_numbering_field_syntax(instruction)
 }
 
+pub(crate) fn supports_compare_field_syntax(instruction: &str) -> bool {
+    fields::supports_compare_field_syntax(instruction)
+}
+
 /// Relationship table: `Id` → `(Target, is_external)`.
 type Rels = HashMap<String, (String, bool)>;
 

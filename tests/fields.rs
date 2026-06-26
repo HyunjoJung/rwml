@@ -3348,10 +3348,16 @@ fn docx_dynamic_fields_compute_formula_quote_if_compare_and_literal_set_ref() {
     );
     assert_eq!(
         report.features.unsupported_field_reasons,
-        vec![FieldEvaluationReasonCount {
-            reason: FieldEvaluationReason::NoComputedResult,
-            count: 4,
-        }]
+        vec![
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::NoComputedResult,
+                count: 3,
+            },
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::UnsupportedSwitch,
+                count: 1,
+            },
+        ]
     );
 
     let main_text = doc.main_text();

@@ -315,10 +315,10 @@ The first public maturity release should meet these requirements.
   field-result format switches rendered as hidden output while feeding later
   plain `REF`/direct bookmark references in source order, plus literal `NEXT`,
   `NEXTIF`, and `SKIPIF` merge-control fields with field-result format switches
-  rendered as hidden output without running a mail merge; remaining
-  dynamic/control fields
-  preserve cached display text with `NoComputedResult` until native evaluation is
-  implemented; inserted/external-content fields (`INCLUDETEXT`,
+  rendered as hidden output without running a mail merge; invalid literal
+  `COMPARE` syntax reports `UnsupportedSwitch`, while remaining dynamic/control
+  fields preserve cached display text with `NoComputedResult` until native
+  evaluation is implemented; inserted/external-content fields (`INCLUDETEXT`,
   `INCLUDEPICTURE`, `LINK`, `EMBED`, `DATABASE`, `DDE`, `DDEAUTO`, `IMPORT`,
   `INCLUDE`, `AUTOTEXT`, `AUTOTEXTLIST`) are named diagnostics with cached
   display text and `NoComputedResult` until native evaluation is implemented;
