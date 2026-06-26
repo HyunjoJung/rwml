@@ -2099,7 +2099,7 @@ fn default_neutral_toc_heading_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Executive Summary</w:t></w:r></w:p><w:p><w:pPr><w:outlineLvl w:val="1"/></w:pPr><w:r><w:t>Risks</w:t></w:r></w:p><w:p><w:pPr><w:outlineLvl w:val="2"/></w:pPr><w:r><w:t>Mitigation</w:t></w:r></w:p><w:p><w:pPr><w:outlineLvl w:val="3"/></w:pPr><w:r><w:t>Excluded Detail</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" TOC \h \z "><w:r><w:t>stale neutral default toc</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TOC \n &quot;1-3&quot; "><w:r><w:t>stale no-page default toc</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Executive Summary</w:t></w:r></w:p><w:p><w:pPr><w:outlineLvl w:val="1"/></w:pPr><w:r><w:t>Risks</w:t></w:r></w:p><w:p><w:pPr><w:outlineLvl w:val="2"/></w:pPr><w:r><w:t>Mitigation</w:t></w:r></w:p><w:p><w:pPr><w:outlineLvl w:val="3"/></w:pPr><w:r><w:t>Excluded Detail</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" TOC \h \z "><w:r><w:t>stale neutral default toc</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TOC \n &quot;1-3&quot; "><w:r><w:t>stale no-page default toc</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TOC \p &quot;-&quot; "><w:r><w:t>stale separator default toc</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TOC \s chapter \d &quot;-&quot; "><w:r><w:t>stale sequence default toc</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -5998,7 +5998,7 @@ fn docx_default_toc_with_neutral_switches_uses_default_heading_levels() {
     let doc = Document::open(&default_neutral_toc_heading_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 2);
+    assert_eq!(fields.len(), 4);
     assert_eq!(fields[0].kind, FieldKind::Toc);
     assert_eq!(fields[0].instruction, "TOC \\h \\z");
     assert_eq!(fields[0].result, "stale neutral default toc");
@@ -6013,6 +6013,20 @@ fn docx_default_toc_with_neutral_switches_uses_default_heading_levels() {
         fields[1].computed_result.as_deref(),
         Some("Executive Summary\n  Risks\n    Mitigation")
     );
+    assert_eq!(fields[2].kind, FieldKind::Toc);
+    assert_eq!(fields[2].instruction, "TOC \\p \"-\"");
+    assert_eq!(fields[2].result, "stale separator default toc");
+    assert_eq!(
+        fields[2].computed_result.as_deref(),
+        Some("Executive Summary\n  Risks\n    Mitigation")
+    );
+    assert_eq!(fields[3].kind, FieldKind::Toc);
+    assert_eq!(fields[3].instruction, "TOC \\s chapter \\d \"-\"");
+    assert_eq!(fields[3].result, "stale sequence default toc");
+    assert_eq!(
+        fields[3].computed_result.as_deref(),
+        Some("Executive Summary\n  Risks\n    Mitigation")
+    );
 
     let main_text = doc.main_text();
     assert!(
@@ -6022,6 +6036,14 @@ fn docx_default_toc_with_neutral_switches_uses_default_heading_levels() {
     assert!(
         !main_text.contains("stale no-page default toc"),
         "no-page TOC fields should display computed default heading text: {main_text:?}"
+    );
+    assert!(
+        !main_text.contains("stale separator default toc"),
+        "separator TOC fields should display computed default heading text: {main_text:?}"
+    );
+    assert!(
+        !main_text.contains("stale sequence default toc"),
+        "sequence TOC fields should display computed default heading text: {main_text:?}"
     );
 
     let report = doc.report();

@@ -2086,18 +2086,22 @@ fn supported_toc_bookmark_scope(instruction: &str) -> Option<Option<String>> {
         }
         if part.eq_ignore_ascii_case("\\p") {
             diagnostic_literal_token(parts.next_if(|next| !next.starts_with('\\'))?)?;
+            saw_default_toc_neutral_switch = true;
             continue;
         }
         if let Some(separator) = strip_ascii_switch_prefix(part, "\\p") {
             diagnostic_literal_token(separator)?;
+            saw_default_toc_neutral_switch = true;
             continue;
         }
         if part.eq_ignore_ascii_case("\\d") {
             diagnostic_literal_token(parts.next_if(|next| !next.starts_with('\\'))?)?;
+            saw_default_toc_neutral_switch = true;
             continue;
         }
         if let Some(separator) = strip_ascii_switch_prefix(part, "\\d") {
             diagnostic_literal_token(separator)?;
+            saw_default_toc_neutral_switch = true;
             continue;
         }
         if part.eq_ignore_ascii_case("\\s") {
@@ -2106,6 +2110,7 @@ fn supported_toc_bookmark_scope(instruction: &str) -> Option<Option<String>> {
                 return None;
             }
             saw_page_number_sequence_prefix = true;
+            saw_default_toc_neutral_switch = true;
             continue;
         }
         if let Some(identifier) = strip_ascii_switch_prefix(part, "\\s") {
@@ -2114,6 +2119,7 @@ fn supported_toc_bookmark_scope(instruction: &str) -> Option<Option<String>> {
                 return None;
             }
             saw_page_number_sequence_prefix = true;
+            saw_default_toc_neutral_switch = true;
             continue;
         }
         if part.eq_ignore_ascii_case("\\b") {
