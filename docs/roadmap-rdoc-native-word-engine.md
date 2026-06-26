@@ -248,8 +248,9 @@ Initial status:
   body-level revision wrappers.
 - `Document::text_boxes()` extracts `.docx` body text-box side-table records
   from `w:txbxContent` shapes with stable synthetic ids and visible text,
-  reusing the same `mc:AlternateContent` first-branch policy as flat text and
-  the accepted/current revision policy from the shared body parser.
+  unambiguous anchored-shape containing body anchor text, the same
+  `mc:AlternateContent` first-branch policy as flat text, and the
+  accepted/current revision policy from the shared body parser.
 - `Document::core_properties()` extracts supported `docProps/core.xml` metadata
   fields (`title`, `subject`, `creator`, `description`, `keywords`,
   `category`, `contentStatus`, `lastModifiedBy`, `created`, `modified`,

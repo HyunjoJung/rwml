@@ -231,8 +231,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     notes.extend(endnote_blocks);
     note_records.append(&mut endnote_records);
     attach_note_reference_anchors(&mut note_records, &doc_xml);
-    let text_boxes = read_text_boxes(&doc_xml, &ctx);
     let floating_shapes = read_floating_shapes(&doc_xml);
+    let text_boxes = read_text_boxes(&doc_xml, &ctx, &floating_shapes);
     // Running headers/footers referenced by the body's sectPr(s). `ctx` only holds
     // shared (&) borrows of rels/styles/numbering, so the &mut zip pass is fine.
     let (section_header_footers, final_header_footer, header_footers) = read_headers_footers(
@@ -700,18 +700,36 @@ fn read_notes(
     (blocks, records)
 }
 
-fn read_text_boxes(doc_xml: &str, ctx: &body::Ctx<'_>) -> Vec<TextBox> {
+fn read_text_boxes(
+    doc_xml: &str,
+    ctx: &body::Ctx<'_>,
+    floating_shapes: &[FloatingShape],
+) -> Vec<TextBox> {
     body::parse_text_boxes(doc_xml, ctx)
         .into_iter()
         .enumerate()
         .filter_map(|(index, text)| {
             (!text.is_empty()).then(|| TextBox {
                 id: format!("docx-text-box-{index}"),
+                anchor: text_box_anchor(&text, floating_shapes),
                 text,
-                anchor: None,
             })
         })
         .collect()
+}
+
+fn text_box_anchor(text: &str, floating_shapes: &[FloatingShape]) -> Option<TextAnchor> {
+    let mut matches = floating_shapes.iter().filter(|shape| {
+        shape.text.as_deref() == Some(text) && shape.anchor_text.as_deref().is_some()
+    });
+    let shape = matches.next()?;
+    if matches.next().is_some() {
+        return None;
+    }
+    Some(TextAnchor {
+        id: shape.id.clone(),
+        text: shape.anchor_text.clone()?,
+    })
 }
 
 fn read_floating_shapes(doc_xml: &str) -> Vec<FloatingShape> {
