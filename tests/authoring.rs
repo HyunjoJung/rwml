@@ -4824,6 +4824,30 @@ fn render_pdf_report_treats_page_and_filename_fields_as_supported() {
 
 #[cfg(feature = "render")]
 #[test]
+fn render_pdf_report_counts_authored_hyperlink_runs() {
+    let model = DocBuilder::new()
+        .paragraph_runs([RunBuilder::new("rdoc")
+            .hyperlink("https://example.com/rdoc")
+            .build()])
+        .build();
+
+    let rendered = rdoc::render_pdf_with_report(&model);
+
+    assert!(rendered.pdf.starts_with(b"%PDF"));
+    assert_eq!(rendered.report.unsupported.hyperlinks, 1);
+    assert_eq!(rendered.report.unsupported.fields, 0);
+    assert!(!rendered.report.warnings.iter().any(|warning| {
+        matches!(
+            warning,
+            rdoc::RenderWarning::UnsupportedFieldEvaluation { .. }
+        )
+    }));
+    let json = rendered.report.to_json();
+    assert!(json.contains(r#""hyperlinks":1"#), "{json}");
+}
+
+#[cfg(feature = "render")]
+#[test]
 fn render_pdf_report_treats_page_ref_as_named_unsupported_field() {
     let model = DocBuilder::new().field("PAGEREF Figure1 \\h", "3").build();
 

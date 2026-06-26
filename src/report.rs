@@ -714,21 +714,18 @@ fn count_render_block_fields(blocks: &[Block], inventory: &mut FeatureInventory)
         match block {
             Block::Paragraph(paragraph) => {
                 for run in &paragraph.runs {
-                    if let FieldRole::Simple { instruction } = &run.field {
+                    if let Some(field) = field_from_role(&run.field, &run.text) {
                         inventory.fields += 1;
-                        let kind = FieldKind::from_instruction(instruction);
+                        let kind = field.kind.clone();
                         increment_field_kind_count(&mut inventory.field_kinds, kind.clone());
+                        if kind == FieldKind::Hyperlink {
+                            inventory.hyperlinks += 1;
+                        }
                         if !supports_render_model_field_kind_evaluation(&kind) {
                             increment_field_kind_count(
                                 &mut inventory.unsupported_field_kinds,
                                 kind.clone(),
                             );
-                            let field = Field {
-                                kind,
-                                instruction: instruction.clone(),
-                                result: String::new(),
-                                computed_result: None,
-                            };
                             if let Some(reason) = unsupported_field_reason(&field) {
                                 increment_field_evaluation_reason_count(
                                     &mut inventory.unsupported_field_reasons,
