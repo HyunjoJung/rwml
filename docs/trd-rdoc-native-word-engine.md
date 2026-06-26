@@ -610,7 +610,8 @@ Implementation:
   literal affixes, single-section leading `+`/`-` sign-control items, `x`
   digit-drop/rounding positions, and sectioned
   positive/negative/zero pictures, plus neutral `\* MERGEFORMAT`/`\* CHARFORMAT`
-  formula tails and literal `DEFINED(expr)` checks for parser-local literal expressions, literal
+  formula tails, malformed formula switch syntax reporting `UnsupportedSwitch`,
+  and literal `DEFINED(expr)` checks for parser-local literal expressions, literal
   quoted/unquoted literal `QUOTE`, literal `IF` finite numeric/text comparisons, literal `COMPARE`
   finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields, and literal quoted or single-token
   `SET` bookmark assignments with field-result format switches feeding later
@@ -638,6 +639,7 @@ Implementation:
   numeric pictures, literal affixes, single-section leading `+`/`-` sign-control items, `x`
   digit-drop/rounding positions, and sectioned positive/negative/zero pictures,
   plus neutral `\* MERGEFORMAT`/`\* CHARFORMAT` formula tails,
+  malformed formula switch syntax reporting `UnsupportedSwitch`,
   quoted/unquoted literal `QUOTE`, literal `IF` finite numeric/text comparisons, literal
   `COMPARE` finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields, and
   literal quoted or single-token `SET` bookmark assignments with field-result
@@ -693,7 +695,8 @@ Acceptance:
   literal affixes, single-section leading `+`/`-`
   sign-control items, `x` digit-drop/rounding positions, and sectioned
   positive/negative/zero pictures, plus neutral `\* MERGEFORMAT`/`\* CHARFORMAT`
-  formula tails and literal `DEFINED(expr)` checks for parser-local literal expressions,
+  formula tails, malformed formula switch syntax reporting `UnsupportedSwitch`,
+  and literal `DEFINED(expr)` checks for parser-local literal expressions,
   quoted/unquoted literal `QUOTE`, malformed literal `QUOTE` syntax reporting
   `UnsupportedSwitch`, literal `IF` comparisons, malformed literal `IF`
   syntax reporting `UnsupportedSwitch`, literal `COMPARE` results,
@@ -1123,7 +1126,8 @@ open and edit the chart data.
   literal affixes, single-section leading `+`/`-` sign-control items, `x`
   digit-drop/rounding positions, and sectioned
   positive/negative/zero pictures, plus neutral `\* MERGEFORMAT`/`\* CHARFORMAT`
-  formula tails and literal `DEFINED(expr)` checks for parser-local literal expressions, literal
+  formula tails, malformed formula switch syntax reporting `UnsupportedSwitch`,
+  and literal `DEFINED(expr)` checks for parser-local literal expressions, literal
   quoted/unquoted literal `QUOTE`, literal `IF` finite numeric/text comparisons, literal `COMPARE`
   finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields, and literal quoted or single-token
   `SET` bookmark assignments with field-result format switches feeding later
@@ -1151,6 +1155,7 @@ open and edit the chart data.
   numeric pictures, literal affixes, single-section leading `+`/`-` sign-control items, `x`
   digit-drop/rounding positions, and sectioned positive/negative/zero pictures,
   plus neutral `\* MERGEFORMAT`/`\* CHARFORMAT` formula tails,
+  malformed formula switch syntax reporting `UnsupportedSwitch`,
   literal `DEFINED(expr)` checks for parser-local literal expressions,
   quoted/unquoted literal `QUOTE`, literal `IF` comparisons, literal `COMPARE` results,
   explicit-default `FILLIN`/`ASK` prompt fields, and

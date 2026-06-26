@@ -197,6 +197,7 @@ Initial status:
   digit-drop/rounding positions, plus two- and three-section
   positive/negative/zero numeric pictures separated by semicolons,
   with optional neutral `\* MERGEFORMAT`/`\* CHARFORMAT` formula tails,
+  malformed formula switch syntax reports `UnsupportedSwitch`,
   deterministic literal `QUOTE` fields with quoted/unquoted text and general text-format switches,
   deterministic literal `IF` fields for numeric comparisons and quoted string
   equality/inequality, deterministic literal `COMPARE` fields returning `1`/`0`
@@ -291,6 +292,7 @@ Initial status:
   two- and three-section
   positive/negative/zero numeric pictures separated by semicolons,
   with optional neutral `\* MERGEFORMAT`/`\* CHARFORMAT` formula tails,
+  malformed formula switch syntax reports `UnsupportedSwitch`,
   deterministic literal `QUOTE` fields compute quoted/unquoted text with
   general text-format switches, malformed literal `QUOTE` syntax reports
   `UnsupportedSwitch`, deterministic literal `IF` fields compute
@@ -760,6 +762,7 @@ Initial status:
   digit-drop/rounding positions, plus two- and three-section
   positive/negative/zero numeric pictures separated by semicolons,
   with optional neutral `\* MERGEFORMAT`/`\* CHARFORMAT` formula tails,
+  malformed formula switch syntax reports `UnsupportedSwitch`,
   deterministic literal `QUOTE` fields render quoted or unquoted computed text
   with general text-format switches, malformed literal `QUOTE` syntax reports
   `UnsupportedSwitch`, deterministic literal `IF` fields compute finite

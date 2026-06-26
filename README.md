@@ -461,6 +461,7 @@ prefix/suffix characters such as `$` or `%`, single-section leading `+`/`-`
 sign-control items, and `x` digit-drop/rounding positions, plus two- and
 three-section positive/negative/zero numeric pictures separated by semicolons,
 with optional neutral `\* MERGEFORMAT`/`\* CHARFORMAT` formula tails,
+malformed formula switch syntax reports `UnsupportedSwitch`,
 deterministic literal `QUOTE` fields render quoted or unquoted computed text
 with general text-format switches, malformed literal `QUOTE` syntax reports
 `UnsupportedSwitch`, deterministic literal `IF` fields compute finite

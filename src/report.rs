@@ -1465,6 +1465,9 @@ fn unsupported_field_reason(field: &Field) -> Option<FieldEvaluationReason> {
                 Some(FieldEvaluationReason::UnsupportedSwitch)
             }
         }
+        FieldKind::Dynamic(ref kind) if kind == "=" => {
+            Some(formula_uncomputed_reason(&field.instruction))
+        }
         FieldKind::Dynamic(ref kind) if kind.eq_ignore_ascii_case("COMPARE") => {
             Some(compare_uncomputed_reason(&field.instruction))
         }
@@ -1726,6 +1729,21 @@ fn compare_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     #[cfg(feature = "docx")]
     {
         if crate::docx::supports_compare_field_syntax(instruction) {
+            return FieldEvaluationReason::NoComputedResult;
+        }
+        FieldEvaluationReason::UnsupportedSwitch
+    }
+    #[cfg(not(feature = "docx"))]
+    {
+        let _ = instruction;
+        FieldEvaluationReason::NoComputedResult
+    }
+}
+
+fn formula_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
+    #[cfg(feature = "docx")]
+    {
+        if crate::docx::supports_formula_field_syntax(instruction) {
             return FieldEvaluationReason::NoComputedResult;
         }
         FieldEvaluationReason::UnsupportedSwitch

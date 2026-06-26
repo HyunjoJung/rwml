@@ -304,6 +304,7 @@ The first public maturity release should meet these requirements.
   digit-drop/rounding positions, plus two- and three-section
   positive/negative/zero numeric pictures separated by semicolons,
   with optional neutral `\* MERGEFORMAT`/`\* CHARFORMAT` formula tails,
+  malformed formula switch syntax reporting `UnsupportedSwitch`,
   deterministic literal `QUOTE` fields computed from quoted or unquoted text
   using general text-format switches, malformed literal `QUOTE` syntax reports
   `UnsupportedSwitch`, and deterministic literal `IF` fields computed

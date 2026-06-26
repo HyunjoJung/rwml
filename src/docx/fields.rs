@@ -5753,6 +5753,43 @@ fn formula_instruction(instruction: &str) -> Option<FormulaInstruction> {
     })
 }
 
+pub(crate) fn supports_formula_field_syntax(instruction: &str) -> bool {
+    formula_field_syntax(instruction).is_some()
+}
+
+fn formula_field_syntax(instruction: &str) -> Option<()> {
+    let body = instruction.trim().strip_prefix('=')?.trim();
+    if body.is_empty() {
+        return None;
+    }
+    let tokens = instruction_parts(body);
+    let Some(format_switch) = formula_number_format_switch(&tokens) else {
+        if let Some(tail_index) = tokens.iter().position(|part| is_field_format_start(part)) {
+            if tail_index == 0 {
+                return None;
+            }
+            let mut tail = tokens[tail_index..].iter().map(String::as_str);
+            return accept_field_format_tail(&mut tail);
+        }
+        return Some(());
+    };
+    let (format_index, tail_start) = match format_switch {
+        FormulaNumberFormatSwitch::Separate(format_index) => {
+            formula_number_format_picture(tokens.get(format_index + 1)?)?;
+            (format_index, format_index + 2)
+        }
+        FormulaNumberFormatSwitch::Compact { index, picture } => {
+            formula_number_format_picture(&picture)?;
+            (index, index + 1)
+        }
+    };
+    if format_index == 0 {
+        return None;
+    }
+    let mut tail = tokens[tail_start..].iter().map(String::as_str);
+    accept_field_format_tail(&mut tail)
+}
+
 fn formula_number_format_switch(tokens: &[String]) -> Option<FormulaNumberFormatSwitch> {
     tokens.iter().enumerate().find_map(|(index, part)| {
         if part == "\\#" {
