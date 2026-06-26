@@ -623,7 +623,7 @@ Implementation:
   inserted-content fields, mail-merge helper
   fields, reference/index fields beyond hidden simple literal `RD`/`TA`/`XE` markers,
   numbering/list fields, document-structure
-  fields beyond computed `SECTION`, structurally bounded `SECTIONPAGES`, and
+  fields beyond computed `REVNUM`/`SECTION`, structurally bounded `SECTIONPAGES`, and
   deterministic body paragraph- and character-style `STYLEREF`,
   hidden validated `ADVANCE`, deterministic literal simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, hidden displacement controls, and `SYMBOL`,
   invalid display/layout syntax, remaining valid broader display/layout fields,
@@ -650,7 +650,7 @@ Implementation:
   `NEXT`/`NEXTIF`/`SKIPIF` merge-control fields with field-result format
   switches that render as hidden output without running a mail merge,
   inserted-content, mail-merge helper, reference/index, numbering/list,
-  document-structure fields beyond computed `SECTION`, structurally bounded
+  document-structure fields beyond computed `REVNUM`/`SECTION`, structurally bounded
   `SECTIONPAGES`, and deterministic body paragraph- and character-style
   `STYLEREF`, hidden validated `ADVANCE`, deterministic simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, hidden displacement controls, and `SYMBOL`,
   remaining display/layout, action/automation fields beyond deterministic quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms,
@@ -1143,7 +1143,7 @@ open and edit the chart data.
   inserted-content fields, mail-merge helper
   fields, reference/index fields beyond hidden simple literal `RD`/`TA`/`XE` markers,
   numbering/list fields, document-structure
-  fields beyond computed `SECTION`, structurally bounded `SECTIONPAGES`, and
+  fields beyond computed `REVNUM`/`SECTION`, structurally bounded `SECTIONPAGES`, and
   deterministic body paragraph- and character-style `STYLEREF`,
   hidden validated `ADVANCE`, deterministic simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, hidden displacement controls, and `SYMBOL`,
   remaining display/layout fields,
@@ -1172,7 +1172,7 @@ open and edit the chart data.
   switches that render as hidden output without running a mail merge,
   inserted-content, mail-merge helper, reference/index beyond hidden simple
   literal `RD`/`TA`/`XE` markers, numbering/list,
-  document-structure fields beyond computed `SECTION`, structurally bounded
+  document-structure fields beyond computed `REVNUM`/`SECTION`, structurally bounded
   `SECTIONPAGES`, and deterministic body paragraph- and character-style
   `STYLEREF`, hidden validated `ADVANCE`, deterministic simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, hidden displacement controls, and `SYMBOL`,
   remaining display/layout, action/automation fields beyond deterministic quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms,

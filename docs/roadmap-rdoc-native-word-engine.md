@@ -1080,7 +1080,7 @@ The next useful implementation batch is:
    inserted-content fields, mail-merge helper fields,
    reference/index fields beyond hidden simple `RD`/`TA`/`XE` markers,
    numbering/list fields, document-structure fields
-   beyond computed `SECTION`, structurally bounded `SECTIONPAGES`,
+   beyond computed `REVNUM`/`SECTION`, structurally bounded `SECTIONPAGES`,
    deterministic body paragraph- and character-style `STYLEREF`,
    hidden validated `ADVANCE`, deterministic simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, hidden displacement controls and `SYMBOL`,
    remaining display/layout fields, action/automation fields beyond deterministic quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms,

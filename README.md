@@ -661,7 +661,7 @@ literal quoted or single-token `SET` bookmark assignments feeding later plain `R
 malformed `SET` syntax reporting `UnsupportedSwitch`, inserted-content
 fields, mail-merge helper fields, reference/index fields beyond hidden simple
 `RD`/`TA`/`XE` markers, numbering/list fields,
-document-structure fields beyond computed `SECTION`, structurally bounded
+document-structure fields beyond computed `REVNUM`/`SECTION`, structurally bounded
 `SECTIONPAGES`, deterministic body paragraph- and character-style `STYLEREF`,
 deterministic literal `EQ \f(n,d)` simple fractions with supported operand
 separators/escapes and parenthesized nested simple `EQ` operands, simple
@@ -951,7 +951,7 @@ The long-term native Word engine plan is split into the
       `REF`/direct bookmark references,
       malformed `SET` syntax reporting `UnsupportedSwitch`,
       inserted-content fields, mail-merge helper fields, reference/index fields beyond hidden simple `RD`/`TA`/`XE` markers,
-      numbering/list fields, document-structure fields beyond computed `SECTION`,
+      numbering/list fields, document-structure fields beyond computed `REVNUM`/`SECTION`,
       structurally bounded `SECTIONPAGES`, and
       deterministic body paragraph- and character-style `STYLEREF`, display/layout fields beyond hidden validated `ADVANCE`, deterministic simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, hidden displacement controls, and `SYMBOL`, action/automation fields beyond deterministic quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms,
       compatibility/private fields, barcode fields, legacy form fields beyond
@@ -990,7 +990,7 @@ The long-term native Word engine plan is split into the
       `REF`/direct bookmark references,
       malformed `SET` syntax reporting `UnsupportedSwitch`,
       inserted-content fields, mail-merge helper fields, reference/index fields beyond hidden simple `RD`/`TA`/`XE` markers,
-      numbering/list fields, document-structure fields beyond computed `SECTION`,
+      numbering/list fields, document-structure fields beyond computed `REVNUM`/`SECTION`,
       structurally bounded `SECTIONPAGES`, and
       deterministic body paragraph- and character-style `STYLEREF`, display/layout fields beyond hidden validated `ADVANCE`, deterministic simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, hidden displacement controls, and `SYMBOL`, action/automation fields beyond deterministic quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms,
       compatibility/private fields, barcode fields, legacy form fields beyond
