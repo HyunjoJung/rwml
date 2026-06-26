@@ -308,7 +308,8 @@ The first public maturity release should meet these requirements.
   using general text-format switches, malformed literal `QUOTE` syntax reports
   `UnsupportedSwitch`, and deterministic literal `IF` fields computed
   for finite decimal/scientific numeric comparisons and quoted string
-  equality/inequality, plus
+  equality/inequality, with malformed literal `IF` syntax reporting
+  `UnsupportedSwitch`, plus
   deterministic literal `COMPARE` fields computed as `1`/`0` for finite
   decimal/scientific numeric operands and quoted
   `?`/`*` wildcard equality/inequality, deterministic `FILLIN` fields with

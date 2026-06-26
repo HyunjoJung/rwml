@@ -465,6 +465,7 @@ deterministic literal `QUOTE` fields render quoted or unquoted computed text
 with general text-format switches, malformed literal `QUOTE` syntax reports
 `UnsupportedSwitch`, deterministic literal `IF` fields compute finite
 decimal/scientific numeric comparisons and quoted string equality/inequality,
+malformed literal `IF` syntax reports `UnsupportedSwitch`,
 deterministic literal `COMPARE` fields compute `1`/`0` results for finite
 decimal/scientific numeric operands and either-side quoted `?`/`*` wildcard
 equality/inequality, deterministic `FILLIN` fields with explicit `\d`

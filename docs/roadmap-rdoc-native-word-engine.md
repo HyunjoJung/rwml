@@ -295,7 +295,8 @@ Initial status:
   general text-format switches, malformed literal `QUOTE` syntax reports
   `UnsupportedSwitch`, deterministic literal `IF` fields compute
   finite decimal/scientific numeric comparisons and
-  quoted string equality/inequality, deterministic literal `COMPARE` fields compute
+  quoted string equality/inequality, malformed literal `IF` syntax reports
+  `UnsupportedSwitch`, deterministic literal `COMPARE` fields compute
   `1`/`0` results for finite decimal/scientific numeric operands and either-side
   quoted `?`/`*` wildcard equality/inequality, deterministic `FILLIN` fields with explicit `\d`
   default responses rendered without simulating prompts, deterministic `ASK name "prompt" \d "default"` fields with field-result format
@@ -763,6 +764,7 @@ Initial status:
   with general text-format switches, malformed literal `QUOTE` syntax reports
   `UnsupportedSwitch`, deterministic literal `IF` fields compute finite
   decimal/scientific numeric comparisons and quoted string equality/inequality,
+  malformed literal `IF` syntax reports `UnsupportedSwitch`,
   and deterministic literal
   `COMPARE` fields compute `1`/`0` results for finite decimal/scientific numeric operands and either-side quoted `?`/`*` wildcard equality/inequality,
   deterministic `FILLIN` fields with explicit `\d` default responses render without simulating prompts,

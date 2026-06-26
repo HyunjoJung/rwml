@@ -7001,6 +7001,36 @@ fn if_instruction(instruction: &str) -> Option<IfInstruction> {
     })
 }
 
+pub(crate) fn supports_if_field_syntax(instruction: &str) -> bool {
+    if_field_syntax(instruction).is_some()
+}
+
+fn if_field_syntax(instruction: &str) -> Option<()> {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let kind = parts.next()?;
+    if !kind.eq_ignore_ascii_case("IF") {
+        return None;
+    }
+    let first = parts.next()?;
+    merge_control_comparison_syntax(first, &mut parts)?;
+    if_result_text(parts.next()?)?;
+    let mut text_format = None;
+    if let Some(part) = parts.next() {
+        if is_field_format_start(part) {
+            let next = (part == "\\*").then(|| parts.next()).flatten();
+            accept_if_format_switch(part, next, &mut text_format)?;
+        } else {
+            if_result_text(part)?;
+        }
+    }
+    while let Some(part) = parts.next() {
+        let next = (part == "\\*").then(|| parts.next()).flatten();
+        accept_if_format_switch(part, next, &mut text_format)?;
+    }
+    Some(())
+}
+
 fn computed_compare_result(instruction: &str) -> Option<String> {
     let spec = compare_instruction(instruction)?;
     let result = if compare_if_operands(&spec.left, spec.operator, &spec.right)? {

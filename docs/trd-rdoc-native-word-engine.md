@@ -695,7 +695,8 @@ Acceptance:
   positive/negative/zero pictures, plus neutral `\* MERGEFORMAT`/`\* CHARFORMAT`
   formula tails and literal `DEFINED(expr)` checks for parser-local literal expressions,
   quoted/unquoted literal `QUOTE`, malformed literal `QUOTE` syntax reporting
-  `UnsupportedSwitch`, literal `IF` comparisons, literal `COMPARE` results,
+  `UnsupportedSwitch`, literal `IF` comparisons, malformed literal `IF`
+  syntax reporting `UnsupportedSwitch`, literal `COMPARE` results,
   invalid literal `COMPARE` syntax reporting `UnsupportedSwitch`,
   explicit-default `FILLIN`/`ASK`
   prompt fields with field-result format switches, malformed prompt field syntax

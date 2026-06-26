@@ -77,6 +77,10 @@ pub(crate) fn supports_compare_field_syntax(instruction: &str) -> bool {
     fields::supports_compare_field_syntax(instruction)
 }
 
+pub(crate) fn supports_if_field_syntax(instruction: &str) -> bool {
+    fields::supports_if_field_syntax(instruction)
+}
+
 pub(crate) fn supports_quote_field_syntax(instruction: &str) -> bool {
     fields::supports_quote_field_syntax(instruction)
 }
