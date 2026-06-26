@@ -2341,12 +2341,14 @@ fn scan_docx_xml(xml: &str, features: &mut FeatureInventory) {
                     name if is_alternate_content_shape_marker(name) && old_revision_depth == 0 => {
                         mark_report_alternate_shape_marker_seen(&mut alternate_content_stack);
                     }
-                    b"chart" => features.charts += 1,
-                    b"object" => {
+                    b"chart" if old_revision_depth == 0 => features.charts += 1,
+                    b"chart" => {}
+                    b"object" if old_revision_depth == 0 => {
                         object_depth = object_depth.saturating_add(1);
                         object_has_ole = false;
                     }
-                    b"oleObject" => {
+                    b"object" => {}
+                    b"oleObject" if old_revision_depth == 0 => {
                         if object_depth > 0 {
                             if !object_has_ole {
                                 features.ole_objects += 1;
@@ -2393,9 +2395,11 @@ fn scan_docx_xml(xml: &str, features: &mut FeatureInventory) {
                     name if is_alternate_content_shape_marker(name) && old_revision_depth == 0 => {
                         mark_report_alternate_shape_marker_seen(&mut alternate_content_stack);
                     }
-                    b"chart" => features.charts += 1,
-                    b"object" => features.ole_objects += 1,
-                    b"oleObject" => {
+                    b"chart" if old_revision_depth == 0 => features.charts += 1,
+                    b"chart" => {}
+                    b"object" if old_revision_depth == 0 => features.ole_objects += 1,
+                    b"object" => {}
+                    b"oleObject" if old_revision_depth == 0 => {
                         if object_depth > 0 {
                             if !object_has_ole {
                                 features.ole_objects += 1;
