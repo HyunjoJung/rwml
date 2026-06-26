@@ -2624,6 +2624,7 @@ fn draw_authored_chart(
         | ChartKind::Area3D
         | ChartKind::Scatter
         | ChartKind::Bubble
+        | ChartKind::Bubble3D
         | ChartKind::Surface
         | ChartKind::Surface3D
         | ChartKind::Stock => {
@@ -2841,7 +2842,7 @@ fn draw_authored_chart(
                         }
                     }
                 }
-                ChartKind::Bubble => {
+                ChartKind::Bubble | ChartKind::Bubble3D => {
                     let (_, max_bubble_size) = chart_bubble_size_range(chart);
                     let max_radius = (band_w.min(plot_h) * 0.22).clamp(3.5, 14.0);
                     for (series_index, series) in chart.series.iter().enumerate() {

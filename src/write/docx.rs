@@ -1587,7 +1587,7 @@ fn chart_workbook_sheet_xml(chart: &Chart) -> (String, String) {
         let name = shared_string_index(&mut shared_strings, &series.name);
         write_xlsx_shared_cell(&mut sheet, next_col, 1, name);
         next_col += 1;
-        if chart.kind == ChartKind::Bubble {
+        if matches!(chart.kind, ChartKind::Bubble | ChartKind::Bubble3D) {
             let size_name =
                 shared_string_index(&mut shared_strings, &format!("{} size", series.name));
             write_xlsx_shared_cell(&mut sheet, next_col, 1, size_name);
@@ -1618,7 +1618,7 @@ fn chart_workbook_sheet_xml(chart: &Chart) -> (String, String) {
             let value = series.values.get(row_index).copied().unwrap_or(0.0);
             write_xlsx_number_cell(&mut sheet, next_col, row_number, value);
             next_col += 1;
-            if chart.kind == ChartKind::Bubble {
+            if matches!(chart.kind, ChartKind::Bubble | ChartKind::Bubble3D) {
                 let bubble_size = series.bubble_sizes.get(row_index).copied().unwrap_or(1.0);
                 write_xlsx_number_cell(&mut sheet, next_col, row_number, bubble_size);
                 next_col += 1;
@@ -1744,7 +1744,9 @@ fn chart_xml(chart: &Chart, chart_id: u32, workbook_rid: Option<&str>) -> String
         }
         ChartKind::Radar => write_radar_chart(&mut out, chart, cat_axis_id, val_axis_id),
         ChartKind::Scatter => write_scatter_chart(&mut out, chart, cat_axis_id, val_axis_id),
-        ChartKind::Bubble => write_bubble_chart(&mut out, chart, cat_axis_id, val_axis_id),
+        ChartKind::Bubble | ChartKind::Bubble3D => {
+            write_bubble_chart(&mut out, chart, cat_axis_id, val_axis_id)
+        }
         ChartKind::Pie => write_pie_chart(&mut out, chart),
         ChartKind::Pie3D => write_pie_3d_chart(&mut out, chart),
         ChartKind::PieOfPie => write_of_pie_chart(&mut out, chart, "pie"),
@@ -1764,7 +1766,7 @@ fn chart_xml(chart: &Chart, chart_id: u32, workbook_rid: Option<&str>) -> String
         | ChartKind::PieOfPie
         | ChartKind::BarOfPie
         | ChartKind::Doughnut => {}
-        ChartKind::Scatter | ChartKind::Bubble => {
+        ChartKind::Scatter | ChartKind::Bubble | ChartKind::Bubble3D => {
             write_scatter_axes(&mut out, cat_axis_id, val_axis_id)
         }
         ChartKind::Line3D | ChartKind::Area3D | ChartKind::Surface | ChartKind::Surface3D => {
@@ -1975,6 +1977,9 @@ fn write_bubble_chart(out: &mut String, chart: &Chart, x_axis_id: u32, y_axis_id
         write_chart_y_values(out, &series.values);
         write_chart_bubble_sizes(out, series, series.values.len());
         out.push_str("</c:ser>");
+    }
+    if chart.kind == ChartKind::Bubble3D {
+        out.push_str(r#"<c:bubble3D val="1"/>"#);
     }
     out.push_str(&format!(
         r#"<c:bubbleScale val="100"/><c:showNegBubbles val="0"/><c:axId val="{x_axis_id}"/><c:axId val="{y_axis_id}"/></c:bubbleChart>"#
@@ -2196,6 +2201,7 @@ fn write_chart_axes(out: &mut String, kind: ChartKind, cat_axis_id: u32, val_axi
         | ChartKind::Radar => ("b", "l"),
         ChartKind::Scatter
         | ChartKind::Bubble
+        | ChartKind::Bubble3D
         | ChartKind::Pie
         | ChartKind::Pie3D
         | ChartKind::PieOfPie

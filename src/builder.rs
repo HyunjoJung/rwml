@@ -912,6 +912,16 @@ impl ChartBuilder {
         }
     }
 
+    /// Start a 3-D bubble chart.
+    pub fn bubble_3d() -> Self {
+        Self {
+            chart: Chart {
+                kind: ChartKind::Bubble3D,
+                ..Chart::default()
+            },
+        }
+    }
+
     /// Start a pie chart using the first series as slice values.
     pub fn pie() -> Self {
         Self {

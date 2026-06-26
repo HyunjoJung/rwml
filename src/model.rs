@@ -866,6 +866,8 @@ pub enum ChartKind {
     Scatter,
     /// A bubble chart with numeric horizontal values, vertical values, and sizes.
     Bubble,
+    /// A 3-D bubble chart with numeric horizontal values, vertical values, and sizes.
+    Bubble3D,
     /// A pie chart using the first series as slice values.
     Pie,
     /// A 3-D pie chart using the first series as slice values.

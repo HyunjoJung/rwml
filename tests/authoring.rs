@@ -3570,6 +3570,69 @@ fn doc_builder_adds_bubble_chart() {
 }
 
 #[test]
+fn doc_builder_adds_3d_bubble_chart() {
+    let model = DocBuilder::new()
+        .chart(
+            ChartBuilder::bubble_3d()
+                .title("Opportunity depth")
+                .categories(["Segment A", "Segment B", "Segment C"])
+                .bubble_series("Pipeline", [12.0, 24.0, 36.0], [5.0, 12.5, 21.0])
+                .size_px(420, 280)
+                .alt("Opportunity 3-D bubble chart"),
+        )
+        .build();
+
+    let Block::Chart(chart) = &model.blocks[0] else {
+        panic!("expected chart block");
+    };
+    assert_eq!(chart.kind, ChartKind::Bubble3D);
+    assert_eq!(chart.series[0].values, [12.0, 24.0, 36.0]);
+    assert_eq!(chart.series[0].bubble_sizes, [5.0, 12.5, 21.0]);
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let chart_xml = String::from_utf8(parts["word/charts/chart1.xml"].clone()).unwrap();
+    let workbook_bytes = parts
+        .get("word/embeddings/Microsoft_Excel_Worksheet1.xlsx")
+        .expect("embedded 3-D bubble chart workbook");
+    let workbook_parts = unzip_parts(workbook_bytes);
+    let sheet_xml = String::from_utf8(workbook_parts["xl/worksheets/sheet1.xml"].clone()).unwrap();
+    let shared_strings = String::from_utf8(workbook_parts["xl/sharedStrings.xml"].clone()).unwrap();
+
+    assert!(
+        document_xml
+            .contains(r#"<wp:docPr id="1" name="Chart1" descr="Opportunity 3-D bubble chart"/>"#)
+            && document_xml.contains(r#"<c:chart r:id="rId1"/>"#),
+        "3-D bubble chart drawing missing: {document_xml}"
+    );
+    assert!(
+        chart_xml.contains("<c:bubbleChart>")
+            && chart_xml.contains(r#"<c:bubble3D val="1"/>"#)
+            && chart_xml.contains(r#"<c:bubbleScale val="100"/>"#)
+            && chart_xml.contains(r#"<c:showNegBubbles val="0"/>"#)
+            && chart_xml.contains("<a:t>Opportunity depth</a:t>")
+            && chart_xml.contains("<c:v>Pipeline</c:v>")
+            && chart_xml.contains("<c:bubbleSize>")
+            && chart_xml.contains(r#"<c:pt idx="0"><c:v>12</c:v></c:pt>"#)
+            && chart_xml.contains(r#"<c:pt idx="2"><c:v>36</c:v></c:pt>"#)
+            && chart_xml.contains(r#"<c:pt idx="0"><c:v>5</c:v></c:pt>"#)
+            && chart_xml.contains(r#"<c:pt idx="2"><c:v>21</c:v></c:pt>"#),
+        "3-D bubble chart payload missing: {chart_xml}"
+    );
+    assert!(
+        shared_strings.contains("<t>Pipeline size</t>")
+            && sheet_xml.contains(r#"<c r="B2"><v>12</v></c>"#)
+            && sheet_xml.contains(r#"<c r="C2"><v>5</v></c>"#)
+            && sheet_xml.contains(r#"<c r="C4"><v>21</v></c>"#),
+        "3-D bubble chart workbook values missing: {sheet_xml} / {shared_strings}"
+    );
+
+    let reopened = Document::open(&bytes).expect("3-D bubble chart .docx reopens");
+    assert_eq!(reopened.report().features.charts, 1);
+}
+
+#[test]
 fn doc_builder_adds_pie_chart() {
     let model = DocBuilder::new()
         .chart(
@@ -4344,6 +4407,37 @@ fn render_pdf_draws_authored_bubble_chart() {
     assert!(
         rendered.pdf.len() > empty.pdf.len() + 100,
         "bubble chart drawing should add visible PDF content"
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn render_pdf_draws_authored_3d_bubble_chart() {
+    let model = DocBuilder::new()
+        .chart(
+            ChartBuilder::bubble_3d()
+                .title("Opportunity depth")
+                .categories(["Segment A", "Segment B", "Segment C"])
+                .bubble_series("Pipeline", [12.0, 24.0, 36.0], [5.0, 12.5, 21.0]),
+        )
+        .build();
+
+    let empty = rdoc::render_pdf_with_report(&DocModel::default());
+    let rendered = rdoc::render_pdf_with_report(&model);
+
+    assert!(rendered.pdf.starts_with(b"%PDF"));
+    assert_eq!(rendered.report.pages, 1);
+    assert_eq!(rendered.report.unsupported.charts, 0);
+    assert!(
+        !rendered.report.warnings.iter().any(|warning| matches!(
+            warning,
+            rdoc::RenderWarning::ChartsPreservedButNotModeled { .. }
+        )),
+        "authored 3-D bubble chart should render without preserved-only warnings"
+    );
+    assert!(
+        rendered.pdf.len() > empty.pdf.len() + 100,
+        "3-D bubble chart drawing should add visible PDF content"
     );
 }
 

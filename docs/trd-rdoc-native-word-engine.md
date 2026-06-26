@@ -264,7 +264,7 @@ metadata, and authored tab/newline markers,
 tracked insertion/deletion runs through
 `RevisionBuilder`, run-level content controls through `ContentControlBuilder`,
 hyperlinks, image blocks with alt text and explicit pixel sizing via
-`ImageBuilder`, bar/3-D bar/column/3-D column/line/3-D line/area/3-D area/radar/scatter/bubble/pie/3-D pie/doughnut/surface/3-D surface/stock/pie-of-pie/bar-of-pie
+`ImageBuilder`, bar/3-D bar/column/3-D column/line/3-D line/area/3-D area/radar/scatter/bubble/3-D bubble/pie/3-D pie/doughnut/surface/3-D surface/stock/pie-of-pie/bar-of-pie
 charts with embedded workbook-backed source data through `ChartBuilder`,
 3-D bar/column shape styling through `ChartBuilder::shape(ChartShape::...)`,
 surface-family wireframe styling through `ChartBuilder::wireframe()`,
@@ -945,7 +945,7 @@ Authoring grows in stages:
 8. add area chart XML/render support on the shared chart data path;
 9. add radar chart XML/render support on the shared chart data path;
 10. add scatter chart XML/render support on the shared chart data path;
-11. add bubble chart XML/render support on the shared chart data path;
+11. add bubble and 3-D bubble chart XML/render support on the shared chart data path;
 12. add surface and 3-D surface chart XML/render support, plus wireframe styling,
     on the shared chart data path;
 13. add stock chart XML/render support and 3-D bar/column shape styling on the
@@ -1026,7 +1026,7 @@ or placeable WMF header makes that recoverable without full rendering.
 
 Authored `Block::Chart` values are different from preserved foreign chart parts:
 the model renderer draws bar, 3-D bar, column, 3-D column, line, 3-D line, area,
-3-D area, radar, scatter, bubble, pie, 3-D pie, doughnut, surface, 3-D surface,
+3-D area, radar, scatter, bubble, 3-D bubble, pie, 3-D pie, doughnut, surface, 3-D surface,
 stock, pie-of-pie, and bar-of-pie charts as native vector preview charts and does not
 report them as unsupported. Chart parts
 observed only through an opened package feature inventory still use the
