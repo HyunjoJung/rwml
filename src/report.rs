@@ -562,7 +562,7 @@ fn unsupported_field_evaluation(features: &FeatureInventory) -> (usize, Vec<Fiel
 }
 
 fn supports_field_kind_evaluation(kind: &FieldKind) -> bool {
-    matches!(kind, FieldKind::Filename | FieldKind::DocumentInfo(_))
+    matches!(kind, FieldKind::DocumentInfo(_))
 }
 
 fn supports_field_evaluation(field: &Field) -> bool {
@@ -577,6 +577,9 @@ fn supports_field_evaluation(field: &Field) -> bool {
     }
     if field.kind == FieldKind::MergeField {
         return supports_merge_field_evaluation(field);
+    }
+    if field.kind == FieldKind::Filename {
+        return supported_filename_syntax(&field.instruction);
     }
     supports_field_kind_evaluation(&field.kind)
 }
@@ -618,8 +621,8 @@ fn supports_document_info_field_evaluation(field: &Field) -> bool {
 }
 
 #[cfg(feature = "render")]
-fn supports_render_model_field_kind_evaluation(kind: &FieldKind) -> bool {
-    supports_field_kind_evaluation(kind) || matches!(kind, FieldKind::Page)
+fn supports_render_model_field_evaluation(field: &Field) -> bool {
+    matches!(field.kind, FieldKind::Page) || supports_field_evaluation(field)
 }
 
 pub(crate) fn fields_for_model(blocks: &[Block]) -> Vec<Field> {
@@ -654,7 +657,7 @@ pub(crate) fn render_inventory_for_model(blocks: &[Block]) -> FeatureInventory {
         .filter(|field| field.kind == FieldKind::Hyperlink)
         .count();
     for field in &fields {
-        if supports_render_model_field_kind_evaluation(&field.kind) {
+        if supports_render_model_field_evaluation(field) {
             continue;
         }
         if let Some(existing) = inventory
@@ -1543,12 +1546,56 @@ fn unsupported_field_reason(field: &Field) -> Option<FieldEvaluationReason> {
         FieldKind::Compatibility(_) => Some(FieldEvaluationReason::NoComputedResult),
         FieldKind::Barcode(_) => Some(FieldEvaluationReason::NoComputedResult),
         FieldKind::FormField(_) => Some(FieldEvaluationReason::NoComputedResult),
-        FieldKind::Filename => None,
+        FieldKind::Filename => Some(filename_uncomputed_reason(&field.instruction)),
         FieldKind::Hyperlink => Some(FieldEvaluationReason::UnsupportedSwitch),
         FieldKind::MergeField => Some(FieldEvaluationReason::UnsupportedSwitch),
         FieldKind::DocumentInfo(_) => Some(FieldEvaluationReason::UnsupportedSwitch),
         FieldKind::TocEntry | FieldKind::Sequence => Some(FieldEvaluationReason::NoComputedResult),
     }
+}
+
+fn filename_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
+    if supported_filename_syntax(instruction) {
+        FieldEvaluationReason::NoComputedResult
+    } else {
+        FieldEvaluationReason::UnsupportedSwitch
+    }
+}
+
+fn supported_filename_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if !kind.eq_ignore_ascii_case("FILENAME") {
+        return false;
+    }
+    let mut path = false;
+    let mut text_format = false;
+    while let Some(part) = parts.next() {
+        if part.eq_ignore_ascii_case("\\p") {
+            if path {
+                return false;
+            }
+            path = true;
+            continue;
+        }
+        if part == "\\*" {
+            if !accept_field_format_switch(parts.next().unwrap_or_default(), &mut text_format) {
+                return false;
+            }
+            continue;
+        }
+        if let Some(format) = part.strip_prefix("\\*") {
+            if !accept_field_format_switch(format, &mut text_format) {
+                return false;
+            }
+            continue;
+        }
+        return false;
+    }
+    true
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

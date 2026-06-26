@@ -727,8 +727,9 @@ Initial status:
 - Generated running footer page numbers (`DocSetup::page_numbers`) and body
   `PAGE` field runs are computed from the actual emitted PDF page list.
   Field-code `HYPERLINK` runs render as link annotations and malformed
-  hyperlink syntax reports `UnsupportedSwitch`; body `FILENAME`,
-  `MERGEFIELD` with malformed merge-field names reporting `UnsupportedSwitch`,
+  hyperlink syntax reports `UnsupportedSwitch`; body `FILENAME` with malformed
+  switches reporting `UnsupportedSwitch`, `MERGEFIELD` with malformed merge-field
+  names reporting `UnsupportedSwitch`,
   metadata-backed document-info fields such as
   `AUTHOR`, `TITLE`, `SUBJECT`, `KEYWORDS`, `COMMENTS`, `LASTSAVEDBY`,
   `CATEGORY`, `CONTENTSTATUS`, `VERSION`, core aliases such as `CREATOR`,

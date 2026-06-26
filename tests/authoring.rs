@@ -7,10 +7,10 @@ use std::io::Read;
 use rdoc::{
     Align, Block, Cell, CellBuilder, CellMargins, CharProps, ChartBuilder, ChartKind, ChartShape,
     Color, CommentBuilder, ContentControlBuilder, DocBuilder, DocGridType, DocModel, DocSetup,
-    Document, DocumentWarning, FieldKind, FieldRole, ImageBuilder, NoteKind, PageNumberFormat,
-    PageSetup, ParaProps, Paragraph, ParagraphBuilder, ParagraphStyleBuilder, RevisionBuilder,
-    RevisionKind, RevisionView, Row, RunBuilder, SectionBreakKind, Table, TableBorderSide,
-    TableBorderStyle, TableBuilder, TextDirection, VCell,
+    Document, DocumentWarning, FieldKind, FieldKindCount, FieldRole, ImageBuilder, NoteKind,
+    PageNumberFormat, PageSetup, ParaProps, Paragraph, ParagraphBuilder, ParagraphStyleBuilder,
+    RevisionBuilder, RevisionKind, RevisionView, Row, RunBuilder, SectionBreakKind, Table,
+    TableBorderSide, TableBorderStyle, TableBuilder, TextDirection, VCell,
 };
 
 fn run(text: &str, props: CharProps) -> rdoc::Run {
@@ -7141,6 +7141,25 @@ fn render_pdf_report_treats_page_and_filename_fields_as_supported() {
     assert!(
         json.contains(r#""kind":"UnsupportedFieldEvaluation""#),
         "{json}"
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn render_pdf_report_flags_malformed_filename_fields() {
+    let model = DocBuilder::new()
+        .field("FILENAME \\x", "cached filename")
+        .build();
+
+    let rendered = rdoc::render_pdf_with_report(&model);
+
+    assert_eq!(rendered.report.unsupported.fields, 1);
+    assert_eq!(
+        rendered.report.unsupported.field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Filename,
+            count: 1,
+        }]
     );
 }
 
