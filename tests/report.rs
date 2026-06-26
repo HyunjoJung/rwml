@@ -502,6 +502,24 @@ fn ref_field_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn malformed_ref_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" REF &quot;MissingBookmark "><w:r><w:t>cached malformed ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn note_ref_field_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -2221,6 +2239,23 @@ fn report_ref_field_warning_ignores_computed_bookmark_refs() {
         "{json}"
     );
     assert!(json.contains(r#""kind":"UnsupportedFieldEvaluation","count":4,"field_kinds":[{"kind":"REF","count":4}]"#), "{json}");
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_malformed_ref_targets_are_unsupported_switches() {
+    let doc = Document::open(&malformed_ref_diagnostics_docx()).expect("fixture opens");
+    let fields = doc.fields();
+    assert_eq!(fields[0].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnsupportedSwitch,
+            count: 1,
+        }]
+    );
 }
 
 #[cfg(feature = "docx")]

@@ -1584,7 +1584,7 @@ fn supported_ref_syntax_parts<'a>(
                 if sequence_separator {
                     return None;
                 }
-                let separator = parts.next()?.trim_matches('"');
+                let separator = diagnostic_literal_token(parts.next()?)?;
                 if separator.is_empty() || separator.starts_with('\\') {
                     return None;
                 }
@@ -1624,8 +1624,8 @@ fn supported_ref_syntax_parts<'a>(
             }
             return None;
         }
-        let candidate = part.trim_matches('"');
-        if candidate.is_empty() || target.replace(candidate.to_string()).is_some() {
+        let candidate = diagnostic_name_token(part)?;
+        if target.replace(candidate.to_string()).is_some() {
             return None;
         }
     }
@@ -1692,8 +1692,8 @@ fn supported_page_ref_syntax(instruction: &str) -> Option<PageRefDiagnosticSynta
             }
             return None;
         }
-        let candidate = part.trim_matches('"');
-        if candidate.is_empty() || target.replace(candidate.to_string()).is_some() {
+        let candidate = diagnostic_name_token(part)?;
+        if target.replace(candidate.to_string()).is_some() {
             return None;
         }
     }
@@ -1794,12 +1794,36 @@ fn supported_note_ref_target(instruction: &str) -> Option<String> {
             }
             return None;
         }
-        let candidate = part.trim_matches('"');
-        if candidate.is_empty() || target.replace(candidate.to_string()).is_some() {
+        let candidate = diagnostic_name_token(part)?;
+        if target.replace(candidate.to_string()).is_some() {
             return None;
         }
     }
     target
+}
+
+fn diagnostic_name_token(value: &str) -> Option<&str> {
+    let value = value.trim();
+    let value = match (value.starts_with('"'), value.ends_with('"')) {
+        (true, true) if value.len() >= 2 => &value[1..value.len() - 1],
+        (true, _) | (_, true) => return None,
+        (false, false) => value,
+    }
+    .trim();
+    if value.is_empty() || value.starts_with('\\') || value.contains('"') {
+        return None;
+    }
+    Some(value)
+}
+
+fn diagnostic_literal_token(value: &str) -> Option<&str> {
+    let value = value.trim();
+    let value = match (value.starts_with('"'), value.ends_with('"')) {
+        (true, true) if value.len() >= 2 => &value[1..value.len() - 1],
+        (true, _) | (_, true) => return None,
+        (false, false) => value,
+    };
+    (!value.contains('"')).then_some(value)
 }
 
 fn is_neutral_field_format_switch(part: &str) -> bool {
@@ -1881,47 +1905,49 @@ fn supported_toc_bookmark_scope(instruction: &str) -> Option<Option<String>> {
         }
         if part.eq_ignore_ascii_case("\\f") {
             if let Some(value) = parts.next_if(|next| !next.starts_with('\\')) {
-                if value.trim_matches('"').is_empty() {
-                    return None;
-                }
+                diagnostic_name_token(value)?;
             }
             saw_tc_switch = true;
             continue;
         }
         if let Some(value) = strip_ascii_switch_prefix(part, "\\f") {
-            if !value.is_empty() && value.trim_matches('"').is_empty() {
-                return None;
+            if !value.is_empty() {
+                diagnostic_name_token(value)?;
             }
             saw_tc_switch = true;
             continue;
         }
         if part.eq_ignore_ascii_case("\\a") {
             let value = parts.next_if(|next| !next.starts_with('\\'))?;
-            if value.trim_matches('"').is_empty() || saw_sequence_switch {
+            if saw_sequence_switch {
                 return None;
             }
+            diagnostic_name_token(value)?;
             saw_sequence_switch = true;
             continue;
         }
         if let Some(value) = strip_ascii_switch_prefix(part, "\\a") {
-            if value.trim_matches('"').is_empty() || saw_sequence_switch {
+            if saw_sequence_switch {
                 return None;
             }
+            diagnostic_name_token(value)?;
             saw_sequence_switch = true;
             continue;
         }
         if part.eq_ignore_ascii_case("\\c") {
             let value = parts.next_if(|next| !next.starts_with('\\'))?;
-            if value.trim_matches('"').is_empty() || saw_sequence_switch {
+            if saw_sequence_switch {
                 return None;
             }
+            diagnostic_name_token(value)?;
             saw_sequence_switch = true;
             continue;
         }
         if let Some(value) = strip_ascii_switch_prefix(part, "\\c") {
-            if value.trim_matches('"').is_empty() || saw_sequence_switch {
+            if saw_sequence_switch {
                 return None;
             }
+            diagnostic_name_token(value)?;
             saw_sequence_switch = true;
             continue;
         }
@@ -1960,41 +1986,31 @@ fn supported_toc_bookmark_scope(instruction: &str) -> Option<Option<String>> {
             continue;
         }
         if part.eq_ignore_ascii_case("\\p") {
-            parts.next_if(|next| !next.starts_with('\\'))?;
+            diagnostic_literal_token(parts.next_if(|next| !next.starts_with('\\'))?)?;
             continue;
         }
         if let Some(separator) = strip_ascii_switch_prefix(part, "\\p") {
-            if separator.is_empty() {
-                return None;
-            }
+            diagnostic_literal_token(separator)?;
             continue;
         }
         if part.eq_ignore_ascii_case("\\d") {
-            parts.next_if(|next| !next.starts_with('\\'))?;
+            diagnostic_literal_token(parts.next_if(|next| !next.starts_with('\\'))?)?;
             continue;
         }
         if let Some(separator) = strip_ascii_switch_prefix(part, "\\d") {
-            if separator.is_empty() {
-                return None;
-            }
+            diagnostic_literal_token(separator)?;
             continue;
         }
         if part.eq_ignore_ascii_case("\\b") {
-            let target = parts.next_if(|next| !next.starts_with('\\'))?;
-            if bookmark
-                .replace(target.trim_matches('"').to_string())
-                .is_some()
-            {
+            let target = diagnostic_name_token(parts.next_if(|next| !next.starts_with('\\'))?)?;
+            if bookmark.replace(target.to_string()).is_some() {
                 return None;
             }
             continue;
         }
         if let Some(target) = strip_ascii_switch_prefix(part, "\\b") {
-            if target.is_empty()
-                || bookmark
-                    .replace(target.trim_matches('"').to_string())
-                    .is_some()
-            {
+            let target = diagnostic_name_token(target)?;
+            if bookmark.replace(target.to_string()).is_some() {
                 return None;
             }
             continue;
