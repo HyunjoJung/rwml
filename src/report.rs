@@ -572,7 +572,25 @@ fn supports_field_kind_evaluation(kind: &FieldKind) -> bool {
 }
 
 fn supports_field_evaluation(field: &Field) -> bool {
-    supports_field_kind_evaluation(&field.kind) || field.computed_result.is_some()
+    if field.computed_result.is_some() {
+        return true;
+    }
+    if matches!(&field.kind, FieldKind::DocumentInfo(_)) {
+        return supports_document_info_field_evaluation(field);
+    }
+    supports_field_kind_evaluation(&field.kind)
+}
+
+fn supports_document_info_field_evaluation(field: &Field) -> bool {
+    #[cfg(feature = "docx")]
+    {
+        crate::docx::supports_document_info_field_syntax(&field.instruction)
+    }
+    #[cfg(not(feature = "docx"))]
+    {
+        let _ = field;
+        true
+    }
 }
 
 #[cfg(feature = "render")]
@@ -1486,10 +1504,8 @@ fn unsupported_field_reason(field: &Field) -> Option<FieldEvaluationReason> {
         FieldKind::Compatibility(_) => Some(FieldEvaluationReason::NoComputedResult),
         FieldKind::Barcode(_) => Some(FieldEvaluationReason::NoComputedResult),
         FieldKind::FormField(_) => Some(FieldEvaluationReason::NoComputedResult),
-        FieldKind::Hyperlink
-        | FieldKind::Filename
-        | FieldKind::MergeField
-        | FieldKind::DocumentInfo(_) => None,
+        FieldKind::Hyperlink | FieldKind::Filename | FieldKind::MergeField => None,
+        FieldKind::DocumentInfo(_) => Some(FieldEvaluationReason::UnsupportedSwitch),
         FieldKind::TocEntry | FieldKind::Sequence => Some(FieldEvaluationReason::NoComputedResult),
     }
 }

@@ -450,7 +450,8 @@ Implementation:
   megabyte switches, direct `USERNAME`/`USERINITIALS`/`USERADDRESS` fields with
   explicit quoted literal overrides, and cached
   date/user/unmapped document-info fields
-  render-supported display fields);
+  render-supported display fields when their instruction syntax is valid;
+  malformed document-info syntax reports `UnsupportedSwitch`);
 - compute unambiguous `.docx` `REF` bookmark targets, including Word-generated
   hidden bookmark targets, multi-paragraph bookmark ranges, and simple inline
   tabs, line breaks, no-break hyphens, and deterministic `REF \* Upper`/
@@ -666,7 +667,8 @@ Implementation:
   with compact counts for `UnknownField`, `UnresolvedBookmark`,
   `UnsupportedSwitch`, and `NoComputedResult` so downstream gates can distinguish
   unsupported classes within the same field kind, including missing `PAGEREF`
-  bookmark targets, explicit and direct bookmark-name `REF \d` supported syntax
+  bookmark targets, malformed document-info syntax, explicit and direct
+  bookmark-name `REF \d` supported syntax
   with no computed result, missing explicit or direct `REF \f` targets, existing
   explicit or direct non-note `REF \f` unsupported-switch cases, missing
   `NOTEREF` targets, existing non-note `NOTEREF` targets, unsupported

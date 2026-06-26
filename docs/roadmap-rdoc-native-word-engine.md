@@ -270,7 +270,8 @@ Initial status:
   `SEQ` forms with `NoComputedResult` diagnostics and without mutating later sequence counters,
   metadata-backed document-info/date results, and cached date/stat/unmapped
   document-info results are counted as supported display
-  fields. The
+  fields when their instruction syntax is valid; malformed document-info syntax
+  reports `UnsupportedSwitch`. The
   known dynamic/control fields (`=`, `IF`, `QUOTE`, `FILLIN`, `ASK`, `COMPARE`,
   `SET`, `NEXT`, `NEXTIF`, `SKIPIF`) are named separately from unknown fields;
   deterministic literal arithmetic formula fields compute finite decimal/scientific numeric constants,
@@ -739,7 +740,8 @@ Initial status:
   overrides compute while environment-backed no-override forms remain cached; and
   remaining cached document-info/date/stat fields
   without backing package properties render without
-  unsupported-field warnings. Known dynamic/control fields are named separately
+  unsupported-field warnings when their instruction syntax is valid; malformed
+  document-info syntax reports `UnsupportedSwitch`. Known dynamic/control fields are named separately
   from unknown fields; deterministic literal arithmetic formula fields render
   finite decimal/scientific numeric constants and literal scalar numeric/logical functions (`ABS`,
   `AND`, `AVERAGE`, `COUNT`, `DEFINED`, `FALSE`, `IF`, `INT`, `MAX`, `MIN`, `MOD`, `NOT`,

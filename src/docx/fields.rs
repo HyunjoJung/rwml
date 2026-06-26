@@ -5180,6 +5180,7 @@ enum DocumentInfoProperty {
     UserName,
     UserInitials,
     UserAddress,
+    DisplayOnly,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -5220,12 +5221,17 @@ pub(crate) fn computed_document_info_result(
         DocumentInfoProperty::UserName
         | DocumentInfoProperty::UserInitials
         | DocumentInfoProperty::UserAddress => spec.user_override.clone()?,
+        DocumentInfoProperty::DisplayOnly => return None,
     };
     let text = match spec.date_format {
         Some(format) => format_core_timestamp(&text, &format)?,
         None => text,
     };
     Some(apply_field_text_format(text, spec.text_format))
+}
+
+pub(crate) fn supports_document_info_field_syntax(instruction: &str) -> bool {
+    document_info_instruction(instruction).is_some()
 }
 
 fn document_info_instruction(instruction: &str) -> Option<DocumentInfoInstruction> {
@@ -5243,9 +5249,12 @@ fn document_info_instruction(instruction: &str) -> Option<DocumentInfoInstructio
         let name = field_name_token(parts.next()?)?;
         (!name.is_empty()).then(|| DocumentInfoProperty::Variable(document_property_key(name)))?
     } else if kind.eq_ignore_ascii_case("INFO") {
-        document_info_property(field_name_token(parts.next()?)?)?
+        document_info_property(field_name_token(parts.next()?)?)
+            .unwrap_or(DocumentInfoProperty::DisplayOnly)
     } else if let Some(property) = user_info_property(kind) {
         property
+    } else if kind.eq_ignore_ascii_case("DATE") || kind.eq_ignore_ascii_case("TIME") {
+        DocumentInfoProperty::DisplayOnly
     } else {
         document_info_property(kind)?
     };

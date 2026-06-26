@@ -441,7 +441,8 @@ date/user/unmapped document-info fields
 unmapped `DOCPROPERTY` names, unmapped `INFO` subfields, unmapped
 `DOCVARIABLE` names, unmapped core date fields, and app stat/template fields
 when backing app properties are absent)
-render without unsupported-field warnings;
+render without unsupported-field warnings when their instruction syntax is valid;
+malformed document-info syntax reports `UnsupportedSwitch`;
 named dynamic/control fields (`=`, `IF`, `QUOTE`, `FILLIN`, `ASK`, `COMPARE`,
 `SET`, `NEXT`, `NEXTIF`, `SKIPIF`) are distinguished from unknown fields,
 deterministic literal arithmetic formula fields compute finite decimal/scientific numeric constants,

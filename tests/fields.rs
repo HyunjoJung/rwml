@@ -164,7 +164,7 @@ fn document_info_field_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" DATE \@ &quot;yyyy-MM-dd&quot; "><w:r><w:t>2026-06-24</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTHOR \* MERGEFORMAT "><w:r><w:t>Hyunjo Jung</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DOCPROPERTY &quot;Company&quot; "><w:r><w:t>Example Co.</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NUMPAGES "><w:r><w:t>12</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" EDITTIME "><w:r><w:t>42</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" DATE \@ &quot;yyyy-MM-dd&quot; "><w:r><w:t>2026-06-24</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTHOR \* MERGEFORMAT "><w:r><w:t>Hyunjo Jung</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DOCPROPERTY &quot;Company&quot; "><w:r><w:t>Example Co.</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NUMPAGES "><w:r><w:t>12</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" EDITTIME "><w:r><w:t>42</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DOCPROPERTY &quot;Broken Name "><w:r><w:t>cached broken property</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -2735,7 +2735,7 @@ fn docx_document_info_fields_are_named_cached_display_fields() {
     let doc = Document::open(&document_info_field_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 5);
+    assert_eq!(fields.len(), 6);
     assert_eq!(fields[0].kind, FieldKind::DocumentInfo("DATE".to_string()));
     assert_eq!(fields[0].instruction, "DATE \\@ \"yyyy-MM-dd\"");
     assert_eq!(fields[0].result, "2026-06-24");
@@ -2760,10 +2760,29 @@ fn docx_document_info_fields_are_named_cached_display_fields() {
         FieldKind::DocumentInfo("EDITTIME".to_string())
     );
     assert_eq!(fields[4].result, "42");
+    assert_eq!(
+        fields[5].kind,
+        FieldKind::DocumentInfo("DOCPROPERTY".to_string())
+    );
+    assert_eq!(fields[5].instruction, "DOCPROPERTY \"Broken Name ");
+    assert_eq!(fields[5].result, "cached broken property");
+    assert_eq!(fields[5].computed_result, None);
 
     let report = doc.report();
-    assert!(report.features.unsupported_field_kinds.is_empty());
-    assert!(report.features.unsupported_field_reasons.is_empty());
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::DocumentInfo("DOCPROPERTY".to_string()),
+            count: 1,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnsupportedSwitch,
+            count: 1,
+        }]
+    );
 
     let main_text = doc.main_text();
     assert!(
@@ -2771,7 +2790,8 @@ fn docx_document_info_fields_are_named_cached_display_fields() {
             && main_text.contains("Hyunjo Jung")
             && main_text.contains("Example Co.")
             && main_text.contains("12")
-            && main_text.contains("42"),
+            && main_text.contains("42")
+            && main_text.contains("cached broken property"),
         "document-info fields should preserve cached display text: {main_text:?}"
     );
 }
