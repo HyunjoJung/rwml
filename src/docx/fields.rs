@@ -7243,6 +7243,7 @@ fn unescape_eq_literal_operand(operand: &str) -> Option<String> {
         match chars.next()? {
             ',' => out.push(','),
             '(' => out.push('('),
+            ')' => out.push(')'),
             '\\' => out.push('\\'),
             _ => return None,
         }
@@ -9738,6 +9739,14 @@ mod tests {
         assert!(computed_display_result(r#"EQ \b("A"B")"#).is_none());
         assert!(computed_display_result(r#"EQ \b("Chapter One)"#).is_none());
         assert!(computed_display_result(r#"EQ \x \to("Chapter One)"#).is_none());
+    }
+
+    #[test]
+    fn eq_literal_operands_accept_escaped_closing_parentheses() {
+        assert_eq!(
+            computed_display_result(r#"EQ \f(A\),B)"#).as_deref(),
+            Some("A)/B")
+        );
     }
 
     #[test]

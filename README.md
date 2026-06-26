@@ -519,7 +519,7 @@ switches (`\d`, `\u`, `\l`, `\r`, `\x`, `\y`) render as hidden output without
 applying layout offsets while accepting field-result format switches, validated `EQ \d` displacement controls render as empty
 output without applying visual offsets or underlines, deterministic `EQ \f(n,d)` simple fractions with literal,
 spaced, quoted, comma- or semicolon-separated operands plus documented escaped
-comma/open-parenthesis/backslash characters compute plain `n/d` text, nested
+comma/parenthesis/backslash characters compute plain `n/d` text, nested
 simple `EQ \f`/`\r` operands are parenthesized in plain text, simple
 `EQ \r(radicand)`/`\r(degree,radicand)` radicals compute plain root text,
 default/custom `EQ \b(element)` brackets with documented `\lc`, `\rc`, or
