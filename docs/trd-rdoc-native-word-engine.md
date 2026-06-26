@@ -259,7 +259,8 @@ simple text tables, width-aware, aligned, fixed-layout, indented, and border-col
 cell margins, and typed nested cell blocks via `TableBuilder`/`CellBuilder`,
 list paragraphs with explicit levels, simple fields
 with cached results, run-anchored
-comments via `CommentBuilder` including authored tab/newline markers,
+comments via `CommentBuilder` including reply parent ids, commentsExtended
+metadata, and authored tab/newline markers,
 tracked insertion/deletion runs through
 `RevisionBuilder`, run-level content controls through `ContentControlBuilder`,
 hyperlinks, image blocks with alt text and explicit pixel sizing via

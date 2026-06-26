@@ -123,8 +123,9 @@ Deliverables:
 Initial status:
 
 - `Document::comments()` extracts the `.docx` comments side table from
-  `word/comments.xml` with id, optional reply parent id, author, initials, date,
-  visible text, and main-document anchor text when a
+  `word/comments.xml` plus optional `word/commentsExtended.xml` reply links
+  with id, optional reply parent id, author, initials, date, visible text, and
+  main-document anchor text when a
   `commentRangeStart`/`commentRangeEnd` pair is present, including visible
   `w:tab`, `w:br`, and `w:cr` markers in comment bodies and anchors. Comment
   anchor text follows the accepted/current revision policy, including direct,
@@ -619,8 +620,8 @@ Initial status:
   typed cell paragraphs, explicit cell margins, and nested cell tables through
   `CellBuilder`, list
   paragraphs with explicit levels, simple field runs with cached results,
-  run-anchored comments through `CommentBuilder` with reply parent ids and
-  authored tab/newline markers, inline hyperlink runs through `RunBuilder::hyperlink`,
+  run-anchored comments through `CommentBuilder` with reply parent ids,
+  commentsExtended metadata, and authored tab/newline markers, inline hyperlink runs through `RunBuilder::hyperlink`,
   tracked insertion/deletion runs through
   `RevisionBuilder`, run-level content controls through `ContentControlBuilder`,
   standalone hyperlink paragraphs, image blocks with alt text and explicit sizing

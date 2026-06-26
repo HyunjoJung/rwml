@@ -61,7 +61,8 @@ size, color, bold/italic, highlight, super/subscript), paragraph layout
 **bordered tables with width, fixed layout, alignment, indentation, border color, and per-cell shading / width / margins / vertical alignment**, images
 with alt text, explicit pixel size, inline rotation, and page-relative floating
 offsets, simple fields with cached results, `PAGEREF` helper runs, dirty TOC
-heading-range fields, run-anchored comments with reply parent ids, tracked
+heading-range fields, run-anchored comments with reply parent ids and
+commentsExtended metadata, tracked
 insertion/deletion runs, run-level content controls, bookmarked runs, authored
 footnotes/endnotes, string custom document properties, raw custom XML data-store
 items, page setup with section columns, document grids, text direction, title pages, and page-number restarts/formats, explicit page/section breaks,
@@ -807,8 +808,9 @@ code points.
 - *Write/edit:* rdoc now **does** preserve arbitrary OOXML parts when editing an
   opened `.docx` (`save()` keeps comments, revisions, charts, content controls, custom
   XML, themes, fonts verbatim). The writer can generate run-anchored comments
-  with reply parent ids, tracked insertion/deletion runs, run-level content
-  controls with data-binding metadata, authored footnotes/endnotes, bookmarks,
+  with reply parent ids and commentsExtended metadata, tracked
+  insertion/deletion runs, run-level content controls with data-binding
+  metadata, authored footnotes/endnotes, bookmarks,
   custom properties, raw custom XML data stores, section layout, rotated/floating
   images, rich tables, and the currently listed chart families with embedded
   workbook-backed source data. Remaining gaps are broader structural editing
@@ -834,8 +836,8 @@ The long-term native Word engine plan is split into the
 - [x] Unified `.docx` reader into the same model (98.6% recall vs python-docx)
 - [x] **`.docx` writer** - styled authoring (named styles, rich tables with typed nested cell blocks, page setup,
       styled runs, leveled lists, paragraph page-break-before, simple fields, `PAGEREF` helper runs, dirty TOC heading-range fields,
-      run-anchored comments with reply parent ids, tracked insertion/deletion runs, run-level content
-      controls with data-binding metadata, bookmarked runs, authored footnotes/endnotes, inline/standalone hyperlinks,
+      run-anchored comments with reply parent ids and commentsExtended metadata, tracked insertion/deletion runs,
+      run-level content controls with data-binding metadata, bookmarked runs, authored footnotes/endnotes, inline/standalone hyperlinks,
       string custom document properties, raw custom XML data-store items, default/first/even headers/footers + page numbers, section columns, document grids, text direction, title pages, page-number restarts/formats, images with inline rotation and page-relative floating offsets,
       table width, fixed-layout tables, table alignment, indentation, border color, per-cell table margins,
       bar/3-D bar/column/3-D column/line/3-D line/area/3-D area/radar/scatter/bubble/pie/3-D pie/doughnut/surface/3-D surface/stock/pie-of-pie/bar-of-pie

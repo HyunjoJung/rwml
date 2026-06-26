@@ -93,7 +93,7 @@ pub(crate) struct DocxState {
     /// package-preserving `save()`. Element-tree edits mutate its `document.xml` in
     /// place; the lossy `model` above is the read/render view.
     pub package: crate::opc::Package,
-    /// Comments parsed from `word/comments.xml`.
+    /// Comments parsed from `word/comments.xml` and optional commentsExtended links.
     pub comments: Vec<Comment>,
     /// Fields parsed from `word/document.xml`.
     pub fields: Vec<Field>,
