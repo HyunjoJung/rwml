@@ -1889,6 +1889,9 @@ fn supported_toc_bookmark_scope(instruction: &str) -> Option<Option<String>> {
             continue;
         }
         if part.eq_ignore_ascii_case("\\f") {
+            if saw_tc_switch {
+                return None;
+            }
             if let Some(value) = parts.next_if(|next| !next.starts_with('\\')) {
                 diagnostic_identifier_token(value)?;
             }
@@ -1896,6 +1899,9 @@ fn supported_toc_bookmark_scope(instruction: &str) -> Option<Option<String>> {
             continue;
         }
         if let Some(value) = strip_ascii_switch_prefix(part, "\\f") {
+            if saw_tc_switch {
+                return None;
+            }
             if !value.is_empty() {
                 diagnostic_identifier_token(value)?;
             }
@@ -2622,6 +2628,11 @@ mod tests {
     #[test]
     fn supported_page_ref_syntax_accepts_mixed_case_arabic() {
         assert!(super::supported_page_ref_syntax(r"PAGEREF Figure1 \* ArAbIc").is_some());
+    }
+
+    #[test]
+    fn supported_toc_bookmark_scope_rejects_duplicate_tc_filter() {
+        assert!(super::supported_toc_bookmark_scope(r"TOC \f m \f x").is_none());
     }
 
     #[test]
