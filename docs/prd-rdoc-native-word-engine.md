@@ -312,7 +312,8 @@ The first public maturity release should meet these requirements.
   `?`/`*` wildcard equality/inequality, deterministic `FILLIN` fields with
   explicit `\d` default responses rendered without simulating prompts,
   deterministic `ASK name "prompt" \d "default"` fields rendered as hidden
-  output while feeding later plain `REF`/direct bookmark references, and deterministic literal
+  output while feeding later plain `REF`/direct bookmark references, malformed
+  prompt field syntax reports `UnsupportedSwitch`, and deterministic literal
   `SET name "value"` or single-token `SET name value` fields with
   field-result format switches rendered as hidden output while feeding later
   plain `REF`/direct bookmark references in source order, plus literal `NEXT`,

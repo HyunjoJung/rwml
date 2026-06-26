@@ -248,7 +248,7 @@ fn dynamic_field_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" = (2 + 3) * 4 "><w:r><w:t>stale formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = 10 / 4 \# &quot;0.00&quot; "><w:r><w:t>stale formatted formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" IF 1 = 1 &quot;yes&quot; &quot;no&quot; "><w:r><w:t>stale true</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" IF &quot;Tokyo&quot; &lt;&gt; &quot;Tokyo&quot; &quot;yes&quot; &quot;no&quot; "><w:r><w:t>stale false</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" IF 100&gt;=99 &quot;big&quot; &quot;small&quot; "><w:r><w:t>stale compact</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" COMPARE 5 &gt; 3 "><w:r><w:t>stale compare true</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" COMPARE &quot;98512&quot; = &quot;985*&quot; "><w:r><w:t>stale compare wildcard</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" COMPARE &quot;AB&quot; &lt;&gt; &quot;A?&quot; "><w:r><w:t>stale compare false</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" QUOTE &quot;literal&quot; "><w:r><w:t>literal</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FILLIN &quot;Client?&quot; "><w:r><w:t>Acme</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" ASK ClientCode &quot;Client code?&quot; "><w:r><w:t>cached ask</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SET ClientName &quot;Acme&quot; "><w:r><w:t>cached set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF ClientName \* Upper "><w:r><w:t>stale set ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SET ClientTier &quot;Gold&quot; \* MERGEFORMAT "><w:r><w:t>cached formatted set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF ClientTier "><w:r><w:t>stale formatted set ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SET ClientCode Client-42 "><w:r><w:t>cached unsupported set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NEXT "><w:r><w:t>cached next</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NEXTIF 1 = 1 "><w:r><w:t>cached nextif</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SKIPIF 1 = 0 "><w:r><w:t>cached skipif</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" IF 1e2 = 100 &quot;scientific&quot; &quot;bad&quot; "><w:r><w:t>stale scientific if</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" COMPARE 1e309 &gt; 0 "><w:r><w:t>cached nonfinite compare</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NEXTIF City = &quot;Tokyo&quot; "><w:r><w:t>cached unsupported nextif</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" = (2 + 3) * 4 "><w:r><w:t>stale formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = 10 / 4 \# &quot;0.00&quot; "><w:r><w:t>stale formatted formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" IF 1 = 1 &quot;yes&quot; &quot;no&quot; "><w:r><w:t>stale true</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" IF &quot;Tokyo&quot; &lt;&gt; &quot;Tokyo&quot; &quot;yes&quot; &quot;no&quot; "><w:r><w:t>stale false</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" IF 100&gt;=99 &quot;big&quot; &quot;small&quot; "><w:r><w:t>stale compact</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" COMPARE 5 &gt; 3 "><w:r><w:t>stale compare true</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" COMPARE &quot;98512&quot; = &quot;985*&quot; "><w:r><w:t>stale compare wildcard</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" COMPARE &quot;AB&quot; &lt;&gt; &quot;A?&quot; "><w:r><w:t>stale compare false</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" QUOTE &quot;literal&quot; "><w:r><w:t>literal</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FILLIN &quot;Client?&quot; "><w:r><w:t>Acme</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" ASK ClientCode &quot;Client code?&quot; "><w:r><w:t>cached ask</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SET ClientName &quot;Acme&quot; "><w:r><w:t>cached set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF ClientName \* Upper "><w:r><w:t>stale set ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SET ClientTier &quot;Gold&quot; \* MERGEFORMAT "><w:r><w:t>cached formatted set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF ClientTier "><w:r><w:t>stale formatted set ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SET ClientCode Client-42 "><w:r><w:t>cached unsupported set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NEXT "><w:r><w:t>cached next</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NEXTIF 1 = 1 "><w:r><w:t>cached nextif</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SKIPIF 1 = 0 "><w:r><w:t>cached skipif</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" IF 1e2 = 100 &quot;scientific&quot; &quot;bad&quot; "><w:r><w:t>stale scientific if</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" COMPARE 1e309 &gt; 0 "><w:r><w:t>cached nonfinite compare</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NEXTIF City = &quot;Tokyo&quot; "><w:r><w:t>cached unsupported nextif</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FILLIN &quot;broken prompt "><w:r><w:t>cached broken fillin</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -3239,7 +3239,7 @@ fn docx_dynamic_fields_compute_formula_quote_if_compare_and_literal_set_ref() {
     let doc = Document::open(&dynamic_field_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 22);
+    assert_eq!(fields.len(), 23);
     assert_eq!(fields[0].kind, FieldKind::Dynamic("=".to_string()));
     assert_eq!(fields[0].instruction, "= (2 + 3) * 4");
     assert_eq!(fields[0].result, "stale formula");
@@ -3323,6 +3323,10 @@ fn docx_dynamic_fields_compute_formula_quote_if_compare_and_literal_set_ref() {
     assert_eq!(fields[21].instruction, "NEXTIF City = \"Tokyo\"");
     assert_eq!(fields[21].result, "cached unsupported nextif");
     assert_eq!(fields[21].computed_result, None);
+    assert_eq!(fields[22].kind, FieldKind::Dynamic("FILLIN".to_string()));
+    assert_eq!(fields[22].instruction, "FILLIN \"broken prompt ");
+    assert_eq!(fields[22].result, "cached broken fillin");
+    assert_eq!(fields[22].computed_result, None);
 
     let report = doc.report();
     assert_eq!(
@@ -3330,7 +3334,7 @@ fn docx_dynamic_fields_compute_formula_quote_if_compare_and_literal_set_ref() {
         vec![
             FieldKindCount {
                 kind: FieldKind::Dynamic("FILLIN".to_string()),
-                count: 1,
+                count: 2,
             },
             FieldKindCount {
                 kind: FieldKind::Dynamic("ASK".to_string()),
@@ -3355,7 +3359,7 @@ fn docx_dynamic_fields_compute_formula_quote_if_compare_and_literal_set_ref() {
             },
             FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::UnsupportedSwitch,
-                count: 1,
+                count: 2,
             },
         ]
     );
@@ -3375,7 +3379,8 @@ fn docx_dynamic_fields_compute_formula_quote_if_compare_and_literal_set_ref() {
             && main_text.contains("Gold")
             && main_text.contains("scientific")
             && main_text.contains("cached nonfinite compare")
-            && main_text.contains("cached unsupported nextif"),
+            && main_text.contains("cached unsupported nextif")
+            && main_text.contains("cached broken fillin"),
         "computed/cached dynamic field results should be materialized in main text: {main_text:?}"
     );
     assert!(

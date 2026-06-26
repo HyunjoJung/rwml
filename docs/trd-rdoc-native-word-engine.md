@@ -695,7 +695,8 @@ Acceptance:
   `UnsupportedSwitch`, literal `IF` comparisons, literal `COMPARE` results,
   invalid literal `COMPARE` syntax reporting `UnsupportedSwitch`,
   explicit-default `FILLIN`/`ASK`
-  prompt fields with field-result format switches, and literal quoted or single-token `SET` bookmark
+  prompt fields with field-result format switches, malformed prompt field syntax
+  reporting `UnsupportedSwitch`, and literal quoted or single-token `SET` bookmark
   assignments feeding later plain `REF`/direct bookmark references,
   inserted-content fields including
   `DDE`/`DDEAUTO`, mail-merge helper fields, reference/index fields including

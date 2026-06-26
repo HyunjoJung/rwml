@@ -6782,6 +6782,10 @@ fn fill_in_instruction(instruction: &str) -> Option<FillInInstruction> {
     })
 }
 
+pub(crate) fn supports_prompt_field_syntax(instruction: &str) -> bool {
+    fill_in_instruction(instruction).is_some() || ask_instruction(instruction).is_some()
+}
+
 pub(crate) fn computed_ask_result(
     instruction: &str,
     field_bookmarks: &mut HashMap<String, String>,

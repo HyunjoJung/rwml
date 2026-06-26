@@ -470,7 +470,7 @@ equality/inequality, deterministic `FILLIN` fields with explicit `\d`
 default responses render those defaults without simulating prompts,
 deterministic `ASK name "prompt" \d "default"` fields with field-result format
 switches seed later plain `REF`/direct bookmark references as hidden output,
-and deterministic literal
+malformed prompt field syntax reports `UnsupportedSwitch`, and deterministic literal
 `SET name "value"` or single-token `SET name value` fields with
 field-result format switches render as hidden
 output while feeding later plain `REF`/direct bookmark references in
