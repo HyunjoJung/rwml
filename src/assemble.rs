@@ -508,6 +508,7 @@ impl<'a, 'l> Asm<'a, 'l> {
             comment: None,
             revision: None,
             content_control: None,
+            note: None,
         });
     }
 
@@ -603,6 +604,7 @@ impl<'a, 'l> Asm<'a, 'l> {
             comment: None,
             revision: None,
             content_control: None,
+            note: None,
         });
     }
 

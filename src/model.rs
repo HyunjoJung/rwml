@@ -10,7 +10,7 @@
 //! of block-level nodes; paragraphs hold inline runs) so the Markdown/HTML
 //! exporters are simple folds.
 
-use crate::annotation::RevisionKind;
+use crate::annotation::{NoteKind, RevisionKind};
 
 /// A whole `.doc` document as an ordered list of block-level nodes plus
 /// document-level metadata.
@@ -302,6 +302,15 @@ pub struct AuthoredContentControl {
     pub tag: Option<String>,
 }
 
+/// Footnote or endnote metadata to author after a generated run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthoredNote {
+    /// Footnote or endnote.
+    pub kind: NoteKind,
+    /// Note body text.
+    pub text: String,
+}
+
 impl Default for AuthoredRevision {
     fn default() -> Self {
         Self {
@@ -341,6 +350,8 @@ pub struct Run {
     pub revision: Option<AuthoredRevision>,
     /// Authored plain text content-control metadata for this run.
     pub content_control: Option<AuthoredContentControl>,
+    /// Authored footnote/endnote anchored after this run.
+    pub note: Option<AuthoredNote>,
 }
 
 /// An sRGB color.

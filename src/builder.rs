@@ -1,11 +1,12 @@
 //! Ergonomic authoring helpers over [`crate::DocModel`].
 
 use crate::model::{
-    Align, AuthoredComment, AuthoredContentControl, AuthoredRevision, Block, Cell, CharProps,
-    Chart, ChartKind, ChartSeries, ChartShape, Color, DocModel, FieldRole, Image, ListInfo,
-    PageSetup, ParaProps, Paragraph, ParagraphStyle, Row, Run, SectionSetup, Table, VCell,
+    Align, AuthoredComment, AuthoredContentControl, AuthoredNote, AuthoredRevision, Block, Cell,
+    CharProps, Chart, ChartKind, ChartSeries, ChartShape, Color, DocModel, FieldRole, Image,
+    ListInfo, PageSetup, ParaProps, Paragraph, ParagraphStyle, Row, Run, SectionSetup, Table,
+    VCell,
 };
-use crate::RevisionKind;
+use crate::{NoteKind, RevisionKind};
 
 /// Thin builder for an inline [`Run`] with character formatting.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -116,6 +117,24 @@ impl RunBuilder {
         C: Into<AuthoredContentControl>,
     {
         self.run.content_control = Some(control.into());
+        self
+    }
+
+    /// Anchor an authored footnote after this run.
+    pub fn footnote(mut self, text: impl Into<String>) -> Self {
+        self.run.note = Some(AuthoredNote {
+            kind: NoteKind::Footnote,
+            text: text.into(),
+        });
+        self
+    }
+
+    /// Anchor an authored endnote after this run.
+    pub fn endnote(mut self, text: impl Into<String>) -> Self {
+        self.run.note = Some(AuthoredNote {
+            kind: NoteKind::Endnote,
+            text: text.into(),
+        });
         self
     }
 

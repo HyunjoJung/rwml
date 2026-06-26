@@ -7,7 +7,7 @@ use std::io::Read;
 use rdoc::{
     Align, Block, Cell, CellBuilder, CharProps, ChartBuilder, ChartKind, ChartShape, Color,
     CommentBuilder, ContentControlBuilder, DocBuilder, DocModel, DocSetup, Document, FieldKind,
-    FieldRole, ImageBuilder, PageSetup, ParaProps, Paragraph, ParagraphBuilder,
+    FieldRole, ImageBuilder, NoteKind, PageSetup, ParaProps, Paragraph, ParagraphBuilder,
     ParagraphStyleBuilder, RevisionBuilder, RevisionKind, RevisionView, Row, RunBuilder, Table,
     TableBuilder, VCell,
 };
@@ -631,6 +631,103 @@ fn run_builder_authored_comment_writes_tabs_and_breaks() {
     let comments = reopened.comments();
     assert_eq!(comments.len(), 1);
     assert_eq!(comments[0].text, "Line 1\nLine\t2");
+}
+
+#[test]
+fn run_builder_adds_authored_notes() {
+    let model = DocBuilder::new()
+        .paragraph_runs([RunBuilder::new("Clause")
+            .footnote("Foot <one> & two")
+            .build()])
+        .paragraph_runs([RunBuilder::new("Appendix").endnote("End\nLine\t2").build()])
+        .build();
+
+    let Block::Paragraph(paragraph) = &model.blocks[0] else {
+        panic!("expected first paragraph");
+    };
+    let Block::Paragraph(second_paragraph) = &model.blocks[1] else {
+        panic!("expected second paragraph");
+    };
+    assert_eq!(
+        paragraph.runs[0].note.as_ref().map(|note| note.kind),
+        Some(NoteKind::Footnote)
+    );
+    assert_eq!(
+        second_paragraph.runs[0].note.as_ref().map(|note| note.kind),
+        Some(NoteKind::Endnote)
+    );
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let footnotes_xml = String::from_utf8(parts["word/footnotes.xml"].clone()).unwrap();
+    let endnotes_xml = String::from_utf8(parts["word/endnotes.xml"].clone()).unwrap();
+    let rels = String::from_utf8(parts["word/_rels/document.xml.rels"].clone()).unwrap();
+    let content_types = String::from_utf8(parts["[Content_Types].xml"].clone()).unwrap();
+
+    let clause_pos = document_xml
+        .find(r#"<w:t xml:space="preserve">Clause</w:t>"#)
+        .unwrap_or(usize::MAX);
+    let footnote_ref_pos = document_xml
+        .find(r#"<w:footnoteReference w:id="1"/>"#)
+        .unwrap_or(usize::MAX);
+    let appendix_pos = document_xml
+        .find(r#"<w:t xml:space="preserve">Appendix</w:t>"#)
+        .unwrap_or(usize::MAX);
+    let endnote_ref_pos = document_xml
+        .find(r#"<w:endnoteReference w:id="1"/>"#)
+        .unwrap_or(usize::MAX);
+    assert!(
+        clause_pos < footnote_ref_pos
+            && footnote_ref_pos < appendix_pos
+            && appendix_pos < endnote_ref_pos,
+        "note references missing or out of order: {document_xml}"
+    );
+    assert!(
+        footnotes_xml.contains(r#"<w:footnote w:type="separator" w:id="-1">"#)
+            && footnotes_xml.contains(r#"<w:footnote w:id="1">"#)
+            && footnotes_xml
+                .contains(r#"<w:t xml:space="preserve">Foot &lt;one&gt; &amp; two</w:t>"#),
+        "footnotes part missing authored note: {footnotes_xml}"
+    );
+    assert!(
+        endnotes_xml.contains(r#"<w:endnote w:type="separator" w:id="-1">"#)
+            && endnotes_xml.contains(r#"<w:endnote w:id="1">"#)
+            && endnotes_xml.contains(r#"<w:t xml:space="preserve">End</w:t><w:br/><w:t xml:space="preserve">Line</w:t><w:tab/><w:t xml:space="preserve">2</w:t>"#),
+        "endnotes part missing authored note: {endnotes_xml}"
+    );
+    assert!(
+        rels.contains("relationships/footnotes")
+            && rels.contains(r#"Target="footnotes.xml""#)
+            && rels.contains("relationships/endnotes")
+            && rels.contains(r#"Target="endnotes.xml""#),
+        "note relationships missing: {rels}"
+    );
+    assert!(
+        content_types.contains(r#"PartName="/word/footnotes.xml""#)
+            && content_types.contains("wordprocessingml.footnotes+xml")
+            && content_types.contains(r#"PartName="/word/endnotes.xml""#)
+            && content_types.contains("wordprocessingml.endnotes+xml"),
+        "note content types missing: {content_types}"
+    );
+
+    let reopened = Document::open(&bytes).expect("note-authored .docx reopens");
+    let notes = reopened.notes();
+    assert_eq!(notes.len(), 2);
+    assert_eq!(notes[0].kind, NoteKind::Footnote);
+    assert_eq!(notes[0].id, "1");
+    assert_eq!(notes[0].text, "Foot <one> & two");
+    assert_eq!(
+        notes[0].anchor.as_ref().map(|anchor| anchor.text.as_str()),
+        Some("Clause")
+    );
+    assert_eq!(notes[1].kind, NoteKind::Endnote);
+    assert_eq!(notes[1].id, "1");
+    assert_eq!(notes[1].text, "End\nLine\t2");
+    assert_eq!(
+        notes[1].anchor.as_ref().map(|anchor| anchor.text.as_str()),
+        Some("Appendix")
+    );
 }
 
 #[test]

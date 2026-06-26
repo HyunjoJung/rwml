@@ -16,11 +16,11 @@
 use super::opc::{Package, Rel};
 use super::{esc_attr, esc_text};
 use crate::model::{
-    Align, AuthoredComment, AuthoredContentControl, AuthoredRevision, Block, CharProps, Chart,
-    ChartKind, ChartSeries, ChartShape, Color, FieldRole, Image, Indent, ParaProps, Paragraph,
-    ParagraphStyle, SectionSetup, Spacing, Table, VertAlign,
+    Align, AuthoredComment, AuthoredContentControl, AuthoredNote, AuthoredRevision, Block,
+    CharProps, Chart, ChartKind, ChartSeries, ChartShape, Color, FieldRole, Image, Indent,
+    ParaProps, Paragraph, ParagraphStyle, SectionSetup, Spacing, Table, VertAlign,
 };
-use crate::RevisionKind;
+use crate::{NoteKind, RevisionKind};
 
 /// `Color` → 6-hex `RRGGBB` for OOXML `w:val`.
 fn hex(c: Color) -> String {
@@ -71,6 +71,14 @@ const CT_COMMENTS: &str =
     "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml";
 const REL_COMMENTS: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments";
+const CT_FOOTNOTES: &str =
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml";
+const CT_ENDNOTES: &str =
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml";
+const REL_FOOTNOTES: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes";
+const REL_ENDNOTES: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes";
 
 /// Build a `word/header1.xml` / `footer1.xml` part body from running paragraphs
 /// (text + run formatting + alignment; images/links/tables inside a header are
@@ -341,6 +349,10 @@ struct Ctx {
     revision_id: u32,
     /// Authored comments emitted while writing body runs.
     comments: Vec<WrittenComment>,
+    /// Authored footnotes emitted while writing body runs.
+    footnotes: Vec<WrittenNote>,
+    /// Authored endnotes emitted while writing body runs.
+    endnotes: Vec<WrittenNote>,
     /// Next generated header part number.
     header_id: u32,
     /// Next generated footer part number.
@@ -351,6 +363,12 @@ struct Ctx {
 struct WrittenComment {
     id: String,
     comment: AuthoredComment,
+}
+
+#[derive(Debug, Clone)]
+struct WrittenNote {
+    id: String,
+    text: String,
 }
 
 impl Ctx {
@@ -373,6 +391,8 @@ impl Ctx {
             comment_id: 0,
             revision_id: 0,
             comments: Vec::new(),
+            footnotes: Vec::new(),
+            endnotes: Vec::new(),
             header_id: 0,
             footer_id: 0,
         }
@@ -603,6 +623,7 @@ impl Ctx {
         let run_xml = self.content_control_wrapper(r.content_control.as_ref(), &run_xml);
         self.write_revision_wrapper(out, r.revision.as_ref(), &run_xml);
         self.end_comment(out, comment_id);
+        self.write_note_reference(out, r.note.as_ref());
     }
 
     fn begin_comment(
@@ -627,6 +648,22 @@ impl Ctx {
                 r#"<w:commentRangeEnd w:id="{id}"/><w:r><w:commentReference w:id="{id}"/></w:r>"#
             ));
         }
+    }
+
+    fn write_note_reference(&mut self, out: &mut String, note: Option<&AuthoredNote>) {
+        let Some(note) = note else {
+            return;
+        };
+        let (tag, notes) = match note.kind {
+            NoteKind::Footnote => ("footnoteReference", &mut self.footnotes),
+            NoteKind::Endnote => ("endnoteReference", &mut self.endnotes),
+        };
+        let id = (notes.len() + 1).to_string();
+        notes.push(WrittenNote {
+            id: id.clone(),
+            text: note.text.clone(),
+        });
+        out.push_str(&format!(r#"<w:r><w:{tag} w:id="{id}"/></w:r>"#));
     }
 
     fn write_revision_wrapper(
@@ -1090,6 +1127,29 @@ fn comments_xml(comments: &[WrittenComment]) -> Vec<u8> {
         s.push_str("</w:r></w:p></w:comment>");
     }
     s.push_str("</w:comments>");
+    s.into_bytes()
+}
+
+fn notes_xml(root: &str, item: &str, notes: &[WrittenNote]) -> Vec<u8> {
+    let mut s = String::new();
+    s.push_str(XML_DECL);
+    s.push_str(&format!(r#"<w:{root} xmlns:w="{W_NS}">"#));
+    s.push_str(&format!(
+        concat!(
+            r#"<w:{item} w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:{item}>"#,
+            r#"<w:{item} w:type="continuationSeparator" w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:{item}>"#
+        ),
+        item = item
+    ));
+    for note in notes {
+        s.push_str(&format!(
+            r#"<w:{item} w:id="{}"><w:p><w:r>"#,
+            esc_attr(&note.id)
+        ));
+        write_run_text(&mut s, &note.text);
+        s.push_str(&format!("</w:r></w:p></w:{item}>"));
+    }
+    s.push_str(&format!("</w:{root}>"));
     s.into_bytes()
 }
 
@@ -1916,6 +1976,12 @@ pub(crate) fn try_to_docx(model: &crate::DocModel) -> crate::Result<Vec<u8>> {
     if let Some(comments) = br.comments_xml {
         pkg.add_part("word/comments.xml", Some(CT_COMMENTS), comments);
     }
+    if let Some(footnotes) = br.footnotes_xml {
+        pkg.add_part("word/footnotes.xml", Some(CT_FOOTNOTES), footnotes);
+    }
+    if let Some(endnotes) = br.endnotes_xml {
+        pkg.add_part("word/endnotes.xml", Some(CT_ENDNOTES), endnotes);
+    }
     if br.has_list {
         pkg.add_part(
             "word/numbering.xml",
@@ -1980,6 +2046,10 @@ pub(crate) struct BodyRender {
     pub hf_parts: Vec<(String, &'static str, Vec<u8>)>,
     /// Serialized comments part, if authored comments were emitted.
     pub comments_xml: Option<Vec<u8>>,
+    /// Serialized footnotes part, if authored footnotes were emitted.
+    pub footnotes_xml: Option<Vec<u8>>,
+    /// Serialized endnotes part, if authored endnotes were emitted.
+    pub endnotes_xml: Option<Vec<u8>>,
     /// `(part path, bytes, extension, content-type)` for inline/block images.
     pub media: Vec<(String, Vec<u8>, &'static str, &'static str)>,
     /// `(part path, bytes)` for authored chart parts.
@@ -2028,6 +2098,30 @@ fn render_body(model: &crate::DocModel) -> BodyRender {
         });
         Some(comments_xml(&ctx.comments))
     };
+    let footnotes_xml = if ctx.footnotes.is_empty() {
+        None
+    } else {
+        ctx.doc_rels.push(Rel {
+            id: format!("rId{}", ctx.next_rid),
+            rel_type: REL_FOOTNOTES.to_string(),
+            target: "footnotes.xml".to_string(),
+            external: false,
+        });
+        ctx.next_rid += 1;
+        Some(notes_xml("footnotes", "footnote", &ctx.footnotes))
+    };
+    let endnotes_xml = if ctx.endnotes.is_empty() {
+        None
+    } else {
+        ctx.doc_rels.push(Rel {
+            id: format!("rId{}", ctx.next_rid),
+            rel_type: REL_ENDNOTES.to_string(),
+            target: "endnotes.xml".to_string(),
+            external: false,
+        });
+        ctx.next_rid += 1;
+        Some(notes_xml("endnotes", "endnote", &ctx.endnotes))
+    };
     doc.push_str("</w:body></w:document>");
 
     // Type-link rels for the styles/numbering parts (read-by-path doesn't need
@@ -2067,6 +2161,8 @@ fn render_body(model: &crate::DocModel) -> BodyRender {
         doc_rels: ctx.doc_rels,
         hf_parts: ctx.hf_parts,
         comments_xml,
+        footnotes_xml,
+        endnotes_xml,
         media: ctx.media,
         chart_parts: ctx.chart_parts,
         chart_rels: ctx.chart_rels,

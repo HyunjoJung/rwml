@@ -61,8 +61,8 @@ size, color, bold/italic, highlight, super/subscript), paragraph layout
 **bordered tables with per-cell shading / width / vertical alignment**, images
 with alt text and explicit pixel size, simple fields with cached results,
 run-anchored comments, tracked insertion/deletion runs, run-level content
-controls, page setup, explicit page/section breaks, and running headers/footers
-with page numbers all round-trip. See
+controls, authored footnotes/endnotes, page setup, explicit page/section breaks,
+and running headers/footers with page numbers all round-trip. See
 [`examples/report.rs`](examples/report.rs).
 
 ```rust
@@ -832,7 +832,8 @@ The long-term native Word engine plan is split into the
 - [x] Unified `.docx` reader into the same model (98.6% recall vs python-docx)
 - [x] **`.docx` writer** — styled authoring (named styles, rich tables with typed nested cell blocks, page setup,
       styled runs, leveled lists, simple fields, run-anchored comments,
-      tracked insertion/deletion runs, run-level content controls, inline/standalone hyperlinks,
+      tracked insertion/deletion runs, run-level content controls, authored
+      footnotes/endnotes, inline/standalone hyperlinks,
       headers/footers + page numbers, images,
       bar/3-D bar/column/3-D column/line/3-D line/area/3-D area/radar/scatter/bubble/pie/3-D pie/doughnut/surface/3-D surface/stock/pie-of-pie/bar-of-pie
       charts with embedded workbook-backed data) via `DocBuilder`,
