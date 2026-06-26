@@ -1649,16 +1649,17 @@ fn supported_page_ref_syntax(instruction: &str) -> Option<PageRefDiagnosticSynta
     }
     let mut target = None;
     let mut number_format = false;
+    let mut text_format = false;
     let mut relative = false;
     while let Some(part) = parts.next() {
         if part == "\\*" {
-            if !accept_page_number_format_switch(parts.next()?, &mut number_format) {
+            if !accept_page_ref_format_switch(parts.next()?, &mut number_format, &mut text_format) {
                 return None;
             }
             continue;
         }
         if let Some(format) = part.strip_prefix("\\*") {
-            if !accept_page_number_format_switch(format, &mut number_format) {
+            if !accept_page_ref_format_switch(format, &mut number_format, &mut text_format) {
                 return None;
             }
             continue;
@@ -1685,6 +1686,15 @@ fn supported_page_ref_syntax(instruction: &str) -> Option<PageRefDiagnosticSynta
         target: target?,
         uses_target_section_number_format: !number_format && !relative,
     })
+}
+
+fn accept_page_ref_format_switch(
+    part: &str,
+    number_format: &mut bool,
+    text_format: &mut bool,
+) -> bool {
+    accept_page_number_format_switch(part, number_format)
+        || accept_field_format_switch(part, text_format)
 }
 
 fn page_ref_uncomputed_reason(
