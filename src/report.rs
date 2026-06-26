@@ -2497,6 +2497,8 @@ fn docx_page_ref_unsupported_section_format_targets(xml: &str) -> HashSet<String
                 | "decimalEnclosedCircle"
                 | "decimalEnclosedFullstop"
                 | "decimalEnclosedParen"
+                | "ganada"
+                | "chosung"
                 | "lowerLetter"
                 | "upperLetter"
                 | "lowerRoman"

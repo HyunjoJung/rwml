@@ -576,8 +576,8 @@ Implementation:
   displayed page-number restarts and supported `w:pgNumType w:fmt` styles
   (`decimal`, `decimalZero`, `numberInDash`, `decimalFullWidth`,
   `decimalHalfWidth`, `decimalFullWidth2`, `decimalEnclosedCircle`,
-  `decimalEnclosedFullstop`, `decimalEnclosedParen`, lower/upper letter,
-  lower/upper roman, ordinal/cardinal text) on those section starts and
+  `decimalEnclosedFullstop`, `decimalEnclosedParen`, `ganada`, `chosung`,
+  lower/upper letter, lower/upper roman, ordinal/cardinal text) on those section starts and
   single-section final `body/sectPr` page-number defaults, source-persisted
   `w:lastRenderedPageBreak` markers scanned with the same single-branch
   `mc:AlternateContent` policy as flat text, or

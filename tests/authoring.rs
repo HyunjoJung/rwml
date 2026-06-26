@@ -579,6 +579,31 @@ fn doc_builder_adds_decimal_width_variant_page_number_formats() {
 }
 
 #[test]
+fn doc_builder_adds_korean_page_number_formats() {
+    for (format, wml, text) in [
+        (PageNumberFormat::Ganada, "ganada", "Ganada numbering"),
+        (PageNumberFormat::Chosung, "chosung", "Chosung numbering"),
+    ] {
+        let model = DocBuilder::new()
+            .page_number_start(1)
+            .page_number_format(format)
+            .paragraph(text)
+            .build();
+
+        let bytes = rdoc::write_docx(&model);
+        let parts = unzip_parts(&bytes);
+        let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+        assert!(
+            document_xml.contains(&format!(r#"<w:pgNumType w:start="1" w:fmt="{wml}"/>"#)),
+            "{wml} page-number format missing: {document_xml}"
+        );
+
+        let reopened = Document::open(&bytes).expect("Korean page format .docx reopens");
+        assert_eq!(reopened.model().setup.page_number_format, Some(format));
+    }
+}
+
+#[test]
 fn write_docx_emits_first_even_header_footer_variants() {
     let model = DocModel {
         blocks: vec![Block::Paragraph(plain_paragraph("Body"))],

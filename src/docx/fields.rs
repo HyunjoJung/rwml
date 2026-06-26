@@ -3067,6 +3067,8 @@ fn page_ref_section_page_number_format(e: &BytesStart<'_>) -> Option<PageRefDisp
         "decimalEnclosedCircle" => PageNumberFormat::DecimalEnclosedCircle,
         "decimalEnclosedFullstop" => PageNumberFormat::DecimalEnclosedFullstop,
         "decimalEnclosedParen" => PageNumberFormat::DecimalEnclosedParen,
+        "ganada" => PageNumberFormat::Ganada,
+        "chosung" => PageNumberFormat::Chosung,
         "lowerLetter" => PageNumberFormat::AlphabeticLower,
         "upperLetter" => PageNumberFormat::AlphabeticUpper,
         "lowerRoman" => PageNumberFormat::RomanLower,
@@ -7559,6 +7561,8 @@ enum PageNumberFormat {
     DecimalEnclosedCircle,
     DecimalEnclosedFullstop,
     DecimalEnclosedParen,
+    Ganada,
+    Chosung,
     AlphabeticLower,
     AlphabeticUpper,
     RomanLower,
@@ -8030,6 +8034,12 @@ fn format_page_number(page: usize, format: Option<PageNumberFormat>) -> Option<S
         PageNumberFormat::DecimalEnclosedParen => u32::try_from(page)
             .ok()
             .map(|page| numfmt::format(page, 0x1B)),
+        PageNumberFormat::Ganada => u32::try_from(page)
+            .ok()
+            .map(|page| numfmt::format(page, 0x18)),
+        PageNumberFormat::Chosung => u32::try_from(page)
+            .ok()
+            .map(|page| numfmt::format(page, 0x19)),
         PageNumberFormat::AlphabeticLower => alphabetic_page_number(page, false),
         PageNumberFormat::AlphabeticUpper => alphabetic_page_number(page, true),
         PageNumberFormat::RomanLower => roman_page_number(page).map(|value| value.to_lowercase()),

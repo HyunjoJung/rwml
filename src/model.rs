@@ -894,6 +894,10 @@ pub enum PageNumberFormat {
     DecimalEnclosedFullstop,
     /// Parenthesized decimal digits for one through twenty.
     DecimalEnclosedParen,
+    /// Korean Ganada sequence.
+    Ganada,
+    /// Korean Chosung sequence.
+    Chosung,
     /// Lowercase letters (`a`, `b`, `c`).
     LowerLetter,
     /// Uppercase letters (`A`, `B`, `C`).
@@ -922,6 +926,8 @@ impl PageNumberFormat {
             PageNumberFormat::DecimalEnclosedCircle => "decimalEnclosedCircle",
             PageNumberFormat::DecimalEnclosedFullstop => "decimalEnclosedFullstop",
             PageNumberFormat::DecimalEnclosedParen => "decimalEnclosedParen",
+            PageNumberFormat::Ganada => "ganada",
+            PageNumberFormat::Chosung => "chosung",
             PageNumberFormat::LowerLetter => "lowerLetter",
             PageNumberFormat::UpperLetter => "upperLetter",
             PageNumberFormat::LowerRoman => "lowerRoman",
@@ -943,6 +949,8 @@ impl PageNumberFormat {
             "decimalEnclosedCircle" => Some(PageNumberFormat::DecimalEnclosedCircle),
             "decimalEnclosedFullstop" => Some(PageNumberFormat::DecimalEnclosedFullstop),
             "decimalEnclosedParen" => Some(PageNumberFormat::DecimalEnclosedParen),
+            "ganada" => Some(PageNumberFormat::Ganada),
+            "chosung" => Some(PageNumberFormat::Chosung),
             "lowerLetter" => Some(PageNumberFormat::LowerLetter),
             "upperLetter" => Some(PageNumberFormat::UpperLetter),
             "lowerRoman" => Some(PageNumberFormat::LowerRoman),
