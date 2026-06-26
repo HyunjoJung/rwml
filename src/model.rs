@@ -846,6 +846,8 @@ pub enum PageNumberFormat {
     NumberInDash,
     /// Full-width decimal digits (`１`, `２`, `３`).
     DecimalFullWidth,
+    /// Circled decimal digits for one through twenty, then decimal fallback.
+    DecimalEnclosedCircle,
     /// Lowercase letters (`a`, `b`, `c`).
     LowerLetter,
     /// Uppercase letters (`A`, `B`, `C`).
@@ -869,6 +871,7 @@ impl PageNumberFormat {
             PageNumberFormat::DecimalZero => "decimalZero",
             PageNumberFormat::NumberInDash => "numberInDash",
             PageNumberFormat::DecimalFullWidth => "decimalFullWidth",
+            PageNumberFormat::DecimalEnclosedCircle => "decimalEnclosedCircle",
             PageNumberFormat::LowerLetter => "lowerLetter",
             PageNumberFormat::UpperLetter => "upperLetter",
             PageNumberFormat::LowerRoman => "lowerRoman",
@@ -885,6 +888,7 @@ impl PageNumberFormat {
             "decimalZero" => Some(PageNumberFormat::DecimalZero),
             "numberInDash" => Some(PageNumberFormat::NumberInDash),
             "decimalFullWidth" => Some(PageNumberFormat::DecimalFullWidth),
+            "decimalEnclosedCircle" => Some(PageNumberFormat::DecimalEnclosedCircle),
             "lowerLetter" => Some(PageNumberFormat::LowerLetter),
             "upperLetter" => Some(PageNumberFormat::UpperLetter),
             "lowerRoman" => Some(PageNumberFormat::LowerRoman),

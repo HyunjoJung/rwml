@@ -1545,6 +1545,23 @@ fn page_ref_decimal_full_width_section_page_number_format_docx() -> Vec<u8> {
     ])
 }
 
+fn page_ref_decimal_enclosed_circle_section_page_number_format_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgNumType w:start="12" w:fmt="decimalEnclosedCircle"/></w:sectPr></w:pPr></w:p><w:p><w:bookmarkStart w:id="11" w:name="CircleSection"/><w:r><w:t>Circle target</w:t></w:r><w:bookmarkEnd w:id="11"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF CircleSection \h "><w:r><w:t>stale circle</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF CircleSection \* Arabic "><w:r><w:t>stale circle arabic</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn page_ref_final_section_page_number_format_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -6802,6 +6819,32 @@ fn docx_page_ref_applies_decimal_full_width_section_page_number_format() {
     assert!(
         !main_text.contains("stale fullwidth"),
         "computed decimalFullWidth PAGEREF fields should replace stale cached text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_page_ref_applies_decimal_enclosed_circle_section_page_number_format() {
+    let doc = Document::open(&page_ref_decimal_enclosed_circle_section_page_number_format_docx())
+        .expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::PageRef);
+    assert_eq!(fields[0].instruction, "PAGEREF CircleSection \\h");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("\u{246b}"));
+    assert_eq!(fields[1].kind, FieldKind::PageRef);
+    assert_eq!(fields[1].instruction, "PAGEREF CircleSection \\* Arabic");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("12"));
+
+    let main_text = doc.main_text();
+    let expected = format!("{}\n12", "\u{246b}");
+    assert!(
+        main_text.contains(&expected),
+        "decimalEnclosedCircle section page-number format should drive supported PAGEREF text: {main_text:?}"
+    );
+    assert!(
+        !main_text.contains("stale circle"),
+        "computed decimalEnclosedCircle PAGEREF fields should replace stale cached text: {main_text:?}"
     );
 }
 
