@@ -5015,6 +5015,59 @@ fn merge_control_instruction(instruction: &str) -> Option<()> {
     None
 }
 
+pub(crate) fn supports_merge_control_field_syntax(instruction: &str) -> bool {
+    merge_control_field_syntax(instruction).is_some()
+}
+
+fn merge_control_field_syntax(instruction: &str) -> Option<()> {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let kind = parts.next()?;
+    if kind.eq_ignore_ascii_case("NEXT") {
+        return accept_field_format_tail(&mut parts);
+    }
+    if kind.eq_ignore_ascii_case("NEXTIF") || kind.eq_ignore_ascii_case("SKIPIF") {
+        let first = parts.next()?;
+        merge_control_comparison_syntax(first, &mut parts)?;
+        return accept_field_format_tail(&mut parts);
+    }
+    None
+}
+
+fn merge_control_comparison_syntax<'a, I>(first: &str, parts: &mut I) -> Option<()>
+where
+    I: Iterator<Item = &'a str>,
+{
+    if let Some((left, operator, right)) = compact_merge_control_comparison(first) {
+        return (merge_control_operand_syntax(left)
+            && if_operator(operator).is_some()
+            && merge_control_operand_syntax(right))
+        .then_some(());
+    }
+    merge_control_operand_syntax(first).then_some(())?;
+    if_operator(parts.next()?)?;
+    merge_control_operand_syntax(parts.next()?).then_some(())
+}
+
+fn compact_merge_control_comparison(token: &str) -> Option<(&str, &str, &str)> {
+    for operator in [">=", "<=", "<>", "=", ">", "<"] {
+        let Some(index) = find_unquoted_operator(token, operator) else {
+            continue;
+        };
+        let (left, right_with_operator) = token.split_at(index);
+        let right = &right_with_operator[operator.len()..];
+        if left.is_empty() || right.is_empty() {
+            return None;
+        }
+        return Some((left, operator, right));
+    }
+    None
+}
+
+fn merge_control_operand_syntax(token: &str) -> bool {
+    field_literal_token(token).is_some_and(|value| !value.is_empty())
+}
+
 fn accept_field_format_tail<'a, I>(parts: &mut I) -> Option<()>
 where
     I: Iterator<Item = &'a str>,

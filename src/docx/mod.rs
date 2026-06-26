@@ -85,6 +85,10 @@ pub(crate) fn supports_prompt_field_syntax(instruction: &str) -> bool {
     fields::supports_prompt_field_syntax(instruction)
 }
 
+pub(crate) fn supports_merge_control_field_syntax(instruction: &str) -> bool {
+    fields::supports_merge_control_field_syntax(instruction)
+}
+
 /// Relationship table: `Id` → `(Target, is_external)`.
 type Rels = HashMap<String, (String, bool)>;
 

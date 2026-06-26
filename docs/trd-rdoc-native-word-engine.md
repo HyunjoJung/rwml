@@ -698,6 +698,7 @@ Acceptance:
   prompt fields with field-result format switches, malformed prompt field syntax
   reporting `UnsupportedSwitch`, and literal quoted or single-token `SET` bookmark
   assignments feeding later plain `REF`/direct bookmark references,
+  malformed merge-control syntax reporting `UnsupportedSwitch`,
   inserted-content fields including
   `DDE`/`DDEAUTO`, mail-merge helper fields, reference/index fields including
   hidden simple literal `RD`/`TA`/`XE` markers,
