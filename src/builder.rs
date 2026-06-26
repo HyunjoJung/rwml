@@ -952,6 +952,16 @@ impl ChartBuilder {
         }
     }
 
+    /// Start a radar chart with explicit point markers.
+    pub fn radar_with_markers() -> Self {
+        Self {
+            chart: Chart {
+                kind: ChartKind::RadarWithMarkers,
+                ..Chart::default()
+            },
+        }
+    }
+
     /// Start a filled radar chart.
     pub fn filled_radar() -> Self {
         Self {

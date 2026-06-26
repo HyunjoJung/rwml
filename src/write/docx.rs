@@ -1865,6 +1865,9 @@ fn chart_xml(chart: &Chart, chart_id: u32, workbook_rid: Option<&str>) -> String
         ChartKind::Radar => {
             write_radar_chart(&mut out, chart, cat_axis_id, val_axis_id, "standard")
         }
+        ChartKind::RadarWithMarkers => {
+            write_radar_chart(&mut out, chart, cat_axis_id, val_axis_id, "marker")
+        }
         ChartKind::FilledRadar => {
             write_radar_chart(&mut out, chart, cat_axis_id, val_axis_id, "filled")
         }
@@ -2351,6 +2354,7 @@ fn write_chart_axes(out: &mut String, kind: ChartKind, cat_axis_id: u32, val_axi
         | ChartKind::PercentStackedArea
         | ChartKind::Area3D
         | ChartKind::Radar
+        | ChartKind::RadarWithMarkers
         | ChartKind::FilledRadar => ("b", "l"),
         ChartKind::Scatter
         | ChartKind::Bubble
