@@ -765,6 +765,14 @@ fn doc_builder_adds_string_custom_properties() {
     );
 
     let reopened = Document::open(&bytes).expect("custom-property .docx reopens");
+    assert_eq!(
+        reopened
+            .model()
+            .custom_properties
+            .get("Client Name")
+            .map(String::as_str),
+        Some("ACME <Launch>")
+    );
     let fields = reopened.fields();
     assert_eq!(fields[0].computed_result.as_deref(), Some("ACME <Launch>"));
 }

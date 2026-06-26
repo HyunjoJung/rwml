@@ -13,7 +13,7 @@
 //! crate, no JVM, no external `.docx` dependency) — see the README on how it
 //! relates to the mature `docx-rs` crate.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::io::Read;
 
 use quick_xml::events::{BytesStart, Event};
@@ -140,6 +140,10 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     let custom_properties = part(&mut zip, "docProps/custom.xml")
         .map(|s| parse_custom_properties(&s))
         .unwrap_or_default();
+    let custom_property_fields = custom_properties
+        .iter()
+        .map(|(key, value)| (fields::document_property_key(key), value.clone()))
+        .collect::<HashMap<_, _>>();
     let custom_xml_items = read_custom_xml_items(&mut zip);
     let extended_properties = part(&mut zip, "docProps/app.xml")
         .map(|s| parse_extended_properties(&s))
@@ -159,7 +163,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     let toc_entries = fields::toc_entries(&doc_xml, &styles);
     let document_properties = DocumentPropertyRefs {
         core: &core_properties,
-        custom: &custom_properties,
+        custom: &custom_property_fields,
         variables: &document_variables,
         extended: &extended_properties,
         file_size_bytes: Some(bytes.len()),
@@ -181,7 +185,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         table_formula_context: &table_formula_context,
         toc_entries: &toc_entries,
         core_properties: &core_properties,
-        custom_properties: &custom_properties,
+        custom_properties: &custom_property_fields,
         document_variables: &document_variables,
         extended_properties: &extended_properties,
         file_size_bytes: Some(bytes.len()),
@@ -259,7 +263,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         &numbering,
         fields::FieldDocumentProperties {
             core: &core_properties,
-            custom: &custom_properties,
+            custom: &custom_property_fields,
             variables: &document_variables,
             extended: &extended_properties,
             file_size_bytes: Some(bytes.len()),
@@ -282,7 +286,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
             lid: 0,
             stats,
         },
-        custom_properties: Default::default(),
+        custom_properties,
         custom_xml_items,
         setup: crate::model::DocSetup {
             page: body::scan_page_setup(&doc_xml),
@@ -1381,15 +1385,15 @@ fn set_core_property_value(props: &mut CoreProperties, key: &[u8], value: String
     }
 }
 
-fn parse_custom_properties(xml: &str) -> HashMap<String, String> {
+fn parse_custom_properties(xml: &str) -> BTreeMap<String, String> {
     let mut r = Reader::from_str(xml);
-    let mut props = HashMap::new();
+    let mut props = BTreeMap::new();
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"property" => {
                 if let Some(name) = attr_local(&e, b"name").filter(|name| !name.trim().is_empty()) {
                     if let Some(value) = read_custom_property_value(&mut r) {
-                        props.insert(fields::document_property_key(&name), value);
+                        props.insert(name, value);
                     }
                 } else {
                     skip_custom_property(&mut r);
@@ -1397,7 +1401,7 @@ fn parse_custom_properties(xml: &str) -> HashMap<String, String> {
             }
             Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"property" => {
                 if let Some(name) = attr_local(&e, b"name").filter(|name| !name.trim().is_empty()) {
-                    props.insert(fields::document_property_key(&name), String::new());
+                    props.insert(name, String::new());
                 }
             }
             Ok(Event::Eof) | Err(_) => break,
