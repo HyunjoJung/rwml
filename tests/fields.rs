@@ -1025,6 +1025,23 @@ fn ref_deleted_bookmark_text_docx() -> Vec<u8> {
     ])
 }
 
+fn ref_alternate_content_bookmark_text_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:p><w:bookmarkStart w:id="7" w:name="AltText"/><w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:t>Choice clause</w:t></mc:Choice><mc:Fallback><w:t>Fallback clause</w:t></mc:Fallback></mc:AlternateContent></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" REF AltText "><w:r><w:t>stale alternate ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn complex_ref_bookmark_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -6274,6 +6291,25 @@ fn docx_ref_targets_ignore_deleted_bookmark_text() {
             && !main_text.contains("moved clause")
             && !main_text.contains("stale deleted ref"),
         "computed REF bookmark text must follow accepted-current wrappers: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_ref_targets_use_single_alternate_content_branch() {
+    let doc = Document::open(&ref_alternate_content_bookmark_text_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::Ref);
+    assert_eq!(fields[0].instruction, "REF AltText");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("Choice clause"));
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Choice clause")
+            && !main_text.contains("Fallback clause")
+            && !main_text.contains("stale alternate ref"),
+        "computed REF bookmark text must use one AlternateContent branch: {main_text:?}"
     );
 }
 

@@ -576,47 +576,100 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
     let mut r = Reader::from_str(xml);
     let mut active: Vec<(String, String)> = Vec::new();
     let mut out: HashMap<String, String> = HashMap::new();
+    let mut xml_depth = 0usize;
+    let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
-                skip_subtree(&mut r);
-            }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"p" => {
-                append_ref_paragraph_breaks(&active, &mut out);
-            }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e))
-                if local(e.name().as_ref()) == b"bookmarkStart" =>
-            {
-                if let (Some(id), Some(name)) = (attr_local(&e, b"id"), attr_local(&e, b"name")) {
-                    active.push((id, name));
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    skip_subtree(&mut r);
+                    continue;
                 }
-            }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e))
-                if local(e.name().as_ref()) == b"bookmarkEnd" =>
-            {
-                if let Some(id) = attr_local(&e, b"id") {
-                    active.retain(|(active_id, _)| active_id != &id);
+                if matches!(name, b"del" | b"moveFrom") {
+                    skip_subtree(&mut r);
+                    continue;
                 }
-            }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"t" => {
-                let text = read_text(&mut r);
-                if !text.is_empty() {
-                    append_ref_text(&active, &mut out, &text);
-                }
-            }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
-                b"tab" => append_ref_text(&active, &mut out, "\t"),
-                b"br" => {
-                    if matches!(attr_local(&e, b"type").as_deref(), Some("page")) {
-                        append_ref_text(&active, &mut out, "\u{000C}");
-                    } else {
-                        append_ref_text(&active, &mut out, "\n");
+                match name {
+                    b"AlternateContent" => {
+                        alternate_content_stack.push(AlternateContentBranchState {
+                            branch_depth: xml_depth + 1,
+                            took_branch: false,
+                        });
                     }
+                    b"p" => append_ref_paragraph_breaks(&active, &mut out),
+                    b"bookmarkStart" => {
+                        if let (Some(id), Some(name)) =
+                            (attr_local(&e, b"id"), attr_local(&e, b"name"))
+                        {
+                            active.push((id, name));
+                        }
+                    }
+                    b"bookmarkEnd" => {
+                        if let Some(id) = attr_local(&e, b"id") {
+                            active.retain(|(active_id, _)| active_id != &id);
+                        }
+                    }
+                    b"t" => {
+                        let text = read_text(&mut r);
+                        if !text.is_empty() {
+                            append_ref_text(&active, &mut out, &text);
+                        }
+                        continue;
+                    }
+                    b"tab" => append_ref_text(&active, &mut out, "\t"),
+                    b"br" => {
+                        if matches!(attr_local(&e, b"type").as_deref(), Some("page")) {
+                            append_ref_text(&active, &mut out, "\u{000C}");
+                        } else {
+                            append_ref_text(&active, &mut out, "\n");
+                        }
+                    }
+                    b"cr" => append_ref_text(&active, &mut out, "\n"),
+                    b"noBreakHyphen" => append_ref_text(&active, &mut out, "-"),
+                    _ => {}
                 }
-                b"cr" => append_ref_text(&active, &mut out, "\n"),
-                b"noBreakHyphen" => append_ref_text(&active, &mut out, "-"),
-                _ => {}
-            },
+                xml_depth = xml_depth.saturating_add(1);
+            }
+            Ok(Event::Empty(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    continue;
+                }
+                match name {
+                    b"bookmarkStart" => {
+                        if let (Some(id), Some(name)) =
+                            (attr_local(&e, b"id"), attr_local(&e, b"name"))
+                        {
+                            active.push((id, name));
+                        }
+                    }
+                    b"bookmarkEnd" => {
+                        if let Some(id) = attr_local(&e, b"id") {
+                            active.retain(|(active_id, _)| active_id != &id);
+                        }
+                    }
+                    b"tab" => append_ref_text(&active, &mut out, "\t"),
+                    b"br" => {
+                        if matches!(attr_local(&e, b"type").as_deref(), Some("page")) {
+                            append_ref_text(&active, &mut out, "\u{000C}");
+                        } else {
+                            append_ref_text(&active, &mut out, "\n");
+                        }
+                    }
+                    b"cr" => append_ref_text(&active, &mut out, "\n"),
+                    b"noBreakHyphen" => append_ref_text(&active, &mut out, "-"),
+                    _ => {}
+                }
+            }
+            Ok(Event::End(e)) => {
+                if local(e.name().as_ref()) == b"AlternateContent" {
+                    alternate_content_stack.pop();
+                }
+                xml_depth = xml_depth.saturating_sub(1);
+            }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
