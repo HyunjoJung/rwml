@@ -20,9 +20,9 @@ use super::styles::Styles;
 use super::{attr_local, local, toggle_on};
 use crate::annotation::FieldKind;
 use crate::model::{
-    Align, Block, Cell, CellMargins, CharProps, Color, FieldRole, Image, Indent, ListInfo,
-    PageNumberFormat, ParaProps, Paragraph, Row, Run, SectionSetup, Spacing, Table, TextDirection,
-    VCell, VertAlign,
+    Align, Block, Cell, CellMargins, CharProps, Color, DocGrid, DocGridType, FieldRole, Image,
+    Indent, ListInfo, PageNumberFormat, ParaProps, Paragraph, Row, Run, SectionSetup, Spacing,
+    Table, TextDirection, VCell, VertAlign,
 };
 use crate::text;
 use crate::CoreProperties;
@@ -306,6 +306,25 @@ pub(crate) fn scan_section_text_direction(xml: &str) -> Option<TextDirection> {
     text_direction
 }
 
+/// Scan the final/body section properties for document grid settings.
+pub(crate) fn scan_section_doc_grid(xml: &str) -> Option<DocGrid> {
+    let mut r = Reader::from_str(xml);
+    let mut doc_grid = None;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"sectPr" => {
+                doc_grid = read_section_doc_grid(&mut r);
+            }
+            Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"sectPr" => {
+                doc_grid = None;
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    doc_grid
+}
+
 /// Scan the final/body section properties for explicit first-page section behavior.
 pub(crate) fn scan_section_title_page(xml: &str) -> bool {
     let mut r = Reader::from_str(xml);
@@ -398,6 +417,35 @@ fn read_section_text_direction(r: &mut Xml<'_>) -> Option<TextDirection> {
         }
     }
     text_direction
+}
+
+fn doc_grid_from_attrs(e: &BytesStart<'_>) -> Option<DocGrid> {
+    let grid_type = attr_local(e, b"type")
+        .and_then(|value| DocGridType::from_wml_value(&value))
+        .unwrap_or(DocGridType::Default);
+    let line_pitch = attr_local(e, b"linePitch").and_then(|v| v.trim().parse::<u32>().ok());
+    let character_space = attr_local(e, b"charSpace").and_then(|v| v.trim().parse::<u32>().ok());
+    Some(DocGrid {
+        grid_type,
+        line_pitch,
+        character_space,
+    })
+}
+
+fn read_section_doc_grid(r: &mut Xml<'_>) -> Option<DocGrid> {
+    let mut doc_grid = None;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"docGrid" => {
+                doc_grid = doc_grid_from_attrs(&e);
+            }
+            Ok(Event::Start(_)) => skip_subtree(r),
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"sectPr" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    doc_grid
 }
 
 fn read_section_title_page(r: &mut Xml<'_>) -> bool {
@@ -1210,6 +1258,9 @@ fn read_sect_pr(r: &mut Xml<'_>) -> SectionSetup {
                 b"textDirection" => {
                     section.text_direction = attr_local(&e, b"val")
                         .and_then(|value| TextDirection::from_wml_value(&value));
+                }
+                b"docGrid" => {
+                    section.doc_grid = doc_grid_from_attrs(&e);
                 }
                 b"titlePg" => {
                     section.title_page = true;

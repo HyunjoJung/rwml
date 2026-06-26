@@ -336,6 +336,21 @@ fn page_number_type_xml(setup: &SectionSetup) -> String {
     out
 }
 
+fn doc_grid_xml(setup: &SectionSetup) -> String {
+    let Some(grid) = setup.doc_grid else {
+        return String::new();
+    };
+    let mut out = format!(r#"<w:docGrid w:type="{}""#, grid.grid_type.wml_value());
+    if let Some(line_pitch) = grid.line_pitch {
+        out.push_str(&format!(r#" w:linePitch="{line_pitch}""#));
+    }
+    if let Some(character_space) = grid.character_space {
+        out.push_str(&format!(r#" w:charSpace="{character_space}""#));
+    }
+    out.push_str("/>");
+    out
+}
+
 /// Side-state accumulated while folding the model into `document.xml`: the body
 /// XML is built in `out` strings passed to each method, while these tables grow.
 struct Ctx {
@@ -538,6 +553,7 @@ impl Ctx {
             .text_direction
             .map(|direction| format!(r#"<w:textDirection w:val="{}"/>"#, direction.wml_value()))
             .unwrap_or_default();
+        let doc_grid = doc_grid_xml(setup);
         let page_number_type = page_number_type_xml(setup);
         let start = if next_page {
             r#"<w:type w:val="nextPage"/>"#
@@ -550,7 +566,7 @@ impl Ctx {
             ""
         };
         out.push_str(&format!(
-            r#"<w:sectPr>{start}{refs}{title_pg}<w:pgSz w:w="{w}" w:h="{h}"{orient}/><w:pgMar w:top="{mt}" w:right="{mr}" w:bottom="{mb}" w:left="{ml}" w:header="708" w:footer="708" w:gutter="0"/>{text_direction}{page_number_type}{columns}</w:sectPr>"#
+            r#"<w:sectPr>{start}{refs}{title_pg}<w:pgSz w:w="{w}" w:h="{h}"{orient}/><w:pgMar w:top="{mt}" w:right="{mr}" w:bottom="{mb}" w:left="{ml}" w:header="708" w:footer="708" w:gutter="0"/>{text_direction}{page_number_type}{columns}{doc_grid}</w:sectPr>"#
         ));
     }
 

@@ -867,6 +867,51 @@ impl TextDirection {
     }
 }
 
+/// Document grid behavior for a WordprocessingML section.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DocGridType {
+    /// No document grid (`default`).
+    Default,
+    /// Line grid only (`lines`).
+    Lines,
+    /// Line and character grid (`linesAndChars`).
+    LinesAndChars,
+    /// Character grid only (`snapToChars`).
+    SnapToChars,
+}
+
+impl DocGridType {
+    pub(crate) fn wml_value(self) -> &'static str {
+        match self {
+            DocGridType::Default => "default",
+            DocGridType::Lines => "lines",
+            DocGridType::LinesAndChars => "linesAndChars",
+            DocGridType::SnapToChars => "snapToChars",
+        }
+    }
+
+    pub(crate) fn from_wml_value(value: &str) -> Option<Self> {
+        match value {
+            "default" => Some(DocGridType::Default),
+            "lines" => Some(DocGridType::Lines),
+            "linesAndChars" => Some(DocGridType::LinesAndChars),
+            "snapToChars" => Some(DocGridType::SnapToChars),
+            _ => None,
+        }
+    }
+}
+
+/// Document grid settings for a WordprocessingML section.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DocGrid {
+    /// Grid behavior.
+    pub grid_type: DocGridType,
+    /// Grid line pitch (`w:linePitch`) in twentieths of a point, if set.
+    pub line_pitch: Option<u32>,
+    /// Grid character pitch adjustment (`w:charSpace`), if set.
+    pub character_space: Option<u32>,
+}
+
 /// Section-level layout recovered from or generated into `.docx` section
 /// properties.
 ///
@@ -902,6 +947,8 @@ pub struct SectionSetup {
     pub columns: Option<u16>,
     /// Text flow direction for this section, if explicitly set.
     pub text_direction: Option<TextDirection>,
+    /// Document grid settings for this section, if explicitly set.
+    pub doc_grid: Option<DocGrid>,
 }
 
 /// Document-level layout + metadata, for authoring and rendering. All fields are
@@ -936,6 +983,8 @@ pub struct DocSetup {
     pub columns: Option<u16>,
     /// Text flow direction for the final/current section, if explicitly set.
     pub text_direction: Option<TextDirection>,
+    /// Document grid settings for the final/current section, if explicitly set.
+    pub doc_grid: Option<DocGrid>,
     /// Document title metadata.
     pub title: Option<String>,
     /// Document author metadata.
@@ -958,6 +1007,7 @@ impl From<&DocSetup> for SectionSetup {
             page_number_format: setup.page_number_format,
             columns: setup.columns,
             text_direction: setup.text_direction,
+            doc_grid: setup.doc_grid,
         }
     }
 }

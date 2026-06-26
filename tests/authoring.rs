@@ -6,10 +6,10 @@ use std::io::Read;
 
 use rdoc::{
     Align, Block, Cell, CellBuilder, CellMargins, CharProps, ChartBuilder, ChartKind, ChartShape,
-    Color, CommentBuilder, ContentControlBuilder, DocBuilder, DocModel, DocSetup, Document,
-    DocumentWarning, FieldKind, FieldRole, ImageBuilder, NoteKind, PageNumberFormat, PageSetup,
-    ParaProps, Paragraph, ParagraphBuilder, ParagraphStyleBuilder, RevisionBuilder, RevisionKind,
-    RevisionView, Row, RunBuilder, Table, TableBuilder, TextDirection, VCell,
+    Color, CommentBuilder, ContentControlBuilder, DocBuilder, DocGridType, DocModel, DocSetup,
+    Document, DocumentWarning, FieldKind, FieldRole, ImageBuilder, NoteKind, PageNumberFormat,
+    PageSetup, ParaProps, Paragraph, ParagraphBuilder, ParagraphStyleBuilder, RevisionBuilder,
+    RevisionKind, RevisionView, Row, RunBuilder, Table, TableBuilder, TextDirection, VCell,
 };
 
 fn run(text: &str, props: CharProps) -> rdoc::Run {
@@ -560,6 +560,30 @@ fn doc_builder_adds_section_columns() {
 
     let reopened = Document::open(&bytes).expect("column section .docx reopens");
     assert_eq!(reopened.model().setup.columns, Some(2));
+}
+
+#[test]
+fn doc_builder_adds_line_document_grid() {
+    let model = DocBuilder::new()
+        .doc_grid_lines(360)
+        .paragraph("Grid body")
+        .build();
+
+    let grid = model.setup.doc_grid.expect("doc grid");
+    assert_eq!(grid.grid_type, DocGridType::Lines);
+    assert_eq!(grid.line_pitch, Some(360));
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+
+    assert!(
+        document_xml.contains(r#"<w:docGrid w:type="lines" w:linePitch="360"/>"#),
+        "document grid missing: {document_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("document-grid section .docx reopens");
+    assert_eq!(reopened.model().setup.doc_grid, Some(grid));
 }
 
 #[test]

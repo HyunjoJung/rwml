@@ -2,9 +2,9 @@
 
 use crate::model::{
     Align, AuthoredComment, AuthoredContentControl, AuthoredNote, AuthoredRevision, Block, Cell,
-    CharProps, Chart, ChartKind, ChartSeries, ChartShape, Color, CustomXmlItem, DocModel,
-    FieldRole, Image, ListInfo, PageNumberFormat, PageSetup, ParaProps, Paragraph, ParagraphStyle,
-    Row, Run, SectionSetup, Table, TextDirection, VCell,
+    CharProps, Chart, ChartKind, ChartSeries, ChartShape, Color, CustomXmlItem, DocGrid,
+    DocGridType, DocModel, FieldRole, Image, ListInfo, PageNumberFormat, PageSetup, ParaProps,
+    Paragraph, ParagraphStyle, Row, Run, SectionSetup, Table, TextDirection, VCell,
 };
 use crate::{NoteKind, RevisionKind};
 
@@ -1320,6 +1320,16 @@ impl DocBuilder {
     /// Set the text flow direction for the current/final section.
     pub fn text_direction(mut self, direction: TextDirection) -> Self {
         self.model.setup.text_direction = Some(direction);
+        self
+    }
+
+    /// Set a line-only document grid for the current/final section.
+    pub fn doc_grid_lines(mut self, line_pitch: u32) -> Self {
+        self.model.setup.doc_grid = Some(DocGrid {
+            grid_type: DocGridType::Lines,
+            line_pitch: Some(line_pitch),
+            character_space: None,
+        });
         self
     }
 
