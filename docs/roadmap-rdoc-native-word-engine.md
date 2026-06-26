@@ -314,7 +314,8 @@ Initial status:
   reference/index fields (`BIBLIOGRAPHY`, `CITATION`, `INDEX`, `RD`, `TA`,
   `TOA`, `XE`) are named separately from unknown fields, deterministic simple
   literal `RD`/`TA`/`XE` marker fields with field-result format switches render
-  as hidden output, and generated bibliography/citation/index/table-of-authorities fields report
+  as hidden output, invalid marker syntax reports `UnsupportedSwitch`, and
+  generated bibliography/citation/index/table-of-authorities fields report
   `NoComputedResult` until native generation is implemented. The
   numbering/list fields compute deterministic source-order plain `AUTONUM`
   values with common number-format switches and the documented `\s` separator
@@ -768,7 +769,8 @@ Initial status:
   fields and preserve cached text with `NoComputedResult` diagnostics.
   Reference/index fields are named separately from unknown fields; simple
   literal `RD`/`TA`/`XE` marker fields with field-result format switches render
-  as hidden output, while generated bibliography/citation/index/table-of-authorities fields preserve
+  as hidden output, invalid marker syntax reports `UnsupportedSwitch`, while
+  generated bibliography/citation/index/table-of-authorities fields preserve
   cached text with `NoComputedResult` diagnostics.
   Numbering/list fields compute deterministic source-order plain `AUTONUM`
   values with common number-format switches and the documented `\s` separator

@@ -1450,6 +1450,9 @@ fn unsupported_field_reason(field: &Field) -> Option<FieldEvaluationReason> {
         FieldKind::Dynamic(_) => Some(FieldEvaluationReason::NoComputedResult),
         FieldKind::InsertedContent(_) => Some(FieldEvaluationReason::NoComputedResult),
         FieldKind::MailMerge(_) => Some(FieldEvaluationReason::NoComputedResult),
+        FieldKind::ReferenceIndex(ref kind) if is_reference_index_marker_kind(kind.as_str()) => {
+            Some(reference_index_marker_uncomputed_reason(&field.instruction))
+        }
         FieldKind::ReferenceIndex(_) => Some(FieldEvaluationReason::NoComputedResult),
         FieldKind::Numbering(_) => Some(FieldEvaluationReason::NoComputedResult),
         FieldKind::DocumentStructure(ref kind)
@@ -1622,6 +1625,24 @@ fn action_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     #[cfg(feature = "docx")]
     {
         if crate::docx::supports_action_field_syntax(instruction) {
+            return FieldEvaluationReason::NoComputedResult;
+        }
+    }
+    #[cfg(not(feature = "docx"))]
+    let _ = instruction;
+    FieldEvaluationReason::UnsupportedSwitch
+}
+
+fn is_reference_index_marker_kind(kind: &str) -> bool {
+    kind.eq_ignore_ascii_case("RD")
+        || kind.eq_ignore_ascii_case("TA")
+        || kind.eq_ignore_ascii_case("XE")
+}
+
+fn reference_index_marker_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
+    #[cfg(feature = "docx")]
+    {
+        if crate::docx::supports_reference_index_marker_syntax(instruction) {
             return FieldEvaluationReason::NoComputedResult;
         }
     }

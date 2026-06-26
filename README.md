@@ -488,8 +488,9 @@ text, and report `NoComputedResult` diagnostics;
 reference/index fields (`BIBLIOGRAPHY`, `CITATION`, `INDEX`, `RD`, `TA`,
 `TOA`, `XE`) are named separately from unknown fields, deterministic simple
 literal `RD`/`TA`/`XE` marker fields with field-result format switches render as
-hidden output, and remaining reference/index fields preserve cached result text
-and report `NoComputedResult` diagnostics;
+hidden output, invalid marker syntax reports `UnsupportedSwitch`, and remaining
+reference/index fields preserve cached result text and report
+`NoComputedResult` diagnostics;
 numbering/list fields compute deterministic source-order plain `AUTONUM`
 values with common number-format switches and the documented `\s` separator
 switch, including unquoted or quoted one-character separators, standalone

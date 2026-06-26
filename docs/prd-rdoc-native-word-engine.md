@@ -328,10 +328,11 @@ The first public maturity release should meet these requirements.
   `NoComputedResult` until native merge-record evaluation is
   implemented; reference/index fields (`BIBLIOGRAPHY`, `CITATION`, `INDEX`,
   `RD`, `TA`, `TOA`, `XE`) are named diagnostics, deterministic simple literal
-  `RD`/`TA`/`XE` marker fields render as hidden output, and generated
-  bibliography/citation/index/table-of-authorities fields preserve
-  cached display text with `NoComputedResult` until native generation is
-  implemented; numbering/list fields compute deterministic
+  `RD`/`TA`/`XE` marker fields render as hidden output, invalid marker syntax
+  reports `UnsupportedSwitch`, and generated
+  bibliography/citation/index/table-of-authorities fields preserve cached
+  display text with `NoComputedResult` until native generation is implemented;
+  numbering/list fields compute deterministic
   source-order plain `AUTONUM` values with common number-format switches and the
   documented `\s` separator switch, including unquoted or quoted
   one-character separators, standalone plain, neutral, or common-number-format

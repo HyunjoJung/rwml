@@ -65,6 +65,10 @@ pub(crate) fn supports_action_field_syntax(instruction: &str) -> bool {
     fields::computed_action_result(instruction).is_some()
 }
 
+pub(crate) fn supports_reference_index_marker_syntax(instruction: &str) -> bool {
+    fields::computed_reference_index_result(instruction).is_some()
+}
+
 /// Relationship table: `Id` → `(Target, is_external)`.
 type Rels = HashMap<String, (String, bool)>;
 
