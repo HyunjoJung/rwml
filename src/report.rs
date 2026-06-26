@@ -604,7 +604,36 @@ pub(crate) fn feature_inventory_for_model(blocks: &[Block]) -> FeatureInventory 
 #[cfg(feature = "render")]
 pub(crate) fn render_inventory_for_model(blocks: &[Block]) -> FeatureInventory {
     let mut inventory = FeatureInventory::default();
-    count_render_block_fields(blocks, &mut inventory);
+    let fields = fields_for_model(blocks);
+    inventory.fields = fields.len();
+    inventory.field_kinds = count_field_kinds(&fields);
+    inventory.hyperlinks = fields
+        .iter()
+        .filter(|field| field.kind == FieldKind::Hyperlink)
+        .count();
+    for field in &fields {
+        if supports_render_model_field_kind_evaluation(&field.kind) {
+            continue;
+        }
+        if let Some(existing) = inventory
+            .unsupported_field_kinds
+            .iter_mut()
+            .find(|item| item.kind == field.kind)
+        {
+            existing.count += 1;
+        } else {
+            inventory.unsupported_field_kinds.push(FieldKindCount {
+                kind: field.kind.clone(),
+                count: 1,
+            });
+        }
+        if let Some(reason) = unsupported_field_reason(field) {
+            increment_field_evaluation_reason_count(
+                &mut inventory.unsupported_field_reasons,
+                reason,
+            );
+        }
+    }
     count_nested_model_tables(blocks, 0, &mut inventory, false);
     inventory
 }
@@ -706,59 +735,6 @@ fn field_from_role(role: &FieldRole, result: &str) -> Option<Field> {
 
 fn normalize_model_field_instruction(instruction: &str) -> String {
     instruction.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-#[cfg(feature = "render")]
-fn count_render_block_fields(blocks: &[Block], inventory: &mut FeatureInventory) {
-    for block in blocks {
-        match block {
-            Block::Paragraph(paragraph) => {
-                for run in &paragraph.runs {
-                    if let Some(field) = field_from_role(&run.field, &run.text) {
-                        inventory.fields += 1;
-                        let kind = field.kind.clone();
-                        increment_field_kind_count(&mut inventory.field_kinds, kind.clone());
-                        if kind == FieldKind::Hyperlink {
-                            inventory.hyperlinks += 1;
-                        }
-                        if !supports_render_model_field_kind_evaluation(&kind) {
-                            increment_field_kind_count(
-                                &mut inventory.unsupported_field_kinds,
-                                kind.clone(),
-                            );
-                            if let Some(reason) = unsupported_field_reason(&field) {
-                                increment_field_evaluation_reason_count(
-                                    &mut inventory.unsupported_field_reasons,
-                                    reason,
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-            Block::Table(table) => count_render_table_fields(table, inventory),
-            Block::Chart(_) => {}
-            Block::Image(_) | Block::PageBreak | Block::SectionBreak(_) => {}
-        }
-    }
-}
-
-#[cfg(feature = "render")]
-fn count_render_table_fields(table: &Table, inventory: &mut FeatureInventory) {
-    for row in &table.rows {
-        for cell in &row.cells {
-            count_render_block_fields(&cell.blocks, inventory);
-        }
-    }
-}
-
-#[cfg(feature = "render")]
-fn increment_field_kind_count(counts: &mut Vec<FieldKindCount>, kind: FieldKind) {
-    if let Some(existing) = counts.iter_mut().find(|item| item.kind == kind) {
-        existing.count += 1;
-    } else {
-        counts.push(FieldKindCount { kind, count: 1 });
-    }
 }
 
 pub(crate) fn doc_edit_capability() -> EditCapability {
@@ -2701,6 +2677,48 @@ mod tests {
                     count: 1,
                 },
             ]
+        );
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn render_model_fields_coalesce_contiguous_result_runs() {
+        let blocks = vec![Block::Paragraph(Paragraph {
+            runs: vec![
+                Run {
+                    text: "A".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r#" TOC \o "1-3" "#.to_string(),
+                    },
+                    ..Run::default()
+                },
+                Run {
+                    text: "B".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r#"TOC \o "1-3""#.to_string(),
+                    },
+                    ..Run::default()
+                },
+            ],
+            ..Paragraph::default()
+        })];
+
+        let inventory = super::render_inventory_for_model(&blocks);
+
+        assert_eq!(inventory.fields, 1);
+        assert_eq!(
+            inventory.field_kinds,
+            vec![super::FieldKindCount {
+                kind: FieldKind::Toc,
+                count: 1,
+            }]
+        );
+        assert_eq!(
+            inventory.unsupported_field_kinds,
+            vec![super::FieldKindCount {
+                kind: FieldKind::Toc,
+                count: 1,
+            }]
         );
     }
 
