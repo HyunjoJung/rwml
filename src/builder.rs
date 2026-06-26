@@ -4,7 +4,8 @@ use crate::model::{
     Align, AuthoredComment, AuthoredContentControl, AuthoredNote, AuthoredRevision, Block, Cell,
     CharProps, Chart, ChartKind, ChartSeries, ChartShape, Color, CustomXmlItem, DocGrid,
     DocGridType, DocModel, FieldRole, Image, ListInfo, PageNumberFormat, PageSetup, ParaProps,
-    Paragraph, ParagraphStyle, Row, Run, SectionSetup, Table, TextDirection, VCell,
+    Paragraph, ParagraphStyle, Row, Run, SectionSetup, Table, TableBorderSide, TextDirection,
+    VCell,
 };
 use crate::{NoteKind, RevisionKind};
 
@@ -1155,6 +1156,12 @@ impl TableBuilder {
     /// Set a uniform table border color.
     pub fn border_color(mut self, color: Color) -> Self {
         self.table.border_color = Some(color);
+        self
+    }
+
+    /// Set a table border color for one physical side.
+    pub fn border_side_color(mut self, side: TableBorderSide, color: Color) -> Self {
+        self.table.border_colors.set(side, color);
         self
     }
 

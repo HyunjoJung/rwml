@@ -18,13 +18,23 @@ use super::{esc_attr, esc_text};
 use crate::model::{
     Align, AuthoredComment, AuthoredContentControl, AuthoredNote, AuthoredRevision, Block,
     CellMargins, CharProps, Chart, ChartKind, ChartSeries, ChartShape, Color, FieldRole, Image,
-    Indent, ParaProps, Paragraph, ParagraphStyle, SectionSetup, Spacing, Table, VertAlign,
+    Indent, ParaProps, Paragraph, ParagraphStyle, SectionSetup, Spacing, Table, TableBorderSide,
+    VertAlign,
 };
 use crate::{NoteKind, RevisionKind};
 
 /// `Color` → 6-hex `RRGGBB` for OOXML `w:val`.
 fn hex(c: Color) -> String {
     format!("{:02X}{:02X}{:02X}", c.r, c.g, c.b)
+}
+
+fn table_border_color(table: &Table, side: TableBorderSide) -> String {
+    table
+        .border_colors
+        .get(side)
+        .or(table.border_color)
+        .map(hex)
+        .unwrap_or_else(|| "auto".to_string())
 }
 
 /// Points → twips (1/20 pt), the OOXML measurement unit.
@@ -1115,22 +1125,29 @@ impl Ctx {
             };
             out.push_str(&format!(r#"<w:jc w:val="{val}"/>"#));
         }
-        let border_color = t
-            .border_color
-            .map(hex)
-            .unwrap_or_else(|| "auto".to_string());
+        let top_border_color = table_border_color(t, TableBorderSide::Top);
+        let left_border_color = table_border_color(t, TableBorderSide::Left);
+        let bottom_border_color = table_border_color(t, TableBorderSide::Bottom);
+        let right_border_color = table_border_color(t, TableBorderSide::Right);
+        let inside_h_border_color = table_border_color(t, TableBorderSide::InsideHorizontal);
+        let inside_v_border_color = table_border_color(t, TableBorderSide::InsideVertical);
         out.push_str(&format!(
             concat!(
                 r#"<w:tblBorders>"#,
-                r#"<w:top w:val="single" w:sz="4" w:space="0" w:color="{border_color}"/>"#,
-                r#"<w:left w:val="single" w:sz="4" w:space="0" w:color="{border_color}"/>"#,
-                r#"<w:bottom w:val="single" w:sz="4" w:space="0" w:color="{border_color}"/>"#,
-                r#"<w:right w:val="single" w:sz="4" w:space="0" w:color="{border_color}"/>"#,
-                r#"<w:insideH w:val="single" w:sz="4" w:space="0" w:color="{border_color}"/>"#,
-                r#"<w:insideV w:val="single" w:sz="4" w:space="0" w:color="{border_color}"/>"#,
+                r#"<w:top w:val="single" w:sz="4" w:space="0" w:color="{top_border_color}"/>"#,
+                r#"<w:left w:val="single" w:sz="4" w:space="0" w:color="{left_border_color}"/>"#,
+                r#"<w:bottom w:val="single" w:sz="4" w:space="0" w:color="{bottom_border_color}"/>"#,
+                r#"<w:right w:val="single" w:sz="4" w:space="0" w:color="{right_border_color}"/>"#,
+                r#"<w:insideH w:val="single" w:sz="4" w:space="0" w:color="{inside_h_border_color}"/>"#,
+                r#"<w:insideV w:val="single" w:sz="4" w:space="0" w:color="{inside_v_border_color}"/>"#,
                 r#"</w:tblBorders>"#,
             ),
-            border_color = border_color
+            top_border_color = top_border_color,
+            left_border_color = left_border_color,
+            bottom_border_color = bottom_border_color,
+            right_border_color = right_border_color,
+            inside_h_border_color = inside_h_border_color,
+            inside_v_border_color = inside_v_border_color
         ));
         if t.fixed_layout {
             out.push_str(r#"<w:tblLayout w:type="fixed"/>"#);

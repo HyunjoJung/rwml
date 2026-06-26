@@ -399,6 +399,66 @@ impl Color {
     }
 }
 
+/// A physical side of a table border.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TableBorderSide {
+    /// Top border.
+    Top,
+    /// Left border.
+    Left,
+    /// Bottom border.
+    Bottom,
+    /// Right border.
+    Right,
+    /// Horizontal inside borders.
+    InsideHorizontal,
+    /// Vertical inside borders.
+    InsideVertical,
+}
+
+/// Optional table border colors by physical side.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TableBorderColors {
+    /// Top border color.
+    pub top: Option<Color>,
+    /// Left border color.
+    pub left: Option<Color>,
+    /// Bottom border color.
+    pub bottom: Option<Color>,
+    /// Right border color.
+    pub right: Option<Color>,
+    /// Horizontal inside border color.
+    pub inside_h: Option<Color>,
+    /// Vertical inside border color.
+    pub inside_v: Option<Color>,
+}
+
+impl TableBorderColors {
+    /// Return the color for a side, if one was set.
+    pub fn get(&self, side: TableBorderSide) -> Option<Color> {
+        match side {
+            TableBorderSide::Top => self.top,
+            TableBorderSide::Left => self.left,
+            TableBorderSide::Bottom => self.bottom,
+            TableBorderSide::Right => self.right,
+            TableBorderSide::InsideHorizontal => self.inside_h,
+            TableBorderSide::InsideVertical => self.inside_v,
+        }
+    }
+
+    /// Set the color for a side.
+    pub fn set(&mut self, side: TableBorderSide, color: Color) {
+        match side {
+            TableBorderSide::Top => self.top = Some(color),
+            TableBorderSide::Left => self.left = Some(color),
+            TableBorderSide::Bottom => self.bottom = Some(color),
+            TableBorderSide::Right => self.right = Some(color),
+            TableBorderSide::InsideHorizontal => self.inside_h = Some(color),
+            TableBorderSide::InsideVertical => self.inside_v = Some(color),
+        }
+    }
+}
+
 /// Vertical alignment of a run (super/subscript).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum VertAlign {
@@ -497,6 +557,8 @@ pub struct Table {
     pub align: Option<Align>,
     /// Uniform table border color, if explicitly set.
     pub border_color: Option<Color>,
+    /// Side-specific table border colors, overriding `border_color` per side.
+    pub border_colors: TableBorderColors,
 }
 
 impl Table {

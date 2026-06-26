@@ -22,7 +22,8 @@ use crate::annotation::FieldKind;
 use crate::model::{
     Align, AuthoredContentControl, Block, Cell, CellMargins, CharProps, Color, DocGrid,
     DocGridType, FieldRole, Image, Indent, ListInfo, PageNumberFormat, ParaProps, Paragraph, Row,
-    Run, SectionSetup, Spacing, Table, TextDirection, VCell, VertAlign,
+    Run, SectionSetup, Spacing, Table, TableBorderColors, TableBorderSide, TextDirection, VCell,
+    VertAlign,
 };
 use crate::text;
 use crate::CoreProperties;
@@ -2288,6 +2289,7 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Table {
     let mut align = None;
     let mut width_pct = None;
     let mut border_color = None;
+    let mut border_colors = TableBorderColors::default();
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
@@ -2298,6 +2300,7 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Table {
                     align = tblpr.2;
                     width_pct = tblpr.3;
                     border_color = tblpr.4;
+                    border_colors = tblpr.5;
                 }
                 b"tr" => rows.push(read_row(r, ctx, depth)),
                 _ => skip_subtree(r), // tblGrid, …
@@ -2313,16 +2316,27 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Table {
         align,
         width_pct,
         border_color,
+        border_colors,
     )
 }
 
 /// Read `<w:tblPr>` layout metadata.
-fn read_tblpr(r: &mut Xml<'_>) -> (bool, Option<i32>, Option<Align>, Option<f32>, Option<Color>) {
+fn read_tblpr(
+    r: &mut Xml<'_>,
+) -> (
+    bool,
+    Option<i32>,
+    Option<Align>,
+    Option<f32>,
+    Option<Color>,
+    TableBorderColors,
+) {
     let mut fixed_layout = false;
     let mut indent_twips = None;
     let mut align = None;
     let mut width_pct = None;
     let mut border_color = None;
+    let mut border_colors = TableBorderColors::default();
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
@@ -2353,24 +2367,38 @@ fn read_tblpr(r: &mut Xml<'_>) -> (bool, Option<i32>, Option<Align>, Option<f32>
                 };
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblBorders" => {
-                border_color = read_tbl_border_color(r);
+                let borders = read_tbl_border_colors(r);
+                border_color = borders.0;
+                border_colors = borders.1;
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"tblPr" => break,
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
     }
-    (fixed_layout, indent_twips, align, width_pct, border_color)
+    (
+        fixed_layout,
+        indent_twips,
+        align,
+        width_pct,
+        border_color,
+        border_colors,
+    )
 }
 
-fn read_tbl_border_color(r: &mut Xml<'_>) -> Option<Color> {
+fn read_tbl_border_colors(r: &mut Xml<'_>) -> (Option<Color>, TableBorderColors) {
     let mut color = None;
+    let mut colors = TableBorderColors::default();
     let mut seen = false;
     let mut consistent = true;
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if is_table_border_side(&e) => {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
+                let Some(side) = table_border_side(&e) else {
+                    continue;
+                };
                 if let Some(next) = attr_local(&e, b"color").and_then(|v| parse_hex_color(&v)) {
+                    colors.set(side, next);
                     seen = true;
                     match color {
                         Some(current) if current != next => consistent = false,
@@ -2384,18 +2412,20 @@ fn read_tbl_border_color(r: &mut Xml<'_>) -> Option<Color> {
             _ => {}
         }
     }
-    if seen && consistent {
-        color
-    } else {
-        None
-    }
+    let uniform = if seen && consistent { color } else { None };
+    (uniform, colors)
 }
 
-fn is_table_border_side(e: &BytesStart<'_>) -> bool {
-    matches!(
-        local(e.name().as_ref()),
-        b"top" | b"left" | b"bottom" | b"right" | b"insideH" | b"insideV"
-    )
+fn table_border_side(e: &BytesStart<'_>) -> Option<TableBorderSide> {
+    match local(e.name().as_ref()) {
+        b"top" => Some(TableBorderSide::Top),
+        b"left" => Some(TableBorderSide::Left),
+        b"bottom" => Some(TableBorderSide::Bottom),
+        b"right" => Some(TableBorderSide::Right),
+        b"insideH" => Some(TableBorderSide::InsideHorizontal),
+        b"insideV" => Some(TableBorderSide::InsideVertical),
+        _ => None,
+    }
 }
 
 /// Read a `<w:tr>` and whether it is a repeated header row.
@@ -2604,6 +2634,7 @@ fn build_table(
     align: Option<Align>,
     width_pct: Option<f32>,
     border_color: Option<Color>,
+    border_colors: TableBorderColors,
 ) -> Table {
     let header_rows = raw_rows.iter().take_while(|(_, h)| *h).count();
 
@@ -2696,6 +2727,7 @@ fn build_table(
         align,
         width_pct,
         border_color,
+        border_colors,
         ..Default::default()
     }
 }
@@ -3150,7 +3182,15 @@ mod tests {
             (0..u16::MAX as usize).map(|_| (vec![raw_merge_cell(VMerge::Continue)], false)),
         );
 
-        let table = build_table(rows, false, None, None, None, None);
+        let table = build_table(
+            rows,
+            false,
+            None,
+            None,
+            None,
+            None,
+            TableBorderColors::default(),
+        );
 
         assert_eq!(table.rows[0].cells[0].row_span, u16::MAX);
     }

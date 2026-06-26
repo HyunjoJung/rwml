@@ -9,7 +9,8 @@ use rdoc::{
     Color, CommentBuilder, ContentControlBuilder, DocBuilder, DocGridType, DocModel, DocSetup,
     Document, DocumentWarning, FieldKind, FieldRole, ImageBuilder, NoteKind, PageNumberFormat,
     PageSetup, ParaProps, Paragraph, ParagraphBuilder, ParagraphStyleBuilder, RevisionBuilder,
-    RevisionKind, RevisionView, Row, RunBuilder, Table, TableBuilder, TextDirection, VCell,
+    RevisionKind, RevisionView, Row, RunBuilder, Table, TableBorderSide, TableBuilder,
+    TextDirection, VCell,
 };
 
 fn run(text: &str, props: CharProps) -> rdoc::Run {
@@ -123,6 +124,7 @@ fn report() -> DocModel {
         indent_twips: None,
         align: None,
         border_color: None,
+        border_colors: Default::default(),
     };
     DocModel {
         blocks: vec![title, Block::Table(table)],
@@ -2030,6 +2032,49 @@ fn table_builder_adds_table_border_color() {
         panic!("expected reopened table");
     };
     assert_eq!(reopened_table.border_color, Some(border));
+}
+
+#[test]
+fn table_builder_adds_side_specific_border_colors() {
+    let border = Color::rgb(0x22, 0x66, 0xAA);
+    let top = Color::rgb(0xAA, 0x33, 0x11);
+    let inside = Color::rgb(0x11, 0x88, 0x44);
+    let model = DocBuilder::new()
+        .rich_table(
+            TableBuilder::new()
+                .border_color(border)
+                .border_side_color(TableBorderSide::Top, top)
+                .border_side_color(TableBorderSide::InsideHorizontal, inside)
+                .row([CellBuilder::text("Bordered")]),
+        )
+        .build();
+
+    let Block::Table(table) = &model.blocks[0] else {
+        panic!("expected builder to add a table block");
+    };
+    assert_eq!(table.border_color, Some(border));
+    assert_eq!(table.border_colors.top, Some(top));
+    assert_eq!(table.border_colors.inside_h, Some(inside));
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    assert!(
+        document_xml.contains(r#"<w:top w:val="single" w:sz="4" w:space="0" w:color="AA3311"/>"#)
+            && document_xml
+                .contains(r#"<w:left w:val="single" w:sz="4" w:space="0" w:color="2266AA"/>"#)
+            && document_xml
+                .contains(r#"<w:insideH w:val="single" w:sz="4" w:space="0" w:color="118844"/>"#),
+        "side-specific table border XML missing: {document_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("side-border table .docx reopens");
+    let Block::Table(reopened_table) = &reopened.model().blocks[0] else {
+        panic!("expected reopened table");
+    };
+    assert_eq!(reopened_table.border_colors.top, Some(top));
+    assert_eq!(reopened_table.border_colors.left, Some(border));
+    assert_eq!(reopened_table.border_colors.inside_h, Some(inside));
 }
 
 #[test]
