@@ -65,7 +65,7 @@ heading-range fields, run-anchored comments with reply parent ids and
 commentsExtended metadata, tracked
 insertion/deletion runs, run-level content controls, bookmarked runs, authored
 footnotes/endnotes, string custom document properties, raw custom XML data-store
-items, explicit Word document ids, page setup with section columns, document grids, text direction, title pages, and page-number restarts/formats, explicit page breaks and next/even/odd section breaks,
+items, explicit Word document ids, web-extension task pane package shells, page setup with section columns, document grids, text direction, title pages, and page-number restarts/formats, explicit page breaks and next/even/odd section breaks,
 and default/first/even running headers/footers with page numbers all round-trip. Content controls can include tag/alias and
 data-binding metadata. See
 [`examples/report.rs`](examples/report.rs).
@@ -819,7 +819,7 @@ code points.
   with reply parent ids and commentsExtended metadata, tracked
   insertion/deletion runs, run-level content controls with data-binding
   metadata, authored footnotes/endnotes, bookmarks,
-  custom properties, raw custom XML data stores, explicit Word document ids, section layout, rotated/floating
+  custom properties, raw custom XML data stores, explicit Word document ids, web-extension task pane package shells, section layout, rotated/floating
   images, rich tables, and the currently listed chart families with embedded
   workbook-backed source data. Remaining gaps are broader structural editing
   surfaces and chart families beyond the current authored set; the element-tree
@@ -846,7 +846,7 @@ The long-term native Word engine plan is split into the
       styled runs, leveled lists, paragraph page-break-before, simple fields, `PAGEREF` helper runs, dirty TOC heading-range fields,
       run-anchored comments with reply parent ids and commentsExtended metadata, tracked insertion/deletion runs,
       run-level content controls with data-binding metadata, bookmarked runs, authored footnotes/endnotes, inline/standalone hyperlinks,
-      string custom document properties, raw custom XML data-store items, explicit Word document ids, default/first/even headers/footers + page numbers, section columns, document grids, text direction, title pages, page-number restarts/formats, next/even/odd section breaks, images with inline rotation and page-relative floating offsets,
+      string custom document properties, raw custom XML data-store items, explicit Word document ids, web-extension task pane package shells, default/first/even headers/footers + page numbers, section columns, document grids, text direction, title pages, page-number restarts/formats, next/even/odd section breaks, images with inline rotation and page-relative floating offsets,
       table width, fixed-layout tables, table alignment, indentation, uniform/per-side border widths, styles, and colors, per-cell table margins,
       bar/3-D bar/column/3-D column/line/3-D line/area/3-D area/radar/scatter/bubble/3-D bubble/pie/3-D pie/doughnut/surface/3-D surface/stock/pie-of-pie/bar-of-pie
       charts with embedded workbook-backed data) via `DocBuilder`,

@@ -475,7 +475,7 @@ The first public maturity release should meet these requirements.
 
 - generated `.docx` files reopen in rdoc, Word, and LibreOffice.
 - report example covers styles, tables, images, page setup with section columns,
-  document grids, text direction, title pages, page-number restarts/formats, explicit Word document ids, explicit page breaks and next/even/odd section breaks,
+  document grids, text direction, title pages, page-number restarts/formats, explicit Word document ids, web-extension task pane package shells, explicit page breaks and next/even/odd section breaks,
   default/first/even headers/footers, and page numbers.
 - lossy authoring vs preservation editing is documented.
 

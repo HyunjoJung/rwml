@@ -1093,6 +1093,84 @@ fn doc_builder_adds_document_id_setting() {
 }
 
 #[test]
+fn doc_builder_adds_web_extension_task_pane() {
+    let model = DocBuilder::new()
+        .web_extension_task_pane(
+            "{52811C31-4593-43B8-A697-EB873422D156}",
+            "af8fa5ba-4010-4bcc-9e03-a91ddadf6dd3",
+            "1.0.0.0",
+            "EXCatalog",
+            "EXCatalog",
+        )
+        .paragraph("Body")
+        .build();
+
+    assert_eq!(model.setup.web_extension_task_panes.len(), 1);
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let content_types = String::from_utf8(parts["[Content_Types].xml"].clone()).unwrap();
+    let root_rels = String::from_utf8(parts["_rels/.rels"].clone()).unwrap();
+    let taskpanes_xml =
+        String::from_utf8(parts["word/webextensions/taskpanes.xml"].clone()).unwrap();
+    let taskpanes_rels =
+        String::from_utf8(parts["word/webextensions/_rels/taskpanes.xml.rels"].clone()).unwrap();
+    let webextension_xml =
+        String::from_utf8(parts["word/webextensions/webextension1.xml"].clone()).unwrap();
+
+    assert!(
+        content_types.contains(
+            r#"<Override PartName="/word/webextensions/taskpanes.xml" ContentType="application/vnd.ms-office.webextensiontaskpanes+xml"/>"#
+        ) && content_types.contains(
+            r#"<Override PartName="/word/webextensions/webextension1.xml" ContentType="application/vnd.ms-office.webextension+xml"/>"#
+        ),
+        "web extension content types missing: {content_types}"
+    );
+    assert!(
+        root_rels.contains(
+            r#"Type="http://schemas.microsoft.com/office/2011/relationships/webextensiontaskpanes" Target="word/webextensions/taskpanes.xml""#
+        ),
+        "web extension taskpanes root relationship missing: {root_rels}"
+    );
+    assert!(
+        taskpanes_rels.contains(
+            r#"Type="http://schemas.microsoft.com/office/2011/relationships/webextension" Target="webextension1.xml""#
+        ),
+        "web extension relationship missing: {taskpanes_rels}"
+    );
+    assert!(
+        taskpanes_xml.contains(r#"<wetp:taskpane dockstate="right" visibility="1" width="350" row="0">"#)
+            && taskpanes_xml.contains(r#"<wetp:webextension xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rId1"/>"#),
+        "taskpanes XML missing authored pane: {taskpanes_xml}"
+    );
+    assert!(
+        webextension_xml.contains(
+            r#"<we:webextension xmlns:we="http://schemas.microsoft.com/office/webextensions/webextension/2010/11" id="{52811C31-4593-43B8-A697-EB873422D156}">"#
+        ) && webextension_xml.contains(
+            r#"<we:reference id="af8fa5ba-4010-4bcc-9e03-a91ddadf6dd3" version="1.0.0.0" store="EXCatalog" storeType="EXCatalog"/>"#
+        ) && webextension_xml.contains(
+            r#"<we:property name="Office.AutoShowTaskpaneWithDocument" value="true"/>"#
+        ),
+        "webextension XML missing reference/properties: {webextension_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("web-extension taskpane .docx reopens");
+    assert_eq!(reopened.text(), "Body");
+    let saved = reopened
+        .save()
+        .expect("web-extension taskpane package saves");
+    let saved_parts = unzip_parts(&saved);
+    assert_eq!(
+        saved_parts["word/webextensions/taskpanes.xml"],
+        parts["word/webextensions/taskpanes.xml"]
+    );
+    assert_eq!(
+        saved_parts["word/webextensions/webextension1.xml"],
+        parts["word/webextensions/webextension1.xml"]
+    );
+}
+
+#[test]
 fn run_builder_adds_bookmark_for_ref_fields() {
     let model = DocBuilder::new()
         .paragraph_runs([RunBuilder::new("Figure 1").bookmark("Figure1").build()])

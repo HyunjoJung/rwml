@@ -268,7 +268,7 @@ hyperlinks, image blocks with alt text and explicit pixel sizing via
 charts with embedded workbook-backed source data through `ChartBuilder`,
 3-D bar/column shape styling through `ChartBuilder::shape(ChartShape::...)`,
 surface-family wireframe styling through `ChartBuilder::wireframe()`,
-page size/orientation/margins/columns/document grids/text direction/title pages, page-number restarts/formats, explicit Word document ids,
+page size/orientation/margins/columns/document grids/text direction/title pages, page-number restarts/formats, explicit Word document ids, web-extension task pane package shells,
 explicit page breaks and next/even/odd section breaks, default/first/even headers and footers, page numbers, and metadata. It does not
 replace the lower-level structs for custom sections or complex nested layouts.
 

@@ -44,6 +44,33 @@ pub struct CustomXmlItem {
     pub xml: String,
 }
 
+/// A generated Office web-extension task pane package entry.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct WebExtensionTaskPane {
+    /// Web extension instance id.
+    pub extension_id: String,
+    /// Add-in reference id from the deployment catalog or manifest.
+    pub reference_id: String,
+    /// Add-in version string.
+    pub version: String,
+    /// Store or catalog pointer.
+    pub store: String,
+    /// Store or catalog kind, such as `EXCatalog`, `FileSystem`, or `OMEX`.
+    pub store_type: String,
+    /// Web-extension custom property bag.
+    pub properties: BTreeMap<String, String>,
+    /// Last docked task-pane location.
+    pub dock_state: String,
+    /// Whether the task pane is visible by default.
+    pub visible: bool,
+    /// Default task-pane width.
+    pub width: u32,
+    /// Task-pane row index among panes docked in the same location.
+    pub row: u32,
+    /// Whether the task pane is locked in the UI.
+    pub locked: bool,
+}
+
 /// A coarse source subdocument region from the original Word file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SourceRegionKind {
@@ -1266,6 +1293,8 @@ pub struct DocSetup {
     pub doc_grid: Option<DocGrid>,
     /// Optional document identifier emitted to `word/settings.xml` as `w14:docId`.
     pub document_id: Option<String>,
+    /// Authored Office web-extension task panes.
+    pub web_extension_task_panes: Vec<WebExtensionTaskPane>,
     /// Document title metadata.
     pub title: Option<String>,
     /// Document author metadata.

@@ -19,7 +19,7 @@ use crate::model::{
     Align, AuthoredComment, AuthoredContentControl, AuthoredNote, AuthoredRevision, Block,
     CellMargins, CharProps, Chart, ChartKind, ChartSeries, ChartShape, Color, FieldRole, Image,
     Indent, ParaProps, Paragraph, ParagraphStyle, SectionBreakKind, SectionSetup, Spacing, Table,
-    TableBorderSide, TableBorderStyle, VertAlign,
+    TableBorderSide, TableBorderStyle, VertAlign, WebExtensionTaskPane,
 };
 use crate::{NoteKind, RevisionKind};
 
@@ -118,6 +118,16 @@ const CT_CUSTOM_XML_PROPERTIES: &str =
     "application/vnd.openxmlformats-officedocument.customXmlProperties+xml";
 const REL_CUSTOM_XML_PROPERTIES: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXmlProps";
+const CT_WEB_EXTENSION_TASKPANES: &str = "application/vnd.ms-office.webextensiontaskpanes+xml";
+const CT_WEB_EXTENSION: &str = "application/vnd.ms-office.webextension+xml";
+const REL_WEB_EXTENSION_TASKPANES: &str =
+    "http://schemas.microsoft.com/office/2011/relationships/webextensiontaskpanes";
+const REL_WEB_EXTENSION: &str =
+    "http://schemas.microsoft.com/office/2011/relationships/webextension";
+const WEB_EXTENSION_NS: &str =
+    "http://schemas.microsoft.com/office/webextensions/webextension/2010/11";
+const WEB_EXTENSION_TASKPANES_NS: &str =
+    "http://schemas.microsoft.com/office/webextensions/taskpanes/2010/11";
 
 /// Build a `word/header1.xml` / `footer1.xml` part body from running paragraphs
 /// (text + run formatting + alignment; images/links/tables inside a header are
@@ -1515,6 +1525,70 @@ fn custom_xml_item_props_xml(store_item_id: &str) -> Vec<u8> {
     .into_bytes()
 }
 
+fn web_extension_xml(pane: &WebExtensionTaskPane) -> Vec<u8> {
+    let mut s = String::new();
+    s.push_str(XML_DECL);
+    s.push_str(&format!(
+        r#"<we:webextension xmlns:we="{WEB_EXTENSION_NS}" id="{}">"#,
+        esc_attr(&pane.extension_id)
+    ));
+    s.push_str(&format!(
+        r#"<we:reference id="{}" version="{}" store="{}" storeType="{}"/>"#,
+        esc_attr(&pane.reference_id),
+        esc_attr(&pane.version),
+        esc_attr(&pane.store),
+        esc_attr(&pane.store_type)
+    ));
+    s.push_str("<we:alternateReferences/>");
+    if pane.properties.is_empty() {
+        s.push_str("<we:properties/>");
+    } else {
+        s.push_str("<we:properties>");
+        for (name, value) in &pane.properties {
+            s.push_str(&format!(
+                r#"<we:property name="{}" value="{}"/>"#,
+                esc_attr(name),
+                esc_attr(value)
+            ));
+        }
+        s.push_str("</we:properties>");
+    }
+    s.push_str(&format!(
+        r#"<we:bindings/><we:snapshot xmlns:r="{R_NS}"/></we:webextension>"#
+    ));
+    s.into_bytes()
+}
+
+fn web_extension_taskpanes_xml(panes: &[WebExtensionTaskPane]) -> Vec<u8> {
+    let mut s = String::new();
+    s.push_str(XML_DECL);
+    s.push_str(&format!(
+        r#"<wetp:taskpanes xmlns:wetp="{WEB_EXTENSION_TASKPANES_NS}">"#
+    ));
+    for (index, pane) in panes.iter().enumerate() {
+        let visible = if pane.visible { "1" } else { "0" };
+        let dock_state = if pane.dock_state.is_empty() {
+            "right"
+        } else {
+            pane.dock_state.as_str()
+        };
+        let locked = if pane.locked { r#" locked="1""# } else { "" };
+        s.push_str(&format!(
+            r#"<wetp:taskpane dockstate="{}" visibility="{visible}" width="{}" row="{}"{locked}>"#,
+            esc_attr(dock_state),
+            pane.width.max(1),
+            pane.row
+        ));
+        s.push_str(&format!(
+            r#"<wetp:webextension xmlns:r="{R_NS}" r:id="rId{}"/>"#,
+            index + 1
+        ));
+        s.push_str("</wetp:taskpane>");
+    }
+    s.push_str("</wetp:taskpanes>");
+    s.into_bytes()
+}
+
 fn chart_workbook_xlsx(chart: &Chart) -> Vec<u8> {
     let (sheet_xml, shared_strings_xml) = chart_workbook_sheet_xml(chart);
     let mut pkg = Package::new();
@@ -2355,6 +2429,29 @@ pub(crate) fn try_to_docx(model: &crate::DocModel) -> crate::Result<Vec<u8>> {
             }],
         );
     }
+    if !model.setup.web_extension_task_panes.is_empty() {
+        pkg.add_part(
+            "word/webextensions/taskpanes.xml",
+            Some(CT_WEB_EXTENSION_TASKPANES),
+            web_extension_taskpanes_xml(&model.setup.web_extension_task_panes),
+        );
+        let mut taskpane_rels = Vec::new();
+        for (index, pane) in model.setup.web_extension_task_panes.iter().enumerate() {
+            let n = index + 1;
+            pkg.add_part(
+                &format!("word/webextensions/webextension{n}.xml"),
+                Some(CT_WEB_EXTENSION),
+                web_extension_xml(pane),
+            );
+            taskpane_rels.push(Rel {
+                id: format!("rId{n}"),
+                rel_type: REL_WEB_EXTENSION.to_string(),
+                target: format!("webextension{n}.xml"),
+                external: false,
+            });
+        }
+        pkg.add_rels("word/webextensions/_rels/taskpanes.xml.rels", taskpane_rels);
+    }
     if br.has_list {
         pkg.add_part(
             "word/numbering.xml",
@@ -2397,9 +2494,17 @@ pub(crate) fn try_to_docx(model: &crate::DocModel) -> crate::Result<Vec<u8>> {
     }];
     if !model.custom_properties.is_empty() {
         root_rels.push(Rel {
-            id: "rId2".to_string(),
+            id: format!("rId{}", root_rels.len() + 1),
             rel_type: REL_CUSTOM_PROPERTIES.to_string(),
             target: "docProps/custom.xml".to_string(),
+            external: false,
+        });
+    }
+    if !model.setup.web_extension_task_panes.is_empty() {
+        root_rels.push(Rel {
+            id: format!("rId{}", root_rels.len() + 1),
+            rel_type: REL_WEB_EXTENSION_TASKPANES.to_string(),
+            target: "word/webextensions/taskpanes.xml".to_string(),
             external: false,
         });
     }

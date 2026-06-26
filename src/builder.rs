@@ -5,7 +5,7 @@ use crate::model::{
     CharProps, Chart, ChartKind, ChartSeries, ChartShape, Color, CustomXmlItem, DocGrid,
     DocGridType, DocModel, FieldRole, Image, ListInfo, PageNumberFormat, PageSetup, ParaProps,
     Paragraph, ParagraphStyle, Row, Run, SectionBreakKind, SectionSetup, Table, TableBorderSide,
-    TableBorderStyle, TextDirection, VCell,
+    TableBorderStyle, TextDirection, VCell, WebExtensionTaskPane,
 };
 use crate::{NoteKind, RevisionKind};
 
@@ -1294,6 +1294,39 @@ impl DocBuilder {
     pub fn document_id(mut self, id: impl Into<String>) -> Self {
         let id = id.into();
         self.model.setup.document_id = (!id.is_empty()).then_some(id);
+        self
+    }
+
+    /// Add an auto-show Office web-extension task pane.
+    pub fn web_extension_task_pane(
+        mut self,
+        extension_id: impl Into<String>,
+        reference_id: impl Into<String>,
+        version: impl Into<String>,
+        store: impl Into<String>,
+        store_type: impl Into<String>,
+    ) -> Self {
+        let mut properties = std::collections::BTreeMap::new();
+        properties.insert(
+            "Office.AutoShowTaskpaneWithDocument".to_string(),
+            "true".to_string(),
+        );
+        self.model
+            .setup
+            .web_extension_task_panes
+            .push(WebExtensionTaskPane {
+                extension_id: extension_id.into(),
+                reference_id: reference_id.into(),
+                version: version.into(),
+                store: store.into(),
+                store_type: store_type.into(),
+                properties,
+                dock_state: "right".to_string(),
+                visible: true,
+                width: 350,
+                row: 0,
+                locked: false,
+            });
         self
     }
 
