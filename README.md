@@ -32,8 +32,8 @@ let text = rdoc::extract_text(&bytes)?;
 
 // Rich model + exporters (identical IR for .doc and .docx):
 let doc   = rdoc::Document::open(&bytes)?;
-let md    = doc.to_markdown();   // # headings, **bold**, | tables |, lists, links
-let html  = doc.to_html();       // <h1>, <strong>, <table colspan>, <img>, <a>
+let md    = doc.to_markdown();   // # headings, **bold**, | tables |, lists, links, page breaks
+let html  = doc.to_html();       // <h1>, <strong>, <table colspan>, <img>, <a>, page breaks
 let model = doc.model();         // typed IR: Vec<Block> (Paragraph | Table | Image | PageBreak | SectionBreak)
 let hregs = model.source_regions(rdoc::SourceRegionKind::HeaderFooter);
 let imgs  = doc.images();        // extracted PNG/JPEG bytes (like POI getAllPictures)

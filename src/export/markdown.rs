@@ -16,6 +16,9 @@ pub(crate) fn render(doc: &DocModel) -> String {
         if chunk.is_empty() {
             continue;
         }
+        if matches!(block, Block::Paragraph(p) if p.props.page_break_before) && !first {
+            out.push_str("\n\n\\pagebreak");
+        }
         if !first {
             out.push_str("\n\n");
         }
@@ -281,5 +284,24 @@ mod tests {
             }),
             "[site](https://x.io)"
         );
+    }
+
+    #[test]
+    fn paragraph_page_break_before_emits_page_break_marker() {
+        let doc = DocModel {
+            blocks: vec![
+                para(vec![run("Cover", false, false)]),
+                Block::Paragraph(Paragraph {
+                    props: ParaProps {
+                        page_break_before: true,
+                        ..Default::default()
+                    },
+                    runs: vec![run("Detail", false, false)],
+                }),
+            ],
+            meta: DocMeta::default(),
+            ..Default::default()
+        };
+        assert_eq!(render(&doc), "Cover\n\n\\pagebreak\n\nDetail");
     }
 }

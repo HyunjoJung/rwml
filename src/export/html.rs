@@ -10,6 +10,10 @@ pub(crate) fn render(doc: &DocModel) -> String {
     let mut out = String::new();
     let mut stack: Vec<bool> = Vec::new(); // ordered flag per open list level
     for block in &doc.blocks {
+        if matches!(block, Block::Paragraph(p) if p.props.page_break_before) && !out.is_empty() {
+            close_lists(&mut out, &mut stack);
+            out.push_str("<hr class=\"page-break\">");
+        }
         match block {
             Block::Paragraph(p) if p.props.list.is_some() => {
                 let list = p.props.list.as_ref().expect("list checked");
@@ -249,6 +253,31 @@ mod tests {
         assert_eq!(
             render_table_fragment(&t),
             "<table><tbody><tr><td colspan=\"2\"><p>a&lt;b&gt;</p></td></tr></tbody></table>"
+        );
+    }
+
+    #[test]
+    fn paragraph_page_break_before_emits_page_break_marker() {
+        let doc = DocModel {
+            blocks: vec![
+                Block::Paragraph(Paragraph {
+                    props: ParaProps::default(),
+                    runs: vec![run("Cover")],
+                }),
+                Block::Paragraph(Paragraph {
+                    props: ParaProps {
+                        page_break_before: true,
+                        ..Default::default()
+                    },
+                    runs: vec![run("Detail")],
+                }),
+            ],
+            meta: DocMeta::default(),
+            ..Default::default()
+        };
+        assert_eq!(
+            render(&doc),
+            "<p>Cover</p><hr class=\"page-break\"><p>Detail</p>"
         );
     }
 }
