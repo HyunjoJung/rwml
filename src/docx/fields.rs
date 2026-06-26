@@ -7242,6 +7242,7 @@ fn unescape_eq_literal_operand(operand: &str) -> Option<String> {
         }
         match chars.next()? {
             ',' => out.push(','),
+            ';' => out.push(';'),
             '(' => out.push('('),
             ')' => out.push(')'),
             '\\' => out.push('\\'),
@@ -9746,6 +9747,14 @@ mod tests {
         assert_eq!(
             computed_display_result(r#"EQ \f(A\),B)"#).as_deref(),
             Some("A)/B")
+        );
+    }
+
+    #[test]
+    fn eq_literal_operands_accept_escaped_semicolons() {
+        assert_eq!(
+            computed_display_result(r#"EQ \f(A\;B;C)"#).as_deref(),
+            Some("A;B/C")
         );
     }
 
