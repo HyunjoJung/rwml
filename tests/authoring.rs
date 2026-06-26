@@ -9,8 +9,8 @@ use rdoc::{
     Color, CommentBuilder, ContentControlBuilder, DocBuilder, DocGridType, DocModel, DocSetup,
     Document, DocumentWarning, FieldKind, FieldRole, ImageBuilder, NoteKind, PageNumberFormat,
     PageSetup, ParaProps, Paragraph, ParagraphBuilder, ParagraphStyleBuilder, RevisionBuilder,
-    RevisionKind, RevisionView, Row, RunBuilder, Table, TableBorderSide, TableBuilder,
-    TextDirection, VCell,
+    RevisionKind, RevisionView, Row, RunBuilder, Table, TableBorderSide, TableBorderStyle,
+    TableBuilder, TextDirection, VCell,
 };
 
 fn run(text: &str, props: CharProps) -> rdoc::Run {
@@ -126,6 +126,7 @@ fn report() -> DocModel {
         border_color: None,
         border_colors: Default::default(),
         border_size_eighths: None,
+        border_style: None,
     };
     DocModel {
         blocks: vec![title, Block::Table(table)],
@@ -2200,6 +2201,38 @@ fn table_builder_adds_table_border_size() {
         panic!("expected reopened table");
     };
     assert_eq!(reopened_table.border_size_eighths, Some(12));
+}
+
+#[test]
+fn table_builder_adds_table_border_style() {
+    let model = DocBuilder::new()
+        .rich_table(
+            TableBuilder::new()
+                .border_style(TableBorderStyle::Dotted)
+                .row([CellBuilder::text("Dotted")]),
+        )
+        .build();
+
+    let Block::Table(table) = &model.blocks[0] else {
+        panic!("expected builder to add a table block");
+    };
+    assert_eq!(table.border_style, Some(TableBorderStyle::Dotted));
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    assert!(
+        document_xml.contains(r#"<w:top w:val="dotted" w:sz="4" w:space="0" w:color="auto"/>"#)
+            && document_xml
+                .contains(r#"<w:insideV w:val="dotted" w:sz="4" w:space="0" w:color="auto"/>"#),
+        "table border style XML missing: {document_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("border-style table .docx reopens");
+    let Block::Table(reopened_table) = &reopened.model().blocks[0] else {
+        panic!("expected reopened table");
+    };
+    assert_eq!(reopened_table.border_style, Some(TableBorderStyle::Dotted));
 }
 
 #[test]

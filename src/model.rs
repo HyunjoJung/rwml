@@ -416,6 +416,40 @@ pub enum TableBorderSide {
     InsideVertical,
 }
 
+/// Uniform table border line style.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TableBorderStyle {
+    /// Single solid line (`single`).
+    Single,
+    /// Dotted line (`dotted`).
+    Dotted,
+    /// Dashed line (`dashed`).
+    Dashed,
+    /// Double solid line (`double`).
+    Double,
+}
+
+impl TableBorderStyle {
+    pub(crate) fn wml_value(self) -> &'static str {
+        match self {
+            TableBorderStyle::Single => "single",
+            TableBorderStyle::Dotted => "dotted",
+            TableBorderStyle::Dashed => "dashed",
+            TableBorderStyle::Double => "double",
+        }
+    }
+
+    pub(crate) fn from_wml_value(value: &str) -> Option<Self> {
+        match value {
+            "single" => Some(TableBorderStyle::Single),
+            "dotted" => Some(TableBorderStyle::Dotted),
+            "dashed" => Some(TableBorderStyle::Dashed),
+            "double" => Some(TableBorderStyle::Double),
+            _ => None,
+        }
+    }
+}
+
 /// Optional table border colors by physical side.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct TableBorderColors {
@@ -561,6 +595,8 @@ pub struct Table {
     pub border_colors: TableBorderColors,
     /// Uniform table border width in eighths of a point, if explicitly set.
     pub border_size_eighths: Option<u16>,
+    /// Uniform table border style, if explicitly set.
+    pub border_style: Option<TableBorderStyle>,
 }
 
 impl Table {

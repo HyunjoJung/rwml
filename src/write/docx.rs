@@ -19,7 +19,7 @@ use crate::model::{
     Align, AuthoredComment, AuthoredContentControl, AuthoredNote, AuthoredRevision, Block,
     CellMargins, CharProps, Chart, ChartKind, ChartSeries, ChartShape, Color, FieldRole, Image,
     Indent, ParaProps, Paragraph, ParagraphStyle, SectionSetup, Spacing, Table, TableBorderSide,
-    VertAlign,
+    TableBorderStyle, VertAlign,
 };
 use crate::{NoteKind, RevisionKind};
 
@@ -39,6 +39,10 @@ fn table_border_color(table: &Table, side: TableBorderSide) -> String {
 
 fn table_border_size(table: &Table) -> u16 {
     table.border_size_eighths.unwrap_or(4).max(1)
+}
+
+fn table_border_style(table: &Table) -> TableBorderStyle {
+    table.border_style.unwrap_or(TableBorderStyle::Single)
 }
 
 /// Points → twips (1/20 pt), the OOXML measurement unit.
@@ -1136,18 +1140,20 @@ impl Ctx {
         let inside_h_border_color = table_border_color(t, TableBorderSide::InsideHorizontal);
         let inside_v_border_color = table_border_color(t, TableBorderSide::InsideVertical);
         let border_size = table_border_size(t);
+        let border_style = table_border_style(t).wml_value();
         out.push_str(&format!(
             concat!(
                 r#"<w:tblBorders>"#,
-                r#"<w:top w:val="single" w:sz="{border_size}" w:space="0" w:color="{top_border_color}"/>"#,
-                r#"<w:left w:val="single" w:sz="{border_size}" w:space="0" w:color="{left_border_color}"/>"#,
-                r#"<w:bottom w:val="single" w:sz="{border_size}" w:space="0" w:color="{bottom_border_color}"/>"#,
-                r#"<w:right w:val="single" w:sz="{border_size}" w:space="0" w:color="{right_border_color}"/>"#,
-                r#"<w:insideH w:val="single" w:sz="{border_size}" w:space="0" w:color="{inside_h_border_color}"/>"#,
-                r#"<w:insideV w:val="single" w:sz="{border_size}" w:space="0" w:color="{inside_v_border_color}"/>"#,
+                r#"<w:top w:val="{border_style}" w:sz="{border_size}" w:space="0" w:color="{top_border_color}"/>"#,
+                r#"<w:left w:val="{border_style}" w:sz="{border_size}" w:space="0" w:color="{left_border_color}"/>"#,
+                r#"<w:bottom w:val="{border_style}" w:sz="{border_size}" w:space="0" w:color="{bottom_border_color}"/>"#,
+                r#"<w:right w:val="{border_style}" w:sz="{border_size}" w:space="0" w:color="{right_border_color}"/>"#,
+                r#"<w:insideH w:val="{border_style}" w:sz="{border_size}" w:space="0" w:color="{inside_h_border_color}"/>"#,
+                r#"<w:insideV w:val="{border_style}" w:sz="{border_size}" w:space="0" w:color="{inside_v_border_color}"/>"#,
                 r#"</w:tblBorders>"#,
             ),
             border_size = border_size,
+            border_style = border_style,
             top_border_color = top_border_color,
             left_border_color = left_border_color,
             bottom_border_color = bottom_border_color,

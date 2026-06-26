@@ -4,8 +4,8 @@ use crate::model::{
     Align, AuthoredComment, AuthoredContentControl, AuthoredNote, AuthoredRevision, Block, Cell,
     CharProps, Chart, ChartKind, ChartSeries, ChartShape, Color, CustomXmlItem, DocGrid,
     DocGridType, DocModel, FieldRole, Image, ListInfo, PageNumberFormat, PageSetup, ParaProps,
-    Paragraph, ParagraphStyle, Row, Run, SectionSetup, Table, TableBorderSide, TextDirection,
-    VCell,
+    Paragraph, ParagraphStyle, Row, Run, SectionSetup, Table, TableBorderSide, TableBorderStyle,
+    TextDirection, VCell,
 };
 use crate::{NoteKind, RevisionKind};
 
@@ -1168,6 +1168,12 @@ impl TableBuilder {
     /// Set the uniform table border width in eighths of a point.
     pub fn border_size_eighths(mut self, size: u16) -> Self {
         self.table.border_size_eighths = Some(size.max(1));
+        self
+    }
+
+    /// Set the uniform table border style.
+    pub fn border_style(mut self, style: TableBorderStyle) -> Self {
+        self.table.border_style = Some(style);
         self
     }
 
