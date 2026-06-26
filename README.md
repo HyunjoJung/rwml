@@ -464,7 +464,7 @@ deterministic literal `QUOTE` fields render quoted or unquoted computed text wit
 text-format switches, deterministic literal `IF` fields compute finite
 decimal/scientific numeric comparisons and quoted string equality/inequality,
 deterministic literal `COMPARE` fields compute `1`/`0` results for finite
-decimal/scientific numeric operands and quoted `?`/`*` wildcard
+decimal/scientific numeric operands and either-side quoted `?`/`*` wildcard
 equality/inequality, deterministic `FILLIN` fields with explicit `\d`
 default responses render those defaults without simulating prompts,
 deterministic `ASK name "prompt" \d "default"` fields with field-result format

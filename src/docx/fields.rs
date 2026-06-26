@@ -6306,6 +6306,8 @@ fn compare_if_operands(left: &IfOperand, operator: IfOperator, right: &IfOperand
 fn compare_text_operands(left: &str, right: &str) -> bool {
     if right.contains(['*', '?']) {
         wildcard_match(left, right)
+    } else if left.contains(['*', '?']) {
+        wildcard_match(right, left)
     } else {
         left == right
     }
@@ -9692,6 +9694,14 @@ mod tests {
         assert_eq!(
             computed_dynamic_result(r#"COMPARE "A>B"<>"A?B""#).as_deref(),
             Some("0")
+        );
+    }
+
+    #[test]
+    fn text_comparisons_accept_wildcards_on_either_operand() {
+        assert_eq!(
+            computed_dynamic_result(r#"COMPARE "A*" = "AB""#).as_deref(),
+            Some("1")
         );
     }
 

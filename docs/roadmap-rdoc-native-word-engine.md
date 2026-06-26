@@ -292,8 +292,8 @@ Initial status:
   deterministic literal `QUOTE` fields compute quoted/unquoted text with general text-format switches, deterministic
   literal `IF` fields compute finite decimal/scientific numeric comparisons and
   quoted string equality/inequality, deterministic literal `COMPARE` fields compute
-  `1`/`0` results for finite decimal/scientific numeric operands and quoted
-  `?`/`*` wildcard equality/inequality, deterministic `FILLIN` fields with explicit `\d`
+  `1`/`0` results for finite decimal/scientific numeric operands and either-side
+  quoted `?`/`*` wildcard equality/inequality, deterministic `FILLIN` fields with explicit `\d`
   default responses rendered without simulating prompts, deterministic `ASK name "prompt" \d "default"` fields with field-result format
   switches rendered as hidden output while feeding later plain `REF`/direct
   bookmark references, and
@@ -750,7 +750,7 @@ Initial status:
   text-format switches, deterministic literal `IF` fields compute finite
   decimal/scientific numeric comparisons and quoted string equality/inequality,
   and deterministic literal
-  `COMPARE` fields compute `1`/`0` results for finite decimal/scientific numeric operands and quoted `?`/`*` wildcard equality/inequality,
+  `COMPARE` fields compute `1`/`0` results for finite decimal/scientific numeric operands and either-side quoted `?`/`*` wildcard equality/inequality,
   deterministic `FILLIN` fields with explicit `\d` default responses render without simulating prompts,
   deterministic `ASK name "prompt" \d "default"` fields with field-result format
   switches render as hidden output while feeding later plain `REF`/direct bookmark references,
