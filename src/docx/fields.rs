@@ -5854,9 +5854,10 @@ fn parse_formula_number_picture(picture: &str) -> Option<FormulaNumberPicture> {
 }
 
 fn valid_formula_number_affix(affix: &str) -> bool {
-    affix
-        .chars()
-        .all(|ch| ch.is_ascii_graphic() && !matches!(ch, '0' | '#' | ',' | '.' | '"' | '\\' | 'x'))
+    affix.chars().all(|ch| {
+        (ch == ' ' || ch.is_ascii_graphic())
+            && !matches!(ch, '0' | '#' | ',' | '.' | '"' | '\\' | 'x')
+    })
 }
 
 fn valid_formula_integer_picture(picture: &str) -> bool {

@@ -299,7 +299,7 @@ fn formula_numeric_picture_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" = 1234.5 \# &quot;$#,##0.00&quot; "><w:r><w:t>stale currency formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = 33 \# &quot;##%&quot; "><w:r><w:t>stale percent formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = 111053 + 111439 \# x## "><w:r><w:t>stale dropped formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = 1 / 8 \# 0.00x "><w:r><w:t>stale precision formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = 3 / 4 \# .x "><w:r><w:t>stale rounded formula</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" = 1234.5 \# &quot;$#,##0.00&quot; "><w:r><w:t>stale currency formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = 33 \# &quot;##%&quot; "><w:r><w:t>stale percent formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = 111053 + 111439 \# x## "><w:r><w:t>stale dropped formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = 1 / 8 \# 0.00x "><w:r><w:t>stale precision formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = 3 / 4 \# .x "><w:r><w:t>stale rounded formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = 5 \# &quot;0 units&quot; "><w:r><w:t>stale spaced suffix formula</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -3940,7 +3940,7 @@ fn docx_formula_fields_compute_numeric_picture_affixes_and_x_placeholders() {
     let doc = Document::open(&formula_numeric_picture_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 5);
+    assert_eq!(fields.len(), 6);
     assert_eq!(fields[0].kind, FieldKind::Dynamic("=".to_string()));
     assert_eq!(fields[0].instruction, r#"= 1234.5 \# "$#,##0.00""#);
     assert_eq!(fields[0].result, "stale currency formula");
@@ -3961,6 +3961,10 @@ fn docx_formula_fields_compute_numeric_picture_affixes_and_x_placeholders() {
     assert_eq!(fields[4].instruction, r#"= 3 / 4 \# .x"#);
     assert_eq!(fields[4].result, "stale rounded formula");
     assert_eq!(fields[4].computed_result.as_deref(), Some(".8"));
+    assert_eq!(fields[5].kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(fields[5].instruction, r#"= 5 \# "0 units""#);
+    assert_eq!(fields[5].result, "stale spaced suffix formula");
+    assert_eq!(fields[5].computed_result.as_deref(), Some("5 units"));
 
     let report = doc.report();
     assert!(report.features.unsupported_field_kinds.is_empty());
@@ -3972,7 +3976,8 @@ fn docx_formula_fields_compute_numeric_picture_affixes_and_x_placeholders() {
             && main_text.contains("33%")
             && main_text.contains("492")
             && main_text.contains("0.125")
-            && main_text.contains(".8"),
+            && main_text.contains(".8")
+            && main_text.contains("5 units"),
         "computed formula numeric pictures should materialize literal affixes: {main_text:?}"
     );
     assert!(
@@ -3980,7 +3985,8 @@ fn docx_formula_fields_compute_numeric_picture_affixes_and_x_placeholders() {
             && !main_text.contains("stale percent formula")
             && !main_text.contains("stale dropped formula")
             && !main_text.contains("stale precision formula")
-            && !main_text.contains("stale rounded formula"),
+            && !main_text.contains("stale rounded formula")
+            && !main_text.contains("stale spaced suffix formula"),
         "computed formula numeric pictures should replace stale cached text: {main_text:?}"
     );
 }
