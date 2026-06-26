@@ -1591,6 +1591,17 @@ fn supported_ref_syntax_parts<'a>(
                 sequence_separator = true;
                 continue;
             }
+            if let Some(separator) = strip_ascii_switch_prefix(part, "\\d") {
+                if sequence_separator {
+                    return None;
+                }
+                let separator = diagnostic_literal_token(separator)?;
+                if separator.is_empty() || separator.starts_with('\\') {
+                    return None;
+                }
+                sequence_separator = true;
+                continue;
+            }
             if part.eq_ignore_ascii_case("\\n") {
                 if paragraph_number || full_context_number || relative_context_number {
                     return None;
