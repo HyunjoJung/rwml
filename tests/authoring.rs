@@ -1322,6 +1322,12 @@ fn run_builder_adds_plain_text_content_control() {
     };
     assert_eq!(reopened_paragraph.text(), "Locked clause tail");
     assert!(reopened_paragraph.runs[0].props.bold);
+    let reopened_control = reopened_paragraph.runs[0]
+        .content_control
+        .as_ref()
+        .expect("reopened run carries content-control metadata");
+    assert_eq!(reopened_control.alias.as_deref(), Some("Clause title"));
+    assert_eq!(reopened_control.tag.as_deref(), Some("clause-001"));
 }
 
 #[test]
@@ -1374,6 +1380,23 @@ fn content_control_builder_adds_data_binding_metadata() {
     let reopened = Document::open(&bytes).expect("data-bound content-control .docx reopens");
     assert_eq!(reopened.text(), "Bound value");
     assert_eq!(reopened.report().features.content_controls, 1);
+    let Block::Paragraph(reopened_paragraph) = &reopened.model().blocks[0] else {
+        panic!("expected reopened paragraph");
+    };
+    let reopened_control = reopened_paragraph.runs[0]
+        .content_control
+        .as_ref()
+        .expect("reopened run carries data-binding metadata");
+    assert_eq!(reopened_control.alias.as_deref(), Some("Client"));
+    assert_eq!(reopened_control.tag.as_deref(), Some("client-name"));
+    assert_eq!(
+        reopened_control.data_binding_xpath.as_deref(),
+        Some(r#"/root/client[@code="A&B"]"#)
+    );
+    assert_eq!(
+        reopened_control.data_binding_store_item_id.as_deref(),
+        Some("{11111111-2222-3333-4444-555555555555}")
+    );
 }
 
 #[test]

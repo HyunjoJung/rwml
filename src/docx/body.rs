@@ -20,9 +20,9 @@ use super::styles::Styles;
 use super::{attr_local, local, toggle_on};
 use crate::annotation::FieldKind;
 use crate::model::{
-    Align, Block, Cell, CellMargins, CharProps, Color, DocGrid, DocGridType, FieldRole, Image,
-    Indent, ListInfo, PageNumberFormat, ParaProps, Paragraph, Row, Run, SectionSetup, Spacing,
-    Table, TextDirection, VCell, VertAlign,
+    Align, AuthoredContentControl, Block, Cell, CellMargins, CharProps, Color, DocGrid,
+    DocGridType, FieldRole, Image, Indent, ListInfo, PageNumberFormat, ParaProps, Paragraph, Row,
+    Run, SectionSetup, Spacing, Table, TextDirection, VCell, VertAlign,
 };
 use crate::text;
 use crate::CoreProperties;
@@ -858,7 +858,15 @@ fn read_paragraph(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Paragraph, Opt
                 }
                 b"hyperlink" => runs.extend(read_hyperlink(r, &e, ctx, depth)),
                 b"fldSimple" => runs.extend(read_fldsimple(r, &e, ctx, depth)),
-                b"ins" | b"moveTo" | b"smartTag" | b"sdtContent" | b"sdt" | b"bdo" | b"dir" => {
+                b"sdt" => append_content_control_runs_with_complex(
+                    r,
+                    ctx,
+                    None,
+                    depth + 1,
+                    &mut runs,
+                    &mut complex_field,
+                ),
+                b"ins" | b"moveTo" | b"smartTag" | b"sdtContent" | b"bdo" | b"dir" => {
                     append_runs_container_with_complex(
                         r,
                         ctx,
@@ -1098,7 +1106,8 @@ fn read_runs_container(r: &mut Xml<'_>, ctx: &Ctx<'_>, link: Option<&str>, depth
                 b"r" => runs.extend(read_run(r, ctx, link, depth + 1, None, 0)),
                 b"hyperlink" => runs.extend(read_hyperlink(r, &e, ctx, depth)),
                 b"fldSimple" => runs.extend(read_fldsimple(r, &e, ctx, depth)),
-                b"ins" | b"moveTo" | b"smartTag" | b"sdtContent" | b"sdt" | b"bdo" | b"dir" => {
+                b"sdt" => runs.extend(read_content_control_runs(r, ctx, link, depth + 1)),
+                b"ins" | b"moveTo" | b"smartTag" | b"sdtContent" | b"bdo" | b"dir" => {
                     runs.extend(read_runs_container(r, ctx, link, depth + 1))
                 }
                 _ => skip_subtree(r),
@@ -1132,13 +1141,151 @@ fn append_runs_container_with_complex(
                 }
                 b"hyperlink" => runs.extend(read_hyperlink(r, &e, ctx, depth)),
                 b"fldSimple" => runs.extend(read_fldsimple(r, &e, ctx, depth)),
-                b"ins" | b"moveTo" | b"smartTag" | b"sdtContent" | b"sdt" | b"bdo" | b"dir" => {
+                b"sdt" => append_content_control_runs_with_complex(
+                    r,
+                    ctx,
+                    link,
+                    depth + 1,
+                    runs,
+                    complex_field,
+                ),
+                b"ins" | b"moveTo" | b"smartTag" | b"sdtContent" | b"bdo" | b"dir" => {
                     append_runs_container_with_complex(r, ctx, link, depth + 1, runs, complex_field)
                 }
                 _ => skip_subtree(r),
             },
             Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
             _ => {}
+        }
+    }
+}
+
+fn read_content_control_runs(
+    r: &mut Xml<'_>,
+    ctx: &Ctx<'_>,
+    link: Option<&str>,
+    depth: u32,
+) -> Vec<Run> {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return Vec::new();
+    }
+    let mut control = None;
+    let mut runs = Vec::new();
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
+                b"sdtPr" => control = read_content_control_pr(r),
+                b"sdtContent" => runs.extend(read_runs_container(r, ctx, link, depth + 1)),
+                b"r" => runs.extend(read_run(r, ctx, link, depth + 1, None, 0)),
+                b"hyperlink" => runs.extend(read_hyperlink(r, &e, ctx, depth)),
+                b"fldSimple" => runs.extend(read_fldsimple(r, &e, ctx, depth)),
+                b"sdt" => runs.extend(read_content_control_runs(r, ctx, link, depth + 1)),
+                b"ins" | b"moveTo" | b"smartTag" | b"bdo" | b"dir" => {
+                    runs.extend(read_runs_container(r, ctx, link, depth + 1))
+                }
+                _ => skip_subtree(r),
+            },
+            Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    apply_content_control(&mut runs, control);
+    runs
+}
+
+fn append_content_control_runs_with_complex(
+    r: &mut Xml<'_>,
+    ctx: &Ctx<'_>,
+    link: Option<&str>,
+    depth: u32,
+    runs: &mut Vec<Run>,
+    complex_field: &mut ComplexFieldTracker,
+) {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return;
+    }
+    let start = runs.len();
+    let mut control = None;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
+                b"sdtPr" => control = read_content_control_pr(r),
+                b"sdtContent" => {
+                    append_runs_container_with_complex(r, ctx, link, depth + 1, runs, complex_field)
+                }
+                b"r" => {
+                    let next = read_run(r, ctx, link, depth + 1, Some(complex_field), runs.len());
+                    runs.extend(next);
+                    complex_field.apply_pending(runs);
+                }
+                b"hyperlink" => runs.extend(read_hyperlink(r, &e, ctx, depth)),
+                b"fldSimple" => runs.extend(read_fldsimple(r, &e, ctx, depth)),
+                b"sdt" => append_content_control_runs_with_complex(
+                    r,
+                    ctx,
+                    link,
+                    depth + 1,
+                    runs,
+                    complex_field,
+                ),
+                b"ins" | b"moveTo" | b"smartTag" | b"bdo" | b"dir" => {
+                    append_runs_container_with_complex(r, ctx, link, depth + 1, runs, complex_field)
+                }
+                _ => skip_subtree(r),
+            },
+            Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    apply_content_control(&mut runs[start..], control);
+}
+
+fn read_content_control_pr(r: &mut Xml<'_>) -> Option<AuthoredContentControl> {
+    let mut control = AuthoredContentControl::default();
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                read_content_control_pr_item(&mut control, &e);
+                skip_subtree(r);
+            }
+            Ok(Event::Empty(e)) => read_content_control_pr_item(&mut control, &e),
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"sdtPr" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    content_control_if_present(control)
+}
+
+fn read_content_control_pr_item(control: &mut AuthoredContentControl, e: &BytesStart<'_>) {
+    match local(e.name().as_ref()) {
+        b"alias" => control.alias = attr_local(e, b"val"),
+        b"tag" => control.tag = attr_local(e, b"val"),
+        b"dataBinding" => {
+            control.data_binding_xpath = attr_local(e, b"xpath");
+            control.data_binding_store_item_id = attr_local(e, b"storeItemID");
+        }
+        _ => {}
+    }
+}
+
+fn content_control_if_present(control: AuthoredContentControl) -> Option<AuthoredContentControl> {
+    (control.alias.is_some()
+        || control.tag.is_some()
+        || control.data_binding_xpath.is_some()
+        || control.data_binding_store_item_id.is_some())
+    .then_some(control)
+}
+
+fn apply_content_control(runs: &mut [Run], control: Option<AuthoredContentControl>) {
+    let Some(control) = control else {
+        return;
+    };
+    for run in runs {
+        if run.content_control.is_none() {
+            run.content_control = Some(control.clone());
         }
     }
 }
