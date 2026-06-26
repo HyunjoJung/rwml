@@ -1436,7 +1436,7 @@ fn unsupported_field_reason(field: &Field) -> Option<FieldEvaluationReason> {
     }
     match field.kind {
         FieldKind::Unknown(_) => Some(FieldEvaluationReason::UnknownField),
-        FieldKind::Page => Some(FieldEvaluationReason::NoComputedResult),
+        FieldKind::Page => Some(page_uncomputed_reason(&field.instruction)),
         FieldKind::Ref => Some(ref_uncomputed_reason(&field.instruction, None)),
         FieldKind::Toc => Some(toc_uncomputed_reason(&field.instruction, None)),
         FieldKind::PageRef => Some(page_ref_uncomputed_reason(&field.instruction, None)),
@@ -1511,6 +1511,47 @@ fn supported_direct_ref_syntax(instruction: &str) -> Option<RefDiagnosticSyntax>
         return None;
     }
     supported_ref_syntax_parts(tokens.iter().map(String::as_str))
+}
+
+fn page_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
+    if supported_page_syntax(instruction) {
+        FieldEvaluationReason::NoComputedResult
+    } else {
+        FieldEvaluationReason::UnsupportedSwitch
+    }
+}
+
+fn supported_page_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if !kind.eq_ignore_ascii_case("PAGE") {
+        return false;
+    }
+    let mut number_format = false;
+    let mut text_format = false;
+    while let Some(part) = parts.next() {
+        if part == "\\*" {
+            if !accept_page_field_format_switch(
+                parts.next().unwrap_or_default(),
+                &mut number_format,
+                &mut text_format,
+            ) {
+                return false;
+            }
+            continue;
+        }
+        if let Some(format) = part.strip_prefix("\\*") {
+            if !accept_page_field_format_switch(format, &mut number_format, &mut text_format) {
+                return false;
+            }
+            continue;
+        }
+        return false;
+    }
+    true
 }
 
 fn supported_ref_syntax_parts<'a>(
@@ -1653,13 +1694,14 @@ fn supported_page_ref_syntax(instruction: &str) -> Option<PageRefDiagnosticSynta
     let mut relative = false;
     while let Some(part) = parts.next() {
         if part == "\\*" {
-            if !accept_page_ref_format_switch(parts.next()?, &mut number_format, &mut text_format) {
+            if !accept_page_field_format_switch(parts.next()?, &mut number_format, &mut text_format)
+            {
                 return None;
             }
             continue;
         }
         if let Some(format) = part.strip_prefix("\\*") {
-            if !accept_page_ref_format_switch(format, &mut number_format, &mut text_format) {
+            if !accept_page_field_format_switch(format, &mut number_format, &mut text_format) {
                 return None;
             }
             continue;
@@ -1688,7 +1730,7 @@ fn supported_page_ref_syntax(instruction: &str) -> Option<PageRefDiagnosticSynta
     })
 }
 
-fn accept_page_ref_format_switch(
+fn accept_page_field_format_switch(
     part: &str,
     number_format: &mut bool,
     text_format: &mut bool,
