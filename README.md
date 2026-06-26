@@ -538,15 +538,15 @@ source-order overlay operand plain text,
 deterministic `SYMBOL` fields compute decimal/hex/default ANSI, Unicode
 `\u`, neutral `\h`, separated or compact font `\f` switches and quoted or
 unquoted separated/compact size `\s` switches, and common Symbol/Wingdings character
-insertions including Symbol `0xB7` bullet, with field-result format switches, and remaining display/layout cases preserve cached result text
-with `NoComputedResult` diagnostics;
+insertions including Symbol `0xB7` bullet, with field-result format switches; invalid display/layout syntax reports
+`UnsupportedSwitch`, while valid broader display/layout cases preserve cached result text with `NoComputedResult` diagnostics;
 action/automation fields (`GOTOBUTTON`, `MACROBUTTON`, `PRINT`) are named
 separately from unknown fields, deterministic `GOTOBUTTON`/`MACROBUTTON`
 quoted or unquoted display text with field text-format switches renders without
 executing actions, validated `PRINT` direct instructions and separated or
 compact `\p` printer-control groups with field-result format switches render as
-hidden output without executing printer/PostScript instructions, and remaining
-action/automation fields preserve
+hidden output without executing printer/PostScript instructions; invalid action/automation syntax reports
+`UnsupportedSwitch`, while valid broader action/automation fields preserve
 cached result text and report `NoComputedResult` diagnostics;
 compatibility/private fields (`PRIVATE`, `ADDIN`, `DATA`, `GLOSSARY`,
 `HTMLACTIVEX`) are named separately from unknown fields, preserve cached result

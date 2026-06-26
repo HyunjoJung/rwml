@@ -5577,7 +5577,7 @@ fn docx_action_fields_compute_display_text_without_running_actions() {
     assert_eq!(
         report.features.unsupported_field_reasons,
         vec![FieldEvaluationReasonCount {
-            reason: FieldEvaluationReason::NoComputedResult,
+            reason: FieldEvaluationReason::UnsupportedSwitch,
             count: 1,
         }]
     );

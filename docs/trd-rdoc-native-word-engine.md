@@ -562,6 +562,10 @@ Implementation:
   font mappings including Symbol `0xB7` bullet, plus field-result format switches, exposing the inserted character as `Field::computed_result` and
   using that text in the read/render model for simple and common complex fields;
   keep cached text for Shift-JIS and broader font-specific symbol mappings;
+- classify invalid display/layout and action/automation field syntax as
+  `UnsupportedSwitch`, while valid broader forms that need unsupported layout,
+  equation, symbol, action, macro, printer, or PostScript semantics keep cached
+  text with `NoComputedResult`;
 - compute body `PAGE` fields from trusted leading structural or source-rendered
   current-page context, including accepted/current wrappers, single-branch
   `mc:AlternateContent` page markers, section `w:pgNumType` displayed
@@ -617,8 +621,8 @@ Implementation:
   fields beyond computed `SECTION`, structurally bounded `SECTIONPAGES`, and
   deterministic body paragraph- and character-style `STYLEREF`,
   hidden validated `ADVANCE`, deterministic literal simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, hidden displacement controls, and `SYMBOL`,
-  remaining display/layout fields,
-  action/automation fields beyond deterministic quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms,
+  invalid display/layout syntax, remaining valid broader display/layout fields,
+  invalid action/automation syntax, action/automation fields beyond deterministic quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms,
   compatibility/private fields, barcode fields, and legacy form fields beyond
   deterministic `w:ffData` checkbox checked/default states, dropdown
   result/default selections, explicit non-empty text-input current values, and

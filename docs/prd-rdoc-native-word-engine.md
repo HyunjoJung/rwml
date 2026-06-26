@@ -377,15 +377,17 @@ The first public maturity release should meet these requirements.
   for decimal/hex/default ANSI, Unicode `\u`, neutral `\h`, separated or compact
   font `\f` switches and quoted or unquoted separated/compact size `\s`
   switches, and common
-  Symbol/Wingdings font mappings including Symbol `0xB7` bullet, while remaining display/layout cases preserve
+  Symbol/Wingdings font mappings including Symbol `0xB7` bullet; invalid display/layout syntax reports
+  `UnsupportedSwitch`, while valid broader display/layout cases preserve
   cached display text with `NoComputedResult`; action/automation fields
   (`GOTOBUTTON`, `MACROBUTTON`, `PRINT`) are named diagnostics, with
   deterministic `GOTOBUTTON`/`MACROBUTTON` quoted or unquoted display text and
   field text-format switches computed without executing navigation or macros,
   validated `PRINT` direct instructions and separated or compact `\p`
   printer-control groups rendered as hidden output without executing
-  printer/PostScript instructions, and remaining action/automation forms
-  preserving cached display text with `NoComputedResult`;
+  printer/PostScript instructions; invalid action/automation syntax reports
+  `UnsupportedSwitch`, while valid broader action/automation forms preserve
+  cached display text with `NoComputedResult`;
   compatibility/private fields (`PRIVATE`, `ADDIN`,
   `DATA`, `GLOSSARY`, `HTMLACTIVEX`) are named diagnostics with cached display
   text and `NoComputedResult` while leaving opaque payloads uninterpreted;

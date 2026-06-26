@@ -1461,7 +1461,7 @@ fn unsupported_field_reason(field: &Field) -> Option<FieldEvaluationReason> {
         }
         FieldKind::DocumentStructure(_) => Some(FieldEvaluationReason::NoComputedResult),
         FieldKind::Display(_) => Some(display_uncomputed_reason(&field.instruction)),
-        FieldKind::Action(_) => Some(FieldEvaluationReason::NoComputedResult),
+        FieldKind::Action(_) => Some(action_uncomputed_reason(&field.instruction)),
         FieldKind::Compatibility(_) => Some(FieldEvaluationReason::NoComputedResult),
         FieldKind::Barcode(_) => Some(FieldEvaluationReason::NoComputedResult),
         FieldKind::FormField(_) => Some(FieldEvaluationReason::NoComputedResult),
@@ -1610,6 +1610,18 @@ fn display_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     #[cfg(feature = "docx")]
     {
         if crate::docx::supports_display_field_syntax(instruction) {
+            return FieldEvaluationReason::NoComputedResult;
+        }
+    }
+    #[cfg(not(feature = "docx"))]
+    let _ = instruction;
+    FieldEvaluationReason::UnsupportedSwitch
+}
+
+fn action_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
+    #[cfg(feature = "docx")]
+    {
+        if crate::docx::supports_action_field_syntax(instruction) {
             return FieldEvaluationReason::NoComputedResult;
         }
     }

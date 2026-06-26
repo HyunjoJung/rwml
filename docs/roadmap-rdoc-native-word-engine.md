@@ -363,18 +363,18 @@ Initial status:
   deterministic `SYMBOL` fields compute decimal/hex/default ANSI,
   Unicode `\u`, neutral `\h`, separated or compact font `\f` switches and
   quoted or unquoted separated/compact size `\s` switches, and common Symbol/Wingdings character
-  insertions including Symbol `0xB7` bullet, with field-result format switches, while remaining display/layout cases report
-  `NoComputedResult` until native layout/equation/symbol evaluation is
-  implemented. The
+  insertions including Symbol `0xB7` bullet, with field-result format switches; invalid display/layout syntax reports
+  `UnsupportedSwitch`, while valid broader display/layout cases report
+  `NoComputedResult` until native layout/equation/symbol evaluation is implemented. The
   action/automation fields (`GOTOBUTTON`, `MACROBUTTON`, `PRINT`) are named
   separately from unknown fields; deterministic `GOTOBUTTON`/`MACROBUTTON`
   quoted or unquoted display text with field text-format switches computes
   without executing navigation or macros, validated `PRINT` direct instructions
   and separated or compact `\p` printer-control groups with field-result format
   switches render as hidden output without executing printer/PostScript
-  instructions, while remaining
-  action/automation forms report `NoComputedResult` without executing side
-  effects. The
+  instructions; invalid action/automation syntax reports `UnsupportedSwitch`,
+  while valid broader action/automation forms report `NoComputedResult` without
+  executing side effects. The
   compatibility/private fields (`PRIVATE`, `ADDIN`, `DATA`, `GLOSSARY`,
   `HTMLACTIVEX`) are named separately from unknown fields and report
   `NoComputedResult` while leaving opaque payloads uninterpreted. The
@@ -799,15 +799,17 @@ Initial status:
   `\ai n()`/`\di n()` layout controls, `EQ \i` integrals/sums/products,
   `EQ \o` overstrikes, hidden `EQ \d` displacement controls, and
   `SYMBOL` fields compute supported separated or compact
-  font switches and quoted or unquoted separated/compact size switches, while remaining
+  font switches and quoted or unquoted separated/compact size switches; invalid
+  display/layout syntax reports `UnsupportedSwitch`, while valid broader
   display/layout cases preserve cached text with `NoComputedResult` diagnostics.
   Action/automation fields are named separately from unknown fields;
   deterministic `GOTOBUTTON`/`MACROBUTTON` quoted or unquoted display text with
   field text-format switches computes without executing actions, validated
   `PRINT` direct instructions and separated or compact `\p` printer-control
   groups with field-result format switches render as hidden output without
-  executing printer/PostScript instructions, while remaining action/automation fields preserve cached text
-  with `NoComputedResult` diagnostics.
+  executing printer/PostScript instructions; invalid action/automation syntax
+  reports `UnsupportedSwitch`, while valid broader action/automation fields
+  preserve cached text with `NoComputedResult` diagnostics.
   Compatibility/private fields are named separately from unknown fields and
   preserve cached text with `NoComputedResult` diagnostics.
   Barcode fields are named separately from unknown fields and preserve cached
