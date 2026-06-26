@@ -2829,6 +2829,7 @@ fn image_builder_adds_floating_anchor_offset() {
     let images = reopened.images();
     assert_eq!(images.len(), 1);
     assert_eq!(images[0].bytes.as_deref(), Some(png.as_slice()));
+    assert_eq!(images[0].floating_offset_emu, Some((91440, 182880)));
     let shapes = reopened.floating_shapes();
     assert_eq!(shapes.len(), 1);
     assert_eq!(

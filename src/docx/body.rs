@@ -1576,7 +1576,8 @@ fn read_run(
                 b"AlternateContent" => {
                     let mut img = None;
                     let mut txbx = String::new();
-                    walk_alternate_content(r, ctx, &mut img, &mut txbx, depth + 1);
+                    let mut anchor = DrawingAnchorOffset::default();
+                    walk_alternate_content(r, ctx, &mut img, &mut txbx, &mut anchor, depth + 1);
                     push_drawing_runs(&mut images, img, txbx);
                 }
                 _ => skip_subtree(r),
@@ -1715,9 +1716,10 @@ fn read_text(r: &mut Xml<'_>) -> String {
 fn read_drawing(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Option<Image>, String) {
     let mut img = None;
     let mut text = String::new();
+    let mut anchor = DrawingAnchorOffset::default();
     // Start from the caller's structural depth (not 0) so the recursion budget is
     // continuous across the drawing/text-box boundary.
-    walk_drawing(r, ctx, &mut img, &mut text, depth);
+    walk_drawing(r, ctx, &mut img, &mut text, &mut anchor, depth);
     (img, text)
 }
 
@@ -1729,11 +1731,35 @@ fn walk_drawing(
     ctx: &Ctx<'_>,
     img: &mut Option<Image>,
     text: &mut String,
+    anchor: &mut DrawingAnchorOffset,
     depth: u32,
 ) {
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
+                b"anchor" => {
+                    let previous_anchor = *anchor;
+                    let had_image = img.is_some();
+                    *anchor = DrawingAnchorOffset {
+                        active: true,
+                        ..DrawingAnchorOffset::default()
+                    };
+                    if depth < MAX_DEPTH {
+                        walk_drawing(r, ctx, img, text, anchor, depth + 1);
+                    } else {
+                        skip_subtree(r);
+                    }
+                    if !had_image {
+                        apply_floating_anchor_offset(img, anchor);
+                    }
+                    *anchor = previous_anchor;
+                }
+                b"positionH" => {
+                    anchor.horizontal_page_offset_emu = read_page_position_offset(r, &e);
+                }
+                b"positionV" => {
+                    anchor.vertical_page_offset_emu = read_page_position_offset(r, &e);
+                }
                 b"txbxContent" => {
                     if depth < MAX_DEPTH {
                         let blocks = read_blocks(r, ctx, depth + 1);
@@ -1742,16 +1768,17 @@ fn walk_drawing(
                         skip_subtree(r);
                     }
                 }
-                b"AlternateContent" => walk_alternate_content(r, ctx, img, text, depth + 1),
+                b"AlternateContent" => walk_alternate_content(r, ctx, img, text, anchor, depth + 1),
                 _ => {
                     if local(e.name().as_ref()) == b"xfrm" {
                         apply_image_rotation(img, &e);
                     }
                     if img.is_none() {
                         *img = blip_image(&e, ctx);
+                        apply_floating_anchor_offset(img, anchor);
                     }
                     if depth < MAX_DEPTH {
-                        walk_drawing(r, ctx, img, text, depth + 1);
+                        walk_drawing(r, ctx, img, text, anchor, depth + 1);
                     } else {
                         skip_subtree(r);
                     }
@@ -1763,11 +1790,57 @@ fn walk_drawing(
                 }
                 if img.is_none() {
                     *img = blip_image(&e, ctx);
+                    apply_floating_anchor_offset(img, anchor);
                 }
             }
             Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct DrawingAnchorOffset {
+    active: bool,
+    horizontal_page_offset_emu: Option<i64>,
+    vertical_page_offset_emu: Option<i64>,
+}
+
+fn read_page_position_offset(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Option<i64> {
+    let page_relative = attr_local(start, b"relativeFrom").as_deref() == Some("page");
+    let mut offset = None;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"posOffset" => {
+                if page_relative {
+                    offset = read_text(r).trim().parse().ok();
+                } else {
+                    skip_subtree(r);
+                }
+            }
+            Ok(Event::Start(_)) => skip_subtree(r),
+            Ok(Event::End(e))
+                if matches!(local(e.name().as_ref()), b"positionH" | b"positionV") =>
+            {
+                break;
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    offset
+}
+
+fn apply_floating_anchor_offset(img: &mut Option<Image>, anchor: &DrawingAnchorOffset) {
+    if !anchor.active {
+        return;
+    }
+    if let (Some(image), Some(x), Some(y)) = (
+        img.as_mut(),
+        anchor.horizontal_page_offset_emu,
+        anchor.vertical_page_offset_emu,
+    ) {
+        image.floating_offset_emu = Some((x, y));
     }
 }
 
@@ -1789,6 +1862,7 @@ fn walk_alternate_content(
     ctx: &Ctx<'_>,
     img: &mut Option<Image>,
     text: &mut String,
+    anchor: &mut DrawingAnchorOffset,
     depth: u32,
 ) {
     let mut took = false;
@@ -1798,7 +1872,7 @@ fn walk_alternate_content(
                 b"Choice" | b"Fallback" if !took => {
                     took = true;
                     if depth < MAX_DEPTH {
-                        walk_drawing(r, ctx, img, text, depth + 1);
+                        walk_drawing(r, ctx, img, text, anchor, depth + 1);
                     } else {
                         skip_subtree(r);
                     }
