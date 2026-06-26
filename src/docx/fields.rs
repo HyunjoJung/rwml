@@ -1847,6 +1847,9 @@ pub(crate) fn style_ref_context(
     let mut next_order = 0usize;
     loop {
         match r.read_event() {
+            Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
+                skip_subtree(&mut r);
+            }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"p" => {
                 read_style_ref_paragraph(
                     &mut r,
@@ -1885,6 +1888,9 @@ fn read_style_ref_paragraph(
     let mut current: Option<StyleRefScanField> = None;
     loop {
         match r.read_event() {
+            Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
+                skip_subtree(r);
+            }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"pPr" => {
                 read_style_ref_ppr(r, &mut style_id, &mut num_id, &mut ilvl);
             }
@@ -2001,6 +2007,9 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
     let mut run_text = String::new();
     loop {
         match r.read_event() {
+            Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
+                skip_subtree(r);
+            }
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"rStyle" => {
                 run_style_id = attr_local(&e, b"val");
             }
