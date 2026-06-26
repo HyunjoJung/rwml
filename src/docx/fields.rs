@@ -6688,6 +6688,10 @@ fn computed_quote_result(instruction: &str) -> Option<String> {
     Some(apply_field_text_format(spec.text, spec.text_format))
 }
 
+pub(crate) fn supports_quote_field_syntax(instruction: &str) -> bool {
+    quote_instruction(instruction).is_some()
+}
+
 fn quote_instruction(instruction: &str) -> Option<QuoteInstruction> {
     let tokens = instruction_parts(instruction);
     let mut parts = tokens.iter().map(String::as_str);

@@ -1450,6 +1450,9 @@ fn unsupported_field_reason(field: &Field) -> Option<FieldEvaluationReason> {
         FieldKind::Dynamic(ref kind) if kind.eq_ignore_ascii_case("COMPARE") => {
             Some(compare_uncomputed_reason(&field.instruction))
         }
+        FieldKind::Dynamic(ref kind) if kind.eq_ignore_ascii_case("QUOTE") => {
+            Some(quote_uncomputed_reason(&field.instruction))
+        }
         FieldKind::Dynamic(_) => Some(FieldEvaluationReason::NoComputedResult),
         FieldKind::InsertedContent(_) => Some(FieldEvaluationReason::NoComputedResult),
         FieldKind::MailMerge(_) => Some(FieldEvaluationReason::NoComputedResult),
@@ -1673,6 +1676,21 @@ fn compare_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     #[cfg(feature = "docx")]
     {
         if crate::docx::supports_compare_field_syntax(instruction) {
+            return FieldEvaluationReason::NoComputedResult;
+        }
+        FieldEvaluationReason::UnsupportedSwitch
+    }
+    #[cfg(not(feature = "docx"))]
+    {
+        let _ = instruction;
+        FieldEvaluationReason::NoComputedResult
+    }
+}
+
+fn quote_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
+    #[cfg(feature = "docx")]
+    {
+        if crate::docx::supports_quote_field_syntax(instruction) {
             return FieldEvaluationReason::NoComputedResult;
         }
         FieldEvaluationReason::UnsupportedSwitch

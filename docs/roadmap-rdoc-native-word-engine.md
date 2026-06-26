@@ -290,8 +290,10 @@ Initial status:
   two- and three-section
   positive/negative/zero numeric pictures separated by semicolons,
   with optional neutral `\* MERGEFORMAT`/`\* CHARFORMAT` formula tails,
-  deterministic literal `QUOTE` fields compute quoted/unquoted text with general text-format switches, deterministic
-  literal `IF` fields compute finite decimal/scientific numeric comparisons and
+  deterministic literal `QUOTE` fields compute quoted/unquoted text with
+  general text-format switches, malformed literal `QUOTE` syntax reports
+  `UnsupportedSwitch`, deterministic literal `IF` fields compute
+  finite decimal/scientific numeric comparisons and
   quoted string equality/inequality, deterministic literal `COMPARE` fields compute
   `1`/`0` results for finite decimal/scientific numeric operands and either-side
   quoted `?`/`*` wildcard equality/inequality, deterministic `FILLIN` fields with explicit `\d`
@@ -752,8 +754,9 @@ Initial status:
   digit-drop/rounding positions, plus two- and three-section
   positive/negative/zero numeric pictures separated by semicolons,
   with optional neutral `\* MERGEFORMAT`/`\* CHARFORMAT` formula tails,
-  deterministic literal `QUOTE` fields render quoted or unquoted computed text with general
-  text-format switches, deterministic literal `IF` fields compute finite
+  deterministic literal `QUOTE` fields render quoted or unquoted computed text
+  with general text-format switches, malformed literal `QUOTE` syntax reports
+  `UnsupportedSwitch`, deterministic literal `IF` fields compute finite
   decimal/scientific numeric comparisons and quoted string equality/inequality,
   and deterministic literal
   `COMPARE` fields compute `1`/`0` results for finite decimal/scientific numeric operands and either-side quoted `?`/`*` wildcard equality/inequality,

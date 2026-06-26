@@ -588,7 +588,7 @@ fn quote_field_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" QUOTE &quot;literal text&quot; "><w:r><w:t>stale literal</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" QUOTE &quot;mixed words&quot; \* Caps "><w:r><w:t>stale caps</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> QUOTE &quot;word&quot; \* Upper </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale upper</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:p><w:fldSimple w:instr=" QUOTE PlainToken "><w:r><w:t>stale unquoted token</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" QUOTE plain words \* Upper "><w:r><w:t>stale unquoted phrase</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" QUOTE &quot;literal text&quot; "><w:r><w:t>stale literal</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" QUOTE &quot;mixed words&quot; \* Caps "><w:r><w:t>stale caps</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> QUOTE &quot;word&quot; \* Upper </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale upper</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:p><w:fldSimple w:instr=" QUOTE PlainToken "><w:r><w:t>stale unquoted token</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" QUOTE plain words \* Upper "><w:r><w:t>stale unquoted phrase</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" QUOTE &quot;broken literal "><w:r><w:t>cached broken quote</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -4367,7 +4367,7 @@ fn docx_quote_field_computes_literal_text_and_general_text_formats() {
     let doc = Document::open(&quote_field_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 5);
+    assert_eq!(fields.len(), 6);
     assert!(fields
         .iter()
         .all(|field| field.kind == FieldKind::Dynamic("QUOTE".to_string())));
@@ -4386,10 +4386,25 @@ fn docx_quote_field_computes_literal_text_and_general_text_formats() {
     assert_eq!(fields[4].instruction, "QUOTE plain words \\* Upper");
     assert_eq!(fields[4].result, "stale unquoted phrase");
     assert_eq!(fields[4].computed_result.as_deref(), Some("PLAIN WORDS"));
+    assert_eq!(fields[5].instruction, "QUOTE \"broken literal ");
+    assert_eq!(fields[5].result, "cached broken quote");
+    assert_eq!(fields[5].computed_result, None);
 
     let report = doc.report();
-    assert!(report.features.unsupported_field_kinds.is_empty());
-    assert!(report.features.unsupported_field_reasons.is_empty());
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Dynamic("QUOTE".to_string()),
+            count: 1,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnsupportedSwitch,
+            count: 1,
+        }]
+    );
 
     let main_text = doc.main_text();
     assert!(
@@ -4404,6 +4419,7 @@ fn docx_quote_field_computes_literal_text_and_general_text_formats() {
             && !main_text.contains("stale unquoted phrase"),
         "computed QUOTE fields should not display stale cached text: {main_text:?}"
     );
+    assert!(main_text.contains("cached broken quote"), "{main_text:?}");
 }
 
 #[test]

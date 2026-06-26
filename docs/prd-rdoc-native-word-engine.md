@@ -302,9 +302,11 @@ The first public maturity release should meet these requirements.
   digit-drop/rounding positions, plus two- and three-section
   positive/negative/zero numeric pictures separated by semicolons,
   with optional neutral `\* MERGEFORMAT`/`\* CHARFORMAT` formula tails,
-  deterministic literal `QUOTE` fields computed from quoted or unquoted text using
-  general text-format switches and deterministic literal `IF` fields computed
-  for finite decimal/scientific numeric comparisons and quoted string equality/inequality, plus
+  deterministic literal `QUOTE` fields computed from quoted or unquoted text
+  using general text-format switches, malformed literal `QUOTE` syntax reports
+  `UnsupportedSwitch`, and deterministic literal `IF` fields computed
+  for finite decimal/scientific numeric comparisons and quoted string
+  equality/inequality, plus
   deterministic literal `COMPARE` fields computed as `1`/`0` for finite
   decimal/scientific numeric operands and quoted
   `?`/`*` wildcard equality/inequality, deterministic `FILLIN` fields with
