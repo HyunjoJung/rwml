@@ -3511,12 +3511,27 @@ fn merge_field_name(instruction: &str) -> Option<String> {
         if part.starts_with("\\*") || part.starts_with('\\') {
             continue;
         }
-        let name = part.trim_matches('"');
+        let name = merge_field_name_token(&part)?;
         if !name.is_empty() {
             return Some(name.to_string());
         }
     }
     None
+}
+
+#[cfg(feature = "docx")]
+fn merge_field_name_token(token: &str) -> Option<&str> {
+    let token = token.trim();
+    let name = match (token.starts_with('"'), token.ends_with('"')) {
+        (true, true) if token.len() >= 2 => &token[1..token.len() - 1],
+        (true, _) | (_, true) => return None,
+        (false, false) => token,
+    }
+    .trim();
+    if name.is_empty() || name.starts_with('\\') || name.contains('"') {
+        return None;
+    }
+    Some(name)
 }
 
 #[cfg(feature = "docx")]

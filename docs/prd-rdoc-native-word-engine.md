@@ -284,8 +284,8 @@ The first public maturity release should meet these requirements.
   without backing app properties)
   are named supported display fields for diagnostics when their instruction
   syntax is valid; malformed document-info syntax reports `UnsupportedSwitch`;
-  `MERGEFIELD` remains
-  available for template filling; known dynamic/control fields (`=`, `IF`,
+  `MERGEFIELD` remains available for template filling, with malformed
+  merge-field names reporting `UnsupportedSwitch`; known dynamic/control fields (`=`, `IF`,
   `QUOTE`, `FILLIN`, `ASK`, `COMPARE`, `SET`, `NEXT`, `NEXTIF`, `SKIPIF`) are named
   diagnostics, with deterministic literal arithmetic formula fields computed for
   finite decimal/scientific numeric constants, literal scalar numeric/logical functions (`ABS`, `AND`,

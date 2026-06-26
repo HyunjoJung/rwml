@@ -414,6 +414,7 @@ PDF page list; section-aware default/first/even running header/footer variants
 are selected with first-page variants scoped to each section and even variants
 based on emitted page parity; field-code `HYPERLINK` runs render as link annotations; cached
 body `FILENAME`/`MERGEFIELD`, deterministic simple source-order `SEQ`,
+malformed `MERGEFIELD` names reported as `UnsupportedSwitch`,
 metadata-backed document-info/date
 fields (`AUTHOR`, `TITLE`, `SUBJECT`, `KEYWORDS`, `COMMENTS`, `LASTSAVEDBY`,
 `CATEGORY`, `CONTENTSTATUS`, `VERSION`, core aliases such as `CREATOR`,

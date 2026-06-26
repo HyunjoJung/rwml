@@ -430,7 +430,8 @@ Implementation:
 - parse field kind and raw instruction;
 - compute only low-risk fields at first (`PAGE` in renderer context and trusted
   structural/source-rendered reader current-page context, field-code
-  `HYPERLINK` as link annotations, `FILENAME`/`MERGEFIELD`,
+  `HYPERLINK` as link annotations, `FILENAME`/`MERGEFIELD` with malformed
+  merge-field names reporting `UnsupportedSwitch`,
   metadata-backed document-info fields such as `AUTHOR`, `TITLE`,
   `SUBJECT`, `KEYWORDS`, `COMMENTS`, `LASTSAVEDBY`, core aliases such as
   `CREATOR`, `DESCRIPTION`, `KEYWORD`, and `LASTMODIFIEDBY`, and mapped `DOCPROPERTY`
@@ -1060,7 +1061,8 @@ open and edit the chart data.
   layout context is available;
 - compute body `PAGE` field runs from the emitted PDF page number during the draw
   pass, while preserving cached text in the model and exporters;
-- treat field-code `HYPERLINK` runs, cached body `FILENAME`/`MERGEFIELD`,
+- treat field-code `HYPERLINK` runs, cached body `FILENAME`/`MERGEFIELD` with
+  malformed merge-field names reporting `UnsupportedSwitch`,
   metadata-backed document-info results, and cached date/stat/unmapped
   document-info field results as supported preview-render
   content;

@@ -564,10 +564,7 @@ fn unsupported_field_evaluation(features: &FeatureInventory) -> (usize, Vec<Fiel
 fn supports_field_kind_evaluation(kind: &FieldKind) -> bool {
     matches!(
         kind,
-        FieldKind::Hyperlink
-            | FieldKind::Filename
-            | FieldKind::MergeField
-            | FieldKind::DocumentInfo(_)
+        FieldKind::Hyperlink | FieldKind::Filename | FieldKind::DocumentInfo(_)
     )
 }
 
@@ -578,7 +575,22 @@ fn supports_field_evaluation(field: &Field) -> bool {
     if matches!(&field.kind, FieldKind::DocumentInfo(_)) {
         return supports_document_info_field_evaluation(field);
     }
+    if field.kind == FieldKind::MergeField {
+        return supports_merge_field_evaluation(field);
+    }
     supports_field_kind_evaluation(&field.kind)
+}
+
+fn supports_merge_field_evaluation(field: &Field) -> bool {
+    #[cfg(feature = "docx")]
+    {
+        crate::merge_field_name(&field.instruction).is_some()
+    }
+    #[cfg(not(feature = "docx"))]
+    {
+        let _ = field;
+        true
+    }
 }
 
 fn supports_document_info_field_evaluation(field: &Field) -> bool {
@@ -1516,7 +1528,8 @@ fn unsupported_field_reason(field: &Field) -> Option<FieldEvaluationReason> {
         FieldKind::Compatibility(_) => Some(FieldEvaluationReason::NoComputedResult),
         FieldKind::Barcode(_) => Some(FieldEvaluationReason::NoComputedResult),
         FieldKind::FormField(_) => Some(FieldEvaluationReason::NoComputedResult),
-        FieldKind::Hyperlink | FieldKind::Filename | FieldKind::MergeField => None,
+        FieldKind::Hyperlink | FieldKind::Filename => None,
+        FieldKind::MergeField => Some(FieldEvaluationReason::UnsupportedSwitch),
         FieldKind::DocumentInfo(_) => Some(FieldEvaluationReason::UnsupportedSwitch),
         FieldKind::TocEntry | FieldKind::Sequence => Some(FieldEvaluationReason::NoComputedResult),
     }
