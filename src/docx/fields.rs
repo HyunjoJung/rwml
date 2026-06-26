@@ -3060,6 +3060,7 @@ fn page_ref_section_page_number_format(e: &BytesStart<'_>) -> Option<PageRefDisp
     let format = match attr_local(e, b"fmt").as_deref()? {
         "decimal" => PageNumberFormat::Arabic,
         "decimalZero" => PageNumberFormat::DecimalZero,
+        "numberInDash" => PageNumberFormat::ArabicDash,
         "lowerLetter" => PageNumberFormat::AlphabeticLower,
         "upperLetter" => PageNumberFormat::AlphabeticUpper,
         "lowerRoman" => PageNumberFormat::RomanLower,

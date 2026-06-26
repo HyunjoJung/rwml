@@ -2490,6 +2490,7 @@ fn docx_page_ref_unsupported_section_format_targets(xml: &str) -> HashSet<String
             format.as_str(),
             "decimal"
                 | "decimalZero"
+                | "numberInDash"
                 | "lowerLetter"
                 | "upperLetter"
                 | "lowerRoman"

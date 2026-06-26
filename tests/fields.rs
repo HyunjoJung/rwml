@@ -1523,7 +1523,7 @@ fn page_ref_section_page_number_format_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgNumType w:start="3" w:fmt="lowerRoman"/></w:sectPr></w:pPr></w:p><w:p><w:bookmarkStart w:id="7" w:name="RomanSection"/><w:r><w:t>Roman section target</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF RomanSection \h "><w:r><w:t>stale roman</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF RomanSection \* Arabic "><w:r><w:t>stale arabic override</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF RomanSection \p "><w:r><w:t>stale roman relative</w:t></w:r></w:fldSimple></w:p><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgNumType w:start="4" w:fmt="decimalZero"/></w:sectPr></w:pPr></w:p><w:p><w:r><w:lastRenderedPageBreak/><w:t>Decimal zero page lead.</w:t></w:r></w:p><w:p><w:bookmarkStart w:id="8" w:name="DecimalZeroSection"/><w:r><w:t>Decimal zero target</w:t></w:r><w:bookmarkEnd w:id="8"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF DecimalZeroSection \h "><w:r><w:t>stale decimal zero</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF DecimalZeroSection \* Arabic "><w:r><w:t>stale decimal arabic</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgNumType w:start="3" w:fmt="lowerRoman"/></w:sectPr></w:pPr></w:p><w:p><w:bookmarkStart w:id="7" w:name="RomanSection"/><w:r><w:t>Roman section target</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF RomanSection \h "><w:r><w:t>stale roman</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF RomanSection \* Arabic "><w:r><w:t>stale arabic override</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF RomanSection \p "><w:r><w:t>stale roman relative</w:t></w:r></w:fldSimple></w:p><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgNumType w:start="4" w:fmt="decimalZero"/></w:sectPr></w:pPr></w:p><w:p><w:r><w:lastRenderedPageBreak/><w:t>Decimal zero page lead.</w:t></w:r></w:p><w:p><w:bookmarkStart w:id="8" w:name="DecimalZeroSection"/><w:r><w:t>Decimal zero target</w:t></w:r><w:bookmarkEnd w:id="8"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF DecimalZeroSection \h "><w:r><w:t>stale decimal zero</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF DecimalZeroSection \* Arabic "><w:r><w:t>stale decimal arabic</w:t></w:r></w:fldSimple></w:p><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgNumType w:start="5" w:fmt="numberInDash"/></w:sectPr></w:pPr></w:p><w:p><w:bookmarkStart w:id="9" w:name="DashedSection"/><w:r><w:t>Dashed target</w:t></w:r><w:bookmarkEnd w:id="9"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF DashedSection \h "><w:r><w:t>stale dashed</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF DashedSection \* Arabic "><w:r><w:t>stale dashed arabic</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -6718,7 +6718,7 @@ fn docx_page_ref_applies_trusted_section_page_number_formats() {
     let doc = Document::open(&page_ref_section_page_number_format_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 5);
+    assert_eq!(fields.len(), 7);
     assert_eq!(fields[0].kind, FieldKind::PageRef);
     assert_eq!(fields[0].instruction, "PAGEREF RomanSection \\h");
     assert_eq!(fields[0].computed_result.as_deref(), Some("iii"));
@@ -6737,10 +6737,18 @@ fn docx_page_ref_applies_trusted_section_page_number_formats() {
         "PAGEREF DecimalZeroSection \\* Arabic"
     );
     assert_eq!(fields[4].computed_result.as_deref(), Some("4"));
+    assert_eq!(fields[5].kind, FieldKind::PageRef);
+    assert_eq!(fields[5].instruction, "PAGEREF DashedSection \\h");
+    assert_eq!(fields[5].computed_result.as_deref(), Some("- 5 -"));
+    assert_eq!(fields[6].kind, FieldKind::PageRef);
+    assert_eq!(fields[6].instruction, "PAGEREF DashedSection \\* Arabic");
+    assert_eq!(fields[6].computed_result.as_deref(), Some("5"));
 
     let main_text = doc.main_text();
     assert!(
-        main_text.contains("iii\n3\nabove") && main_text.contains("04\n4"),
+        main_text.contains("iii\n3\nabove")
+            && main_text.contains("04\n4")
+            && main_text.contains("- 5 -\n5"),
         "trusted section page-number formats should drive supported PAGEREF text: {main_text:?}"
     );
     assert!(
@@ -6748,7 +6756,9 @@ fn docx_page_ref_applies_trusted_section_page_number_formats() {
             && !main_text.contains("stale arabic override")
             && !main_text.contains("stale roman relative")
             && !main_text.contains("stale decimal zero")
-            && !main_text.contains("stale decimal arabic"),
+            && !main_text.contains("stale decimal arabic")
+            && !main_text.contains("stale dashed")
+            && !main_text.contains("stale dashed arabic"),
         "computed section-format PAGEREF fields should replace stale cached text: {main_text:?}"
     );
 }
