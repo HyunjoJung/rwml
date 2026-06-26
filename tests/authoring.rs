@@ -4301,6 +4301,102 @@ fn doc_builder_adds_marker_only_scatter_chart() {
 }
 
 #[test]
+fn doc_builder_adds_smooth_scatter_charts() {
+    let model = DocBuilder::new()
+        .chart(
+            ChartBuilder::scatter_smooth()
+                .title("Latency smooth markers")
+                .categories(["P50", "P90", "P99"])
+                .series("Before", [120.0, 240.0, 510.0])
+                .series("After", [90.0, 180.0, 360.0])
+                .size_px(420, 280)
+                .alt("Latency smooth scatter chart"),
+        )
+        .chart(
+            ChartBuilder::scatter_smooth_no_markers()
+                .title("Latency smooth")
+                .categories(["P50", "P90", "P99"])
+                .series("Before", [120.0, 240.0, 510.0])
+                .series("After", [90.0, 180.0, 360.0])
+                .size_px(420, 280)
+                .alt("Latency smooth markerless scatter chart"),
+        )
+        .build();
+
+    let Block::Chart(first) = &model.blocks[0] else {
+        panic!("expected first chart block");
+    };
+    let Block::Chart(second) = &model.blocks[1] else {
+        panic!("expected second chart block");
+    };
+    assert_eq!(first.kind, ChartKind::ScatterSmooth);
+    assert_eq!(second.kind, ChartKind::ScatterSmoothNoMarkers);
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let rels = String::from_utf8(parts["word/_rels/document.xml.rels"].clone()).unwrap();
+    let smooth_xml = String::from_utf8(parts["word/charts/chart1.xml"].clone()).unwrap();
+    let markerless_xml = String::from_utf8(parts["word/charts/chart2.xml"].clone()).unwrap();
+    let workbook1_bytes = parts
+        .get("word/embeddings/Microsoft_Excel_Worksheet1.xlsx")
+        .expect("embedded smooth scatter chart workbook");
+    let workbook2_bytes = parts
+        .get("word/embeddings/Microsoft_Excel_Worksheet2.xlsx")
+        .expect("embedded smooth markerless scatter chart workbook");
+    let workbook1_parts = unzip_parts(workbook1_bytes);
+    let workbook2_parts = unzip_parts(workbook2_bytes);
+    let sheet1_xml =
+        String::from_utf8(workbook1_parts["xl/worksheets/sheet1.xml"].clone()).unwrap();
+    let sheet2_xml =
+        String::from_utf8(workbook2_parts["xl/worksheets/sheet1.xml"].clone()).unwrap();
+
+    assert!(
+        document_xml
+            .contains(r#"<wp:docPr id="1" name="Chart1" descr="Latency smooth scatter chart"/>"#)
+            && document_xml.contains(
+                r#"<wp:docPr id="2" name="Chart2" descr="Latency smooth markerless scatter chart"/>"#
+            )
+            && document_xml.contains(r#"<c:chart r:id="rId1"/>"#)
+            && document_xml.contains(r#"<c:chart r:id="rId2"/>"#),
+        "smooth scatter drawings missing: {document_xml}"
+    );
+    assert!(
+        rels.contains(r#"Target="charts/chart1.xml""#)
+            && rels.contains(r#"Target="charts/chart2.xml""#),
+        "smooth scatter relationships missing: {rels}"
+    );
+    assert!(
+        smooth_xml.contains("<c:scatterChart>")
+            && smooth_xml.contains(r#"<c:scatterStyle val="smoothMarker"/>"#)
+            && smooth_xml.contains(r#"<c:marker><c:symbol val="circle"/></c:marker>"#)
+            && smooth_xml.contains("<a:t>Latency smooth markers</a:t>")
+            && smooth_xml.contains("<c:v>Before</c:v>")
+            && smooth_xml.contains(r#"<c:pt idx="2"><c:v>360</c:v></c:pt>"#),
+        "smooth scatter payload missing: {smooth_xml}"
+    );
+    assert!(
+        markerless_xml.contains("<c:scatterChart>")
+            && markerless_xml.contains(r#"<c:scatterStyle val="smooth"/>"#)
+            && markerless_xml.contains(r#"<c:marker><c:symbol val="none"/></c:marker>"#)
+            && markerless_xml.contains("<a:t>Latency smooth</a:t>")
+            && markerless_xml.contains("<c:v>After</c:v>")
+            && markerless_xml.contains(r#"<c:pt idx="2"><c:v>360</c:v></c:pt>"#),
+        "smooth markerless scatter payload missing: {markerless_xml}"
+    );
+    assert!(
+        sheet1_xml.contains(r#"<c r="B2"><v>120</v></c>"#)
+            && sheet1_xml.contains(r#"<c r="C4"><v>360</v></c>"#)
+            && sheet2_xml.contains(r#"<c r="B2"><v>120</v></c>"#)
+            && sheet2_xml.contains(r#"<c r="C4"><v>360</v></c>"#),
+        "smooth scatter workbook values missing: {sheet1_xml} {sheet2_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("smooth scatter charts .docx reopens");
+    assert_eq!(reopened.report().features.charts, 2);
+}
+
+#[test]
 fn doc_builder_adds_bubble_chart() {
     let model = DocBuilder::new()
         .chart(
@@ -5424,6 +5520,45 @@ fn render_pdf_draws_authored_marker_only_scatter_chart() {
     assert!(
         rendered.pdf.len() > empty.pdf.len() + 100,
         "marker-only scatter chart drawing should add visible PDF content"
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn render_pdf_draws_authored_smooth_scatter_charts() {
+    let model = DocBuilder::new()
+        .chart(
+            ChartBuilder::scatter_smooth()
+                .title("Latency smooth markers")
+                .categories(["P50", "P90", "P99"])
+                .series("Before", [120.0, 240.0, 510.0])
+                .series("After", [90.0, 180.0, 360.0]),
+        )
+        .chart(
+            ChartBuilder::scatter_smooth_no_markers()
+                .title("Latency smooth")
+                .categories(["P50", "P90", "P99"])
+                .series("Before", [120.0, 240.0, 510.0])
+                .series("After", [90.0, 180.0, 360.0]),
+        )
+        .build();
+
+    let empty = rdoc::render_pdf_with_report(&DocModel::default());
+    let rendered = rdoc::render_pdf_with_report(&model);
+
+    assert!(rendered.pdf.starts_with(b"%PDF"));
+    assert_eq!(rendered.report.pages, 1);
+    assert_eq!(rendered.report.unsupported.charts, 0);
+    assert!(
+        !rendered.report.warnings.iter().any(|warning| matches!(
+            warning,
+            rdoc::RenderWarning::ChartsPreservedButNotModeled { .. }
+        )),
+        "authored smooth scatter charts should render without preserved-only warnings"
+    );
+    assert!(
+        rendered.pdf.len() > empty.pdf.len() + 100,
+        "smooth scatter chart drawings should add visible PDF content"
     );
 }
 

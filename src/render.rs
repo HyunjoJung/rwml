@@ -2750,6 +2750,8 @@ fn draw_authored_chart(
         | ChartKind::Area3D
         | ChartKind::Scatter
         | ChartKind::ScatterMarkers
+        | ChartKind::ScatterSmooth
+        | ChartKind::ScatterSmoothNoMarkers
         | ChartKind::Bubble
         | ChartKind::Bubble3D
         | ChartKind::Surface
@@ -3054,7 +3056,10 @@ fn draw_authored_chart(
                         }
                     }
                 }
-                ChartKind::Scatter | ChartKind::ScatterMarkers => {
+                ChartKind::Scatter
+                | ChartKind::ScatterMarkers
+                | ChartKind::ScatterSmooth
+                | ChartKind::ScatterSmoothNoMarkers => {
                     for (series_index, series) in chart.series.iter().enumerate() {
                         let color = chart_series_color(series_index);
                         let mut previous: Option<(f32, f32)> = None;
@@ -3067,14 +3072,23 @@ fn draw_authored_chart(
                                 .unwrap_or(0.0);
                             let point_x = plot_left + value_index as f32 * band_w + band_w * 0.5;
                             let point_y = value_y(value).clamp(plot_top, plot_bottom);
-                            if chart.kind == ChartKind::Scatter {
+                            if chart.kind != ChartKind::ScatterMarkers {
                                 if let Some((prev_x, prev_y)) = previous {
                                     fill_line_segment(
                                         surface, prev_x, prev_y, point_x, point_y, 1.3, color,
                                     );
                                 }
                             }
-                            fill_rect_color(surface, point_x - 2.5, point_y - 2.5, 5.0, 5.0, color);
+                            if chart.kind != ChartKind::ScatterSmoothNoMarkers {
+                                fill_rect_color(
+                                    surface,
+                                    point_x - 2.5,
+                                    point_y - 2.5,
+                                    5.0,
+                                    5.0,
+                                    color,
+                                );
+                            }
                             previous = Some((point_x, point_y));
                         }
                     }

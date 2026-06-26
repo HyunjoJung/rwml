@@ -1032,6 +1032,26 @@ impl ChartBuilder {
         }
     }
 
+    /// Start a smoothed scatter chart with point markers.
+    pub fn scatter_smooth() -> Self {
+        Self {
+            chart: Chart {
+                kind: ChartKind::ScatterSmooth,
+                ..Chart::default()
+            },
+        }
+    }
+
+    /// Start a smoothed scatter chart without point markers.
+    pub fn scatter_smooth_no_markers() -> Self {
+        Self {
+            chart: Chart {
+                kind: ChartKind::ScatterSmoothNoMarkers,
+                ..Chart::default()
+            },
+        }
+    }
+
     /// Start a bubble chart.
     pub fn bubble() -> Self {
         Self {

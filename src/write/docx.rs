@@ -1915,11 +1915,32 @@ fn chart_xml(chart: &Chart, chart_id: u32, workbook_rid: Option<&str>) -> String
         ChartKind::FilledRadar => {
             write_radar_chart(&mut out, chart, cat_axis_id, val_axis_id, "filled")
         }
-        ChartKind::Scatter => {
-            write_scatter_chart(&mut out, chart, cat_axis_id, val_axis_id, "lineMarker")
-        }
-        ChartKind::ScatterMarkers => {
-            write_scatter_chart(&mut out, chart, cat_axis_id, val_axis_id, "marker")
+        ChartKind::Scatter => write_scatter_chart(
+            &mut out,
+            chart,
+            cat_axis_id,
+            val_axis_id,
+            "lineMarker",
+            "circle",
+        ),
+        ChartKind::ScatterMarkers => write_scatter_chart(
+            &mut out,
+            chart,
+            cat_axis_id,
+            val_axis_id,
+            "marker",
+            "circle",
+        ),
+        ChartKind::ScatterSmooth => write_scatter_chart(
+            &mut out,
+            chart,
+            cat_axis_id,
+            val_axis_id,
+            "smoothMarker",
+            "circle",
+        ),
+        ChartKind::ScatterSmoothNoMarkers => {
+            write_scatter_chart(&mut out, chart, cat_axis_id, val_axis_id, "smooth", "none")
         }
         ChartKind::Bubble | ChartKind::Bubble3D => {
             write_bubble_chart(&mut out, chart, cat_axis_id, val_axis_id)
@@ -1945,6 +1966,8 @@ fn chart_xml(chart: &Chart, chart_id: u32, workbook_rid: Option<&str>) -> String
         | ChartKind::Doughnut => {}
         ChartKind::Scatter
         | ChartKind::ScatterMarkers
+        | ChartKind::ScatterSmooth
+        | ChartKind::ScatterSmoothNoMarkers
         | ChartKind::Bubble
         | ChartKind::Bubble3D => write_scatter_axes(&mut out, cat_axis_id, val_axis_id),
         ChartKind::Line3D | ChartKind::Area3D | ChartKind::Surface | ChartKind::Surface3D => {
@@ -2167,13 +2190,14 @@ fn write_scatter_chart(
     x_axis_id: u32,
     y_axis_id: u32,
     style: &str,
+    marker_symbol: &str,
 ) {
     out.push_str(&format!(
         r#"<c:scatterChart><c:scatterStyle val="{style}"/><c:varyColors val="0"/>"#
     ));
     for (index, series) in chart.series.iter().enumerate() {
         out.push_str(&format!(
-            r#"<c:ser><c:idx val="{index}"/><c:order val="{index}"/><c:tx><c:v>{}</c:v></c:tx><c:marker><c:symbol val="circle"/></c:marker>"#,
+            r#"<c:ser><c:idx val="{index}"/><c:order val="{index}"/><c:tx><c:v>{}</c:v></c:tx><c:marker><c:symbol val="{marker_symbol}"/></c:marker>"#,
             esc_text(&series.name)
         ));
         write_chart_x_values(out, series.values.len());
@@ -2433,6 +2457,8 @@ fn write_chart_axes(out: &mut String, kind: ChartKind, cat_axis_id: u32, val_axi
         | ChartKind::FilledRadar => ("b", "l"),
         ChartKind::Scatter
         | ChartKind::ScatterMarkers
+        | ChartKind::ScatterSmooth
+        | ChartKind::ScatterSmoothNoMarkers
         | ChartKind::Bubble
         | ChartKind::Bubble3D
         | ChartKind::Pie

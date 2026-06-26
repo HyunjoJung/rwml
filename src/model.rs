@@ -917,6 +917,10 @@ pub enum ChartKind {
     Scatter,
     /// A marker-only scatter chart with numeric horizontal and vertical values.
     ScatterMarkers,
+    /// A smoothed scatter chart with point markers.
+    ScatterSmooth,
+    /// A smoothed scatter chart without point markers.
+    ScatterSmoothNoMarkers,
     /// A bubble chart with numeric horizontal values, vertical values, and sizes.
     Bubble,
     /// A 3-D bubble chart with numeric horizontal values, vertical values, and sizes.
