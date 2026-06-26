@@ -2736,6 +2736,7 @@ fn draw_authored_chart(
         | ChartKind::Column3D
         | ChartKind::Line
         | ChartKind::LineNoMarkers
+        | ChartKind::SmoothLine
         | ChartKind::Line3D
         | ChartKind::Area
         | ChartKind::StackedArea
@@ -2937,7 +2938,10 @@ fn draw_authored_chart(
                         }
                     }
                 }
-                ChartKind::Line | ChartKind::LineNoMarkers | ChartKind::Line3D => {
+                ChartKind::Line
+                | ChartKind::LineNoMarkers
+                | ChartKind::SmoothLine
+                | ChartKind::Line3D => {
                     for (series_index, series) in chart.series.iter().enumerate() {
                         let color = chart_series_color(series_index);
                         let mut previous: Option<(f32, f32)> = None;

@@ -3113,6 +3113,71 @@ fn doc_builder_adds_markerless_line_chart() {
 }
 
 #[test]
+fn doc_builder_adds_smooth_line_chart() {
+    let model = DocBuilder::new()
+        .chart(
+            ChartBuilder::smooth_line()
+                .title("Retention curve")
+                .categories(["Jan", "Feb", "Mar"])
+                .series("Retention", [0.91, 0.93, 0.95])
+                .size_px(420, 280)
+                .alt("Retention smooth line chart"),
+        )
+        .build();
+
+    let Block::Chart(chart) = &model.blocks[0] else {
+        panic!("expected chart block");
+    };
+    assert_eq!(chart.kind, ChartKind::SmoothLine);
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let rels = String::from_utf8(parts["word/_rels/document.xml.rels"].clone()).unwrap();
+    let chart_xml = String::from_utf8(parts["word/charts/chart1.xml"].clone()).unwrap();
+    let chart_rels = String::from_utf8(parts["word/charts/_rels/chart1.xml.rels"].clone()).unwrap();
+    let workbook_bytes = parts
+        .get("word/embeddings/Microsoft_Excel_Worksheet1.xlsx")
+        .expect("embedded smooth line chart workbook");
+    let workbook_parts = unzip_parts(workbook_bytes);
+    let sheet_xml = String::from_utf8(workbook_parts["xl/worksheets/sheet1.xml"].clone()).unwrap();
+
+    assert!(
+        document_xml
+            .contains(r#"<wp:docPr id="1" name="Chart1" descr="Retention smooth line chart"/>"#)
+            && document_xml.contains(r#"<c:chart r:id="rId1"/>"#),
+        "smooth line chart drawing missing: {document_xml}"
+    );
+    assert!(
+        rels.contains("relationships/chart") && rels.contains(r#"Target="charts/chart1.xml""#),
+        "smooth line chart relationship missing: {rels}"
+    );
+    assert!(
+        chart_rels.contains("relationships/package")
+            && chart_rels.contains(r#"Target="../embeddings/Microsoft_Excel_Worksheet1.xlsx""#),
+        "smooth line chart workbook relationship missing: {chart_rels}"
+    );
+    assert!(
+        chart_xml.contains("<c:lineChart>")
+            && chart_xml.contains(r#"<c:smooth val="1"/>"#)
+            && chart_xml.contains(r#"<c:marker><c:symbol val="circle"/></c:marker>"#)
+            && chart_xml.contains("<a:t>Retention curve</a:t>")
+            && chart_xml.contains("<c:v>Retention</c:v>")
+            && chart_xml.contains("<c:v>Mar</c:v>")
+            && chart_xml.contains("<c:v>0.95</c:v>"),
+        "smooth line chart payload missing: {chart_xml}"
+    );
+    assert!(
+        sheet_xml.contains(r#"<c r="B2"><v>0.91</v></c>"#)
+            && sheet_xml.contains(r#"<c r="B4"><v>0.95</v></c>"#),
+        "smooth line chart workbook values missing: {sheet_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("smooth line chart .docx reopens");
+    assert_eq!(reopened.report().features.charts, 1);
+}
+
+#[test]
 fn doc_builder_adds_stacked_bar_and_column_charts() {
     let model = DocBuilder::new()
         .chart(
@@ -4960,6 +5025,37 @@ fn render_pdf_draws_authored_markerless_line_chart() {
     assert!(
         rendered.pdf.len() > empty.pdf.len() + 100,
         "markerless line chart drawing should add visible PDF content"
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn render_pdf_draws_authored_smooth_line_chart() {
+    let model = DocBuilder::new()
+        .chart(
+            ChartBuilder::smooth_line()
+                .title("Retention curve")
+                .categories(["Jan", "Feb", "Mar"])
+                .series("Retention", [0.91, 0.93, 0.95]),
+        )
+        .build();
+
+    let empty = rdoc::render_pdf_with_report(&DocModel::default());
+    let rendered = rdoc::render_pdf_with_report(&model);
+
+    assert!(rendered.pdf.starts_with(b"%PDF"));
+    assert_eq!(rendered.report.pages, 1);
+    assert_eq!(rendered.report.unsupported.charts, 0);
+    assert!(
+        !rendered.report.warnings.iter().any(|warning| matches!(
+            warning,
+            rdoc::RenderWarning::ChartsPreservedButNotModeled { .. }
+        )),
+        "authored smooth line chart should render without preserved-only warnings"
+    );
+    assert!(
+        rendered.pdf.len() > empty.pdf.len() + 100,
+        "smooth line chart drawing should add visible PDF content"
     );
 }
 

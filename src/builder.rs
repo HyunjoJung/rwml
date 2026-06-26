@@ -902,6 +902,16 @@ impl ChartBuilder {
         }
     }
 
+    /// Start a smoothed line chart.
+    pub fn smooth_line() -> Self {
+        Self {
+            chart: Chart {
+                kind: ChartKind::SmoothLine,
+                ..Chart::default()
+            },
+        }
+    }
+
     /// Start a 3-D line chart.
     pub fn line_3d() -> Self {
         Self {

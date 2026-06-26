@@ -891,6 +891,8 @@ pub enum ChartKind {
     Line,
     /// A line chart without point markers.
     LineNoMarkers,
+    /// A smoothed line chart with category labels on the horizontal axis.
+    SmoothLine,
     /// A 3-D line chart with category labels on the horizontal axis.
     Line3D,
     /// An area chart with category labels on the horizontal axis.
