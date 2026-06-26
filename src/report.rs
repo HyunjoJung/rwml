@@ -2311,12 +2311,13 @@ fn scan_docx_xml(xml: &str, features: &mut FeatureInventory) {
                         });
                     }
                     b"tbl" => {
-                        if table_depth > 0 {
+                        if table_depth > 0 && old_revision_depth == 0 {
                             features.nested_tables += 1;
                         }
                         table_depth = table_depth.saturating_add(1);
                     }
-                    b"commentReference" => features.comments += 1,
+                    b"commentReference" if old_revision_depth == 0 => features.comments += 1,
+                    b"commentReference" => {}
                     b"ins" => features.tracked_insertions += 1,
                     b"del" => {
                         features.tracked_deletions += 1;
@@ -2330,9 +2331,12 @@ fn scan_docx_xml(xml: &str, features: &mut FeatureInventory) {
                     name if is_revision_property_change(name) => {
                         features.tracked_property_changes += 1;
                     }
-                    b"fldSimple" | b"instrText" => features.fields += 1,
-                    b"hyperlink" => features.hyperlinks += 1,
-                    b"sdt" => features.content_controls += 1,
+                    b"fldSimple" | b"instrText" if old_revision_depth == 0 => features.fields += 1,
+                    b"fldSimple" | b"instrText" => {}
+                    b"hyperlink" if old_revision_depth == 0 => features.hyperlinks += 1,
+                    b"hyperlink" => {}
+                    b"sdt" if old_revision_depth == 0 => features.content_controls += 1,
+                    b"sdt" => {}
                     b"anchor" if old_revision_depth == 0 => {
                         features.floating_shapes += 1;
                         mark_report_alternate_anchor_seen(&mut alternate_content_stack);
@@ -2375,18 +2379,24 @@ fn scan_docx_xml(xml: &str, features: &mut FeatureInventory) {
                 match name {
                     b"AlternateContent" if old_revision_depth == 0 => features.floating_shapes += 1,
                     b"AlternateContent" => {}
-                    b"tbl" if table_depth > 0 => features.nested_tables += 1,
+                    b"tbl" if table_depth > 0 && old_revision_depth == 0 => {
+                        features.nested_tables += 1;
+                    }
                     b"tbl" => {}
-                    b"commentReference" => features.comments += 1,
+                    b"commentReference" if old_revision_depth == 0 => features.comments += 1,
+                    b"commentReference" => {}
                     b"ins" => features.tracked_insertions += 1,
                     b"del" => features.tracked_deletions += 1,
                     b"moveFrom" | b"moveTo" => features.tracked_moves += 1,
                     name if is_revision_property_change(name) => {
                         features.tracked_property_changes += 1;
                     }
-                    b"fldSimple" | b"instrText" => features.fields += 1,
-                    b"hyperlink" => features.hyperlinks += 1,
-                    b"sdt" => features.content_controls += 1,
+                    b"fldSimple" | b"instrText" if old_revision_depth == 0 => features.fields += 1,
+                    b"fldSimple" | b"instrText" => {}
+                    b"hyperlink" if old_revision_depth == 0 => features.hyperlinks += 1,
+                    b"hyperlink" => {}
+                    b"sdt" if old_revision_depth == 0 => features.content_controls += 1,
+                    b"sdt" => {}
                     b"anchor" if old_revision_depth == 0 => {
                         features.floating_shapes += 1;
                         mark_report_alternate_anchor_seen(&mut alternate_content_stack);
