@@ -2640,71 +2640,121 @@ fn docx_page_ref_unsupported_section_format_targets(xml: &str) -> HashSet<String
     let mut section_properties_depth = 0usize;
     let mut section_is_paragraph_break = false;
     let mut section_page_format_unsupported = None;
+    let mut xml_depth = 0usize;
+    let mut alternate_content_stack = Vec::new();
     loop {
         match reader.read_event() {
-            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
-                b"pPr" => paragraph_properties_depth += 1,
-                b"sectPr" => {
-                    section_properties_depth += 1;
-                    if section_properties_depth == 1 {
-                        section_is_paragraph_break = paragraph_properties_depth > 0;
-                        section_page_format_unsupported = None;
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_report_alternate_branch(
+                    &mut alternate_content_stack,
+                    xml_depth,
+                    name,
+                ) {
+                    skip_report_subtree(&mut reader);
+                    continue;
+                }
+                match name {
+                    b"del" | b"moveFrom" => {
+                        skip_report_subtree(&mut reader);
+                        continue;
                     }
-                }
-                b"pgNumType"
-                    if section_properties_depth > 0
-                        && section_page_format_unsupported.is_none() =>
-                {
-                    section_page_format_unsupported = section_page_number_format_unsupported(&e);
-                }
-                b"bookmarkStart" => record_bookmark(
-                    &e,
-                    current_section_unsupported,
-                    &mut current_section_bookmarks,
-                    &mut unsupported_targets,
-                ),
-                _ => {}
-            },
-            Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
-                b"sectPr" => {
-                    apply_section_format(
-                        paragraph_properties_depth > 0,
-                        None,
-                        &mut current_section_unsupported,
+                    b"AlternateContent" => {
+                        alternate_content_stack.push(ReportAlternateContentState {
+                            branch_depth: xml_depth + 1,
+                            anchor_seen: false,
+                            shape_marker_seen: false,
+                            took_branch: false,
+                        });
+                    }
+                    b"pPr" => paragraph_properties_depth += 1,
+                    b"sectPr" => {
+                        section_properties_depth += 1;
+                        if section_properties_depth == 1 {
+                            section_is_paragraph_break = paragraph_properties_depth > 0;
+                            section_page_format_unsupported = None;
+                        }
+                    }
+                    b"pgNumType"
+                        if section_properties_depth > 0
+                            && section_page_format_unsupported.is_none() =>
+                    {
+                        section_page_format_unsupported =
+                            section_page_number_format_unsupported(&e);
+                    }
+                    b"bookmarkStart" => record_bookmark(
+                        &e,
+                        current_section_unsupported,
                         &mut current_section_bookmarks,
                         &mut unsupported_targets,
-                    );
+                    ),
+                    _ => {}
                 }
-                b"pgNumType"
-                    if section_properties_depth > 0
-                        && section_page_format_unsupported.is_none() =>
-                {
-                    section_page_format_unsupported = section_page_number_format_unsupported(&e);
-                }
-                b"bookmarkStart" => record_bookmark(
-                    &e,
-                    current_section_unsupported,
-                    &mut current_section_bookmarks,
-                    &mut unsupported_targets,
-                ),
-                _ => {}
-            },
-            Ok(Event::End(e)) if local(e.name().as_ref()) == b"sectPr" => {
-                if section_properties_depth == 1 {
-                    apply_section_format(
-                        section_is_paragraph_break,
-                        section_page_format_unsupported,
-                        &mut current_section_unsupported,
-                        &mut current_section_bookmarks,
-                        &mut unsupported_targets,
-                    );
-                    section_is_paragraph_break = false;
-                    section_page_format_unsupported = None;
-                }
-                section_properties_depth = section_properties_depth.saturating_sub(1);
+                xml_depth = xml_depth.saturating_add(1);
             }
-            Ok(Event::End(e)) if local(e.name().as_ref()) == b"pPr" => {
-                paragraph_properties_depth = paragraph_properties_depth.saturating_sub(1);
+            Ok(Event::Empty(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_report_alternate_branch(
+                    &mut alternate_content_stack,
+                    xml_depth,
+                    name,
+                ) {
+                    continue;
+                }
+                match name {
+                    b"sectPr" => {
+                        apply_section_format(
+                            paragraph_properties_depth > 0,
+                            None,
+                            &mut current_section_unsupported,
+                            &mut current_section_bookmarks,
+                            &mut unsupported_targets,
+                        );
+                    }
+                    b"pgNumType"
+                        if section_properties_depth > 0
+                            && section_page_format_unsupported.is_none() =>
+                    {
+                        section_page_format_unsupported =
+                            section_page_number_format_unsupported(&e);
+                    }
+                    b"bookmarkStart" => record_bookmark(
+                        &e,
+                        current_section_unsupported,
+                        &mut current_section_bookmarks,
+                        &mut unsupported_targets,
+                    ),
+                    _ => {}
+                }
+            }
+            Ok(Event::End(e)) => {
+                let qname = e.name();
+                match local(qname.as_ref()) {
+                    b"sectPr" => {
+                        if section_properties_depth == 1 {
+                            apply_section_format(
+                                section_is_paragraph_break,
+                                section_page_format_unsupported,
+                                &mut current_section_unsupported,
+                                &mut current_section_bookmarks,
+                                &mut unsupported_targets,
+                            );
+                            section_is_paragraph_break = false;
+                            section_page_format_unsupported = None;
+                        }
+                        section_properties_depth = section_properties_depth.saturating_sub(1);
+                    }
+                    b"pPr" => {
+                        paragraph_properties_depth = paragraph_properties_depth.saturating_sub(1);
+                    }
+                    b"AlternateContent" => {
+                        alternate_content_stack.pop();
+                    }
+                    _ => {}
+                }
+                xml_depth = xml_depth.saturating_sub(1);
             }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
