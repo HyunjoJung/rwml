@@ -2735,6 +2735,7 @@ fn draw_authored_chart(
         | ChartKind::PercentStackedColumn
         | ChartKind::Column3D
         | ChartKind::Line
+        | ChartKind::LineNoMarkers
         | ChartKind::Line3D
         | ChartKind::Area
         | ChartKind::StackedArea
@@ -2936,7 +2937,7 @@ fn draw_authored_chart(
                         }
                     }
                 }
-                ChartKind::Line | ChartKind::Line3D => {
+                ChartKind::Line | ChartKind::LineNoMarkers | ChartKind::Line3D => {
                     for (series_index, series) in chart.series.iter().enumerate() {
                         let color = chart_series_color(series_index);
                         let mut previous: Option<(f32, f32)> = None;
@@ -2954,7 +2955,16 @@ fn draw_authored_chart(
                                     surface, prev_x, prev_y, point_x, point_y, 1.6, color,
                                 );
                             }
-                            fill_rect_color(surface, point_x - 2.0, point_y - 2.0, 4.0, 4.0, color);
+                            if chart.kind != ChartKind::LineNoMarkers {
+                                fill_rect_color(
+                                    surface,
+                                    point_x - 2.0,
+                                    point_y - 2.0,
+                                    4.0,
+                                    4.0,
+                                    color,
+                                );
+                            }
                             previous = Some((point_x, point_y));
                         }
                     }

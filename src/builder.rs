@@ -892,6 +892,16 @@ impl ChartBuilder {
         }
     }
 
+    /// Start a line chart without point markers.
+    pub fn line_no_markers() -> Self {
+        Self {
+            chart: Chart {
+                kind: ChartKind::LineNoMarkers,
+                ..Chart::default()
+            },
+        }
+    }
+
     /// Start a 3-D line chart.
     pub fn line_3d() -> Self {
         Self {

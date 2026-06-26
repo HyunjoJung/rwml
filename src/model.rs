@@ -889,6 +889,8 @@ pub enum ChartKind {
     Column3D,
     /// A line chart with category labels on the horizontal axis.
     Line,
+    /// A line chart without point markers.
+    LineNoMarkers,
     /// A 3-D line chart with category labels on the horizontal axis.
     Line3D,
     /// An area chart with category labels on the horizontal axis.

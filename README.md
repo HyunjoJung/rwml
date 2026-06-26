@@ -563,7 +563,7 @@ results or empty-current `w:textInput` default text, while broader
 protected-form behavior preserves cached result text with `NoComputedResult`
 diagnostics;
 authored
-bar/stacked bar/100% stacked bar/3-D bar/column/stacked column/100% stacked column/3-D column/line/3-D line/area/stacked area/100% stacked area/3-D area/radar/radar-with-markers/filled radar/scatter/marker-only scatter/bubble/3-D bubble/pie/3-D pie/doughnut/surface/3-D surface/stock/pie-of-pie/bar-of-pie
+bar/stacked bar/100% stacked bar/3-D bar/column/stacked column/100% stacked column/3-D column/line/markerless line/3-D line/area/stacked area/100% stacked area/3-D area/radar/radar-with-markers/filled radar/scatter/marker-only scatter/bubble/3-D bubble/pie/3-D pie/doughnut/surface/3-D surface/stock/pie-of-pie/bar-of-pie
 charts render as native vector preview charts, with wireframe styling available
 for authored surface-family charts and `ChartShape` styling available for authored
 3-D bar/column charts; unambiguous `.docx` `REF`
@@ -848,7 +848,7 @@ The long-term native Word engine plan is split into the
       run-level content controls with data-binding metadata, bookmarked runs, authored footnotes/endnotes, inline/standalone hyperlinks,
       string custom document properties, raw custom XML data-store items, explicit Word document ids, web-extension task pane package shells, default/first/even headers/footers + page numbers, section columns, document grids, text direction, title pages, page-number restarts/formats, next/even/odd section breaks, images with inline rotation and page-relative floating offsets,
       table width, fixed-layout tables, table alignment, indentation, uniform/per-side border widths, styles, and colors, per-cell table margins,
-      bar/stacked bar/100% stacked bar/3-D bar/column/stacked column/100% stacked column/3-D column/line/3-D line/area/stacked area/100% stacked area/3-D area/radar/radar-with-markers/filled radar/scatter/marker-only scatter/bubble/3-D bubble/pie/3-D pie/doughnut/surface/3-D surface/stock/pie-of-pie/bar-of-pie
+      bar/stacked bar/100% stacked bar/3-D bar/column/stacked column/100% stacked column/3-D column/line/markerless line/3-D line/area/stacked area/100% stacked area/3-D area/radar/radar-with-markers/filled radar/scatter/marker-only scatter/bubble/3-D bubble/pie/3-D pie/doughnut/surface/3-D surface/stock/pie-of-pie/bar-of-pie
       charts with embedded workbook-backed data) via `DocBuilder`,
       `ParagraphBuilder`, `RunBuilder`, `CommentBuilder`, `RevisionBuilder`,
       `ContentControlBuilder`, `TableBuilder`, `CellBuilder`, `ImageBuilder`,
@@ -988,9 +988,9 @@ The long-term native Word engine plan is split into the
       unresolved or unsupported NOTEREF switches beyond body
       note-reference marks, and remaining broader TOC/REF body field evaluation;
       bundled-font feature; RTL
-- [x] Basic authoring API for bar/stacked bar/100% stacked bar/3-D bar/column/stacked column/100% stacked column/3-D column/line/3-D line/area/stacked area/100% stacked area/3-D area/radar/radar-with-markers/filled radar/scatter/marker-only scatter/bubble/3-D bubble/pie/3-D pie/doughnut/surface/3-D surface/stock/pie-of-pie/bar-of-pie charts
-- [x] Native PDF preview rendering for authored bar/stacked bar/100% stacked bar/3-D bar/column/stacked column/100% stacked column/3-D column/line/3-D line/area/stacked area/100% stacked area/3-D area/radar/radar-with-markers/filled radar/scatter/marker-only scatter/bubble/3-D bubble/pie/3-D pie/doughnut/surface/3-D surface/stock/pie-of-pie/bar-of-pie charts
-- [x] Workbook-backed chart data for authored bar/stacked bar/100% stacked bar/3-D bar/column/stacked column/100% stacked column/3-D column/line/3-D line/area/stacked area/100% stacked area/3-D area/radar/radar-with-markers/filled radar/scatter/marker-only scatter/bubble/3-D bubble/pie/3-D pie/doughnut/surface/3-D surface/stock/pie-of-pie/bar-of-pie charts
+- [x] Basic authoring API for bar/stacked bar/100% stacked bar/3-D bar/column/stacked column/100% stacked column/3-D column/line/markerless line/3-D line/area/stacked area/100% stacked area/3-D area/radar/radar-with-markers/filled radar/scatter/marker-only scatter/bubble/3-D bubble/pie/3-D pie/doughnut/surface/3-D surface/stock/pie-of-pie/bar-of-pie charts
+- [x] Native PDF preview rendering for authored bar/stacked bar/100% stacked bar/3-D bar/column/stacked column/100% stacked column/3-D column/line/markerless line/3-D line/area/stacked area/100% stacked area/3-D area/radar/radar-with-markers/filled radar/scatter/marker-only scatter/bubble/3-D bubble/pie/3-D pie/doughnut/surface/3-D surface/stock/pie-of-pie/bar-of-pie charts
+- [x] Workbook-backed chart data for authored bar/stacked bar/100% stacked bar/3-D bar/column/stacked column/100% stacked column/3-D column/line/markerless line/3-D line/area/stacked area/100% stacked area/3-D area/radar/radar-with-markers/filled radar/scatter/marker-only scatter/bubble/3-D bubble/pie/3-D pie/doughnut/surface/3-D surface/stock/pie-of-pie/bar-of-pie charts
 - [x] Wireframe styling for authored surface and 3-D surface charts
 - [x] Shape styling for authored 3-D bar and 3-D column charts
 - [x] Metafile diagnostics for WMF/EMF/EMZ/WMZ path, format, byte size, compression flag, and raw/gzip-wrapped header dimensions

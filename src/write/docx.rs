@@ -1848,7 +1848,10 @@ fn chart_xml(chart: &Chart, chart_id: u32, workbook_rid: Option<&str>) -> String
         ChartKind::Column3D => {
             write_bar_or_column_3d_chart(&mut out, chart, cat_axis_id, val_axis_id, "col")
         }
-        ChartKind::Line => write_line_chart(&mut out, chart, cat_axis_id, val_axis_id),
+        ChartKind::Line => write_line_chart(&mut out, chart, cat_axis_id, val_axis_id, "circle"),
+        ChartKind::LineNoMarkers => {
+            write_line_chart(&mut out, chart, cat_axis_id, val_axis_id, "none")
+        }
         ChartKind::Line3D => {
             write_line_3d_chart(&mut out, chart, cat_axis_id, val_axis_id, ser_axis_id)
         }
@@ -1996,11 +1999,17 @@ fn chart_shape_value(shape: ChartShape) -> &'static str {
     }
 }
 
-fn write_line_chart(out: &mut String, chart: &Chart, cat_axis_id: u32, val_axis_id: u32) {
+fn write_line_chart(
+    out: &mut String,
+    chart: &Chart,
+    cat_axis_id: u32,
+    val_axis_id: u32,
+    marker_symbol: &str,
+) {
     out.push_str(r#"<c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>"#);
     for (index, series) in chart.series.iter().enumerate() {
         out.push_str(&format!(
-            r#"<c:ser><c:idx val="{index}"/><c:order val="{index}"/><c:tx><c:v>{}</c:v></c:tx><c:marker><c:symbol val="circle"/></c:marker>"#,
+            r#"<c:ser><c:idx val="{index}"/><c:order val="{index}"/><c:tx><c:v>{}</c:v></c:tx><c:marker><c:symbol val="{marker_symbol}"/></c:marker>"#,
             esc_text(&series.name)
         ));
         write_chart_categories(out, &chart.categories);
@@ -2362,6 +2371,7 @@ fn write_chart_axes(out: &mut String, kind: ChartKind, cat_axis_id: u32, val_axi
         | ChartKind::PercentStackedColumn
         | ChartKind::Column3D
         | ChartKind::Line
+        | ChartKind::LineNoMarkers
         | ChartKind::Line3D
         | ChartKind::Area
         | ChartKind::StackedArea
