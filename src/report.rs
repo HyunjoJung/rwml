@@ -1745,15 +1745,16 @@ fn supported_note_ref_target(instruction: &str) -> Option<String> {
     let mut target = None;
     let mut relative = false;
     let mut formatted = false;
+    let mut text_format = false;
     while let Some(part) = parts.next() {
         if part == "\\*" {
-            if !accept_note_ref_format_switch(parts.next()?) {
+            if !accept_note_ref_format_switch(parts.next()?, &mut text_format) {
                 return None;
             }
             continue;
         }
         if let Some(format) = part.strip_prefix("\\*") {
-            if !accept_note_ref_format_switch(format) {
+            if !accept_note_ref_format_switch(format, &mut text_format) {
                 return None;
             }
             continue;
@@ -1814,8 +1815,8 @@ fn is_neutral_field_format_switch(part: &str) -> bool {
     part.eq_ignore_ascii_case("MERGEFORMAT") || part.eq_ignore_ascii_case("CHARFORMAT")
 }
 
-fn accept_note_ref_format_switch(part: &str) -> bool {
-    is_neutral_field_format_switch(part)
+fn accept_note_ref_format_switch(part: &str, text_format: &mut bool) -> bool {
+    accept_field_format_switch(part, text_format)
 }
 
 fn accept_page_number_format_switch(part: &str, number_format: &mut bool) -> bool {
