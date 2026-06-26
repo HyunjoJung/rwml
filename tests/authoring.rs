@@ -3639,6 +3639,65 @@ fn doc_builder_adds_stacked_3d_column_chart() {
 }
 
 #[test]
+fn doc_builder_adds_stacked_3d_bar_chart() {
+    let model = DocBuilder::new()
+        .chart(
+            ChartBuilder::stacked_bar_3d()
+                .shape(ChartShape::Cylinder)
+                .title("Regional stack")
+                .categories(["North", "South"])
+                .series("Open", [18.0, 23.5])
+                .series("Closed", [9.0, 12.0])
+                .size_px(460, 300)
+                .alt("Regional stacked 3-D bar chart"),
+        )
+        .build();
+
+    let Block::Chart(chart) = &model.blocks[0] else {
+        panic!("expected chart block");
+    };
+    assert_eq!(chart.kind, ChartKind::StackedBar3D);
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let chart_xml = String::from_utf8(parts["word/charts/chart1.xml"].clone()).unwrap();
+    let workbook_bytes = parts
+        .get("word/embeddings/Microsoft_Excel_Worksheet1.xlsx")
+        .expect("embedded stacked 3-D bar chart workbook");
+    let workbook_parts = unzip_parts(workbook_bytes);
+    let sheet_xml = String::from_utf8(workbook_parts["xl/worksheets/sheet1.xml"].clone()).unwrap();
+
+    assert!(
+        document_xml
+            .contains(r#"<wp:docPr id="1" name="Chart1" descr="Regional stacked 3-D bar chart"/>"#),
+        "stacked 3-D bar chart drawing missing: {document_xml}"
+    );
+    assert!(
+        chart_xml.contains("<c:bar3DChart>")
+            && chart_xml.contains(r#"<c:barDir val="bar"/>"#)
+            && chart_xml.contains(r#"<c:grouping val="stacked"/>"#)
+            && chart_xml.contains(r#"<c:overlap val="100"/>"#)
+            && chart_xml.contains(r#"<c:shape val="cylinder"/>"#)
+            && chart_xml.contains("<a:t>Regional stack</a:t>")
+            && chart_xml.contains("<c:v>Open</c:v>")
+            && chart_xml.contains("<c:v>Closed</c:v>")
+            && chart_xml.contains("<c:v>South</c:v>")
+            && chart_xml.contains("<c:v>23.5</c:v>")
+            && chart_xml.contains("<c:v>12</c:v>"),
+        "stacked 3-D bar chart payload missing: {chart_xml}"
+    );
+    assert!(
+        sheet_xml.contains(r#"<c r="B2"><v>18</v></c>"#)
+            && sheet_xml.contains(r#"<c r="C3"><v>12</v></c>"#),
+        "stacked 3-D bar chart workbook values missing: {sheet_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("stacked 3-D bar chart .docx reopens");
+    assert_eq!(reopened.report().features.charts, 1);
+}
+
+#[test]
 fn doc_builder_adds_3d_bar_and_column_shape_styling() {
     let model = DocBuilder::new()
         .chart(
@@ -6195,6 +6254,38 @@ fn render_pdf_draws_authored_stacked_3d_column_chart() {
     assert!(
         rendered.pdf.len() > empty.pdf.len() + 100,
         "stacked 3-D column chart drawing should add visible PDF content"
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn render_pdf_draws_authored_stacked_3d_bar_chart() {
+    let model = DocBuilder::new()
+        .chart(
+            ChartBuilder::stacked_bar_3d()
+                .title("Regional stack")
+                .categories(["North", "South"])
+                .series("Open", [18.0, 23.5])
+                .series("Closed", [9.0, 12.0]),
+        )
+        .build();
+
+    let empty = rdoc::render_pdf_with_report(&DocModel::default());
+    let rendered = rdoc::render_pdf_with_report(&model);
+
+    assert!(rendered.pdf.starts_with(b"%PDF"));
+    assert_eq!(rendered.report.pages, 1);
+    assert_eq!(rendered.report.unsupported.charts, 0);
+    assert!(
+        !rendered.report.warnings.iter().any(|warning| matches!(
+            warning,
+            rdoc::RenderWarning::ChartsPreservedButNotModeled { .. }
+        )),
+        "authored stacked 3-D bar chart should render without preserved-only warnings"
+    );
+    assert!(
+        rendered.pdf.len() > empty.pdf.len() + 100,
+        "stacked 3-D bar chart drawing should add visible PDF content"
     );
 }
 

@@ -2582,6 +2582,7 @@ fn draw_authored_chart(
     } else if matches!(
         chart.kind,
         ChartKind::StackedBar
+            | ChartKind::StackedBar3D
             | ChartKind::StackedColumn
             | ChartKind::StackedColumn3D
             | ChartKind::StackedLine
@@ -2596,7 +2597,7 @@ fn draw_authored_chart(
     let value_y = |value: f64| plot_bottom - (((value - min_value) / range) as f32 * plot_h);
 
     match chart.kind {
-        ChartKind::StackedBar | ChartKind::PercentStackedBar => {
+        ChartKind::StackedBar | ChartKind::StackedBar3D | ChartKind::PercentStackedBar => {
             let percent = chart.kind == ChartKind::PercentStackedBar;
             for tick in 0..=4 {
                 let frac = tick as f32 / 4.0;
@@ -2663,14 +2664,27 @@ fn draw_authored_chart(
                     let end = if percent { offset / total } else { offset };
                     let segment_left = value_x(start).clamp(plot_left, plot_right);
                     let segment_right = value_x(end).clamp(plot_left, plot_right);
-                    fill_rect_color(
-                        surface,
-                        segment_left,
-                        bar_top,
-                        (segment_right - segment_left).max(1.0),
-                        bar_h,
-                        chart_series_color(series_index),
-                    );
+                    let color = chart_series_color(series_index);
+                    if chart.kind == ChartKind::StackedBar3D {
+                        fill_chart_bar_shape(
+                            surface,
+                            segment_left,
+                            bar_top,
+                            (segment_right - segment_left).max(1.0),
+                            bar_h,
+                            chart.shape,
+                            color,
+                        );
+                    } else {
+                        fill_rect_color(
+                            surface,
+                            segment_left,
+                            bar_top,
+                            (segment_right - segment_left).max(1.0),
+                            bar_h,
+                            color,
+                        );
+                    }
                 }
             }
         }
@@ -3233,6 +3247,7 @@ fn draw_authored_chart(
                 | ChartKind::StackedBar
                 | ChartKind::PercentStackedBar
                 | ChartKind::Bar3D
+                | ChartKind::StackedBar3D
                 | ChartKind::Radar
                 | ChartKind::RadarWithMarkers
                 | ChartKind::FilledRadar

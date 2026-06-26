@@ -879,6 +879,8 @@ pub enum ChartKind {
     PercentStackedBar,
     /// A clustered 3-D horizontal bar chart.
     Bar3D,
+    /// A stacked 3-D horizontal bar chart.
+    StackedBar3D,
     /// A clustered vertical column chart.
     Column,
     /// A stacked vertical column chart.
