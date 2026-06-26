@@ -558,6 +558,17 @@ impl ContentControlBuilder {
         self
     }
 
+    /// Bind this content control to a custom XML item.
+    pub fn data_binding(
+        mut self,
+        xpath: impl Into<String>,
+        store_item_id: impl Into<String>,
+    ) -> Self {
+        self.control.data_binding_xpath = Some(xpath.into());
+        self.control.data_binding_store_item_id = Some(store_item_id.into());
+        self
+    }
+
     /// Finish and return the generated content-control metadata.
     pub fn build(self) -> AuthoredContentControl {
         self.control

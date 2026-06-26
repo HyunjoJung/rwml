@@ -1007,6 +1007,58 @@ fn run_builder_adds_plain_text_content_control() {
 }
 
 #[test]
+fn content_control_builder_adds_data_binding_metadata() {
+    let model = DocBuilder::new()
+        .paragraph_runs([RunBuilder::new("Bound value")
+            .content_control(
+                ContentControlBuilder::new()
+                    .alias("Client")
+                    .tag("client-name")
+                    .data_binding(
+                        r#"/root/client[@code="A&B"]"#,
+                        "{11111111-2222-3333-4444-555555555555}",
+                    ),
+            )
+            .build()])
+        .build();
+
+    let Block::Paragraph(paragraph) = &model.blocks[0] else {
+        panic!("expected paragraph");
+    };
+    let control = paragraph.runs[0]
+        .content_control
+        .as_ref()
+        .expect("run carries content-control metadata");
+    assert_eq!(
+        control.data_binding_xpath.as_deref(),
+        Some(r#"/root/client[@code="A&B"]"#)
+    );
+    assert_eq!(
+        control.data_binding_store_item_id.as_deref(),
+        Some("{11111111-2222-3333-4444-555555555555}")
+    );
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let tag_pos = document_xml
+        .find(r#"<w:tag w:val="client-name"/>"#)
+        .unwrap_or(usize::MAX);
+    let binding_pos = document_xml
+        .find(r#"<w:dataBinding w:xpath="/root/client[@code=&quot;A&amp;B&quot;]" w:storeItemID="{11111111-2222-3333-4444-555555555555}"/>"#)
+        .unwrap_or(usize::MAX);
+    let content_pos = document_xml.find("<w:sdtContent>").unwrap_or(usize::MAX);
+    assert!(
+        tag_pos < binding_pos && binding_pos < content_pos,
+        "data binding XML missing or out of order: {document_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("data-bound content-control .docx reopens");
+    assert_eq!(reopened.text(), "Bound value");
+    assert_eq!(reopened.report().features.content_controls, 1);
+}
+
+#[test]
 fn run_builder_adds_styled_paragraph_and_heading_runs() {
     let model = DocBuilder::new()
         .paragraph_runs([

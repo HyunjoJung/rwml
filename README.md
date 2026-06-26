@@ -64,7 +64,8 @@ cached results, dirty TOC heading-range fields, run-anchored comments, tracked
 insertion/deletion runs, run-level content controls, bookmarked runs, authored
 footnotes/endnotes, string custom document properties, page setup, explicit
 page/section breaks, and running headers/footers with page numbers all
-round-trip. See
+round-trip. Content controls can include tag/alias and data-binding metadata.
+See
 [`examples/report.rs`](examples/report.rs).
 
 ```rust
@@ -835,7 +836,7 @@ The long-term native Word engine plan is split into the
 - [x] **`.docx` writer** — styled authoring (named styles, rich tables with typed nested cell blocks, page setup,
       styled runs, leveled lists, simple fields, dirty TOC heading-range fields,
       run-anchored comments, tracked insertion/deletion runs, run-level content
-      controls, bookmarked runs, authored footnotes/endnotes, inline/standalone hyperlinks,
+      controls with data-binding metadata, bookmarked runs, authored footnotes/endnotes, inline/standalone hyperlinks,
       string custom document properties, headers/footers + page numbers, images with inline rotation,
       bar/3-D bar/column/3-D column/line/3-D line/area/3-D area/radar/scatter/bubble/pie/3-D pie/doughnut/surface/3-D surface/stock/pie-of-pie/bar-of-pie
       charts with embedded workbook-backed data) via `DocBuilder`,

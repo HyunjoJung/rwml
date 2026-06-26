@@ -304,6 +304,10 @@ pub struct AuthoredContentControl {
     pub alias: Option<String>,
     /// Machine-readable content-control tag, if any.
     pub tag: Option<String>,
+    /// XPath for a data-bound content control, if any.
+    pub data_binding_xpath: Option<String>,
+    /// Custom XML store item ID for a data-bound content control, if any.
+    pub data_binding_store_item_id: Option<String>,
 }
 
 /// Footnote or endnote metadata to author after a generated run.

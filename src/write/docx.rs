@@ -739,6 +739,22 @@ impl Ctx {
         if let Some(tag) = control.tag.as_deref().filter(|value| !value.is_empty()) {
             xml.push_str(&format!(r#"<w:tag w:val="{}"/>"#, esc_attr(tag)));
         }
+        if let (Some(xpath), Some(store_item_id)) = (
+            control
+                .data_binding_xpath
+                .as_deref()
+                .filter(|value| !value.is_empty()),
+            control
+                .data_binding_store_item_id
+                .as_deref()
+                .filter(|value| !value.is_empty()),
+        ) {
+            xml.push_str(&format!(
+                r#"<w:dataBinding w:xpath="{}" w:storeItemID="{}"/>"#,
+                esc_attr(xpath),
+                esc_attr(store_item_id)
+            ));
+        }
         xml.push_str("</w:sdtPr><w:sdtContent>");
         xml.push_str(run_xml);
         xml.push_str("</w:sdtContent></w:sdt>");
