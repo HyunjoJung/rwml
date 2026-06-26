@@ -17,7 +17,9 @@ pub(crate) fn format(n: u32, nfc: u8) -> String {
         0x04 => letter(n, false),             // lower letter
         0x05 => ordinal(n),                   // 1st, 2nd, 3rd
         0x0E => fullwidth(n),                 // decimalFullWidth: １, ２, ３
+        0x0F => n.to_string(),                // decimalHalfWidth: 1, 2, 3
         0x12 => circled(n),                   // ①②③
+        0x13 => fullwidth(n),                 // decimalFullWidth2: １, ２, ３
         0x16 => format!("{n:02}"),            // decimalZero: 01, 02 … 10
         0x1A => fullstop(n),                  // decimalEnclosedFullstop: ⒈⒉⒊
         0x1B => parenthesized(n),             // decimalEnclosedParen: ⑴⑵⑶
@@ -235,7 +237,9 @@ mod tests {
     fn special_formats() {
         assert_eq!(format(3, 0x16), "03"); // decimalZero
         assert_eq!(format(23, 0x0E), "２３"); // decimalFullWidth
+        assert_eq!(format(23, 0x0F), "23"); // decimalHalfWidth
         assert_eq!(format(1, 0x12), "①"); // circled
+        assert_eq!(format(23, 0x13), "２３"); // decimalFullWidth2
         assert_eq!(format(12, 0x1A), "⒓"); // decimalEnclosedFullstop
         assert_eq!(format(12, 0x1B), "⑿"); // decimalEnclosedParen
         assert_eq!(format(5, 0x17), ""); // bullet

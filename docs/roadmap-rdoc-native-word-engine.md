@@ -224,9 +224,9 @@ Initial status:
   `evenPage`/`oddPage` section starts in leading or trusted rendered context,
   including trusted `w:pgNumType w:start` displayed page-number restarts and
   supported `w:pgNumType w:fmt` styles (`decimal`, `decimalZero`,
-  `numberInDash`, `decimalFullWidth`, `decimalEnclosedCircle`,
-  `decimalEnclosedFullstop`, `decimalEnclosedParen`, lower/upper letter,
-  lower/upper roman, ordinal/cardinal text) on those section starts and
+  `numberInDash`, `decimalFullWidth`, `decimalHalfWidth`, `decimalFullWidth2`,
+  `decimalEnclosedCircle`, `decimalEnclosedFullstop`, `decimalEnclosedParen`,
+  lower/upper letter, lower/upper roman, ordinal/cardinal text) on those section starts and
   single-section final `body/sectPr` page-number defaults,
   source-persisted `w:lastRenderedPageBreak` markers scanned with the same
   single-branch `mc:AlternateContent` policy as flat text, or
@@ -858,9 +858,9 @@ Initial status:
   `evenPage`/`oddPage` section starts in leading or trusted rendered context,
   including trusted `w:pgNumType w:start` displayed page-number restarts and
   supported `w:pgNumType w:fmt` styles (`decimal`, `decimalZero`,
-  `numberInDash`, `decimalFullWidth`, `decimalEnclosedCircle`,
-  `decimalEnclosedFullstop`, `decimalEnclosedParen`, lower/upper letter,
-  lower/upper roman, ordinal/cardinal text) on those section starts and
+  `numberInDash`, `decimalFullWidth`, `decimalHalfWidth`, `decimalFullWidth2`,
+  `decimalEnclosedCircle`, `decimalEnclosedFullstop`, `decimalEnclosedParen`,
+  lower/upper letter, lower/upper roman, ordinal/cardinal text) on those section starts and
   single-section final `body/sectPr` page-number defaults,
   source-persisted `w:lastRenderedPageBreak` markers, or
   explicit hard breaks after a trusted leading/rendered page context, applies

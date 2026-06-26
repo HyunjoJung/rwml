@@ -2492,6 +2492,8 @@ fn docx_page_ref_unsupported_section_format_targets(xml: &str) -> HashSet<String
                 | "decimalZero"
                 | "numberInDash"
                 | "decimalFullWidth"
+                | "decimalHalfWidth"
+                | "decimalFullWidth2"
                 | "decimalEnclosedCircle"
                 | "decimalEnclosedFullstop"
                 | "decimalEnclosedParen"

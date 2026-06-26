@@ -3062,6 +3062,8 @@ fn page_ref_section_page_number_format(e: &BytesStart<'_>) -> Option<PageRefDisp
         "decimalZero" => PageNumberFormat::DecimalZero,
         "numberInDash" => PageNumberFormat::ArabicDash,
         "decimalFullWidth" => PageNumberFormat::DecimalFullWidth,
+        "decimalHalfWidth" => PageNumberFormat::DecimalHalfWidth,
+        "decimalFullWidth2" => PageNumberFormat::DecimalFullWidth2,
         "decimalEnclosedCircle" => PageNumberFormat::DecimalEnclosedCircle,
         "decimalEnclosedFullstop" => PageNumberFormat::DecimalEnclosedFullstop,
         "decimalEnclosedParen" => PageNumberFormat::DecimalEnclosedParen,
@@ -7552,6 +7554,8 @@ enum PageNumberFormat {
     ArabicDash,
     DecimalZero,
     DecimalFullWidth,
+    DecimalHalfWidth,
+    DecimalFullWidth2,
     DecimalEnclosedCircle,
     DecimalEnclosedFullstop,
     DecimalEnclosedParen,
@@ -8011,6 +8015,12 @@ fn format_page_number(page: usize, format: Option<PageNumberFormat>) -> Option<S
         PageNumberFormat::DecimalFullWidth => u32::try_from(page)
             .ok()
             .map(|page| numfmt::format(page, 0x0E)),
+        PageNumberFormat::DecimalHalfWidth => u32::try_from(page)
+            .ok()
+            .map(|page| numfmt::format(page, 0x0F)),
+        PageNumberFormat::DecimalFullWidth2 => u32::try_from(page)
+            .ok()
+            .map(|page| numfmt::format(page, 0x13)),
         PageNumberFormat::DecimalEnclosedCircle => u32::try_from(page)
             .ok()
             .map(|page| numfmt::format(page, 0x12)),

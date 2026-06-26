@@ -1579,6 +1579,23 @@ fn page_ref_decimal_enclosed_punctuation_section_page_number_format_docx() -> Ve
     ])
 }
 
+fn page_ref_decimal_width_variant_section_page_number_format_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgNumType w:start="12" w:fmt="decimalHalfWidth"/></w:sectPr></w:pPr></w:p><w:p><w:bookmarkStart w:id="14" w:name="HalfWidthSection"/><w:r><w:t>Half-width target</w:t></w:r><w:bookmarkEnd w:id="14"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF HalfWidthSection \h "><w:r><w:t>stale halfwidth</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF HalfWidthSection \* ArabicDash "><w:r><w:t>stale halfwidth dash</w:t></w:r></w:fldSimple></w:p><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgNumType w:start="12" w:fmt="decimalFullWidth2"/></w:sectPr></w:pPr></w:p><w:p><w:r><w:lastRenderedPageBreak/><w:t>Full-width alternate page lead.</w:t></w:r></w:p><w:p><w:bookmarkStart w:id="15" w:name="FullWidthAltSection"/><w:r><w:t>Full-width alternate target</w:t></w:r><w:bookmarkEnd w:id="15"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF FullWidthAltSection \h "><w:r><w:t>stale fullwidth alt</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF FullWidthAltSection \* Arabic "><w:r><w:t>stale fullwidth alt arabic</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn page_ref_final_section_page_number_format_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -6895,6 +6912,43 @@ fn docx_page_ref_applies_decimal_enclosed_punctuation_section_page_number_format
     assert!(
         !main_text.contains("stale fullstop") && !main_text.contains("stale paren"),
         "computed decimal enclosed punctuation PAGEREF fields should replace stale cached text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_page_ref_applies_decimal_width_variant_section_page_number_formats() {
+    let doc = Document::open(&page_ref_decimal_width_variant_section_page_number_format_docx())
+        .expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 4);
+    assert_eq!(fields[0].kind, FieldKind::PageRef);
+    assert_eq!(fields[0].instruction, "PAGEREF HalfWidthSection \\h");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("12"));
+    assert_eq!(fields[1].kind, FieldKind::PageRef);
+    assert_eq!(
+        fields[1].instruction,
+        "PAGEREF HalfWidthSection \\* ArabicDash"
+    );
+    assert_eq!(fields[1].computed_result.as_deref(), Some("- 12 -"));
+    assert_eq!(fields[2].kind, FieldKind::PageRef);
+    assert_eq!(fields[2].instruction, "PAGEREF FullWidthAltSection \\h");
+    assert_eq!(fields[2].computed_result.as_deref(), Some("１３"));
+    assert_eq!(fields[3].kind, FieldKind::PageRef);
+    assert_eq!(
+        fields[3].instruction,
+        "PAGEREF FullWidthAltSection \\* Arabic"
+    );
+    assert_eq!(fields[3].computed_result.as_deref(), Some("13"));
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("12\n- 12 -") && main_text.contains("１３\n13"),
+        "decimal width variant section page-number formats should drive supported PAGEREF text: {main_text:?}"
+    );
+    assert!(
+        !main_text.contains("stale halfwidth") && !main_text.contains("stale fullwidth alt"),
+        "computed decimal width variant PAGEREF fields should replace stale cached text: {main_text:?}"
     );
 }
 

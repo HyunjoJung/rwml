@@ -846,6 +846,10 @@ pub enum PageNumberFormat {
     NumberInDash,
     /// Full-width decimal digits (`１`, `２`, `３`).
     DecimalFullWidth,
+    /// Half-width decimal digits (`1`, `2`, `3`).
+    DecimalHalfWidth,
+    /// Alternate full-width decimal digits.
+    DecimalFullWidth2,
     /// Circled decimal digits for one through twenty, then decimal fallback.
     DecimalEnclosedCircle,
     /// Decimal digits followed by full-stop glyphs for one through twenty.
@@ -875,6 +879,8 @@ impl PageNumberFormat {
             PageNumberFormat::DecimalZero => "decimalZero",
             PageNumberFormat::NumberInDash => "numberInDash",
             PageNumberFormat::DecimalFullWidth => "decimalFullWidth",
+            PageNumberFormat::DecimalHalfWidth => "decimalHalfWidth",
+            PageNumberFormat::DecimalFullWidth2 => "decimalFullWidth2",
             PageNumberFormat::DecimalEnclosedCircle => "decimalEnclosedCircle",
             PageNumberFormat::DecimalEnclosedFullstop => "decimalEnclosedFullstop",
             PageNumberFormat::DecimalEnclosedParen => "decimalEnclosedParen",
@@ -894,6 +900,8 @@ impl PageNumberFormat {
             "decimalZero" => Some(PageNumberFormat::DecimalZero),
             "numberInDash" => Some(PageNumberFormat::NumberInDash),
             "decimalFullWidth" => Some(PageNumberFormat::DecimalFullWidth),
+            "decimalHalfWidth" => Some(PageNumberFormat::DecimalHalfWidth),
+            "decimalFullWidth2" => Some(PageNumberFormat::DecimalFullWidth2),
             "decimalEnclosedCircle" => Some(PageNumberFormat::DecimalEnclosedCircle),
             "decimalEnclosedFullstop" => Some(PageNumberFormat::DecimalEnclosedFullstop),
             "decimalEnclosedParen" => Some(PageNumberFormat::DecimalEnclosedParen),
