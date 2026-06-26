@@ -1482,6 +1482,9 @@ fn unsupported_field_reason(field: &Field) -> Option<FieldEvaluationReason> {
         {
             Some(prompt_uncomputed_reason(&field.instruction))
         }
+        FieldKind::Dynamic(ref kind) if kind.eq_ignore_ascii_case("SET") => {
+            Some(set_uncomputed_reason(&field.instruction))
+        }
         FieldKind::Dynamic(ref kind)
             if kind.eq_ignore_ascii_case("NEXT")
                 || kind.eq_ignore_ascii_case("NEXTIF")
@@ -1789,6 +1792,21 @@ fn prompt_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     #[cfg(feature = "docx")]
     {
         if crate::docx::supports_prompt_field_syntax(instruction) {
+            return FieldEvaluationReason::NoComputedResult;
+        }
+        FieldEvaluationReason::UnsupportedSwitch
+    }
+    #[cfg(not(feature = "docx"))]
+    {
+        let _ = instruction;
+        FieldEvaluationReason::NoComputedResult
+    }
+}
+
+fn set_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
+    #[cfg(feature = "docx")]
+    {
+        if crate::docx::supports_set_field_syntax(instruction) {
             return FieldEvaluationReason::NoComputedResult;
         }
         FieldEvaluationReason::UnsupportedSwitch

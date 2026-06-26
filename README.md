@@ -477,7 +477,8 @@ malformed prompt field syntax reports `UnsupportedSwitch`, and deterministic lit
 `SET name "value"` or single-token `SET name value` fields with
 field-result format switches render as hidden
 output while feeding later plain `REF`/direct bookmark references in
-source order, plus literal `NEXT`, `NEXTIF`, and `SKIPIF` merge-control fields
+source order, malformed `SET` syntax reports `UnsupportedSwitch`,
+plus literal `NEXT`, `NEXTIF`, and `SKIPIF` merge-control fields
 with field-result format switches render as hidden output without running a mail
 merge; malformed merge-control syntax reports `UnsupportedSwitch`, invalid
 literal `COMPARE` syntax reports `UnsupportedSwitch`, while
@@ -654,7 +655,8 @@ dynamic/control fields beyond deterministic literal arithmetic/comparison/scalar
 formula fields,
 literal `QUOTE`, literal `IF` comparisons, literal `COMPARE` results,
 explicit-default `FILLIN`/`ASK` prompt fields, and
-literal quoted or single-token `SET` bookmark assignments feeding later plain `REF`/direct bookmark references, inserted-content
+literal quoted or single-token `SET` bookmark assignments feeding later plain `REF`/direct bookmark references,
+malformed `SET` syntax reporting `UnsupportedSwitch`, inserted-content
 fields, mail-merge helper fields, reference/index fields beyond hidden simple
 `RD`/`TA`/`XE` markers, numbering/list fields,
 document-structure fields beyond computed `SECTION`, structurally bounded
@@ -945,6 +947,7 @@ The long-term native Word engine plan is split into the
       fields, literal `QUOTE`, literal `IF` comparisons, literal `COMPARE`
       results, explicit-default `FILLIN`/`ASK` prompt fields, and literal quoted or single-token `SET` bookmark assignments feeding later plain
       `REF`/direct bookmark references,
+      malformed `SET` syntax reporting `UnsupportedSwitch`,
       inserted-content fields, mail-merge helper fields, reference/index fields beyond hidden simple `RD`/`TA`/`XE` markers,
       numbering/list fields, document-structure fields beyond computed `SECTION`,
       structurally bounded `SECTIONPAGES`, and
@@ -983,6 +986,7 @@ The long-term native Word engine plan is split into the
       fields, literal `QUOTE`, literal `IF` comparisons, literal `COMPARE`
       results, explicit-default `FILLIN`/`ASK` prompt fields, and literal quoted or single-token `SET` bookmark assignments feeding later plain
       `REF`/direct bookmark references,
+      malformed `SET` syntax reporting `UnsupportedSwitch`,
       inserted-content fields, mail-merge helper fields, reference/index fields beyond hidden simple `RD`/`TA`/`XE` markers,
       numbering/list fields, document-structure fields beyond computed `SECTION`,
       structurally bounded `SECTIONPAGES`, and

@@ -287,6 +287,23 @@ fn formula_diagnostics_docx() -> Vec<u8> {
     ])
 }
 
+fn set_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SET ClientName Client 42 "><w:r><w:t>cached ambiguous set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SET ClientName &quot;Acme "><w:r><w:t>cached broken set</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn prompt_default_field_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -3546,6 +3563,48 @@ fn docx_malformed_formula_picture_reports_unsupported_switch_without_flagging_da
     assert!(
         main_text.contains("cached data formula") && main_text.contains("cached broken formula"),
         "uncomputed formula fields should preserve cached text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_malformed_set_reports_unsupported_switch_without_flagging_ambiguous_set() {
+    let doc = Document::open(&set_diagnostics_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::Dynamic("SET".to_string()));
+    assert_eq!(fields[0].instruction, "SET ClientName Client 42");
+    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(fields[1].kind, FieldKind::Dynamic("SET".to_string()));
+    assert_eq!(fields[1].instruction, r#"SET ClientName "Acme "#);
+    assert_eq!(fields[1].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Dynamic("SET".to_string()),
+            count: 2,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::NoComputedResult,
+                count: 1,
+            },
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::UnsupportedSwitch,
+                count: 1,
+            },
+        ]
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("cached ambiguous set") && main_text.contains("cached broken set"),
+        "uncomputed SET fields should preserve cached text: {main_text:?}"
     );
 }
 

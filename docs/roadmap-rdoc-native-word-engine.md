@@ -138,6 +138,7 @@ Initial status:
   fields, literal `QUOTE`, literal `IF` comparisons, literal `COMPARE` results,
   explicit-default `FILLIN`/`ASK` prompt fields, and literal quoted or single-token `SET` bookmark assignments feeding later plain `REF`/direct
   bookmark references,
+  malformed `SET` syntax reporting `UnsupportedSwitch`,
   inserted-content fields, mail-merge helper fields, reference/index fields,
   numbering/list fields, document-structure fields, display/layout fields,
   action/automation fields, compatibility/private
@@ -205,6 +206,7 @@ Initial status:
   deterministic literal `SET name "value"` or single-token `SET name value` fields with
   field-result format switches rendered as hidden output while
   feeding later plain `REF`/direct bookmark references in source order,
+  malformed `SET` syntax reports `UnsupportedSwitch`,
   literal `NEXT`, `NEXTIF`, and `SKIPIF` merge-control fields with
   field-result format switches rendered as hidden output without running a mail merge,
   deterministic `GOTOBUTTON`/`MACROBUTTON` quoted or unquoted display text with
@@ -307,8 +309,9 @@ Initial status:
   `UnsupportedSwitch`, and
   deterministic literal `SET name "value"` or single-token `SET name value` fields with
   field-result format switches render as hidden output while
-  feeding later plain `REF`/direct bookmark references in source order, plus
-  literal `NEXT`, `NEXTIF`, and `SKIPIF` merge-control fields with
+  feeding later plain `REF`/direct bookmark references in source order,
+  malformed `SET` syntax reports `UnsupportedSwitch`, plus literal `NEXT`,
+  `NEXTIF`, and `SKIPIF` merge-control fields with
   field-result format switches render as hidden output without running a mail
   merge; malformed merge-control syntax reports `UnsupportedSwitch`, invalid
   literal `COMPARE` syntax reports `UnsupportedSwitch`, while
@@ -777,6 +780,7 @@ Initial status:
   and deterministic literal `SET name "value"` or single-token `SET name value` fields with
   field-result format switches render as hidden output while
   feeding later plain `REF`/direct bookmark references in source order,
+  malformed `SET` syntax reports `UnsupportedSwitch`,
   plus literal `NEXT`, `NEXTIF`, and `SKIPIF` merge-control fields with
   field-result format switches render as hidden output without running a mail merge;
   malformed merge-control syntax reports `UnsupportedSwitch`; invalid literal
@@ -1069,6 +1073,7 @@ The next useful implementation batch is:
    comparisons, literal `COMPARE` results, explicit-default `FILLIN`/`ASK`
    prompt fields, and literal quoted or single-token `SET` bookmark
    assignments feeding later plain `REF`/direct bookmark references,
+   malformed `SET` syntax reporting `UnsupportedSwitch`,
    inserted-content fields, mail-merge helper fields,
    reference/index fields beyond hidden simple `RD`/`TA`/`XE` markers,
    numbering/list fields, document-structure fields

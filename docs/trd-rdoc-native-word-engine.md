@@ -643,7 +643,8 @@ Implementation:
   quoted/unquoted literal `QUOTE`, literal `IF` finite numeric/text comparisons, literal
   `COMPARE` finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields, and
   literal quoted or single-token `SET` bookmark assignments with field-result
-  format switches feeding later plain `REF`/direct bookmark references, plus literal
+  format switches feeding later plain `REF`/direct bookmark references, with
+  malformed `SET` syntax reporting `UnsupportedSwitch`, plus literal
   `NEXT`/`NEXTIF`/`SKIPIF` merge-control fields with field-result format
   switches that render as hidden output without running a mail merge,
   inserted-content, mail-merge helper, reference/index, numbering/list,
@@ -704,7 +705,8 @@ Acceptance:
   explicit-default `FILLIN`/`ASK`
   prompt fields with field-result format switches, malformed prompt field syntax
   reporting `UnsupportedSwitch`, and literal quoted or single-token `SET` bookmark
-  assignments feeding later plain `REF`/direct bookmark references,
+  assignments feeding later plain `REF`/direct bookmark references, malformed
+  `SET` syntax reporting `UnsupportedSwitch`,
   malformed merge-control syntax reporting `UnsupportedSwitch`,
   inserted-content fields including
   `DDE`/`DDEAUTO`, mail-merge helper fields, reference/index fields including
@@ -1160,7 +1162,8 @@ open and edit the chart data.
   quoted/unquoted literal `QUOTE`, literal `IF` comparisons, literal `COMPARE` results,
   explicit-default `FILLIN`/`ASK` prompt fields, and
   literal quoted or single-token `SET` bookmark assignments with field-result
-  format switches feeding later plain `REF`/direct bookmark references, plus literal
+  format switches feeding later plain `REF`/direct bookmark references, with
+  malformed `SET` syntax reporting `UnsupportedSwitch`, plus literal
   `NEXT`/`NEXTIF`/`SKIPIF` merge-control fields with field-result format
   switches that render as hidden output without running a mail merge,
   inserted-content, mail-merge helper, reference/index beyond hidden simple

@@ -89,6 +89,10 @@ pub(crate) fn supports_prompt_field_syntax(instruction: &str) -> bool {
     fields::supports_prompt_field_syntax(instruction)
 }
 
+pub(crate) fn supports_set_field_syntax(instruction: &str) -> bool {
+    fields::supports_set_field_syntax(instruction)
+}
+
 pub(crate) fn supports_merge_control_field_syntax(instruction: &str) -> bool {
     fields::supports_merge_control_field_syntax(instruction)
 }

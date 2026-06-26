@@ -5126,6 +5126,52 @@ pub(crate) fn computed_set_result(
     Some(String::new())
 }
 
+pub(crate) fn supports_set_field_syntax(instruction: &str) -> bool {
+    set_field_syntax(instruction).is_some()
+}
+
+fn set_field_syntax(instruction: &str) -> Option<()> {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let kind = parts.next()?;
+    if !kind.eq_ignore_ascii_case("SET") {
+        return None;
+    }
+    field_identifier_token(parts.next()?)?;
+    let value = parts.next()?;
+    if quoted_literal_text(value).is_some() {
+        return accept_field_format_tail(&mut parts);
+    }
+    if value.is_empty() || value.starts_with('\\') || value.contains('"') {
+        return None;
+    }
+    accept_uncomputed_set_tail(&mut parts)
+}
+
+fn accept_uncomputed_set_tail<'a, I>(parts: &mut I) -> Option<()>
+where
+    I: Iterator<Item = &'a str>,
+{
+    let mut text_format = None;
+    while let Some(part) = parts.next() {
+        if part == "\\*" {
+            if !accept_field_format_switch(parts.next()?, &mut text_format) {
+                return None;
+            }
+            continue;
+        }
+        if let Some(format) = part.strip_prefix("\\*") {
+            if accept_field_format_switch(format, &mut text_format) {
+                continue;
+            }
+        }
+        if part.starts_with('\\') || part.contains('"') {
+            return None;
+        }
+    }
+    Some(())
+}
+
 fn set_instruction(instruction: &str) -> Option<SetInstruction> {
     let tokens = instruction_parts(instruction);
     let mut parts = tokens.iter().map(String::as_str);
