@@ -60,12 +60,12 @@ size, color, bold/italic, highlight, super/subscript), paragraph layout
 (named styles, headings, alignment, spacing, indent, shading), leveled lists,
 **bordered tables with per-cell shading / width / vertical alignment**, images
 with alt text, explicit pixel size, inline rotation, and page-relative floating
-offsets, simple fields with cached results, dirty TOC heading-range fields,
-run-anchored comments, tracked insertion/deletion runs, run-level content
-controls, bookmarked runs, authored footnotes/endnotes, string custom document
-properties, raw custom XML data-store items, page setup, explicit page/section
-breaks, and running headers/footers with page numbers all round-trip. Content
-controls can include tag/alias and data-binding metadata. See
+offsets, simple fields with cached results, `PAGEREF` helper runs, dirty TOC
+heading-range fields, run-anchored comments, tracked insertion/deletion runs,
+run-level content controls, bookmarked runs, authored footnotes/endnotes, string
+custom document properties, raw custom XML data-store items, page setup,
+explicit page/section breaks, and running headers/footers with page numbers all
+round-trip. Content controls can include tag/alias and data-binding metadata. See
 [`examples/report.rs`](examples/report.rs).
 
 ```rust
@@ -834,7 +834,7 @@ The long-term native Word engine plan is split into the
       (`sprmTDefTable`), list autonumbers, hyperlinks, inline images
 - [x] Unified `.docx` reader into the same model (98.6% recall vs python-docx)
 - [x] **`.docx` writer** — styled authoring (named styles, rich tables with typed nested cell blocks, page setup,
-      styled runs, leveled lists, simple fields, dirty TOC heading-range fields,
+      styled runs, leveled lists, simple fields, `PAGEREF` helper runs, dirty TOC heading-range fields,
       run-anchored comments, tracked insertion/deletion runs, run-level content
       controls with data-binding metadata, bookmarked runs, authored footnotes/endnotes, inline/standalone hyperlinks,
       string custom document properties, raw custom XML data-store items, headers/footers + page numbers, images with inline rotation and page-relative floating offsets,

@@ -87,6 +87,11 @@ impl RunBuilder {
         self
     }
 
+    /// Mark the run as the cached result of a hyperlink-style `PAGEREF` field.
+    pub fn page_ref(self, bookmark: impl Into<String>) -> Self {
+        self.field(format!("PAGEREF {} \\h", bookmark.into()))
+    }
+
     /// Mark the run as a relationship-backed external hyperlink.
     pub fn hyperlink(mut self, url: impl Into<String>) -> Self {
         self.run.field = FieldRole::Hyperlink { url: url.into() };

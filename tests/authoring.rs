@@ -601,6 +601,38 @@ fn run_builder_adds_bookmark_for_ref_fields() {
 }
 
 #[test]
+fn run_builder_adds_page_ref_field() {
+    let model = DocBuilder::new()
+        .paragraph_runs([RunBuilder::new("Figure 1").bookmark("Figure1").build()])
+        .paragraph_runs([RunBuilder::new("3").page_ref("Figure1").build()])
+        .build();
+
+    let Block::Paragraph(paragraph) = &model.blocks[1] else {
+        panic!("expected page-ref paragraph");
+    };
+    assert!(matches!(
+        &paragraph.runs[0].field,
+        FieldRole::Simple { instruction } if instruction == "PAGEREF Figure1 \\h"
+    ));
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    assert!(
+        document_xml.contains(r#"<w:fldSimple w:instr=" PAGEREF Figure1 \h ">"#)
+            && document_xml.contains(r#"<w:t xml:space="preserve">3</w:t>"#),
+        "PAGEREF field missing: {document_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("page-ref-authored .docx reopens");
+    let fields = reopened.fields();
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::PageRef);
+    assert_eq!(fields[0].instruction, "PAGEREF Figure1 \\h");
+    assert_eq!(fields[0].result, "3");
+}
+
+#[test]
 fn run_builder_adds_inline_hyperlink_runs() {
     let model = DocBuilder::new()
         .rich_paragraph(
