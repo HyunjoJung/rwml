@@ -1380,6 +1380,16 @@ impl DocBuilder {
         self
     }
 
+    /// Set a character-only document grid for the current/final section.
+    pub fn doc_grid_snap_to_chars(mut self, character_space: u32) -> Self {
+        self.model.setup.doc_grid = Some(DocGrid {
+            grid_type: DocGridType::SnapToChars,
+            line_pitch: None,
+            character_space: Some(character_space),
+        });
+        self
+    }
+
     /// Enable distinct first-page section behavior.
     pub fn title_page(mut self) -> Self {
         self.model.setup.title_page = true;
