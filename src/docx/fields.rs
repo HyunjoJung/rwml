@@ -6767,15 +6767,11 @@ fn eq_limit_text(text: String) -> String {
 
 fn eq_overstrike_text(expression: &str) -> Option<String> {
     let mut body = strip_ascii_switch_prefix(expression, "\\o")?.trim_start();
-    loop {
-        if let Some(rest) = consume_eq_prefix_switch(body, "\\al")
-            .or_else(|| consume_eq_prefix_switch(body, "\\ac"))
-            .or_else(|| consume_eq_prefix_switch(body, "\\ar"))
-        {
-            body = rest.trim_start();
-        } else {
-            break;
-        }
+    while let Some(rest) = consume_eq_prefix_switch(body, "\\al")
+        .or_else(|| consume_eq_prefix_switch(body, "\\ac"))
+        .or_else(|| consume_eq_prefix_switch(body, "\\ar"))
+    {
+        body = rest.trim_start();
     }
     let inner = body.strip_prefix('(')?.strip_suffix(')')?;
     let operands = split_eq_list_operands(inner)?;
@@ -7605,24 +7601,10 @@ pub(crate) fn computed_numbering_result(
     {
         return None;
     }
-    let accepts_full_autonum_switches = kind.eq_ignore_ascii_case("AUTONUM");
+    let accepts_separator_switch = kind.eq_ignore_ascii_case("AUTONUM");
     let mut number_format = None;
     let mut separator = None;
     while let Some(part) = parts.next() {
-        if !accepts_full_autonum_switches {
-            if part == "\\*" {
-                if !is_neutral_field_format_switch(parts.next()?) {
-                    return None;
-                }
-                continue;
-            }
-            if let Some(format) = part.strip_prefix("\\*") {
-                if is_neutral_field_format_switch(format) {
-                    continue;
-                }
-            }
-            return None;
-        }
         if part == "\\*" {
             let switch = parts.next()?;
             if is_neutral_field_format_switch(switch) {
@@ -7642,13 +7624,18 @@ pub(crate) fn computed_numbering_result(
             }
             continue;
         }
-        if part.eq_ignore_ascii_case("\\s") {
+        if accepts_separator_switch && part.eq_ignore_ascii_case("\\s") {
             accept_autonum_separator_switch(parts.next()?, &mut separator)?;
             continue;
         }
-        if let Some(value) = part.strip_prefix("\\s") {
-            accept_autonum_separator_switch(value, &mut separator)?;
-            continue;
+        if accepts_separator_switch {
+            if let Some(value) = part.strip_prefix("\\s") {
+                accept_autonum_separator_switch(value, &mut separator)?;
+                continue;
+            }
+        }
+        if part.strip_prefix("\\s").is_some() || part.eq_ignore_ascii_case("\\s") {
+            return None;
         }
         return None;
     }

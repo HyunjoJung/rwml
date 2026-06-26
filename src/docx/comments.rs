@@ -85,11 +85,9 @@ pub(crate) fn parse_anchors(xml: &str) -> HashMap<String, TextAnchor> {
                     }
                 }
             }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
-                if old_content_depth == 0 {
-                    if let Some(text) = inline_marker_text(&e) {
-                        push_anchor_text(&active, &mut anchors, text);
-                    }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if old_content_depth == 0 => {
+                if let Some(text) = inline_marker_text(&e) {
+                    push_anchor_text(&active, &mut anchors, text);
                 }
             }
             Ok(Event::End(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {

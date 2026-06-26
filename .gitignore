@@ -2,6 +2,8 @@
 Cargo.lock
 fuzz/target
 fuzz/Cargo.lock
+__pycache__/
+.pytest_cache/
 
 # local eval artifacts
 codex_eval.log

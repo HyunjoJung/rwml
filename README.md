@@ -487,8 +487,9 @@ diagnostics;
 numbering/list fields compute deterministic source-order plain `AUTONUM`
 values with common number-format switches and the documented `\s` separator
 switch, including unquoted or quoted one-character separators, standalone
-plain/neutral `AUTONUMLGL` and `AUTONUMOUT` values on the same source-order
-counter, plus level-1 `LISTNUM NumberDefault` values with common number-format
+plain, neutral, or common-number-format `AUTONUMLGL` and `AUTONUMOUT`
+values on the same source-order counter,
+plus level-1 `LISTNUM NumberDefault` values with common number-format
 switches, neutral field-format switches, and `\s` starts/resets, while richer `AUTONUMOUT` outline formatting,
 `BIDIOUTLINE`, and richer `LISTNUM` levels/named lists are named separately
 from unknown fields, preserve cached result text, and report

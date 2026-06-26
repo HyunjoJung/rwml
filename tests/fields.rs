@@ -605,7 +605,7 @@ fn numbering_field_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" AUTONUM "><w:r><w:t>stale autonum one</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTONUM \* MERGEFORMAT "><w:r><w:t>stale autonum two</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTONUM \* roman "><w:r><w:t>stale autonum roman</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTONUM \* Unknown "><w:r><w:t>cached unsupported autonum</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTONUM "><w:r><w:t>stale autonum after unsupported</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTONUM \s. "><w:r><w:t>stale autonum separator</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTONUM \s &quot;)&quot; "><w:r><w:t>stale quoted autonum separator</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTONUMLGL "><w:r><w:t>cached legal number</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTONUMOUT "><w:r><w:t>cached outline number</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTONUMOUT \* roman "><w:r><w:t>cached outline roman</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" LISTNUM LegalDefault \l 2 "><w:r><w:t>cached list number</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" BIDIOUTLINE "><w:r><w:t>cached bidi outline</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" AUTONUM "><w:r><w:t>stale autonum one</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTONUM \* MERGEFORMAT "><w:r><w:t>stale autonum two</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTONUM \* roman "><w:r><w:t>stale autonum roman</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTONUM \* Unknown "><w:r><w:t>cached unsupported autonum</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTONUM "><w:r><w:t>stale autonum after unsupported</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTONUM \s. "><w:r><w:t>stale autonum separator</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTONUM \s &quot;)&quot; "><w:r><w:t>stale quoted autonum separator</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTONUMLGL "><w:r><w:t>cached legal number</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTONUMLGL \* roman "><w:r><w:t>cached legal roman</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTONUMOUT "><w:r><w:t>cached outline number</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTONUMOUT \* roman "><w:r><w:t>cached outline roman</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" LISTNUM LegalDefault \l 2 "><w:r><w:t>cached list number</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" BIDIOUTLINE "><w:r><w:t>cached bidi outline</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -4177,7 +4177,7 @@ fn docx_numbering_fields_compute_formatted_autonum_subset() {
     let doc = Document::open(&numbering_field_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 12);
+    assert_eq!(fields.len(), 13);
     assert_eq!(fields[0].kind, FieldKind::Numbering("AUTONUM".to_string()));
     assert_eq!(fields[0].instruction, "AUTONUM");
     assert_eq!(fields[0].result, "stale autonum one");
@@ -4214,28 +4214,35 @@ fn docx_numbering_fields_compute_formatted_autonum_subset() {
     assert_eq!(fields[7].computed_result.as_deref(), Some("7"));
     assert_eq!(
         fields[8].kind,
-        FieldKind::Numbering("AUTONUMOUT".to_string())
+        FieldKind::Numbering("AUTONUMLGL".to_string())
     );
-    assert_eq!(fields[8].result, "cached outline number");
-    assert_eq!(fields[8].computed_result.as_deref(), Some("8"));
+    assert_eq!(fields[8].instruction, "AUTONUMLGL \\* roman");
+    assert_eq!(fields[8].result, "cached legal roman");
+    assert_eq!(fields[8].computed_result.as_deref(), Some("viii"));
     assert_eq!(
         fields[9].kind,
         FieldKind::Numbering("AUTONUMOUT".to_string())
     );
-    assert_eq!(fields[9].instruction, "AUTONUMOUT \\* roman");
-    assert_eq!(fields[9].result, "cached outline roman");
-    assert_eq!(fields[9].computed_result, None);
-    assert_eq!(fields[10].kind, FieldKind::Numbering("LISTNUM".to_string()));
-    assert_eq!(fields[10].instruction, "LISTNUM LegalDefault \\l 2");
-    assert_eq!(fields[10].result, "cached list number");
-    assert_eq!(fields[10].computed_result, None);
+    assert_eq!(fields[9].result, "cached outline number");
+    assert_eq!(fields[9].computed_result.as_deref(), Some("9"));
     assert_eq!(
-        fields[11].kind,
+        fields[10].kind,
+        FieldKind::Numbering("AUTONUMOUT".to_string())
+    );
+    assert_eq!(fields[10].instruction, "AUTONUMOUT \\* roman");
+    assert_eq!(fields[10].result, "cached outline roman");
+    assert_eq!(fields[10].computed_result.as_deref(), Some("x"));
+    assert_eq!(fields[11].kind, FieldKind::Numbering("LISTNUM".to_string()));
+    assert_eq!(fields[11].instruction, "LISTNUM LegalDefault \\l 2");
+    assert_eq!(fields[11].result, "cached list number");
+    assert_eq!(fields[11].computed_result, None);
+    assert_eq!(
+        fields[12].kind,
         FieldKind::Numbering("BIDIOUTLINE".to_string())
     );
-    assert_eq!(fields[11].instruction, "BIDIOUTLINE");
-    assert_eq!(fields[11].result, "cached bidi outline");
-    assert_eq!(fields[11].computed_result, None);
+    assert_eq!(fields[12].instruction, "BIDIOUTLINE");
+    assert_eq!(fields[12].result, "cached bidi outline");
+    assert_eq!(fields[12].computed_result, None);
 
     let report = doc.report();
     assert_eq!(
@@ -4243,10 +4250,6 @@ fn docx_numbering_fields_compute_formatted_autonum_subset() {
         vec![
             FieldKindCount {
                 kind: FieldKind::Numbering("AUTONUM".to_string()),
-                count: 1,
-            },
-            FieldKindCount {
-                kind: FieldKind::Numbering("AUTONUMOUT".to_string()),
                 count: 1,
             },
             FieldKindCount {
@@ -4263,7 +4266,7 @@ fn docx_numbering_fields_compute_formatted_autonum_subset() {
         report.features.unsupported_field_reasons,
         vec![FieldEvaluationReasonCount {
             reason: FieldEvaluationReason::NoComputedResult,
-            count: 4,
+            count: 3,
         }]
     );
 
@@ -4277,8 +4280,9 @@ fn docx_numbering_fields_compute_formatted_autonum_subset() {
             && main_text.contains("5.")
             && main_text.contains("6)")
             && main_text.contains("7")
-            && main_text.contains("8")
-            && main_text.contains("cached outline roman")
+            && main_text.contains("viii")
+            && main_text.contains("9")
+            && main_text.contains("x")
             && main_text.contains("cached list number")
             && main_text.contains("cached bidi outline"),
         "computed AUTONUM and cached remaining numbering field results should appear in main text: {main_text:?}"
@@ -4291,7 +4295,9 @@ fn docx_numbering_fields_compute_formatted_autonum_subset() {
             && !main_text.contains("stale autonum separator")
             && !main_text.contains("stale quoted autonum separator")
             && !main_text.contains("cached legal number")
-            && !main_text.contains("cached outline number"),
+            && !main_text.contains("cached legal roman")
+            && !main_text.contains("cached outline number")
+            && !main_text.contains("cached outline roman"),
         "computed automatic numbering fields should replace stale cached text: {main_text:?}"
     );
 }

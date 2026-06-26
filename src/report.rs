@@ -2177,16 +2177,13 @@ fn scan_docx_xml(xml: &str, features: &mut FeatureInventory) {
                     b"fldSimple" | b"instrText" => features.fields += 1,
                     b"hyperlink" => features.hyperlinks += 1,
                     b"sdt" => features.content_controls += 1,
-                    b"anchor" => {
-                        if old_revision_depth == 0 {
-                            features.floating_shapes += 1;
-                            mark_report_alternate_anchor_seen(&mut alternate_content_stack);
-                        }
+                    b"anchor" if old_revision_depth == 0 => {
+                        features.floating_shapes += 1;
+                        mark_report_alternate_anchor_seen(&mut alternate_content_stack);
                     }
-                    name if is_alternate_content_shape_marker(name) => {
-                        if old_revision_depth == 0 {
-                            mark_report_alternate_shape_marker_seen(&mut alternate_content_stack);
-                        }
+                    b"anchor" => {}
+                    name if is_alternate_content_shape_marker(name) && old_revision_depth == 0 => {
+                        mark_report_alternate_shape_marker_seen(&mut alternate_content_stack);
                     }
                     b"chart" => features.charts += 1,
                     b"object" => {
@@ -2232,16 +2229,13 @@ fn scan_docx_xml(xml: &str, features: &mut FeatureInventory) {
                     b"fldSimple" | b"instrText" => features.fields += 1,
                     b"hyperlink" => features.hyperlinks += 1,
                     b"sdt" => features.content_controls += 1,
-                    b"anchor" => {
-                        if old_revision_depth == 0 {
-                            features.floating_shapes += 1;
-                            mark_report_alternate_anchor_seen(&mut alternate_content_stack);
-                        }
+                    b"anchor" if old_revision_depth == 0 => {
+                        features.floating_shapes += 1;
+                        mark_report_alternate_anchor_seen(&mut alternate_content_stack);
                     }
-                    name if is_alternate_content_shape_marker(name) => {
-                        if old_revision_depth == 0 {
-                            mark_report_alternate_shape_marker_seen(&mut alternate_content_stack);
-                        }
+                    b"anchor" => {}
+                    name if is_alternate_content_shape_marker(name) && old_revision_depth == 0 => {
+                        mark_report_alternate_shape_marker_seen(&mut alternate_content_stack);
                     }
                     b"chart" => features.charts += 1,
                     b"object" => features.ole_objects += 1,
