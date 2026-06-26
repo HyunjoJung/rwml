@@ -1032,6 +1032,16 @@ impl ChartBuilder {
         }
     }
 
+    /// Start a straight-line scatter chart without point markers.
+    pub fn scatter_lines() -> Self {
+        Self {
+            chart: Chart {
+                kind: ChartKind::ScatterLines,
+                ..Chart::default()
+            },
+        }
+    }
+
     /// Start a smoothed scatter chart with point markers.
     pub fn scatter_smooth() -> Self {
         Self {

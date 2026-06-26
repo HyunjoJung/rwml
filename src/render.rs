@@ -2750,6 +2750,7 @@ fn draw_authored_chart(
         | ChartKind::Area3D
         | ChartKind::Scatter
         | ChartKind::ScatterMarkers
+        | ChartKind::ScatterLines
         | ChartKind::ScatterSmooth
         | ChartKind::ScatterSmoothNoMarkers
         | ChartKind::Bubble
@@ -3058,6 +3059,7 @@ fn draw_authored_chart(
                 }
                 ChartKind::Scatter
                 | ChartKind::ScatterMarkers
+                | ChartKind::ScatterLines
                 | ChartKind::ScatterSmooth
                 | ChartKind::ScatterSmoothNoMarkers => {
                     for (series_index, series) in chart.series.iter().enumerate() {
@@ -3079,7 +3081,10 @@ fn draw_authored_chart(
                                     );
                                 }
                             }
-                            if chart.kind != ChartKind::ScatterSmoothNoMarkers {
+                            if !matches!(
+                                chart.kind,
+                                ChartKind::ScatterLines | ChartKind::ScatterSmoothNoMarkers
+                            ) {
                                 fill_rect_color(
                                     surface,
                                     point_x - 2.5,

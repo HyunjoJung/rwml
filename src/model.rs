@@ -917,6 +917,8 @@ pub enum ChartKind {
     Scatter,
     /// A marker-only scatter chart with numeric horizontal and vertical values.
     ScatterMarkers,
+    /// A straight-line scatter chart without point markers.
+    ScatterLines,
     /// A smoothed scatter chart with point markers.
     ScatterSmooth,
     /// A smoothed scatter chart without point markers.

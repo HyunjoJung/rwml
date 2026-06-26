@@ -4301,6 +4301,65 @@ fn doc_builder_adds_marker_only_scatter_chart() {
 }
 
 #[test]
+fn doc_builder_adds_line_only_scatter_chart() {
+    let model = DocBuilder::new()
+        .chart(
+            ChartBuilder::scatter_lines()
+                .title("Latency line")
+                .categories(["P50", "P90", "P99"])
+                .series("Before", [120.0, 240.0, 510.0])
+                .series("After", [90.0, 180.0, 360.0])
+                .size_px(420, 280)
+                .alt("Latency line-only scatter chart"),
+        )
+        .build();
+
+    let Block::Chart(chart) = &model.blocks[0] else {
+        panic!("expected chart block");
+    };
+    assert_eq!(chart.kind, ChartKind::ScatterLines);
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let rels = String::from_utf8(parts["word/_rels/document.xml.rels"].clone()).unwrap();
+    let chart_xml = String::from_utf8(parts["word/charts/chart1.xml"].clone()).unwrap();
+    let workbook_bytes = parts
+        .get("word/embeddings/Microsoft_Excel_Worksheet1.xlsx")
+        .expect("embedded line-only scatter chart workbook");
+    let workbook_parts = unzip_parts(workbook_bytes);
+    let sheet_xml = String::from_utf8(workbook_parts["xl/worksheets/sheet1.xml"].clone()).unwrap();
+
+    assert!(
+        document_xml.contains(
+            r#"<wp:docPr id="1" name="Chart1" descr="Latency line-only scatter chart"/>"#
+        ) && document_xml.contains(r#"<c:chart r:id="rId1"/>"#),
+        "line-only scatter chart drawing missing: {document_xml}"
+    );
+    assert!(
+        rels.contains("relationships/chart") && rels.contains(r#"Target="charts/chart1.xml""#),
+        "line-only scatter chart relationship missing: {rels}"
+    );
+    assert!(
+        chart_xml.contains("<c:scatterChart>")
+            && chart_xml.contains(r#"<c:scatterStyle val="line"/>"#)
+            && chart_xml.contains(r#"<c:marker><c:symbol val="none"/></c:marker>"#)
+            && chart_xml.contains("<a:t>Latency line</a:t>")
+            && chart_xml.contains("<c:v>Before</c:v>")
+            && chart_xml.contains(r#"<c:pt idx="2"><c:v>360</c:v></c:pt>"#),
+        "line-only scatter chart payload missing: {chart_xml}"
+    );
+    assert!(
+        sheet_xml.contains(r#"<c r="B2"><v>120</v></c>"#)
+            && sheet_xml.contains(r#"<c r="C4"><v>360</v></c>"#),
+        "line-only scatter chart workbook values missing: {sheet_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("line-only scatter chart .docx reopens");
+    assert_eq!(reopened.report().features.charts, 1);
+}
+
+#[test]
 fn doc_builder_adds_smooth_scatter_charts() {
     let model = DocBuilder::new()
         .chart(
@@ -5520,6 +5579,38 @@ fn render_pdf_draws_authored_marker_only_scatter_chart() {
     assert!(
         rendered.pdf.len() > empty.pdf.len() + 100,
         "marker-only scatter chart drawing should add visible PDF content"
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn render_pdf_draws_authored_line_only_scatter_chart() {
+    let model = DocBuilder::new()
+        .chart(
+            ChartBuilder::scatter_lines()
+                .title("Latency line")
+                .categories(["P50", "P90", "P99"])
+                .series("Before", [120.0, 240.0, 510.0])
+                .series("After", [90.0, 180.0, 360.0]),
+        )
+        .build();
+
+    let empty = rdoc::render_pdf_with_report(&DocModel::default());
+    let rendered = rdoc::render_pdf_with_report(&model);
+
+    assert!(rendered.pdf.starts_with(b"%PDF"));
+    assert_eq!(rendered.report.pages, 1);
+    assert_eq!(rendered.report.unsupported.charts, 0);
+    assert!(
+        !rendered.report.warnings.iter().any(|warning| matches!(
+            warning,
+            rdoc::RenderWarning::ChartsPreservedButNotModeled { .. }
+        )),
+        "authored line-only scatter chart should render without preserved-only warnings"
+    );
+    assert!(
+        rendered.pdf.len() > empty.pdf.len() + 100,
+        "line-only scatter chart drawing should add visible PDF content"
     );
 }
 

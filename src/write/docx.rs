@@ -1931,6 +1931,9 @@ fn chart_xml(chart: &Chart, chart_id: u32, workbook_rid: Option<&str>) -> String
             "marker",
             "circle",
         ),
+        ChartKind::ScatterLines => {
+            write_scatter_chart(&mut out, chart, cat_axis_id, val_axis_id, "line", "none")
+        }
         ChartKind::ScatterSmooth => write_scatter_chart(
             &mut out,
             chart,
@@ -1966,6 +1969,7 @@ fn chart_xml(chart: &Chart, chart_id: u32, workbook_rid: Option<&str>) -> String
         | ChartKind::Doughnut => {}
         ChartKind::Scatter
         | ChartKind::ScatterMarkers
+        | ChartKind::ScatterLines
         | ChartKind::ScatterSmooth
         | ChartKind::ScatterSmoothNoMarkers
         | ChartKind::Bubble
@@ -2457,6 +2461,7 @@ fn write_chart_axes(out: &mut String, kind: ChartKind, cat_axis_id: u32, val_axi
         | ChartKind::FilledRadar => ("b", "l"),
         ChartKind::Scatter
         | ChartKind::ScatterMarkers
+        | ChartKind::ScatterLines
         | ChartKind::ScatterSmooth
         | ChartKind::ScatterSmoothNoMarkers
         | ChartKind::Bubble
