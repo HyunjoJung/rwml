@@ -708,8 +708,8 @@ Acceptance:
   reset semantics stay cached with `NoComputedResult` diagnostics and without
   mutating later source-order counters.
 - deterministic simple literal `RD`, `TA`, and `XE` reference/index marker fields
-  validate their filename or literal marker text and supported marker switches,
-  then render as hidden output; generated bibliography, citation, index,
+  validate their filename or literal marker text, supported marker switches, and
+  field-result format switches, then render as hidden output; generated bibliography, citation, index,
   and table-of-authorities fields preserve cached text with
   `NoComputedResult` diagnostics until native generation is modeled.
 - plain `AUTONUM` fields compute source-order values with common number-format

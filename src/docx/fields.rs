@@ -6279,7 +6279,7 @@ fn reference_index_rd_instruction<'a>(mut parts: impl Iterator<Item = &'a str>) 
         if part.eq_ignore_ascii_case("\\f") {
             continue;
         }
-        if accept_reference_index_neutral_format(part, &mut parts).is_some() {
+        if accept_reference_index_field_format(part, &mut parts).is_some() {
             continue;
         }
         return None;
@@ -6316,7 +6316,7 @@ fn reference_index_ta_instruction<'a>(mut parts: impl Iterator<Item = &'a str>) 
             parse_reference_index_category(category)?;
             continue;
         }
-        if accept_reference_index_neutral_format(part, &mut parts).is_some() {
+        if accept_reference_index_field_format(part, &mut parts).is_some() {
             continue;
         }
         return None;
@@ -6354,7 +6354,7 @@ fn reference_index_xe_instruction<'a>(mut parts: impl Iterator<Item = &'a str>) 
             reference_index_literal(value)?;
             continue;
         }
-        if accept_reference_index_neutral_format(part, &mut parts).is_some() {
+        if accept_reference_index_field_format(part, &mut parts).is_some() {
             continue;
         }
         return None;
@@ -6379,14 +6379,15 @@ fn parse_reference_index_category(value: &str) -> Option<u8> {
     (1..=16).contains(&value).then_some(value)
 }
 
-fn accept_reference_index_neutral_format<'a>(
+fn accept_reference_index_field_format<'a>(
     part: &str,
     parts: &mut impl Iterator<Item = &'a str>,
 ) -> Option<()> {
+    let mut text_format = None;
     if part == "\\*" {
-        return is_neutral_field_format_switch(parts.next()?).then_some(());
+        return accept_field_format_switch(parts.next()?, &mut text_format).then_some(());
     }
-    is_neutral_field_format_switch(part.strip_prefix("\\*")?).then_some(())
+    accept_field_format_switch(part.strip_prefix("\\*")?, &mut text_format).then_some(())
 }
 
 fn wildcard_match(text: &str, pattern: &str) -> bool {
@@ -9449,6 +9450,23 @@ mod tests {
         assert!(computed_reference_index_result(r#"TA \l "Case" \c "1""#).is_some());
         assert!(computed_reference_index_result(r#"TA \l "Case" \c "1"#).is_none());
         assert!(computed_reference_index_result(r#"TA \l "Case" \c"1"#).is_none());
+    }
+
+    #[test]
+    fn reference_index_markers_accept_field_text_format_switches() {
+        assert_eq!(
+            computed_reference_index_result(r#"RD "chapter2.docx" \* Upper"#).as_deref(),
+            Some("")
+        );
+        assert_eq!(
+            computed_reference_index_result(r#"TA \l "Case" \*Lower"#).as_deref(),
+            Some("")
+        );
+        assert_eq!(
+            computed_reference_index_result(r#"XE "Mercury" \t "See planets" \* FirstCap"#)
+                .as_deref(),
+            Some("")
+        );
     }
 
     #[test]

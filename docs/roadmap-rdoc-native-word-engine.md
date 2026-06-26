@@ -313,8 +313,8 @@ Initial status:
   `NoComputedResult` until native merge-record evaluation is implemented. The
   reference/index fields (`BIBLIOGRAPHY`, `CITATION`, `INDEX`, `RD`, `TA`,
   `TOA`, `XE`) are named separately from unknown fields, deterministic simple
-  literal `RD`/`TA`/`XE` marker fields render as hidden output, and generated
-  bibliography/citation/index/table-of-authorities fields report
+  literal `RD`/`TA`/`XE` marker fields with field-result format switches render
+  as hidden output, and generated bibliography/citation/index/table-of-authorities fields report
   `NoComputedResult` until native generation is implemented. The
   numbering/list fields compute deterministic source-order plain `AUTONUM`
   values with common number-format switches and the documented `\s` separator
@@ -766,8 +766,8 @@ Initial status:
   diagnostics. Mail-merge helper fields are named separately from unknown
   fields and preserve cached text with `NoComputedResult` diagnostics.
   Reference/index fields are named separately from unknown fields; simple
-  literal `RD`/`TA`/`XE` marker fields render as hidden output, while generated
-  bibliography/citation/index/table-of-authorities fields preserve
+  literal `RD`/`TA`/`XE` marker fields with field-result format switches render
+  as hidden output, while generated bibliography/citation/index/table-of-authorities fields preserve
   cached text with `NoComputedResult` diagnostics.
   Numbering/list fields compute deterministic source-order plain `AUTONUM`
   values with common number-format switches and the documented `\s` separator
