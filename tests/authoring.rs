@@ -727,6 +727,46 @@ fn doc_builder_adds_first_even_header_footer_variants() {
 }
 
 #[test]
+fn doc_builder_clear_header_footer_removes_all_variants() {
+    let model = DocBuilder::new()
+        .header("Default header")
+        .first_header("First header")
+        .even_header("Even header")
+        .footer("Default footer")
+        .first_footer("First footer")
+        .even_footer("Even footer")
+        .clear_header_footer()
+        .paragraph("Body")
+        .build();
+
+    assert!(model.setup.header.is_empty());
+    assert!(model.setup.first_header.is_empty());
+    assert!(model.setup.even_header.is_empty());
+    assert!(model.setup.footer.is_empty());
+    assert!(model.setup.first_footer.is_empty());
+    assert!(model.setup.even_footer.is_empty());
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    assert!(!parts.keys().any(|name| name.starts_with("word/header")));
+    assert!(!parts.keys().any(|name| name.starts_with("word/footer")));
+
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let rels = parts
+        .get("word/_rels/document.xml.rels")
+        .map(|bytes| String::from_utf8(bytes.clone()).unwrap())
+        .unwrap_or_default();
+    assert!(
+        !document_xml.contains("headerReference") && !document_xml.contains("footerReference"),
+        "header/footer references should be absent: {document_xml}"
+    );
+    assert!(
+        !rels.contains("relationships/header") && !rels.contains("relationships/footer"),
+        "header/footer relationships should be absent: {rels}"
+    );
+}
+
+#[test]
 fn doc_builder_adds_section_columns() {
     let model = DocBuilder::new()
         .columns(2)

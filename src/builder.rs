@@ -1704,6 +1704,8 @@ impl DocBuilder {
     /// Remove all running header blocks from the current/final section.
     pub fn clear_header(mut self) -> Self {
         self.model.setup.header.clear();
+        self.model.setup.first_header.clear();
+        self.model.setup.even_header.clear();
         self
     }
 
@@ -1753,6 +1755,8 @@ impl DocBuilder {
     /// Remove all running footer blocks from the current/final section.
     pub fn clear_footer(mut self) -> Self {
         self.model.setup.footer.clear();
+        self.model.setup.first_footer.clear();
+        self.model.setup.even_footer.clear();
         self
     }
 
