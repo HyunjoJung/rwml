@@ -3628,14 +3628,7 @@ fn is_tc_instruction(instruction: &str) -> bool {
 }
 
 fn seq_identifier_from_instruction(instruction: Option<&str>) -> Option<String> {
-    let tokens = instruction_parts(instruction?);
-    let mut parts = tokens.iter().map(String::as_str);
-    let kind = parts.next()?;
-    if !kind.eq_ignore_ascii_case("SEQ") {
-        return None;
-    }
-    let identifier = field_identifier_token(parts.next()?)?;
-    Some(identifier.to_string())
+    sequence_instruction(instruction?).map(|instruction| instruction.identifier)
 }
 
 fn caption_text_without_label(text: &str, identifier: &str) -> Option<String> {
@@ -7657,17 +7650,22 @@ enum SequenceAction {
     Reset(i64),
 }
 
-pub(crate) fn computed_sequence_result(
-    instruction: &str,
-    counters: &mut HashMap<String, i64>,
-) -> Option<String> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SequenceInstruction {
+    identifier: String,
+    action: SequenceAction,
+    hidden: bool,
+    number_format: Option<PageNumberFormat>,
+}
+
+fn sequence_instruction(instruction: &str) -> Option<SequenceInstruction> {
     let tokens = instruction_parts(instruction);
     let mut parts = tokens.iter().map(String::as_str);
     let kind = parts.next()?;
     if !kind.eq_ignore_ascii_case("SEQ") {
         return None;
     }
-    let identifier = field_identifier_token(parts.next()?)?;
+    let identifier = field_identifier_token(parts.next()?)?.to_string();
     let mut action = SequenceAction::Next;
     let mut action_seen = false;
     let mut hidden = false;
@@ -7727,21 +7725,34 @@ pub(crate) fn computed_sequence_result(
         }
         return None;
     }
-    let value = match action {
-        SequenceAction::Next => counters.get(identifier).copied().unwrap_or(0) + 1,
-        SequenceAction::Current => counters.get(identifier).copied()?,
+    Some(SequenceInstruction {
+        identifier,
+        action,
+        hidden,
+        number_format,
+    })
+}
+
+pub(crate) fn computed_sequence_result(
+    instruction: &str,
+    counters: &mut HashMap<String, i64>,
+) -> Option<String> {
+    let instruction = sequence_instruction(instruction)?;
+    let value = match instruction.action {
+        SequenceAction::Next => counters.get(&instruction.identifier).copied().unwrap_or(0) + 1,
+        SequenceAction::Current => counters.get(&instruction.identifier).copied()?,
         SequenceAction::Reset(value) => value,
     };
-    let text = if hidden {
+    let text = if instruction.hidden {
         if value < 0 {
             return None;
         }
         String::new()
     } else {
-        format_sequence_number(value, number_format)?
+        format_sequence_number(value, instruction.number_format)?
     };
-    if !matches!(action, SequenceAction::Current) {
-        counters.insert(identifier.to_string(), value);
+    if !matches!(instruction.action, SequenceAction::Current) {
+        counters.insert(instruction.identifier, value);
     }
     Some(text)
 }
@@ -9485,6 +9496,18 @@ mod tests {
         assert_eq!(
             seq_identifier_from_instruction(Some(r##"SEQ "Figure"##)),
             None
+        );
+    }
+
+    #[test]
+    fn sequence_identifiers_reject_unsupported_tail_switches() {
+        assert_eq!(
+            seq_identifier_from_instruction(Some(r#"SEQ Figure \x"#)),
+            None
+        );
+        assert_eq!(
+            seq_identifier_from_instruction(Some(r#"SEQ Figure \* roman"#)).as_deref(),
+            Some("Figure")
         );
     }
 
