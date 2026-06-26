@@ -18,8 +18,8 @@ use super::{esc_attr, esc_text};
 use crate::model::{
     Align, AuthoredComment, AuthoredContentControl, AuthoredNote, AuthoredRevision, Block,
     CellMargins, CharProps, Chart, ChartKind, ChartSeries, ChartShape, Color, FieldRole, Image,
-    Indent, ParaProps, Paragraph, ParagraphStyle, SectionSetup, Spacing, Table, TableBorderSide,
-    TableBorderStyle, VertAlign,
+    Indent, ParaProps, Paragraph, ParagraphStyle, SectionBreakKind, SectionSetup, Spacing, Table,
+    TableBorderSide, TableBorderStyle, VertAlign,
 };
 use crate::{NoteKind, RevisionKind};
 
@@ -504,7 +504,7 @@ impl Ctx {
 
     fn write_section_break(&mut self, out: &mut String, setup: &SectionSetup) {
         out.push_str("<w:p><w:pPr>");
-        self.write_sect_pr(out, setup, true);
+        self.write_sect_pr(out, setup, Some(SectionBreakKind::NextPage));
         out.push_str("</w:pPr></w:p>");
     }
 
@@ -550,7 +550,12 @@ impl Ctx {
         ));
     }
 
-    fn write_sect_pr(&mut self, out: &mut String, setup: &SectionSetup, next_page: bool) {
+    fn write_sect_pr(
+        &mut self,
+        out: &mut String,
+        setup: &SectionSetup,
+        fallback_break: Option<SectionBreakKind>,
+    ) {
         let mut refs = String::new();
         self.write_header_ref(&mut refs, "default", &setup.header);
         self.write_header_ref(&mut refs, "first", &setup.first_header);
@@ -588,11 +593,11 @@ impl Ctx {
             .unwrap_or_default();
         let doc_grid = doc_grid_xml(setup);
         let page_number_type = page_number_type_xml(setup);
-        let start = if next_page {
-            r#"<w:type w:val="nextPage"/>"#
-        } else {
-            ""
-        };
+        let start = setup
+            .section_break
+            .or(fallback_break)
+            .map(|kind| format!(r#"<w:type w:val="{}"/>"#, kind.wml_value()))
+            .unwrap_or_default();
         let title_pg = if setup.title_page || has_first_variant {
             "<w:titlePg/>"
         } else {
@@ -2446,7 +2451,7 @@ fn render_body(model: &crate::DocModel) -> BodyRender {
 
     // Final section properties describe the last section in the body. Earlier
     // section breaks were emitted while folding blocks.
-    ctx.write_sect_pr(&mut doc, &SectionSetup::from(&model.setup), false);
+    ctx.write_sect_pr(&mut doc, &SectionSetup::from(&model.setup), None);
     let comments_xml = if ctx.comments.is_empty() {
         None
     } else {

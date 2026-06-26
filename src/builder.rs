@@ -4,8 +4,8 @@ use crate::model::{
     Align, AuthoredComment, AuthoredContentControl, AuthoredNote, AuthoredRevision, Block, Cell,
     CharProps, Chart, ChartKind, ChartSeries, ChartShape, Color, CustomXmlItem, DocGrid,
     DocGridType, DocModel, FieldRole, Image, ListInfo, PageNumberFormat, PageSetup, ParaProps,
-    Paragraph, ParagraphStyle, Row, Run, SectionSetup, Table, TableBorderSide, TableBorderStyle,
-    TextDirection, VCell,
+    Paragraph, ParagraphStyle, Row, Run, SectionBreakKind, SectionSetup, Table, TableBorderSide,
+    TableBorderStyle, TextDirection, VCell,
 };
 use crate::{NoteKind, RevisionKind};
 
@@ -1597,10 +1597,24 @@ impl DocBuilder {
     ///
     /// The section break snapshots the current page setup, headers, footers, and
     /// page-number setting. Later builder calls mutate the final section setup.
-    pub fn section_break(mut self) -> Self {
-        self.model
-            .blocks
-            .push(Block::SectionBreak(SectionSetup::from(&self.model.setup)));
+    pub fn section_break(self) -> Self {
+        self.section_break_kind(SectionBreakKind::NextPage)
+    }
+
+    /// Close the current section and start a new one on the next even page.
+    pub fn section_break_even_page(self) -> Self {
+        self.section_break_kind(SectionBreakKind::EvenPage)
+    }
+
+    /// Close the current section and start a new one on the next odd page.
+    pub fn section_break_odd_page(self) -> Self {
+        self.section_break_kind(SectionBreakKind::OddPage)
+    }
+
+    fn section_break_kind(mut self, kind: SectionBreakKind) -> Self {
+        let mut setup = SectionSetup::from(&self.model.setup);
+        setup.section_break = Some(kind);
+        self.model.blocks.push(Block::SectionBreak(setup));
         self
     }
 

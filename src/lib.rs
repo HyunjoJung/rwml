@@ -85,9 +85,9 @@ pub use model::{
     Align, AuthoredComment, AuthoredContentControl, AuthoredNote, AuthoredRevision, Block, Cell,
     CellMargins, CharProps, Chart, ChartKind, ChartSeries, ChartShape, Color, DocGrid, DocGridType,
     DocMeta, DocModel, DocSetup, FieldRole, Image, Indent, ListInfo, PageNumberFormat, PageSetup,
-    ParaProps, Paragraph, ParagraphStyle, Row, Run, SectionSetup, SourceRegion, SourceRegionKind,
-    Spacing, Stats, Table, TableBorderColors, TableBorderSide, TableBorderSizes, TableBorderStyle,
-    TableBorderStyles, TextDirection, VCell, VertAlign,
+    ParaProps, Paragraph, ParagraphStyle, Row, Run, SectionBreakKind, SectionSetup, SourceRegion,
+    SourceRegionKind, Spacing, Stats, Table, TableBorderColors, TableBorderSide, TableBorderSizes,
+    TableBorderStyle, TableBorderStyles, TextDirection, VCell, VertAlign,
 };
 pub use report::{
     DocumentFormat, DocumentReport, DocumentWarning, EditCapability, EditReadOnlyReason,

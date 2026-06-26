@@ -9,8 +9,8 @@ use rdoc::{
     Color, CommentBuilder, ContentControlBuilder, DocBuilder, DocGridType, DocModel, DocSetup,
     Document, DocumentWarning, FieldKind, FieldRole, ImageBuilder, NoteKind, PageNumberFormat,
     PageSetup, ParaProps, Paragraph, ParagraphBuilder, ParagraphStyleBuilder, RevisionBuilder,
-    RevisionKind, RevisionView, Row, RunBuilder, Table, TableBorderSide, TableBorderStyle,
-    TableBuilder, TextDirection, VCell,
+    RevisionKind, RevisionView, Row, RunBuilder, SectionBreakKind, Table, TableBorderSide,
+    TableBorderStyle, TableBuilder, TextDirection, VCell,
 };
 
 fn run(text: &str, props: CharProps) -> rdoc::Run {
@@ -442,6 +442,41 @@ fn doc_builder_adds_section_breaks_with_section_setup() {
     assert!(
         text.contains("Cover header") && text.contains("Detail header"),
         "section headers lost from text view: {text:?}"
+    );
+}
+
+#[test]
+fn doc_builder_adds_even_and_odd_page_section_breaks() {
+    let model = DocBuilder::new()
+        .paragraph("Cover")
+        .section_break_even_page()
+        .paragraph("Even target")
+        .section_break_odd_page()
+        .paragraph("Odd target")
+        .build();
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    assert!(
+        document_xml.contains(r#"<w:type w:val="evenPage"/>"#)
+            && document_xml.contains(r#"<w:type w:val="oddPage"/>"#),
+        "even/odd section break types missing: {document_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("even/odd section break .docx reopens");
+    let sections: Vec<_> = reopened
+        .model()
+        .blocks
+        .iter()
+        .filter_map(|block| match block {
+            Block::SectionBreak(setup) => setup.section_break,
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        sections,
+        vec![SectionBreakKind::EvenPage, SectionBreakKind::OddPage]
     );
 }
 

@@ -22,8 +22,8 @@ use crate::annotation::FieldKind;
 use crate::model::{
     Align, AuthoredContentControl, Block, Cell, CellMargins, CharProps, Color, DocGrid,
     DocGridType, FieldRole, Image, Indent, ListInfo, PageNumberFormat, ParaProps, Paragraph, Row,
-    Run, SectionSetup, Spacing, Table, TableBorderColors, TableBorderSide, TableBorderSizes,
-    TableBorderStyle, TableBorderStyles, TextDirection, VCell, VertAlign,
+    Run, SectionBreakKind, SectionSetup, Spacing, Table, TableBorderColors, TableBorderSide,
+    TableBorderSizes, TableBorderStyle, TableBorderStyles, TextDirection, VCell, VertAlign,
 };
 use crate::text;
 use crate::CoreProperties;
@@ -946,7 +946,10 @@ fn read_paragraph(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Paragraph, Opt
 fn read_paragraph_blocks(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Vec<Block> {
     let (paragraph, section) = read_paragraph(r, ctx, depth);
     let mut blocks = split_page_breaks(paragraph);
-    if let Some(section) = section {
+    if let Some(mut section) = section {
+        if section.section_break.is_none() {
+            section.section_break = Some(SectionBreakKind::NextPage);
+        }
         blocks.push(Block::SectionBreak(section));
     }
     blocks
@@ -1434,6 +1437,10 @@ fn read_sect_pr(r: &mut Xml<'_>) -> SectionSetup {
                         section.page.landscape =
                             attr_local(&e, b"orient").as_deref() == Some("landscape");
                     }
+                }
+                b"type" => {
+                    section.section_break = attr_local(&e, b"val")
+                        .and_then(|value| SectionBreakKind::from_wml_value(&value));
                 }
                 b"pgMar" => {
                     let l = attr_local(&e, b"left").and_then(|v| twips_to_pt(&v));

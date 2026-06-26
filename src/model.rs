@@ -186,6 +186,36 @@ pub enum Block {
     SectionBreak(SectionSetup),
 }
 
+/// Section-break start behavior for a WordprocessingML section boundary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SectionBreakKind {
+    /// Start the following section on the next page (`nextPage`).
+    NextPage,
+    /// Start the following section on the next even page (`evenPage`).
+    EvenPage,
+    /// Start the following section on the next odd page (`oddPage`).
+    OddPage,
+}
+
+impl SectionBreakKind {
+    pub(crate) fn wml_value(self) -> &'static str {
+        match self {
+            SectionBreakKind::NextPage => "nextPage",
+            SectionBreakKind::EvenPage => "evenPage",
+            SectionBreakKind::OddPage => "oddPage",
+        }
+    }
+
+    pub(crate) fn from_wml_value(value: &str) -> Option<Self> {
+        match value {
+            "nextPage" => Some(SectionBreakKind::NextPage),
+            "evenPage" => Some(SectionBreakKind::EvenPage),
+            "oddPage" => Some(SectionBreakKind::OddPage),
+            _ => None,
+        }
+    }
+}
+
 /// A paragraph: inline runs plus paragraph-level properties.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Paragraph {
@@ -1166,6 +1196,8 @@ pub struct DocGrid {
 /// describes the final section.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SectionSetup {
+    /// Section-break start behavior, if this setup belongs to a section boundary.
+    pub section_break: Option<SectionBreakKind>,
     /// Page geometry.
     pub page: PageSetup,
     /// Running header content (empty = none).
@@ -1239,6 +1271,7 @@ pub struct DocSetup {
 impl From<&DocSetup> for SectionSetup {
     fn from(setup: &DocSetup) -> Self {
         SectionSetup {
+            section_break: None,
             page: setup.page,
             header: setup.header.clone(),
             first_header: setup.first_header.clone(),
