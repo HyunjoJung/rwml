@@ -771,6 +771,60 @@ impl Default for PageSetup {
     }
 }
 
+/// Display format for generated section page numbers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PageNumberFormat {
+    /// Decimal numbers (`1`, `2`, `3`).
+    Decimal,
+    /// Zero-padded decimal numbers (`01`, `02`, `03`).
+    DecimalZero,
+    /// Lowercase letters (`a`, `b`, `c`).
+    LowerLetter,
+    /// Uppercase letters (`A`, `B`, `C`).
+    UpperLetter,
+    /// Lowercase Roman numerals (`i`, `ii`, `iii`).
+    LowerRoman,
+    /// Uppercase Roman numerals (`I`, `II`, `III`).
+    UpperRoman,
+    /// Ordinal decimal numbers (`1st`, `2nd`, `3rd`).
+    Ordinal,
+    /// Cardinal text (`one`, `two`, `three`).
+    CardinalText,
+    /// Ordinal text (`first`, `second`, `third`).
+    OrdinalText,
+}
+
+impl PageNumberFormat {
+    pub(crate) fn wml_value(self) -> &'static str {
+        match self {
+            PageNumberFormat::Decimal => "decimal",
+            PageNumberFormat::DecimalZero => "decimalZero",
+            PageNumberFormat::LowerLetter => "lowerLetter",
+            PageNumberFormat::UpperLetter => "upperLetter",
+            PageNumberFormat::LowerRoman => "lowerRoman",
+            PageNumberFormat::UpperRoman => "upperRoman",
+            PageNumberFormat::Ordinal => "ordinal",
+            PageNumberFormat::CardinalText => "cardinalText",
+            PageNumberFormat::OrdinalText => "ordinalText",
+        }
+    }
+
+    pub(crate) fn from_wml_value(value: &str) -> Option<Self> {
+        match value {
+            "decimal" => Some(PageNumberFormat::Decimal),
+            "decimalZero" => Some(PageNumberFormat::DecimalZero),
+            "lowerLetter" => Some(PageNumberFormat::LowerLetter),
+            "upperLetter" => Some(PageNumberFormat::UpperLetter),
+            "lowerRoman" => Some(PageNumberFormat::LowerRoman),
+            "upperRoman" => Some(PageNumberFormat::UpperRoman),
+            "ordinal" => Some(PageNumberFormat::Ordinal),
+            "cardinalText" => Some(PageNumberFormat::CardinalText),
+            "ordinalText" => Some(PageNumberFormat::OrdinalText),
+            _ => None,
+        }
+    }
+}
+
 /// Section-level layout recovered from or generated into `.docx` section
 /// properties.
 ///
@@ -798,6 +852,8 @@ pub struct SectionSetup {
     pub page_numbers: bool,
     /// Display page number to start this section at, if explicitly set.
     pub page_number_start: Option<u32>,
+    /// Display page-number format for this section, if explicitly set.
+    pub page_number_format: Option<PageNumberFormat>,
     /// Number of text columns in this section, if explicitly set.
     pub columns: Option<u16>,
 }
@@ -826,6 +882,8 @@ pub struct DocSetup {
     pub page_numbers: bool,
     /// Display page number to start the final/current section at, if explicitly set.
     pub page_number_start: Option<u32>,
+    /// Display page-number format for the final/current section, if explicitly set.
+    pub page_number_format: Option<PageNumberFormat>,
     /// Number of text columns in the final/current section, if explicitly set.
     pub columns: Option<u16>,
     /// Document title metadata.
@@ -846,6 +904,7 @@ impl From<&DocSetup> for SectionSetup {
             even_footer: setup.even_footer.clone(),
             page_numbers: setup.page_numbers,
             page_number_start: setup.page_number_start,
+            page_number_format: setup.page_number_format,
             columns: setup.columns,
         }
     }

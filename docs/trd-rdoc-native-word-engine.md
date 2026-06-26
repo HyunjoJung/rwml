@@ -267,7 +267,7 @@ hyperlinks, image blocks with alt text and explicit pixel sizing via
 charts with embedded workbook-backed source data through `ChartBuilder`,
 3-D bar/column shape styling through `ChartBuilder::shape(ChartShape::...)`,
 surface-family wireframe styling through `ChartBuilder::wireframe()`,
-page size/orientation/margins/columns, page-number restarts,
+page size/orientation/margins/columns, page-number restarts/formats,
 explicit page and section breaks, headers, footers, page numbers, and metadata. It does not
 replace the lower-level structs for custom sections or complex nested layouts.
 

@@ -3,8 +3,8 @@
 use crate::model::{
     Align, AuthoredComment, AuthoredContentControl, AuthoredNote, AuthoredRevision, Block, Cell,
     CharProps, Chart, ChartKind, ChartSeries, ChartShape, Color, CustomXmlItem, DocModel,
-    FieldRole, Image, ListInfo, PageSetup, ParaProps, Paragraph, ParagraphStyle, Row, Run,
-    SectionSetup, Table, VCell,
+    FieldRole, Image, ListInfo, PageNumberFormat, PageSetup, ParaProps, Paragraph, ParagraphStyle,
+    Row, Run, SectionSetup, Table, VCell,
 };
 use crate::{NoteKind, RevisionKind};
 
@@ -1302,6 +1302,12 @@ impl DocBuilder {
     /// Restart displayed page numbering for the current/final section.
     pub fn page_number_start(mut self, start: u32) -> Self {
         self.model.setup.page_number_start = Some(start.max(1));
+        self
+    }
+
+    /// Set the displayed page-number format for the current/final section.
+    pub fn page_number_format(mut self, format: PageNumberFormat) -> Self {
+        self.model.setup.page_number_format = Some(format);
         self
     }
 

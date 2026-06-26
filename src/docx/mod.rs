@@ -284,6 +284,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
             first_footer: final_header_footer.first_footer,
             even_footer: final_header_footer.even_footer,
             page_number_start: body::scan_page_number_start(&doc_xml),
+            page_number_format: body::scan_page_number_format(&doc_xml),
             columns: body::scan_section_columns(&doc_xml),
             title: core_properties.title.clone(),
             creator: core_properties.creator.clone(),

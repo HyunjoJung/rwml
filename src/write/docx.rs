@@ -321,6 +321,21 @@ const S_NS: &str = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 /// (`col_span = u16::MAX`) cannot amplify into millions of `<w:gridCol>`/cells.
 const MAX_TABLE_COLS: usize = 1024;
 
+fn page_number_type_xml(setup: &SectionSetup) -> String {
+    if setup.page_number_start.is_none() && setup.page_number_format.is_none() {
+        return String::new();
+    }
+    let mut out = String::from("<w:pgNumType");
+    if let Some(start) = setup.page_number_start {
+        out.push_str(&format!(r#" w:start="{}""#, start.max(1)));
+    }
+    if let Some(format) = setup.page_number_format {
+        out.push_str(&format!(r#" w:fmt="{}""#, format.wml_value()));
+    }
+    out.push_str("/>");
+    out
+}
+
 /// Side-state accumulated while folding the model into `document.xml`: the body
 /// XML is built in `out` strings passed to each method, while these tables grow.
 struct Ctx {
@@ -519,10 +534,7 @@ impl Ctx {
             .columns
             .map(|columns| format!(r#"<w:cols w:num="{}"/>"#, columns.max(1)))
             .unwrap_or_default();
-        let page_number_start = setup
-            .page_number_start
-            .map(|start| format!(r#"<w:pgNumType w:start="{}"/>"#, start.max(1)))
-            .unwrap_or_default();
+        let page_number_type = page_number_type_xml(setup);
         let start = if next_page {
             r#"<w:type w:val="nextPage"/>"#
         } else {
@@ -534,7 +546,7 @@ impl Ctx {
             ""
         };
         out.push_str(&format!(
-            r#"<w:sectPr>{start}{refs}{title_pg}<w:pgSz w:w="{w}" w:h="{h}"{orient}/><w:pgMar w:top="{mt}" w:right="{mr}" w:bottom="{mb}" w:left="{ml}" w:header="708" w:footer="708" w:gutter="0"/>{page_number_start}{columns}</w:sectPr>"#
+            r#"<w:sectPr>{start}{refs}{title_pg}<w:pgSz w:w="{w}" w:h="{h}"{orient}/><w:pgMar w:top="{mt}" w:right="{mr}" w:bottom="{mb}" w:left="{ml}" w:header="708" w:footer="708" w:gutter="0"/>{page_number_type}{columns}</w:sectPr>"#
         ));
     }
 

@@ -21,7 +21,8 @@ use super::{attr_local, local, toggle_on};
 use crate::annotation::FieldKind;
 use crate::model::{
     Align, Block, Cell, CellMargins, CharProps, Color, FieldRole, Image, Indent, ListInfo,
-    ParaProps, Paragraph, Row, Run, SectionSetup, Spacing, Table, VCell, VertAlign,
+    PageNumberFormat, ParaProps, Paragraph, Row, Run, SectionSetup, Spacing, Table, VCell,
+    VertAlign,
 };
 use crate::text;
 use crate::CoreProperties;
@@ -305,6 +306,25 @@ pub(crate) fn scan_page_number_start(xml: &str) -> Option<u32> {
     page_number_start
 }
 
+/// Scan the final/body section properties for a displayed page-number format.
+pub(crate) fn scan_page_number_format(xml: &str) -> Option<PageNumberFormat> {
+    let mut r = Reader::from_str(xml);
+    let mut page_number_format = None;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"sectPr" => {
+                page_number_format = read_section_page_number_format(&mut r);
+            }
+            Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"sectPr" => {
+                page_number_format = None;
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    page_number_format
+}
+
 fn read_section_columns(r: &mut Xml<'_>) -> Option<u16> {
     let mut columns = None;
     loop {
@@ -341,6 +361,25 @@ fn read_section_page_number_start(r: &mut Xml<'_>) -> Option<u32> {
         }
     }
     page_number_start
+}
+
+fn read_section_page_number_format(r: &mut Xml<'_>) -> Option<PageNumberFormat> {
+    let mut page_number_format = None;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if local(e.name().as_ref()) == b"pgNumType" =>
+            {
+                page_number_format = attr_local(&e, b"fmt")
+                    .and_then(|value| PageNumberFormat::from_wml_value(&value));
+            }
+            Ok(Event::Start(_)) => skip_subtree(r),
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"sectPr" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    page_number_format
 }
 
 /// Parse a `word/headerN.xml` / `footerN.xml` part (root `<w:hdr>` / `<w:ftr>`)
@@ -1087,6 +1126,8 @@ fn read_sect_pr(r: &mut Xml<'_>) -> SectionSetup {
                     section.page_number_start = attr_local(&e, b"start")
                         .and_then(|v| v.trim().parse::<u32>().ok())
                         .map(|value| value.max(1));
+                    section.page_number_format = attr_local(&e, b"fmt")
+                        .and_then(|value| PageNumberFormat::from_wml_value(&value));
                 }
                 b"cols" => {
                     section.columns = attr_local(&e, b"num")
@@ -2529,16 +2570,21 @@ mod tests {
     #[test]
     fn scans_final_section_page_number_start_only() {
         let no_final_restart = r#"<w:document><w:body>
-            <w:p><w:pPr><w:sectPr><w:pgNumType w:start="3"/></w:sectPr></w:pPr></w:p>
+            <w:p><w:pPr><w:sectPr><w:pgNumType w:start="3" w:fmt="upperRoman"/></w:sectPr></w:pPr></w:p>
             <w:sectPr/>
         </w:body></w:document>"#;
         assert_eq!(scan_page_number_start(no_final_restart), None);
+        assert_eq!(scan_page_number_format(no_final_restart), None);
 
         let final_restart = r#"<w:document><w:body>
             <w:p><w:pPr><w:sectPr><w:pgNumType w:start="3"/></w:sectPr></w:pPr></w:p>
-            <w:sectPr><w:pgNumType w:start="7"/></w:sectPr>
+            <w:sectPr><w:pgNumType w:start="7" w:fmt="decimalZero"/></w:sectPr>
         </w:body></w:document>"#;
         assert_eq!(scan_page_number_start(final_restart), Some(7));
+        assert_eq!(
+            scan_page_number_format(final_restart),
+            Some(PageNumberFormat::DecimalZero)
+        );
     }
 
     #[test]

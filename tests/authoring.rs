@@ -7,9 +7,9 @@ use std::io::Read;
 use rdoc::{
     Align, Block, Cell, CellBuilder, CellMargins, CharProps, ChartBuilder, ChartKind, ChartShape,
     Color, CommentBuilder, ContentControlBuilder, DocBuilder, DocModel, DocSetup, Document,
-    DocumentWarning, FieldKind, FieldRole, ImageBuilder, NoteKind, PageSetup, ParaProps, Paragraph,
-    ParagraphBuilder, ParagraphStyleBuilder, RevisionBuilder, RevisionKind, RevisionView, Row,
-    RunBuilder, Table, TableBuilder, VCell,
+    DocumentWarning, FieldKind, FieldRole, ImageBuilder, NoteKind, PageNumberFormat, PageSetup,
+    ParaProps, Paragraph, ParagraphBuilder, ParagraphStyleBuilder, RevisionBuilder, RevisionKind,
+    RevisionView, Row, RunBuilder, Table, TableBuilder, VCell,
 };
 
 fn run(text: &str, props: CharProps) -> rdoc::Run {
@@ -318,6 +318,7 @@ fn doc_builder_adds_section_breaks_with_section_setup() {
         .page_setup(cover_page)
         .columns(2)
         .page_number_start(3)
+        .page_number_format(PageNumberFormat::UpperRoman)
         .header("Cover header")
         .paragraph("Cover")
         .section_break()
@@ -325,6 +326,7 @@ fn doc_builder_adds_section_breaks_with_section_setup() {
         .page_setup(detail_page)
         .columns(3)
         .page_number_start(7)
+        .page_number_format(PageNumberFormat::DecimalZero)
         .header("Detail header")
         .paragraph("Detail")
         .build();
@@ -336,10 +338,18 @@ fn doc_builder_adds_section_breaks_with_section_setup() {
     assert_eq!(section.page.margin_pt, 72.0);
     assert_eq!(section.columns, Some(2));
     assert_eq!(section.page_number_start, Some(3));
+    assert_eq!(
+        section.page_number_format,
+        Some(PageNumberFormat::UpperRoman)
+    );
     assert_eq!(section.header.len(), 1);
     assert_eq!(model.setup.page.width_pt, 792.0);
     assert_eq!(model.setup.columns, Some(3));
     assert_eq!(model.setup.page_number_start, Some(7));
+    assert_eq!(
+        model.setup.page_number_format,
+        Some(PageNumberFormat::DecimalZero)
+    );
     assert_eq!(model.setup.header.len(), 1);
 
     let bytes = rdoc::write_docx(&model);
@@ -358,8 +368,8 @@ fn doc_builder_adds_section_breaks_with_section_setup() {
         document_xml.contains(r#"<w:type w:val="nextPage"/>"#)
             && document_xml.contains(r#"<w:pgSz w:w="11906" w:h="16838"/>"#)
             && document_xml.contains(r#"<w:pgSz w:w="15840" w:h="12240" w:orient="landscape"/>"#)
-            && document_xml.contains(r#"<w:pgNumType w:start="3"/>"#)
-            && document_xml.contains(r#"<w:pgNumType w:start="7"/>"#)
+            && document_xml.contains(r#"<w:pgNumType w:start="3" w:fmt="upperRoman"/>"#)
+            && document_xml.contains(r#"<w:pgNumType w:start="7" w:fmt="decimalZero"/>"#)
             && document_xml.contains(r#"<w:cols w:num="2"/>"#)
             && document_xml.contains(r#"<w:cols w:num="3"/>"#),
         "section page setup missing: {document_xml}"
@@ -385,6 +395,10 @@ fn doc_builder_adds_section_breaks_with_section_setup() {
     assert_eq!(reopened_model.setup.page.width_pt, 792.0);
     assert_eq!(reopened_model.setup.columns, Some(3));
     assert_eq!(reopened_model.setup.page_number_start, Some(7));
+    assert_eq!(
+        reopened_model.setup.page_number_format,
+        Some(PageNumberFormat::DecimalZero)
+    );
     let Some(Block::SectionBreak(reopened_section)) = reopened_model
         .blocks
         .iter()
@@ -394,6 +408,10 @@ fn doc_builder_adds_section_breaks_with_section_setup() {
     };
     assert_eq!(reopened_section.columns, Some(2));
     assert_eq!(reopened_section.page_number_start, Some(3));
+    assert_eq!(
+        reopened_section.page_number_format,
+        Some(PageNumberFormat::UpperRoman)
+    );
     let text = reopened.text();
     assert!(
         text.contains("Cover header") && text.contains("Detail header"),
