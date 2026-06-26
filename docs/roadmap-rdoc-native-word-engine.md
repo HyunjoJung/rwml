@@ -323,7 +323,9 @@ Initial status:
   plain, neutral, or common-number-format `AUTONUMLGL` and `AUTONUMOUT`
   values on the same source-order counter,
   plus level-1 `LISTNUM NumberDefault` values with common
-  number-format switches, neutral field-format switches, and `\s` starts/resets, while richer `AUTONUMOUT`
+  number-format switches, neutral field-format switches, and `\s`
+  starts/resets, invalid numbering/list syntax reports `UnsupportedSwitch`,
+  while richer `AUTONUMOUT`
   outline formatting, `BIDIOUTLINE`, and richer `LISTNUM` levels/named lists
   are named separately from unknown fields and report `NoComputedResult` until
   broader native automatic-numbering evaluation is implemented. The
@@ -778,7 +780,9 @@ Initial status:
   plain, neutral, or common-number-format `AUTONUMLGL` and `AUTONUMOUT`
   values on the same source-order counter,
   and level-1 `LISTNUM NumberDefault` values with common number-format
-  switches, neutral field-format switches, and `\s` starts/resets; remaining automatic-numbering/list fields
+  switches, neutral field-format switches, and `\s` starts/resets; invalid
+  numbering/list syntax reports `UnsupportedSwitch`; remaining
+  automatic-numbering/list fields
   are named separately from unknown fields and preserve cached text with
   `NoComputedResult` diagnostics.
   Document-structure fields are named separately from unknown fields; `REVNUM`

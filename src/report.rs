@@ -1454,7 +1454,7 @@ fn unsupported_field_reason(field: &Field) -> Option<FieldEvaluationReason> {
             Some(reference_index_marker_uncomputed_reason(&field.instruction))
         }
         FieldKind::ReferenceIndex(_) => Some(FieldEvaluationReason::NoComputedResult),
-        FieldKind::Numbering(_) => Some(FieldEvaluationReason::NoComputedResult),
+        FieldKind::Numbering(_) => Some(numbering_uncomputed_reason(&field.instruction)),
         FieldKind::DocumentStructure(ref kind)
             if is_section_document_structure_kind(kind.as_str()) =>
         {
@@ -1649,6 +1649,21 @@ fn reference_index_marker_uncomputed_reason(instruction: &str) -> FieldEvaluatio
     #[cfg(not(feature = "docx"))]
     let _ = instruction;
     FieldEvaluationReason::UnsupportedSwitch
+}
+
+fn numbering_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
+    #[cfg(feature = "docx")]
+    {
+        if crate::docx::supports_numbering_field_syntax(instruction) {
+            return FieldEvaluationReason::NoComputedResult;
+        }
+        FieldEvaluationReason::UnsupportedSwitch
+    }
+    #[cfg(not(feature = "docx"))]
+    {
+        let _ = instruction;
+        FieldEvaluationReason::NoComputedResult
+    }
 }
 
 fn supported_ref_syntax_parts<'a>(

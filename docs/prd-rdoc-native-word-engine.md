@@ -338,7 +338,9 @@ The first public maturity release should meet these requirements.
   one-character separators, standalone plain, neutral, or common-number-format
   `AUTONUMLGL` and `AUTONUMOUT` values on the same source-order counter, plus level-1
   `LISTNUM NumberDefault` values with common number-format switches, neutral
-  field-format switches, and `\s` starts/resets, while richer `AUTONUMOUT` outline formatting, `BIDIOUTLINE`,
+  field-format switches, and `\s` starts/resets, invalid numbering/list syntax
+  reports `UnsupportedSwitch`, while richer `AUTONUMOUT` outline formatting,
+  `BIDIOUTLINE`,
   and richer `LISTNUM` levels/named lists are named diagnostics with cached
   display text and `NoComputedResult` until broader native automatic-numbering
   evaluation is implemented;

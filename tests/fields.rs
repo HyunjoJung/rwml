@@ -4825,10 +4825,16 @@ fn docx_numbering_fields_compute_formatted_autonum_subset() {
     );
     assert_eq!(
         report.features.unsupported_field_reasons,
-        vec![FieldEvaluationReasonCount {
-            reason: FieldEvaluationReason::NoComputedResult,
-            count: 3,
-        }]
+        vec![
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::UnsupportedSwitch,
+                count: 1,
+            },
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::NoComputedResult,
+                count: 2,
+            },
+        ]
     );
 
     let main_text = doc.main_text();

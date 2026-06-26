@@ -8591,6 +8591,29 @@ pub(crate) fn computed_numbering_result(
     Some(text)
 }
 
+pub(crate) fn supports_numbering_field_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if kind.eq_ignore_ascii_case("AUTONUM")
+        || kind.eq_ignore_ascii_case("AUTONUMLGL")
+        || kind.eq_ignore_ascii_case("AUTONUMOUT")
+    {
+        let mut counter = 0;
+        return computed_numbering_result(instruction, &mut counter).is_some();
+    }
+    if kind.eq_ignore_ascii_case("LISTNUM") {
+        let mut counter = 0;
+        if computed_listnum_result(instruction, &mut counter).is_some() {
+            return true;
+        }
+        return supports_listnum_field_syntax(parts);
+    }
+    kind.eq_ignore_ascii_case("BIDIOUTLINE")
+}
+
 pub(crate) fn computed_listnum_result(
     instruction: &str,
     listnum_counter: &mut i64,
@@ -8655,6 +8678,65 @@ pub(crate) fn computed_listnum_result(
     Some(text)
 }
 
+fn supports_listnum_field_syntax<'a>(mut parts: impl Iterator<Item = &'a str>) -> bool {
+    let mut list_name_seen = false;
+    let mut level_seen = false;
+    let mut reset_start = None;
+    let mut number_format = None;
+    while let Some(part) = parts.next() {
+        if part == "\\*" {
+            let Some(format) = parts.next() else {
+                return false;
+            };
+            if !accept_page_number_format_switch(format, &mut number_format) {
+                return false;
+            }
+            continue;
+        }
+        if let Some(format) = part.strip_prefix("\\*") {
+            if !accept_page_number_format_switch(format, &mut number_format) {
+                return false;
+            }
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\l") {
+            let Some(level) = parts.next() else {
+                return false;
+            };
+            if !accept_listnum_syntax_level_switch(level, &mut level_seen) {
+                return false;
+            }
+            continue;
+        }
+        if let Some(level) = strip_ascii_switch_prefix(part, "\\l") {
+            if level.is_empty() || !accept_listnum_syntax_level_switch(level, &mut level_seen) {
+                return false;
+            }
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\s") {
+            let Some(start) = parts.next() else {
+                return false;
+            };
+            if accept_listnum_start_switch(start, &mut reset_start).is_none() {
+                return false;
+            }
+            continue;
+        }
+        if let Some(start) = strip_ascii_switch_prefix(part, "\\s") {
+            if start.is_empty() || accept_listnum_start_switch(start, &mut reset_start).is_none() {
+                return false;
+            }
+            continue;
+        }
+        if part.starts_with('\\') || list_name_seen || field_name_token(part).is_none() {
+            return false;
+        }
+        list_name_seen = true;
+    }
+    true
+}
+
 fn accept_listnum_level_switch(part: &str, level_seen: &mut bool) -> Option<()> {
     if *level_seen {
         return None;
@@ -8665,6 +8747,20 @@ fn accept_listnum_level_switch(part: &str, level_seen: &mut bool) -> Option<()> 
     }
     *level_seen = true;
     Some(())
+}
+
+fn accept_listnum_syntax_level_switch(part: &str, level_seen: &mut bool) -> bool {
+    if *level_seen {
+        return false;
+    }
+    let Some(level) = field_name_token(part).and_then(|part| part.parse::<u8>().ok()) else {
+        return false;
+    };
+    if level == 0 {
+        return false;
+    }
+    *level_seen = true;
+    true
 }
 
 fn accept_listnum_start_switch(part: &str, reset_start: &mut Option<i64>) -> Option<()> {

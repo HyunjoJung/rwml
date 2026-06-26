@@ -720,7 +720,9 @@ Acceptance:
   quoted one-character separators; standalone plain, neutral, or
   common-number-format `AUTONUMLGL` and `AUTONUMOUT` values compute on the same source-order counter; level-1
   `LISTNUM NumberDefault` fields compute source-order values with common
-  number-format switches, neutral field-format switches, and `\s` starts/resets, while richer `AUTONUMOUT`
+  number-format switches, neutral field-format switches, and `\s`
+  starts/resets; invalid numbering/list syntax reports `UnsupportedSwitch`,
+  while richer `AUTONUMOUT`
   outline formatting, `BIDIOUTLINE`, and richer `LISTNUM` levels/named lists
   preserve cached text with `NoComputedResult` diagnostics until richer
   automatic-numbering semantics are modeled.
