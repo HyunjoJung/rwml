@@ -793,6 +793,36 @@ class ReleaseManifestTests(unittest.TestCase):
                     corpus_manifests=[corpus, render_corpus],
                 )
 
+    def test_enforced_public_release_policy_rejects_failed_policy_threshold_check(self):
+        report = {
+            "summary": {"documents": 1, "recall_min": 0.97, "mean_recall": 0.50},
+            "gate": {
+                "passed": True,
+                "checks": [
+                    {
+                        "metric": "mean_recall",
+                        "op": ">=",
+                        "threshold": 0.90,
+                        "actual": 0.50,
+                        "passed": False,
+                    }
+                ],
+            },
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "public-release validation report gate check did not pass: mean_recall >= 0.9",
+        ):
+            release_manifest.require_gate_check_threshold(
+                "public-release",
+                report,
+                "validation",
+                "mean_recall",
+                ">=",
+                0.90,
+            )
+
     def test_enforced_public_release_policy_accepts_passing_local_evidence(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)

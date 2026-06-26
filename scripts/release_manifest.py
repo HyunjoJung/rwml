@@ -318,9 +318,14 @@ def require_gate_check_threshold(
         threshold = check.get("threshold")
         if not isinstance(threshold, (int, float)):
             continue
-        if op == ">=" and threshold >= policy_threshold:
-            return
-        if op == "<=" and threshold <= policy_threshold:
+        if (op == ">=" and threshold >= policy_threshold) or (
+            op == "<=" and threshold <= policy_threshold
+        ):
+            if check.get("passed") is not True:
+                raise ValueError(
+                    f"{policy} {label} report gate check did not pass: "
+                    f"{metric} {op} {policy_threshold}"
+                )
             return
     raise ValueError(
         f"{policy} {label} report gate must include {metric} {op} {policy_threshold}"
