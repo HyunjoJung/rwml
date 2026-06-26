@@ -915,6 +915,10 @@ pub enum ChartKind {
     PercentStackedArea,
     /// A 3-D area chart with category labels on the horizontal axis.
     Area3D,
+    /// A stacked 3-D area chart with category labels on the horizontal axis.
+    StackedArea3D,
+    /// A 100% stacked 3-D area chart with category labels on the horizontal axis.
+    PercentStackedArea3D,
     /// A radar chart with category labels around a radial axis.
     Radar,
     /// A radar chart with explicit point markers.

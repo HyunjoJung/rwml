@@ -1022,6 +1022,26 @@ impl ChartBuilder {
         }
     }
 
+    /// Start a stacked 3-D area chart.
+    pub fn stacked_area_3d() -> Self {
+        Self {
+            chart: Chart {
+                kind: ChartKind::StackedArea3D,
+                ..Chart::default()
+            },
+        }
+    }
+
+    /// Start a 100% stacked 3-D area chart.
+    pub fn percent_stacked_area_3d() -> Self {
+        Self {
+            chart: Chart {
+                kind: ChartKind::PercentStackedArea3D,
+                ..Chart::default()
+            },
+        }
+    }
+
     /// Start a radar chart.
     pub fn radar() -> Self {
         Self {

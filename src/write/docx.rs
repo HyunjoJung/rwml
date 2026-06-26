@@ -1945,9 +1945,30 @@ fn chart_xml(chart: &Chart, chart_id: u32, workbook_rid: Option<&str>) -> String
         ChartKind::PercentStackedArea => {
             write_area_chart(&mut out, chart, cat_axis_id, val_axis_id, "percentStacked")
         }
-        ChartKind::Area3D => {
-            write_area_3d_chart(&mut out, chart, cat_axis_id, val_axis_id, ser_axis_id)
-        }
+        ChartKind::Area3D => write_area_3d_chart(
+            &mut out,
+            chart,
+            cat_axis_id,
+            val_axis_id,
+            ser_axis_id,
+            "standard",
+        ),
+        ChartKind::StackedArea3D => write_area_3d_chart(
+            &mut out,
+            chart,
+            cat_axis_id,
+            val_axis_id,
+            ser_axis_id,
+            "stacked",
+        ),
+        ChartKind::PercentStackedArea3D => write_area_3d_chart(
+            &mut out,
+            chart,
+            cat_axis_id,
+            val_axis_id,
+            ser_axis_id,
+            "percentStacked",
+        ),
         ChartKind::Radar => {
             write_radar_chart(&mut out, chart, cat_axis_id, val_axis_id, "standard")
         }
@@ -2022,7 +2043,12 @@ fn chart_xml(chart: &Chart, chart_id: u32, workbook_rid: Option<&str>) -> String
         | ChartKind::ScatterSmoothNoMarkers
         | ChartKind::Bubble
         | ChartKind::Bubble3D => write_scatter_axes(&mut out, cat_axis_id, val_axis_id),
-        ChartKind::Line3D | ChartKind::Area3D | ChartKind::Surface | ChartKind::Surface3D => {
+        ChartKind::Line3D
+        | ChartKind::Area3D
+        | ChartKind::StackedArea3D
+        | ChartKind::PercentStackedArea3D
+        | ChartKind::Surface
+        | ChartKind::Surface3D => {
             write_surface_axes(&mut out, cat_axis_id, val_axis_id, ser_axis_id)
         }
         _ => write_chart_axes(&mut out, chart.kind, cat_axis_id, val_axis_id),
@@ -2200,8 +2226,11 @@ fn write_area_3d_chart(
     cat_axis_id: u32,
     val_axis_id: u32,
     ser_axis_id: u32,
+    grouping: &str,
 ) {
-    out.push_str(r#"<c:area3DChart><c:grouping val="standard"/><c:varyColors val="0"/>"#);
+    out.push_str(&format!(
+        r#"<c:area3DChart><c:grouping val="{grouping}"/><c:varyColors val="0"/>"#
+    ));
     for (index, series) in chart.series.iter().enumerate() {
         out.push_str(&format!(
             r#"<c:ser><c:idx val="{index}"/><c:order val="{index}"/><c:tx><c:v>{}</c:v></c:tx>"#,
@@ -2521,6 +2550,8 @@ fn write_chart_axes(out: &mut String, kind: ChartKind, cat_axis_id: u32, val_axi
         | ChartKind::StackedArea
         | ChartKind::PercentStackedArea
         | ChartKind::Area3D
+        | ChartKind::StackedArea3D
+        | ChartKind::PercentStackedArea3D
         | ChartKind::Radar
         | ChartKind::RadarWithMarkers
         | ChartKind::FilledRadar => ("b", "l"),

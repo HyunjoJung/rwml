@@ -2579,6 +2579,7 @@ fn draw_authored_chart(
             | ChartKind::PercentStackedColumn3D
             | ChartKind::PercentStackedLine
             | ChartKind::PercentStackedArea
+            | ChartKind::PercentStackedArea3D
     ) {
         (0.0, 1.0)
     } else if matches!(
@@ -2589,6 +2590,7 @@ fn draw_authored_chart(
             | ChartKind::StackedColumn3D
             | ChartKind::StackedLine
             | ChartKind::StackedArea
+            | ChartKind::StackedArea3D
     ) {
         (0.0, stacked_chart_max(chart, category_count))
     } else {
@@ -2791,6 +2793,8 @@ fn draw_authored_chart(
         | ChartKind::StackedArea
         | ChartKind::PercentStackedArea
         | ChartKind::Area3D
+        | ChartKind::StackedArea3D
+        | ChartKind::PercentStackedArea3D
         | ChartKind::Scatter
         | ChartKind::ScatterMarkers
         | ChartKind::ScatterLines
@@ -2946,12 +2950,20 @@ fn draw_authored_chart(
                 ChartKind::Area
                 | ChartKind::StackedArea
                 | ChartKind::PercentStackedArea
-                | ChartKind::Area3D => {
+                | ChartKind::Area3D
+                | ChartKind::StackedArea3D
+                | ChartKind::PercentStackedArea3D => {
                     if matches!(
                         chart.kind,
-                        ChartKind::StackedArea | ChartKind::PercentStackedArea
+                        ChartKind::StackedArea
+                            | ChartKind::PercentStackedArea
+                            | ChartKind::StackedArea3D
+                            | ChartKind::PercentStackedArea3D
                     ) {
-                        let percent = chart.kind == ChartKind::PercentStackedArea;
+                        let percent = matches!(
+                            chart.kind,
+                            ChartKind::PercentStackedArea | ChartKind::PercentStackedArea3D
+                        );
                         for series_index in (0..chart.series.len()).rev() {
                             let color = chart_series_color(series_index);
                             let mut points = Vec::new();
