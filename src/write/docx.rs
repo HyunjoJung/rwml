@@ -2025,7 +2025,10 @@ fn chart_xml(chart: &Chart, chart_id: u32, workbook_rid: Option<&str>) -> String
         ChartKind::Surface3D => {
             write_surface_3d_chart(&mut out, chart, cat_axis_id, val_axis_id, ser_axis_id)
         }
-        ChartKind::Stock => write_stock_chart(&mut out, chart, cat_axis_id, val_axis_id),
+        ChartKind::StockHighLowClose => {
+            write_stock_chart(&mut out, chart, cat_axis_id, val_axis_id, false)
+        }
+        ChartKind::Stock => write_stock_chart(&mut out, chart, cat_axis_id, val_axis_id, true),
     }
     match chart.kind {
         ChartKind::Pie
@@ -2433,7 +2436,13 @@ fn write_surface_3d_chart(
     ));
 }
 
-fn write_stock_chart(out: &mut String, chart: &Chart, cat_axis_id: u32, val_axis_id: u32) {
+fn write_stock_chart(
+    out: &mut String,
+    chart: &Chart,
+    cat_axis_id: u32,
+    val_axis_id: u32,
+    up_down_bars: bool,
+) {
     out.push_str(r#"<c:stockChart>"#);
     for (index, series) in chart.series.iter().enumerate() {
         out.push_str(&format!(
@@ -2444,8 +2453,13 @@ fn write_stock_chart(out: &mut String, chart: &Chart, cat_axis_id: u32, val_axis
         write_chart_values(out, &series.values);
         out.push_str("</c:ser>");
     }
+    let up_down_bars_xml = if up_down_bars {
+        r#"<c:upDownBars><c:gapWidth val="150"/></c:upDownBars>"#
+    } else {
+        ""
+    };
     out.push_str(&format!(
-        r#"<c:hiLowLines/><c:upDownBars><c:gapWidth val="150"/></c:upDownBars><c:axId val="{cat_axis_id}"/><c:axId val="{val_axis_id}"/></c:stockChart>"#
+        r#"<c:hiLowLines/>{up_down_bars_xml}<c:axId val="{cat_axis_id}"/><c:axId val="{val_axis_id}"/></c:stockChart>"#
     ));
 }
 
@@ -2572,6 +2586,7 @@ fn write_chart_axes(out: &mut String, kind: ChartKind, cat_axis_id: u32, val_axi
         | ChartKind::ExplodedDoughnut
         | ChartKind::Surface
         | ChartKind::Surface3D
+        | ChartKind::StockHighLowClose
         | ChartKind::Stock => ("b", "l"),
     };
     out.push_str(&format!(

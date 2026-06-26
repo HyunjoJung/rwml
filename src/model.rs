@@ -959,6 +959,8 @@ pub enum ChartKind {
     Surface,
     /// A 3-D surface chart using category columns and series rows as a value grid.
     Surface3D,
+    /// A high-low-close stock chart using date/category labels.
+    StockHighLowClose,
     /// A stock chart using date/category labels and open/high/low/close-style series.
     Stock,
 }

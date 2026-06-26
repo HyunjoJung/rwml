@@ -1242,6 +1242,16 @@ impl ChartBuilder {
         }
     }
 
+    /// Start a high-low-close stock chart using date/category labels.
+    pub fn stock_high_low_close() -> Self {
+        Self {
+            chart: Chart {
+                kind: ChartKind::StockHighLowClose,
+                ..Chart::default()
+            },
+        }
+    }
+
     /// Start a stock chart using date/category labels and open/high/low/close-style series.
     pub fn stock() -> Self {
         Self {

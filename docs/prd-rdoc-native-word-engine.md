@@ -82,7 +82,7 @@ Required direction:
 - chart authoring should cover bar, stacked bar, 100% stacked bar, 3-D bar, stacked 3-D bar, 100% stacked 3-D bar, column, stacked column, 100% stacked column, 3-D column, stacked 3-D column, 100% stacked 3-D column,
   line, markerless line, smooth line, stacked line, 100% stacked line, 3-D line, area, stacked area, 100% stacked area, 3-D area, stacked 3-D area, 100% stacked 3-D area,
   radar, radar-with-markers, filled radar, scatter, line-only scatter, smooth scatter, smooth markerless scatter, marker-only scatter, bubble, 3-D bubble, pie, exploded pie, 3-D pie, exploded 3-D pie, doughnut, exploded doughnut,
-  surface, 3-D surface, stock, pie-of-pie, and bar-of-pie charts with literal chart caches plus embedded
+  surface, 3-D surface, high-low-close stock, stock, pie-of-pie, and bar-of-pie charts with literal chart caches plus embedded
   workbook-backed source data, plus shape styling for 3-D bar/column-family charts and
   wireframe styling for surface-family charts;
   remaining chart families can mature separately;

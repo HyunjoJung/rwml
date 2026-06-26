@@ -2804,6 +2804,7 @@ fn draw_authored_chart(
         | ChartKind::Bubble3D
         | ChartKind::Surface
         | ChartKind::Surface3D
+        | ChartKind::StockHighLowClose
         | ChartKind::Stock => {
             let zero_y = value_y(0.0).clamp(plot_top, plot_bottom);
             for tick in 0..=4 {
@@ -3081,7 +3082,7 @@ fn draw_authored_chart(
                         }
                     }
                 }
-                ChartKind::Stock => {
+                ChartKind::StockHighLowClose | ChartKind::Stock => {
                     for category_index in 0..category_count {
                         let point_x = plot_left + category_index as f32 * band_w + band_w * 0.5;
                         let values: Vec<_> = chart
@@ -3110,18 +3111,25 @@ fn draw_authored_chart(
                             (y_low - y_high).abs().max(1.0),
                             axis,
                         );
-                        if let Some(open) = values.first().copied() {
-                            let y_open = value_y(open).clamp(plot_top, plot_bottom);
-                            fill_rect_color(
-                                surface,
-                                point_x - band_w * 0.18,
-                                y_open - 0.8,
-                                band_w * 0.18,
-                                1.6,
-                                chart_series_color(0),
-                            );
+                        if chart.kind == ChartKind::Stock {
+                            if let Some(open) = values.first().copied() {
+                                let y_open = value_y(open).clamp(plot_top, plot_bottom);
+                                fill_rect_color(
+                                    surface,
+                                    point_x - band_w * 0.18,
+                                    y_open - 0.8,
+                                    band_w * 0.18,
+                                    1.6,
+                                    chart_series_color(0),
+                                );
+                            }
                         }
                         if let Some(close) = values.last().copied() {
+                            let color_index = if chart.kind == ChartKind::Stock {
+                                3.min(chart.series.len().saturating_sub(1))
+                            } else {
+                                2.min(chart.series.len().saturating_sub(1))
+                            };
                             let y_close = value_y(close).clamp(plot_top, plot_bottom);
                             fill_rect_color(
                                 surface,
@@ -3129,7 +3137,7 @@ fn draw_authored_chart(
                                 y_close - 0.8,
                                 band_w * 0.18,
                                 1.6,
-                                chart_series_color(3.min(chart.series.len().saturating_sub(1))),
+                                chart_series_color(color_index),
                             );
                         }
                     }

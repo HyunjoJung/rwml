@@ -5597,6 +5597,68 @@ fn doc_builder_adds_stock_chart() {
 }
 
 #[test]
+fn doc_builder_adds_high_low_close_stock_chart() {
+    let model = DocBuilder::new()
+        .chart(
+            ChartBuilder::stock_high_low_close()
+                .title("Share range")
+                .categories(["Mon", "Tue", "Wed"])
+                .series("High", [12.0, 13.5, 14.0])
+                .series("Low", [9.5, 10.5, 11.0])
+                .series("Close", [11.0, 12.8, 13.2])
+                .size_px(460, 300)
+                .alt("Share range high-low-close stock chart"),
+        )
+        .build();
+
+    let Block::Chart(chart) = &model.blocks[0] else {
+        panic!("expected chart block");
+    };
+    assert_eq!(chart.kind, ChartKind::StockHighLowClose);
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let chart_xml = String::from_utf8(parts["word/charts/chart1.xml"].clone()).unwrap();
+    let chart_rels = String::from_utf8(parts["word/charts/_rels/chart1.xml.rels"].clone()).unwrap();
+    let workbook_bytes = parts
+        .get("word/embeddings/Microsoft_Excel_Worksheet1.xlsx")
+        .expect("embedded high-low-close stock chart workbook");
+    let workbook_parts = unzip_parts(workbook_bytes);
+    let sheet_xml = String::from_utf8(workbook_parts["xl/worksheets/sheet1.xml"].clone()).unwrap();
+
+    assert!(
+        document_xml.contains(
+            r#"<wp:docPr id="1" name="Chart1" descr="Share range high-low-close stock chart"/>"#
+        ),
+        "high-low-close stock chart drawing missing: {document_xml}"
+    );
+    assert!(
+        chart_rels.contains(r#"Target="../embeddings/Microsoft_Excel_Worksheet1.xlsx""#),
+        "high-low-close stock chart workbook relationship missing: {chart_rels}"
+    );
+    assert!(
+        chart_xml.contains("<c:stockChart>")
+            && chart_xml.contains("<c:hiLowLines/>")
+            && !chart_xml.contains("<c:upDownBars>")
+            && chart_xml.contains("<a:t>Share range</a:t>")
+            && chart_xml.contains("<c:v>High</c:v>")
+            && chart_xml.contains("<c:v>Low</c:v>")
+            && chart_xml.contains("<c:v>Close</c:v>")
+            && chart_xml.contains("<c:v>13.2</c:v>"),
+        "high-low-close stock chart payload missing: {chart_xml}"
+    );
+    assert!(
+        sheet_xml.contains(r#"<c r="B2"><v>12</v></c>"#)
+            && sheet_xml.contains(r#"<c r="D4"><v>13.2</v></c>"#),
+        "high-low-close stock chart workbook values missing: {sheet_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("high-low-close stock chart .docx reopens");
+    assert_eq!(reopened.report().features.charts, 1);
+}
+
+#[test]
 fn doc_builder_adds_pie_of_pie_and_bar_of_pie_charts() {
     let model = DocBuilder::new()
         .chart(
@@ -6919,6 +6981,39 @@ fn render_pdf_draws_authored_stock_chart() {
     assert!(
         rendered.pdf.len() > empty.pdf.len() + 100,
         "stock chart drawing should add visible PDF content"
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn render_pdf_draws_authored_high_low_close_stock_chart() {
+    let model = DocBuilder::new()
+        .chart(
+            ChartBuilder::stock_high_low_close()
+                .title("Share range")
+                .categories(["Mon", "Tue", "Wed"])
+                .series("High", [12.0, 13.5, 14.0])
+                .series("Low", [9.5, 10.5, 11.0])
+                .series("Close", [11.0, 12.8, 13.2]),
+        )
+        .build();
+
+    let empty = rdoc::render_pdf_with_report(&DocModel::default());
+    let rendered = rdoc::render_pdf_with_report(&model);
+
+    assert!(rendered.pdf.starts_with(b"%PDF"));
+    assert_eq!(rendered.report.pages, 1);
+    assert_eq!(rendered.report.unsupported.charts, 0);
+    assert!(
+        !rendered.report.warnings.iter().any(|warning| matches!(
+            warning,
+            rdoc::RenderWarning::ChartsPreservedButNotModeled { .. }
+        )),
+        "authored high-low-close stock chart should render without preserved-only warnings"
+    );
+    assert!(
+        rendered.pdf.len() > empty.pdf.len() + 100,
+        "high-low-close stock chart drawing should add visible PDF content"
     );
 }
 
