@@ -794,6 +794,8 @@ pub struct SectionSetup {
     pub even_footer: Vec<Block>,
     /// Emit a centered page number (`PAGE` field) in the footer.
     pub page_numbers: bool,
+    /// Number of text columns in this section, if explicitly set.
+    pub columns: Option<u16>,
 }
 
 /// Document-level layout + metadata, for authoring and rendering. All fields are
@@ -818,6 +820,8 @@ pub struct DocSetup {
     pub even_footer: Vec<Block>,
     /// Emit a centered page number (`PAGE` field) in the footer.
     pub page_numbers: bool,
+    /// Number of text columns in the final/current section, if explicitly set.
+    pub columns: Option<u16>,
     /// Document title metadata.
     pub title: Option<String>,
     /// Document author metadata.
@@ -835,6 +839,7 @@ impl From<&DocSetup> for SectionSetup {
             first_footer: setup.first_footer.clone(),
             even_footer: setup.even_footer.clone(),
             page_numbers: setup.page_numbers,
+            columns: setup.columns,
         }
     }
 }

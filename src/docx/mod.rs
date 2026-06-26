@@ -283,6 +283,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
             footer: final_header_footer.footer,
             first_footer: final_header_footer.first_footer,
             even_footer: final_header_footer.even_footer,
+            columns: body::scan_section_columns(&doc_xml),
             title: core_properties.title.clone(),
             creator: core_properties.creator.clone(),
             ..crate::model::DocSetup::default()

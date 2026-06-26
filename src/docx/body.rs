@@ -267,6 +267,43 @@ pub(crate) fn scan_page_setup(xml: &str) -> crate::model::PageSetup {
     }
 }
 
+/// Scan the final/body section properties for text column count.
+pub(crate) fn scan_section_columns(xml: &str) -> Option<u16> {
+    let mut r = Reader::from_str(xml);
+    let mut columns = None;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"sectPr" => {
+                columns = read_section_columns(&mut r);
+            }
+            Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"sectPr" => {
+                columns = None;
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    columns
+}
+
+fn read_section_columns(r: &mut Xml<'_>) -> Option<u16> {
+    let mut columns = None;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"cols" => {
+                columns = attr_local(&e, b"num")
+                    .and_then(|v| v.trim().parse::<u16>().ok())
+                    .map(|value| value.max(1));
+            }
+            Ok(Event::Start(_)) => skip_subtree(r),
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"sectPr" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    columns
+}
+
 /// Parse a `word/headerN.xml` / `footerN.xml` part (root `<w:hdr>` / `<w:ftr>`)
 /// into block-level nodes, reusing the same grammar as the body.
 pub(crate) fn parse_hdrftr(xml: &str, ctx: &Ctx<'_>) -> Vec<Block> {
@@ -1006,6 +1043,11 @@ fn read_sect_pr(r: &mut Xml<'_>) -> SectionSetup {
                     section.page.margin_right_pt = rr;
                     section.page.margin_top_pt = t;
                     section.page.margin_bottom_pt = b;
+                }
+                b"cols" => {
+                    section.columns = attr_local(&e, b"num")
+                        .and_then(|v| v.trim().parse::<u16>().ok())
+                        .map(|value| value.max(1));
                 }
                 _ => {}
             },

@@ -315,11 +315,13 @@ fn doc_builder_adds_section_breaks_with_section_setup() {
 
     let model = DocBuilder::new()
         .page_setup(cover_page)
+        .columns(2)
         .header("Cover header")
         .paragraph("Cover")
         .section_break()
         .clear_header()
         .page_setup(detail_page)
+        .columns(3)
         .header("Detail header")
         .paragraph("Detail")
         .build();
@@ -329,8 +331,10 @@ fn doc_builder_adds_section_breaks_with_section_setup() {
         panic!("second block should be a section break");
     };
     assert_eq!(section.page.margin_pt, 72.0);
+    assert_eq!(section.columns, Some(2));
     assert_eq!(section.header.len(), 1);
     assert_eq!(model.setup.page.width_pt, 792.0);
+    assert_eq!(model.setup.columns, Some(3));
     assert_eq!(model.setup.header.len(), 1);
 
     let bytes = rdoc::write_docx(&model);
@@ -348,7 +352,9 @@ fn doc_builder_adds_section_breaks_with_section_setup() {
     assert!(
         document_xml.contains(r#"<w:type w:val="nextPage"/>"#)
             && document_xml.contains(r#"<w:pgSz w:w="11906" w:h="16838"/>"#)
-            && document_xml.contains(r#"<w:pgSz w:w="15840" w:h="12240" w:orient="landscape"/>"#),
+            && document_xml.contains(r#"<w:pgSz w:w="15840" w:h="12240" w:orient="landscape"/>"#)
+            && document_xml.contains(r#"<w:cols w:num="2"/>"#)
+            && document_xml.contains(r#"<w:cols w:num="3"/>"#),
         "section page setup missing: {document_xml}"
     );
     assert!(
@@ -361,15 +367,24 @@ fn doc_builder_adds_section_breaks_with_section_setup() {
     );
 
     let reopened = Document::open(&bytes).expect("multi-section .docx reopens");
+    let reopened_model = reopened.model();
     assert!(
-        reopened
-            .model()
+        reopened_model
             .blocks
             .iter()
             .any(|block| matches!(block, Block::SectionBreak(_))),
         "section break lost on reopen"
     );
-    assert_eq!(reopened.model().setup.page.width_pt, 792.0);
+    assert_eq!(reopened_model.setup.page.width_pt, 792.0);
+    assert_eq!(reopened_model.setup.columns, Some(3));
+    let Some(Block::SectionBreak(reopened_section)) = reopened_model
+        .blocks
+        .iter()
+        .find(|block| matches!(block, Block::SectionBreak(_)))
+    else {
+        panic!("section break lost on reopen");
+    };
+    assert_eq!(reopened_section.columns, Some(2));
     let text = reopened.text();
     assert!(
         text.contains("Cover header") && text.contains("Detail header"),
@@ -419,6 +434,28 @@ fn write_docx_emits_first_even_header_footer_variants() {
     assert_eq!(single_paragraph_text(&setup.footer), "Default footer");
     assert_eq!(single_paragraph_text(&setup.first_footer), "First footer");
     assert_eq!(single_paragraph_text(&setup.even_footer), "Even footer");
+}
+
+#[test]
+fn doc_builder_adds_section_columns() {
+    let model = DocBuilder::new()
+        .columns(2)
+        .paragraph("Column body")
+        .build();
+
+    assert_eq!(model.setup.columns, Some(2));
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+
+    assert!(
+        document_xml.contains(r#"<w:cols w:num="2"/>"#),
+        "section columns missing: {document_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("column section .docx reopens");
+    assert_eq!(reopened.model().setup.columns, Some(2));
 }
 
 #[test]

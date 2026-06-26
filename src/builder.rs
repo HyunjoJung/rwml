@@ -1293,6 +1293,12 @@ impl DocBuilder {
         self
     }
 
+    /// Set the number of text columns for the current/final section.
+    pub fn columns(mut self, columns: u16) -> Self {
+        self.model.setup.columns = Some(columns.max(1));
+        self
+    }
+
     /// Add a paragraph style definition.
     pub fn paragraph_style<S>(mut self, style: S) -> Self
     where
