@@ -227,6 +227,9 @@ pub(crate) fn table_formula_context(xml: &str) -> TableFormulaContext {
     let mut current = Vec::new();
     loop {
         match r.read_event() {
+            Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
+                skip_subtree(&mut r);
+            }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tbl" => {
                 results.extend(read_table_formula_table(&mut r));
             }
@@ -283,6 +286,9 @@ fn read_table_formula_table(r: &mut Xml<'_>) -> Vec<Option<String>> {
     let mut records = Vec::new();
     loop {
         match r.read_event() {
+            Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
+                skip_subtree(r);
+            }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tr" => {
                 let row_index = rows.len();
                 let mut row = read_table_formula_row(r, row_index);
@@ -316,6 +322,9 @@ fn read_table_formula_row(r: &mut Xml<'_>, row_index: usize) -> Vec<TableFormula
     let mut row = Vec::new();
     loop {
         match r.read_event() {
+            Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
+                skip_subtree(r);
+            }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tc" => {
                 let col_index = row.len();
                 row.push(read_table_formula_cell(r, row_index, col_index));
@@ -337,6 +346,9 @@ fn read_table_formula_cell(r: &mut Xml<'_>, row: usize, col: usize) -> TableForm
     let mut current = Vec::new();
     loop {
         match r.read_event() {
+            Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
+                skip_subtree(r);
+            }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tcPr" => {
                 cell.has_span |= read_table_formula_cell_props(r);
             }
@@ -438,6 +450,9 @@ fn read_field_result_text(r: &mut Xml<'_>) -> String {
     let mut text = String::new();
     loop {
         match r.read_event() {
+            Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
+                skip_subtree(r);
+            }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"t" => {
                 text.push_str(&read_text(r));
             }
