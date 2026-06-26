@@ -2484,20 +2484,34 @@ pub(crate) fn legacy_form_context(xml: &str) -> LegacyFormContext {
     let mut r = Reader::from_str(xml);
     let mut results = Vec::new();
     let mut current: Option<LegacyFormScanField> = None;
+    let mut xml_depth = 0usize;
+    let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => {
                 let qname = e.name();
                 let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    skip_subtree(&mut r);
+                    continue;
+                }
                 if matches!(name, b"del" | b"moveFrom") {
                     skip_subtree(&mut r);
                     continue;
                 }
+                let mut consumed_element = false;
                 match name {
+                    b"AlternateContent" => {
+                        alternate_content_stack.push(AlternateContentBranchState {
+                            branch_depth: xml_depth + 1,
+                            took_branch: false,
+                        });
+                    }
                     b"fldSimple" => {
                         let instruction = attr_local(&e, b"instr").unwrap_or_default();
                         let form_data = read_legacy_form_data_until(&mut r);
                         record_simple_legacy_form_result(&instruction, form_data, &mut results);
+                        consumed_element = true;
                     }
                     b"fldChar" => {
                         let kind = attr_local(&e, b"fldCharType");
@@ -2508,9 +2522,11 @@ pub(crate) fn legacy_form_context(xml: &str) -> LegacyFormContext {
                             &mut current,
                             &mut results,
                         );
+                        consumed_element = true;
                     }
                     b"instrText" => {
                         let text = read_text(&mut r);
+                        consumed_element = true;
                         if let Some(field) = current.as_mut() {
                             if field.phase == FieldPhase::Instruction {
                                 field.instruction.push_str(&text);
@@ -2519,23 +2535,39 @@ pub(crate) fn legacy_form_context(xml: &str) -> LegacyFormContext {
                     }
                     _ => {}
                 }
-            }
-            Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
-                b"fldSimple" => {
-                    record_simple_legacy_form_result(
-                        attr_local(&e, b"instr").as_deref().unwrap_or_default(),
-                        None,
-                        &mut results,
-                    );
+                if !consumed_element {
+                    xml_depth = xml_depth.saturating_add(1);
                 }
-                b"fldChar" => apply_legacy_form_scan_fld_char(
-                    attr_local(&e, b"fldCharType").as_deref(),
-                    None,
-                    &mut current,
-                    &mut results,
-                ),
-                _ => {}
-            },
+            }
+            Ok(Event::Empty(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    continue;
+                }
+                match name {
+                    b"fldSimple" => {
+                        record_simple_legacy_form_result(
+                            attr_local(&e, b"instr").as_deref().unwrap_or_default(),
+                            None,
+                            &mut results,
+                        );
+                    }
+                    b"fldChar" => apply_legacy_form_scan_fld_char(
+                        attr_local(&e, b"fldCharType").as_deref(),
+                        None,
+                        &mut current,
+                        &mut results,
+                    ),
+                    _ => {}
+                }
+            }
+            Ok(Event::End(e)) => {
+                if local(e.name().as_ref()) == b"AlternateContent" {
+                    alternate_content_stack.pop();
+                }
+                xml_depth = xml_depth.saturating_sub(1);
+            }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
@@ -2591,6 +2623,8 @@ fn apply_legacy_form_scan_fld_char(
 
 fn read_legacy_form_data_until(r: &mut Xml<'_>) -> Option<LegacyFormData> {
     let mut depth = 1usize;
+    let mut xml_depth = 1usize;
+    let mut alternate_content_stack = Vec::new();
     let mut checkbox_depth = 0usize;
     let mut dropdown_depth = 0usize;
     let mut text_input_depth = 0usize;
@@ -2598,9 +2632,19 @@ fn read_legacy_form_data_until(r: &mut Xml<'_>) -> Option<LegacyFormData> {
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => {
-                let is_checkbox = local(e.name().as_ref()) == b"checkBox";
-                let is_dropdown = local(e.name().as_ref()) == b"ddList";
-                let is_text_input = local(e.name().as_ref()) == b"textInput";
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    skip_subtree(r);
+                    continue;
+                }
+                if matches!(name, b"del" | b"moveFrom") {
+                    skip_subtree(r);
+                    continue;
+                }
+                let is_checkbox = name == b"checkBox";
+                let is_dropdown = name == b"ddList";
+                let is_text_input = name == b"textInput";
                 read_legacy_form_data_element(
                     &e,
                     checkbox_depth > 0,
@@ -2608,16 +2652,27 @@ fn read_legacy_form_data_until(r: &mut Xml<'_>) -> Option<LegacyFormData> {
                     text_input_depth > 0,
                     &mut data,
                 );
-                if is_checkbox {
-                    checkbox_depth += 1;
-                } else if is_dropdown {
-                    dropdown_depth += 1;
-                } else if is_text_input {
-                    text_input_depth += 1;
+                match name {
+                    b"AlternateContent" => {
+                        alternate_content_stack.push(AlternateContentBranchState {
+                            branch_depth: xml_depth + 1,
+                            took_branch: false,
+                        });
+                    }
+                    _ if is_checkbox => checkbox_depth += 1,
+                    _ if is_dropdown => dropdown_depth += 1,
+                    _ if is_text_input => text_input_depth += 1,
+                    _ => {}
                 }
                 depth += 1;
+                xml_depth = xml_depth.saturating_add(1);
             }
             Ok(Event::Empty(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    continue;
+                }
                 read_legacy_form_data_element(
                     &e,
                     checkbox_depth > 0,
@@ -2627,14 +2682,20 @@ fn read_legacy_form_data_until(r: &mut Xml<'_>) -> Option<LegacyFormData> {
                 );
             }
             Ok(Event::End(e)) => {
-                if local(e.name().as_ref()) == b"checkBox" {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if name == b"AlternateContent" {
+                    alternate_content_stack.pop();
+                }
+                if name == b"checkBox" {
                     checkbox_depth = checkbox_depth.saturating_sub(1);
-                } else if local(e.name().as_ref()) == b"ddList" {
+                } else if name == b"ddList" {
                     dropdown_depth = dropdown_depth.saturating_sub(1);
-                } else if local(e.name().as_ref()) == b"textInput" {
+                } else if name == b"textInput" {
                     text_input_depth = text_input_depth.saturating_sub(1);
                 }
                 depth = depth.saturating_sub(1);
+                xml_depth = xml_depth.saturating_sub(1);
                 if depth == 0 {
                     break;
                 }

@@ -923,6 +923,23 @@ fn legacy_form_deleted_field_docx() -> Vec<u8> {
     ])
 }
 
+fn legacy_form_alternate_content_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><mc:AlternateContent><mc:Choice Requires="wps"><w:p/></mc:Choice><mc:Fallback><w:p><w:r><w:fldChar w:fldCharType="begin"><w:ffData><w:checkBox><w:checked w:val="true"/></w:checkBox></w:ffData></w:fldChar></w:r><w:r><w:instrText> FORMCHECKBOX </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>fallback checked</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></mc:Fallback></mc:AlternateContent><w:p><w:fldSimple w:instr=" FORMDROPDOWN "><w:ffData><mc:AlternateContent><mc:Choice Requires="wps"><w:ddList><w:result w:val="0"/><w:listEntry w:val="Choice option"/></w:ddList></mc:Choice><mc:Fallback><w:ddList><w:result w:val="1"/><w:listEntry w:val="Fallback option"/></w:ddList></mc:Fallback></mc:AlternateContent></w:ffData><w:r><w:t>stale option</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn simple_cached_result_inline_marker_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -5607,6 +5624,26 @@ fn docx_legacy_form_context_ignores_deleted_fields() {
     assert!(
         main_text.contains('\u{2610}') && !main_text.contains("deleted checked"),
         "deleted form metadata must not shift visible form results: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_legacy_form_context_uses_single_alternate_content_branch() {
+    let doc = Document::open(&legacy_form_alternate_content_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(
+        fields[0].kind,
+        FieldKind::FormField("FORMDROPDOWN".to_string())
+    );
+    assert_eq!(fields[0].result, "stale option");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("Choice option"));
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Choice option") && !main_text.contains("Fallback option"),
+        "computed legacy form field must use one AlternateContent branch: {main_text:?}"
     );
 }
 
