@@ -69,6 +69,10 @@ pub(crate) fn supports_reference_index_marker_syntax(instruction: &str) -> bool 
     fields::computed_reference_index_result(instruction).is_some()
 }
 
+pub(crate) fn supports_hyperlink_field_syntax(instruction: &str) -> bool {
+    body::hyperlink_instr_url(instruction).is_some()
+}
+
 pub(crate) fn supports_numbering_field_syntax(instruction: &str) -> bool {
     fields::supports_numbering_field_syntax(instruction)
 }

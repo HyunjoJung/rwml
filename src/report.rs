@@ -562,15 +562,15 @@ fn unsupported_field_evaluation(features: &FeatureInventory) -> (usize, Vec<Fiel
 }
 
 fn supports_field_kind_evaluation(kind: &FieldKind) -> bool {
-    matches!(
-        kind,
-        FieldKind::Hyperlink | FieldKind::Filename | FieldKind::DocumentInfo(_)
-    )
+    matches!(kind, FieldKind::Filename | FieldKind::DocumentInfo(_))
 }
 
 fn supports_field_evaluation(field: &Field) -> bool {
     if field.computed_result.is_some() {
         return true;
+    }
+    if field.kind == FieldKind::Hyperlink {
+        return supports_hyperlink_field_evaluation(field);
     }
     if matches!(&field.kind, FieldKind::DocumentInfo(_)) {
         return supports_document_info_field_evaluation(field);
@@ -579,6 +579,18 @@ fn supports_field_evaluation(field: &Field) -> bool {
         return supports_merge_field_evaluation(field);
     }
     supports_field_kind_evaluation(&field.kind)
+}
+
+fn supports_hyperlink_field_evaluation(field: &Field) -> bool {
+    #[cfg(feature = "docx")]
+    {
+        crate::docx::supports_hyperlink_field_syntax(&field.instruction)
+    }
+    #[cfg(not(feature = "docx"))]
+    {
+        let _ = field;
+        true
+    }
 }
 
 fn supports_merge_field_evaluation(field: &Field) -> bool {
@@ -1528,7 +1540,8 @@ fn unsupported_field_reason(field: &Field) -> Option<FieldEvaluationReason> {
         FieldKind::Compatibility(_) => Some(FieldEvaluationReason::NoComputedResult),
         FieldKind::Barcode(_) => Some(FieldEvaluationReason::NoComputedResult),
         FieldKind::FormField(_) => Some(FieldEvaluationReason::NoComputedResult),
-        FieldKind::Hyperlink | FieldKind::Filename => None,
+        FieldKind::Filename => None,
+        FieldKind::Hyperlink => Some(FieldEvaluationReason::UnsupportedSwitch),
         FieldKind::MergeField => Some(FieldEvaluationReason::UnsupportedSwitch),
         FieldKind::DocumentInfo(_) => Some(FieldEvaluationReason::UnsupportedSwitch),
         FieldKind::TocEntry | FieldKind::Sequence => Some(FieldEvaluationReason::NoComputedResult),

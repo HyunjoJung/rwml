@@ -250,6 +250,24 @@ fn field_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn malformed_hyperlink_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" HYPERLINK &quot;https://example.com "><w:r><w:t>Cached link</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn page_unsupported_switch_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -1639,6 +1657,28 @@ fn report_field_evaluation_warning_only_lists_unsupported_kinds() {
     assert!(json.contains(r#""field_kinds":[{"kind":"PAGE","count":1},{"kind":"FILENAME","count":1},{"kind":"HYPERLINK","count":1},{"kind":"TOC","count":1},{"kind":"REF","count":1},{"kind":"CUSTOM","count":1}]"#), "{json}");
     assert!(json.contains(r#""unsupported_field_reasons":[{"reason":"NoComputedResult","count":1},{"reason":"UnresolvedBookmark","count":1},{"reason":"UnknownField","count":1}]"#), "{json}");
     assert!(json.contains(r#""kind":"UnsupportedFieldEvaluation","count":3,"field_kinds":[{"kind":"TOC","count":1},{"kind":"REF","count":1},{"kind":"CUSTOM","count":1}]"#), "{json}");
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_malformed_hyperlink_reports_unsupported_switch() {
+    let doc = Document::open(&malformed_hyperlink_diagnostics_docx()).expect("fixture opens");
+    let report = doc.report();
+
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Hyperlink,
+            count: 1,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnsupportedSwitch,
+            count: 1,
+        }]
+    );
 }
 
 #[cfg(feature = "docx")]

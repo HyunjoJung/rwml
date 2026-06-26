@@ -2236,7 +2236,7 @@ fn ref_field_positions(
 
 /// Extract a URL from a `HYPERLINK "…"` field instruction (matches the `.doc`
 /// field-code parser).
-fn hyperlink_instr_url(instr: &str) -> Option<String> {
+pub(crate) fn hyperlink_instr_url(instr: &str) -> Option<String> {
     let s = instr.trim();
     let after = s.find("HYPERLINK").map(|i| &s[i + "HYPERLINK".len()..])?;
     let q = after.find('"')?;
