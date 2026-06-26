@@ -2259,6 +2259,7 @@ fn draw_pie_chart(
     w: f32,
     h: f32,
     doughnut: bool,
+    exploded: bool,
 ) {
     let Some(series) = chart.series.first() else {
         return;
@@ -2283,16 +2284,20 @@ fn draw_pie_chart(
     let radius = (w.min(h) * 0.42).max(1.0);
     let cx = x + w * 0.5;
     let cy = y + h * 0.5;
+    let explosion = if exploded { radius * 0.08 } else { 0.0 };
     let mut angle = -std::f32::consts::FRAC_PI_2;
     for (index, value) in values.iter().enumerate() {
         if *value <= 0.0 {
             continue;
         }
         let sweep = (*value / total) as f32 * std::f32::consts::TAU;
+        let mid_angle = angle + sweep * 0.5;
+        let slice_cx = cx + mid_angle.cos() * explosion;
+        let slice_cy = cy + mid_angle.sin() * explosion;
         fill_pie_slice(
             surface,
-            cx,
-            cy,
+            slice_cx,
+            slice_cy,
             radius,
             angle,
             sweep,
@@ -2461,6 +2466,7 @@ fn draw_authored_chart(
     if matches!(
         chart.kind,
         ChartKind::Pie
+            | ChartKind::ExplodedPie
             | ChartKind::Pie3D
             | ChartKind::PieOfPie
             | ChartKind::BarOfPie
@@ -2474,6 +2480,7 @@ fn draw_authored_chart(
             plot_w,
             plot_h,
             chart.kind == ChartKind::Doughnut,
+            chart.kind == ChartKind::ExplodedPie,
         );
         let mut legend_x = plot_left;
         let legend_y = y + h - 14.0;
@@ -3205,6 +3212,7 @@ fn draw_authored_chart(
                 | ChartKind::RadarWithMarkers
                 | ChartKind::FilledRadar
                 | ChartKind::Pie
+                | ChartKind::ExplodedPie
                 | ChartKind::Pie3D
                 | ChartKind::PieOfPie
                 | ChartKind::BarOfPie
@@ -3215,6 +3223,7 @@ fn draw_authored_chart(
         | ChartKind::RadarWithMarkers
         | ChartKind::FilledRadar
         | ChartKind::Pie
+        | ChartKind::ExplodedPie
         | ChartKind::Pie3D
         | ChartKind::PieOfPie
         | ChartKind::BarOfPie

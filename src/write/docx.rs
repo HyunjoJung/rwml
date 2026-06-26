@@ -1948,7 +1948,8 @@ fn chart_xml(chart: &Chart, chart_id: u32, workbook_rid: Option<&str>) -> String
         ChartKind::Bubble | ChartKind::Bubble3D => {
             write_bubble_chart(&mut out, chart, cat_axis_id, val_axis_id)
         }
-        ChartKind::Pie => write_pie_chart(&mut out, chart),
+        ChartKind::Pie => write_pie_chart(&mut out, chart, false),
+        ChartKind::ExplodedPie => write_pie_chart(&mut out, chart, true),
         ChartKind::Pie3D => write_pie_3d_chart(&mut out, chart),
         ChartKind::PieOfPie => write_of_pie_chart(&mut out, chart, "pie"),
         ChartKind::BarOfPie => write_of_pie_chart(&mut out, chart, "bar"),
@@ -1963,6 +1964,7 @@ fn chart_xml(chart: &Chart, chart_id: u32, workbook_rid: Option<&str>) -> String
     }
     match chart.kind {
         ChartKind::Pie
+        | ChartKind::ExplodedPie
         | ChartKind::Pie3D
         | ChartKind::PieOfPie
         | ChartKind::BarOfPie
@@ -2233,13 +2235,16 @@ fn write_bubble_chart(out: &mut String, chart: &Chart, x_axis_id: u32, y_axis_id
     ));
 }
 
-fn write_pie_chart(out: &mut String, chart: &Chart) {
+fn write_pie_chart(out: &mut String, chart: &Chart, exploded: bool) {
     out.push_str(r#"<c:pieChart><c:varyColors val="1"/>"#);
     for (index, series) in chart.series.iter().take(1).enumerate() {
         out.push_str(&format!(
             r#"<c:ser><c:idx val="{index}"/><c:order val="{index}"/><c:tx><c:v>{}</c:v></c:tx>"#,
             esc_text(&series.name)
         ));
+        if exploded {
+            out.push_str(r#"<c:explosion val="25"/>"#);
+        }
         write_chart_categories(out, &chart.categories);
         write_chart_values(out, &series.values);
         out.push_str("</c:ser>");
@@ -2467,6 +2472,7 @@ fn write_chart_axes(out: &mut String, kind: ChartKind, cat_axis_id: u32, val_axi
         | ChartKind::Bubble
         | ChartKind::Bubble3D
         | ChartKind::Pie
+        | ChartKind::ExplodedPie
         | ChartKind::Pie3D
         | ChartKind::PieOfPie
         | ChartKind::BarOfPie

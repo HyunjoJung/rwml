@@ -929,6 +929,8 @@ pub enum ChartKind {
     Bubble3D,
     /// A pie chart using the first series as slice values.
     Pie,
+    /// An exploded pie chart using the first series as slice values.
+    ExplodedPie,
     /// A 3-D pie chart using the first series as slice values.
     Pie3D,
     /// A pie-of-pie chart using the first series as slice values.
