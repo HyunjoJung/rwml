@@ -315,12 +315,11 @@ emits text/markdown/html).
 
 ## Why one crate? (and how this relates to `docx-rs`)
 
-The mature [`docx-rs`](https://crates.io/crates/docx-rs) reads and writes `.docx`
-well, and for a `.docx`-only need it is the obvious choice. `rdoc` adds `.docx`
-**not** to beat it on `.docx` features, but for **unification**: legacy `.doc` (no
-comparable pure-Rust option exists) and `.docx` produce the *identical* [`DocModel`]
-and share one read/write/render surface, with no JVM and no second Word parser in
-the tree. If you only ever touch `.docx`, prefer `docx-rs`.
+The mature [`docx-rs`](https://crates.io/crates/docx-rs) proves there is real
+demand for Rust-native `.docx` authoring. `rdoc` aims higher than a writer-only
+surface: legacy `.doc` (no comparable pure-Rust option exists) and modern `.docx`
+produce the *identical* [`DocModel`] and share one read/write/edit/render/report
+surface, with no JVM, no subprocess, and no second Word parser in the tree.
 
 ## How it works
 
