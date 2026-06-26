@@ -691,7 +691,7 @@ Acceptance:
   formula tails and literal `DEFINED(expr)` checks for parser-local literal expressions,
   quoted/unquoted literal `QUOTE`, literal `IF`
   comparisons, literal `COMPARE` results, explicit-default `FILLIN`/`ASK`
-  prompt fields, and literal quoted or single-token `SET` bookmark
+  prompt fields with field-result format switches, and literal quoted or single-token `SET` bookmark
   assignments feeding later plain `REF`/direct bookmark references,
   inserted-content fields including
   `DDE`/`DDEAUTO`, mail-merge helper fields, reference/index fields including

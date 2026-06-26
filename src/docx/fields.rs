@@ -5986,6 +5986,7 @@ fn ask_instruction(instruction: &str) -> Option<AskInstruction> {
     }
     let mut default = None;
     let mut ask_once = false;
+    let mut text_format = None;
     while let Some(part) = parts.next() {
         if field_prompt_default_switch(part, &mut parts, &mut default) {
             continue;
@@ -5998,13 +5999,13 @@ fn ask_instruction(instruction: &str) -> Option<AskInstruction> {
             continue;
         }
         if part == "\\*" {
-            if !is_neutral_field_format_switch(parts.next()?) {
+            if !accept_field_format_switch(parts.next()?, &mut text_format) {
                 return None;
             }
             continue;
         }
         if let Some(format) = part.strip_prefix("\\*") {
-            if is_neutral_field_format_switch(format) {
+            if accept_field_format_switch(format, &mut text_format) {
                 continue;
             }
         }
@@ -9092,6 +9093,24 @@ mod tests {
         assert_eq!(
             computed_dynamic_result(r#"ASK ClientCode "Client code?" \d "ac-42" \o"#),
             None
+        );
+    }
+
+    #[test]
+    fn ask_accepts_field_text_format_switches_without_formatting_bookmark() {
+        let mut field_bookmarks = HashMap::new();
+
+        assert_eq!(
+            computed_ask_result(
+                r#"ASK ClientCode "Client code?" \d "ac-42" \* Upper"#,
+                &mut field_bookmarks,
+            )
+            .as_deref(),
+            Some("")
+        );
+        assert_eq!(
+            field_bookmarks.get("ClientCode").map(String::as_str),
+            Some("ac-42")
         );
     }
 

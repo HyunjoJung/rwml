@@ -296,8 +296,9 @@ Initial status:
   quoted string equality/inequality, deterministic literal `COMPARE` fields compute
   `1`/`0` results for finite decimal/scientific numeric operands and quoted
   `?`/`*` wildcard equality/inequality, deterministic `FILLIN` fields with explicit `\d`
-  default responses rendered without simulating prompts, deterministic `ASK name "prompt" \d "default"` fields rendered as hidden output while
-  feeding later plain `REF`/direct bookmark references, and
+  default responses rendered without simulating prompts, deterministic `ASK name "prompt" \d "default"` fields with field-result format
+  switches rendered as hidden output while feeding later plain `REF`/direct
+  bookmark references, and
   deterministic literal `SET name "value"` or single-token `SET name value` fields with optional neutral
   `\* MERGEFORMAT`/`\* CHARFORMAT` switches render as hidden output while
   feeding later plain `REF`/direct bookmark references in source order, plus
@@ -753,7 +754,8 @@ Initial status:
   and deterministic literal
   `COMPARE` fields compute `1`/`0` results for finite decimal/scientific numeric operands and quoted `?`/`*` wildcard equality/inequality,
   deterministic `FILLIN` fields with explicit `\d` default responses render without simulating prompts,
-  deterministic `ASK name "prompt" \d "default"` fields render as hidden output while feeding later plain `REF`/direct bookmark references,
+  deterministic `ASK name "prompt" \d "default"` fields with field-result format
+  switches render as hidden output while feeding later plain `REF`/direct bookmark references,
   and deterministic literal `SET name "value"` or single-token `SET name value` fields with optional neutral
   `\* MERGEFORMAT`/`\* CHARFORMAT` switches render as hidden output while
   feeding later plain `REF`/direct bookmark references in source order,

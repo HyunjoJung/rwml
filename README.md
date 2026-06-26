@@ -467,8 +467,9 @@ deterministic literal `COMPARE` fields compute `1`/`0` results for finite
 decimal/scientific numeric operands and quoted `?`/`*` wildcard
 equality/inequality, deterministic `FILLIN` fields with explicit `\d`
 default responses render those defaults without simulating prompts,
-deterministic `ASK name "prompt" \d "default"` fields seed later plain
-`REF`/direct bookmark references as hidden output, and deterministic literal
+deterministic `ASK name "prompt" \d "default"` fields with field-result format
+switches seed later plain `REF`/direct bookmark references as hidden output,
+and deterministic literal
 `SET name "value"` or single-token `SET name value` fields with
 optional neutral `\* MERGEFORMAT`/`\* CHARFORMAT` switches render as hidden
 output while feeding later plain `REF`/direct bookmark references in
