@@ -255,6 +255,8 @@ pub struct ParaProps {
     pub indent: Indent,
     /// Paragraph background shading, if any.
     pub shading: Option<Color>,
+    /// Force this paragraph to begin on a new page (`w:pageBreakBefore`).
+    pub page_break_before: bool,
 }
 
 /// A paragraph style definition for generated `.docx` output.

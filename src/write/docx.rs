@@ -610,11 +610,12 @@ impl Ctx {
             && !has_spacing
             && !has_indent
             && pr.shading.is_none()
+            && !pr.page_break_before
         {
             return;
         }
         out.push_str("<w:pPr>");
-        // Schema order: pStyle, numPr, shd, spacing, ind, jc, outlineLvl.
+        // Schema order: pStyle, numPr, pageBreakBefore, shd, spacing, ind, jc, outlineLvl.
         if let Some(s) = &style_id {
             self.has_styles = true;
             if generated_heading_style {
@@ -629,6 +630,9 @@ impl Ctx {
                 r#"<w:numPr><w:ilvl w:val="{}"/><w:numId w:val="{num_id}"/></w:numPr>"#,
                 li.level
             ));
+        }
+        if pr.page_break_before {
+            out.push_str("<w:pageBreakBefore/>");
         }
         if let Some(c) = pr.shading {
             out.push_str(&format!(

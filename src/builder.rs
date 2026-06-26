@@ -253,6 +253,12 @@ impl ParagraphBuilder {
         self
     }
 
+    /// Force the paragraph to begin on a new page.
+    pub fn page_break_before(mut self) -> Self {
+        self.paragraph.props.page_break_before = true;
+        self
+    }
+
     /// Finish and return the paragraph.
     pub fn build(self) -> Paragraph {
         self.paragraph

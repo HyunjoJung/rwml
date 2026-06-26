@@ -1473,6 +1473,7 @@ fn paragraph_builder_adds_layout_properties() {
                 .indent_left_pt(24.0)
                 .indent_right_pt(12.0)
                 .first_line_pt(18.0)
+                .page_break_before()
                 .shading(shade)
                 .runs([
                     RunBuilder::new("Layout ").bold().build(),
@@ -1491,6 +1492,7 @@ fn paragraph_builder_adds_layout_properties() {
     assert_eq!(paragraph.props.indent.left_pt, Some(24.0));
     assert_eq!(paragraph.props.indent.right_pt, Some(12.0));
     assert_eq!(paragraph.props.indent.first_line_pt, Some(18.0));
+    assert!(paragraph.props.page_break_before);
     assert_eq!(paragraph.props.shading, Some(shade));
     assert!(paragraph.runs[0].props.bold);
     assert!(paragraph.runs[1].props.italic);
@@ -1505,6 +1507,7 @@ fn paragraph_builder_adds_layout_properties() {
             )
             && document_xml.contains(r#"<w:ind w:left="480" w:right="240" w:firstLine="360"/>"#)
             && document_xml.contains(r#"<w:jc w:val="both"/>"#)
+            && document_xml.contains("<w:pageBreakBefore/>")
             && document_xml.contains("<w:b/>")
             && document_xml.contains("<w:i/>"),
         "paragraph layout XML missing: {document_xml}"
@@ -1515,6 +1518,7 @@ fn paragraph_builder_adds_layout_properties() {
         panic!("expected reopened paragraph");
     };
     assert_eq!(reopened_paragraph.props.align, Align::Justify);
+    assert!(reopened_paragraph.props.page_break_before);
     assert_eq!(reopened_paragraph.props.shading, Some(shade));
     assert_eq!(reopened_paragraph.text(), "Layout paragraph");
 }

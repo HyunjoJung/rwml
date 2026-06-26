@@ -57,7 +57,7 @@ let orig  = doc.main_text_with_revision_view(rdoc::RevisionView::Original);
 Build a document with [`DocBuilder`] or the lower-level [`DocModel`] structs, then
 serialize it to a clean, Office-openable `.docx`. Character formatting (font,
 size, color, bold/italic, highlight, super/subscript), paragraph layout
-(named styles, headings, alignment, spacing, indent, shading), leveled lists,
+(named styles, headings, alignment, spacing, indent, shading, page-break-before), leveled lists,
 **bordered tables with width, fixed layout, alignment, indentation, border color, and per-cell shading / width / margins / vertical alignment**, images
 with alt text, explicit pixel size, inline rotation, and page-relative floating
 offsets, simple fields with cached results, `PAGEREF` helper runs, dirty TOC
@@ -835,7 +835,7 @@ The long-term native Word engine plan is split into the
       (`sprmTDefTable`), list autonumbers, hyperlinks, inline images
 - [x] Unified `.docx` reader into the same model (98.6% recall vs python-docx)
 - [x] **`.docx` writer** — styled authoring (named styles, rich tables with typed nested cell blocks, page setup,
-      styled runs, leveled lists, simple fields, `PAGEREF` helper runs, dirty TOC heading-range fields,
+      styled runs, leveled lists, paragraph page-break-before, simple fields, `PAGEREF` helper runs, dirty TOC heading-range fields,
       run-anchored comments with reply parent ids, tracked insertion/deletion runs, run-level content
       controls with data-binding metadata, bookmarked runs, authored footnotes/endnotes, inline/standalone hyperlinks,
       string custom document properties, raw custom XML data-store items, default/first/even headers/footers + page numbers, section columns, document grids, text direction, title pages, page-number restarts/formats, images with inline rotation and page-relative floating offsets,

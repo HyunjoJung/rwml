@@ -1080,6 +1080,7 @@ struct PPr {
     spacing: Spacing,
     indent: Indent,
     shading: Option<Color>,
+    page_break_before: bool,
     section: Option<SectionSetup>,
 }
 
@@ -1185,6 +1186,7 @@ fn read_ppr_item(pp: &mut PPr, e: &BytesStart<'_>, num_id: &mut Option<String>, 
         b"numId" => *num_id = attr_local(e, b"val"),
         b"jc" => pp.jc = attr_local(e, b"val"),
         b"outlineLvl" => pp.outline = attr_local(e, b"val").and_then(|v| v.parse().ok()),
+        b"pageBreakBefore" => pp.page_break_before = true,
         b"spacing" => {
             pp.spacing.before_pt = attr_local(e, b"before").and_then(|v| twips_to_pt(&v));
             pp.spacing.after_pt = attr_local(e, b"after").and_then(|v| twips_to_pt(&v));
@@ -1994,6 +1996,7 @@ fn finalize_paragraph(runs: Vec<Run>, pp: PPr, ctx: &Ctx<'_>) -> Paragraph {
         spacing,
         indent,
         shading,
+        page_break_before,
         section: _,
     } = pp;
     let heading_level = match outline {
@@ -2047,6 +2050,7 @@ fn finalize_paragraph(runs: Vec<Run>, pp: PPr, ctx: &Ctx<'_>) -> Paragraph {
             spacing,
             indent,
             shading,
+            page_break_before,
         },
         runs,
     }
