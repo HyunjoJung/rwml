@@ -677,7 +677,7 @@ fn section_pages_field_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SECTIONPAGES "></w:fldSimple></w:p><w:p><w:r><w:br w:type="page"/></w:r></w:p><w:p><w:fldSimple w:instr=" SECTIONPAGES \* ROMAN "></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SECTIONPAGES \* CardText \* Upper "></w:fldSimple></w:p><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/></w:sectPr></w:pPr></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> SECTIONPAGES \* Ordinal </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:sectPr/></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SECTIONPAGES "></w:fldSimple></w:p><w:p><w:r><w:br w:type="page"/></w:r></w:p><w:p><w:fldSimple w:instr=" SECTIONPAGES \* ROMAN "></w:fldSimple></w:p><w:p><w:pPr><w:pageBreakBefore/></w:pPr><w:fldSimple w:instr=" SECTIONPAGES \* CardText \* Upper "></w:fldSimple></w:p><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/></w:sectPr></w:pPr></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> SECTIONPAGES \* Ordinal </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:sectPr/></w:body></w:document>"#,
         ),
     ])
 }
@@ -4646,11 +4646,11 @@ fn docx_section_pages_field_computes_structural_section_page_count() {
         );
     }
     assert_eq!(fields[0].instruction, "SECTIONPAGES");
-    assert_eq!(fields[0].computed_result.as_deref(), Some("2"));
+    assert_eq!(fields[0].computed_result.as_deref(), Some("3"));
     assert_eq!(fields[1].instruction, "SECTIONPAGES \\* ROMAN");
-    assert_eq!(fields[1].computed_result.as_deref(), Some("II"));
+    assert_eq!(fields[1].computed_result.as_deref(), Some("III"));
     assert_eq!(fields[2].instruction, "SECTIONPAGES \\* CardText \\* Upper");
-    assert_eq!(fields[2].computed_result.as_deref(), Some("TWO"));
+    assert_eq!(fields[2].computed_result.as_deref(), Some("THREE"));
     assert_eq!(fields[3].instruction, "SECTIONPAGES \\* Ordinal");
     assert_eq!(fields[3].computed_result.as_deref(), Some("1st"));
 
@@ -4659,9 +4659,9 @@ fn docx_section_pages_field_computes_structural_section_page_count() {
     assert!(report.features.unsupported_field_reasons.is_empty());
 
     let main_text = doc.main_text();
-    assert!(main_text.contains("2"), "{main_text:?}");
-    assert!(main_text.contains("II"), "{main_text:?}");
-    assert!(main_text.contains("TWO"), "{main_text:?}");
+    assert!(main_text.contains("3"), "{main_text:?}");
+    assert!(main_text.contains("III"), "{main_text:?}");
+    assert!(main_text.contains("THREE"), "{main_text:?}");
     assert!(main_text.contains("1st"), "{main_text:?}");
 }
 

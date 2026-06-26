@@ -511,8 +511,8 @@ Implementation:
   cached text for page-aware/header-footer lookup and other unsupported
   `STYLEREF` variants;
 - compute `.docx` `SECTIONPAGES` fields for structurally bounded sections whose
-  page count comes only from source page/section structure and does not require
-  layout inference, exposing the result as `Field::computed_result` and using
+  page count comes only from source hard breaks, enabled `pageBreakBefore`, and
+  section structure without layout inference, exposing the result as `Field::computed_result` and using
   that text in the read/render model for simple and common complex fields with
   page-number and general field-result format switches; keep cached text for
   layout-derived section page counts;

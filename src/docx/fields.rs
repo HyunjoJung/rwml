@@ -1581,6 +1581,11 @@ pub(crate) fn section_context(xml: &str) -> SectionContext {
                     section_type_seen = true;
                     section_break_kind = page_ref_section_break(&e);
                 }
+                b"pageBreakBefore"
+                    if paragraph_properties_depth > 0 && page_ref_on_off_enabled(&e) =>
+                {
+                    current_page += 1;
+                }
                 b"fldSimple" => record_section_field(
                     attr_local(&e, b"instr").as_deref(),
                     current_section,
@@ -1628,6 +1633,11 @@ pub(crate) fn section_context(xml: &str) -> SectionContext {
                 b"type" if section_properties_depth > 0 && !section_type_seen => {
                     section_type_seen = true;
                     section_break_kind = page_ref_section_break(&e);
+                }
+                b"pageBreakBefore"
+                    if paragraph_properties_depth > 0 && page_ref_on_off_enabled(&e) =>
+                {
+                    current_page += 1;
                 }
                 b"fldSimple" => record_section_field(
                     attr_local(&e, b"instr").as_deref(),

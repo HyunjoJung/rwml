@@ -343,8 +343,9 @@ The first public maturity release should meet these requirements.
   document-structure fields (`REVNUM`, `SECTION`, `SECTIONPAGES`,
   `STYLEREF`) are named diagnostics, with `REVNUM` computed from
   `cp:revision`, `SECTION` computed from structural section breaks,
-  `SECTIONPAGES` computed for structurally bounded section page counts that do
-  not require layout inference, both with page-number and general field-result
+  `SECTIONPAGES` computed for structurally bounded section page counts from
+  explicit hard breaks, enabled `pageBreakBefore`, and section starts when they
+  do not require layout inference, with page-number and general field-result
   format switches, and deterministic body paragraph-
   and character-style `STYLEREF` computed by style id/name nearest paragraph/run
   lookup, including source-order `\p` above/below and deterministic numbered

@@ -329,9 +329,10 @@ Initial status:
   document-structure fields (`REVNUM`, `SECTION`, `SECTIONPAGES`, `STYLEREF`)
   are named separately from unknown fields; `REVNUM` computes from
   `cp:revision`, `SECTION` computes the current structural section number,
-  `SECTIONPAGES` computes structurally bounded section page counts when no
-  layout inference is needed, both with page-number and general field-result
-  format switches, and deterministic body
+  `SECTIONPAGES` computes structurally bounded section page counts from
+  explicit hard breaks, enabled `pageBreakBefore`, and section starts when no
+  layout inference is needed, with page-number and general field-result format
+  switches, and deterministic body
   paragraph- and character-style `STYLEREF` computes nearest styled paragraph/run
   text by style id/name plus source-order `\p` above/below and deterministic
   numbered source paragraphs with `\n`, `\r`, `\w`, and numeric-text `\t`
@@ -779,8 +780,9 @@ Initial status:
   Document-structure fields are named separately from unknown fields; `REVNUM`
   computes from `cp:revision`, `SECTION` computes the current structural section
   number, `SECTIONPAGES` computes structurally bounded section page counts when
-  no layout inference is needed, both with page-number and general field-result
-  format switches, deterministic body paragraph- and
+  no layout inference is needed, including explicit hard breaks, enabled
+  `pageBreakBefore`, and section starts, with page-number and general
+  field-result format switches, deterministic body paragraph- and
   character-style `STYLEREF` computes nearest
   styled paragraph/run text by style id/name plus source-order `\p`
   above/below and numbered paragraph `\n`, `\r`, `\w`, and numeric-text `\t`
