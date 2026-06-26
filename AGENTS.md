@@ -39,8 +39,8 @@ rendering moving toward one coherent Rust-native document model.
 - Do not silently fall back to mini or another worker model. If Spark is
   capped or unavailable, capture the exact error. For narrow read-only
   investigation, small fallback workers are allowed after noting the fallback;
-  keep Spark required for broad sign-off, implementation, or release claims
-  unless the user explicitly approves another model.
+  for broader worker runs, choose the cheapest adequate model for the task and
+  state the fallback model used.
 - Keep worker lanes read-only for investigation unless the task explicitly needs
   isolated writable worktrees. The parent agent remains responsible for reading
   worker output, integrating changes, and running verification.
