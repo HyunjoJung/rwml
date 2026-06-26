@@ -79,6 +79,10 @@ const REL_FOOTNOTES: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes";
 const REL_ENDNOTES: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes";
+const CT_CUSTOM_PROPERTIES: &str =
+    "application/vnd.openxmlformats-officedocument.custom-properties+xml";
+const REL_CUSTOM_PROPERTIES: &str =
+    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties";
 
 /// Build a `word/header1.xml` / `footer1.xml` part body from running paragraphs
 /// (text + run formatting + alignment; images/links/tables inside a header are
@@ -1210,6 +1214,24 @@ fn write_comment_text(out: &mut String, text: &str) {
     flush(out, &mut buf);
 }
 
+fn custom_properties_xml(properties: &std::collections::BTreeMap<String, String>) -> Vec<u8> {
+    let mut s = String::new();
+    s.push_str(XML_DECL);
+    s.push_str(
+        r#"<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">"#,
+    );
+    for (index, (name, value)) in properties.iter().enumerate() {
+        s.push_str(&format!(
+            r#"<property fmtid="{{D5CDD505-2E9C-101B-9397-08002B2CF9AE}}" pid="{}" name="{}"><vt:lpwstr>{}</vt:lpwstr></property>"#,
+            index + 2,
+            esc_attr(name),
+            esc_text(value)
+        ));
+    }
+    s.push_str("</Properties>");
+    s.into_bytes()
+}
+
 fn chart_workbook_xlsx(chart: &Chart) -> Vec<u8> {
     let (sheet_xml, shared_strings_xml) = chart_workbook_sheet_xml(chart);
     let mut pkg = Package::new();
@@ -2008,6 +2030,13 @@ pub(crate) fn try_to_docx(model: &crate::DocModel) -> crate::Result<Vec<u8>> {
     if let Some(endnotes) = br.endnotes_xml {
         pkg.add_part("word/endnotes.xml", Some(CT_ENDNOTES), endnotes);
     }
+    if !model.custom_properties.is_empty() {
+        pkg.add_part(
+            "docProps/custom.xml",
+            Some(CT_CUSTOM_PROPERTIES),
+            custom_properties_xml(&model.custom_properties),
+        );
+    }
     if br.has_list {
         pkg.add_part(
             "word/numbering.xml",
@@ -2046,15 +2075,21 @@ pub(crate) fn try_to_docx(model: &crate::DocModel) -> crate::Result<Vec<u8>> {
     if !br.doc_rels.is_empty() {
         pkg.add_rels("word/_rels/document.xml.rels", br.doc_rels);
     }
-    pkg.add_rels(
-        "_rels/.rels",
-        vec![Rel {
-            id: "rId1".to_string(),
-            rel_type: REL_OFFICE_DOCUMENT.to_string(),
-            target: "word/document.xml".to_string(),
+    let mut root_rels = vec![Rel {
+        id: "rId1".to_string(),
+        rel_type: REL_OFFICE_DOCUMENT.to_string(),
+        target: "word/document.xml".to_string(),
+        external: false,
+    }];
+    if !model.custom_properties.is_empty() {
+        root_rels.push(Rel {
+            id: "rId2".to_string(),
+            rel_type: REL_CUSTOM_PROPERTIES.to_string(),
+            target: "docProps/custom.xml".to_string(),
             external: false,
-        }],
-    );
+        });
+    }
+    pkg.add_rels("_rels/.rels", root_rels);
 
     pkg.try_into_zip()
         .map_err(|e| crate::Error::Docx(format!("docx serialize: {e}")))

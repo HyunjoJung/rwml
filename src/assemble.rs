@@ -53,6 +53,7 @@ pub(crate) fn build_model(
             lid: fib.lid,
             stats,
         },
+        custom_properties: Default::default(),
         setup,
     }
 }

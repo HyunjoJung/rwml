@@ -1153,6 +1153,14 @@ impl DocBuilder {
         self
     }
 
+    /// Set a string custom document property.
+    pub fn custom_property(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.model
+            .custom_properties
+            .insert(name.into(), value.into());
+        self
+    }
+
     /// Set page geometry and margins.
     pub fn page_setup(mut self, page: PageSetup) -> Self {
         self.model.setup.page = page;

@@ -273,6 +273,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
             lid: 0,
             stats,
         },
+        custom_properties: Default::default(),
         setup: crate::model::DocSetup {
             page: body::scan_page_setup(&doc_xml),
             header: final_header_footer.header,

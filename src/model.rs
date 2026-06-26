@@ -10,6 +10,8 @@
 //! of block-level nodes; paragraphs hold inline runs) so the Markdown/HTML
 //! exporters are simple folds.
 
+use std::collections::BTreeMap;
+
 use crate::annotation::{NoteKind, RevisionKind};
 
 /// A whole `.doc` document as an ordered list of block-level nodes plus
@@ -24,6 +26,8 @@ pub struct DocModel {
     pub regions: Vec<SourceRegion>,
     /// Document-level metadata (codepage, language, counts).
     pub meta: DocMeta,
+    /// Authored string custom document properties.
+    pub custom_properties: BTreeMap<String, String>,
     /// Document-level layout for authoring/rendering (page size, header/footer,
     /// metadata). Defaults to A4 portrait with no running header/footer.
     pub setup: DocSetup,

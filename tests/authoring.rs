@@ -515,6 +515,42 @@ fn doc_builder_adds_dirty_toc_heading_range() {
 }
 
 #[test]
+fn doc_builder_adds_string_custom_properties() {
+    let model = DocBuilder::new()
+        .custom_property("Client Name", "ACME <Launch>")
+        .field(r#"DOCPROPERTY "Client Name""#, "cached")
+        .build();
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let content_types = String::from_utf8(parts["[Content_Types].xml"].clone()).unwrap();
+    let root_rels = String::from_utf8(parts["_rels/.rels"].clone()).unwrap();
+    let custom_xml = String::from_utf8(parts["docProps/custom.xml"].clone()).unwrap();
+
+    assert!(
+        content_types.contains(
+            r#"<Override PartName="/docProps/custom.xml" ContentType="application/vnd.openxmlformats-officedocument.custom-properties+xml"/>"#
+        ),
+        "custom properties content type missing: {content_types}"
+    );
+    assert!(
+        root_rels.contains(
+            r#"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties" Target="docProps/custom.xml""#
+        ),
+        "custom properties relationship missing: {root_rels}"
+    );
+    assert!(
+        custom_xml
+            .contains(r#"pid="2" name="Client Name"><vt:lpwstr>ACME &lt;Launch&gt;</vt:lpwstr>"#),
+        "custom property XML missing: {custom_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("custom-property .docx reopens");
+    let fields = reopened.fields();
+    assert_eq!(fields[0].computed_result.as_deref(), Some("ACME <Launch>"));
+}
+
+#[test]
 fn run_builder_adds_bookmark_for_ref_fields() {
     let model = DocBuilder::new()
         .paragraph_runs([RunBuilder::new("Figure 1").bookmark("Figure1").build()])
