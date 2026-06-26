@@ -1896,6 +1896,7 @@ fn supported_toc_bookmark_scope(instruction: &str) -> Option<Option<String>> {
     let mut saw_tc_switch = false;
     let mut saw_tc_level_switch = false;
     let mut saw_sequence_switch = false;
+    let mut saw_page_number_sequence_prefix = false;
     let mut text_format = false;
     while let Some(part) = parts.next() {
         saw_switch = true;
@@ -2012,6 +2013,22 @@ fn supported_toc_bookmark_scope(instruction: &str) -> Option<Option<String>> {
             diagnostic_literal_token(separator)?;
             continue;
         }
+        if part.eq_ignore_ascii_case("\\s") {
+            diagnostic_identifier_token(parts.next_if(|next| !next.starts_with('\\'))?)?;
+            if saw_page_number_sequence_prefix {
+                return None;
+            }
+            saw_page_number_sequence_prefix = true;
+            continue;
+        }
+        if let Some(identifier) = strip_ascii_switch_prefix(part, "\\s") {
+            diagnostic_identifier_token(identifier)?;
+            if saw_page_number_sequence_prefix {
+                return None;
+            }
+            saw_page_number_sequence_prefix = true;
+            continue;
+        }
         if part.eq_ignore_ascii_case("\\b") {
             let target = diagnostic_name_token(parts.next_if(|next| !next.starts_with('\\'))?)?;
             if bookmark.replace(target.to_string()).is_some() {
@@ -2101,6 +2118,11 @@ fn parse_toc_style_specs_for_report(value: &str) -> Option<()> {
         }
     }
     Some(())
+}
+
+fn diagnostic_identifier_token(value: &str) -> Option<&str> {
+    let value = diagnostic_name_token(value)?;
+    (!value.chars().any(char::is_whitespace)).then_some(value)
 }
 
 fn is_toc_value_neutral_switch_for_report(part: &str) -> bool {
