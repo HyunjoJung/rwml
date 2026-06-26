@@ -1726,7 +1726,7 @@ fn supported_page_ref_syntax(instruction: &str) -> Option<PageRefDiagnosticSynta
     }
     Some(PageRefDiagnosticSyntax {
         target: target?,
-        uses_target_section_number_format: !number_format && !relative,
+        uses_target_section_number_format: !number_format,
     })
 }
 
