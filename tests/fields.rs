@@ -1664,6 +1664,23 @@ fn page_ref_final_section_page_number_format_docx() -> Vec<u8> {
     ])
 }
 
+fn page_ref_final_section_ignores_deleted_paragraph_section_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><mc:AlternateContent><mc:Choice Requires="wps"><w:p/></mc:Choice><mc:Fallback><w:p><w:pPr><w:sectPr><w:pgNumType w:start="88"/></w:sectPr></w:pPr></w:p></mc:Fallback></mc:AlternateContent><w:del><w:p><w:pPr><w:sectPr><w:pgNumType w:start="99"/></w:sectPr></w:pPr></w:p></w:del><w:p><w:r><w:br w:type="page"/></w:r></w:p><w:p><w:bookmarkStart w:id="7" w:name="FinalSection"/><w:r><w:t>Final-section target</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF FinalSection \h "><w:r><w:t>stale final roman</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF FinalSection \* Arabic "><w:r><w:t>stale final arabic</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF FinalSection \p "><w:r><w:t>stale final relative</w:t></w:r></w:fldSimple></w:p><w:sectPr><w:pgNumType w:start="5" w:fmt="upperRoman"/></w:sectPr></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn page_ref_visible_manual_break_before_rendered_hint_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -7140,6 +7157,34 @@ fn docx_page_ref_applies_final_section_page_number_format() {
     assert!(
         main_text.contains("vi\n6\nabove"),
         "final section page-number format should apply to computed PAGEREF output: {main_text:?}"
+    );
+    assert!(
+        !main_text.contains("stale final"),
+        "computed final-section PAGEREF fields should replace stale cached text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_page_ref_final_section_numbering_ignores_deleted_paragraph_section() {
+    let doc = Document::open(&page_ref_final_section_ignores_deleted_paragraph_section_docx())
+        .expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 3);
+    assert_eq!(fields[0].kind, FieldKind::PageRef);
+    assert_eq!(fields[0].instruction, "PAGEREF FinalSection \\h");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("VI"));
+    assert_eq!(fields[1].kind, FieldKind::PageRef);
+    assert_eq!(fields[1].instruction, "PAGEREF FinalSection \\* Arabic");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("6"));
+    assert_eq!(fields[2].kind, FieldKind::PageRef);
+    assert_eq!(fields[2].instruction, "PAGEREF FinalSection \\p");
+    assert_eq!(fields[2].computed_result.as_deref(), Some("above"));
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("VI\n6\nabove"),
+        "accepted-current final section numbering should ignore deleted paragraph sectPr: {main_text:?}"
     );
     assert!(
         !main_text.contains("stale final"),

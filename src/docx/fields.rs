@@ -2988,44 +2988,85 @@ fn single_section_initial_page_numbering(
     let mut has_paragraph_section_properties = false;
     let mut page_number_start = None;
     let mut page_number_format = None;
+    let mut xml_depth = 0usize;
+    let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
-                b"pPr" => paragraph_properties_depth += 1,
-                b"sectPr" if paragraph_properties_depth > 0 => {
-                    has_paragraph_section_properties = true;
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
                     skip_subtree(&mut r);
+                    continue;
                 }
-                b"sectPr" => body_section_properties_depth += 1,
-                b"pgNumType" if body_section_properties_depth > 0 => {
-                    if page_number_start.is_none() {
-                        page_number_start = page_ref_section_page_number_start(&e);
-                    }
-                    if page_number_format.is_none() {
-                        page_number_format = page_ref_section_page_number_format(&e);
-                    }
+                if matches!(name, b"del" | b"moveFrom") {
+                    skip_subtree(&mut r);
+                    continue;
                 }
-                _ => {}
-            },
-            Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
-                b"sectPr" if paragraph_properties_depth > 0 => {
-                    has_paragraph_section_properties = true;
-                }
-                b"pgNumType" if body_section_properties_depth > 0 => {
-                    if page_number_start.is_none() {
-                        page_number_start = page_ref_section_page_number_start(&e);
+                match name {
+                    b"AlternateContent" => {
+                        alternate_content_stack.push(AlternateContentBranchState {
+                            branch_depth: xml_depth + 1,
+                            took_branch: false,
+                        });
                     }
-                    if page_number_format.is_none() {
-                        page_number_format = page_ref_section_page_number_format(&e);
+                    b"pPr" => paragraph_properties_depth += 1,
+                    b"sectPr" if paragraph_properties_depth > 0 => {
+                        has_paragraph_section_properties = true;
+                        skip_subtree(&mut r);
+                        continue;
                     }
+                    b"sectPr" => body_section_properties_depth += 1,
+                    b"pgNumType" if body_section_properties_depth > 0 => {
+                        if page_number_start.is_none() {
+                            page_number_start = page_ref_section_page_number_start(&e);
+                        }
+                        if page_number_format.is_none() {
+                            page_number_format = page_ref_section_page_number_format(&e);
+                        }
+                    }
+                    _ => {}
                 }
-                _ => {}
-            },
-            Ok(Event::End(e)) if local(e.name().as_ref()) == b"sectPr" => {
-                body_section_properties_depth = body_section_properties_depth.saturating_sub(1);
+                xml_depth = xml_depth.saturating_add(1);
             }
-            Ok(Event::End(e)) if local(e.name().as_ref()) == b"pPr" => {
-                paragraph_properties_depth = paragraph_properties_depth.saturating_sub(1);
+            Ok(Event::Empty(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    continue;
+                }
+                match name {
+                    b"sectPr" if paragraph_properties_depth > 0 => {
+                        has_paragraph_section_properties = true;
+                    }
+                    b"pgNumType" if body_section_properties_depth > 0 => {
+                        if page_number_start.is_none() {
+                            page_number_start = page_ref_section_page_number_start(&e);
+                        }
+                        if page_number_format.is_none() {
+                            page_number_format = page_ref_section_page_number_format(&e);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Ok(Event::End(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                match name {
+                    b"AlternateContent" => {
+                        alternate_content_stack.pop();
+                    }
+                    b"sectPr" => {
+                        body_section_properties_depth =
+                            body_section_properties_depth.saturating_sub(1);
+                    }
+                    b"pPr" => {
+                        paragraph_properties_depth = paragraph_properties_depth.saturating_sub(1);
+                    }
+                    _ => {}
+                }
+                xml_depth = xml_depth.saturating_sub(1);
             }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
