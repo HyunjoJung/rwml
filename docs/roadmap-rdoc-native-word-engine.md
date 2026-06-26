@@ -226,8 +226,9 @@ Initial status:
   supported `w:pgNumType w:fmt` styles (`decimal`, `decimalZero`,
   `numberInDash`, `decimalFullWidth`, `decimalHalfWidth`, `decimalFullWidth2`,
   `decimalEnclosedCircle`, `decimalEnclosedFullstop`, `decimalEnclosedParen`,
-  `ganada`, `chosung`, lower/upper letter, lower/upper roman,
-  ordinal/cardinal text) on those section starts and
+  `ganada`, `chosung`, `koreanDigital`, `koreanCounting`, `koreanLegal`,
+  `koreanDigital2`, lower/upper letter, lower/upper roman, ordinal/cardinal
+  text) on those section starts and
   single-section final `body/sectPr` page-number defaults,
   source-persisted `w:lastRenderedPageBreak` markers scanned with the same
   single-branch `mc:AlternateContent` policy as flat text, or
@@ -861,8 +862,9 @@ Initial status:
   supported `w:pgNumType w:fmt` styles (`decimal`, `decimalZero`,
   `numberInDash`, `decimalFullWidth`, `decimalHalfWidth`, `decimalFullWidth2`,
   `decimalEnclosedCircle`, `decimalEnclosedFullstop`, `decimalEnclosedParen`,
-  `ganada`, `chosung`, lower/upper letter, lower/upper roman,
-  ordinal/cardinal text) on those section starts and
+  `ganada`, `chosung`, `koreanDigital`, `koreanCounting`, `koreanLegal`,
+  `koreanDigital2`, lower/upper letter, lower/upper roman, ordinal/cardinal
+  text) on those section starts and
   single-section final `body/sectPr` page-number defaults,
   source-persisted `w:lastRenderedPageBreak` markers, or
   explicit hard breaks after a trusted leading/rendered page context, applies

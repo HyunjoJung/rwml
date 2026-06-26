@@ -3069,6 +3069,10 @@ fn page_ref_section_page_number_format(e: &BytesStart<'_>) -> Option<PageRefDisp
         "decimalEnclosedParen" => PageNumberFormat::DecimalEnclosedParen,
         "ganada" => PageNumberFormat::Ganada,
         "chosung" => PageNumberFormat::Chosung,
+        "koreanDigital" => PageNumberFormat::KoreanDigital,
+        "koreanCounting" => PageNumberFormat::KoreanCounting,
+        "koreanLegal" => PageNumberFormat::KoreanLegal,
+        "koreanDigital2" => PageNumberFormat::KoreanDigital2,
         "lowerLetter" => PageNumberFormat::AlphabeticLower,
         "upperLetter" => PageNumberFormat::AlphabeticUpper,
         "lowerRoman" => PageNumberFormat::RomanLower,
@@ -7563,6 +7567,10 @@ enum PageNumberFormat {
     DecimalEnclosedParen,
     Ganada,
     Chosung,
+    KoreanDigital,
+    KoreanCounting,
+    KoreanLegal,
+    KoreanDigital2,
     AlphabeticLower,
     AlphabeticUpper,
     RomanLower,
@@ -8040,6 +8048,18 @@ fn format_page_number(page: usize, format: Option<PageNumberFormat>) -> Option<S
         PageNumberFormat::Chosung => u32::try_from(page)
             .ok()
             .map(|page| numfmt::format(page, 0x19)),
+        PageNumberFormat::KoreanDigital => u32::try_from(page)
+            .ok()
+            .map(|page| numfmt::format(page, 0x29)),
+        PageNumberFormat::KoreanCounting => u32::try_from(page)
+            .ok()
+            .map(|page| numfmt::format(page, 0x2A)),
+        PageNumberFormat::KoreanLegal => u32::try_from(page)
+            .ok()
+            .map(|page| numfmt::format(page, 0x2B)),
+        PageNumberFormat::KoreanDigital2 => u32::try_from(page)
+            .ok()
+            .map(|page| numfmt::format(page, 0x2C)),
         PageNumberFormat::AlphabeticLower => alphabetic_page_number(page, false),
         PageNumberFormat::AlphabeticUpper => alphabetic_page_number(page, true),
         PageNumberFormat::RomanLower => roman_page_number(page).map(|value| value.to_lowercase()),

@@ -898,6 +898,14 @@ pub enum PageNumberFormat {
     Ganada,
     /// Korean Chosung sequence.
     Chosung,
+    /// Korean digital numerals.
+    KoreanDigital,
+    /// Native Korean counting words.
+    KoreanCounting,
+    /// Korean legal numerals.
+    KoreanLegal,
+    /// Alternate Korean digital numerals.
+    KoreanDigital2,
     /// Lowercase letters (`a`, `b`, `c`).
     LowerLetter,
     /// Uppercase letters (`A`, `B`, `C`).
@@ -928,6 +936,10 @@ impl PageNumberFormat {
             PageNumberFormat::DecimalEnclosedParen => "decimalEnclosedParen",
             PageNumberFormat::Ganada => "ganada",
             PageNumberFormat::Chosung => "chosung",
+            PageNumberFormat::KoreanDigital => "koreanDigital",
+            PageNumberFormat::KoreanCounting => "koreanCounting",
+            PageNumberFormat::KoreanLegal => "koreanLegal",
+            PageNumberFormat::KoreanDigital2 => "koreanDigital2",
             PageNumberFormat::LowerLetter => "lowerLetter",
             PageNumberFormat::UpperLetter => "upperLetter",
             PageNumberFormat::LowerRoman => "lowerRoman",
@@ -951,6 +963,10 @@ impl PageNumberFormat {
             "decimalEnclosedParen" => Some(PageNumberFormat::DecimalEnclosedParen),
             "ganada" => Some(PageNumberFormat::Ganada),
             "chosung" => Some(PageNumberFormat::Chosung),
+            "koreanDigital" => Some(PageNumberFormat::KoreanDigital),
+            "koreanCounting" => Some(PageNumberFormat::KoreanCounting),
+            "koreanLegal" => Some(PageNumberFormat::KoreanLegal),
+            "koreanDigital2" => Some(PageNumberFormat::KoreanDigital2),
             "lowerLetter" => Some(PageNumberFormat::LowerLetter),
             "upperLetter" => Some(PageNumberFormat::UpperLetter),
             "lowerRoman" => Some(PageNumberFormat::LowerRoman),

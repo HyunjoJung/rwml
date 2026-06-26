@@ -583,6 +583,26 @@ fn doc_builder_adds_korean_page_number_formats() {
     for (format, wml, text) in [
         (PageNumberFormat::Ganada, "ganada", "Ganada numbering"),
         (PageNumberFormat::Chosung, "chosung", "Chosung numbering"),
+        (
+            PageNumberFormat::KoreanDigital,
+            "koreanDigital",
+            "Korean digital numbering",
+        ),
+        (
+            PageNumberFormat::KoreanCounting,
+            "koreanCounting",
+            "Korean counting numbering",
+        ),
+        (
+            PageNumberFormat::KoreanLegal,
+            "koreanLegal",
+            "Korean legal numbering",
+        ),
+        (
+            PageNumberFormat::KoreanDigital2,
+            "koreanDigital2",
+            "Korean digital alternate numbering",
+        ),
     ] {
         let model = DocBuilder::new()
             .page_number_start(1)

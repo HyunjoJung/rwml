@@ -577,6 +577,7 @@ Implementation:
   (`decimal`, `decimalZero`, `numberInDash`, `decimalFullWidth`,
   `decimalHalfWidth`, `decimalFullWidth2`, `decimalEnclosedCircle`,
   `decimalEnclosedFullstop`, `decimalEnclosedParen`, `ganada`, `chosung`,
+  `koreanDigital`, `koreanCounting`, `koreanLegal`, `koreanDigital2`,
   lower/upper letter, lower/upper roman, ordinal/cardinal text) on those section starts and
   single-section final `body/sectPr` page-number defaults, source-persisted
   `w:lastRenderedPageBreak` markers scanned with the same single-branch

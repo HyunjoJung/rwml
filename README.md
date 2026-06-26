@@ -620,8 +620,9 @@ context, including trusted `w:pgNumType w:start` displayed page-number
 restarts and supported `w:pgNumType w:fmt` styles (`decimal`, `decimalZero`,
 `numberInDash`, `decimalFullWidth`, `decimalHalfWidth`, `decimalFullWidth2`,
 `decimalEnclosedCircle`, `decimalEnclosedFullstop`, `decimalEnclosedParen`,
-`ganada`, `chosung`, lower/upper letter, lower/upper roman, ordinal/cardinal
-text) on those section starts,
+`ganada`, `chosung`, `koreanDigital`, `koreanCounting`, `koreanLegal`,
+`koreanDigital2`, lower/upper letter, lower/upper roman, ordinal/cardinal text)
+on those section starts,
 source-persisted `w:lastRenderedPageBreak` markers scanned with the same
 single-branch `mc:AlternateContent` policy as flat text, or explicit hard
 breaks after a trusted leading/rendered page context make the

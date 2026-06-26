@@ -1613,6 +1613,23 @@ fn page_ref_korean_section_page_number_format_docx() -> Vec<u8> {
     ])
 }
 
+fn page_ref_korean_numeric_section_page_number_format_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgNumType w:start="1" w:fmt="koreanDigital"/></w:sectPr></w:pPr></w:p><w:p><w:bookmarkStart w:id="18" w:name="KoreanDigitalSection"/><w:r><w:t>Korean digital target</w:t></w:r><w:bookmarkEnd w:id="18"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF KoreanDigitalSection \h "><w:r><w:t>stale korean digital</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF KoreanDigitalSection \* Arabic "><w:r><w:t>stale korean digital arabic</w:t></w:r></w:fldSimple></w:p><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgNumType w:start="1" w:fmt="koreanCounting"/></w:sectPr></w:pPr></w:p><w:p><w:r><w:lastRenderedPageBreak/><w:t>Korean counting page lead.</w:t></w:r></w:p><w:p><w:bookmarkStart w:id="19" w:name="KoreanCountingSection"/><w:r><w:t>Korean counting target</w:t></w:r><w:bookmarkEnd w:id="19"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF KoreanCountingSection \h "><w:r><w:t>stale korean counting</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF KoreanCountingSection \* Arabic "><w:r><w:t>stale korean counting arabic</w:t></w:r></w:fldSimple></w:p><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgNumType w:start="9" w:fmt="koreanLegal"/></w:sectPr></w:pPr></w:p><w:p><w:r><w:lastRenderedPageBreak/><w:t>Korean legal page lead.</w:t></w:r></w:p><w:p><w:bookmarkStart w:id="20" w:name="KoreanLegalSection"/><w:r><w:t>Korean legal target</w:t></w:r><w:bookmarkEnd w:id="20"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF KoreanLegalSection \h "><w:r><w:t>stale korean legal</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF KoreanLegalSection \* Arabic "><w:r><w:t>stale korean legal arabic</w:t></w:r></w:fldSimple></w:p><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgNumType w:start="1" w:fmt="koreanDigital2"/></w:sectPr></w:pPr></w:p><w:p><w:r><w:lastRenderedPageBreak/><w:t>Korean digital2 page lead.</w:t></w:r></w:p><w:p><w:bookmarkStart w:id="21" w:name="KoreanDigital2Section"/><w:r><w:t>Korean digital2 target</w:t></w:r><w:bookmarkEnd w:id="21"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF KoreanDigital2Section \h "><w:r><w:t>stale korean digital2</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF KoreanDigital2Section \* Arabic "><w:r><w:t>stale korean digital2 arabic</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn page_ref_final_section_page_number_format_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -6998,6 +7015,67 @@ fn docx_page_ref_applies_korean_section_page_number_formats() {
     assert!(
         !main_text.contains("stale ganada") && !main_text.contains("stale chosung"),
         "computed Korean PAGEREF fields should replace stale cached text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_page_ref_applies_korean_numeric_section_page_number_formats() {
+    let doc = Document::open(&page_ref_korean_numeric_section_page_number_format_docx())
+        .expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 8);
+    assert_eq!(fields[0].kind, FieldKind::PageRef);
+    assert_eq!(fields[0].instruction, "PAGEREF KoreanDigitalSection \\h");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("\u{c77c}"));
+    assert_eq!(fields[1].kind, FieldKind::PageRef);
+    assert_eq!(
+        fields[1].instruction,
+        "PAGEREF KoreanDigitalSection \\* Arabic"
+    );
+    assert_eq!(fields[1].computed_result.as_deref(), Some("1"));
+    assert_eq!(fields[2].kind, FieldKind::PageRef);
+    assert_eq!(fields[2].instruction, "PAGEREF KoreanCountingSection \\h");
+    assert_eq!(fields[2].computed_result.as_deref(), Some("\u{b458}"));
+    assert_eq!(fields[3].kind, FieldKind::PageRef);
+    assert_eq!(
+        fields[3].instruction,
+        "PAGEREF KoreanCountingSection \\* Arabic"
+    );
+    assert_eq!(fields[3].computed_result.as_deref(), Some("2"));
+    assert_eq!(fields[4].kind, FieldKind::PageRef);
+    assert_eq!(fields[4].instruction, "PAGEREF KoreanLegalSection \\h");
+    assert_eq!(fields[4].computed_result.as_deref(), Some("\u{c2ed}"));
+    assert_eq!(fields[5].kind, FieldKind::PageRef);
+    assert_eq!(
+        fields[5].instruction,
+        "PAGEREF KoreanLegalSection \\* Arabic"
+    );
+    assert_eq!(fields[5].computed_result.as_deref(), Some("10"));
+    assert_eq!(fields[6].kind, FieldKind::PageRef);
+    assert_eq!(fields[6].instruction, "PAGEREF KoreanDigital2Section \\h");
+    assert_eq!(fields[6].computed_result.as_deref(), Some("\u{c774}"));
+    assert_eq!(fields[7].kind, FieldKind::PageRef);
+    assert_eq!(
+        fields[7].instruction,
+        "PAGEREF KoreanDigital2Section \\* Arabic"
+    );
+    assert_eq!(fields[7].computed_result.as_deref(), Some("2"));
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains(&format!("{}\n1", "\u{c77c}"))
+            && main_text.contains(&format!("{}\n2", "\u{b458}"))
+            && main_text.contains(&format!("{}\n10", "\u{c2ed}"))
+            && main_text.contains(&format!("{}\n2", "\u{c774}")),
+        "Korean numeric section page-number formats should drive supported PAGEREF text: {main_text:?}"
+    );
+    assert!(
+        !main_text.contains("stale korean digital")
+            && !main_text.contains("stale korean counting")
+            && !main_text.contains("stale korean legal")
+            && !main_text.contains("stale korean digital2"),
+        "computed Korean numeric PAGEREF fields should replace stale cached text: {main_text:?}"
     );
 }
 
