@@ -474,6 +474,23 @@ fn formula_table_deleted_preceding_field_docx() -> Vec<u8> {
     ])
 }
 
+fn formula_table_alternate_content_preceding_field_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><mc:AlternateContent><mc:Choice Requires="wps"><w:p/></mc:Choice><mc:Fallback><w:p><w:fldSimple w:instr=" = SUM(LEFT) "><w:r><w:t>fallback formula</w:t></w:r></w:fldSimple></w:p></mc:Fallback></mc:AlternateContent><w:tbl><w:tr><w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>3</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(LEFT) "><w:r><w:t>stale visible sum</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn formula_table_combined_reference_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -3786,6 +3803,25 @@ fn docx_table_formula_context_ignores_deleted_fields() {
     assert!(
         main_text.contains("5") && !main_text.contains("deleted formula"),
         "deleted formulas must not shift visible table formula results: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_table_formula_context_uses_single_alternate_content_branch() {
+    let doc = Document::open(&formula_table_alternate_content_preceding_field_docx())
+        .expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(fields[0].instruction, r#"= SUM(LEFT)"#);
+    assert_eq!(fields[0].result, "stale visible sum");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("5"));
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("5") && !main_text.contains("fallback formula"),
+        "AlternateContent fallback formulas must not shift visible table formula results: {main_text:?}"
     );
 }
 

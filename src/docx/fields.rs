@@ -225,36 +225,83 @@ pub(crate) fn table_formula_context(xml: &str) -> TableFormulaContext {
     let mut r = Reader::from_str(xml);
     let mut results = Vec::new();
     let mut current = Vec::new();
+    let mut xml_depth = 0usize;
+    let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
-                skip_subtree(&mut r);
-            }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tbl" => {
-                results.extend(read_table_formula_table(&mut r));
-            }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"fldSimple" => {
-                if is_formula_instruction(attr_local(&e, b"instr").as_deref()) {
-                    results.push(None);
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    skip_subtree(&mut r);
+                    continue;
                 }
-                skip_element(&mut r, b"fldSimple");
-            }
-            Ok(Event::Empty(e))
-                if local(e.name().as_ref()) == b"fldSimple"
-                    && is_formula_instruction(attr_local(&e, b"instr").as_deref()) =>
-            {
-                results.push(None);
-            }
-            Ok(Event::Empty(e)) | Ok(Event::Start(e)) if local(e.name().as_ref()) == b"fldChar" => {
-                apply_table_formula_scan_fld_char(&e, &mut current, |_, _| results.push(None));
-            }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"instrText" => {
-                let text = read_text(&mut r);
-                if let Some(field) = current.last_mut() {
-                    if field.phase == FieldPhase::Instruction {
-                        field.instruction.push_str(&text);
+                if matches!(name, b"del" | b"moveFrom") {
+                    skip_subtree(&mut r);
+                    continue;
+                }
+                let mut consumed_element = false;
+                match name {
+                    b"AlternateContent" => {
+                        alternate_content_stack.push(AlternateContentBranchState {
+                            branch_depth: xml_depth + 1,
+                            took_branch: false,
+                        });
                     }
+                    b"tbl" => {
+                        results.extend(read_table_formula_table(&mut r));
+                        consumed_element = true;
+                    }
+                    b"fldSimple" => {
+                        if is_formula_instruction(attr_local(&e, b"instr").as_deref()) {
+                            results.push(None);
+                        }
+                        skip_element(&mut r, b"fldSimple");
+                        consumed_element = true;
+                    }
+                    b"fldChar" => {
+                        apply_table_formula_scan_fld_char(&e, &mut current, |_, _| {
+                            results.push(None)
+                        });
+                    }
+                    b"instrText" => {
+                        let text = read_text(&mut r);
+                        consumed_element = true;
+                        if let Some(field) = current.last_mut() {
+                            if field.phase == FieldPhase::Instruction {
+                                field.instruction.push_str(&text);
+                            }
+                        }
+                    }
+                    _ => {}
                 }
+                if !consumed_element {
+                    xml_depth = xml_depth.saturating_add(1);
+                }
+            }
+            Ok(Event::Empty(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    continue;
+                }
+                match name {
+                    b"fldSimple" if is_formula_instruction(attr_local(&e, b"instr").as_deref()) => {
+                        results.push(None);
+                    }
+                    b"fldChar" => {
+                        apply_table_formula_scan_fld_char(&e, &mut current, |_, _| {
+                            results.push(None)
+                        });
+                    }
+                    _ => {}
+                }
+            }
+            Ok(Event::End(e)) => {
+                if local(e.name().as_ref()) == b"AlternateContent" {
+                    alternate_content_stack.pop();
+                }
+                xml_depth = xml_depth.saturating_sub(1);
             }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
@@ -284,22 +331,52 @@ struct TableFormulaCell {
 fn read_table_formula_table(r: &mut Xml<'_>) -> Vec<Option<String>> {
     let mut rows = Vec::new();
     let mut records = Vec::new();
+    let mut xml_depth = 1usize;
+    let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
-                skip_subtree(r);
-            }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tr" => {
-                let row_index = rows.len();
-                let mut row = read_table_formula_row(r, row_index);
-                for cell in &mut row {
-                    records.append(&mut cell.records);
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    skip_subtree(r);
+                    continue;
                 }
-                rows.push(row);
+                if matches!(name, b"del" | b"moveFrom") {
+                    skip_subtree(r);
+                    continue;
+                }
+                match name {
+                    b"AlternateContent" => {
+                        alternate_content_stack.push(AlternateContentBranchState {
+                            branch_depth: xml_depth + 1,
+                            took_branch: false,
+                        });
+                        xml_depth = xml_depth.saturating_add(1);
+                    }
+                    b"tr" => {
+                        let row_index = rows.len();
+                        let mut row = read_table_formula_row(r, row_index);
+                        for cell in &mut row {
+                            records.append(&mut cell.records);
+                        }
+                        rows.push(row);
+                    }
+                    _ => skip_subtree(r),
+                }
             }
-            Ok(Event::End(e)) if local(e.name().as_ref()) == b"tbl" => break,
+            Ok(Event::End(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if name == b"tbl" {
+                    break;
+                }
+                if name == b"AlternateContent" {
+                    alternate_content_stack.pop();
+                }
+                xml_depth = xml_depth.saturating_sub(1);
+            }
             Ok(Event::Eof) | Err(_) => break,
-            Ok(Event::Start(_)) => skip_subtree(r),
             _ => {}
         }
     }
@@ -320,21 +397,51 @@ fn read_table_formula_table(r: &mut Xml<'_>) -> Vec<Option<String>> {
 
 fn read_table_formula_row(r: &mut Xml<'_>, row_index: usize) -> Vec<TableFormulaCell> {
     let mut row = Vec::new();
+    let mut xml_depth = 1usize;
+    let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
-                skip_subtree(r);
-            }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tc" => {
-                let col_index = row.len();
-                row.push(read_table_formula_cell(r, row_index, col_index));
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    skip_subtree(r);
+                    continue;
+                }
+                if matches!(name, b"del" | b"moveFrom") {
+                    skip_subtree(r);
+                    continue;
+                }
+                match name {
+                    b"AlternateContent" => {
+                        alternate_content_stack.push(AlternateContentBranchState {
+                            branch_depth: xml_depth + 1,
+                            took_branch: false,
+                        });
+                        xml_depth = xml_depth.saturating_add(1);
+                    }
+                    b"tc" => {
+                        let col_index = row.len();
+                        row.push(read_table_formula_cell(r, row_index, col_index));
+                    }
+                    _ => skip_subtree(r),
+                }
             }
             Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"tc" => {
                 row.push(TableFormulaCell::default());
             }
-            Ok(Event::End(e)) if local(e.name().as_ref()) == b"tr" => break,
+            Ok(Event::End(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if name == b"tr" {
+                    break;
+                }
+                if name == b"AlternateContent" {
+                    alternate_content_stack.pop();
+                }
+                xml_depth = xml_depth.saturating_sub(1);
+            }
             Ok(Event::Eof) | Err(_) => break,
-            Ok(Event::Start(_)) => skip_subtree(r),
             _ => {}
         }
     }
@@ -344,82 +451,150 @@ fn read_table_formula_row(r: &mut Xml<'_>, row_index: usize) -> Vec<TableFormula
 fn read_table_formula_cell(r: &mut Xml<'_>, row: usize, col: usize) -> TableFormulaCell {
     let mut cell = TableFormulaCell::default();
     let mut current = Vec::new();
+    let mut xml_depth = 1usize;
+    let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
-                skip_subtree(r);
-            }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tcPr" => {
-                cell.has_span |= read_table_formula_cell_props(r);
-            }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tbl" => {
-                for result in read_table_formula_table(r) {
-                    cell.records.push(TableFormulaRecord::Nested(result));
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    skip_subtree(r);
+                    continue;
                 }
-                if !cell.text.is_empty() {
-                    cell.text.push('\n');
+                if matches!(name, b"del" | b"moveFrom") {
+                    skip_subtree(r);
+                    continue;
                 }
-            }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"fldSimple" => {
-                let instruction =
-                    attr_local(&e, b"instr").map(|value| normalize_instruction(&value));
-                if instruction.as_deref().is_some_and(|value| {
-                    FieldKind::from_instruction(value) == FieldKind::Dynamic("=".to_string())
-                }) {
-                    cell.contains_formula = true;
-                    cell.records.push(TableFormulaRecord::Local {
-                        row,
-                        col,
-                        instruction: instruction.unwrap_or_default(),
-                    });
-                }
-                cell.text.push_str(&read_field_result_text(r));
-            }
-            Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"fldSimple" => {
-                let instruction =
-                    attr_local(&e, b"instr").map(|value| normalize_instruction(&value));
-                if instruction.as_deref().is_some_and(|value| {
-                    FieldKind::from_instruction(value) == FieldKind::Dynamic("=".to_string())
-                }) {
-                    cell.contains_formula = true;
-                    cell.records.push(TableFormulaRecord::Local {
-                        row,
-                        col,
-                        instruction: instruction.unwrap_or_default(),
-                    });
-                }
-            }
-            Ok(Event::Empty(e)) | Ok(Event::Start(e)) if local(e.name().as_ref()) == b"fldChar" => {
-                apply_table_formula_scan_fld_char(&e, &mut current, |instruction, _| {
-                    if FieldKind::from_instruction(instruction)
-                        == FieldKind::Dynamic("=".to_string())
-                    {
-                        cell.contains_formula = true;
-                        cell.records.push(TableFormulaRecord::Local {
-                            row,
-                            col,
-                            instruction: instruction.to_string(),
+                let mut consumed_element = false;
+                match name {
+                    b"AlternateContent" => {
+                        alternate_content_stack.push(AlternateContentBranchState {
+                            branch_depth: xml_depth + 1,
+                            took_branch: false,
                         });
                     }
-                });
+                    b"tcPr" => {
+                        cell.has_span |= read_table_formula_cell_props(r);
+                        consumed_element = true;
+                    }
+                    b"tbl" => {
+                        for result in read_table_formula_table(r) {
+                            cell.records.push(TableFormulaRecord::Nested(result));
+                        }
+                        if !cell.text.is_empty() {
+                            cell.text.push('\n');
+                        }
+                        consumed_element = true;
+                    }
+                    b"fldSimple" => {
+                        let instruction =
+                            attr_local(&e, b"instr").map(|value| normalize_instruction(&value));
+                        if instruction.as_deref().is_some_and(|value| {
+                            FieldKind::from_instruction(value)
+                                == FieldKind::Dynamic("=".to_string())
+                        }) {
+                            cell.contains_formula = true;
+                            cell.records.push(TableFormulaRecord::Local {
+                                row,
+                                col,
+                                instruction: instruction.unwrap_or_default(),
+                            });
+                        }
+                        cell.text.push_str(&read_field_result_text(r));
+                        consumed_element = true;
+                    }
+                    b"fldChar" => {
+                        apply_table_formula_scan_fld_char(&e, &mut current, |instruction, _| {
+                            if FieldKind::from_instruction(instruction)
+                                == FieldKind::Dynamic("=".to_string())
+                            {
+                                cell.contains_formula = true;
+                                cell.records.push(TableFormulaRecord::Local {
+                                    row,
+                                    col,
+                                    instruction: instruction.to_string(),
+                                });
+                            }
+                        });
+                    }
+                    b"instrText" => {
+                        let text = read_text(r);
+                        consumed_element = true;
+                        if let Some(field) = current.last_mut() {
+                            if field.phase == FieldPhase::Instruction {
+                                field.instruction.push_str(&text);
+                            }
+                        }
+                    }
+                    b"t" => {
+                        cell.text.push_str(&read_text(r));
+                        consumed_element = true;
+                    }
+                    _ => {
+                        if let Some(text) = inline_marker_text(&e) {
+                            cell.text.push_str(text);
+                        }
+                    }
+                }
+                if !consumed_element {
+                    xml_depth = xml_depth.saturating_add(1);
+                }
             }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"instrText" => {
-                let text = read_text(r);
-                if let Some(field) = current.last_mut() {
-                    if field.phase == FieldPhase::Instruction {
-                        field.instruction.push_str(&text);
+            Ok(Event::Empty(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    continue;
+                }
+                match name {
+                    b"fldSimple" => {
+                        let instruction =
+                            attr_local(&e, b"instr").map(|value| normalize_instruction(&value));
+                        if instruction.as_deref().is_some_and(|value| {
+                            FieldKind::from_instruction(value)
+                                == FieldKind::Dynamic("=".to_string())
+                        }) {
+                            cell.contains_formula = true;
+                            cell.records.push(TableFormulaRecord::Local {
+                                row,
+                                col,
+                                instruction: instruction.unwrap_or_default(),
+                            });
+                        }
+                    }
+                    b"fldChar" => {
+                        apply_table_formula_scan_fld_char(&e, &mut current, |instruction, _| {
+                            if FieldKind::from_instruction(instruction)
+                                == FieldKind::Dynamic("=".to_string())
+                            {
+                                cell.contains_formula = true;
+                                cell.records.push(TableFormulaRecord::Local {
+                                    row,
+                                    col,
+                                    instruction: instruction.to_string(),
+                                });
+                            }
+                        });
+                    }
+                    _ => {
+                        if let Some(text) = inline_marker_text(&e) {
+                            cell.text.push_str(text);
+                        }
                     }
                 }
             }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"t" => {
-                cell.text.push_str(&read_text(r));
-            }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
-                if let Some(text) = inline_marker_text(&e) {
-                    cell.text.push_str(text);
+            Ok(Event::End(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if name == b"tc" {
+                    break;
                 }
+                if name == b"AlternateContent" {
+                    alternate_content_stack.pop();
+                }
+                xml_depth = xml_depth.saturating_sub(1);
             }
-            Ok(Event::End(e)) if local(e.name().as_ref()) == b"tc" => break,
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
@@ -429,16 +604,61 @@ fn read_table_formula_cell(r: &mut Xml<'_>, row: usize, col: usize) -> TableForm
 
 fn read_table_formula_cell_props(r: &mut Xml<'_>) -> bool {
     let mut has_span = false;
+    let mut xml_depth = 1usize;
+    let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
-                b"gridSpan" => {
-                    has_span |= attr_local(&e, b"val").as_deref().unwrap_or("1") != "1";
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    skip_subtree(r);
+                    continue;
                 }
-                b"vMerge" => has_span = true,
-                _ => {}
-            },
-            Ok(Event::End(e)) if local(e.name().as_ref()) == b"tcPr" => break,
+                match name {
+                    b"AlternateContent" => {
+                        alternate_content_stack.push(AlternateContentBranchState {
+                            branch_depth: xml_depth + 1,
+                            took_branch: false,
+                        });
+                        xml_depth = xml_depth.saturating_add(1);
+                    }
+                    b"gridSpan" => {
+                        has_span |= attr_local(&e, b"val").as_deref().unwrap_or("1") != "1";
+                        skip_subtree(r);
+                    }
+                    b"vMerge" => {
+                        has_span = true;
+                        skip_subtree(r);
+                    }
+                    _ => {}
+                }
+            }
+            Ok(Event::Empty(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    continue;
+                }
+                match name {
+                    b"gridSpan" => {
+                        has_span |= attr_local(&e, b"val").as_deref().unwrap_or("1") != "1";
+                    }
+                    b"vMerge" => has_span = true,
+                    _ => {}
+                }
+            }
+            Ok(Event::End(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if name == b"tcPr" {
+                    break;
+                }
+                if name == b"AlternateContent" {
+                    alternate_content_stack.pop();
+                }
+                xml_depth = xml_depth.saturating_sub(1);
+            }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
