@@ -847,7 +847,7 @@ The long-term native Word engine plan is split into the
       `ChartBuilder`, `DocModel`, and
       `write_docx`
 - [x] **PDF renderer** — `parley` + `krilla` with rich text/tables/images/lists/
-      hyperlinks, header-row repeat, oversized-row split, font registration
+      hyperlinks, paragraph page-break-before, header-row repeat, oversized-row split, font registration
 - [x] Reader: `.docx` headers/footers, text boxes (`w:txbxContent` incl. run-level
       `mc:AlternateContent`) including `text_boxes()` records, footnotes/endnotes
       including `notes()` records, per-level numbering labels, caps

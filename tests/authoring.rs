@@ -4239,6 +4239,20 @@ fn render_pdf_entry_points_produce_pdf() {
 
 #[cfg(feature = "render")]
 #[test]
+fn render_pdf_honors_paragraph_page_break_before() {
+    let model = DocBuilder::new()
+        .paragraph("First page")
+        .rich_paragraph(ParagraphBuilder::text("Second page").page_break_before())
+        .build();
+
+    let rendered = rdoc::render_pdf_with_report(&model);
+
+    assert!(rendered.pdf.starts_with(b"%PDF"));
+    assert_eq!(rendered.report.pages, 2);
+}
+
+#[cfg(feature = "render")]
+#[test]
 fn render_pdf_report_treats_page_and_filename_fields_as_supported() {
     let model = DocBuilder::new()
         .field("PAGE", "1")

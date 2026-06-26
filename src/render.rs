@@ -1759,6 +1759,13 @@ fn collect_blocks_inner(
         }
         match b {
             Block::Paragraph(p) => {
+                if p.props.page_break_before
+                    && out
+                        .iter()
+                        .any(|item| !matches!(item, FlowItem::BlockStart(_)))
+                {
+                    out.push(FlowItem::PageBreak);
+                }
                 // A heading suppresses list marking, mirroring the writer.
                 let marker = match (&p.props.list, p.props.heading_level) {
                     (Some(list), None) => Some(lists.marker(list)),
