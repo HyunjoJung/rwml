@@ -400,6 +400,7 @@ The first public maturity release should meet these requirements.
   `NoComputedResult`;
   body `PAGE` fields compute current page numbers only from
   trusted leading structural or source-rendered current-page context, including
+  accepted/current wrappers, single-branch `mc:AlternateContent` page markers,
   trusted section `w:pgNumType` displayed page-number restarts/styles and
   deterministic page-number format switches plus common field-result format
   switches, while visible-content manual-break and broader layout-derived

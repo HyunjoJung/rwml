@@ -612,9 +612,10 @@ numbered source paragraphs with `\n`, `\r`, `\w`, and numeric-text `\t`
 switches, while page-aware/header-footer
 lookup and layout-dependent variants preserve cached text; body `PAGE` fields
 compute current page numbers from trusted leading structural or source-rendered
-current-page context, including section `w:pgNumType` displayed page-number
-restarts/styles, deterministic page-number format switches, and common
-field-result format switches, while broader layout-derived current-page cases
+current-page context, including accepted/current wrappers, single-branch
+`mc:AlternateContent` page markers, section `w:pgNumType` displayed
+page-number restarts/styles, deterministic page-number format switches, and
+common field-result format switches, while broader layout-derived current-page cases
 preserve cached text with `NoComputedResult`
 diagnostics; `PAGEREF` fields are named, compute page numbers only when leading
 explicit page breaks before any visible body content,

@@ -212,9 +212,10 @@ Initial status:
   explicit non-empty `FORMTEXT` current values or empty-current text-input
   defaults.
   Body `PAGE` fields compute current page numbers from trusted leading
-  structural or source-rendered current-page context, including section
-  `w:pgNumType` displayed page-number restarts/styles and deterministic
-  page-number format switches plus common field-result format switches, while
+  structural or source-rendered current-page context, including
+  accepted/current wrappers, single-branch `mc:AlternateContent` page markers,
+  section `w:pgNumType` displayed page-number restarts/styles and
+  deterministic page-number format switches plus common field-result format switches, while
   visible-content manual-break and broader layout-derived current-page cases
   preserve cached text with `NoComputedResult`
   diagnostics. `PAGEREF` is
@@ -854,7 +855,8 @@ Initial status:
   and no-break hyphens, expose computed results, and display the computed text
   for simple and common complex fields. `PAGE` computes current page numbers
   from trusted leading structural and source-rendered current-page contexts,
-  including page-number format switches plus common field-result format
+  including accepted/current wrappers, single-branch `mc:AlternateContent`
+  page markers, page-number format switches, and common field-result format
   switches, preserving cached text for broader layout-derived cases with
   `NoComputedResult` diagnostics. `PAGEREF` computes
   target pages only from leading explicit page breaks before visible body content, enabled

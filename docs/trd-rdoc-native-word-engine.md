@@ -563,7 +563,8 @@ Implementation:
   using that text in the read/render model for simple and common complex fields;
   keep cached text for Shift-JIS and broader font-specific symbol mappings;
 - compute body `PAGE` fields from trusted leading structural or source-rendered
-  current-page context, including section `w:pgNumType` displayed
+  current-page context, including accepted/current wrappers, single-branch
+  `mc:AlternateContent` page markers, section `w:pgNumType` displayed
   page-number restarts/styles, deterministic page-number format switches, and
   common field-result format switches; preserve cached text for
   visible-content manual-break and broader layout-derived current-page cases

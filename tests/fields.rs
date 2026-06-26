@@ -101,6 +101,23 @@ fn page_field_docx() -> Vec<u8> {
     ])
 }
 
+fn wrapped_page_field_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:p><w:r><w:t>Page one text.</w:t></w:r></w:p><w:ins><w:p><w:r><w:lastRenderedPageBreak/><w:t>Inserted page two.</w:t></w:r></w:p></w:ins><w:ins><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> PAGE \* Arabic </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale inserted page</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:ins><w:p><w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:lastRenderedPageBreak/></mc:Choice><mc:Fallback><w:lastRenderedPageBreak/></mc:Fallback></mc:AlternateContent></w:r><w:r><w:t>Alternate page three.</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" PAGE \* Ordinal "><w:r><w:t>stale alternate page</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn merge_field_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -2287,6 +2304,29 @@ fn docx_page_fields_compute_trusted_current_page_numbers() {
             count: 1,
         }]
     );
+}
+
+#[test]
+fn docx_page_fields_follow_accepted_wrappers_and_single_alternate_branch() {
+    let doc = Document::open(&wrapped_page_field_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].instruction, "PAGE \\* Arabic");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("2"));
+    assert_eq!(fields[1].instruction, "PAGE \\* Ordinal");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("3rd"));
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("2") && main_text.contains("3rd"),
+        "computed PAGE fields should be materialized in accepted/current text: {main_text:?}"
+    );
+    assert!(
+        !main_text.contains("stale inserted page") && !main_text.contains("stale alternate page"),
+        "computed PAGE fields should replace stale cached text: {main_text:?}"
+    );
+    assert!(doc.report().features.unsupported_field_kinds.is_empty());
 }
 
 #[test]
