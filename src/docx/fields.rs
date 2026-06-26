@@ -9635,6 +9635,7 @@ fn toc_spec(instruction: &str) -> Option<TocSpec> {
             if let Some(range) = parts.next_if(|next| !next.starts_with('\\')) {
                 parse_toc_outline_range(range)?;
             }
+            saw_default_toc_neutral_switch = true;
             continue;
         }
         if let Some(range) = strip_ascii_switch_prefix(part, "\\n") {
@@ -9642,6 +9643,7 @@ fn toc_spec(instruction: &str) -> Option<TocSpec> {
                 return None;
             }
             parse_toc_outline_range(range)?;
+            saw_default_toc_neutral_switch = true;
             continue;
         }
         if part.eq_ignore_ascii_case("\\p") {

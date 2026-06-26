@@ -2073,6 +2073,7 @@ fn supported_toc_bookmark_scope(instruction: &str) -> Option<Option<String>> {
             if let Some(range) = parts.next_if(|next| !next.starts_with('\\')) {
                 parse_toc_outline_range_for_report(range)?;
             }
+            saw_default_toc_neutral_switch = true;
             continue;
         }
         if let Some(range) = strip_ascii_switch_prefix(part, "\\n") {
@@ -2080,6 +2081,7 @@ fn supported_toc_bookmark_scope(instruction: &str) -> Option<Option<String>> {
                 return None;
             }
             parse_toc_outline_range_for_report(range)?;
+            saw_default_toc_neutral_switch = true;
             continue;
         }
         if part.eq_ignore_ascii_case("\\p") {
