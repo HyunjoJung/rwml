@@ -1852,7 +1852,13 @@ fn chart_xml(chart: &Chart, chart_id: u32, workbook_rid: Option<&str>) -> String
         ChartKind::Line3D => {
             write_line_3d_chart(&mut out, chart, cat_axis_id, val_axis_id, ser_axis_id)
         }
-        ChartKind::Area => write_area_chart(&mut out, chart, cat_axis_id, val_axis_id),
+        ChartKind::Area => write_area_chart(&mut out, chart, cat_axis_id, val_axis_id, "standard"),
+        ChartKind::StackedArea => {
+            write_area_chart(&mut out, chart, cat_axis_id, val_axis_id, "stacked")
+        }
+        ChartKind::PercentStackedArea => {
+            write_area_chart(&mut out, chart, cat_axis_id, val_axis_id, "percentStacked")
+        }
         ChartKind::Area3D => {
             write_area_3d_chart(&mut out, chart, cat_axis_id, val_axis_id, ser_axis_id)
         }
@@ -2019,8 +2025,16 @@ fn write_line_3d_chart(
     ));
 }
 
-fn write_area_chart(out: &mut String, chart: &Chart, cat_axis_id: u32, val_axis_id: u32) {
-    out.push_str(r#"<c:areaChart><c:grouping val="standard"/><c:varyColors val="0"/>"#);
+fn write_area_chart(
+    out: &mut String,
+    chart: &Chart,
+    cat_axis_id: u32,
+    val_axis_id: u32,
+    grouping: &str,
+) {
+    out.push_str(&format!(
+        r#"<c:areaChart><c:grouping val="{grouping}"/><c:varyColors val="0"/>"#
+    ));
     for (index, series) in chart.series.iter().enumerate() {
         out.push_str(&format!(
             r#"<c:ser><c:idx val="{index}"/><c:order val="{index}"/><c:tx><c:v>{}</c:v></c:tx>"#,
@@ -2333,6 +2347,8 @@ fn write_chart_axes(out: &mut String, kind: ChartKind, cat_axis_id: u32, val_axi
         | ChartKind::Line
         | ChartKind::Line3D
         | ChartKind::Area
+        | ChartKind::StackedArea
+        | ChartKind::PercentStackedArea
         | ChartKind::Area3D
         | ChartKind::Radar
         | ChartKind::FilledRadar => ("b", "l"),

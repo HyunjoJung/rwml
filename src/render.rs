@@ -2555,10 +2555,15 @@ fn draw_authored_chart(
     let series_count = chart.series.len().max(1);
     let (min_value, max_value) = if matches!(
         chart.kind,
-        ChartKind::PercentStackedBar | ChartKind::PercentStackedColumn
+        ChartKind::PercentStackedBar
+            | ChartKind::PercentStackedColumn
+            | ChartKind::PercentStackedArea
     ) {
         (0.0, 1.0)
-    } else if matches!(chart.kind, ChartKind::StackedBar | ChartKind::StackedColumn) {
+    } else if matches!(
+        chart.kind,
+        ChartKind::StackedBar | ChartKind::StackedColumn | ChartKind::StackedArea
+    ) {
         (0.0, stacked_chart_max(chart, category_count))
     } else {
         chart_value_range(chart)
@@ -2729,6 +2734,8 @@ fn draw_authored_chart(
         | ChartKind::Line
         | ChartKind::Line3D
         | ChartKind::Area
+        | ChartKind::StackedArea
+        | ChartKind::PercentStackedArea
         | ChartKind::Area3D
         | ChartKind::Scatter
         | ChartKind::Bubble
@@ -2856,32 +2863,72 @@ fn draw_authored_chart(
                         }
                     }
                 }
-                ChartKind::Area | ChartKind::Area3D => {
-                    for (series_index, series) in chart.series.iter().enumerate() {
-                        let color = chart_series_color(series_index);
-                        let mut points = Vec::new();
-                        for category_index in 0..chart.categories.len() {
-                            let value = series
-                                .values
-                                .get(category_index)
-                                .copied()
-                                .filter(|value| value.is_finite())
-                                .unwrap_or(0.0);
-                            points.push((
-                                plot_left + category_index as f32 * band_w + band_w * 0.5,
-                                value_y(value).clamp(plot_top, plot_bottom),
-                            ));
-                        }
-                        fill_area_shape(surface, &points, zero_y, color);
-                        let mut previous: Option<(f32, f32)> = None;
-                        for (point_x, point_y) in points {
-                            if let Some((prev_x, prev_y)) = previous {
-                                fill_line_segment(
-                                    surface, prev_x, prev_y, point_x, point_y, 1.4, color,
-                                );
+                ChartKind::Area
+                | ChartKind::StackedArea
+                | ChartKind::PercentStackedArea
+                | ChartKind::Area3D => {
+                    if matches!(
+                        chart.kind,
+                        ChartKind::StackedArea | ChartKind::PercentStackedArea
+                    ) {
+                        let percent = chart.kind == ChartKind::PercentStackedArea;
+                        for series_index in (0..chart.series.len()).rev() {
+                            let color = chart_series_color(series_index);
+                            let mut points = Vec::new();
+                            for category_index in 0..chart.categories.len() {
+                                let mut value = 0.0;
+                                for series in chart.series.iter().take(series_index + 1) {
+                                    value += series
+                                        .values
+                                        .get(category_index)
+                                        .copied()
+                                        .filter(|value| value.is_finite() && *value > 0.0)
+                                        .unwrap_or(0.0);
+                                }
+                                if percent {
+                                    value /= stacked_category_total(chart, category_index).max(1.0);
+                                }
+                                points.push((
+                                    plot_left + category_index as f32 * band_w + band_w * 0.5,
+                                    value_y(value).clamp(plot_top, plot_bottom),
+                                ));
                             }
-                            fill_rect_color(surface, point_x - 2.0, point_y - 2.0, 4.0, 4.0, color);
-                            previous = Some((point_x, point_y));
+                            fill_area_shape(surface, &points, zero_y, color);
+                        }
+                    } else {
+                        for (series_index, series) in chart.series.iter().enumerate() {
+                            let color = chart_series_color(series_index);
+                            let mut points = Vec::new();
+                            for category_index in 0..chart.categories.len() {
+                                let value = series
+                                    .values
+                                    .get(category_index)
+                                    .copied()
+                                    .filter(|value| value.is_finite())
+                                    .unwrap_or(0.0);
+                                points.push((
+                                    plot_left + category_index as f32 * band_w + band_w * 0.5,
+                                    value_y(value).clamp(plot_top, plot_bottom),
+                                ));
+                            }
+                            fill_area_shape(surface, &points, zero_y, color);
+                            let mut previous: Option<(f32, f32)> = None;
+                            for (point_x, point_y) in points {
+                                if let Some((prev_x, prev_y)) = previous {
+                                    fill_line_segment(
+                                        surface, prev_x, prev_y, point_x, point_y, 1.4, color,
+                                    );
+                                }
+                                fill_rect_color(
+                                    surface,
+                                    point_x - 2.0,
+                                    point_y - 2.0,
+                                    4.0,
+                                    4.0,
+                                    color,
+                                );
+                                previous = Some((point_x, point_y));
+                            }
                         }
                     }
                 }

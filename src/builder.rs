@@ -912,6 +912,26 @@ impl ChartBuilder {
         }
     }
 
+    /// Start a stacked area chart.
+    pub fn stacked_area() -> Self {
+        Self {
+            chart: Chart {
+                kind: ChartKind::StackedArea,
+                ..Chart::default()
+            },
+        }
+    }
+
+    /// Start a 100% stacked area chart.
+    pub fn percent_stacked_area() -> Self {
+        Self {
+            chart: Chart {
+                kind: ChartKind::PercentStackedArea,
+                ..Chart::default()
+            },
+        }
+    }
+
     /// Start a 3-D area chart.
     pub fn area_3d() -> Self {
         Self {
