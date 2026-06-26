@@ -332,6 +332,23 @@ fn anchored_text_box_docx() -> Vec<u8> {
     ])
 }
 
+fn duplicate_anchored_text_box_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:body><w:p><w:r><w:t>First </w:t></w:r><w:r><w:drawing><wp:anchor relativeHeight="1"><wp:docPr id="7" name="First anchored box"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>BOX TEXT</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:t>done</w:t></w:r></w:p><w:p><w:r><w:t>Second </w:t></w:r><w:r><w:drawing><wp:anchor relativeHeight="2"><wp:docPr id="8" name="Second anchored box"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>BOX TEXT</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:t>done</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn revision_wrapped_text_box_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -1580,6 +1597,22 @@ fn docx_anchored_text_box_exposes_containing_body_anchor() {
     let anchor = text_boxes[0].anchor.as_ref().expect("text box anchor");
     assert_eq!(anchor.id, "7");
     assert_eq!(anchor.text, "Before After");
+}
+
+#[test]
+fn docx_duplicate_anchored_text_boxes_keep_distinct_body_anchors() {
+    let doc = Document::open(&duplicate_anchored_text_box_docx()).expect("fixture opens");
+
+    let text_boxes = doc.text_boxes();
+    assert_eq!(text_boxes.len(), 2);
+    assert_eq!(text_boxes[0].text, "BOX TEXT");
+    assert_eq!(text_boxes[1].text, "BOX TEXT");
+    let first = text_boxes[0].anchor.as_ref().expect("first anchor");
+    assert_eq!(first.id, "7");
+    assert_eq!(first.text, "First done");
+    let second = text_boxes[1].anchor.as_ref().expect("second anchor");
+    assert_eq!(second.id, "8");
+    assert_eq!(second.text, "Second done");
 }
 
 #[test]

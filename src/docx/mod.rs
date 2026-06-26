@@ -705,16 +705,46 @@ fn read_text_boxes(
     ctx: &body::Ctx<'_>,
     floating_shapes: &[FloatingShape],
 ) -> Vec<TextBox> {
-    body::parse_text_boxes(doc_xml, ctx)
+    let text_boxes: Vec<_> = body::parse_text_boxes(doc_xml, ctx)
         .into_iter()
         .enumerate()
-        .filter_map(|(index, text)| {
-            (!text.is_empty()).then(|| TextBox {
-                id: format!("docx-text-box-{index}"),
-                anchor: text_box_anchor(&text, floating_shapes),
-                text,
-            })
+        .filter(|(_, text)| !text.is_empty())
+        .collect();
+    let ordered_anchors = ordered_text_box_anchors(&text_boxes, floating_shapes);
+    text_boxes
+        .into_iter()
+        .enumerate()
+        .map(|(text_box_index, (index, text))| TextBox {
+            id: format!("docx-text-box-{index}"),
+            anchor: ordered_anchors
+                .get(text_box_index)
+                .and_then(|anchor| anchor.clone())
+                .or_else(|| text_box_anchor(&text, floating_shapes)),
+            text,
         })
+        .collect()
+}
+
+fn ordered_text_box_anchors(
+    text_boxes: &[(usize, String)],
+    floating_shapes: &[FloatingShape],
+) -> Vec<Option<TextAnchor>> {
+    let text_box_shapes: Vec<_> = floating_shapes
+        .iter()
+        .filter(|shape| shape.text.is_some() && shape.anchor_text.is_some())
+        .collect();
+    if text_boxes.len() != text_box_shapes.len()
+        || !text_boxes
+            .iter()
+            .map(|(_, text)| text.as_str())
+            .zip(&text_box_shapes)
+            .all(|(text, shape)| shape.text.as_deref() == Some(text))
+    {
+        return vec![None; text_boxes.len()];
+    }
+    text_box_shapes
+        .into_iter()
+        .map(text_anchor_from_shape)
         .collect()
 }
 
@@ -726,6 +756,10 @@ fn text_box_anchor(text: &str, floating_shapes: &[FloatingShape]) -> Option<Text
     if matches.next().is_some() {
         return None;
     }
+    text_anchor_from_shape(shape)
+}
+
+fn text_anchor_from_shape(shape: &FloatingShape) -> Option<TextAnchor> {
     Some(TextAnchor {
         id: shape.id.clone(),
         text: shape.anchor_text.clone()?,
