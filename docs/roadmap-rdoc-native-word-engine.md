@@ -342,7 +342,7 @@ Initial status:
   display/layout fields (`ADVANCE`, `EQ`, `SYMBOL`) are named separately from
   unknown fields; deterministic `ADVANCE` fields with validated point movement
   switches (`\d`, `\u`, `\l`, `\r`, `\x`, `\y`) render as hidden output without
-  applying layout offsets, validated `EQ \d` displacement controls render as
+  applying layout offsets while accepting field-result format switches, validated `EQ \d` displacement controls render as
   empty output without applying visual offsets or underlines, deterministic `EQ \f(n,d)` simple fractions with literal,
   spaced, quoted, comma- or semicolon-separated operands plus documented escaped
   comma/open-parenthesis/backslash characters compute plain `n/d` text, nested
@@ -363,7 +363,7 @@ Initial status:
   deterministic `SYMBOL` fields compute decimal/hex/default ANSI,
   Unicode `\u`, neutral `\h`, separated or compact font `\f` switches and
   quoted or unquoted separated/compact size `\s` switches, and common Symbol/Wingdings character
-  insertions including Symbol `0xB7` bullet, while remaining display/layout cases report
+  insertions including Symbol `0xB7` bullet, with field-result format switches, while remaining display/layout cases report
   `NoComputedResult` until native layout/equation/symbol evaluation is
   implemented. The
   action/automation fields (`GOTOBUTTON`, `MACROBUTTON`, `PRINT`) are named

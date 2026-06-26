@@ -6557,18 +6557,18 @@ fn advance_instruction(instruction: &str) -> Option<()> {
     if !kind.eq_ignore_ascii_case("ADVANCE") {
         return None;
     }
+    let mut text_format = None;
     while let Some(part) = parts.next() {
         if part == "\\*" {
-            if !is_neutral_field_format_switch(parts.next()?) {
+            if !accept_field_format_switch(parts.next()?, &mut text_format) {
                 return None;
             }
             continue;
         }
         if let Some(format) = part.strip_prefix("\\*") {
-            if !is_neutral_field_format_switch(format) {
-                return None;
+            if accept_field_format_switch(format, &mut text_format) {
+                continue;
             }
-            continue;
         }
         if accept_advance_switch(part, &mut parts).is_some() {
             continue;
@@ -9566,6 +9566,14 @@ mod tests {
         );
         assert!(computed_display_result(r#"ADVANCE \r "2"#).is_none());
         assert!(computed_display_result(r#"ADVANCE \r2""#).is_none());
+    }
+
+    #[test]
+    fn advance_accepts_field_text_format_switches() {
+        assert_eq!(
+            computed_display_result(r#"ADVANCE \r 2 \* Upper"#).as_deref(),
+            Some("")
+        );
     }
 
     #[test]

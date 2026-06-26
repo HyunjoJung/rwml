@@ -554,12 +554,12 @@ Implementation:
   `Field::computed_result`, without applying visual offsets or underlines;
 - compute deterministic `.docx` `ADVANCE` fields with validated point movement
   switches (`\d`, `\u`, `\l`, `\r`, `\x`, `\y`) as hidden output in
-  `Field::computed_result`, without applying the layout offsets to surrounding
-  text;
+  `Field::computed_result`, accepting field-result format switches without applying
+  the layout offsets to surrounding text;
 - compute deterministic `.docx` `SYMBOL` fields for decimal/hex/default ANSI
   codepoints, Unicode `\u`, neutral `\h`, separated or compact font `\f`
   switches, quoted or unquoted separated/compact size `\s` switches, and common Symbol/Wingdings
-  font mappings including Symbol `0xB7` bullet, exposing the inserted character as `Field::computed_result` and
+  font mappings including Symbol `0xB7` bullet, plus field-result format switches, exposing the inserted character as `Field::computed_result` and
   using that text in the read/render model for simple and common complex fields;
   keep cached text for Shift-JIS and broader font-specific symbol mappings;
 - compute body `PAGE` fields from trusted leading structural or source-rendered
