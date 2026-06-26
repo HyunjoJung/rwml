@@ -69,8 +69,11 @@ const REL_FOOTER: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer";
 const CT_COMMENTS: &str =
     "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml";
+const CT_COMMENTS_EXT: &str = "application/vnd.ms-word.commentsExt+xml";
 const REL_COMMENTS: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments";
+const REL_COMMENTS_EXT: &str =
+    "http://schemas.microsoft.com/office/2011/relationships/commentsExtended";
 const CT_FOOTNOTES: &str =
     "application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml";
 const CT_ENDNOTES: &str =
@@ -278,6 +281,9 @@ fn write_indent(out: &mut String, ind: Indent) {
 }
 
 const W_NS: &str = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+const W14_NS: &str = "http://schemas.microsoft.com/office/word/2010/wordml";
+const W15_NS: &str = "http://schemas.microsoft.com/office/word/2012/wordml";
+const MC_NS: &str = "http://schemas.openxmlformats.org/markup-compatibility/2006";
 const R_NS: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 const WP_NS: &str = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing";
 const A_NS: &str = "http://schemas.openxmlformats.org/drawingml/2006/main";
@@ -1283,8 +1289,15 @@ fn numbering_xml() -> String {
 fn comments_xml(comments: &[WrittenComment]) -> Vec<u8> {
     let mut s = String::new();
     s.push_str(XML_DECL);
-    s.push_str(&format!(r#"<w:comments xmlns:w="{W_NS}">"#));
-    for comment in comments {
+    let threaded = has_comment_replies(comments);
+    if threaded {
+        s.push_str(&format!(
+            r#"<w:comments xmlns:w="{W_NS}" xmlns:w14="{W14_NS}" xmlns:mc="{MC_NS}" mc:Ignorable="w14">"#
+        ));
+    } else {
+        s.push_str(&format!(r#"<w:comments xmlns:w="{W_NS}">"#));
+    }
+    for (index, comment) in comments.iter().enumerate() {
         let mut attrs = format!(r#" w:id="{}""#, esc_attr(&comment.id));
         if let Some(author) = comment.comment.author.as_deref() {
             attrs.push_str(&format!(r#" w:author="{}""#, esc_attr(author)));
@@ -1298,12 +1311,55 @@ fn comments_xml(comments: &[WrittenComment]) -> Vec<u8> {
         if let Some(parent_id) = comment.comment.parent_comment_id.as_deref() {
             attrs.push_str(&format!(r#" w:parentId="{}""#, esc_attr(parent_id)));
         }
-        s.push_str(&format!(r#"<w:comment{attrs}><w:p><w:r>"#));
+        let para_id = if threaded {
+            format!(r#" w14:paraId="{}""#, comment_para_id(index))
+        } else {
+            String::new()
+        };
+        s.push_str(&format!(r#"<w:comment{attrs}><w:p{para_id}><w:r>"#));
         write_comment_text(&mut s, &comment.comment.text);
         s.push_str("</w:r></w:p></w:comment>");
     }
     s.push_str("</w:comments>");
     s.into_bytes()
+}
+
+fn comments_extended_xml(comments: &[WrittenComment]) -> Option<Vec<u8>> {
+    if !has_comment_replies(comments) {
+        return None;
+    }
+    let mut s = String::new();
+    s.push_str(XML_DECL);
+    s.push_str(&format!(r#"<w15:commentsEx xmlns:w15="{W15_NS}">"#));
+    for (index, comment) in comments.iter().enumerate() {
+        let para_id = comment_para_id(index);
+        let mut attrs = format!(r#" w15:paraId="{para_id}""#);
+        if let Some(parent_id) = comment.comment.parent_comment_id.as_deref() {
+            if let Some(parent_para_id) = comment_para_id_for_id(comments, parent_id) {
+                attrs.push_str(&format!(r#" w15:paraIdParent="{parent_para_id}""#));
+            }
+        }
+        s.push_str(&format!(r#"<w15:commentEx{attrs} w15:done="0"/>"#));
+    }
+    s.push_str("</w15:commentsEx>");
+    Some(s.into_bytes())
+}
+
+fn has_comment_replies(comments: &[WrittenComment]) -> bool {
+    comments
+        .iter()
+        .any(|comment| comment.comment.parent_comment_id.is_some())
+}
+
+fn comment_para_id(index: usize) -> String {
+    format!("{:08X}", (index + 1).min(0x7FFF_FFFF))
+}
+
+fn comment_para_id_for_id(comments: &[WrittenComment], id: &str) -> Option<String> {
+    comments
+        .iter()
+        .position(|comment| comment.id == id)
+        .map(comment_para_id)
 }
 
 fn notes_xml(root: &str, item: &str, notes: &[WrittenNote]) -> Vec<u8> {
@@ -2178,6 +2234,13 @@ pub(crate) fn try_to_docx(model: &crate::DocModel) -> crate::Result<Vec<u8>> {
     if let Some(comments) = br.comments_xml {
         pkg.add_part("word/comments.xml", Some(CT_COMMENTS), comments);
     }
+    if let Some(comments_ext) = br.comments_ext_xml {
+        pkg.add_part(
+            "word/commentsExtended.xml",
+            Some(CT_COMMENTS_EXT),
+            comments_ext,
+        );
+    }
     if let Some(footnotes) = br.footnotes_xml {
         pkg.add_part("word/footnotes.xml", Some(CT_FOOTNOTES), footnotes);
     }
@@ -2283,6 +2346,8 @@ pub(crate) struct BodyRender {
     pub hf_parts: Vec<(String, &'static str, Vec<u8>)>,
     /// Serialized comments part, if authored comments were emitted.
     pub comments_xml: Option<Vec<u8>>,
+    /// Serialized commentsExtended part, if authored comment replies were emitted.
+    pub comments_ext_xml: Option<Vec<u8>>,
     /// Serialized footnotes part, if authored footnotes were emitted.
     pub footnotes_xml: Option<Vec<u8>>,
     /// Serialized endnotes part, if authored endnotes were emitted.
@@ -2335,6 +2400,16 @@ fn render_body(model: &crate::DocModel) -> BodyRender {
         });
         Some(comments_xml(&ctx.comments))
     };
+    let comments_ext_xml = comments_extended_xml(&ctx.comments);
+    if comments_ext_xml.is_some() {
+        ctx.doc_rels.push(Rel {
+            id: format!("rId{}", ctx.next_rid),
+            rel_type: REL_COMMENTS_EXT.to_string(),
+            target: "commentsExtended.xml".to_string(),
+            external: false,
+        });
+        ctx.next_rid += 1;
+    }
     let footnotes_xml = if ctx.footnotes.is_empty() {
         None
     } else {
@@ -2398,6 +2473,7 @@ fn render_body(model: &crate::DocModel) -> BodyRender {
         doc_rels: ctx.doc_rels,
         hf_parts: ctx.hf_parts,
         comments_xml,
+        comments_ext_xml,
         footnotes_xml,
         endnotes_xml,
         media: ctx.media,

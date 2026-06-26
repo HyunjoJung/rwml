@@ -1024,10 +1024,35 @@ fn run_builder_adds_comment_reply_parent_id() {
     let bytes = rdoc::write_docx(&model);
     let parts = unzip_parts(&bytes);
     let comments_xml = String::from_utf8(parts["word/comments.xml"].clone()).unwrap();
+    let comments_ex_xml = String::from_utf8(parts["word/commentsExtended.xml"].clone()).unwrap();
+    let rels = String::from_utf8(parts["word/_rels/document.xml.rels"].clone()).unwrap();
+    let content_types = String::from_utf8(parts["[Content_Types].xml"].clone()).unwrap();
     assert!(
         comments_xml.contains(r#"<w:comment w:id="1" w:author="Approver" w:parentId="0">"#)
             && comments_xml.contains(r#"<w:t>Reply note</w:t>"#),
         "reply parent id missing: {comments_xml}"
+    );
+    assert!(
+        comments_xml.contains(r#"<w:p w14:paraId="00000001">"#)
+            && comments_xml.contains(r#"<w:p w14:paraId="00000002">"#),
+        "comment paragraphs should carry ids for reply threading: {comments_xml}"
+    );
+    assert!(
+        comments_ex_xml.contains(r#"<w15:commentEx w15:paraId="00000001" w15:done="0"/>"#)
+            && comments_ex_xml.contains(
+                r#"<w15:commentEx w15:paraId="00000002" w15:paraIdParent="00000001" w15:done="0"/>"#
+            ),
+        "commentsExtended.xml missing reply threading metadata: {comments_ex_xml}"
+    );
+    assert!(
+        rels.contains("relationships/commentsExtended")
+            && rels.contains(r#"Target="commentsExtended.xml""#),
+        "commentsExtended relationship missing: {rels}"
+    );
+    assert!(
+        content_types.contains(r#"PartName="/word/commentsExtended.xml""#)
+            && content_types.contains("application/vnd.ms-word.commentsExt+xml"),
+        "commentsExtended content type missing: {content_types}"
     );
 
     let reopened = Document::open(&bytes).expect("comment reply .docx reopens");
