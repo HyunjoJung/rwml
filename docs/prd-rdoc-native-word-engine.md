@@ -313,8 +313,8 @@ The first public maturity release should meet these requirements.
   `SET name "value"` or single-token `SET name value` fields with
   field-result format switches rendered as hidden output while feeding later
   plain `REF`/direct bookmark references in source order, plus literal `NEXT`,
-  `NEXTIF`, and `SKIPIF` merge-control fields rendered as hidden output without
-  running a mail merge; remaining
+  `NEXTIF`, and `SKIPIF` merge-control fields with field-result format switches
+  rendered as hidden output without running a mail merge; remaining
   dynamic/control fields
   preserve cached display text with `NoComputedResult` until native evaluation is
   implemented; inserted/external-content fields (`INCLUDETEXT`,

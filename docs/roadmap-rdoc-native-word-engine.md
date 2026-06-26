@@ -204,8 +204,8 @@ Initial status:
   deterministic literal `SET name "value"` or single-token `SET name value` fields with
   field-result format switches rendered as hidden output while
   feeding later plain `REF`/direct bookmark references in source order,
-  literal `NEXT`, `NEXTIF`, and `SKIPIF` merge-control fields rendered as
-  hidden output without running a mail merge,
+  literal `NEXT`, `NEXTIF`, and `SKIPIF` merge-control fields with
+  field-result format switches rendered as hidden output without running a mail merge,
   deterministic `GOTOBUTTON`/`MACROBUTTON` quoted or unquoted display text with
   field text-format switches, and deterministic `w:ffData` `FORMCHECKBOX`
   checked/default states, `FORMDROPDOWN` result/default selections, and
@@ -302,8 +302,8 @@ Initial status:
   deterministic literal `SET name "value"` or single-token `SET name value` fields with
   field-result format switches render as hidden output while
   feeding later plain `REF`/direct bookmark references in source order, plus
-  literal `NEXT`, `NEXTIF`, and `SKIPIF` merge-control fields render as hidden
-  output without running a mail merge; remaining dynamic/control fields report
+  literal `NEXT`, `NEXTIF`, and `SKIPIF` merge-control fields with
+  field-result format switches render as hidden output without running a mail merge; remaining dynamic/control fields report
   `NoComputedResult` until native evaluation is implemented. The
   inserted/external-content fields (`INCLUDETEXT`, `INCLUDEPICTURE`, `LINK`,
   `EMBED`, `DATABASE`, `DDE`, `DDEAUTO`, `IMPORT`, `INCLUDE`, `AUTOTEXT`,
@@ -759,8 +759,8 @@ Initial status:
   and deterministic literal `SET name "value"` or single-token `SET name value` fields with
   field-result format switches render as hidden output while
   feeding later plain `REF`/direct bookmark references in source order,
-  plus literal `NEXT`, `NEXTIF`, and `SKIPIF` merge-control fields render as
-  hidden output without running a mail merge;
+  plus literal `NEXT`, `NEXTIF`, and `SKIPIF` merge-control fields with
+  field-result format switches render as hidden output without running a mail merge;
   remaining dynamic/control fields preserve cached text with `NoComputedResult`
   diagnostics.
   Inserted/external-content fields are likewise named separately

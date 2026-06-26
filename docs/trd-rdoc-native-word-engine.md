@@ -610,8 +610,8 @@ Implementation:
   finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields, and literal quoted or single-token
   `SET` bookmark assignments with field-result format switches feeding later
   plain `REF`/direct bookmark references, plus literal
-  `NEXT`/`NEXTIF`/`SKIPIF` merge-control fields that
-  render as hidden output without running a mail merge,
+  `NEXT`/`NEXTIF`/`SKIPIF` merge-control fields with field-result format
+  switches that render as hidden output without running a mail merge,
   inserted-content fields, mail-merge helper
   fields, reference/index fields beyond hidden simple literal `RD`/`TA`/`XE` markers,
   numbering/list fields, document-structure
@@ -637,8 +637,8 @@ Implementation:
   `COMPARE` finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields, and
   literal quoted or single-token `SET` bookmark assignments with field-result
   format switches feeding later plain `REF`/direct bookmark references, plus literal
-  `NEXT`/`NEXTIF`/`SKIPIF` merge-control fields that
-  render as hidden output without running a mail merge,
+  `NEXT`/`NEXTIF`/`SKIPIF` merge-control fields with field-result format
+  switches that render as hidden output without running a mail merge,
   inserted-content, mail-merge helper, reference/index, numbering/list,
   document-structure fields beyond computed `SECTION`, structurally bounded
   `SECTIONPAGES`, and deterministic body paragraph- and character-style
@@ -1115,8 +1115,8 @@ open and edit the chart data.
   finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields, and literal quoted or single-token
   `SET` bookmark assignments with field-result format switches feeding later
   plain `REF`/direct bookmark references, plus literal
-  `NEXT`/`NEXTIF`/`SKIPIF` merge-control fields that
-  render as hidden output without running a mail merge,
+  `NEXT`/`NEXTIF`/`SKIPIF` merge-control fields with field-result format
+  switches that render as hidden output without running a mail merge,
   inserted-content fields, mail-merge helper
   fields, reference/index fields beyond hidden simple literal `RD`/`TA`/`XE` markers,
   numbering/list fields, document-structure
@@ -1143,8 +1143,8 @@ open and edit the chart data.
   explicit-default `FILLIN`/`ASK` prompt fields, and
   literal quoted or single-token `SET` bookmark assignments with field-result
   format switches feeding later plain `REF`/direct bookmark references, plus literal
-  `NEXT`/`NEXTIF`/`SKIPIF` merge-control fields that
-  render as hidden output without running a mail merge,
+  `NEXT`/`NEXTIF`/`SKIPIF` merge-control fields with field-result format
+  switches that render as hidden output without running a mail merge,
   inserted-content, mail-merge helper, reference/index beyond hidden simple
   literal `RD`/`TA`/`XE` markers, numbering/list,
   document-structure fields beyond computed `SECTION`, structurally bounded

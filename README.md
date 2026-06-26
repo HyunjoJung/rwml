@@ -474,7 +474,8 @@ and deterministic literal
 field-result format switches render as hidden
 output while feeding later plain `REF`/direct bookmark references in
 source order, plus literal `NEXT`, `NEXTIF`, and `SKIPIF` merge-control fields
-render as hidden output without running a mail merge; remaining dynamic/control fields preserve cached result text and report
+with field-result format switches render as hidden output without running a mail
+merge; remaining dynamic/control fields preserve cached result text and report
 `NoComputedResult` diagnostics;
 inserted/external-content fields (`INCLUDETEXT`, `INCLUDEPICTURE`, `LINK`,
 `EMBED`, `DATABASE`, `DDE`, `DDEAUTO`, `IMPORT`, `INCLUDE`, `AUTOTEXT`,

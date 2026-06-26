@@ -4209,17 +4209,39 @@ fn merge_control_instruction(instruction: &str) -> Option<()> {
     let mut parts = tokens.iter().map(String::as_str);
     let kind = parts.next()?;
     if kind.eq_ignore_ascii_case("NEXT") {
-        accept_neutral_field_format_tail(&mut parts)?;
+        accept_field_format_tail(&mut parts)?;
         return Some(());
     }
     if kind.eq_ignore_ascii_case("NEXTIF") || kind.eq_ignore_ascii_case("SKIPIF") {
         let first = parts.next()?;
         let (left, operator, right) = comparison_operands(first, &mut parts)?;
         compare_if_operands(&left, operator, &right)?;
-        accept_neutral_field_format_tail(&mut parts)?;
+        accept_field_format_tail(&mut parts)?;
         return Some(());
     }
     None
+}
+
+fn accept_field_format_tail<'a, I>(parts: &mut I) -> Option<()>
+where
+    I: Iterator<Item = &'a str>,
+{
+    let mut text_format = None;
+    while let Some(part) = parts.next() {
+        if part == "\\*" {
+            if !accept_field_format_switch(parts.next()?, &mut text_format) {
+                return None;
+            }
+            continue;
+        }
+        if let Some(format) = part.strip_prefix("\\*") {
+            if accept_field_format_switch(format, &mut text_format) {
+                continue;
+            }
+        }
+        return None;
+    }
+    Some(())
 }
 
 fn accept_neutral_field_format_tail<'a, I>(parts: &mut I) -> Option<()>
@@ -4267,21 +4289,7 @@ fn set_instruction(instruction: &str) -> Option<SetInstruction> {
     }
     let name = field_identifier_token(parts.next()?)?;
     let value = set_value_literal(parts.next()?)?;
-    let mut text_format = None;
-    while let Some(part) = parts.next() {
-        if part == "\\*" {
-            if !accept_field_format_switch(parts.next()?, &mut text_format) {
-                return None;
-            }
-            continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if accept_field_format_switch(format, &mut text_format) {
-                continue;
-            }
-        }
-        return None;
-    }
+    accept_field_format_tail(&mut parts)?;
     Some(SetInstruction {
         name: name.to_string(),
         value,
@@ -9178,6 +9186,22 @@ mod tests {
         );
         assert_eq!(
             computed_action_result(r#"PRINT \p ReportBox "0 0 moveto" \*Lower"#).as_deref(),
+            Some("")
+        );
+    }
+
+    #[test]
+    fn merge_controls_accept_field_text_format_switches() {
+        assert_eq!(
+            computed_dynamic_result(r#"NEXT \* Upper"#).as_deref(),
+            Some("")
+        );
+        assert_eq!(
+            computed_dynamic_result(r#"NEXTIF 1 = 1 \* FirstCap"#).as_deref(),
+            Some("")
+        );
+        assert_eq!(
+            computed_dynamic_result(r#"SKIPIF 1 = 0 \*Lower"#).as_deref(),
             Some("")
         );
     }
