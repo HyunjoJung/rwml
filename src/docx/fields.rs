@@ -6525,8 +6525,8 @@ fn print_instruction(instruction: &str) -> Option<()> {
             return None;
         }
     } else {
-        let instructions = quoted_literal_text(first)?;
-        if instructions.is_empty() {
+        let instructions = field_literal_token(first)?;
+        if instructions.is_empty() || instructions.starts_with('\\') {
             return None;
         }
     }
