@@ -41,8 +41,12 @@ fn table_border_size(table: &Table) -> u16 {
     table.border_size_eighths.unwrap_or(4).max(1)
 }
 
-fn table_border_style(table: &Table) -> TableBorderStyle {
-    table.border_style.unwrap_or(TableBorderStyle::Single)
+fn table_border_style(table: &Table, side: TableBorderSide) -> TableBorderStyle {
+    table
+        .border_styles
+        .get(side)
+        .or(table.border_style)
+        .unwrap_or(TableBorderStyle::Single)
 }
 
 /// Points → twips (1/20 pt), the OOXML measurement unit.
@@ -1140,20 +1144,32 @@ impl Ctx {
         let inside_h_border_color = table_border_color(t, TableBorderSide::InsideHorizontal);
         let inside_v_border_color = table_border_color(t, TableBorderSide::InsideVertical);
         let border_size = table_border_size(t);
-        let border_style = table_border_style(t).wml_value();
+        let top_border_style = table_border_style(t, TableBorderSide::Top).wml_value();
+        let left_border_style = table_border_style(t, TableBorderSide::Left).wml_value();
+        let bottom_border_style = table_border_style(t, TableBorderSide::Bottom).wml_value();
+        let right_border_style = table_border_style(t, TableBorderSide::Right).wml_value();
+        let inside_h_border_style =
+            table_border_style(t, TableBorderSide::InsideHorizontal).wml_value();
+        let inside_v_border_style =
+            table_border_style(t, TableBorderSide::InsideVertical).wml_value();
         out.push_str(&format!(
             concat!(
                 r#"<w:tblBorders>"#,
-                r#"<w:top w:val="{border_style}" w:sz="{border_size}" w:space="0" w:color="{top_border_color}"/>"#,
-                r#"<w:left w:val="{border_style}" w:sz="{border_size}" w:space="0" w:color="{left_border_color}"/>"#,
-                r#"<w:bottom w:val="{border_style}" w:sz="{border_size}" w:space="0" w:color="{bottom_border_color}"/>"#,
-                r#"<w:right w:val="{border_style}" w:sz="{border_size}" w:space="0" w:color="{right_border_color}"/>"#,
-                r#"<w:insideH w:val="{border_style}" w:sz="{border_size}" w:space="0" w:color="{inside_h_border_color}"/>"#,
-                r#"<w:insideV w:val="{border_style}" w:sz="{border_size}" w:space="0" w:color="{inside_v_border_color}"/>"#,
+                r#"<w:top w:val="{top_border_style}" w:sz="{border_size}" w:space="0" w:color="{top_border_color}"/>"#,
+                r#"<w:left w:val="{left_border_style}" w:sz="{border_size}" w:space="0" w:color="{left_border_color}"/>"#,
+                r#"<w:bottom w:val="{bottom_border_style}" w:sz="{border_size}" w:space="0" w:color="{bottom_border_color}"/>"#,
+                r#"<w:right w:val="{right_border_style}" w:sz="{border_size}" w:space="0" w:color="{right_border_color}"/>"#,
+                r#"<w:insideH w:val="{inside_h_border_style}" w:sz="{border_size}" w:space="0" w:color="{inside_h_border_color}"/>"#,
+                r#"<w:insideV w:val="{inside_v_border_style}" w:sz="{border_size}" w:space="0" w:color="{inside_v_border_color}"/>"#,
                 r#"</w:tblBorders>"#,
             ),
             border_size = border_size,
-            border_style = border_style,
+            top_border_style = top_border_style,
+            left_border_style = left_border_style,
+            bottom_border_style = bottom_border_style,
+            right_border_style = right_border_style,
+            inside_h_border_style = inside_h_border_style,
+            inside_v_border_style = inside_v_border_style,
             top_border_color = top_border_color,
             left_border_color = left_border_color,
             bottom_border_color = bottom_border_color,

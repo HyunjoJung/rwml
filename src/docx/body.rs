@@ -23,7 +23,7 @@ use crate::model::{
     Align, AuthoredContentControl, Block, Cell, CellMargins, CharProps, Color, DocGrid,
     DocGridType, FieldRole, Image, Indent, ListInfo, PageNumberFormat, ParaProps, Paragraph, Row,
     Run, SectionSetup, Spacing, Table, TableBorderColors, TableBorderSide, TableBorderStyle,
-    TextDirection, VCell, VertAlign,
+    TableBorderStyles, TextDirection, VCell, VertAlign,
 };
 use crate::text;
 use crate::CoreProperties;
@@ -2292,6 +2292,7 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Table {
     let mut border_colors = TableBorderColors::default();
     let mut border_size_eighths = None;
     let mut border_style = None;
+    let mut border_styles = TableBorderStyles::default();
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
@@ -2305,6 +2306,7 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Table {
                     border_colors = tblpr.5;
                     border_size_eighths = tblpr.6;
                     border_style = tblpr.7;
+                    border_styles = tblpr.8;
                 }
                 b"tr" => rows.push(read_row(r, ctx, depth)),
                 _ => skip_subtree(r), // tblGrid, …
@@ -2323,6 +2325,7 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Table {
         border_colors,
         border_size_eighths,
         border_style,
+        border_styles,
     )
 }
 
@@ -2338,6 +2341,7 @@ fn read_tblpr(
     TableBorderColors,
     Option<u16>,
     Option<TableBorderStyle>,
+    TableBorderStyles,
 ) {
     let mut fixed_layout = false;
     let mut indent_twips = None;
@@ -2347,6 +2351,7 @@ fn read_tblpr(
     let mut border_colors = TableBorderColors::default();
     let mut border_size_eighths = None;
     let mut border_style = None;
+    let mut border_styles = TableBorderStyles::default();
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
@@ -2377,11 +2382,12 @@ fn read_tblpr(
                 };
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblBorders" => {
-                let borders = read_tbl_border_colors(r);
+                let borders = read_tbl_borders(r);
                 border_color = borders.0;
                 border_colors = borders.1;
                 border_size_eighths = borders.2;
                 border_style = borders.3;
+                border_styles = borders.4;
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"tblPr" => break,
             Ok(Event::Eof) | Err(_) => break,
@@ -2397,19 +2403,22 @@ fn read_tblpr(
         border_colors,
         border_size_eighths,
         border_style,
+        border_styles,
     )
 }
 
-fn read_tbl_border_colors(
+fn read_tbl_borders(
     r: &mut Xml<'_>,
 ) -> (
     Option<Color>,
     TableBorderColors,
     Option<u16>,
     Option<TableBorderStyle>,
+    TableBorderStyles,
 ) {
     let mut color = None;
     let mut colors = TableBorderColors::default();
+    let mut styles = TableBorderStyles::default();
     let mut color_seen = false;
     let mut color_consistent = true;
     let mut size = None;
@@ -2447,6 +2456,7 @@ fn read_tbl_border_colors(
                 if let Some(next) =
                     attr_local(&e, b"val").and_then(|v| TableBorderStyle::from_wml_value(&v))
                 {
+                    styles.set(side, next);
                     style_seen = true;
                     match style {
                         Some(current) if current != next => style_consistent = false,
@@ -2475,7 +2485,7 @@ fn read_tbl_border_colors(
     } else {
         None
     };
-    (uniform_color, colors, uniform_size, uniform_style)
+    (uniform_color, colors, uniform_size, uniform_style, styles)
 }
 
 fn table_border_side(e: &BytesStart<'_>) -> Option<TableBorderSide> {
@@ -2699,6 +2709,7 @@ fn build_table(
     border_colors: TableBorderColors,
     border_size_eighths: Option<u16>,
     border_style: Option<TableBorderStyle>,
+    border_styles: TableBorderStyles,
 ) -> Table {
     let header_rows = raw_rows.iter().take_while(|(_, h)| *h).count();
 
@@ -2794,6 +2805,7 @@ fn build_table(
         border_colors,
         border_size_eighths,
         border_style,
+        border_styles,
         ..Default::default()
     }
 }
@@ -3258,6 +3270,7 @@ mod tests {
             TableBorderColors::default(),
             None,
             None,
+            TableBorderStyles::default(),
         );
 
         assert_eq!(table.rows[0].cells[0].row_span, u16::MAX);

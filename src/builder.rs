@@ -1177,6 +1177,12 @@ impl TableBuilder {
         self
     }
 
+    /// Set a table border style for one physical side.
+    pub fn border_side_style(mut self, side: TableBorderSide, style: TableBorderStyle) -> Self {
+        self.table.border_styles.set(side, style);
+        self
+    }
+
     /// Append a row of cells.
     pub fn row<I, C>(mut self, cells: I) -> Self
     where

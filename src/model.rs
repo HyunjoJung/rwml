@@ -493,6 +493,49 @@ impl TableBorderColors {
     }
 }
 
+/// Optional table border line styles by physical side.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TableBorderStyles {
+    /// Top border style.
+    pub top: Option<TableBorderStyle>,
+    /// Left border style.
+    pub left: Option<TableBorderStyle>,
+    /// Bottom border style.
+    pub bottom: Option<TableBorderStyle>,
+    /// Right border style.
+    pub right: Option<TableBorderStyle>,
+    /// Horizontal inside border style.
+    pub inside_h: Option<TableBorderStyle>,
+    /// Vertical inside border style.
+    pub inside_v: Option<TableBorderStyle>,
+}
+
+impl TableBorderStyles {
+    /// Return the style for a side, if one was set.
+    pub fn get(&self, side: TableBorderSide) -> Option<TableBorderStyle> {
+        match side {
+            TableBorderSide::Top => self.top,
+            TableBorderSide::Left => self.left,
+            TableBorderSide::Bottom => self.bottom,
+            TableBorderSide::Right => self.right,
+            TableBorderSide::InsideHorizontal => self.inside_h,
+            TableBorderSide::InsideVertical => self.inside_v,
+        }
+    }
+
+    /// Set the style for a side.
+    pub fn set(&mut self, side: TableBorderSide, style: TableBorderStyle) {
+        match side {
+            TableBorderSide::Top => self.top = Some(style),
+            TableBorderSide::Left => self.left = Some(style),
+            TableBorderSide::Bottom => self.bottom = Some(style),
+            TableBorderSide::Right => self.right = Some(style),
+            TableBorderSide::InsideHorizontal => self.inside_h = Some(style),
+            TableBorderSide::InsideVertical => self.inside_v = Some(style),
+        }
+    }
+}
+
 /// Vertical alignment of a run (super/subscript).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum VertAlign {
@@ -597,6 +640,8 @@ pub struct Table {
     pub border_size_eighths: Option<u16>,
     /// Uniform table border style, if explicitly set.
     pub border_style: Option<TableBorderStyle>,
+    /// Side-specific table border styles, overriding `border_style` per side.
+    pub border_styles: TableBorderStyles,
 }
 
 impl Table {

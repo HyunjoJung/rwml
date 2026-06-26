@@ -255,7 +255,7 @@ let bytes = rdoc::try_write_docx(&doc)?;
 `DocBuilder` is now a thin wrapper over `DocModel` for plain paragraphs,
 layout-aware paragraphs via `ParagraphBuilder`, headings, styled runs via
 `RunBuilder`, named paragraph style definitions via `ParagraphStyleBuilder`,
-simple text tables, width-aware, aligned, fixed-layout, indented, border-width/style-aware, and border-colored rich tables, explicit
+simple text tables, width-aware, aligned, fixed-layout, indented, border-width-aware, uniform/per-side border-style and border-color rich tables, explicit
 cell margins, and typed nested cell blocks via `TableBuilder`/`CellBuilder`,
 list paragraphs with explicit levels, simple fields
 with cached results, run-anchored

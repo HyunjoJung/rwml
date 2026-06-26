@@ -86,8 +86,8 @@ pub use model::{
     CellMargins, CharProps, Chart, ChartKind, ChartSeries, ChartShape, Color, DocGrid, DocGridType,
     DocMeta, DocModel, DocSetup, FieldRole, Image, Indent, ListInfo, PageNumberFormat, PageSetup,
     ParaProps, Paragraph, ParagraphStyle, Row, Run, SectionSetup, SourceRegion, SourceRegionKind,
-    Spacing, Stats, Table, TableBorderColors, TableBorderSide, TableBorderStyle, TextDirection,
-    VCell, VertAlign,
+    Spacing, Stats, Table, TableBorderColors, TableBorderSide, TableBorderStyle, TableBorderStyles,
+    TextDirection, VCell, VertAlign,
 };
 pub use report::{
     DocumentFormat, DocumentReport, DocumentWarning, EditCapability, EditReadOnlyReason,

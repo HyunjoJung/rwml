@@ -127,6 +127,7 @@ fn report() -> DocModel {
         border_colors: Default::default(),
         border_size_eighths: None,
         border_style: None,
+        border_styles: Default::default(),
     };
     DocModel {
         blocks: vec![title, Block::Table(table)],
@@ -2321,6 +2322,55 @@ fn table_builder_adds_side_specific_border_colors() {
     assert_eq!(reopened_table.border_colors.top, Some(top));
     assert_eq!(reopened_table.border_colors.left, Some(border));
     assert_eq!(reopened_table.border_colors.inside_h, Some(inside));
+}
+
+#[test]
+fn table_builder_adds_side_specific_border_styles() {
+    let model = DocBuilder::new()
+        .rich_table(
+            TableBuilder::new()
+                .border_style(TableBorderStyle::Single)
+                .border_side_style(TableBorderSide::Top, TableBorderStyle::Double)
+                .border_side_style(TableBorderSide::InsideVertical, TableBorderStyle::Dotted)
+                .row([CellBuilder::text("Styled")]),
+        )
+        .build();
+
+    let Block::Table(table) = &model.blocks[0] else {
+        panic!("expected builder to add a table block");
+    };
+    assert_eq!(table.border_style, Some(TableBorderStyle::Single));
+    assert_eq!(table.border_styles.top, Some(TableBorderStyle::Double));
+    assert_eq!(table.border_styles.inside_v, Some(TableBorderStyle::Dotted));
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    assert!(
+        document_xml.contains(r#"<w:top w:val="double" w:sz="4" w:space="0" w:color="auto"/>"#)
+            && document_xml
+                .contains(r#"<w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#)
+            && document_xml
+                .contains(r#"<w:insideV w:val="dotted" w:sz="4" w:space="0" w:color="auto"/>"#),
+        "side-specific table border style XML missing: {document_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("side-border-style table .docx reopens");
+    let Block::Table(reopened_table) = &reopened.model().blocks[0] else {
+        panic!("expected reopened table");
+    };
+    assert_eq!(
+        reopened_table.border_styles.top,
+        Some(TableBorderStyle::Double)
+    );
+    assert_eq!(
+        reopened_table.border_styles.left,
+        Some(TableBorderStyle::Single)
+    );
+    assert_eq!(
+        reopened_table.border_styles.inside_v,
+        Some(TableBorderStyle::Dotted)
+    );
 }
 
 #[test]
