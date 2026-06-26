@@ -1323,6 +1323,12 @@ impl DocBuilder {
         self
     }
 
+    /// Enable distinct first-page section behavior.
+    pub fn title_page(mut self) -> Self {
+        self.model.setup.title_page = true;
+        self
+    }
+
     /// Add a paragraph style definition.
     pub fn paragraph_style<S>(mut self, style: S) -> Self
     where
@@ -1593,6 +1599,7 @@ impl DocBuilder {
 
     /// Add a first-page running header paragraph.
     pub fn first_header(mut self, text: impl Into<String>) -> Self {
+        self.model.setup.title_page = true;
         self.model
             .setup
             .first_header
@@ -1641,6 +1648,7 @@ impl DocBuilder {
 
     /// Add a first-page running footer paragraph.
     pub fn first_footer(mut self, text: impl Into<String>) -> Self {
+        self.model.setup.title_page = true;
         self.model
             .setup
             .first_footer

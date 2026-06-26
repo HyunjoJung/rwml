@@ -890,6 +890,8 @@ pub struct SectionSetup {
     pub first_footer: Vec<Block>,
     /// Even-page running footer content (empty = none or default applies).
     pub even_footer: Vec<Block>,
+    /// Use distinct first-page section behavior (`w:titlePg`).
+    pub title_page: bool,
     /// Emit a centered page number (`PAGE` field) in the footer.
     pub page_numbers: bool,
     /// Display page number to start this section at, if explicitly set.
@@ -922,6 +924,8 @@ pub struct DocSetup {
     pub first_footer: Vec<Block>,
     /// Even-page running footer content (empty = none or default applies).
     pub even_footer: Vec<Block>,
+    /// Use distinct first-page section behavior (`w:titlePg`).
+    pub title_page: bool,
     /// Emit a centered page number (`PAGE` field) in the footer.
     pub page_numbers: bool,
     /// Display page number to start the final/current section at, if explicitly set.
@@ -948,6 +952,7 @@ impl From<&DocSetup> for SectionSetup {
             footer: setup.footer.clone(),
             first_footer: setup.first_footer.clone(),
             even_footer: setup.even_footer.clone(),
+            title_page: setup.title_page,
             page_numbers: setup.page_numbers,
             page_number_start: setup.page_number_start,
             page_number_format: setup.page_number_format,

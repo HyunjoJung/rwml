@@ -563,6 +563,29 @@ fn doc_builder_adds_section_columns() {
 }
 
 #[test]
+fn doc_builder_adds_explicit_title_page_section_option() {
+    let model = DocBuilder::new()
+        .title_page()
+        .header("Default header")
+        .paragraph("Body")
+        .build();
+
+    assert!(model.setup.title_page);
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+
+    assert!(
+        document_xml.contains("<w:titlePg/>"),
+        "title page section option missing: {document_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("title-page section .docx reopens");
+    assert!(reopened.model().setup.title_page);
+}
+
+#[test]
 fn run_builder_adds_simple_field_runs() {
     let model = DocBuilder::new()
         .paragraph_runs([

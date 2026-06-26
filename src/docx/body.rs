@@ -306,6 +306,25 @@ pub(crate) fn scan_section_text_direction(xml: &str) -> Option<TextDirection> {
     text_direction
 }
 
+/// Scan the final/body section properties for explicit first-page section behavior.
+pub(crate) fn scan_section_title_page(xml: &str) -> bool {
+    let mut r = Reader::from_str(xml);
+    let mut title_page = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"sectPr" => {
+                title_page = read_section_title_page(&mut r);
+            }
+            Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"sectPr" => {
+                title_page = false;
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    title_page
+}
+
 /// Scan the final/body section properties for a displayed page-number restart.
 pub(crate) fn scan_page_number_start(xml: &str) -> Option<u32> {
     let mut r = Reader::from_str(xml);
@@ -379,6 +398,22 @@ fn read_section_text_direction(r: &mut Xml<'_>) -> Option<TextDirection> {
         }
     }
     text_direction
+}
+
+fn read_section_title_page(r: &mut Xml<'_>) -> bool {
+    let mut title_page = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"titlePg" => {
+                title_page = true;
+            }
+            Ok(Event::Start(_)) => skip_subtree(r),
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"sectPr" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    title_page
 }
 
 fn read_section_page_number_start(r: &mut Xml<'_>) -> Option<u32> {
@@ -1175,6 +1210,9 @@ fn read_sect_pr(r: &mut Xml<'_>) -> SectionSetup {
                 b"textDirection" => {
                     section.text_direction = attr_local(&e, b"val")
                         .and_then(|value| TextDirection::from_wml_value(&value));
+                }
+                b"titlePg" => {
+                    section.title_page = true;
                 }
                 _ => {}
             },

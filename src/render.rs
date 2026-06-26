@@ -1585,6 +1585,7 @@ trait RunningSurfaceSetup {
     fn footer(&self) -> &[Block];
     fn first_footer(&self) -> &[Block];
     fn even_footer(&self) -> &[Block];
+    fn title_page(&self) -> bool;
 }
 
 impl RunningSurfaceSetup for crate::model::DocSetup {
@@ -1610,6 +1611,10 @@ impl RunningSurfaceSetup for crate::model::DocSetup {
 
     fn even_footer(&self) -> &[Block] {
         &self.even_footer
+    }
+
+    fn title_page(&self) -> bool {
+        self.title_page
     }
 }
 
@@ -1637,6 +1642,10 @@ impl RunningSurfaceSetup for SectionSetup {
     fn even_footer(&self) -> &[Block] {
         &self.even_footer
     }
+
+    fn title_page(&self) -> bool {
+        self.title_page
+    }
 }
 
 fn running_header_footer_blocks_for_page<T: RunningSurfaceSetup + ?Sized>(
@@ -1644,14 +1653,18 @@ fn running_header_footer_blocks_for_page<T: RunningSurfaceSetup + ?Sized>(
     page_number: usize,
     is_first_section_page: bool,
 ) -> (&[Block], &[Block]) {
-    let header = if is_first_section_page && !setup.first_header().is_empty() {
+    let title_page = is_first_section_page
+        && (setup.title_page()
+            || !setup.first_header().is_empty()
+            || !setup.first_footer().is_empty());
+    let header = if title_page {
         setup.first_header()
     } else if page_number % 2 == 0 && !setup.even_header().is_empty() {
         setup.even_header()
     } else {
         setup.header()
     };
-    let footer = if is_first_section_page && !setup.first_footer().is_empty() {
+    let footer = if title_page {
         setup.first_footer()
     } else if page_number % 2 == 0 && !setup.even_footer().is_empty() {
         setup.even_footer()
@@ -3992,6 +4005,24 @@ mod tests {
 
         let (header, footer) = running_header_footer_blocks_for_page(&setup, 2, false);
         assert_eq!(block_text(header), "even header");
+        assert_eq!(block_text(footer), "default footer");
+    }
+
+    #[test]
+    fn title_page_suppresses_default_running_surface_on_first_page() {
+        let setup = crate::model::DocSetup {
+            header: vec![para("default header", None)],
+            footer: vec![para("default footer", None)],
+            title_page: true,
+            ..Default::default()
+        };
+
+        let (header, footer) = running_header_footer_blocks_for_page(&setup, 1, true);
+        assert!(header.is_empty());
+        assert!(footer.is_empty());
+
+        let (header, footer) = running_header_footer_blocks_for_page(&setup, 2, false);
+        assert_eq!(block_text(header), "default header");
         assert_eq!(block_text(footer), "default footer");
     }
 

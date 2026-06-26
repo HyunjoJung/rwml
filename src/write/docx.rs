@@ -544,7 +544,7 @@ impl Ctx {
         } else {
             ""
         };
-        let title_pg = if has_first_variant {
+        let title_pg = if setup.title_page || has_first_variant {
             "<w:titlePg/>"
         } else {
             ""
