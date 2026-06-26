@@ -286,6 +286,25 @@ pub(crate) fn scan_section_columns(xml: &str) -> Option<u16> {
     columns
 }
 
+/// Scan the final/body section properties for a displayed page-number restart.
+pub(crate) fn scan_page_number_start(xml: &str) -> Option<u32> {
+    let mut r = Reader::from_str(xml);
+    let mut page_number_start = None;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"sectPr" => {
+                page_number_start = read_section_page_number_start(&mut r);
+            }
+            Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"sectPr" => {
+                page_number_start = None;
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    page_number_start
+}
+
 fn read_section_columns(r: &mut Xml<'_>) -> Option<u16> {
     let mut columns = None;
     loop {
@@ -302,6 +321,26 @@ fn read_section_columns(r: &mut Xml<'_>) -> Option<u16> {
         }
     }
     columns
+}
+
+fn read_section_page_number_start(r: &mut Xml<'_>) -> Option<u32> {
+    let mut page_number_start = None;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if local(e.name().as_ref()) == b"pgNumType" =>
+            {
+                page_number_start = attr_local(&e, b"start")
+                    .and_then(|v| v.trim().parse::<u32>().ok())
+                    .map(|value| value.max(1));
+            }
+            Ok(Event::Start(_)) => skip_subtree(r),
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"sectPr" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    page_number_start
 }
 
 /// Parse a `word/headerN.xml` / `footerN.xml` part (root `<w:hdr>` / `<w:ftr>`)
@@ -1043,6 +1082,11 @@ fn read_sect_pr(r: &mut Xml<'_>) -> SectionSetup {
                     section.page.margin_right_pt = rr;
                     section.page.margin_top_pt = t;
                     section.page.margin_bottom_pt = b;
+                }
+                b"pgNumType" => {
+                    section.page_number_start = attr_local(&e, b"start")
+                        .and_then(|v| v.trim().parse::<u32>().ok())
+                        .map(|value| value.max(1));
                 }
                 b"cols" => {
                     section.columns = attr_local(&e, b"num")
@@ -2480,6 +2524,21 @@ mod tests {
                 type_name: "default".to_string()
             }]
         );
+    }
+
+    #[test]
+    fn scans_final_section_page_number_start_only() {
+        let no_final_restart = r#"<w:document><w:body>
+            <w:p><w:pPr><w:sectPr><w:pgNumType w:start="3"/></w:sectPr></w:pPr></w:p>
+            <w:sectPr/>
+        </w:body></w:document>"#;
+        assert_eq!(scan_page_number_start(no_final_restart), None);
+
+        let final_restart = r#"<w:document><w:body>
+            <w:p><w:pPr><w:sectPr><w:pgNumType w:start="3"/></w:sectPr></w:pPr></w:p>
+            <w:sectPr><w:pgNumType w:start="7"/></w:sectPr>
+        </w:body></w:document>"#;
+        assert_eq!(scan_page_number_start(final_restart), Some(7));
     }
 
     #[test]

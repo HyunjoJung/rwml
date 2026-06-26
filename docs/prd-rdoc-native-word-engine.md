@@ -469,8 +469,8 @@ The first public maturity release should meet these requirements.
 ### Authoring
 
 - generated `.docx` files reopen in rdoc, Word, and LibreOffice.
-- report example covers styles, tables, images, page setup with section columns, explicit
-  page/section breaks, headers/footers, and page numbers.
+- report example covers styles, tables, images, page setup with section columns and
+  page-number restarts, explicit page/section breaks, headers/footers, and page numbers.
 - lossy authoring vs preservation editing is documented.
 
 ### Renderer

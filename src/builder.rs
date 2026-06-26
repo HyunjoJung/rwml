@@ -1299,6 +1299,12 @@ impl DocBuilder {
         self
     }
 
+    /// Restart displayed page numbering for the current/final section.
+    pub fn page_number_start(mut self, start: u32) -> Self {
+        self.model.setup.page_number_start = Some(start.max(1));
+        self
+    }
+
     /// Set the number of text columns for the current/final section.
     pub fn columns(mut self, columns: u16) -> Self {
         self.model.setup.columns = Some(columns.max(1));

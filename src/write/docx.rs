@@ -519,6 +519,10 @@ impl Ctx {
             .columns
             .map(|columns| format!(r#"<w:cols w:num="{}"/>"#, columns.max(1)))
             .unwrap_or_default();
+        let page_number_start = setup
+            .page_number_start
+            .map(|start| format!(r#"<w:pgNumType w:start="{}"/>"#, start.max(1)))
+            .unwrap_or_default();
         let start = if next_page {
             r#"<w:type w:val="nextPage"/>"#
         } else {
@@ -530,7 +534,7 @@ impl Ctx {
             ""
         };
         out.push_str(&format!(
-            r#"<w:sectPr>{start}{refs}{title_pg}<w:pgSz w:w="{w}" w:h="{h}"{orient}/><w:pgMar w:top="{mt}" w:right="{mr}" w:bottom="{mb}" w:left="{ml}" w:header="708" w:footer="708" w:gutter="0"/>{columns}</w:sectPr>"#
+            r#"<w:sectPr>{start}{refs}{title_pg}<w:pgSz w:w="{w}" w:h="{h}"{orient}/><w:pgMar w:top="{mt}" w:right="{mr}" w:bottom="{mb}" w:left="{ml}" w:header="708" w:footer="708" w:gutter="0"/>{page_number_start}{columns}</w:sectPr>"#
         ));
     }
 

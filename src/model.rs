@@ -796,6 +796,8 @@ pub struct SectionSetup {
     pub even_footer: Vec<Block>,
     /// Emit a centered page number (`PAGE` field) in the footer.
     pub page_numbers: bool,
+    /// Display page number to start this section at, if explicitly set.
+    pub page_number_start: Option<u32>,
     /// Number of text columns in this section, if explicitly set.
     pub columns: Option<u16>,
 }
@@ -822,6 +824,8 @@ pub struct DocSetup {
     pub even_footer: Vec<Block>,
     /// Emit a centered page number (`PAGE` field) in the footer.
     pub page_numbers: bool,
+    /// Display page number to start the final/current section at, if explicitly set.
+    pub page_number_start: Option<u32>,
     /// Number of text columns in the final/current section, if explicitly set.
     pub columns: Option<u16>,
     /// Document title metadata.
@@ -841,6 +845,7 @@ impl From<&DocSetup> for SectionSetup {
             first_footer: setup.first_footer.clone(),
             even_footer: setup.even_footer.clone(),
             page_numbers: setup.page_numbers,
+            page_number_start: setup.page_number_start,
             columns: setup.columns,
         }
     }

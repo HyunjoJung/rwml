@@ -317,12 +317,14 @@ fn doc_builder_adds_section_breaks_with_section_setup() {
     let model = DocBuilder::new()
         .page_setup(cover_page)
         .columns(2)
+        .page_number_start(3)
         .header("Cover header")
         .paragraph("Cover")
         .section_break()
         .clear_header()
         .page_setup(detail_page)
         .columns(3)
+        .page_number_start(7)
         .header("Detail header")
         .paragraph("Detail")
         .build();
@@ -333,9 +335,11 @@ fn doc_builder_adds_section_breaks_with_section_setup() {
     };
     assert_eq!(section.page.margin_pt, 72.0);
     assert_eq!(section.columns, Some(2));
+    assert_eq!(section.page_number_start, Some(3));
     assert_eq!(section.header.len(), 1);
     assert_eq!(model.setup.page.width_pt, 792.0);
     assert_eq!(model.setup.columns, Some(3));
+    assert_eq!(model.setup.page_number_start, Some(7));
     assert_eq!(model.setup.header.len(), 1);
 
     let bytes = rdoc::write_docx(&model);
@@ -354,6 +358,8 @@ fn doc_builder_adds_section_breaks_with_section_setup() {
         document_xml.contains(r#"<w:type w:val="nextPage"/>"#)
             && document_xml.contains(r#"<w:pgSz w:w="11906" w:h="16838"/>"#)
             && document_xml.contains(r#"<w:pgSz w:w="15840" w:h="12240" w:orient="landscape"/>"#)
+            && document_xml.contains(r#"<w:pgNumType w:start="3"/>"#)
+            && document_xml.contains(r#"<w:pgNumType w:start="7"/>"#)
             && document_xml.contains(r#"<w:cols w:num="2"/>"#)
             && document_xml.contains(r#"<w:cols w:num="3"/>"#),
         "section page setup missing: {document_xml}"
@@ -378,6 +384,7 @@ fn doc_builder_adds_section_breaks_with_section_setup() {
     );
     assert_eq!(reopened_model.setup.page.width_pt, 792.0);
     assert_eq!(reopened_model.setup.columns, Some(3));
+    assert_eq!(reopened_model.setup.page_number_start, Some(7));
     let Some(Block::SectionBreak(reopened_section)) = reopened_model
         .blocks
         .iter()
@@ -386,6 +393,7 @@ fn doc_builder_adds_section_breaks_with_section_setup() {
         panic!("section break lost on reopen");
     };
     assert_eq!(reopened_section.columns, Some(2));
+    assert_eq!(reopened_section.page_number_start, Some(3));
     let text = reopened.text();
     assert!(
         text.contains("Cover header") && text.contains("Detail header"),
