@@ -1430,6 +1430,23 @@ fn relative_ref_switch_docx() -> Vec<u8> {
     ])
 }
 
+fn relative_ref_alternate_content_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><mc:AlternateContent><mc:Choice Requires="wps"><w:p/></mc:Choice><mc:Fallback><w:p><w:fldSimple w:instr=" REF LaterBookmark \p "><w:r><w:t>fallback relative</w:t></w:r></w:fldSimple></w:p></mc:Fallback></mc:AlternateContent><w:p><w:bookmarkStart w:id="8" w:name="LaterBookmark"/><w:r><w:t>Later target</w:t></w:r><w:bookmarkEnd w:id="8"/></w:p><w:p><w:fldSimple w:instr=" REF LaterBookmark \p "><w:r><w:t>stale visible above</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn page_ref_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -6872,6 +6889,24 @@ fn docx_ref_p_field_computes_relative_source_position() {
     );
     assert!(main_text.contains("below"), "{main_text:?}");
     assert!(main_text.contains("above"), "{main_text:?}");
+}
+
+#[test]
+fn docx_ref_p_field_uses_single_alternate_content_branch() {
+    let doc = Document::open(&relative_ref_alternate_content_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::Ref);
+    assert_eq!(fields[0].instruction, "REF LaterBookmark \\p");
+    assert_eq!(fields[0].result, "stale visible above");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("above"));
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("above") && !main_text.contains("fallback relative"),
+        "REF \\p position context must ignore untaken AlternateContent branches: {main_text:?}"
+    );
 }
 
 #[test]

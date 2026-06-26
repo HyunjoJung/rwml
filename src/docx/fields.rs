@@ -962,142 +962,189 @@ pub(crate) fn ref_position_context(xml: &str, numbering: &Numbering) -> RefPosit
     let mut counters: HashMap<String, [u32; 9]> = HashMap::new();
     let mut source_order = 0usize;
     let mut current: Option<RefScanField> = None;
+    let mut xml_depth = 0usize;
+    let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
-                b"del" | b"moveFrom" => skip_subtree(&mut r),
-                b"p" => {
-                    if paragraph.active() {
-                        paragraph.depth += 1;
-                    } else {
-                        paragraph.reset();
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    skip_subtree(&mut r);
+                    continue;
+                }
+                if matches!(name, b"del" | b"moveFrom") {
+                    skip_subtree(&mut r);
+                    continue;
+                }
+                let mut consumed_element = false;
+                match name {
+                    b"AlternateContent" => {
+                        alternate_content_stack.push(AlternateContentBranchState {
+                            branch_depth: xml_depth + 1,
+                            took_branch: false,
+                        });
                     }
-                }
-                b"pPr" if paragraph.active() => paragraph.properties_depth += 1,
-                b"ilvl" if paragraph.properties_depth > 0 => {
-                    if let Some(value) = attr_local(&e, b"val").and_then(|v| v.parse().ok()) {
-                        paragraph.ilvl = value;
-                    }
-                }
-                b"numId" if paragraph.properties_depth > 0 => {
-                    paragraph.num_id = attr_local(&e, b"val");
-                }
-                b"fldSimple" => record_ref_field_position(
-                    attr_local(&e, b"instr").as_deref(),
-                    &mut source_order,
-                    &mut field_positions,
-                    &mut paragraph,
-                ),
-                b"fldChar" => apply_ref_scan_fld_char(
-                    &e,
-                    &mut source_order,
-                    &mut current,
-                    &mut field_positions,
-                    &mut paragraph,
-                ),
-                b"instrText" => {
-                    let text = read_text(&mut r);
-                    if let Some(field) = current.as_mut() {
-                        if field.phase == FieldPhase::Instruction {
-                            field.instruction.push_str(&text);
+                    b"p" => {
+                        if paragraph.active() {
+                            paragraph.depth += 1;
+                        } else {
+                            paragraph.reset();
                         }
                     }
-                }
-                b"bookmarkStart" => {
-                    if let (Some(id), Some(name)) = (attr_local(&e, b"id"), attr_local(&e, b"name"))
-                    {
-                        active_bookmarks.push((id, name, source_order));
-                        source_order += 1;
+                    b"pPr" if paragraph.active() => paragraph.properties_depth += 1,
+                    b"ilvl" if paragraph.properties_depth > 0 => {
+                        if let Some(value) = attr_local(&e, b"val").and_then(|v| v.parse().ok()) {
+                            paragraph.ilvl = value;
+                        }
                     }
-                }
-                b"bookmarkEnd" => {
-                    close_ref_position_bookmark(
-                        attr_local(&e, b"id").as_deref(),
-                        source_order,
-                        &mut active_bookmarks,
-                        &mut target_positions,
-                    );
-                    source_order += 1;
-                }
-                b"t" if !read_text(&mut r).is_empty() => {
-                    source_order += 1;
-                }
-                b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"drawing" | b"pict" | b"object" => {
-                    source_order += 1;
-                }
-                _ => {}
-            },
-            Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
-                b"p" => {
-                    paragraph.reset();
-                    finish_ref_position_paragraph(
-                        &mut paragraph,
-                        numbering,
-                        &mut counters,
+                    b"numId" if paragraph.properties_depth > 0 => {
+                        paragraph.num_id = attr_local(&e, b"val");
+                    }
+                    b"fldSimple" => record_ref_field_position(
+                        attr_local(&e, b"instr").as_deref(),
+                        &mut source_order,
                         &mut field_positions,
-                    );
-                }
-                b"pPr" if paragraph.active() => {}
-                b"ilvl" if paragraph.properties_depth > 0 => {
-                    if let Some(value) = attr_local(&e, b"val").and_then(|v| v.parse().ok()) {
-                        paragraph.ilvl = value;
+                        &mut paragraph,
+                    ),
+                    b"fldChar" => apply_ref_scan_fld_char(
+                        &e,
+                        &mut source_order,
+                        &mut current,
+                        &mut field_positions,
+                        &mut paragraph,
+                    ),
+                    b"instrText" => {
+                        let text = read_text(&mut r);
+                        consumed_element = true;
+                        if let Some(field) = current.as_mut() {
+                            if field.phase == FieldPhase::Instruction {
+                                field.instruction.push_str(&text);
+                            }
+                        }
                     }
-                }
-                b"numId" if paragraph.properties_depth > 0 => {
-                    paragraph.num_id = attr_local(&e, b"val");
-                }
-                b"fldSimple" => record_ref_field_position(
-                    attr_local(&e, b"instr").as_deref(),
-                    &mut source_order,
-                    &mut field_positions,
-                    &mut paragraph,
-                ),
-                b"fldChar" => apply_ref_scan_fld_char(
-                    &e,
-                    &mut source_order,
-                    &mut current,
-                    &mut field_positions,
-                    &mut paragraph,
-                ),
-                b"bookmarkStart" => {
-                    if let (Some(id), Some(name)) = (attr_local(&e, b"id"), attr_local(&e, b"name"))
-                    {
-                        active_bookmarks.push((id, name, source_order));
+                    b"bookmarkStart" => {
+                        if let (Some(id), Some(name)) =
+                            (attr_local(&e, b"id"), attr_local(&e, b"name"))
+                        {
+                            active_bookmarks.push((id, name, source_order));
+                            source_order += 1;
+                        }
+                    }
+                    b"bookmarkEnd" => {
+                        close_ref_position_bookmark(
+                            attr_local(&e, b"id").as_deref(),
+                            source_order,
+                            &mut active_bookmarks,
+                            &mut target_positions,
+                        );
                         source_order += 1;
                     }
+                    b"t" => {
+                        if !read_text(&mut r).is_empty() {
+                            source_order += 1;
+                        }
+                        consumed_element = true;
+                    }
+                    b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"drawing" | b"pict"
+                    | b"object" => {
+                        source_order += 1;
+                    }
+                    _ => {}
                 }
-                b"bookmarkEnd" => {
-                    close_ref_position_bookmark(
-                        attr_local(&e, b"id").as_deref(),
-                        source_order,
-                        &mut active_bookmarks,
-                        &mut target_positions,
-                    );
-                    source_order += 1;
+                if !consumed_element {
+                    xml_depth = xml_depth.saturating_add(1);
                 }
-                b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"drawing" | b"pict" | b"object" => {
-                    source_order += 1;
+            }
+            Ok(Event::Empty(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    continue;
                 }
-                _ => {}
-            },
-            Ok(Event::End(e)) => match local(e.name().as_ref()) {
-                b"p" if paragraph.active() => {
-                    if paragraph.depth == 1 {
+                match name {
+                    b"p" => {
+                        paragraph.reset();
                         finish_ref_position_paragraph(
                             &mut paragraph,
                             numbering,
                             &mut counters,
                             &mut field_positions,
                         );
-                    } else {
-                        paragraph.depth -= 1;
+                    }
+                    b"pPr" if paragraph.active() => {}
+                    b"ilvl" if paragraph.properties_depth > 0 => {
+                        if let Some(value) = attr_local(&e, b"val").and_then(|v| v.parse().ok()) {
+                            paragraph.ilvl = value;
+                        }
+                    }
+                    b"numId" if paragraph.properties_depth > 0 => {
+                        paragraph.num_id = attr_local(&e, b"val");
+                    }
+                    b"fldSimple" => record_ref_field_position(
+                        attr_local(&e, b"instr").as_deref(),
+                        &mut source_order,
+                        &mut field_positions,
+                        &mut paragraph,
+                    ),
+                    b"fldChar" => apply_ref_scan_fld_char(
+                        &e,
+                        &mut source_order,
+                        &mut current,
+                        &mut field_positions,
+                        &mut paragraph,
+                    ),
+                    b"bookmarkStart" => {
+                        if let (Some(id), Some(name)) =
+                            (attr_local(&e, b"id"), attr_local(&e, b"name"))
+                        {
+                            active_bookmarks.push((id, name, source_order));
+                            source_order += 1;
+                        }
+                    }
+                    b"bookmarkEnd" => {
+                        close_ref_position_bookmark(
+                            attr_local(&e, b"id").as_deref(),
+                            source_order,
+                            &mut active_bookmarks,
+                            &mut target_positions,
+                        );
+                        source_order += 1;
+                    }
+                    b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"drawing" | b"pict"
+                    | b"object" => {
+                        source_order += 1;
+                    }
+                    _ => {}
+                }
+            }
+            Ok(Event::End(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if name == b"AlternateContent" {
+                    alternate_content_stack.pop();
+                } else {
+                    match name {
+                        b"p" if paragraph.active() => {
+                            if paragraph.depth == 1 {
+                                finish_ref_position_paragraph(
+                                    &mut paragraph,
+                                    numbering,
+                                    &mut counters,
+                                    &mut field_positions,
+                                );
+                            } else {
+                                paragraph.depth -= 1;
+                            }
+                        }
+                        b"pPr" if paragraph.properties_depth > 0 => {
+                            paragraph.properties_depth -= 1;
+                        }
+                        _ => {}
                     }
                 }
-                b"pPr" if paragraph.properties_depth > 0 => {
-                    paragraph.properties_depth -= 1;
-                }
-                _ => {}
-            },
+                xml_depth = xml_depth.saturating_sub(1);
+            }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
