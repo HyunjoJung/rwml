@@ -9534,12 +9534,14 @@ fn toc_spec(instruction: &str) -> Option<TocSpec> {
             if !accept_field_format_switch(parts.next()?, &mut text_format) {
                 return None;
             }
+            saw_default_toc_neutral_switch = true;
             continue;
         }
         if let Some(format) = part.strip_prefix("\\*") {
             if !accept_field_format_switch(format, &mut text_format) {
                 return None;
             }
+            saw_default_toc_neutral_switch = true;
             continue;
         }
         if is_toc_value_neutral_switch(part) {

@@ -1982,12 +1982,14 @@ fn supported_toc_bookmark_scope(instruction: &str) -> Option<Option<String>> {
             if !accept_field_format_switch(parts.next()?, &mut text_format) {
                 return None;
             }
+            saw_default_toc_neutral_switch = true;
             continue;
         }
         if let Some(format) = part.strip_prefix("\\*") {
             if !accept_field_format_switch(format, &mut text_format) {
                 return None;
             }
+            saw_default_toc_neutral_switch = true;
             continue;
         }
         if is_toc_value_neutral_switch_for_report(part) {
