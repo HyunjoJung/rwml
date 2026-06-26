@@ -5411,7 +5411,7 @@ fn docx_display_fields_compute_deterministic_subset() {
     assert_eq!(
         report.features.unsupported_field_reasons,
         vec![FieldEvaluationReasonCount {
-            reason: FieldEvaluationReason::NoComputedResult,
+            reason: FieldEvaluationReason::UnsupportedSwitch,
             count: 1,
         }]
     );
