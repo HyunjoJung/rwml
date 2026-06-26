@@ -485,6 +485,8 @@ pub struct Table {
     pub header_rows: usize,
     /// Column widths as fractions of the table width; empty = even split.
     pub col_widths_pct: Vec<f32>,
+    /// Use Word's fixed table layout algorithm instead of autofit.
+    pub fixed_layout: bool,
 }
 
 impl Table {

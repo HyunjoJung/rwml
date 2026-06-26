@@ -1819,20 +1819,39 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Table {
         return Table::default();
     }
     let mut rows: Vec<(Vec<CellRaw>, bool)> = Vec::new();
+    let mut fixed_layout = false;
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
+                b"tblPr" => fixed_layout = read_tblpr(r),
                 b"tr" => rows.push(read_row(r, ctx, depth)),
-                _ => skip_subtree(r), // tblPr, tblGrid, …
+                _ => skip_subtree(r), // tblGrid, …
             },
             Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
     }
-    build_table(rows)
+    build_table(rows, fixed_layout)
 }
 
 /// Read a `<w:tr>` → its cells and whether it is a repeated header row.
+fn read_tblpr(r: &mut Xml<'_>) -> bool {
+    let mut fixed_layout = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if local(e.name().as_ref()) == b"tblLayout" =>
+            {
+                fixed_layout = attr_local(&e, b"type").as_deref() == Some("fixed");
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"tblPr" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    fixed_layout
+}
+
 fn read_row(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Vec<CellRaw>, bool) {
     let mut cells = Vec::new();
     let mut header = false;
@@ -2031,7 +2050,7 @@ fn apply_tc_mar_side(margins: &mut CellMargins, seen: &mut bool, e: &BytesStart<
 /// (`vMerge="restart"` opens a span, a later `vMerge` continuation at the same
 /// starting column grows the owner's `row_span` and is dropped) — the OOXML
 /// analogue of `table.rs` Phase B.
-fn build_table(raw_rows: Vec<(Vec<CellRaw>, bool)>) -> Table {
+fn build_table(raw_rows: Vec<(Vec<CellRaw>, bool)>, fixed_layout: bool) -> Table {
     let header_rows = raw_rows.iter().take_while(|(_, h)| *h).count();
 
     struct Placed {
@@ -2118,6 +2137,7 @@ fn build_table(raw_rows: Vec<(Vec<CellRaw>, bool)>) -> Table {
     Table {
         rows,
         header_rows,
+        fixed_layout,
         ..Default::default()
     }
 }
@@ -2552,7 +2572,7 @@ mod tests {
             (0..u16::MAX as usize).map(|_| (vec![raw_merge_cell(VMerge::Continue)], false)),
         );
 
-        let table = build_table(rows);
+        let table = build_table(rows, false);
 
         assert_eq!(table.rows[0].cells[0].row_span, u16::MAX);
     }

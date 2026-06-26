@@ -1057,6 +1057,9 @@ impl Ctx {
             r#"<w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/>"#,
             r#"</w:tblBorders>"#,
         ));
+        if t.fixed_layout {
+            out.push_str(r#"<w:tblLayout w:type="fixed"/>"#);
+        }
         out.push_str("</w:tblPr><w:tblGrid>");
         let colw = (9000 / ncols).max(1);
         for _ in 0..ncols {

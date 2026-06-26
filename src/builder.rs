@@ -1122,6 +1122,12 @@ impl TableBuilder {
         self
     }
 
+    /// Use Word's fixed table layout algorithm.
+    pub fn fixed_layout(mut self) -> Self {
+        self.table.fixed_layout = true;
+        self
+    }
+
     /// Append a row of cells.
     pub fn row<I, C>(mut self, cells: I) -> Self
     where

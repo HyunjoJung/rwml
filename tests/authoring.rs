@@ -118,6 +118,7 @@ fn report() -> DocModel {
         ],
         header_rows: 1,
         col_widths_pct: vec![0.7, 0.3],
+        fixed_layout: false,
     };
     DocModel {
         blocks: vec![title, Block::Table(table)],
@@ -1598,6 +1599,37 @@ fn table_builder_adds_rich_table_cells() {
     assert_eq!(reopened_table.rows[1].cells[0].row_span, 2);
     assert_eq!(reopened_table.rows[1].cells[0].valign, VCell::Bottom);
     assert_eq!(reopened_table.rows[1].cells[1].text(), "Q1");
+}
+
+#[test]
+fn table_builder_adds_fixed_layout() {
+    let model = DocBuilder::new()
+        .rich_table(
+            TableBuilder::new()
+                .fixed_layout()
+                .col_widths_pct([0.4, 0.6])
+                .row([CellBuilder::text("A"), CellBuilder::text("B")]),
+        )
+        .build();
+
+    let Block::Table(table) = &model.blocks[0] else {
+        panic!("expected builder to add a table block");
+    };
+    assert!(table.fixed_layout);
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    assert!(
+        document_xml.contains(r#"<w:tblLayout w:type="fixed"/>"#),
+        "fixed table layout XML missing: {document_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("fixed-layout table .docx reopens");
+    let Block::Table(reopened_table) = &reopened.model().blocks[0] else {
+        panic!("expected reopened table");
+    };
+    assert!(reopened_table.fixed_layout);
 }
 
 #[test]

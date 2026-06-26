@@ -614,7 +614,7 @@ Initial status:
   setup, headings, plain paragraphs, simple text tables with optional header rows,
   layout-aware paragraphs through `ParagraphBuilder`, styled runs through
   `RunBuilder`, named paragraph style definitions through
-  `ParagraphStyleBuilder`, rich tables through `TableBuilder` and `CellBuilder`,
+  `ParagraphStyleBuilder`, fixed-layout rich tables through `TableBuilder` and `CellBuilder`,
   typed cell paragraphs, explicit cell margins, and nested cell tables through
   `CellBuilder`, list
   paragraphs with explicit levels, simple field runs with cached results,
