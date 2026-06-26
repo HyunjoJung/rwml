@@ -353,7 +353,7 @@ Initial status:
   paragraph- and character-style `STYLEREF` computes nearest styled paragraph/run
   text by style id/name plus source-order `\p` above/below and deterministic
   numbered source paragraphs with `\n`, `\r`, `\w`, and numeric-text `\t`
-  switches; malformed `STYLEREF` syntax reports `UnsupportedSwitch`, while
+  switches; malformed `REVNUM`/`STYLEREF` syntax reports `UnsupportedSwitch`, while
   page-aware/header-footer,
   layout-derived `SECTIONPAGES`, and remaining document-structure/style lookup
   fields report `NoComputedResult` until native evaluation is implemented. The
@@ -820,7 +820,7 @@ Initial status:
   styled paragraph/run text by style id/name plus source-order `\p`
   above/below and numbered paragraph `\n`, `\r`, `\w`, and numeric-text `\t`
   switch results where numbering context is
-  deterministic; malformed `STYLEREF` syntax reports `UnsupportedSwitch`, and
+  deterministic; malformed `REVNUM`/`STYLEREF` syntax reports `UnsupportedSwitch`, and
   remaining document-structure cases preserve cached text with
   `NoComputedResult` diagnostics.
   Display/layout fields are named separately from unknown fields; deterministic

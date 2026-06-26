@@ -1531,6 +1531,9 @@ fn unsupported_field_reason(field: &Field) -> Option<FieldEvaluationReason> {
                 &field.instruction,
             ))
         }
+        FieldKind::DocumentStructure(ref kind) if kind.eq_ignore_ascii_case("REVNUM") => {
+            Some(revision_number_uncomputed_reason(&field.instruction))
+        }
         FieldKind::DocumentStructure(ref kind) if kind.eq_ignore_ascii_case("STYLEREF") => {
             Some(style_ref_uncomputed_reason(&field.instruction))
         }
@@ -1679,6 +1682,22 @@ fn supported_section_document_structure_syntax(instruction: &str) -> bool {
         return false;
     }
     true
+}
+
+fn revision_number_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
+    #[cfg(feature = "docx")]
+    {
+        if crate::docx::supports_revision_number_field_syntax(instruction) {
+            FieldEvaluationReason::NoComputedResult
+        } else {
+            FieldEvaluationReason::UnsupportedSwitch
+        }
+    }
+    #[cfg(not(feature = "docx"))]
+    {
+        let _ = instruction;
+        FieldEvaluationReason::NoComputedResult
+    }
 }
 
 fn style_ref_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {

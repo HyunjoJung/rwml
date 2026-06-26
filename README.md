@@ -522,7 +522,7 @@ deterministic body paragraph- and
 character-style `STYLEREF` computes nearest styled paragraph/run text by style id
 or style name with backward-then-forward source-order search, source-order `\p`
 above/below results, and numbered paragraph `\n`, `\r`, `\w`, and numeric-text
-`\t` switches; malformed `STYLEREF` syntax reports `UnsupportedSwitch`, and
+`\t` switches; malformed `REVNUM`/`STYLEREF` syntax reports `UnsupportedSwitch`, and
 remaining document-structure cases preserve cached result text with
 `NoComputedResult` diagnostics;
 display/layout fields (`ADVANCE`, `EQ`, `SYMBOL`) are named separately from

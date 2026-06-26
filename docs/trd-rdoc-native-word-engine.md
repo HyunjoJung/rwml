@@ -512,7 +512,7 @@ Implementation:
   numbered source paragraphs with `\n`, `\r`, `\w`, and numeric-text `\t`
   switches from the existing numbering context; keep
   cached text for page-aware/header-footer lookup and other unsupported
-  `STYLEREF` variants, with malformed `STYLEREF` syntax reported as
+  `STYLEREF` variants, with malformed `REVNUM`/`STYLEREF` syntax reported as
   `UnsupportedSwitch`;
 - compute `.docx` `SECTIONPAGES` fields for structurally bounded sections whose
   page count comes only from source hard breaks, enabled `pageBreakBefore`, and

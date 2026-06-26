@@ -363,7 +363,7 @@ The first public maturity release should meet these requirements.
   and character-style `STYLEREF` computed by style id/name nearest paragraph/run
   lookup, including source-order `\p` above/below and deterministic numbered
   source paragraphs with `\n`, `\r`, `\w`, and numeric-text `\t` switches;
-  malformed `STYLEREF` syntax reports `UnsupportedSwitch`;
+  malformed `REVNUM`/`STYLEREF` syntax reports `UnsupportedSwitch`;
   page-aware/header-footer lookup,
   layout-derived `SECTIONPAGES`, and remaining document-structure cases preserve
   cached display text with `NoComputedResult`;

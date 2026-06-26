@@ -5496,6 +5496,16 @@ pub(crate) fn computed_revision_number_result(
     instruction: &str,
     core_properties: &CoreProperties,
 ) -> Option<String> {
+    let text_format = revision_number_instruction(instruction)?;
+    let revision = core_properties.revision.clone()?;
+    Some(apply_field_text_format(revision, text_format))
+}
+
+pub(crate) fn supports_revision_number_field_syntax(instruction: &str) -> bool {
+    revision_number_instruction(instruction).is_some()
+}
+
+fn revision_number_instruction(instruction: &str) -> Option<Option<FieldTextFormat>> {
     let tokens = instruction_parts(instruction);
     let mut parts = tokens.iter().map(String::as_str);
     let kind = parts.next()?;
@@ -5518,8 +5528,7 @@ pub(crate) fn computed_revision_number_result(
         }
         return None;
     }
-    let revision = core_properties.revision.clone()?;
-    Some(apply_field_text_format(revision, text_format))
+    Some(text_format)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
