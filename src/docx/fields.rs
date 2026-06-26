@@ -7712,7 +7712,7 @@ fn sequence_instruction(instruction: &str) -> Option<SequenceInstruction> {
             }
             let reset = field_name_token(parts.next()?)?.parse::<i64>().ok()?;
             action_seen = true;
-            action = SequenceAction::Reset(reset);
+            action = SequenceAction::Reset(nonnegative_sequence_reset(reset)?);
             continue;
         }
         if let Some(reset) = strip_ascii_switch_prefix(part, "\\r") {
@@ -7720,7 +7720,8 @@ fn sequence_instruction(instruction: &str) -> Option<SequenceInstruction> {
                 return None;
             }
             action_seen = true;
-            action = SequenceAction::Reset(field_name_token(reset)?.parse::<i64>().ok()?);
+            let reset = field_name_token(reset)?.parse::<i64>().ok()?;
+            action = SequenceAction::Reset(nonnegative_sequence_reset(reset)?);
             continue;
         }
         return None;
@@ -7731,6 +7732,10 @@ fn sequence_instruction(instruction: &str) -> Option<SequenceInstruction> {
         hidden,
         number_format,
     })
+}
+
+fn nonnegative_sequence_reset(value: i64) -> Option<i64> {
+    (value >= 0).then_some(value)
 }
 
 pub(crate) fn computed_sequence_result(
@@ -9508,6 +9513,14 @@ mod tests {
         assert_eq!(
             seq_identifier_from_instruction(Some(r#"SEQ Figure \* roman"#)).as_deref(),
             Some("Figure")
+        );
+    }
+
+    #[test]
+    fn sequence_identifiers_reject_unsupported_negative_resets() {
+        assert_eq!(
+            seq_identifier_from_instruction(Some(r#"SEQ Figure \r -1"#)),
+            None
         );
     }
 
