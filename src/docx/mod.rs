@@ -1634,6 +1634,7 @@ fn read_media(
                     width_px,
                     height_px,
                     rotation_degrees: None,
+                    floating_offset_emu: None,
                 },
             );
         }

@@ -809,26 +809,58 @@ impl Ctx {
             .rotation_degrees
             .map(|degrees| format!(r#" rot="{}""#, i64::from(degrees.rem_euclid(360)) * 60_000))
             .unwrap_or_default();
-        out.push_str(&format!(
+        let graphic = format!(
             concat!(
-                r#"<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">"#,
-                r#"<wp:extent cx="{cx}" cy="{cy}"/><wp:docPr id="{drawing_id}" name="Image{n}"{descr}/>"#,
                 r#"<a:graphic><a:graphicData uri="{uri}"><pic:pic><pic:nvPicPr>"#,
                 r#"<pic:cNvPr id="{n}" name="Image{n}"/><pic:cNvPicPr/></pic:nvPicPr>"#,
                 r#"<pic:blipFill><a:blip r:embed="{rid}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>"#,
                 r#"<pic:spPr><a:xfrm{rotation}><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>"#,
                 r#"<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>"#,
-                r#"</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>"#,
+                r#"</pic:pic></a:graphicData></a:graphic>"#,
             ),
             cx = cx,
             cy = cy,
             n = n,
-            drawing_id = drawing_id,
-            descr = descr,
             rotation = rotation,
             uri = PIC_URI,
             rid = rid
-        ));
+        );
+        if let Some((x_emu, y_emu)) = img.floating_offset_emu {
+            out.push_str(&format!(
+                concat!(
+                    r#"<w:r><w:drawing><wp:anchor simplePos="0" relativeHeight="251659264" behindDoc="0" locked="0" layoutInCell="1" allowOverlap="1" distT="0" distB="0" distL="0" distR="0">"#,
+                    r#"<wp:simplePos x="0" y="0"/>"#,
+                    r#"<wp:positionH relativeFrom="page"><wp:posOffset>{x_emu}</wp:posOffset></wp:positionH>"#,
+                    r#"<wp:positionV relativeFrom="page"><wp:posOffset>{y_emu}</wp:posOffset></wp:positionV>"#,
+                    r#"<wp:extent cx="{cx}" cy="{cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/>"#,
+                    r#"<wp:wrapSquare wrapText="bothSides"/><wp:docPr id="{drawing_id}" name="Image{n}"{descr}/>"#,
+                    r#"<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>"#,
+                    r#"{graphic}</wp:anchor></w:drawing></w:r>"#,
+                ),
+                cx = cx,
+                cy = cy,
+                x_emu = x_emu,
+                y_emu = y_emu,
+                n = n,
+                drawing_id = drawing_id,
+                descr = descr,
+                graphic = graphic
+            ));
+        } else {
+            out.push_str(&format!(
+                concat!(
+                    r#"<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">"#,
+                    r#"<wp:extent cx="{cx}" cy="{cy}"/><wp:docPr id="{drawing_id}" name="Image{n}"{descr}/>"#,
+                    r#"{graphic}</wp:inline></w:drawing></w:r>"#,
+                ),
+                cx = cx,
+                cy = cy,
+                n = n,
+                drawing_id = drawing_id,
+                descr = descr,
+                graphic = graphic
+            ));
+        }
     }
 
     fn write_chart(&mut self, out: &mut String, chart: &Chart) {

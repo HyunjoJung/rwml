@@ -550,6 +550,7 @@ impl<'a, 'l> Asm<'a, 'l> {
                 width_px: c.width_px,
                 height_px: c.height_px,
                 rotation_degrees: c.rotation_degrees,
+                floating_offset_emu: c.floating_offset_emu,
             };
         }
         self.img_budget -= n;

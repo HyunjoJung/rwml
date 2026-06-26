@@ -585,6 +585,8 @@ pub struct Image {
     pub height_px: Option<u32>,
     /// Clockwise rotation in whole degrees.
     pub rotation_degrees: Option<i32>,
+    /// Page-relative floating anchor offset in EMUs, when authoring `wp:anchor`.
+    pub floating_offset_emu: Option<(i64, i64)>,
 }
 
 /// Supported chart layouts for authored `.docx` output.

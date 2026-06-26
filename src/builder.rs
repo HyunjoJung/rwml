@@ -748,6 +748,12 @@ impl ImageBuilder {
         self
     }
 
+    /// Emit this image as a page-relative floating anchor at the given EMU offset.
+    pub fn floating_offset_emu(mut self, x_emu: i64, y_emu: i64) -> Self {
+        self.image.floating_offset_emu = Some((x_emu, y_emu));
+        self
+    }
+
     /// Finish and return the image.
     pub fn build(self) -> Image {
         self.image
