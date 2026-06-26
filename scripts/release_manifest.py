@@ -326,6 +326,15 @@ def require_gate_check_threshold(
                     f"{policy} {label} report gate check did not pass: "
                     f"{metric} {op} {policy_threshold}"
                 )
+            actual = check.get("actual")
+            if not isinstance(actual, (int, float)) or not (
+                (op == ">=" and actual >= policy_threshold)
+                or (op == "<=" and actual <= policy_threshold)
+            ):
+                raise ValueError(
+                    f"{policy} {label} report gate check actual failed policy threshold: "
+                    f"{metric} {op} {policy_threshold}"
+                )
             return
     raise ValueError(
         f"{policy} {label} report gate must include {metric} {op} {policy_threshold}"
