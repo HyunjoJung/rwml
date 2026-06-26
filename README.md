@@ -638,8 +638,7 @@ number-format switches plus common field-result format switches, compute `\p`
 relative results (`above`, `below`, or `on page N`) when trusted leading
 structural page context or source page markers provide both target and field
 page/order, and keep cached page-reference text for remaining layout-dependent
-cases; remaining unsupported section page-number formats for unformatted
-`PAGEREF` report as `UnsupportedSwitch`;
+cases;
 remaining unknown fields beyond named document-info/date/stat fields,
 dynamic/control fields beyond deterministic literal arithmetic/comparison/scalar-function
 formula fields,
@@ -655,8 +654,7 @@ separators/escapes and parenthesized nested simple `EQ` operands, simple
 `EQ \r` radicals, default/custom `EQ \b` brackets, boxed `EQ \x` operands,
 `EQ \l` lists, `EQ \a` arrays, `EQ \s` scripts, `EQ \i` integrals/sums/products,
 `EQ \o` overstrikes, hidden `EQ \d` displacement controls,
-deterministic `SYMBOL`, and unsupported section
-page-number styles for unformatted `PAGEREF`,
+deterministic `SYMBOL`,
 remaining display/layout fields beyond hidden validated `ADVANCE`, action/automation fields beyond deterministic quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms,
 compatibility/private fields,
 barcode fields, and legacy form fields beyond deterministic `w:ffData`
@@ -670,8 +668,7 @@ still render cached text, including simple inline tabs, line
 breaks, and no-break hyphens, and remain reported as unsupported in diagnostics
 with both field-kind counts and reason counts (`UnknownField`,
 `UnresolvedBookmark`, `UnsupportedSwitch`, `NoComputedResult`), including
-separate missing `PAGEREF` bookmark targets, remaining unsupported section
-page-number formats for unformatted `PAGEREF`, explicit and direct bookmark-name
+separate missing `PAGEREF` bookmark targets, explicit and direct bookmark-name
 `REF \d` supported-syntax/no-computed-result, missing explicit or direct
 `REF \f` bookmark targets, and existing explicit or direct non-note `REF \f`
 unsupported-switch reasons, plus separate missing `NOTEREF`

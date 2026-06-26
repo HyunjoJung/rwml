@@ -592,8 +592,6 @@ Implementation:
   structural page context or source page markers provide both target and field
   page/order, and preserve cached page-reference text for remaining layout-dependent cases while
   leaving full layout-derived bookmark-to-page computation unsupported;
-  remaining unsupported section page-number formats for unformatted `PAGEREF`
-  report as `UnsupportedSwitch`;
 - report unsupported evaluation only for unknown fields beyond named
   document-info/date/stat display fields, dynamic/control fields beyond
   deterministic literal arithmetic/comparison/scalar-function formula fields with
@@ -654,8 +652,8 @@ Implementation:
   comment/annotation insertion and broader REF semantics, remaining missing
   explicit or direct `REF \f` bookmark targets, existing non-note `REF \f`
   targets, missing `NOTEREF` bookmark targets, existing `NOTEREF` bookmark targets without
-  body note-reference marks, unsupported `NOTEREF` switches, unsupported section
-  page-number formats for unformatted `PAGEREF`, layout-dependent `PAGEREF`,
+  body note-reference marks, unsupported `NOTEREF` switches,
+  layout-dependent `PAGEREF`,
   missing `TOC \b` scopes, existing `TOC \b` scopes with no matching entries,
   and broader TOC field cases while
   preserving cached field-result inline tabs, line breaks, and no-break hyphens;
@@ -663,8 +661,7 @@ Implementation:
   with compact counts for `UnknownField`, `UnresolvedBookmark`,
   `UnsupportedSwitch`, and `NoComputedResult` so downstream gates can distinguish
   unsupported classes within the same field kind, including missing `PAGEREF`
-  bookmark targets, remaining unsupported section page-number formats for
-  unformatted `PAGEREF`, explicit and direct bookmark-name `REF \d` supported syntax
+  bookmark targets, explicit and direct bookmark-name `REF \d` supported syntax
   with no computed result, missing explicit or direct `REF \f` targets, existing
   explicit or direct non-note `REF \f` unsupported-switch cases, missing
   `NOTEREF` targets, existing non-note `NOTEREF` targets, unsupported

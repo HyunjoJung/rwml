@@ -239,9 +239,7 @@ Initial status:
   number-format switches plus common field-result format switches, computes `\p` relative results (`above`, `below`, or
   `on page N`) when trusted leading structural page context or source page
   markers provide both target and field page/order, and preserves cached
-  page-reference text for remaining layout-dependent cases while remaining
-  unsupported section page-number formats for unformatted `PAGEREF` are
-  reported as `UnsupportedSwitch`.
+  page-reference text for remaining layout-dependent cases.
 - `Document::notes()` extracts `.docx` footnote/endnote side-table records from
   `word/footnotes.xml` and `word/endnotes.xml` with Word ids, note kind,
   visible text, and reference-id anchors with normalized containing body block
@@ -257,8 +255,7 @@ Initial status:
   `lastPrinted`, `revision`, and `version`) and mirrors `.docx` title/creator
   into `DocSetup`.
 - `Document::report()` includes field-kind counts, and unsupported-field
-  warnings now report only missing `PAGEREF` targets, remaining unsupported
-  section page-number formats for unformatted `PAGEREF`, and remaining layout-dependent `PAGEREF`, unknown, unresolved bookmark scope, unresolved or
+  warnings now report only missing `PAGEREF` targets, remaining layout-dependent `PAGEREF`, unknown, unresolved bookmark scope, unresolved or
   unsupported remaining value-changing REF cases such as
   comment/annotation insertion and broader REF semantics, missing explicit or
   direct `REF \f` bookmark targets, existing non-note `REF \f` targets,

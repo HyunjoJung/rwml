@@ -426,8 +426,7 @@ The first public maturity release should meet these requirements.
   `on page N`) when trusted leading structural page context or source page
   markers provide both target and field page/order, and preserve cached
   page-reference text for remaining layout-dependent cases until layout can map
-  bookmarks to emitted pages; remaining unsupported section page-number formats
-  for unformatted `PAGEREF` report `UnsupportedSwitch`; cached field results
+  bookmarks to emitted pages; cached field results
   preserve simple inline tabs, line breaks, and no-break hyphens for simple and
   common complex body fields;
   unresolved bookmark scopes, unsupported remaining value-changing REF/NOTEREF cases such as
@@ -436,8 +435,7 @@ The first public maturity release should meet these requirements.
   stay visible through diagnostics with unsupported field-kind counts and
   machine-readable reason counts for unknown fields, unresolved bookmarks,
   unsupported switches, and supported syntax with no computed value, including
-  separate missing `PAGEREF` bookmark targets, remaining unsupported section
-  page-number formats for unformatted `PAGEREF`, explicit and direct bookmark-name
+  separate missing `PAGEREF` bookmark targets, explicit and direct bookmark-name
   `REF \d` no-computed-result, missing explicit or direct `REF \f` targets, and
   existing explicit or direct non-note `REF \f` unsupported-switch reasons, plus
   separate missing `NOTEREF` targets, existing non-note `NOTEREF` targets, and
