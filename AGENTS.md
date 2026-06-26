@@ -37,7 +37,10 @@ rendering moving toward one coherent Rust-native document model.
 - When launching Ultracode workers, pin the worker model explicitly:
   `--model GPT-5.3-Codex-Spark --reasoning-effort high`.
 - Do not silently fall back to mini or another worker model. If Spark is
-  unavailable, capture the exact error and ask before using a fallback.
+  capped or unavailable, capture the exact error. For narrow read-only
+  investigation, small fallback workers are allowed after noting the fallback;
+  keep Spark required for broad sign-off, implementation, or release claims
+  unless the user explicitly approves another model.
 - Keep worker lanes read-only for investigation unless the task explicitly needs
   isolated writable worktrees. The parent agent remains responsible for reading
   worker output, integrating changes, and running verification.
