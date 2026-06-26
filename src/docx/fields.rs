@@ -8863,23 +8863,19 @@ fn toc_spec(instruction: &str) -> Option<TocSpec> {
             continue;
         }
         if part.eq_ignore_ascii_case("\\p") {
-            parts.next_if(|next| !next.starts_with('\\'))?;
+            field_literal_token(parts.next_if(|next| !next.starts_with('\\'))?)?;
             continue;
         }
         if let Some(separator) = strip_ascii_switch_prefix(part, "\\p") {
-            if separator.is_empty() {
-                return None;
-            }
+            field_literal_token(separator)?;
             continue;
         }
         if part.eq_ignore_ascii_case("\\d") {
-            parts.next_if(|next| !next.starts_with('\\'))?;
+            field_literal_token(parts.next_if(|next| !next.starts_with('\\'))?)?;
             continue;
         }
         if let Some(separator) = strip_ascii_switch_prefix(part, "\\d") {
-            if separator.is_empty() {
-                return None;
-            }
+            field_literal_token(separator)?;
             continue;
         }
         if part.eq_ignore_ascii_case("\\s") {
@@ -9632,6 +9628,13 @@ mod tests {
         assert!(computed_toc_entry_result(r#"TC "Entry" \l "2"#).is_none());
         assert!(toc_spec(r#"TOC \o "1-2"#).is_none());
         assert!(toc_spec(r#"TOC \o "1-2" \l "2-3"#).is_none());
+    }
+
+    #[test]
+    fn toc_separator_switches_reject_malformed_quotes() {
+        assert!(toc_spec(r#"TOC \o "1-2" \p """#).is_some());
+        assert!(toc_spec(r#"TOC \o "1-2" \p ""#).is_none());
+        assert!(toc_spec(r#"TOC \o "1-2" \d"-"#).is_none());
     }
 
     #[test]
