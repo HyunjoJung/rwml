@@ -564,6 +564,8 @@ pub struct Image {
     pub width_px: Option<u32>,
     /// Intrinsic height in pixels, parsed from the image header, when known.
     pub height_px: Option<u32>,
+    /// Clockwise rotation in whole degrees.
+    pub rotation_degrees: Option<i32>,
 }
 
 /// Supported chart layouts for authored `.docx` output.

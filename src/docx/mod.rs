@@ -1631,6 +1631,7 @@ fn read_media(
                     mime: Some(mime.to_string()),
                     width_px,
                     height_px,
+                    rotation_degrees: None,
                 },
             );
         }

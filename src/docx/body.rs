@@ -1274,6 +1274,9 @@ fn walk_drawing(
                 }
                 b"AlternateContent" => walk_alternate_content(r, ctx, img, text, depth + 1),
                 _ => {
+                    if local(e.name().as_ref()) == b"xfrm" {
+                        apply_image_rotation(img, &e);
+                    }
                     if img.is_none() {
                         *img = blip_image(&e, ctx);
                     }
@@ -1284,13 +1287,29 @@ fn walk_drawing(
                     }
                 }
             },
-            Ok(Event::Empty(e)) if img.is_none() => {
-                *img = blip_image(&e, ctx);
+            Ok(Event::Empty(e)) => {
+                if local(e.name().as_ref()) == b"xfrm" {
+                    apply_image_rotation(img, &e);
+                }
+                if img.is_none() {
+                    *img = blip_image(&e, ctx);
+                }
             }
             Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
     }
+}
+
+fn apply_image_rotation(img: &mut Option<Image>, e: &BytesStart<'_>) {
+    let Some(image) = img.as_mut() else {
+        return;
+    };
+    let Some(rot) = attr_local(e, b"rot").and_then(|rot| rot.parse::<i64>().ok()) else {
+        return;
+    };
+    let units = rot.rem_euclid(21_600_000);
+    image.rotation_degrees = Some(((units + 30_000) / 60_000) as i32 % 360);
 }
 
 /// `mc:AlternateContent` wraps the SAME box as a `Choice` (DrawingML) and a

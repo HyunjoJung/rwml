@@ -547,6 +547,7 @@ impl<'a, 'l> Asm<'a, 'l> {
                 mime: c.mime.clone(),
                 width_px: c.width_px,
                 height_px: c.height_px,
+                rotation_degrees: c.rotation_degrees,
             };
         }
         self.img_budget -= n;

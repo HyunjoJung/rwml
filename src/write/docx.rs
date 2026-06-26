@@ -780,6 +780,10 @@ impl Ctx {
             .filter(|alt| !alt.is_empty())
             .map(|alt| format!(r#" descr="{}""#, esc_attr(alt)))
             .unwrap_or_default();
+        let rotation = img
+            .rotation_degrees
+            .map(|degrees| format!(r#" rot="{}""#, i64::from(degrees.rem_euclid(360)) * 60_000))
+            .unwrap_or_default();
         out.push_str(&format!(
             concat!(
                 r#"<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">"#,
@@ -787,7 +791,7 @@ impl Ctx {
                 r#"<a:graphic><a:graphicData uri="{uri}"><pic:pic><pic:nvPicPr>"#,
                 r#"<pic:cNvPr id="{n}" name="Image{n}"/><pic:cNvPicPr/></pic:nvPicPr>"#,
                 r#"<pic:blipFill><a:blip r:embed="{rid}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>"#,
-                r#"<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>"#,
+                r#"<pic:spPr><a:xfrm{rotation}><a:off x="0" y="0"/><a:ext cx="{cx}" cy="{cy}"/></a:xfrm>"#,
                 r#"<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>"#,
                 r#"</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>"#,
             ),
@@ -796,6 +800,7 @@ impl Ctx {
             n = n,
             drawing_id = drawing_id,
             descr = descr,
+            rotation = rotation,
             uri = PIC_URI,
             rid = rid
         ));

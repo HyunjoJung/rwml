@@ -1485,6 +1485,37 @@ fn image_builder_adds_alt_text_and_size() {
 }
 
 #[test]
+fn image_builder_adds_rotation() {
+    let png = tiny_png();
+    let model = DocBuilder::new()
+        .rich_image(
+            ImageBuilder::new(png.clone(), "image/png")
+                .size_px(200, 100)
+                .rotate_degrees(90),
+        )
+        .build();
+
+    let Block::Image(image) = &model.blocks[0] else {
+        panic!("expected image block");
+    };
+    assert_eq!(image.rotation_degrees, Some(90));
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    assert!(
+        document_xml.contains(r#"<a:xfrm rot="5400000"><a:off x="0" y="0"/>"#),
+        "image rotation missing: {document_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("rotated image builder .docx reopens");
+    let images = reopened.images();
+    assert_eq!(images.len(), 1);
+    assert_eq!(images[0].bytes.as_deref(), Some(png.as_slice()));
+    assert_eq!(images[0].rotation_degrees, Some(90));
+}
+
+#[test]
 fn doc_builder_adds_bar_chart() {
     let model = DocBuilder::new()
         .chart(

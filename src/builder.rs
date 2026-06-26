@@ -731,6 +731,12 @@ impl ImageBuilder {
         self
     }
 
+    /// Rotate the image clockwise by whole degrees.
+    pub fn rotate_degrees(mut self, degrees: i32) -> Self {
+        self.image.rotation_degrees = Some(degrees.rem_euclid(360));
+        self
+    }
+
     /// Finish and return the image.
     pub fn build(self) -> Image {
         self.image

@@ -59,11 +59,11 @@ serialize it to a clean, Office-openable `.docx`. Character formatting (font,
 size, color, bold/italic, highlight, super/subscript), paragraph layout
 (named styles, headings, alignment, spacing, indent, shading), leveled lists,
 **bordered tables with per-cell shading / width / vertical alignment**, images
-with alt text and explicit pixel size, simple fields with cached results, dirty
-TOC heading-range fields, run-anchored comments, tracked insertion/deletion
-runs, run-level content controls, bookmarked runs, authored footnotes/endnotes,
-page setup, explicit page/section breaks, and running headers/footers with page
-numbers all round-trip. See
+with alt text, explicit pixel size, and inline rotation, simple fields with
+cached results, dirty TOC heading-range fields, run-anchored comments, tracked
+insertion/deletion runs, run-level content controls, bookmarked runs, authored
+footnotes/endnotes, page setup, explicit page/section breaks, and running
+headers/footers with page numbers all round-trip. See
 [`examples/report.rs`](examples/report.rs).
 
 ```rust
@@ -835,7 +835,7 @@ The long-term native Word engine plan is split into the
       styled runs, leveled lists, simple fields, dirty TOC heading-range fields,
       run-anchored comments, tracked insertion/deletion runs, run-level content
       controls, bookmarked runs, authored footnotes/endnotes, inline/standalone hyperlinks,
-      headers/footers + page numbers, images,
+      headers/footers + page numbers, images with inline rotation,
       bar/3-D bar/column/3-D column/line/3-D line/area/3-D area/radar/scatter/bubble/pie/3-D pie/doughnut/surface/3-D surface/stock/pie-of-pie/bar-of-pie
       charts with embedded workbook-backed data) via `DocBuilder`,
       `ParagraphBuilder`, `RunBuilder`, `CommentBuilder`, `RevisionBuilder`,
