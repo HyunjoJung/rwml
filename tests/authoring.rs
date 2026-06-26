@@ -467,6 +467,54 @@ fn run_builder_adds_simple_field_runs() {
 }
 
 #[test]
+fn doc_builder_adds_dirty_toc_heading_range() {
+    let model = DocBuilder::new()
+        .heading(1, "Executive Summary")
+        .heading(3, "Detail")
+        .heading(4, "Appendix Detail")
+        .toc_heading_range(1, 3)
+        .build();
+
+    let Block::Paragraph(paragraph) = &model.blocks[3] else {
+        panic!("expected TOC paragraph");
+    };
+    assert_eq!(
+        paragraph.runs[0].field,
+        FieldRole::Simple {
+            instruction: "TOC \\o \"1-3\"".to_string()
+        }
+    );
+    assert!(paragraph.runs[0].field_dirty);
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    assert!(
+        document_xml.contains(r#"<w:fldSimple w:instr=" TOC \o &quot;1-3&quot; " w:dirty="true">"#),
+        "dirty TOC field XML missing: {document_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("TOC-authored .docx reopens");
+    let fields = reopened.fields();
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::Toc);
+    assert_eq!(fields[0].instruction, "TOC \\o \"1-3\"");
+    assert_eq!(fields[0].result, "Contents");
+    let computed = fields[0]
+        .computed_result
+        .as_deref()
+        .expect("TOC should compute from authored headings");
+    assert!(computed.contains("Executive Summary"), "{computed:?}");
+    assert!(computed.contains("Detail"), "{computed:?}");
+    assert!(!computed.contains("Appendix Detail"), "{computed:?}");
+    assert!(reopened
+        .report()
+        .warnings
+        .iter()
+        .all(|warning| !matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })));
+}
+
+#[test]
 fn run_builder_adds_bookmark_for_ref_fields() {
     let model = DocBuilder::new()
         .paragraph_runs([RunBuilder::new("Figure 1").bookmark("Figure1").build()])

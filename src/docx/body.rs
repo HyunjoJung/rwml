@@ -824,6 +824,7 @@ fn computed_field_run(text: String) -> Run {
         text,
         props: CharProps::default(),
         field: FieldRole::Other,
+        field_dirty: false,
         image: None,
         comment: None,
         revision: None,
@@ -1026,6 +1027,7 @@ fn push_drawing_runs(images: &mut Vec<Run>, img: Option<Image>, txbx: String) {
             text: String::new(),
             props: CharProps::default(),
             field: FieldRole::None,
+            field_dirty: false,
             image: Some(img),
             comment: None,
             revision: None,
@@ -1039,6 +1041,7 @@ fn push_drawing_runs(images: &mut Vec<Run>, img: Option<Image>, txbx: String) {
             text: txbx,
             props: CharProps::default(),
             field: FieldRole::None,
+            field_dirty: false,
             image: None,
             comment: None,
             revision: None,
@@ -1141,6 +1144,7 @@ fn read_run(
             field: link
                 .map(|u| FieldRole::Hyperlink { url: u.to_string() })
                 .unwrap_or(FieldRole::None),
+            field_dirty: false,
             image: None,
             comment: None,
             revision: None,

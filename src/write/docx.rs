@@ -614,8 +614,13 @@ impl Ctx {
             }
             FieldRole::Simple { instruction } => {
                 let instruction = normalize_field_instruction(instruction);
+                let dirty = if r.field_dirty {
+                    r#" w:dirty="true""#
+                } else {
+                    ""
+                };
                 run_xml.push_str(&format!(
-                    r#"<w:fldSimple w:instr=" {} ">"#,
+                    r#"<w:fldSimple w:instr=" {} "{dirty}>"#,
                     esc_attr(&instruction)
                 ));
                 self.write_run_inner(&mut run_xml, r, deleted);

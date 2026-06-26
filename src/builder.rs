@@ -1343,6 +1343,29 @@ impl DocBuilder {
         self
     }
 
+    /// Add a dirty table-of-contents field for heading levels in `start..=end`.
+    pub fn toc_heading_range(mut self, start: u8, end: u8) -> Self {
+        let start = start.clamp(1, 9);
+        let end = end.clamp(1, 9);
+        let (start, end) = if start <= end {
+            (start, end)
+        } else {
+            (end, start)
+        };
+        self.model.blocks.push(Block::Paragraph(Paragraph {
+            props: ParaProps::default(),
+            runs: vec![Run {
+                text: "Contents".to_string(),
+                field: FieldRole::Simple {
+                    instruction: format!(r#"TOC \o "{start}-{end}""#),
+                },
+                field_dirty: true,
+                ..Run::default()
+            }],
+        }));
+        self
+    }
+
     /// Add a block image with caller-supplied bytes and MIME type.
     pub fn image(mut self, bytes: Vec<u8>, mime: impl Into<String>) -> Self {
         self.model.blocks.push(Block::Image(Image {

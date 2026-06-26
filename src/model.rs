@@ -342,6 +342,8 @@ pub struct Run {
     pub props: CharProps,
     /// Field role (a hyperlink result carries its URL).
     pub field: FieldRole,
+    /// Mark generated simple fields dirty so Word can refresh them.
+    pub field_dirty: bool,
     /// An inline picture (the run's text is empty when this is set).
     pub image: Option<Image>,
     /// Authored comment anchored to this run.
