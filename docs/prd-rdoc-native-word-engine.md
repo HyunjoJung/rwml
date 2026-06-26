@@ -79,7 +79,7 @@ Required direction:
   tables, and rich text;
 - comments, fields, tracked insertions/deletions, charts, and content controls as
   builder surfaces;
-- chart authoring should cover bar, stacked bar, 3-D bar, column, stacked column, 3-D column, line, 3-D line,
+- chart authoring should cover bar, stacked bar, 100% stacked bar, 3-D bar, column, stacked column, 100% stacked column, 3-D column, line, 3-D line,
   area, 3-D area, radar, scatter, bubble, 3-D bubble, pie, 3-D pie, doughnut,
   surface, 3-D surface, stock, pie-of-pie, and bar-of-pie charts with literal chart caches plus embedded
   workbook-backed source data, plus shape styling for 3-D bar/column charts and

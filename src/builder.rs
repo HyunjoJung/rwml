@@ -822,6 +822,16 @@ impl ChartBuilder {
         }
     }
 
+    /// Start a 100% stacked horizontal bar chart.
+    pub fn percent_stacked_bar() -> Self {
+        Self {
+            chart: Chart {
+                kind: ChartKind::PercentStackedBar,
+                ..Chart::default()
+            },
+        }
+    }
+
     /// Start a clustered 3-D horizontal bar chart.
     pub fn bar_3d() -> Self {
         Self {
@@ -847,6 +857,16 @@ impl ChartBuilder {
         Self {
             chart: Chart {
                 kind: ChartKind::StackedColumn,
+                ..Chart::default()
+            },
+        }
+    }
+
+    /// Start a 100% stacked vertical column chart.
+    pub fn percent_stacked_column() -> Self {
+        Self {
+            chart: Chart {
+                kind: ChartKind::PercentStackedColumn,
                 ..Chart::default()
             },
         }

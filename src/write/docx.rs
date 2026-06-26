@@ -1815,6 +1815,14 @@ fn chart_xml(chart: &Chart, chart_id: u32, workbook_rid: Option<&str>) -> String
         ChartKind::StackedBar => {
             write_bar_or_column_chart(&mut out, chart, cat_axis_id, val_axis_id, "bar", "stacked")
         }
+        ChartKind::PercentStackedBar => write_bar_or_column_chart(
+            &mut out,
+            chart,
+            cat_axis_id,
+            val_axis_id,
+            "bar",
+            "percentStacked",
+        ),
         ChartKind::Bar3D => {
             write_bar_or_column_3d_chart(&mut out, chart, cat_axis_id, val_axis_id, "bar")
         }
@@ -1829,6 +1837,14 @@ fn chart_xml(chart: &Chart, chart_id: u32, workbook_rid: Option<&str>) -> String
         ChartKind::StackedColumn => {
             write_bar_or_column_chart(&mut out, chart, cat_axis_id, val_axis_id, "col", "stacked")
         }
+        ChartKind::PercentStackedColumn => write_bar_or_column_chart(
+            &mut out,
+            chart,
+            cat_axis_id,
+            val_axis_id,
+            "col",
+            "percentStacked",
+        ),
         ChartKind::Column3D => {
             write_bar_or_column_3d_chart(&mut out, chart, cat_axis_id, val_axis_id, "col")
         }
@@ -1916,7 +1932,7 @@ fn write_bar_or_column_chart(
         write_chart_values(out, &series.values);
         out.push_str("</c:ser>");
     }
-    if grouping == "stacked" {
+    if matches!(grouping, "stacked" | "percentStacked") {
         out.push_str(r#"<c:overlap val="100"/>"#);
     }
     out.push_str(&format!(
@@ -2293,9 +2309,13 @@ fn format_chart_number(value: f64) -> String {
 
 fn write_chart_axes(out: &mut String, kind: ChartKind, cat_axis_id: u32, val_axis_id: u32) {
     let (cat_pos, val_pos) = match kind {
-        ChartKind::Bar | ChartKind::StackedBar | ChartKind::Bar3D => ("l", "b"),
+        ChartKind::Bar
+        | ChartKind::StackedBar
+        | ChartKind::PercentStackedBar
+        | ChartKind::Bar3D => ("l", "b"),
         ChartKind::Column
         | ChartKind::StackedColumn
+        | ChartKind::PercentStackedColumn
         | ChartKind::Column3D
         | ChartKind::Line
         | ChartKind::Line3D

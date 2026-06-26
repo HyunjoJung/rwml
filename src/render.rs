@@ -2108,17 +2108,21 @@ fn chart_value_range(chart: &Chart) -> (f64, f64) {
 fn stacked_chart_max(chart: &Chart, category_count: usize) -> f64 {
     let mut max = 0.0;
     for category_index in 0..category_count {
-        let total: f64 = chart
-            .series
-            .iter()
-            .filter_map(|series| series.values.get(category_index).copied())
-            .filter(|value| value.is_finite() && *value > 0.0)
-            .sum();
+        let total = stacked_category_total(chart, category_index);
         if total > max {
             max = total;
         }
     }
     max.max(1.0)
+}
+
+fn stacked_category_total(chart: &Chart, category_index: usize) -> f64 {
+    chart
+        .series
+        .iter()
+        .filter_map(|series| series.values.get(category_index).copied())
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .sum()
 }
 
 fn chart_bubble_size_range(chart: &Chart) -> (f64, f64) {
@@ -2549,23 +2553,32 @@ fn draw_authored_chart(
         .unwrap_or(0);
     let category_count = chart.categories.len().max(max_series_points).max(1);
     let series_count = chart.series.len().max(1);
-    let (min_value, max_value) =
-        if matches!(chart.kind, ChartKind::StackedBar | ChartKind::StackedColumn) {
-            (0.0, stacked_chart_max(chart, category_count))
-        } else {
-            chart_value_range(chart)
-        };
+    let (min_value, max_value) = if matches!(
+        chart.kind,
+        ChartKind::PercentStackedBar | ChartKind::PercentStackedColumn
+    ) {
+        (0.0, 1.0)
+    } else if matches!(chart.kind, ChartKind::StackedBar | ChartKind::StackedColumn) {
+        (0.0, stacked_chart_max(chart, category_count))
+    } else {
+        chart_value_range(chart)
+    };
     let range = (max_value - min_value).max(1.0);
     let value_x = |value: f64| plot_left + (((value - min_value) / range) as f32 * plot_w);
     let value_y = |value: f64| plot_bottom - (((value - min_value) / range) as f32 * plot_h);
 
     match chart.kind {
-        ChartKind::StackedBar => {
+        ChartKind::StackedBar | ChartKind::PercentStackedBar => {
+            let percent = chart.kind == ChartKind::PercentStackedBar;
             for tick in 0..=4 {
                 let frac = tick as f32 / 4.0;
                 let x_tick = plot_left + frac * plot_w;
                 fill_rect_color(surface, x_tick, plot_top, 0.35, plot_h, grid);
-                let label = format_chart_tick(max_value * tick as f64 / 4.0);
+                let label = if percent {
+                    format!("{}%", tick * 25)
+                } else {
+                    format_chart_tick(max_value * tick as f64 / 4.0)
+                };
                 draw_chart_text(
                     surface,
                     &label,
@@ -2606,6 +2619,7 @@ fn draw_authored_chart(
 
                 let bar_top = band_top + (band_h - bar_h) * 0.5;
                 let mut offset = 0.0;
+                let total = stacked_category_total(chart, category_index).max(1.0);
                 for (series_index, series) in chart.series.iter().enumerate() {
                     let value = series
                         .values
@@ -2616,9 +2630,11 @@ fn draw_authored_chart(
                     if value <= 0.0 {
                         continue;
                     }
-                    let segment_left = value_x(offset).clamp(plot_left, plot_right);
+                    let start = if percent { offset / total } else { offset };
                     offset += value;
-                    let segment_right = value_x(offset).clamp(plot_left, plot_right);
+                    let end = if percent { offset / total } else { offset };
+                    let segment_left = value_x(start).clamp(plot_left, plot_right);
+                    let segment_right = value_x(end).clamp(plot_left, plot_right);
                     fill_rect_color(
                         surface,
                         segment_left,
@@ -2708,6 +2724,7 @@ fn draw_authored_chart(
         }
         ChartKind::Column
         | ChartKind::StackedColumn
+        | ChartKind::PercentStackedColumn
         | ChartKind::Column3D
         | ChartKind::Line
         | ChartKind::Line3D
@@ -2764,12 +2781,14 @@ fn draw_authored_chart(
             }
 
             match chart.kind {
-                ChartKind::StackedColumn => {
+                ChartKind::StackedColumn | ChartKind::PercentStackedColumn => {
+                    let percent = chart.kind == ChartKind::PercentStackedColumn;
                     let column_w = (band_w * 0.62).max(2.0);
                     for (category_index, _) in chart.categories.iter().enumerate() {
                         let column_left =
                             plot_left + category_index as f32 * band_w + (band_w - column_w) * 0.5;
                         let mut offset = 0.0;
+                        let total = stacked_category_total(chart, category_index).max(1.0);
                         for (series_index, series) in chart.series.iter().enumerate() {
                             let value = series
                                 .values
@@ -2780,9 +2799,11 @@ fn draw_authored_chart(
                             if value <= 0.0 {
                                 continue;
                             }
-                            let segment_bottom = value_y(offset).clamp(plot_top, plot_bottom);
+                            let start = if percent { offset / total } else { offset };
                             offset += value;
-                            let segment_top = value_y(offset).clamp(plot_top, plot_bottom);
+                            let end = if percent { offset / total } else { offset };
+                            let segment_bottom = value_y(start).clamp(plot_top, plot_bottom);
+                            let segment_top = value_y(end).clamp(plot_top, plot_bottom);
                             fill_rect_color(
                                 surface,
                                 column_left,
@@ -3064,6 +3085,7 @@ fn draw_authored_chart(
                 }
                 ChartKind::Bar
                 | ChartKind::StackedBar
+                | ChartKind::PercentStackedBar
                 | ChartKind::Bar3D
                 | ChartKind::Radar
                 | ChartKind::Pie
