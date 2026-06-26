@@ -874,7 +874,7 @@ fn toc_quoted_custom_style_no_result_diagnostics_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="BodyText"/></w:pPr><w:r><w:t>Body paragraph</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" TOC \t &quot;Custom Heading,2&quot; "><w:r><w:t>stale quoted custom toc</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TOC \o &quot;1-2&quot; \s chapter \d &quot;-&quot; "><w:r><w:t>stale sequence prefix toc</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TOC \c &quot;Figure List&quot; "><w:r><w:t>stale malformed caption toc</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="BodyText"/></w:pPr><w:r><w:t>Body paragraph</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" TOC \t &quot;Custom Heading,2&quot; "><w:r><w:t>stale quoted custom toc</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TOC \o &quot;1-2&quot; \s chapter \d &quot;-&quot; "><w:r><w:t>stale sequence prefix toc</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TOC \c &quot;Figure List&quot; "><w:r><w:t>stale malformed caption toc</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TOC \t &quot;Custom Heading,2 "><w:r><w:t>stale malformed style toc</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -2591,19 +2591,19 @@ fn report_toc_field_with_quoted_custom_style_switch_reports_no_computed_result()
         .expect("fixture opens");
     let report = doc.report();
 
-    assert_eq!(report.features.fields, 3);
+    assert_eq!(report.features.fields, 4);
     assert_eq!(
         report.features.field_kinds,
         vec![FieldKindCount {
             kind: FieldKind::Toc,
-            count: 3,
+            count: 4,
         }]
     );
     assert_eq!(
         report.features.unsupported_field_kinds,
         vec![FieldKindCount {
             kind: FieldKind::Toc,
-            count: 3,
+            count: 4,
         }]
     );
     assert_eq!(
@@ -2615,14 +2615,14 @@ fn report_toc_field_with_quoted_custom_style_switch_reports_no_computed_result()
             },
             FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::UnsupportedSwitch,
-                count: 1,
+                count: 2,
             },
         ]
     );
 
     let json = report.to_json();
     assert!(
-        json.contains(r#""unsupported_field_reasons":[{"reason":"NoComputedResult","count":2},{"reason":"UnsupportedSwitch","count":1}]"#),
+        json.contains(r#""unsupported_field_reasons":[{"reason":"NoComputedResult","count":2},{"reason":"UnsupportedSwitch","count":2}]"#),
         "{json}"
     );
 }

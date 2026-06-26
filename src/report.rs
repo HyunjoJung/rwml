@@ -2107,14 +2107,24 @@ fn toc_uncomputed_reason(
 }
 
 fn parse_toc_style_specs_for_report(value: &str) -> Option<()> {
-    let parts: Vec<_> = value.trim_matches('"').split(',').map(str::trim).collect();
+    let value = value.trim();
+    let value = match (value.starts_with('"'), value.ends_with('"')) {
+        (true, true) if value.len() >= 2 => &value[1..value.len() - 1],
+        (true, _) | (_, true) => return None,
+        (false, false) => value,
+    };
+    let parts: Vec<_> = value.split(',').map(str::trim).collect();
     if parts.is_empty() || parts.len() % 2 != 0 {
         return None;
     }
     for pair in parts.chunks_exact(2) {
-        let name = pair[0].trim_matches('"');
-        let level = pair[1].trim_matches('"').parse::<u8>().ok()?;
-        if name.is_empty() || !(1..=9).contains(&level) {
+        let name = pair[0];
+        let level = pair[1];
+        if name.is_empty() || name.starts_with('\\') || name.contains('"') || level.contains('"') {
+            return None;
+        }
+        let level = level.parse::<u8>().ok()?;
+        if !(1..=9).contains(&level) {
             return None;
         }
     }
