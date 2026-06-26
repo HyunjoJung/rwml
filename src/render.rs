@@ -2105,6 +2105,22 @@ fn chart_value_range(chart: &Chart) -> (f64, f64) {
     (min, max)
 }
 
+fn stacked_chart_max(chart: &Chart, category_count: usize) -> f64 {
+    let mut max = 0.0;
+    for category_index in 0..category_count {
+        let total: f64 = chart
+            .series
+            .iter()
+            .filter_map(|series| series.values.get(category_index).copied())
+            .filter(|value| value.is_finite() && *value > 0.0)
+            .sum();
+        if total > max {
+            max = total;
+        }
+    }
+    max.max(1.0)
+}
+
 fn chart_bubble_size_range(chart: &Chart) -> (f64, f64) {
     let mut max = 1.0;
     for size in chart
@@ -2525,11 +2541,6 @@ fn draw_authored_chart(
         return;
     }
 
-    let (min_value, max_value) = chart_value_range(chart);
-    let range = (max_value - min_value).max(1.0);
-    let value_x = |value: f64| plot_left + (((value - min_value) / range) as f32 * plot_w);
-    let value_y = |value: f64| plot_bottom - (((value - min_value) / range) as f32 * plot_h);
-
     let max_series_points = chart
         .series
         .iter()
@@ -2538,8 +2549,87 @@ fn draw_authored_chart(
         .unwrap_or(0);
     let category_count = chart.categories.len().max(max_series_points).max(1);
     let series_count = chart.series.len().max(1);
+    let (min_value, max_value) =
+        if matches!(chart.kind, ChartKind::StackedBar | ChartKind::StackedColumn) {
+            (0.0, stacked_chart_max(chart, category_count))
+        } else {
+            chart_value_range(chart)
+        };
+    let range = (max_value - min_value).max(1.0);
+    let value_x = |value: f64| plot_left + (((value - min_value) / range) as f32 * plot_w);
+    let value_y = |value: f64| plot_bottom - (((value - min_value) / range) as f32 * plot_h);
 
     match chart.kind {
+        ChartKind::StackedBar => {
+            for tick in 0..=4 {
+                let frac = tick as f32 / 4.0;
+                let x_tick = plot_left + frac * plot_w;
+                fill_rect_color(surface, x_tick, plot_top, 0.35, plot_h, grid);
+                let label = format_chart_tick(max_value * tick as f64 / 4.0);
+                draw_chart_text(
+                    surface,
+                    &label,
+                    x_tick - 18.0,
+                    plot_bottom + 3.0,
+                    36.0,
+                    7.5,
+                    false,
+                    Alignment::Center,
+                    Color::rgb(0x4C, 0x55, 0x5F),
+                    font_cx,
+                    layout_cx,
+                    font_cache,
+                );
+            }
+            fill_rect_color(surface, plot_left, plot_top, 0.8, plot_h, axis);
+            fill_rect_color(surface, plot_left, plot_bottom, plot_w, 0.8, axis);
+
+            let band_h = plot_h / category_count as f32;
+            let bar_h = (band_h * 0.68).max(3.0);
+            for (category_index, category) in chart.categories.iter().enumerate() {
+                let band_top = plot_top + category_index as f32 * band_h;
+                let label_y = band_top + (band_h - 9.0).max(0.0) * 0.5;
+                draw_chart_text(
+                    surface,
+                    category,
+                    x + 5.0,
+                    label_y,
+                    label_w,
+                    8.0,
+                    false,
+                    Alignment::End,
+                    Color::rgb(0x25, 0x2D, 0x36),
+                    font_cx,
+                    layout_cx,
+                    font_cache,
+                );
+
+                let bar_top = band_top + (band_h - bar_h) * 0.5;
+                let mut offset = 0.0;
+                for (series_index, series) in chart.series.iter().enumerate() {
+                    let value = series
+                        .values
+                        .get(category_index)
+                        .copied()
+                        .filter(|value| value.is_finite() && *value > 0.0)
+                        .unwrap_or(0.0);
+                    if value <= 0.0 {
+                        continue;
+                    }
+                    let segment_left = value_x(offset).clamp(plot_left, plot_right);
+                    offset += value;
+                    let segment_right = value_x(offset).clamp(plot_left, plot_right);
+                    fill_rect_color(
+                        surface,
+                        segment_left,
+                        bar_top,
+                        (segment_right - segment_left).max(1.0),
+                        bar_h,
+                        chart_series_color(series_index),
+                    );
+                }
+            }
+        }
         ChartKind::Bar | ChartKind::Bar3D => {
             let zero_x = value_x(0.0).clamp(plot_left, plot_right);
             for tick in 0..=4 {
@@ -2617,6 +2707,7 @@ fn draw_authored_chart(
             }
         }
         ChartKind::Column
+        | ChartKind::StackedColumn
         | ChartKind::Column3D
         | ChartKind::Line
         | ChartKind::Line3D
@@ -2673,6 +2764,36 @@ fn draw_authored_chart(
             }
 
             match chart.kind {
+                ChartKind::StackedColumn => {
+                    let column_w = (band_w * 0.62).max(2.0);
+                    for (category_index, _) in chart.categories.iter().enumerate() {
+                        let column_left =
+                            plot_left + category_index as f32 * band_w + (band_w - column_w) * 0.5;
+                        let mut offset = 0.0;
+                        for (series_index, series) in chart.series.iter().enumerate() {
+                            let value = series
+                                .values
+                                .get(category_index)
+                                .copied()
+                                .filter(|value| value.is_finite() && *value > 0.0)
+                                .unwrap_or(0.0);
+                            if value <= 0.0 {
+                                continue;
+                            }
+                            let segment_bottom = value_y(offset).clamp(plot_top, plot_bottom);
+                            offset += value;
+                            let segment_top = value_y(offset).clamp(plot_top, plot_bottom);
+                            fill_rect_color(
+                                surface,
+                                column_left,
+                                segment_top,
+                                column_w,
+                                (segment_bottom - segment_top).max(1.0),
+                                chart_series_color(series_index),
+                            );
+                        }
+                    }
+                }
                 ChartKind::Column | ChartKind::Column3D => {
                     let group_w = (band_w * 0.68).max(3.0);
                     let column_w = ((group_w / series_count as f32) - 2.0).max(2.0);
@@ -2942,6 +3063,7 @@ fn draw_authored_chart(
                     }
                 }
                 ChartKind::Bar
+                | ChartKind::StackedBar
                 | ChartKind::Bar3D
                 | ChartKind::Radar
                 | ChartKind::Pie

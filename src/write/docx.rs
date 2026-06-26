@@ -1804,14 +1804,30 @@ fn chart_xml(chart: &Chart, chart_id: u32, workbook_rid: Option<&str>) -> String
     }
     out.push_str("<c:plotArea><c:layout/>");
     match chart.kind {
-        ChartKind::Bar => {
-            write_bar_or_column_chart(&mut out, chart, cat_axis_id, val_axis_id, "bar")
+        ChartKind::Bar => write_bar_or_column_chart(
+            &mut out,
+            chart,
+            cat_axis_id,
+            val_axis_id,
+            "bar",
+            "clustered",
+        ),
+        ChartKind::StackedBar => {
+            write_bar_or_column_chart(&mut out, chart, cat_axis_id, val_axis_id, "bar", "stacked")
         }
         ChartKind::Bar3D => {
             write_bar_or_column_3d_chart(&mut out, chart, cat_axis_id, val_axis_id, "bar")
         }
-        ChartKind::Column => {
-            write_bar_or_column_chart(&mut out, chart, cat_axis_id, val_axis_id, "col")
+        ChartKind::Column => write_bar_or_column_chart(
+            &mut out,
+            chart,
+            cat_axis_id,
+            val_axis_id,
+            "col",
+            "clustered",
+        ),
+        ChartKind::StackedColumn => {
+            write_bar_or_column_chart(&mut out, chart, cat_axis_id, val_axis_id, "col", "stacked")
         }
         ChartKind::Column3D => {
             write_bar_or_column_3d_chart(&mut out, chart, cat_axis_id, val_axis_id, "col")
@@ -1886,9 +1902,10 @@ fn write_bar_or_column_chart(
     cat_axis_id: u32,
     val_axis_id: u32,
     bar_dir: &str,
+    grouping: &str,
 ) {
     out.push_str(&format!(
-        r#"<c:barChart><c:barDir val="{bar_dir}"/><c:grouping val="clustered"/><c:varyColors val="0"/>"#
+        r#"<c:barChart><c:barDir val="{bar_dir}"/><c:grouping val="{grouping}"/><c:varyColors val="0"/>"#
     ));
     for (index, series) in chart.series.iter().enumerate() {
         out.push_str(&format!(
@@ -1898,6 +1915,9 @@ fn write_bar_or_column_chart(
         write_chart_categories(out, &chart.categories);
         write_chart_values(out, &series.values);
         out.push_str("</c:ser>");
+    }
+    if grouping == "stacked" {
+        out.push_str(r#"<c:overlap val="100"/>"#);
     }
     out.push_str(&format!(
         r#"<c:axId val="{cat_axis_id}"/><c:axId val="{val_axis_id}"/></c:barChart>"#
@@ -2273,8 +2293,9 @@ fn format_chart_number(value: f64) -> String {
 
 fn write_chart_axes(out: &mut String, kind: ChartKind, cat_axis_id: u32, val_axis_id: u32) {
     let (cat_pos, val_pos) = match kind {
-        ChartKind::Bar | ChartKind::Bar3D => ("l", "b"),
+        ChartKind::Bar | ChartKind::StackedBar | ChartKind::Bar3D => ("l", "b"),
         ChartKind::Column
+        | ChartKind::StackedColumn
         | ChartKind::Column3D
         | ChartKind::Line
         | ChartKind::Line3D

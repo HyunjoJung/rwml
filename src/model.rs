@@ -873,10 +873,14 @@ pub enum ChartKind {
     /// A clustered horizontal bar chart.
     #[default]
     Bar,
+    /// A stacked horizontal bar chart.
+    StackedBar,
     /// A clustered 3-D horizontal bar chart.
     Bar3D,
     /// A clustered vertical column chart.
     Column,
+    /// A stacked vertical column chart.
+    StackedColumn,
     /// A clustered 3-D vertical column chart.
     Column3D,
     /// A line chart with category labels on the horizontal axis.

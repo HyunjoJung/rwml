@@ -812,6 +812,16 @@ impl ChartBuilder {
         }
     }
 
+    /// Start a stacked horizontal bar chart.
+    pub fn stacked_bar() -> Self {
+        Self {
+            chart: Chart {
+                kind: ChartKind::StackedBar,
+                ..Chart::default()
+            },
+        }
+    }
+
     /// Start a clustered 3-D horizontal bar chart.
     pub fn bar_3d() -> Self {
         Self {
@@ -827,6 +837,16 @@ impl ChartBuilder {
         Self {
             chart: Chart {
                 kind: ChartKind::Column,
+                ..Chart::default()
+            },
+        }
+    }
+
+    /// Start a stacked vertical column chart.
+    pub fn stacked_column() -> Self {
+        Self {
+            chart: Chart {
+                kind: ChartKind::StackedColumn,
                 ..Chart::default()
             },
         }

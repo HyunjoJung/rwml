@@ -3049,6 +3049,106 @@ fn doc_builder_adds_column_and_line_charts() {
 }
 
 #[test]
+fn doc_builder_adds_stacked_bar_and_column_charts() {
+    let model = DocBuilder::new()
+        .chart(
+            ChartBuilder::stacked_bar()
+                .title("Regional backlog")
+                .categories(["North", "South"])
+                .series("Open", [18.0, 23.5])
+                .series("Closed", [9.0, 12.0])
+                .size_px(460, 300)
+                .alt("Regional backlog stacked bar chart"),
+        )
+        .chart(
+            ChartBuilder::stacked_column()
+                .title("Quarterly pipeline")
+                .categories(["Q1", "Q2", "Q3"])
+                .series("Pipeline", [10.0, 14.5, 18.0])
+                .series("Committed", [6.0, 8.5, 11.0])
+                .size_px(460, 300)
+                .alt("Quarterly pipeline stacked column chart"),
+        )
+        .build();
+
+    let Block::Chart(first) = &model.blocks[0] else {
+        panic!("expected first chart block");
+    };
+    let Block::Chart(second) = &model.blocks[1] else {
+        panic!("expected second chart block");
+    };
+    assert_eq!(first.kind, ChartKind::StackedBar);
+    assert_eq!(second.kind, ChartKind::StackedColumn);
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let rels = String::from_utf8(parts["word/_rels/document.xml.rels"].clone()).unwrap();
+    let bar_xml = String::from_utf8(parts["word/charts/chart1.xml"].clone()).unwrap();
+    let column_xml = String::from_utf8(parts["word/charts/chart2.xml"].clone()).unwrap();
+    let workbook1_bytes = parts
+        .get("word/embeddings/Microsoft_Excel_Worksheet1.xlsx")
+        .expect("embedded stacked bar chart workbook");
+    let workbook2_bytes = parts
+        .get("word/embeddings/Microsoft_Excel_Worksheet2.xlsx")
+        .expect("embedded stacked column chart workbook");
+    let workbook1_parts = unzip_parts(workbook1_bytes);
+    let workbook2_parts = unzip_parts(workbook2_bytes);
+    let sheet1_xml =
+        String::from_utf8(workbook1_parts["xl/worksheets/sheet1.xml"].clone()).unwrap();
+    let sheet2_xml =
+        String::from_utf8(workbook2_parts["xl/worksheets/sheet1.xml"].clone()).unwrap();
+
+    assert!(
+        document_xml.contains(
+            r#"<wp:docPr id="1" name="Chart1" descr="Regional backlog stacked bar chart"/>"#
+        ) && document_xml.contains(
+            r#"<wp:docPr id="2" name="Chart2" descr="Quarterly pipeline stacked column chart"/>"#
+        ) && document_xml.contains(r#"<c:chart r:id="rId1"/>"#)
+            && document_xml.contains(r#"<c:chart r:id="rId2"/>"#),
+        "stacked chart drawings missing: {document_xml}"
+    );
+    assert!(
+        rels.contains(r#"Target="charts/chart1.xml""#)
+            && rels.contains(r#"Target="charts/chart2.xml""#),
+        "stacked chart relationships missing: {rels}"
+    );
+    assert!(
+        bar_xml.contains("<c:barChart>")
+            && bar_xml.contains(r#"<c:barDir val="bar"/>"#)
+            && bar_xml.contains(r#"<c:grouping val="stacked"/>"#)
+            && bar_xml.contains(r#"<c:overlap val="100"/>"#)
+            && bar_xml.contains("<a:t>Regional backlog</a:t>")
+            && bar_xml.contains("<c:v>Closed</c:v>")
+            && bar_xml.contains("<c:v>23.5</c:v>"),
+        "stacked bar chart payload missing: {bar_xml}"
+    );
+    assert!(
+        column_xml.contains("<c:barChart>")
+            && column_xml.contains(r#"<c:barDir val="col"/>"#)
+            && column_xml.contains(r#"<c:grouping val="stacked"/>"#)
+            && column_xml.contains(r#"<c:overlap val="100"/>"#)
+            && column_xml.contains("<a:t>Quarterly pipeline</a:t>")
+            && column_xml.contains("<c:v>Committed</c:v>")
+            && column_xml.contains("<c:v>Q3</c:v>"),
+        "stacked column chart payload missing: {column_xml}"
+    );
+    assert!(
+        sheet1_xml.contains(r#"<c r="B2"><v>18</v></c>"#)
+            && sheet1_xml.contains(r#"<c r="C3"><v>12</v></c>"#),
+        "stacked bar chart workbook values missing: {sheet1_xml}"
+    );
+    assert!(
+        sheet2_xml.contains(r#"<c r="B4"><v>18</v></c>"#)
+            && sheet2_xml.contains(r#"<c r="C4"><v>11</v></c>"#),
+        "stacked column chart workbook values missing: {sheet2_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("stacked bar/column chart .docx reopens");
+    assert_eq!(reopened.report().features.charts, 2);
+}
+
+#[test]
 fn doc_builder_adds_3d_bar_and_column_charts() {
     let model = DocBuilder::new()
         .chart(
@@ -4608,6 +4708,45 @@ fn render_pdf_draws_authored_3d_pie_chart() {
     assert!(
         rendered.pdf.len() > empty.pdf.len() + 100,
         "3-D pie chart drawing should add visible PDF content"
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn render_pdf_draws_authored_stacked_bar_and_column_charts() {
+    let model = DocBuilder::new()
+        .chart(
+            ChartBuilder::stacked_bar()
+                .title("Regional backlog")
+                .categories(["North", "South"])
+                .series("Open", [18.0, 23.5])
+                .series("Closed", [9.0, 12.0]),
+        )
+        .chart(
+            ChartBuilder::stacked_column()
+                .title("Quarterly pipeline")
+                .categories(["Q1", "Q2", "Q3"])
+                .series("Pipeline", [10.0, 14.5, 18.0])
+                .series("Committed", [6.0, 8.5, 11.0]),
+        )
+        .build();
+
+    let empty = rdoc::render_pdf_with_report(&DocModel::default());
+    let rendered = rdoc::render_pdf_with_report(&model);
+
+    assert!(rendered.pdf.starts_with(b"%PDF"));
+    assert_eq!(rendered.report.pages, 1);
+    assert_eq!(rendered.report.unsupported.charts, 0);
+    assert!(
+        !rendered.report.warnings.iter().any(|warning| matches!(
+            warning,
+            rdoc::RenderWarning::ChartsPreservedButNotModeled { .. }
+        )),
+        "authored stacked bar/column charts should render without preserved-only warnings"
+    );
+    assert!(
+        rendered.pdf.len() > empty.pdf.len() + 100,
+        "stacked bar/column chart drawings should add visible PDF content"
     );
 }
 
