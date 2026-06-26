@@ -148,9 +148,12 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     let extended_properties = part(&mut zip, "docProps/app.xml")
         .map(|s| parse_extended_properties(&s))
         .unwrap_or_default();
-    let document_variables = part(&mut zip, "word/settings.xml")
-        .map(|s| parse_document_variables(&s))
+    let settings_xml = part(&mut zip, "word/settings.xml");
+    let document_variables = settings_xml
+        .as_deref()
+        .map(parse_document_variables)
         .unwrap_or_default();
+    let document_id = settings_xml.as_deref().and_then(parse_document_id);
     let ref_targets = fields::ref_targets(&doc_xml);
     let ref_position_context = fields::ref_position_context(&doc_xml, &numbering);
     let ref_number_context = fields::ref_number_context(&doc_xml, &numbering);
@@ -301,6 +304,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
             columns: body::scan_section_columns(&doc_xml),
             text_direction: body::scan_section_text_direction(&doc_xml),
             doc_grid: body::scan_section_doc_grid(&doc_xml),
+            document_id,
             title_page: body::scan_section_title_page(&doc_xml),
             title: core_properties.title.clone(),
             creator: core_properties.creator.clone(),
@@ -1535,6 +1539,20 @@ fn parse_document_variables(xml: &str) -> HashMap<String, String> {
         }
     }
     vars
+}
+
+fn parse_document_id(xml: &str) -> Option<String> {
+    let mut r = Reader::from_str(xml);
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if e.name().as_ref() == b"w14:docId" => {
+                return attr_local(&e, b"val").filter(|id| !id.trim().is_empty());
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    None
 }
 
 fn read_custom_property_value(r: &mut Reader<&[u8]>) -> Option<String> {

@@ -1085,7 +1085,11 @@ fn doc_builder_adds_document_id_setting() {
         "settings relationship missing: {rels}"
     );
 
-    Document::open(&bytes).expect("document-id .docx reopens");
+    let reopened = Document::open(&bytes).expect("document-id .docx reopens");
+    assert_eq!(
+        reopened.model().setup.document_id.as_deref(),
+        Some("6ECD4467")
+    );
 }
 
 #[test]
