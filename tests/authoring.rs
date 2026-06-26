@@ -3695,6 +3695,77 @@ fn doc_builder_adds_radar_chart() {
 }
 
 #[test]
+fn doc_builder_adds_filled_radar_chart() {
+    let model = DocBuilder::new()
+        .chart(
+            ChartBuilder::filled_radar()
+                .title("Capability coverage")
+                .categories(["Speed", "Quality", "Cost", "Reach"])
+                .series("Current", [4.0, 3.0, 2.0, 5.0])
+                .series("Target", [5.0, 4.0, 4.0, 5.0])
+                .size_px(420, 320)
+                .alt("Capability filled radar chart"),
+        )
+        .build();
+
+    let Block::Chart(chart) = &model.blocks[0] else {
+        panic!("expected chart block");
+    };
+    assert_eq!(chart.kind, ChartKind::FilledRadar);
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let rels = String::from_utf8(parts["word/_rels/document.xml.rels"].clone()).unwrap();
+    let chart_xml = String::from_utf8(parts["word/charts/chart1.xml"].clone()).unwrap();
+    let chart_rels = String::from_utf8(parts["word/charts/_rels/chart1.xml.rels"].clone()).unwrap();
+    let workbook_bytes = parts
+        .get("word/embeddings/Microsoft_Excel_Worksheet1.xlsx")
+        .expect("embedded filled radar chart workbook");
+    let workbook_parts = unzip_parts(workbook_bytes);
+    let sheet_xml = String::from_utf8(workbook_parts["xl/worksheets/sheet1.xml"].clone()).unwrap();
+
+    assert!(
+        document_xml
+            .contains(r#"<wp:docPr id="1" name="Chart1" descr="Capability filled radar chart"/>"#)
+            && document_xml.contains(r#"<c:chart r:id="rId1"/>"#),
+        "filled radar chart drawing missing: {document_xml}"
+    );
+    assert!(
+        rels.contains("relationships/chart") && rels.contains(r#"Target="charts/chart1.xml""#),
+        "filled radar chart relationship missing: {rels}"
+    );
+    assert!(
+        chart_rels.contains("relationships/package")
+            && chart_rels.contains(r#"Target="../embeddings/Microsoft_Excel_Worksheet1.xlsx""#),
+        "filled radar chart workbook relationship missing: {chart_rels}"
+    );
+    assert!(
+        chart_xml.contains("<c:radarChart>")
+            && chart_xml.contains(r#"<c:radarStyle val="filled"/>"#)
+            && chart_xml.contains(r#"<c:varyColors val="0"/>"#)
+            && chart_xml.contains(
+                r#"<c:externalData r:id="rId1"><c:autoUpdate val="0"/></c:externalData>"#
+            )
+            && chart_xml.contains("<a:t>Capability coverage</a:t>")
+            && chart_xml.contains("<c:v>Current</c:v>")
+            && chart_xml.contains("<c:v>Target</c:v>")
+            && chart_xml.contains("<c:v>Speed</c:v>")
+            && chart_xml.contains("<c:v>5</c:v>"),
+        "filled radar chart payload missing: {chart_xml}"
+    );
+    assert!(
+        sheet_xml.contains(r#"<c r="B2"><v>4</v></c>"#)
+            && sheet_xml.contains(r#"<c r="C4"><v>4</v></c>"#)
+            && sheet_xml.contains(r#"<c r="C5"><v>5</v></c>"#),
+        "filled radar chart workbook values missing: {sheet_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("filled radar chart .docx reopens");
+    assert_eq!(reopened.report().features.charts, 1);
+}
+
+#[test]
 fn doc_builder_adds_scatter_chart() {
     let model = DocBuilder::new()
         .chart(
@@ -4624,6 +4695,38 @@ fn render_pdf_draws_authored_radar_chart() {
     assert!(
         rendered.pdf.len() > empty.pdf.len() + 100,
         "radar chart drawing should add visible PDF content"
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn render_pdf_draws_authored_filled_radar_chart() {
+    let model = DocBuilder::new()
+        .chart(
+            ChartBuilder::filled_radar()
+                .title("Capability coverage")
+                .categories(["Speed", "Quality", "Cost", "Reach"])
+                .series("Current", [4.0, 3.0, 2.0, 5.0])
+                .series("Target", [5.0, 4.0, 4.0, 5.0]),
+        )
+        .build();
+
+    let empty = rdoc::render_pdf_with_report(&DocModel::default());
+    let rendered = rdoc::render_pdf_with_report(&model);
+
+    assert!(rendered.pdf.starts_with(b"%PDF"));
+    assert_eq!(rendered.report.pages, 1);
+    assert_eq!(rendered.report.unsupported.charts, 0);
+    assert!(
+        !rendered.report.warnings.iter().any(|warning| matches!(
+            warning,
+            rdoc::RenderWarning::ChartsPreservedButNotModeled { .. }
+        )),
+        "authored filled radar chart should render without preserved-only warnings"
+    );
+    assert!(
+        rendered.pdf.len() > empty.pdf.len() + 100,
+        "filled radar chart drawing should add visible PDF content"
     );
 }
 

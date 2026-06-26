@@ -1856,7 +1856,12 @@ fn chart_xml(chart: &Chart, chart_id: u32, workbook_rid: Option<&str>) -> String
         ChartKind::Area3D => {
             write_area_3d_chart(&mut out, chart, cat_axis_id, val_axis_id, ser_axis_id)
         }
-        ChartKind::Radar => write_radar_chart(&mut out, chart, cat_axis_id, val_axis_id),
+        ChartKind::Radar => {
+            write_radar_chart(&mut out, chart, cat_axis_id, val_axis_id, "standard")
+        }
+        ChartKind::FilledRadar => {
+            write_radar_chart(&mut out, chart, cat_axis_id, val_axis_id, "filled")
+        }
         ChartKind::Scatter => write_scatter_chart(&mut out, chart, cat_axis_id, val_axis_id),
         ChartKind::Bubble | ChartKind::Bubble3D => {
             write_bubble_chart(&mut out, chart, cat_axis_id, val_axis_id)
@@ -2052,8 +2057,16 @@ fn write_area_3d_chart(
     ));
 }
 
-fn write_radar_chart(out: &mut String, chart: &Chart, cat_axis_id: u32, val_axis_id: u32) {
-    out.push_str(r#"<c:radarChart><c:radarStyle val="standard"/><c:varyColors val="0"/>"#);
+fn write_radar_chart(
+    out: &mut String,
+    chart: &Chart,
+    cat_axis_id: u32,
+    val_axis_id: u32,
+    style: &str,
+) {
+    out.push_str(&format!(
+        r#"<c:radarChart><c:radarStyle val="{style}"/><c:varyColors val="0"/>"#
+    ));
     for (index, series) in chart.series.iter().enumerate() {
         out.push_str(&format!(
             r#"<c:ser><c:idx val="{index}"/><c:order val="{index}"/><c:tx><c:v>{}</c:v></c:tx><c:marker><c:symbol val="circle"/></c:marker>"#,
@@ -2321,7 +2334,8 @@ fn write_chart_axes(out: &mut String, kind: ChartKind, cat_axis_id: u32, val_axi
         | ChartKind::Line3D
         | ChartKind::Area
         | ChartKind::Area3D
-        | ChartKind::Radar => ("b", "l"),
+        | ChartKind::Radar
+        | ChartKind::FilledRadar => ("b", "l"),
         ChartKind::Scatter
         | ChartKind::Bubble
         | ChartKind::Bubble3D

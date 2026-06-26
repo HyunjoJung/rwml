@@ -897,6 +897,8 @@ pub enum ChartKind {
     Area3D,
     /// A radar chart with category labels around a radial axis.
     Radar,
+    /// A filled radar chart with category labels around a radial axis.
+    FilledRadar,
     /// A scatter chart with numeric horizontal and vertical values.
     Scatter,
     /// A bubble chart with numeric horizontal values, vertical values, and sizes.

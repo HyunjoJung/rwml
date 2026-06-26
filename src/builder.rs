@@ -932,6 +932,16 @@ impl ChartBuilder {
         }
     }
 
+    /// Start a filled radar chart.
+    pub fn filled_radar() -> Self {
+        Self {
+            chart: Chart {
+                kind: ChartKind::FilledRadar,
+                ..Chart::default()
+            },
+        }
+    }
+
     /// Start a scatter chart.
     pub fn scatter() -> Self {
         Self {

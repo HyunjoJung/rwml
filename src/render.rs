@@ -2508,7 +2508,7 @@ fn draw_authored_chart(
         return;
     }
 
-    if chart.kind == ChartKind::Radar {
+    if matches!(chart.kind, ChartKind::Radar | ChartKind::FilledRadar) {
         draw_radar_chart(
             surface, chart, plot_left, plot_top, plot_w, plot_h, font_cx, layout_cx, font_cache,
         );
@@ -3088,6 +3088,7 @@ fn draw_authored_chart(
                 | ChartKind::PercentStackedBar
                 | ChartKind::Bar3D
                 | ChartKind::Radar
+                | ChartKind::FilledRadar
                 | ChartKind::Pie
                 | ChartKind::Pie3D
                 | ChartKind::PieOfPie
@@ -3096,6 +3097,7 @@ fn draw_authored_chart(
             }
         }
         ChartKind::Radar
+        | ChartKind::FilledRadar
         | ChartKind::Pie
         | ChartKind::Pie3D
         | ChartKind::PieOfPie
