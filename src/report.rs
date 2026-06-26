@@ -1452,6 +1452,13 @@ fn unsupported_field_reason(field: &Field) -> Option<FieldEvaluationReason> {
         FieldKind::MailMerge(_) => Some(FieldEvaluationReason::NoComputedResult),
         FieldKind::ReferenceIndex(_) => Some(FieldEvaluationReason::NoComputedResult),
         FieldKind::Numbering(_) => Some(FieldEvaluationReason::NoComputedResult),
+        FieldKind::DocumentStructure(ref kind)
+            if is_section_document_structure_kind(kind.as_str()) =>
+        {
+            Some(section_document_structure_uncomputed_reason(
+                &field.instruction,
+            ))
+        }
         FieldKind::DocumentStructure(_) => Some(FieldEvaluationReason::NoComputedResult),
         FieldKind::Display(_) => Some(FieldEvaluationReason::NoComputedResult),
         FieldKind::Action(_) => Some(FieldEvaluationReason::NoComputedResult),
@@ -1528,6 +1535,51 @@ fn supported_page_syntax(instruction: &str) -> bool {
         return false;
     };
     if !kind.eq_ignore_ascii_case("PAGE") {
+        return false;
+    }
+    let mut number_format = false;
+    let mut text_format = false;
+    while let Some(part) = parts.next() {
+        if part == "\\*" {
+            if !accept_page_field_format_switch(
+                parts.next().unwrap_or_default(),
+                &mut number_format,
+                &mut text_format,
+            ) {
+                return false;
+            }
+            continue;
+        }
+        if let Some(format) = part.strip_prefix("\\*") {
+            if !accept_page_field_format_switch(format, &mut number_format, &mut text_format) {
+                return false;
+            }
+            continue;
+        }
+        return false;
+    }
+    true
+}
+
+fn is_section_document_structure_kind(kind: &str) -> bool {
+    kind.eq_ignore_ascii_case("SECTION") || kind.eq_ignore_ascii_case("SECTIONPAGES")
+}
+
+fn section_document_structure_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
+    if supported_section_document_structure_syntax(instruction) {
+        FieldEvaluationReason::NoComputedResult
+    } else {
+        FieldEvaluationReason::UnsupportedSwitch
+    }
+}
+
+fn supported_section_document_structure_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if !is_section_document_structure_kind(kind) {
         return false;
     }
     let mut number_format = false;
