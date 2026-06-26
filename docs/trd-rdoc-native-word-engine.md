@@ -700,7 +700,7 @@ Acceptance:
   `SECTION`, structurally bounded `SECTIONPAGES`, and deterministic body
   paragraph- and character-style `STYLEREF`, deterministic simple `EQ`
   fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, hidden displacement controls, and `SYMBOL`, display/layout fields, action/automation fields including deterministic
-  `GOTOBUTTON`/`MACROBUTTON` quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms,
+  `GOTOBUTTON`/`MACROBUTTON` quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms with field-result format switches,
   compatibility/private fields, barcode fields, legacy form fields, and unknown
   fields are distinguishable.
 - simple source-order `SEQ` fields compute default next numbers, `\n`, `\r`,

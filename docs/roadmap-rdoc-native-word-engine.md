@@ -370,8 +370,9 @@ Initial status:
   separately from unknown fields; deterministic `GOTOBUTTON`/`MACROBUTTON`
   quoted or unquoted display text with field text-format switches computes
   without executing navigation or macros, validated `PRINT` direct instructions
-  and separated or compact `\p` printer-control groups render as hidden output
-  without executing printer/PostScript instructions, while remaining
+  and separated or compact `\p` printer-control groups with field-result format
+  switches render as hidden output without executing printer/PostScript
+  instructions, while remaining
   action/automation forms report `NoComputedResult` without executing side
   effects. The
   compatibility/private fields (`PRIVATE`, `ADDIN`, `DATA`, `GLOSSARY`,
@@ -803,8 +804,8 @@ Initial status:
   deterministic `GOTOBUTTON`/`MACROBUTTON` quoted or unquoted display text with
   field text-format switches computes without executing actions, validated
   `PRINT` direct instructions and separated or compact `\p` printer-control
-  groups render as hidden output without executing printer/PostScript
-  instructions, while remaining action/automation fields preserve cached text
+  groups with field-result format switches render as hidden output without
+  executing printer/PostScript instructions, while remaining action/automation fields preserve cached text
   with `NoComputedResult` diagnostics.
   Compatibility/private fields are named separately from unknown fields and
   preserve cached text with `NoComputedResult` diagnostics.

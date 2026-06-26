@@ -542,8 +542,9 @@ action/automation fields (`GOTOBUTTON`, `MACROBUTTON`, `PRINT`) are named
 separately from unknown fields, deterministic `GOTOBUTTON`/`MACROBUTTON`
 quoted or unquoted display text with field text-format switches renders without
 executing actions, validated `PRINT` direct instructions and separated or
-compact `\p` printer-control groups render as hidden output without executing
-printer/PostScript instructions, and remaining action/automation fields preserve
+compact `\p` printer-control groups with field-result format switches render as
+hidden output without executing printer/PostScript instructions, and remaining
+action/automation fields preserve
 cached result text and report `NoComputedResult` diagnostics;
 compatibility/private fields (`PRIVATE`, `ADDIN`, `DATA`, `GLOSSARY`,
 `HTMLACTIVEX`) are named separately from unknown fields, preserve cached result

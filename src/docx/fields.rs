@@ -6469,15 +6469,16 @@ fn print_instruction(instruction: &str) -> Option<()> {
             return None;
         }
     }
+    let mut text_format = None;
     while let Some(part) = parts.next() {
         if part == "\\*" {
-            if !is_neutral_field_format_switch(parts.next()?) {
+            if !accept_field_format_switch(parts.next()?, &mut text_format) {
                 return None;
             }
             continue;
         }
         if let Some(format) = part.strip_prefix("\\*") {
-            if is_neutral_field_format_switch(format) {
+            if accept_field_format_switch(format, &mut text_format) {
                 continue;
             }
         }
@@ -9133,6 +9134,18 @@ mod tests {
             None
         );
         assert_eq!(computed_action_result(r#"PRINT "page "p""#), None);
+    }
+
+    #[test]
+    fn print_accepts_field_text_format_switches() {
+        assert_eq!(
+            computed_action_result(r#"PRINT "page \p" \* Upper"#).as_deref(),
+            Some("")
+        );
+        assert_eq!(
+            computed_action_result(r#"PRINT \p ReportBox "0 0 moveto" \*Lower"#).as_deref(),
+            Some("")
+        );
     }
 
     #[test]
