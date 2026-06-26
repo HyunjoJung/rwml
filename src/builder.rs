@@ -982,6 +982,16 @@ impl ChartBuilder {
         }
     }
 
+    /// Start a marker-only scatter chart.
+    pub fn scatter_markers() -> Self {
+        Self {
+            chart: Chart {
+                kind: ChartKind::ScatterMarkers,
+                ..Chart::default()
+            },
+        }
+    }
+
     /// Start a bubble chart.
     pub fn bubble() -> Self {
         Self {

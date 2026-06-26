@@ -4004,6 +4004,76 @@ fn doc_builder_adds_scatter_chart() {
 }
 
 #[test]
+fn doc_builder_adds_marker_only_scatter_chart() {
+    let model = DocBuilder::new()
+        .chart(
+            ChartBuilder::scatter_markers()
+                .title("Latency points")
+                .categories(["P50", "P90", "P99"])
+                .series("Before", [120.0, 240.0, 510.0])
+                .series("After", [90.0, 180.0, 360.0])
+                .size_px(420, 280)
+                .alt("Latency marker-only scatter chart"),
+        )
+        .build();
+
+    let Block::Chart(chart) = &model.blocks[0] else {
+        panic!("expected chart block");
+    };
+    assert_eq!(chart.kind, ChartKind::ScatterMarkers);
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let rels = String::from_utf8(parts["word/_rels/document.xml.rels"].clone()).unwrap();
+    let chart_xml = String::from_utf8(parts["word/charts/chart1.xml"].clone()).unwrap();
+    let chart_rels = String::from_utf8(parts["word/charts/_rels/chart1.xml.rels"].clone()).unwrap();
+    let workbook_bytes = parts
+        .get("word/embeddings/Microsoft_Excel_Worksheet1.xlsx")
+        .expect("embedded marker-only scatter chart workbook");
+    let workbook_parts = unzip_parts(workbook_bytes);
+    let sheet_xml = String::from_utf8(workbook_parts["xl/worksheets/sheet1.xml"].clone()).unwrap();
+
+    assert!(
+        document_xml.contains(
+            r#"<wp:docPr id="1" name="Chart1" descr="Latency marker-only scatter chart"/>"#
+        ) && document_xml.contains(r#"<c:chart r:id="rId1"/>"#),
+        "marker-only scatter chart drawing missing: {document_xml}"
+    );
+    assert!(
+        rels.contains("relationships/chart") && rels.contains(r#"Target="charts/chart1.xml""#),
+        "marker-only scatter chart relationship missing: {rels}"
+    );
+    assert!(
+        chart_rels.contains("relationships/package")
+            && chart_rels.contains(r#"Target="../embeddings/Microsoft_Excel_Worksheet1.xlsx""#),
+        "marker-only scatter chart workbook relationship missing: {chart_rels}"
+    );
+    assert!(
+        chart_xml.contains("<c:scatterChart>")
+            && chart_xml.contains(r#"<c:scatterStyle val="marker"/>"#)
+            && chart_xml.contains(r#"<c:marker><c:symbol val="circle"/></c:marker>"#)
+            && chart_xml.contains("<a:t>Latency points</a:t>")
+            && chart_xml.contains("<c:v>Before</c:v>")
+            && chart_xml.contains("<c:v>After</c:v>")
+            && chart_xml.contains(r#"<c:pt idx="0"><c:v>1</c:v></c:pt>"#)
+            && chart_xml.contains(r#"<c:pt idx="2"><c:v>3</c:v></c:pt>"#)
+            && chart_xml.contains(r#"<c:pt idx="0"><c:v>120</c:v></c:pt>"#)
+            && chart_xml.contains(r#"<c:pt idx="2"><c:v>360</c:v></c:pt>"#),
+        "marker-only scatter chart payload missing: {chart_xml}"
+    );
+    assert!(
+        sheet_xml.contains(r#"<c r="B2"><v>120</v></c>"#)
+            && sheet_xml.contains(r#"<c r="C3"><v>180</v></c>"#)
+            && sheet_xml.contains(r#"<c r="C4"><v>360</v></c>"#),
+        "marker-only scatter chart workbook values missing: {sheet_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("marker-only scatter chart .docx reopens");
+    assert_eq!(reopened.report().features.charts, 1);
+}
+
+#[test]
 fn doc_builder_adds_bubble_chart() {
     let model = DocBuilder::new()
         .chart(
@@ -4994,6 +5064,38 @@ fn render_pdf_draws_authored_scatter_chart() {
     assert!(
         rendered.pdf.len() > empty.pdf.len() + 100,
         "scatter chart drawing should add visible PDF content"
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn render_pdf_draws_authored_marker_only_scatter_chart() {
+    let model = DocBuilder::new()
+        .chart(
+            ChartBuilder::scatter_markers()
+                .title("Latency points")
+                .categories(["P50", "P90", "P99"])
+                .series("Before", [120.0, 240.0, 510.0])
+                .series("After", [90.0, 180.0, 360.0]),
+        )
+        .build();
+
+    let empty = rdoc::render_pdf_with_report(&DocModel::default());
+    let rendered = rdoc::render_pdf_with_report(&model);
+
+    assert!(rendered.pdf.starts_with(b"%PDF"));
+    assert_eq!(rendered.report.pages, 1);
+    assert_eq!(rendered.report.unsupported.charts, 0);
+    assert!(
+        !rendered.report.warnings.iter().any(|warning| matches!(
+            warning,
+            rdoc::RenderWarning::ChartsPreservedButNotModeled { .. }
+        )),
+        "authored marker-only scatter chart should render without preserved-only warnings"
+    );
+    assert!(
+        rendered.pdf.len() > empty.pdf.len() + 100,
+        "marker-only scatter chart drawing should add visible PDF content"
     );
 }
 

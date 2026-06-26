@@ -907,6 +907,8 @@ pub enum ChartKind {
     FilledRadar,
     /// A scatter chart with numeric horizontal and vertical values.
     Scatter,
+    /// A marker-only scatter chart with numeric horizontal and vertical values.
+    ScatterMarkers,
     /// A bubble chart with numeric horizontal values, vertical values, and sizes.
     Bubble,
     /// A 3-D bubble chart with numeric horizontal values, vertical values, and sizes.
