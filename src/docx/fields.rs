@@ -6536,6 +6536,7 @@ struct SymbolInstruction {
     code: u32,
     unicode: bool,
     font: Option<String>,
+    text_format: Option<FieldTextFormat>,
 }
 
 pub(crate) fn computed_display_result(instruction: &str) -> Option<String> {
@@ -7192,18 +7193,16 @@ fn unescape_eq_literal_operand(operand: &str) -> Option<String> {
 
 fn computed_symbol_result(instruction: &str) -> Option<String> {
     let spec = symbol_instruction(instruction)?;
-    if symbol_font_matches(spec.font.as_deref(), "symbol") {
-        return symbol_font_char(spec.code).map(|ch| ch.to_string());
-    }
-    if symbol_font_matches(spec.font.as_deref(), "wingdings") {
-        return wingdings_font_char(spec.code).map(|ch| ch.to_string());
-    }
-    let ch = if spec.unicode {
-        char::from_u32(spec.code)?
+    let text = if symbol_font_matches(spec.font.as_deref(), "symbol") {
+        symbol_font_char(spec.code)?.to_string()
+    } else if symbol_font_matches(spec.font.as_deref(), "wingdings") {
+        wingdings_font_char(spec.code)?.to_string()
+    } else if spec.unicode {
+        char::from_u32(spec.code)?.to_string()
     } else {
-        ansi_char(spec.code)?
+        ansi_char(spec.code)?.to_string()
     };
-    Some(ch.to_string())
+    Some(apply_field_text_format(text, spec.text_format))
 }
 
 fn symbol_instruction(instruction: &str) -> Option<SymbolInstruction> {
@@ -7216,6 +7215,7 @@ fn symbol_instruction(instruction: &str) -> Option<SymbolInstruction> {
     let code = parse_symbol_code(parts.next()?)?;
     let mut unicode = false;
     let mut font = None;
+    let mut text_format = None;
     while let Some(part) = parts.next() {
         if part.eq_ignore_ascii_case("\\a") || part.eq_ignore_ascii_case("\\h") {
             continue;
@@ -7250,20 +7250,13 @@ fn symbol_instruction(instruction: &str) -> Option<SymbolInstruction> {
             continue;
         }
         if part == "\\*" {
-            if !matches!(
-                parts.next(),
-                Some(format)
-                    if format.eq_ignore_ascii_case("MERGEFORMAT")
-                        || format.eq_ignore_ascii_case("CHARFORMAT")
-            ) {
+            if !accept_field_format_switch(parts.next()?, &mut text_format) {
                 return None;
             }
             continue;
         }
         if let Some(format) = part.strip_prefix("\\*") {
-            if format.eq_ignore_ascii_case("MERGEFORMAT")
-                || format.eq_ignore_ascii_case("CHARFORMAT")
-            {
+            if accept_field_format_switch(format, &mut text_format) {
                 continue;
             }
         }
@@ -7273,6 +7266,7 @@ fn symbol_instruction(instruction: &str) -> Option<SymbolInstruction> {
         code,
         unicode,
         font,
+        text_format,
     })
 }
 
@@ -9588,6 +9582,18 @@ mod tests {
         assert!(computed_display_result(r#"SYMBOL 65 \s "12"#).is_none());
         assert!(computed_display_result(r#"SYMBOL 183 \f "Symbol""#).is_some());
         assert!(computed_display_result(r#"SYMBOL 183 \f "Symbol"#).is_none());
+    }
+
+    #[test]
+    fn symbol_values_accept_field_text_format_switches() {
+        assert_eq!(
+            computed_display_result(r#"SYMBOL 0x0063 \u \* Upper"#).as_deref(),
+            Some("C")
+        );
+        assert_eq!(
+            computed_display_result(r#"SYMBOL 0x0064 \u \*Lower"#).as_deref(),
+            Some("d")
+        );
     }
 
     #[test]
