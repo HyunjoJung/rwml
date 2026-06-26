@@ -2574,6 +2574,7 @@ fn draw_authored_chart(
     let (min_value, max_value) = if matches!(
         chart.kind,
         ChartKind::PercentStackedBar
+            | ChartKind::PercentStackedBar3D
             | ChartKind::PercentStackedColumn
             | ChartKind::PercentStackedColumn3D
             | ChartKind::PercentStackedLine
@@ -2598,8 +2599,14 @@ fn draw_authored_chart(
     let value_y = |value: f64| plot_bottom - (((value - min_value) / range) as f32 * plot_h);
 
     match chart.kind {
-        ChartKind::StackedBar | ChartKind::StackedBar3D | ChartKind::PercentStackedBar => {
-            let percent = chart.kind == ChartKind::PercentStackedBar;
+        ChartKind::StackedBar
+        | ChartKind::StackedBar3D
+        | ChartKind::PercentStackedBar
+        | ChartKind::PercentStackedBar3D => {
+            let percent = matches!(
+                chart.kind,
+                ChartKind::PercentStackedBar | ChartKind::PercentStackedBar3D
+            );
             for tick in 0..=4 {
                 let frac = tick as f32 / 4.0;
                 let x_tick = plot_left + frac * plot_w;
@@ -2666,7 +2673,10 @@ fn draw_authored_chart(
                     let segment_left = value_x(start).clamp(plot_left, plot_right);
                     let segment_right = value_x(end).clamp(plot_left, plot_right);
                     let color = chart_series_color(series_index);
-                    if chart.kind == ChartKind::StackedBar3D {
+                    if matches!(
+                        chart.kind,
+                        ChartKind::StackedBar3D | ChartKind::PercentStackedBar3D
+                    ) {
                         fill_chart_bar_shape(
                             surface,
                             segment_left,
@@ -3257,6 +3267,7 @@ fn draw_authored_chart(
                 | ChartKind::PercentStackedBar
                 | ChartKind::Bar3D
                 | ChartKind::StackedBar3D
+                | ChartKind::PercentStackedBar3D
                 | ChartKind::Radar
                 | ChartKind::RadarWithMarkers
                 | ChartKind::FilledRadar

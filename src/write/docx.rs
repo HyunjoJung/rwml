@@ -1839,6 +1839,14 @@ fn chart_xml(chart: &Chart, chart_id: u32, workbook_rid: Option<&str>) -> String
             "bar",
             "stacked",
         ),
+        ChartKind::PercentStackedBar3D => write_bar_or_column_3d_chart(
+            &mut out,
+            chart,
+            cat_axis_id,
+            val_axis_id,
+            "bar",
+            "percentStacked",
+        ),
         ChartKind::Column => write_bar_or_column_chart(
             &mut out,
             chart,
@@ -2495,7 +2503,8 @@ fn write_chart_axes(out: &mut String, kind: ChartKind, cat_axis_id: u32, val_axi
         | ChartKind::StackedBar
         | ChartKind::PercentStackedBar
         | ChartKind::Bar3D
-        | ChartKind::StackedBar3D => ("l", "b"),
+        | ChartKind::StackedBar3D
+        | ChartKind::PercentStackedBar3D => ("l", "b"),
         ChartKind::Column
         | ChartKind::StackedColumn
         | ChartKind::PercentStackedColumn
