@@ -8075,7 +8075,7 @@ fn accept_page_number_format_switch(
         return true;
     }
     let format = match part {
-        "Arabic" | "arabic" => PageNumberFormat::Arabic,
+        _ if part.eq_ignore_ascii_case("Arabic") => PageNumberFormat::Arabic,
         "alphabetic" => PageNumberFormat::AlphabeticLower,
         "ALPHABETIC" => PageNumberFormat::AlphabeticUpper,
         "roman" => PageNumberFormat::RomanLower,
