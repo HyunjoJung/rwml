@@ -1333,6 +1333,16 @@ impl DocBuilder {
         self
     }
 
+    /// Set a line-and-character document grid for the current/final section.
+    pub fn doc_grid_lines_and_chars(mut self, line_pitch: u32, character_space: u32) -> Self {
+        self.model.setup.doc_grid = Some(DocGrid {
+            grid_type: DocGridType::LinesAndChars,
+            line_pitch: Some(line_pitch),
+            character_space: Some(character_space),
+        });
+        self
+    }
+
     /// Enable distinct first-page section behavior.
     pub fn title_page(mut self) -> Self {
         self.model.setup.title_page = true;

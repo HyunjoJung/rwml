@@ -587,6 +587,33 @@ fn doc_builder_adds_line_document_grid() {
 }
 
 #[test]
+fn doc_builder_adds_line_and_character_document_grid() {
+    let model = DocBuilder::new()
+        .doc_grid_lines_and_chars(360, 40960)
+        .paragraph("Grid body")
+        .build();
+
+    let grid = model.setup.doc_grid.expect("doc grid");
+    assert_eq!(grid.grid_type, DocGridType::LinesAndChars);
+    assert_eq!(grid.line_pitch, Some(360));
+    assert_eq!(grid.character_space, Some(40960));
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+
+    assert!(
+        document_xml.contains(
+            r#"<w:docGrid w:type="linesAndChars" w:linePitch="360" w:charSpace="40960"/>"#
+        ),
+        "line-and-character document grid missing: {document_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("line-and-character grid .docx reopens");
+    assert_eq!(reopened.model().setup.doc_grid, Some(grid));
+}
+
+#[test]
 fn doc_builder_adds_explicit_title_page_section_option() {
     let model = DocBuilder::new()
         .title_page()
