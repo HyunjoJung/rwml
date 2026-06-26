@@ -1917,14 +1917,14 @@ fn supported_toc_bookmark_scope(instruction: &str) -> Option<Option<String>> {
         }
         if part.eq_ignore_ascii_case("\\f") {
             if let Some(value) = parts.next_if(|next| !next.starts_with('\\')) {
-                diagnostic_name_token(value)?;
+                diagnostic_identifier_token(value)?;
             }
             saw_tc_switch = true;
             continue;
         }
         if let Some(value) = strip_ascii_switch_prefix(part, "\\f") {
             if !value.is_empty() {
-                diagnostic_name_token(value)?;
+                diagnostic_identifier_token(value)?;
             }
             saw_tc_switch = true;
             continue;
@@ -1934,7 +1934,7 @@ fn supported_toc_bookmark_scope(instruction: &str) -> Option<Option<String>> {
             if saw_sequence_switch {
                 return None;
             }
-            diagnostic_name_token(value)?;
+            diagnostic_identifier_token(value)?;
             saw_sequence_switch = true;
             continue;
         }
@@ -1942,7 +1942,7 @@ fn supported_toc_bookmark_scope(instruction: &str) -> Option<Option<String>> {
             if saw_sequence_switch {
                 return None;
             }
-            diagnostic_name_token(value)?;
+            diagnostic_identifier_token(value)?;
             saw_sequence_switch = true;
             continue;
         }
@@ -1951,7 +1951,7 @@ fn supported_toc_bookmark_scope(instruction: &str) -> Option<Option<String>> {
             if saw_sequence_switch {
                 return None;
             }
-            diagnostic_name_token(value)?;
+            diagnostic_identifier_token(value)?;
             saw_sequence_switch = true;
             continue;
         }
@@ -1959,7 +1959,7 @@ fn supported_toc_bookmark_scope(instruction: &str) -> Option<Option<String>> {
             if saw_sequence_switch {
                 return None;
             }
-            diagnostic_name_token(value)?;
+            diagnostic_identifier_token(value)?;
             saw_sequence_switch = true;
             continue;
         }
