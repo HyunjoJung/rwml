@@ -775,6 +775,27 @@ fn style_ref_deleted_heading_docx() -> Vec<u8> {
     ])
 }
 
+fn style_ref_alternate_content_heading_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="wps"><w:body><mc:AlternateContent><mc:Choice Requires="wps"><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Choice </w:t><mc:AlternateContent><mc:Choice Requires="wps"><w:t>Heading</w:t></mc:Choice><mc:Fallback><w:t>Fallback Inline</w:t></mc:Fallback></mc:AlternateContent></w:r></w:p></mc:Choice><mc:Fallback><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Fallback Heading</w:t></w:r></w:p></mc:Fallback></mc:AlternateContent><w:p><w:fldSimple w:instr=" STYLEREF &quot;heading 1&quot; "><w:r><w:t>stale style ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn numbered_style_ref_switch_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -5082,6 +5103,28 @@ fn docx_style_ref_context_ignores_deleted_styled_paragraphs() {
             && !main_text.contains("Deleted Heading")
             && !main_text.contains("Moved Heading"),
         "STYLEREF should follow accepted-current style context: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_style_ref_context_uses_single_alternate_content_branch() {
+    let doc = Document::open(&style_ref_alternate_content_heading_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(
+        fields[0].kind,
+        FieldKind::DocumentStructure("STYLEREF".to_string())
+    );
+    assert_eq!(fields[0].instruction, "STYLEREF \"heading 1\"");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("Choice Heading"));
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Choice Heading")
+            && !main_text.contains("Fallback Heading")
+            && !main_text.contains("Fallback Inline"),
+        "STYLEREF should use one AlternateContent branch: {main_text:?}"
     );
 }
 

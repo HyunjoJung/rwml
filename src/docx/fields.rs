@@ -2211,21 +2211,61 @@ pub(crate) fn style_ref_context(
     let mut field_positions = Vec::new();
     let mut counters: HashMap<String, [u32; 9]> = HashMap::new();
     let mut next_order = 0usize;
+    let mut xml_depth = 0usize;
+    let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
-                skip_subtree(&mut r);
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    skip_subtree(&mut r);
+                    continue;
+                }
+                if matches!(name, b"del" | b"moveFrom") {
+                    skip_subtree(&mut r);
+                    continue;
+                }
+                let mut consumed_element = false;
+                match name {
+                    b"AlternateContent" => {
+                        alternate_content_stack.push(AlternateContentBranchState {
+                            branch_depth: xml_depth + 1,
+                            took_branch: false,
+                        });
+                    }
+                    b"p" => {
+                        read_style_ref_paragraph(
+                            &mut r,
+                            styles,
+                            numbering,
+                            &mut counters,
+                            &mut entries,
+                            &mut field_positions,
+                            &mut next_order,
+                        );
+                        consumed_element = true;
+                    }
+                    _ => {}
+                }
+                if !consumed_element {
+                    xml_depth = xml_depth.saturating_add(1);
+                }
             }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"p" => {
-                read_style_ref_paragraph(
-                    &mut r,
-                    styles,
-                    numbering,
-                    &mut counters,
-                    &mut entries,
-                    &mut field_positions,
-                    &mut next_order,
-                );
+            Ok(Event::Empty(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    continue;
+                }
+            }
+            Ok(Event::End(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if name == b"AlternateContent" {
+                    alternate_content_stack.pop();
+                }
+                xml_depth = xml_depth.saturating_sub(1);
             }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
@@ -2252,80 +2292,131 @@ fn read_style_ref_paragraph(
     let mut number = None;
     let mut text = String::new();
     let mut current: Option<StyleRefScanField> = None;
+    let mut xml_depth = 0usize;
+    let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
-                skip_subtree(r);
-            }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"pPr" => {
-                read_style_ref_ppr(r, &mut style_id, &mut num_id, &mut ilvl);
-            }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"r" => {
-                ensure_style_ref_paragraph_number(
-                    &mut number,
-                    numbering,
-                    counters,
-                    num_id.as_deref(),
-                    ilvl,
-                );
-                read_style_ref_run(
-                    r,
-                    StyleRefRunScan {
-                        styles,
-                        entries,
-                        field_positions,
-                        next_order,
-                        paragraph_number: &number,
-                        current: &mut current,
-                        paragraph_text: &mut text,
-                    },
-                );
-            }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"fldSimple" => {
-                ensure_style_ref_paragraph_number(
-                    &mut number,
-                    numbering,
-                    counters,
-                    num_id.as_deref(),
-                    ilvl,
-                );
-                record_style_ref_field(
-                    attr_local(&e, b"instr").as_deref(),
-                    field_positions,
-                    next_order,
-                    &number,
-                );
-                skip_element(r, b"fldSimple");
-            }
-            Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"fldSimple" => {
-                ensure_style_ref_paragraph_number(
-                    &mut number,
-                    numbering,
-                    counters,
-                    num_id.as_deref(),
-                    ilvl,
-                );
-                record_style_ref_field(
-                    attr_local(&e, b"instr").as_deref(),
-                    field_positions,
-                    next_order,
-                    &number,
-                );
-            }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"t" => {
-                let run_text = read_text(r);
-                if !style_ref_in_field_result(&current) {
-                    text.push_str(&run_text);
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    skip_subtree(r);
+                    continue;
+                }
+                if matches!(name, b"del" | b"moveFrom") {
+                    skip_subtree(r);
+                    continue;
+                }
+                let mut consumed_element = false;
+                match name {
+                    b"AlternateContent" => {
+                        alternate_content_stack.push(AlternateContentBranchState {
+                            branch_depth: xml_depth + 1,
+                            took_branch: false,
+                        });
+                    }
+                    b"pPr" => {
+                        read_style_ref_ppr(r, &mut style_id, &mut num_id, &mut ilvl);
+                        consumed_element = true;
+                    }
+                    b"r" => {
+                        ensure_style_ref_paragraph_number(
+                            &mut number,
+                            numbering,
+                            counters,
+                            num_id.as_deref(),
+                            ilvl,
+                        );
+                        read_style_ref_run(
+                            r,
+                            StyleRefRunScan {
+                                styles,
+                                entries,
+                                field_positions,
+                                next_order,
+                                paragraph_number: &number,
+                                current: &mut current,
+                                paragraph_text: &mut text,
+                            },
+                        );
+                        consumed_element = true;
+                    }
+                    b"fldSimple" => {
+                        ensure_style_ref_paragraph_number(
+                            &mut number,
+                            numbering,
+                            counters,
+                            num_id.as_deref(),
+                            ilvl,
+                        );
+                        record_style_ref_field(
+                            attr_local(&e, b"instr").as_deref(),
+                            field_positions,
+                            next_order,
+                            &number,
+                        );
+                        skip_element(r, b"fldSimple");
+                        consumed_element = true;
+                    }
+                    b"t" => {
+                        let run_text = read_text(r);
+                        consumed_element = true;
+                        if !style_ref_in_field_result(&current) {
+                            text.push_str(&run_text);
+                        }
+                    }
+                    _ => {
+                        if let Some(marker) = inline_marker_text(&e) {
+                            if !style_ref_in_field_result(&current) {
+                                text.push_str(marker);
+                            }
+                        }
+                    }
+                }
+                if !consumed_element {
+                    xml_depth = xml_depth.saturating_add(1);
                 }
             }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
-                if let Some(marker) = inline_marker_text(&e) {
-                    if !style_ref_in_field_result(&current) {
-                        text.push_str(marker);
+            Ok(Event::Empty(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    continue;
+                }
+                match name {
+                    b"fldSimple" => {
+                        ensure_style_ref_paragraph_number(
+                            &mut number,
+                            numbering,
+                            counters,
+                            num_id.as_deref(),
+                            ilvl,
+                        );
+                        record_style_ref_field(
+                            attr_local(&e, b"instr").as_deref(),
+                            field_positions,
+                            next_order,
+                            &number,
+                        );
+                    }
+                    _ => {
+                        if let Some(marker) = inline_marker_text(&e) {
+                            if !style_ref_in_field_result(&current) {
+                                text.push_str(marker);
+                            }
+                        }
                     }
                 }
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"p" => break,
+            Ok(Event::End(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if name == b"AlternateContent" {
+                    alternate_content_stack.pop();
+                }
+                xml_depth = xml_depth.saturating_sub(1);
+            }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
@@ -2371,47 +2462,109 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
     } = scan;
     let mut run_style_id = None;
     let mut run_text = String::new();
+    let mut xml_depth = 0usize;
+    let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
-                skip_subtree(r);
-            }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"rStyle" => {
-                run_style_id = attr_local(&e, b"val");
-            }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"fldChar" => {
-                apply_style_ref_scan_fld_char(
-                    &e,
-                    current,
-                    field_positions,
-                    next_order,
-                    paragraph_number,
-                );
-            }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"instrText" => {
-                let field_text = read_text(r);
-                if let Some(field) = current.as_mut() {
-                    if field.phase == FieldPhase::Instruction {
-                        field.instruction.push_str(&field_text);
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    skip_subtree(r);
+                    continue;
+                }
+                if matches!(name, b"del" | b"moveFrom") {
+                    skip_subtree(r);
+                    continue;
+                }
+                let mut consumed_element = false;
+                match name {
+                    b"AlternateContent" => {
+                        alternate_content_stack.push(AlternateContentBranchState {
+                            branch_depth: xml_depth + 1,
+                            took_branch: false,
+                        });
+                    }
+                    b"rStyle" => {
+                        run_style_id = attr_local(&e, b"val");
+                    }
+                    b"fldChar" => {
+                        apply_style_ref_scan_fld_char(
+                            &e,
+                            current,
+                            field_positions,
+                            next_order,
+                            paragraph_number,
+                        );
+                    }
+                    b"instrText" => {
+                        let field_text = read_text(r);
+                        consumed_element = true;
+                        if let Some(field) = current.as_mut() {
+                            if field.phase == FieldPhase::Instruction {
+                                field.instruction.push_str(&field_text);
+                            }
+                        }
+                    }
+                    b"t" => {
+                        let text = read_text(r);
+                        consumed_element = true;
+                        if !style_ref_in_field_result(current) {
+                            paragraph_text.push_str(&text);
+                            run_text.push_str(&text);
+                        }
+                    }
+                    _ => {
+                        if let Some(marker) = inline_marker_text(&e) {
+                            if !style_ref_in_field_result(current) {
+                                paragraph_text.push_str(marker);
+                                run_text.push_str(marker);
+                            }
+                        }
                     }
                 }
-            }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"t" => {
-                let text = read_text(r);
-                if !style_ref_in_field_result(current) {
-                    paragraph_text.push_str(&text);
-                    run_text.push_str(&text);
+                if !consumed_element {
+                    xml_depth = xml_depth.saturating_add(1);
                 }
             }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
-                if let Some(marker) = inline_marker_text(&e) {
-                    if !style_ref_in_field_result(current) {
-                        paragraph_text.push_str(marker);
-                        run_text.push_str(marker);
+            Ok(Event::Empty(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    continue;
+                }
+                match name {
+                    b"rStyle" => {
+                        run_style_id = attr_local(&e, b"val");
+                    }
+                    b"fldChar" => {
+                        apply_style_ref_scan_fld_char(
+                            &e,
+                            current,
+                            field_positions,
+                            next_order,
+                            paragraph_number,
+                        );
+                    }
+                    _ => {
+                        if let Some(marker) = inline_marker_text(&e) {
+                            if !style_ref_in_field_result(current) {
+                                paragraph_text.push_str(marker);
+                                run_text.push_str(marker);
+                            }
+                        }
                     }
                 }
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"r" => break,
+            Ok(Event::End(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if name == b"AlternateContent" {
+                    alternate_content_stack.pop();
+                }
+                xml_depth = xml_depth.saturating_sub(1);
+            }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
