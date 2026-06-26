@@ -1008,6 +1008,23 @@ fn ref_bookmark_docx() -> Vec<u8> {
     ])
 }
 
+fn ref_deleted_bookmark_text_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="ClauseText"/><w:r><w:t>Visible clause</w:t></w:r><w:del><w:r><w:t> deleted clause</w:t></w:r></w:del><w:moveFrom><w:r><w:t> moved clause</w:t></w:r></w:moveFrom><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" REF ClauseText "><w:r><w:t>stale deleted ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn complex_ref_bookmark_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -6238,6 +6255,26 @@ fn docx_ref_field_computes_unambiguous_bookmark_text() {
     assert_eq!(fields[1].kind, FieldKind::Ref);
     assert_eq!(fields[1].instruction, "REF MissingBookmark");
     assert_eq!(fields[1].computed_result, None);
+}
+
+#[test]
+fn docx_ref_targets_ignore_deleted_bookmark_text() {
+    let doc = Document::open(&ref_deleted_bookmark_text_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::Ref);
+    assert_eq!(fields[0].instruction, "REF ClauseText");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("Visible clause"));
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Visible clause")
+            && !main_text.contains("deleted clause")
+            && !main_text.contains("moved clause")
+            && !main_text.contains("stale deleted ref"),
+        "computed REF bookmark text must follow accepted-current wrappers: {main_text:?}"
+    );
 }
 
 #[test]

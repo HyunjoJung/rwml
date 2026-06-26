@@ -578,6 +578,9 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
     let mut out: HashMap<String, String> = HashMap::new();
     loop {
         match r.read_event() {
+            Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
+                skip_subtree(&mut r);
+            }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"p" => {
                 append_ref_paragraph_breaks(&active, &mut out);
             }
