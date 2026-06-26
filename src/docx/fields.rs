@@ -2406,32 +2406,40 @@ pub(crate) fn legacy_form_context(xml: &str) -> LegacyFormContext {
     let mut current: Option<LegacyFormScanField> = None;
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
-                b"fldSimple" => {
-                    let instruction = attr_local(&e, b"instr").unwrap_or_default();
-                    let form_data = read_legacy_form_data_until(&mut r);
-                    record_simple_legacy_form_result(&instruction, form_data, &mut results);
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if matches!(name, b"del" | b"moveFrom") {
+                    skip_subtree(&mut r);
+                    continue;
                 }
-                b"fldChar" => {
-                    let kind = attr_local(&e, b"fldCharType");
-                    let form_data = read_legacy_form_data_until(&mut r);
-                    apply_legacy_form_scan_fld_char(
-                        kind.as_deref(),
-                        form_data,
-                        &mut current,
-                        &mut results,
-                    );
-                }
-                b"instrText" => {
-                    let text = read_text(&mut r);
-                    if let Some(field) = current.as_mut() {
-                        if field.phase == FieldPhase::Instruction {
-                            field.instruction.push_str(&text);
+                match name {
+                    b"fldSimple" => {
+                        let instruction = attr_local(&e, b"instr").unwrap_or_default();
+                        let form_data = read_legacy_form_data_until(&mut r);
+                        record_simple_legacy_form_result(&instruction, form_data, &mut results);
+                    }
+                    b"fldChar" => {
+                        let kind = attr_local(&e, b"fldCharType");
+                        let form_data = read_legacy_form_data_until(&mut r);
+                        apply_legacy_form_scan_fld_char(
+                            kind.as_deref(),
+                            form_data,
+                            &mut current,
+                            &mut results,
+                        );
+                    }
+                    b"instrText" => {
+                        let text = read_text(&mut r);
+                        if let Some(field) = current.as_mut() {
+                            if field.phase == FieldPhase::Instruction {
+                                field.instruction.push_str(&text);
+                            }
                         }
                     }
+                    _ => {}
                 }
-                _ => {}
-            },
+            }
             Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
                 b"fldSimple" => {
                     record_simple_legacy_form_result(
