@@ -893,6 +893,10 @@ pub enum ChartKind {
     LineNoMarkers,
     /// A smoothed line chart with category labels on the horizontal axis.
     SmoothLine,
+    /// A stacked line chart with category labels on the horizontal axis.
+    StackedLine,
+    /// A 100% stacked line chart with category labels on the horizontal axis.
+    PercentStackedLine,
     /// A 3-D line chart with category labels on the horizontal axis.
     Line3D,
     /// An area chart with category labels on the horizontal axis.

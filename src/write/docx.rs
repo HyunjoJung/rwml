@@ -1848,15 +1848,51 @@ fn chart_xml(chart: &Chart, chart_id: u32, workbook_rid: Option<&str>) -> String
         ChartKind::Column3D => {
             write_bar_or_column_3d_chart(&mut out, chart, cat_axis_id, val_axis_id, "col")
         }
-        ChartKind::Line => {
-            write_line_chart(&mut out, chart, cat_axis_id, val_axis_id, "circle", false)
-        }
-        ChartKind::LineNoMarkers => {
-            write_line_chart(&mut out, chart, cat_axis_id, val_axis_id, "none", false)
-        }
-        ChartKind::SmoothLine => {
-            write_line_chart(&mut out, chart, cat_axis_id, val_axis_id, "circle", true)
-        }
+        ChartKind::Line => write_line_chart(
+            &mut out,
+            chart,
+            cat_axis_id,
+            val_axis_id,
+            "circle",
+            "standard",
+            false,
+        ),
+        ChartKind::LineNoMarkers => write_line_chart(
+            &mut out,
+            chart,
+            cat_axis_id,
+            val_axis_id,
+            "none",
+            "standard",
+            false,
+        ),
+        ChartKind::SmoothLine => write_line_chart(
+            &mut out,
+            chart,
+            cat_axis_id,
+            val_axis_id,
+            "circle",
+            "standard",
+            true,
+        ),
+        ChartKind::StackedLine => write_line_chart(
+            &mut out,
+            chart,
+            cat_axis_id,
+            val_axis_id,
+            "circle",
+            "stacked",
+            false,
+        ),
+        ChartKind::PercentStackedLine => write_line_chart(
+            &mut out,
+            chart,
+            cat_axis_id,
+            val_axis_id,
+            "circle",
+            "percentStacked",
+            false,
+        ),
         ChartKind::Line3D => {
             write_line_3d_chart(&mut out, chart, cat_axis_id, val_axis_id, ser_axis_id)
         }
@@ -2010,9 +2046,12 @@ fn write_line_chart(
     cat_axis_id: u32,
     val_axis_id: u32,
     marker_symbol: &str,
+    grouping: &str,
     smooth: bool,
 ) {
-    out.push_str(r#"<c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>"#);
+    out.push_str(&format!(
+        r#"<c:lineChart><c:grouping val="{grouping}"/><c:varyColors val="0"/>"#
+    ));
     for (index, series) in chart.series.iter().enumerate() {
         out.push_str(&format!(
             r#"<c:ser><c:idx val="{index}"/><c:order val="{index}"/><c:tx><c:v>{}</c:v></c:tx><c:marker><c:symbol val="{marker_symbol}"/></c:marker>"#,
@@ -2382,6 +2421,8 @@ fn write_chart_axes(out: &mut String, kind: ChartKind, cat_axis_id: u32, val_axi
         | ChartKind::Line
         | ChartKind::LineNoMarkers
         | ChartKind::SmoothLine
+        | ChartKind::StackedLine
+        | ChartKind::PercentStackedLine
         | ChartKind::Line3D
         | ChartKind::Area
         | ChartKind::StackedArea

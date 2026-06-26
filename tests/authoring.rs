@@ -3178,6 +3178,104 @@ fn doc_builder_adds_smooth_line_chart() {
 }
 
 #[test]
+fn doc_builder_adds_stacked_line_charts() {
+    let model = DocBuilder::new()
+        .chart(
+            ChartBuilder::stacked_line()
+                .title("Retention stack")
+                .categories(["Jan", "Feb", "Mar"])
+                .series("Free", [20.0, 28.0, 33.0])
+                .series("Paid", [8.0, 13.5, 21.0])
+                .size_px(420, 280)
+                .alt("Retention stacked line chart"),
+        )
+        .chart(
+            ChartBuilder::percent_stacked_line()
+                .title("Retention mix")
+                .categories(["Jan", "Feb", "Mar"])
+                .series("Free", [20.0, 28.0, 33.0])
+                .series("Paid", [8.0, 13.5, 21.0])
+                .size_px(420, 280)
+                .alt("Retention percent stacked line chart"),
+        )
+        .build();
+
+    let Block::Chart(first) = &model.blocks[0] else {
+        panic!("expected first chart block");
+    };
+    let Block::Chart(second) = &model.blocks[1] else {
+        panic!("expected second chart block");
+    };
+    assert_eq!(first.kind, ChartKind::StackedLine);
+    assert_eq!(second.kind, ChartKind::PercentStackedLine);
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let rels = String::from_utf8(parts["word/_rels/document.xml.rels"].clone()).unwrap();
+    let stacked_xml = String::from_utf8(parts["word/charts/chart1.xml"].clone()).unwrap();
+    let percent_xml = String::from_utf8(parts["word/charts/chart2.xml"].clone()).unwrap();
+    let workbook1_bytes = parts
+        .get("word/embeddings/Microsoft_Excel_Worksheet1.xlsx")
+        .expect("embedded stacked line chart workbook");
+    let workbook2_bytes = parts
+        .get("word/embeddings/Microsoft_Excel_Worksheet2.xlsx")
+        .expect("embedded percent stacked line chart workbook");
+    let workbook1_parts = unzip_parts(workbook1_bytes);
+    let workbook2_parts = unzip_parts(workbook2_bytes);
+    let sheet1_xml =
+        String::from_utf8(workbook1_parts["xl/worksheets/sheet1.xml"].clone()).unwrap();
+    let sheet2_xml =
+        String::from_utf8(workbook2_parts["xl/worksheets/sheet1.xml"].clone()).unwrap();
+
+    assert!(
+        document_xml
+            .contains(r#"<wp:docPr id="1" name="Chart1" descr="Retention stacked line chart"/>"#)
+            && document_xml.contains(
+                r#"<wp:docPr id="2" name="Chart2" descr="Retention percent stacked line chart"/>"#
+            )
+            && document_xml.contains(r#"<c:chart r:id="rId1"/>"#)
+            && document_xml.contains(r#"<c:chart r:id="rId2"/>"#),
+        "stacked line chart drawings missing: {document_xml}"
+    );
+    assert!(
+        rels.contains(r#"Target="charts/chart1.xml""#)
+            && rels.contains(r#"Target="charts/chart2.xml""#),
+        "stacked line chart relationships missing: {rels}"
+    );
+    assert!(
+        stacked_xml.contains("<c:lineChart>")
+            && stacked_xml.contains(r#"<c:grouping val="stacked"/>"#)
+            && stacked_xml.contains(r#"<c:marker><c:symbol val="circle"/></c:marker>"#)
+            && stacked_xml.contains("<a:t>Retention stack</a:t>")
+            && stacked_xml.contains("<c:v>Paid</c:v>")
+            && stacked_xml.contains("<c:v>Mar</c:v>")
+            && stacked_xml.contains("<c:v>21</c:v>"),
+        "stacked line chart payload missing: {stacked_xml}"
+    );
+    assert!(
+        percent_xml.contains("<c:lineChart>")
+            && percent_xml.contains(r#"<c:grouping val="percentStacked"/>"#)
+            && percent_xml.contains(r#"<c:marker><c:symbol val="circle"/></c:marker>"#)
+            && percent_xml.contains("<a:t>Retention mix</a:t>")
+            && percent_xml.contains("<c:v>Free</c:v>")
+            && percent_xml.contains("<c:v>Mar</c:v>")
+            && percent_xml.contains("<c:v>21</c:v>"),
+        "percent stacked line chart payload missing: {percent_xml}"
+    );
+    assert!(
+        sheet1_xml.contains(r#"<c r="B2"><v>20</v></c>"#)
+            && sheet1_xml.contains(r#"<c r="C4"><v>21</v></c>"#)
+            && sheet2_xml.contains(r#"<c r="B2"><v>20</v></c>"#)
+            && sheet2_xml.contains(r#"<c r="C4"><v>21</v></c>"#),
+        "stacked line chart workbook values missing: {sheet1_xml} {sheet2_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("stacked line charts .docx reopens");
+    assert_eq!(reopened.report().features.charts, 2);
+}
+
+#[test]
 fn doc_builder_adds_stacked_bar_and_column_charts() {
     let model = DocBuilder::new()
         .chart(
@@ -5056,6 +5154,45 @@ fn render_pdf_draws_authored_smooth_line_chart() {
     assert!(
         rendered.pdf.len() > empty.pdf.len() + 100,
         "smooth line chart drawing should add visible PDF content"
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn render_pdf_draws_authored_stacked_line_charts() {
+    let model = DocBuilder::new()
+        .chart(
+            ChartBuilder::stacked_line()
+                .title("Retention stack")
+                .categories(["Jan", "Feb", "Mar"])
+                .series("Free", [20.0, 28.0, 33.0])
+                .series("Paid", [8.0, 13.5, 21.0]),
+        )
+        .chart(
+            ChartBuilder::percent_stacked_line()
+                .title("Retention mix")
+                .categories(["Jan", "Feb", "Mar"])
+                .series("Free", [20.0, 28.0, 33.0])
+                .series("Paid", [8.0, 13.5, 21.0]),
+        )
+        .build();
+
+    let empty = rdoc::render_pdf_with_report(&DocModel::default());
+    let rendered = rdoc::render_pdf_with_report(&model);
+
+    assert!(rendered.pdf.starts_with(b"%PDF"));
+    assert_eq!(rendered.report.pages, 1);
+    assert_eq!(rendered.report.unsupported.charts, 0);
+    assert!(
+        !rendered.report.warnings.iter().any(|warning| matches!(
+            warning,
+            rdoc::RenderWarning::ChartsPreservedButNotModeled { .. }
+        )),
+        "authored stacked line charts should render without preserved-only warnings"
+    );
+    assert!(
+        rendered.pdf.len() > empty.pdf.len() + 100,
+        "stacked line chart drawings should add visible PDF content"
     );
 }
 

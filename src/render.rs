@@ -2560,12 +2560,16 @@ fn draw_authored_chart(
         chart.kind,
         ChartKind::PercentStackedBar
             | ChartKind::PercentStackedColumn
+            | ChartKind::PercentStackedLine
             | ChartKind::PercentStackedArea
     ) {
         (0.0, 1.0)
     } else if matches!(
         chart.kind,
-        ChartKind::StackedBar | ChartKind::StackedColumn | ChartKind::StackedArea
+        ChartKind::StackedBar
+            | ChartKind::StackedColumn
+            | ChartKind::StackedLine
+            | ChartKind::StackedArea
     ) {
         (0.0, stacked_chart_max(chart, category_count))
     } else {
@@ -2737,6 +2741,8 @@ fn draw_authored_chart(
         | ChartKind::Line
         | ChartKind::LineNoMarkers
         | ChartKind::SmoothLine
+        | ChartKind::StackedLine
+        | ChartKind::PercentStackedLine
         | ChartKind::Line3D
         | ChartKind::Area
         | ChartKind::StackedArea
@@ -2941,17 +2947,39 @@ fn draw_authored_chart(
                 ChartKind::Line
                 | ChartKind::LineNoMarkers
                 | ChartKind::SmoothLine
+                | ChartKind::StackedLine
+                | ChartKind::PercentStackedLine
                 | ChartKind::Line3D => {
                     for (series_index, series) in chart.series.iter().enumerate() {
                         let color = chart_series_color(series_index);
                         let mut previous: Option<(f32, f32)> = None;
                         for category_index in 0..chart.categories.len() {
-                            let value = series
-                                .values
-                                .get(category_index)
-                                .copied()
-                                .filter(|value| value.is_finite())
-                                .unwrap_or(0.0);
+                            let value = if matches!(
+                                chart.kind,
+                                ChartKind::StackedLine | ChartKind::PercentStackedLine
+                            ) {
+                                let mut value = 0.0;
+                                for series in chart.series.iter().take(series_index + 1) {
+                                    value += series
+                                        .values
+                                        .get(category_index)
+                                        .copied()
+                                        .filter(|value| value.is_finite() && *value > 0.0)
+                                        .unwrap_or(0.0);
+                                }
+                                if chart.kind == ChartKind::PercentStackedLine {
+                                    value / stacked_category_total(chart, category_index).max(1.0)
+                                } else {
+                                    value
+                                }
+                            } else {
+                                series
+                                    .values
+                                    .get(category_index)
+                                    .copied()
+                                    .filter(|value| value.is_finite())
+                                    .unwrap_or(0.0)
+                            };
                             let point_x = plot_left + category_index as f32 * band_w + band_w * 0.5;
                             let point_y = value_y(value).clamp(plot_top, plot_bottom);
                             if let Some((prev_x, prev_y)) = previous {

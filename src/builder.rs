@@ -912,6 +912,26 @@ impl ChartBuilder {
         }
     }
 
+    /// Start a stacked line chart.
+    pub fn stacked_line() -> Self {
+        Self {
+            chart: Chart {
+                kind: ChartKind::StackedLine,
+                ..Chart::default()
+            },
+        }
+    }
+
+    /// Start a 100% stacked line chart.
+    pub fn percent_stacked_line() -> Self {
+        Self {
+            chart: Chart {
+                kind: ChartKind::PercentStackedLine,
+                ..Chart::default()
+            },
+        }
+    }
+
     /// Start a 3-D line chart.
     pub fn line_3d() -> Self {
         Self {
