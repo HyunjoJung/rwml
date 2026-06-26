@@ -2130,7 +2130,7 @@ fn strip_ascii_switch_prefix<'a>(part: &'a str, switch: &str) -> Option<&'a str>
 }
 
 fn parse_toc_outline_range_for_report(range: &str) -> Option<(u8, u8)> {
-    let range = range.trim_matches('"');
+    let range = diagnostic_name_token(range)?;
     let (start, end) = range.split_once('-')?;
     let start = start.parse::<u8>().ok()?;
     let end = end.parse::<u8>().ok()?;
@@ -2633,6 +2633,12 @@ mod tests {
     #[test]
     fn supported_toc_bookmark_scope_rejects_duplicate_tc_filter() {
         assert!(super::supported_toc_bookmark_scope(r"TOC \f m \f x").is_none());
+    }
+
+    #[test]
+    fn supported_toc_bookmark_scope_rejects_unbalanced_outline_range_quotes() {
+        assert!(super::supported_toc_bookmark_scope(r#"TOC \o "1-2"#).is_none());
+        assert!(super::supported_toc_bookmark_scope(r#"TOC \o "1-2" \l "2-3"#).is_none());
     }
 
     #[test]
