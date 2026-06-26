@@ -1953,7 +1953,8 @@ fn chart_xml(chart: &Chart, chart_id: u32, workbook_rid: Option<&str>) -> String
         ChartKind::Pie3D => write_pie_3d_chart(&mut out, chart),
         ChartKind::PieOfPie => write_of_pie_chart(&mut out, chart, "pie"),
         ChartKind::BarOfPie => write_of_pie_chart(&mut out, chart, "bar"),
-        ChartKind::Doughnut => write_doughnut_chart(&mut out, chart),
+        ChartKind::Doughnut => write_doughnut_chart(&mut out, chart, false),
+        ChartKind::ExplodedDoughnut => write_doughnut_chart(&mut out, chart, true),
         ChartKind::Surface => {
             write_surface_chart(&mut out, chart, cat_axis_id, val_axis_id, ser_axis_id)
         }
@@ -1968,7 +1969,8 @@ fn chart_xml(chart: &Chart, chart_id: u32, workbook_rid: Option<&str>) -> String
         | ChartKind::Pie3D
         | ChartKind::PieOfPie
         | ChartKind::BarOfPie
-        | ChartKind::Doughnut => {}
+        | ChartKind::Doughnut
+        | ChartKind::ExplodedDoughnut => {}
         ChartKind::Scatter
         | ChartKind::ScatterMarkers
         | ChartKind::ScatterLines
@@ -2284,13 +2286,16 @@ fn write_of_pie_chart(out: &mut String, chart: &Chart, of_pie_type: &str) {
     );
 }
 
-fn write_doughnut_chart(out: &mut String, chart: &Chart) {
+fn write_doughnut_chart(out: &mut String, chart: &Chart, exploded: bool) {
     out.push_str(r#"<c:doughnutChart><c:varyColors val="1"/>"#);
     for (index, series) in chart.series.iter().take(1).enumerate() {
         out.push_str(&format!(
             r#"<c:ser><c:idx val="{index}"/><c:order val="{index}"/><c:tx><c:v>{}</c:v></c:tx>"#,
             esc_text(&series.name)
         ));
+        if exploded {
+            out.push_str(r#"<c:explosion val="25"/>"#);
+        }
         write_chart_categories(out, &chart.categories);
         write_chart_values(out, &series.values);
         out.push_str("</c:ser>");
@@ -2477,6 +2482,7 @@ fn write_chart_axes(out: &mut String, kind: ChartKind, cat_axis_id: u32, val_axi
         | ChartKind::PieOfPie
         | ChartKind::BarOfPie
         | ChartKind::Doughnut
+        | ChartKind::ExplodedDoughnut
         | ChartKind::Surface
         | ChartKind::Surface3D
         | ChartKind::Stock => ("b", "l"),

@@ -1142,6 +1142,16 @@ impl ChartBuilder {
         }
     }
 
+    /// Start an exploded doughnut chart using the first series as slice values.
+    pub fn exploded_doughnut() -> Self {
+        Self {
+            chart: Chart {
+                kind: ChartKind::ExplodedDoughnut,
+                ..Chart::default()
+            },
+        }
+    }
+
     /// Start a surface chart using category columns and series rows as a value grid.
     pub fn surface() -> Self {
         Self {

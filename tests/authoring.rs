@@ -4840,6 +4840,65 @@ fn doc_builder_adds_doughnut_chart() {
 }
 
 #[test]
+fn doc_builder_adds_exploded_doughnut_chart() {
+    let model = DocBuilder::new()
+        .chart(
+            ChartBuilder::exploded_doughnut()
+                .title("Revenue ring breakout")
+                .categories(["Cloud", "Services", "Support"])
+                .series("Share", [65.0, 25.0, 10.0])
+                .size_px(420, 280)
+                .alt("Revenue exploded doughnut chart"),
+        )
+        .build();
+
+    let Block::Chart(chart) = &model.blocks[0] else {
+        panic!("expected chart block");
+    };
+    assert_eq!(chart.kind, ChartKind::ExplodedDoughnut);
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let rels = String::from_utf8(parts["word/_rels/document.xml.rels"].clone()).unwrap();
+    let chart_xml = String::from_utf8(parts["word/charts/chart1.xml"].clone()).unwrap();
+    let workbook_bytes = parts
+        .get("word/embeddings/Microsoft_Excel_Worksheet1.xlsx")
+        .expect("embedded exploded doughnut chart workbook");
+    let workbook_parts = unzip_parts(workbook_bytes);
+    let sheet_xml = String::from_utf8(workbook_parts["xl/worksheets/sheet1.xml"].clone()).unwrap();
+
+    assert!(
+        document_xml.contains(
+            r#"<wp:docPr id="1" name="Chart1" descr="Revenue exploded doughnut chart"/>"#
+        ) && document_xml.contains(r#"<c:chart r:id="rId1"/>"#),
+        "exploded doughnut chart drawing missing: {document_xml}"
+    );
+    assert!(
+        rels.contains("relationships/chart") && rels.contains(r#"Target="charts/chart1.xml""#),
+        "exploded doughnut chart relationship missing: {rels}"
+    );
+    assert!(
+        chart_xml.contains("<c:doughnutChart>")
+            && chart_xml.contains(r#"<c:explosion val="25"/>"#)
+            && chart_xml.contains(r#"<c:holeSize val="50"/>"#)
+            && chart_xml.contains("<a:t>Revenue ring breakout</a:t>")
+            && chart_xml.contains("<c:v>Share</c:v>")
+            && chart_xml.contains("<c:v>Cloud</c:v>")
+            && chart_xml.contains("<c:v>65</c:v>"),
+        "exploded doughnut chart payload missing: {chart_xml}"
+    );
+    assert!(
+        sheet_xml.contains(r#"<c r="B2"><v>65</v></c>"#)
+            && sheet_xml.contains(r#"<c r="B4"><v>10</v></c>"#),
+        "exploded doughnut chart workbook values missing: {sheet_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("exploded doughnut chart .docx reopens");
+    assert_eq!(reopened.report().features.charts, 1);
+}
+
+#[test]
 fn doc_builder_adds_surface_chart() {
     let model = DocBuilder::new()
         .chart(
@@ -6089,6 +6148,37 @@ fn render_pdf_draws_authored_doughnut_chart() {
     assert!(
         rendered.pdf.len() > empty.pdf.len() + 100,
         "doughnut chart drawing should add visible PDF content"
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn render_pdf_draws_authored_exploded_doughnut_chart() {
+    let model = DocBuilder::new()
+        .chart(
+            ChartBuilder::exploded_doughnut()
+                .title("Revenue ring breakout")
+                .categories(["Cloud", "Services", "Support"])
+                .series("Share", [65.0, 25.0, 10.0]),
+        )
+        .build();
+
+    let empty = rdoc::render_pdf_with_report(&DocModel::default());
+    let rendered = rdoc::render_pdf_with_report(&model);
+
+    assert!(rendered.pdf.starts_with(b"%PDF"));
+    assert_eq!(rendered.report.pages, 1);
+    assert_eq!(rendered.report.unsupported.charts, 0);
+    assert!(
+        !rendered.report.warnings.iter().any(|warning| matches!(
+            warning,
+            rdoc::RenderWarning::ChartsPreservedButNotModeled { .. }
+        )),
+        "authored exploded doughnut chart should render without preserved-only warnings"
+    );
+    assert!(
+        rendered.pdf.len() > empty.pdf.len() + 100,
+        "exploded doughnut chart drawing should add visible PDF content"
     );
 }
 

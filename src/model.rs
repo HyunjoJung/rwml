@@ -939,6 +939,8 @@ pub enum ChartKind {
     BarOfPie,
     /// A doughnut chart using the first series as slice values.
     Doughnut,
+    /// An exploded doughnut chart using the first series as slice values.
+    ExplodedDoughnut,
     /// A surface chart using category columns and series rows as a value grid.
     Surface,
     /// A 3-D surface chart using category columns and series rows as a value grid.

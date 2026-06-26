@@ -2471,6 +2471,7 @@ fn draw_authored_chart(
             | ChartKind::PieOfPie
             | ChartKind::BarOfPie
             | ChartKind::Doughnut
+            | ChartKind::ExplodedDoughnut
     ) {
         draw_pie_chart(
             surface,
@@ -2479,8 +2480,14 @@ fn draw_authored_chart(
             plot_top,
             plot_w,
             plot_h,
-            chart.kind == ChartKind::Doughnut,
-            chart.kind == ChartKind::ExplodedPie,
+            matches!(
+                chart.kind,
+                ChartKind::Doughnut | ChartKind::ExplodedDoughnut
+            ),
+            matches!(
+                chart.kind,
+                ChartKind::ExplodedPie | ChartKind::ExplodedDoughnut
+            ),
         );
         let mut legend_x = plot_left;
         let legend_y = y + h - 14.0;
@@ -3216,7 +3223,8 @@ fn draw_authored_chart(
                 | ChartKind::Pie3D
                 | ChartKind::PieOfPie
                 | ChartKind::BarOfPie
-                | ChartKind::Doughnut => {}
+                | ChartKind::Doughnut
+                | ChartKind::ExplodedDoughnut => {}
             }
         }
         ChartKind::Radar
@@ -3227,7 +3235,8 @@ fn draw_authored_chart(
         | ChartKind::Pie3D
         | ChartKind::PieOfPie
         | ChartKind::BarOfPie
-        | ChartKind::Doughnut => {}
+        | ChartKind::Doughnut
+        | ChartKind::ExplodedDoughnut => {}
     }
 
     let mut legend_x = plot_left;
