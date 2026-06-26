@@ -8356,6 +8356,10 @@ pub(crate) fn computed_style_ref_result(
     Some(apply_field_text_format(text, spec.text_format))
 }
 
+pub(crate) fn supports_style_ref_field_syntax(instruction: &str) -> bool {
+    style_ref_instruction(instruction).is_some()
+}
+
 fn style_ref_instruction(instruction: &str) -> Option<StyleRefInstruction> {
     let tokens = instruction_parts(instruction);
     let mut parts = tokens.iter().map(String::as_str);

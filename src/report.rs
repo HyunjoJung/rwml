@@ -1498,6 +1498,9 @@ fn unsupported_field_reason(field: &Field) -> Option<FieldEvaluationReason> {
                 &field.instruction,
             ))
         }
+        FieldKind::DocumentStructure(ref kind) if kind.eq_ignore_ascii_case("STYLEREF") => {
+            Some(style_ref_uncomputed_reason(&field.instruction))
+        }
         FieldKind::DocumentStructure(_) => Some(FieldEvaluationReason::NoComputedResult),
         FieldKind::Display(_) => Some(display_uncomputed_reason(&field.instruction)),
         FieldKind::Action(_) => Some(action_uncomputed_reason(&field.instruction)),
@@ -1641,6 +1644,22 @@ fn supported_section_document_structure_syntax(instruction: &str) -> bool {
         return false;
     }
     true
+}
+
+fn style_ref_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
+    #[cfg(feature = "docx")]
+    {
+        if crate::docx::supports_style_ref_field_syntax(instruction) {
+            FieldEvaluationReason::NoComputedResult
+        } else {
+            FieldEvaluationReason::UnsupportedSwitch
+        }
+    }
+    #[cfg(not(feature = "docx"))]
+    {
+        let _ = instruction;
+        FieldEvaluationReason::NoComputedResult
+    }
 }
 
 fn display_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {

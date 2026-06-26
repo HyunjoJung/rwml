@@ -93,6 +93,10 @@ pub(crate) fn supports_document_info_field_syntax(instruction: &str) -> bool {
     fields::supports_document_info_field_syntax(instruction)
 }
 
+pub(crate) fn supports_style_ref_field_syntax(instruction: &str) -> bool {
+    fields::supports_style_ref_field_syntax(instruction)
+}
+
 /// Relationship table: `Id` → `(Target, is_external)`.
 type Rels = HashMap<String, (String, bool)>;
 

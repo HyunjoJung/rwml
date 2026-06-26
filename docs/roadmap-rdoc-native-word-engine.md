@@ -346,7 +346,8 @@ Initial status:
   paragraph- and character-style `STYLEREF` computes nearest styled paragraph/run
   text by style id/name plus source-order `\p` above/below and deterministic
   numbered source paragraphs with `\n`, `\r`, `\w`, and numeric-text `\t`
-  switches, while page-aware/header-footer,
+  switches; malformed `STYLEREF` syntax reports `UnsupportedSwitch`, while
+  page-aware/header-footer,
   layout-derived `SECTIONPAGES`, and remaining document-structure/style lookup
   fields report `NoComputedResult` until native evaluation is implemented. The
   display/layout fields (`ADVANCE`, `EQ`, `SYMBOL`) are named separately from
@@ -807,7 +808,8 @@ Initial status:
   styled paragraph/run text by style id/name plus source-order `\p`
   above/below and numbered paragraph `\n`, `\r`, `\w`, and numeric-text `\t`
   switch results where numbering context is
-  deterministic, and remaining document-structure cases preserve cached text with
+  deterministic; malformed `STYLEREF` syntax reports `UnsupportedSwitch`, and
+  remaining document-structure cases preserve cached text with
   `NoComputedResult` diagnostics.
   Display/layout fields are named separately from unknown fields; deterministic
   hidden validated `ADVANCE`, literal simple `EQ` fractions with supported

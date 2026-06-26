@@ -694,7 +694,7 @@ fn document_structure_field_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" REVNUM "><w:r><w:t>4</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SECTION "><w:r><w:t>2</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SECTIONPAGES "><w:r><w:t>5</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;Heading 1&quot; \n "><w:r><w:t>Executive Summary</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" REVNUM "><w:r><w:t>4</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SECTION "><w:r><w:t>2</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SECTIONPAGES "><w:r><w:t>5</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;Heading 1&quot; \n "><w:r><w:t>Executive Summary</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;Heading 1 "><w:r><w:t>cached broken style ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -5002,7 +5002,7 @@ fn docx_document_structure_fields_are_named_and_section_is_computed() {
     let doc = Document::open(&document_structure_field_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 4);
+    assert_eq!(fields.len(), 5);
     assert_eq!(
         fields[0].kind,
         FieldKind::DocumentStructure("REVNUM".to_string())
@@ -5029,6 +5029,13 @@ fn docx_document_structure_fields_are_named_and_section_is_computed() {
     assert_eq!(fields[3].instruction, "STYLEREF \"Heading 1\" \\n");
     assert_eq!(fields[3].result, "Executive Summary");
     assert_eq!(fields[3].computed_result, None);
+    assert_eq!(
+        fields[4].kind,
+        FieldKind::DocumentStructure("STYLEREF".to_string())
+    );
+    assert_eq!(fields[4].instruction, "STYLEREF \"Heading 1 ");
+    assert_eq!(fields[4].result, "cached broken style ref");
+    assert_eq!(fields[4].computed_result, None);
 
     let report = doc.report();
     assert_eq!(
@@ -5040,16 +5047,22 @@ fn docx_document_structure_fields_are_named_and_section_is_computed() {
             },
             FieldKindCount {
                 kind: FieldKind::DocumentStructure("STYLEREF".to_string()),
-                count: 1,
+                count: 2,
             },
         ]
     );
     assert_eq!(
         report.features.unsupported_field_reasons,
-        vec![FieldEvaluationReasonCount {
-            reason: FieldEvaluationReason::NoComputedResult,
-            count: 2,
-        }]
+        vec![
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::NoComputedResult,
+                count: 2,
+            },
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::UnsupportedSwitch,
+                count: 1,
+            },
+        ]
     );
 
     let main_text = doc.main_text();
@@ -5057,7 +5070,8 @@ fn docx_document_structure_fields_are_named_and_section_is_computed() {
         main_text.contains("12")
             && main_text.contains("1")
             && main_text.contains("5")
-            && main_text.contains("Executive Summary"),
+            && main_text.contains("Executive Summary")
+            && main_text.contains("cached broken style ref"),
         "computed REVNUM/SECTION and cached remaining document-structure fields should appear in main text: {main_text:?}"
     );
     assert!(
