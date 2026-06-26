@@ -113,6 +113,10 @@ pub(crate) fn supports_formula_field_syntax(instruction: &str) -> bool {
     fields::supports_formula_field_syntax(instruction)
 }
 
+pub(crate) fn supports_sequence_field_syntax(instruction: &str) -> bool {
+    fields::supports_sequence_field_syntax(instruction)
+}
+
 pub(crate) fn supports_style_ref_field_syntax(instruction: &str) -> bool {
     fields::supports_style_ref_field_syntax(instruction)
 }

@@ -1550,7 +1550,8 @@ fn unsupported_field_reason(field: &Field) -> Option<FieldEvaluationReason> {
         FieldKind::Hyperlink => Some(FieldEvaluationReason::UnsupportedSwitch),
         FieldKind::MergeField => Some(FieldEvaluationReason::UnsupportedSwitch),
         FieldKind::DocumentInfo(_) => Some(FieldEvaluationReason::UnsupportedSwitch),
-        FieldKind::TocEntry | FieldKind::Sequence => Some(FieldEvaluationReason::NoComputedResult),
+        FieldKind::Sequence => Some(sequence_uncomputed_reason(&field.instruction)),
+        FieldKind::TocEntry => Some(FieldEvaluationReason::NoComputedResult),
     }
 }
 
@@ -1839,6 +1840,21 @@ fn formula_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     #[cfg(feature = "docx")]
     {
         if crate::docx::supports_formula_field_syntax(instruction) {
+            return FieldEvaluationReason::NoComputedResult;
+        }
+        FieldEvaluationReason::UnsupportedSwitch
+    }
+    #[cfg(not(feature = "docx"))]
+    {
+        let _ = instruction;
+        FieldEvaluationReason::NoComputedResult
+    }
+}
+
+fn sequence_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
+    #[cfg(feature = "docx")]
+    {
+        if crate::docx::supports_sequence_field_syntax(instruction) {
             return FieldEvaluationReason::NoComputedResult;
         }
         FieldEvaluationReason::UnsupportedSwitch

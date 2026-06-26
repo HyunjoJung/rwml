@@ -258,9 +258,10 @@ The first public maturity release should meet these requirements.
   normalize simple inline heading tabs, line breaks, and no-break
   hyphens and expose computed results for simple and common complex field forms;
   cached `MERGEFIELD` results, deterministic simple source-order `SEQ` fields
-  with `\n`/`\r`/`\c`, hidden `\h`, and common number-format switches, preserving
-  cached text for unsupported `SEQ` forms with `NoComputedResult` diagnostics
-  and without mutating later sequence counters, metadata-backed
+  with `\n`/`\r`/`\c`, hidden `\h`, and common number-format switches,
+  malformed `SEQ` syntax reporting `UnsupportedSwitch`, while valid unsupported
+  `SEQ` forms preserve cached text with `NoComputedResult` diagnostics and do
+  not mutate later sequence counters, metadata-backed
   document-info fields (`AUTHOR`, `TITLE`, `SUBJECT`, `KEYWORDS`, `COMMENTS`,
   `LASTSAVEDBY`, `CATEGORY`, `CONTENTSTATUS`, `VERSION`, core aliases such as
   `CREATOR`, `DESCRIPTION`, `KEYWORD`, and `LASTMODIFIEDBY`, mapped

@@ -1142,6 +1142,24 @@ fn toc_sequence_caption_text_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn malformed_sequence_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SEQ Figure \x "><w:r><w:t>bad sequence</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn toc_general_format_switch_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -3689,6 +3707,34 @@ fn report_toc_field_warning_ignores_supported_sequence_caption_text_tocs() {
         .warnings
         .iter()
         .all(|warning| !matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })));
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_malformed_sequence_reports_unsupported_switch() {
+    let doc = Document::open(&malformed_sequence_diagnostics_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::Sequence);
+    assert_eq!(fields[0].instruction, "SEQ Figure \\x");
+    assert_eq!(fields[0].result, "bad sequence");
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Sequence,
+            count: 1,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnsupportedSwitch,
+            count: 1,
+        }]
+    );
 }
 
 #[cfg(feature = "docx")]

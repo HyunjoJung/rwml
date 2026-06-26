@@ -722,9 +722,10 @@ Acceptance:
   compatibility/private fields, barcode fields, legacy form fields, and unknown
   fields are distinguishable.
 - simple source-order `SEQ` fields compute default next numbers, `\n`, `\r`,
-  `\c`, hidden `\h`, and common number-format switches while broader sequence
-  reset semantics stay cached with `NoComputedResult` diagnostics and without
-  mutating later source-order counters.
+  `\c`, hidden `\h`, and common number-format switches, malformed `SEQ` syntax
+  reports `UnsupportedSwitch`, while valid broader sequence reset semantics stay
+  cached with `NoComputedResult` diagnostics and do not mutate later source-order
+  counters.
 - deterministic simple literal `RD`, `TA`, and `XE` reference/index marker fields
   validate their filename or literal marker text, supported marker switches, and
   field-result format switches, then render as hidden output; invalid marker

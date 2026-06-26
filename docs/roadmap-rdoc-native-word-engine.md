@@ -270,8 +270,9 @@ Initial status:
   computed values are not evaluated; cached `MERGEFIELD` results, malformed
   merge-field names reporting `UnsupportedSwitch`,
   deterministic simple source-order `SEQ` fields with `\n`/`\r`/`\c`, hidden
-  `\h`, and common number-format switches, preserving cached text for unsupported
-  `SEQ` forms with `NoComputedResult` diagnostics and without mutating later sequence counters,
+  `\h`, and common number-format switches, malformed `SEQ` syntax reporting
+  `UnsupportedSwitch`, while valid unsupported `SEQ` forms preserve cached text
+  with `NoComputedResult` diagnostics and do not mutate later sequence counters,
   metadata-backed document-info/date results, and cached date/stat/unmapped
   document-info results are counted as supported display
   fields when their instruction syntax is valid; malformed document-info syntax
