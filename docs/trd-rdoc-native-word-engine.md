@@ -608,8 +608,8 @@ Implementation:
   formula tails and literal `DEFINED(expr)` checks for parser-local literal expressions, literal
   quoted/unquoted literal `QUOTE`, literal `IF` finite numeric/text comparisons, literal `COMPARE`
   finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields, and literal quoted or single-token
-  `SET` bookmark assignments with neutral `\* MERGEFORMAT`/`\* CHARFORMAT`
-  switches feeding later plain `REF`/direct bookmark references, plus literal
+  `SET` bookmark assignments with field-result format switches feeding later
+  plain `REF`/direct bookmark references, plus literal
   `NEXT`/`NEXTIF`/`SKIPIF` merge-control fields that
   render as hidden output without running a mail merge,
   inserted-content fields, mail-merge helper
@@ -635,8 +635,8 @@ Implementation:
   plus neutral `\* MERGEFORMAT`/`\* CHARFORMAT` formula tails,
   quoted/unquoted literal `QUOTE`, literal `IF` finite numeric/text comparisons, literal
   `COMPARE` finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields, and
-  literal quoted or single-token `SET` bookmark assignments with neutral `\* MERGEFORMAT`/`\* CHARFORMAT`
-  switches feeding later plain `REF`/direct bookmark references, plus literal
+  literal quoted or single-token `SET` bookmark assignments with field-result
+  format switches feeding later plain `REF`/direct bookmark references, plus literal
   `NEXT`/`NEXTIF`/`SKIPIF` merge-control fields that
   render as hidden output without running a mail merge,
   inserted-content, mail-merge helper, reference/index, numbering/list,
@@ -1113,8 +1113,8 @@ open and edit the chart data.
   formula tails and literal `DEFINED(expr)` checks for parser-local literal expressions, literal
   quoted/unquoted literal `QUOTE`, literal `IF` finite numeric/text comparisons, literal `COMPARE`
   finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields, and literal quoted or single-token
-  `SET` bookmark assignments with neutral `\* MERGEFORMAT`/`\* CHARFORMAT`
-  switches feeding later plain `REF`/direct bookmark references, plus literal
+  `SET` bookmark assignments with field-result format switches feeding later
+  plain `REF`/direct bookmark references, plus literal
   `NEXT`/`NEXTIF`/`SKIPIF` merge-control fields that
   render as hidden output without running a mail merge,
   inserted-content fields, mail-merge helper
@@ -1141,8 +1141,8 @@ open and edit the chart data.
   literal `DEFINED(expr)` checks for parser-local literal expressions,
   quoted/unquoted literal `QUOTE`, literal `IF` comparisons, literal `COMPARE` results,
   explicit-default `FILLIN`/`ASK` prompt fields, and
-  literal quoted or single-token `SET` bookmark assignments with neutral `\* MERGEFORMAT`/`\* CHARFORMAT`
-  switches feeding later plain `REF`/direct bookmark references, plus literal
+  literal quoted or single-token `SET` bookmark assignments with field-result
+  format switches feeding later plain `REF`/direct bookmark references, plus literal
   `NEXT`/`NEXTIF`/`SKIPIF` merge-control fields that
   render as hidden output without running a mail merge,
   inserted-content, mail-merge helper, reference/index beyond hidden simple

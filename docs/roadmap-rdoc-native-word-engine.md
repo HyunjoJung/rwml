@@ -201,8 +201,8 @@ Initial status:
   deterministic literal `IF` fields for numeric comparisons and quoted string
   equality/inequality, deterministic literal `COMPARE` fields returning `1`/`0`
   including quoted `?`/`*` wildcard equality/inequality,
-  deterministic literal `SET name "value"` or single-token `SET name value` fields with optional neutral
-  `\* MERGEFORMAT`/`\* CHARFORMAT` switches rendered as hidden output while
+  deterministic literal `SET name "value"` or single-token `SET name value` fields with
+  field-result format switches rendered as hidden output while
   feeding later plain `REF`/direct bookmark references in source order,
   literal `NEXT`, `NEXTIF`, and `SKIPIF` merge-control fields rendered as
   hidden output without running a mail merge,
@@ -299,8 +299,8 @@ Initial status:
   default responses rendered without simulating prompts, deterministic `ASK name "prompt" \d "default"` fields with field-result format
   switches rendered as hidden output while feeding later plain `REF`/direct
   bookmark references, and
-  deterministic literal `SET name "value"` or single-token `SET name value` fields with optional neutral
-  `\* MERGEFORMAT`/`\* CHARFORMAT` switches render as hidden output while
+  deterministic literal `SET name "value"` or single-token `SET name value` fields with
+  field-result format switches render as hidden output while
   feeding later plain `REF`/direct bookmark references in source order, plus
   literal `NEXT`, `NEXTIF`, and `SKIPIF` merge-control fields render as hidden
   output without running a mail merge; remaining dynamic/control fields report
@@ -756,8 +756,8 @@ Initial status:
   deterministic `FILLIN` fields with explicit `\d` default responses render without simulating prompts,
   deterministic `ASK name "prompt" \d "default"` fields with field-result format
   switches render as hidden output while feeding later plain `REF`/direct bookmark references,
-  and deterministic literal `SET name "value"` or single-token `SET name value` fields with optional neutral
-  `\* MERGEFORMAT`/`\* CHARFORMAT` switches render as hidden output while
+  and deterministic literal `SET name "value"` or single-token `SET name value` fields with
+  field-result format switches render as hidden output while
   feeding later plain `REF`/direct bookmark references in source order,
   plus literal `NEXT`, `NEXTIF`, and `SKIPIF` merge-control fields render as
   hidden output without running a mail merge;

@@ -310,8 +310,8 @@ The first public maturity release should meet these requirements.
   explicit `\d` default responses rendered without simulating prompts,
   deterministic `ASK name "prompt" \d "default"` fields rendered as hidden
   output while feeding later plain `REF`/direct bookmark references, and deterministic literal
-  `SET name "value"` or single-token `SET name value` fields with optional neutral
-  `\* MERGEFORMAT`/`\* CHARFORMAT` switches rendered as hidden output while feeding later
+  `SET name "value"` or single-token `SET name value` fields with
+  field-result format switches rendered as hidden output while feeding later
   plain `REF`/direct bookmark references in source order, plus literal `NEXT`,
   `NEXTIF`, and `SKIPIF` merge-control fields rendered as hidden output without
   running a mail merge; remaining

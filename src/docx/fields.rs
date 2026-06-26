@@ -4267,7 +4267,21 @@ fn set_instruction(instruction: &str) -> Option<SetInstruction> {
     }
     let name = field_identifier_token(parts.next()?)?;
     let value = set_value_literal(parts.next()?)?;
-    accept_neutral_field_format_tail(&mut parts)?;
+    let mut text_format = None;
+    while let Some(part) = parts.next() {
+        if part == "\\*" {
+            if !accept_field_format_switch(parts.next()?, &mut text_format) {
+                return None;
+            }
+            continue;
+        }
+        if let Some(format) = part.strip_prefix("\\*") {
+            if accept_field_format_switch(format, &mut text_format) {
+                continue;
+            }
+        }
+        return None;
+    }
     Some(SetInstruction {
         name: name.to_string(),
         value,
@@ -9165,6 +9179,24 @@ mod tests {
         assert_eq!(
             computed_action_result(r#"PRINT \p ReportBox "0 0 moveto" \*Lower"#).as_deref(),
             Some("")
+        );
+    }
+
+    #[test]
+    fn set_accepts_field_text_format_switches_without_formatting_bookmark() {
+        let mut field_bookmarks = HashMap::new();
+
+        assert_eq!(
+            computed_set_result(
+                r#"SET ClientName "Acme Launch" \* Upper"#,
+                &mut field_bookmarks,
+            )
+            .as_deref(),
+            Some("")
+        );
+        assert_eq!(
+            field_bookmarks.get("ClientName").map(String::as_str),
+            Some("Acme Launch")
         );
     }
 
