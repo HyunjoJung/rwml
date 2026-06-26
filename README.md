@@ -806,21 +806,19 @@ code points.
   fields including category, content status, and version.
 - *Write/edit:* rdoc now **does** preserve arbitrary OOXML parts when editing an
   opened `.docx` (`save()` keeps comments, revisions, charts, content controls, custom
-  XML, themes, fonts verbatim). The remaining gaps are broader *authoring* APIs for those
-  constructs (run-anchored comments, tracked insertion/deletion runs, run-level
-  content controls, and
-  bar/3-D bar/column/3-D column/line/3-D line/area/3-D area/radar/scatter/bubble/pie/3-D pie/doughnut/surface/3-D surface/stock/pie-of-pie/bar-of-pie
-  charts with embedded workbook-backed source data, including wireframe
-  surface-chart styling and `ChartShape` styling for 3-D bar/column charts, can
-  be generated; remaining chart families beyond these are future work), and broader *structural*
-  editing surfaces (the element-tree edit exposes focused body/header/footer/note
-  text, tagged body/header/footer content-control and MERGEFIELD template filling,
-  tracked body revision acceptance,
-  field/comment/image operations, adjacent-run comment/note anchors, and
-  `gridSpan`/`vMerge`-aware body-table cell replacement;
-  richer in-place mutations are future work).
+  XML, themes, fonts verbatim). The writer can generate run-anchored comments
+  with reply parent ids, tracked insertion/deletion runs, run-level content
+  controls with data-binding metadata, authored footnotes/endnotes, bookmarks,
+  custom properties, raw custom XML data stores, section layout, rotated/floating
+  images, rich tables, and the currently listed chart families with embedded
+  workbook-backed source data. Remaining gaps are broader structural editing
+  surfaces and chart families beyond the current authored set; the element-tree
+  edit exposes focused body/header/footer/note text, tagged body/header/footer
+  content-control and MERGEFIELD template filling, tracked body revision
+  acceptance, field/comment/image operations, adjacent-run comment/note anchors,
+  and `gridSpan`/`vMerge`-aware body-table cell replacement.
 - *Render:* preview-grade vs LibreOffice (see above); right-to-left scripts; no
-  embedded CJK font is bundled — install a system CJK font or pass one to
+  embedded CJK font is bundled - install a system CJK font or pass one to
   `render_pdf_with_fonts`.
 
 ## Roadmap
@@ -834,7 +832,7 @@ The long-term native Word engine plan is split into the
 - [x] Full read model: runs (CHPX incl. font/size/color), headings (STSH), tables
       (`sprmTDefTable`), list autonumbers, hyperlinks, inline images
 - [x] Unified `.docx` reader into the same model (98.6% recall vs python-docx)
-- [x] **`.docx` writer** — styled authoring (named styles, rich tables with typed nested cell blocks, page setup,
+- [x] **`.docx` writer** - styled authoring (named styles, rich tables with typed nested cell blocks, page setup,
       styled runs, leveled lists, paragraph page-break-before, simple fields, `PAGEREF` helper runs, dirty TOC heading-range fields,
       run-anchored comments with reply parent ids, tracked insertion/deletion runs, run-level content
       controls with data-binding metadata, bookmarked runs, authored footnotes/endnotes, inline/standalone hyperlinks,
@@ -846,7 +844,7 @@ The long-term native Word engine plan is split into the
       `ContentControlBuilder`, `TableBuilder`, `CellBuilder`, `ImageBuilder`,
       `ChartBuilder`, `DocModel`, and
       `write_docx`
-- [x] **PDF renderer** — `parley` + `krilla` with rich text/tables/images/lists/
+- [x] **PDF renderer** - `parley` + `krilla` with rich text/tables/images/lists/
       hyperlinks, paragraph page-break-before, header-row repeat, oversized-row split, font registration
 - [x] Reader: `.docx` headers/footers, text boxes (`w:txbxContent` incl. run-level
       `mc:AlternateContent`) including `text_boxes()` records, footnotes/endnotes
