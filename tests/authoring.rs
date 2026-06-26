@@ -1448,6 +1448,7 @@ fn doc_builder_adds_custom_xml_item() {
     let reopened = Document::open(&bytes).expect("custom XML .docx reopens");
     assert_eq!(reopened.text(), "Bound value");
     assert_eq!(reopened.report().features.content_controls, 1);
+    assert_eq!(reopened.model().custom_xml_items, model.custom_xml_items);
 }
 
 #[test]

@@ -26,7 +26,7 @@ use crate::annotation::{
 };
 use crate::assemble;
 use crate::error::{Error, Result};
-use crate::model::{Block, Color, DocMeta, DocModel, Image};
+use crate::model::{Block, Color, CustomXmlItem, DocMeta, DocModel, Image};
 use crate::text;
 use crate::CoreProperties;
 
@@ -140,6 +140,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     let custom_properties = part(&mut zip, "docProps/custom.xml")
         .map(|s| parse_custom_properties(&s))
         .unwrap_or_default();
+    let custom_xml_items = read_custom_xml_items(&mut zip);
     let extended_properties = part(&mut zip, "docProps/app.xml")
         .map(|s| parse_extended_properties(&s))
         .unwrap_or_default();
@@ -282,7 +283,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
             stats,
         },
         custom_properties: Default::default(),
-        custom_xml_items: Vec::new(),
+        custom_xml_items,
         setup: crate::model::DocSetup {
             page: body::scan_page_setup(&doc_xml),
             header: final_header_footer.header,
@@ -1404,6 +1405,52 @@ fn parse_custom_properties(xml: &str) -> HashMap<String, String> {
         }
     }
     props
+}
+
+fn read_custom_xml_items(zip: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>) -> Vec<CustomXmlItem> {
+    let mut names = Vec::new();
+    for index in 0..zip.len() {
+        if let Ok(file) = zip.by_index(index) {
+            let name = file.name().to_string();
+            if let Some(number) = custom_xml_item_number(&name) {
+                names.push((number, name));
+            }
+        }
+    }
+    names.sort_by_key(|(number, _)| *number);
+    names
+        .into_iter()
+        .filter_map(|(number, name)| {
+            let xml = part(zip, &name)?;
+            let store_item_id = part(zip, &format!("customXml/itemProps{number}.xml"))
+                .and_then(|props| custom_xml_item_id(&props))
+                .unwrap_or_default();
+            Some(CustomXmlItem { store_item_id, xml })
+        })
+        .collect()
+}
+
+fn custom_xml_item_number(name: &str) -> Option<usize> {
+    name.strip_prefix("customXml/item")?
+        .strip_suffix(".xml")?
+        .parse()
+        .ok()
+}
+
+fn custom_xml_item_id(xml: &str) -> Option<String> {
+    let mut r = Reader::from_str(xml);
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if local(e.name().as_ref()) == b"datastoreItem" =>
+            {
+                return attr_local(&e, b"itemID");
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    None
 }
 
 fn parse_extended_properties(xml: &str) -> HashMap<String, String> {
