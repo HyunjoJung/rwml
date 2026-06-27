@@ -7502,6 +7502,7 @@ struct ActionInstruction {
 
 pub(crate) fn supports_action_field_syntax(instruction: &str) -> bool {
     computed_action_result(instruction).is_some()
+        || action_target_only_instruction(instruction).is_some()
 }
 
 pub(crate) fn computed_action_result(instruction: &str) -> Option<String> {
@@ -7596,6 +7597,17 @@ fn action_instruction(instruction: &str) -> Option<ActionInstruction> {
         display_text,
         text_format,
     })
+}
+
+fn action_target_only_instruction(instruction: &str) -> Option<()> {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let kind = parts.next()?;
+    if !kind.eq_ignore_ascii_case("GOTOBUTTON") && !kind.eq_ignore_ascii_case("MACROBUTTON") {
+        return None;
+    }
+    field_identifier_token(parts.next()?)?;
+    accept_field_format_tail(&mut parts)
 }
 
 fn unquote_field_text(text: &str) -> String {
@@ -11102,6 +11114,13 @@ mod tests {
         assert!(supports_action_field_syntax(
             r#"PRINT \p ReportBox "0 0 moveto""#
         ));
+        assert!(supports_action_field_syntax(
+            r#"MACROBUTTON RunReport \* MERGEFORMAT"#
+        ));
+        assert_eq!(
+            computed_action_result(r#"MACROBUTTON RunReport \* MERGEFORMAT"#),
+            None
+        );
         assert!(!supports_action_field_syntax(
             r#"MACROBUTTON RunReport Run \* Upper Again"#
         ));
