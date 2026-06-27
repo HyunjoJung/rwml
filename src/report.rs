@@ -1907,14 +1907,18 @@ fn supported_barcode_syntax(instruction: &str) -> bool {
         return false;
     };
     let mut value_tokens = 0usize;
+    let mut positional_values = true;
     for part in parts {
         if !diagnostic_field_token_well_formed(part) {
             return false;
         }
         if part.starts_with('\\') {
+            positional_values = false;
             continue;
         }
-        value_tokens += 1;
+        if positional_values {
+            value_tokens += 1;
+        }
     }
     value_tokens >= required_value_tokens
 }

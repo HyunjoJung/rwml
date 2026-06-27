@@ -6673,13 +6673,13 @@ fn docx_barcode_diagnostics_split_valid_broader_fields_from_malformed_syntax() {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" DISPLAYBARCODE &quot;https://example.com&quot; QR \q H "><w:r><w:t>QR preview</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DISPLAYBARCODE &quot;https://example.com QR "><w:r><w:t>cached malformed barcode</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" DISPLAYBARCODE &quot;https://example.com&quot; QR \q H "><w:r><w:t>QR preview</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DISPLAYBARCODE &quot;https://example.com&quot; \q H "><w:r><w:t>cached missing barcode type</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DISPLAYBARCODE &quot;https://example.com QR "><w:r><w:t>cached malformed barcode</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ]))
     .expect("fixture opens");
 
     let fields = doc.fields();
-    assert_eq!(fields.len(), 2);
+    assert_eq!(fields.len(), 3);
     assert_eq!(
         fields[0].kind,
         FieldKind::Barcode("DISPLAYBARCODE".to_string())
@@ -6695,16 +6695,25 @@ fn docx_barcode_diagnostics_split_valid_broader_fields_from_malformed_syntax() {
     );
     assert_eq!(
         fields[1].instruction,
-        r#"DISPLAYBARCODE "https://example.com QR "#
+        r#"DISPLAYBARCODE "https://example.com" \q H"#
     );
     assert_eq!(fields[1].computed_result, None);
+    assert_eq!(
+        fields[2].kind,
+        FieldKind::Barcode("DISPLAYBARCODE".to_string())
+    );
+    assert_eq!(
+        fields[2].instruction,
+        r#"DISPLAYBARCODE "https://example.com QR "#
+    );
+    assert_eq!(fields[2].computed_result, None);
 
     let report = doc.report();
     assert_eq!(
         report.features.unsupported_field_kinds,
         vec![FieldKindCount {
             kind: FieldKind::Barcode("DISPLAYBARCODE".to_string()),
-            count: 2,
+            count: 3,
         }]
     );
     assert_eq!(
@@ -6716,10 +6725,11 @@ fn docx_barcode_diagnostics_split_valid_broader_fields_from_malformed_syntax() {
             },
             FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::UnsupportedSwitch,
-                count: 1,
+                count: 2,
             },
         ]
     );
+    assert!(doc.main_text().contains("cached missing barcode type"));
     assert!(doc.main_text().contains("cached malformed barcode"));
 }
 
