@@ -316,9 +316,10 @@ The first public maturity release should meet these requirements.
   deterministic literal `COMPARE` fields computed as `1`/`0` for finite
   decimal/scientific numeric operands and quoted
   `?`/`*` wildcard equality/inequality, deterministic `FILLIN` fields with
-  explicit `\d` default responses rendered without simulating prompts,
-  deterministic `ASK name "prompt" \d "default"` fields rendered as hidden
-  output while feeding later plain `REF`/direct bookmark references, malformed
+  quoted or single-token prompts and explicit `\d` default responses rendered
+  without simulating prompts, deterministic `ASK name prompt \d default` fields
+  with quoted or single-token prompt/default literals rendered as hidden output
+  while feeding later plain `REF`/direct bookmark references, malformed
   prompt field syntax reports `UnsupportedSwitch`, and deterministic literal
   `SET name "value"` or single-token `SET name value` fields with
   field-result format switches rendered as hidden output while feeding later

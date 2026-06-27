@@ -306,10 +306,13 @@ Initial status:
   quoted string equality/inequality, malformed literal `IF` syntax reports
   `UnsupportedSwitch`, deterministic literal `COMPARE` fields compute
   `1`/`0` results for finite decimal/scientific numeric operands and either-side
-  quoted `?`/`*` wildcard equality/inequality, deterministic `FILLIN` fields with explicit `\d`
-  default responses rendered without simulating prompts, deterministic `ASK name "prompt" \d "default"` fields with field-result format
-  switches rendered as hidden output while feeding later plain `REF`/direct
-  bookmark references, malformed prompt field syntax reports
+  quoted `?`/`*` wildcard equality/inequality, deterministic `FILLIN` fields
+  with quoted or single-token prompts and explicit `\d` default responses
+  rendered without simulating prompts, deterministic
+  `ASK name prompt \d default` fields with quoted or single-token
+  prompt/default literals and field-result format switches rendered as hidden
+  output while feeding later plain `REF`/direct bookmark references, malformed
+  prompt field syntax reports
   `UnsupportedSwitch`, and
   deterministic literal `SET name "value"` or single-token `SET name value` fields with
   field-result format switches render as hidden output while
@@ -780,8 +783,8 @@ Initial status:
   malformed literal `IF` syntax reports `UnsupportedSwitch`,
   and deterministic literal
   `COMPARE` fields compute `1`/`0` results for finite decimal/scientific numeric operands and either-side quoted `?`/`*` wildcard equality/inequality,
-  deterministic `FILLIN` fields with explicit `\d` default responses render without simulating prompts,
-  deterministic `ASK name "prompt" \d "default"` fields with field-result format
+  deterministic `FILLIN` fields with quoted or single-token prompts and explicit `\d` default responses render without simulating prompts,
+  deterministic `ASK name prompt \d default` fields with quoted or single-token prompt/default literals and field-result format
   switches render as hidden output while feeding later plain `REF`/direct bookmark references,
   malformed prompt field syntax reports `UnsupportedSwitch`,
   and deterministic literal `SET name "value"` or single-token `SET name value` fields with
