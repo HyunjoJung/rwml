@@ -129,6 +129,25 @@ class PublicHygieneAuditTests(unittest.TestCase):
                     [(1, "windows_profile_env_path")],
                 )
 
+    def test_text_audit_flags_shell_home_paths(self):
+        for home_path in (
+            "$" + "HOME" + "/private.doc",
+            "${" + "HOME" + "}/private.doc",
+        ):
+            with self.subTest(home_path=home_path):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = pathlib.Path(tmp)
+                    doc = root / "README.md"
+                    doc.write_text("path=" + home_path + "\n", encoding="utf-8")
+
+                    with audit_root(root):
+                        findings = public_hygiene_audit.audit_text_file(doc)
+
+                self.assertEqual(
+                    [(finding.line, finding.kind) for finding in findings],
+                    [(1, "shell_home_path")],
+                )
+
     def test_text_audit_flags_yaml_private_corpus_defaults(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
