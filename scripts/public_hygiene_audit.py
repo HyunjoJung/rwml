@@ -407,20 +407,27 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def json_payload(payload: dict) -> str:
+    return json.dumps(
+        payload,
+        ensure_ascii=False,
+        indent=2,
+        sort_keys=True,
+        allow_nan=False,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
     findings = audit()
     if args.json:
         print(
-            json.dumps(
+            json_payload(
                 {
                     "schema": "rdoc.public-hygiene-audit.v1",
                     "passed": not findings,
                     "findings": [finding.as_dict() for finding in findings],
-                },
-                ensure_ascii=False,
-                indent=2,
-                sort_keys=True,
+                }
             )
         )
     elif findings:

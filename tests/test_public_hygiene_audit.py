@@ -284,6 +284,10 @@ class PublicHygieneAuditTests(unittest.TestCase):
         self.assertFalse(payload["passed"])
         self.assertEqual(payload["findings"], [finding.as_dict()])
 
+    def test_json_payload_rejects_non_finite_values(self):
+        with self.assertRaisesRegex(ValueError, "Out of range float values"):
+            public_hygiene_audit.json_payload({"score": float("nan")})
+
 
 if __name__ == "__main__":
     unittest.main()
