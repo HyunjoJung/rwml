@@ -116,7 +116,9 @@ def report_summary(path: Path) -> dict[str, Any]:
         raise ValueError(f"{path} does not contain a JSON object field named 'summary'")
     report = {"path": path.as_posix(), "summary": summary}
     gate = data.get("gate")
-    if isinstance(gate, dict):
+    if gate is not None and not isinstance(gate, dict):
+        raise ValueError(f"{path} gate is not a JSON object")
+    if gate is not None:
         report["gate"] = gate
     return report
 
