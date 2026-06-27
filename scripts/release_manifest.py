@@ -123,6 +123,9 @@ def report_summary(path: Path) -> dict[str, Any]:
     summary = data.get("summary")
     if not isinstance(summary, dict):
         raise ValueError(f"{path} does not contain a JSON object field named 'summary'")
+    for key in summary:
+        if not key or not key.isascii() or not key.isidentifier():
+            raise ValueError(f"{path} summary key is invalid: {key}")
     try:
         json.dumps(summary, allow_nan=False)
     except ValueError as error:

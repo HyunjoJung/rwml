@@ -477,6 +477,22 @@ class ReleaseManifestTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "summary contains non-finite value"):
                 release_manifest.report_summary(validation)
 
+    def test_report_summary_rejects_non_canonical_summary_keys(self):
+        for key in ("mean recall", "\u8a08"):
+            with self.subTest(key=key):
+                with tempfile.TemporaryDirectory() as tmp:
+                    validation = pathlib.Path(tmp) / "render-validation.json"
+                    validation.write_text(
+                        json.dumps({"summary": {key: 1}}),
+                        encoding="utf-8",
+                    )
+
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        f"summary key is invalid: {key}",
+                    ):
+                        release_manifest.report_summary(validation)
+
     def test_report_summary_rejects_non_finite_gate_values(self):
         with tempfile.TemporaryDirectory() as tmp:
             validation = pathlib.Path(tmp) / "render-validation.json"
