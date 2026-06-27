@@ -1866,7 +1866,7 @@ fn display_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     }
     #[cfg(not(feature = "docx"))]
     {
-        if supported_advance_syntax(instruction) {
+        if supported_advance_syntax(instruction) || supported_symbol_syntax(instruction) {
             return FieldEvaluationReason::NoComputedResult;
         }
     }
@@ -1927,6 +1927,97 @@ fn parse_advance_points_for_report(value: &str) -> Option<f32> {
         .parse::<f32>()
         .ok()
         .filter(|value| value.is_finite())
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_symbol_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if !kind.eq_ignore_ascii_case("SYMBOL") {
+        return false;
+    }
+    if parse_symbol_code_for_report(parts.next()).is_none() {
+        return false;
+    }
+    let mut text_format = false;
+    while let Some(part) = parts.next() {
+        if part.eq_ignore_ascii_case("\\a") || part.eq_ignore_ascii_case("\\h") {
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\u") {
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\j") {
+            return false;
+        }
+        if part.eq_ignore_ascii_case("\\f") {
+            let Some(font) = parts.next() else {
+                return false;
+            };
+            if diagnostic_name_token(font).is_none() {
+                return false;
+            }
+            continue;
+        }
+        if let Some(font) = strip_ascii_switch_prefix(part, "\\f") {
+            if font.is_empty() || diagnostic_name_token(font).is_none() {
+                return false;
+            }
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\s") {
+            let Some(size) = parts.next() else {
+                return false;
+            };
+            if parse_symbol_size_for_report(size).is_none() {
+                return false;
+            }
+            continue;
+        }
+        if let Some(size) = strip_ascii_switch_prefix(part, "\\s") {
+            if size.is_empty() || parse_symbol_size_for_report(size).is_none() {
+                return false;
+            }
+            continue;
+        }
+        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        }) else {
+            return false;
+        };
+        if !accepted {
+            return false;
+        }
+    }
+    true
+}
+
+#[cfg(not(feature = "docx"))]
+fn parse_symbol_code_for_report(token: Option<&str>) -> Option<u32> {
+    let token = diagnostic_name_token(token?)?;
+    if let Some(hex) = token
+        .strip_prefix("0x")
+        .or_else(|| token.strip_prefix("0X"))
+    {
+        return u32::from_str_radix(hex, 16).ok();
+    }
+    if let Ok(code) = token.parse::<u32>() {
+        return Some(code);
+    }
+    let mut chars = token.chars();
+    let ch = chars.next()?;
+    chars.next().is_none().then_some(ch as u32)
+}
+
+#[cfg(not(feature = "docx"))]
+fn parse_symbol_size_for_report(token: &str) -> Option<f32> {
+    diagnostic_name_token(token)?
+        .parse::<f32>()
+        .ok()
+        .filter(|value| value.is_finite() && *value > 0.0)
 }
 
 fn action_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -4429,6 +4520,19 @@ mod tests {
         );
         assert_eq!(
             super::display_uncomputed_reason(r"ADVANCE \z 2"),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_display_diagnostics_reject_malformed_symbol() {
+        assert_eq!(
+            super::display_uncomputed_reason(r"SYMBOL 65 \f Wingdings"),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::display_uncomputed_reason(r#"SYMBOL 65 \f "Wingdings"#),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
     }
