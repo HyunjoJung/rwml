@@ -7,10 +7,10 @@ use std::io::Read;
 use rdoc::{
     Align, Block, Cell, CellBuilder, CellMargins, CharProps, ChartBuilder, ChartKind, ChartShape,
     Color, CommentBuilder, ContentControlBuilder, DocBuilder, DocGridType, DocModel, DocSetup,
-    Document, DocumentWarning, FieldKind, FieldKindCount, FieldRole, ImageBuilder, NoteKind,
-    PageNumberFormat, PageSetup, ParaProps, Paragraph, ParagraphBuilder, ParagraphStyleBuilder,
-    RevisionBuilder, RevisionKind, RevisionView, Row, RunBuilder, SectionBreakKind, Table,
-    TableBorderSide, TableBorderStyle, TableBuilder, TextDirection, VCell,
+    Document, DocumentWarning, FieldKind, FieldRole, ImageBuilder, NoteKind, PageNumberFormat,
+    PageSetup, ParaProps, Paragraph, ParagraphBuilder, ParagraphStyleBuilder, RevisionBuilder,
+    RevisionKind, RevisionView, Row, RunBuilder, SectionBreakKind, Table, TableBorderSide,
+    TableBorderStyle, TableBuilder, TextDirection, VCell,
 };
 
 fn run(text: &str, props: CharProps) -> rdoc::Run {
@@ -7156,7 +7156,7 @@ fn render_pdf_report_flags_malformed_filename_fields() {
     assert_eq!(rendered.report.unsupported.fields, 1);
     assert_eq!(
         rendered.report.unsupported.field_kinds,
-        vec![FieldKindCount {
+        vec![rdoc::FieldKindCount {
             kind: FieldKind::Filename,
             count: 1,
         }]

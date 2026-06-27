@@ -2221,6 +2221,14 @@ fn fill_area_shape(
     }
 }
 
+#[derive(Clone, Copy)]
+struct ChartRect {
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+}
+
 fn fill_pie_slice(
     surface: &mut Surface<'_>,
     cx: f32,
@@ -2254,10 +2262,7 @@ fn fill_pie_slice(
 fn draw_pie_chart(
     surface: &mut Surface<'_>,
     chart: &Chart,
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
+    rect: ChartRect,
     doughnut: bool,
     exploded: bool,
 ) {
@@ -2281,9 +2286,9 @@ fn draw_pie_chart(
     if total <= 0.0 {
         return;
     }
-    let radius = (w.min(h) * 0.42).max(1.0);
-    let cx = x + w * 0.5;
-    let cy = y + h * 0.5;
+    let radius = (rect.w.min(rect.h) * 0.42).max(1.0);
+    let cx = rect.x + rect.w * 0.5;
+    let cy = rect.y + rect.h * 0.5;
     let explosion = if exploded { radius * 0.08 } else { 0.0 };
     let mut angle = -std::f32::consts::FRAC_PI_2;
     for (index, value) in values.iter().enumerate() {
@@ -2477,10 +2482,12 @@ fn draw_authored_chart(
         draw_pie_chart(
             surface,
             chart,
-            plot_left,
-            plot_top,
-            plot_w,
-            plot_h,
+            ChartRect {
+                x: plot_left,
+                y: plot_top,
+                w: plot_w,
+                h: plot_h,
+            },
             matches!(
                 chart.kind,
                 ChartKind::Doughnut | ChartKind::ExplodedDoughnut

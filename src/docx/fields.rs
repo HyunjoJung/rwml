@@ -4994,17 +4994,9 @@ fn section_instruction(instruction: &str) -> Option<SectionInstruction> {
     let mut number_format = None;
     let mut text_format = None;
     while let Some(part) = parts.next() {
-        if part == "\\*" {
-            if !accept_page_field_format_switch(parts.next()?, &mut number_format, &mut text_format)
-            {
-                return None;
-            }
-            continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if !accept_page_field_format_switch(format, &mut number_format, &mut text_format) {
-                return None;
-            }
+        if accept_general_format_switch(part, &mut parts, |format| {
+            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
+        })? {
             continue;
         }
         return None;
@@ -5125,16 +5117,10 @@ where
 {
     let mut text_format = None;
     while let Some(part) = parts.next() {
-        if part == "\\*" {
-            if !accept_field_format_switch(parts.next()?, &mut text_format) {
-                return None;
-            }
+        if accept_general_format_switch(part, parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        })? {
             continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if accept_field_format_switch(format, &mut text_format) {
-                continue;
-            }
         }
         return None;
     }
@@ -5146,16 +5132,8 @@ where
     I: Iterator<Item = &'a str>,
 {
     while let Some(part) = parts.next() {
-        if part == "\\*" {
-            if !is_neutral_field_format_switch(parts.next()?) {
-                return None;
-            }
+        if accept_general_format_switch(part, parts, is_neutral_field_format_switch)? {
             continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if is_neutral_field_format_switch(format) {
-                continue;
-            }
         }
         return None;
     }
@@ -5205,16 +5183,10 @@ where
 {
     let mut text_format = None;
     while let Some(part) = parts.next() {
-        if part == "\\*" {
-            if !accept_field_format_switch(parts.next()?, &mut text_format) {
-                return None;
-            }
+        if accept_general_format_switch(part, parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        })? {
             continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if accept_field_format_switch(format, &mut text_format) {
-                continue;
-            }
         }
         if part.starts_with('\\') || part.contains('"') {
             return None;
@@ -5356,16 +5328,9 @@ fn document_info_instruction(instruction: &str) -> Option<DocumentInfoInstructio
         document_info_property(kind)?
     };
     while let Some(part) = parts.next() {
-        if part == "\\*" {
-            if !accept_field_format_switch(parts.next()?, &mut text_format) {
-                return None;
-            }
-            continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if !accept_field_format_switch(format, &mut text_format) {
-                return None;
-            }
+        if accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        })? {
             continue;
         }
         if part.eq_ignore_ascii_case("\\@") {
@@ -5565,16 +5530,9 @@ fn revision_number_instruction(instruction: &str) -> Option<Option<FieldTextForm
     }
     let mut text_format = None;
     while let Some(part) = parts.next() {
-        if part == "\\*" {
-            if !accept_field_format_switch(parts.next()?, &mut text_format) {
-                return None;
-            }
-            continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if !accept_field_format_switch(format, &mut text_format) {
-                return None;
-            }
+        if accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        })? {
             continue;
         }
         return None;
@@ -6908,18 +6866,10 @@ fn quote_instruction(instruction: &str) -> Option<QuoteInstruction> {
     let mut text_format = None;
     let mut saw_format = false;
     while let Some(part) = parts.next() {
-        if part == "\\*" {
+        if accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        })? {
             saw_format = true;
-            if !accept_field_format_switch(parts.next()?, &mut text_format) {
-                return None;
-            }
-            continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            saw_format = true;
-            if !accept_field_format_switch(format, &mut text_format) {
-                return None;
-            }
             continue;
         }
         if saw_format || part.starts_with('\\') {
@@ -6963,16 +6913,9 @@ fn fill_in_instruction(instruction: &str) -> Option<FillInInstruction> {
             ask_once = true;
             continue;
         }
-        if part == "\\*" {
-            if !accept_field_format_switch(parts.next()?, &mut text_format) {
-                return None;
-            }
-            continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if !accept_field_format_switch(format, &mut text_format) {
-                return None;
-            }
+        if accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        })? {
             continue;
         }
         let prompt = quoted_literal_text(part)?;
@@ -7027,16 +6970,10 @@ fn ask_instruction(instruction: &str) -> Option<AskInstruction> {
             ask_once = true;
             continue;
         }
-        if part == "\\*" {
-            if !accept_field_format_switch(parts.next()?, &mut text_format) {
-                return None;
-            }
+        if accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        })? {
             continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if accept_field_format_switch(format, &mut text_format) {
-                continue;
-            }
         }
         return None;
     }
@@ -7446,14 +7383,14 @@ fn parse_reference_index_category(value: &str) -> Option<u8> {
 }
 
 fn accept_reference_index_field_format<'a>(
-    part: &str,
+    part: &'a str,
     parts: &mut impl Iterator<Item = &'a str>,
 ) -> Option<()> {
     let mut text_format = None;
-    if part == "\\*" {
-        return accept_field_format_switch(parts.next()?, &mut text_format).then_some(());
-    }
-    accept_field_format_switch(part.strip_prefix("\\*")?, &mut text_format).then_some(())
+    accept_general_format_switch(part, parts, |format| {
+        accept_field_format_switch(format, &mut text_format)
+    })
+    .and_then(|accepted| accepted.then_some(()))
 }
 
 fn wildcard_match(text: &str, pattern: &str) -> bool {
@@ -7482,6 +7419,23 @@ fn wildcard_match(text: &str, pattern: &str) -> bool {
 
 fn is_field_format_start(part: &str) -> bool {
     part == "\\*" || part.starts_with("\\*")
+}
+
+fn accept_general_format_switch<'a, I>(
+    part: &'a str,
+    parts: &mut I,
+    accept: impl FnOnce(&str) -> bool,
+) -> Option<bool>
+where
+    I: Iterator<Item = &'a str>,
+{
+    if part == "\\*" {
+        return accept(parts.next()?).then_some(true);
+    }
+    if let Some(format) = part.strip_prefix("\\*") {
+        return accept(format).then_some(true);
+    }
+    Some(false)
 }
 
 fn accept_if_format_switch(
@@ -7535,18 +7489,11 @@ fn print_instruction(instruction: &str) -> Option<()> {
         let mut text_format = None;
         let mut saw_format = false;
         while let Some(part) = parts.next() {
-            if part == "\\*" {
-                if !accept_field_format_switch(parts.next()?, &mut text_format) {
-                    return None;
-                }
+            if accept_general_format_switch(part, &mut parts, |format| {
+                accept_field_format_switch(format, &mut text_format)
+            })? {
                 saw_format = true;
                 continue;
-            }
-            if let Some(format) = part.strip_prefix("\\*") {
-                if accept_field_format_switch(format, &mut text_format) {
-                    saw_format = true;
-                    continue;
-                }
             }
             if saw_format {
                 return None;
@@ -7557,16 +7504,10 @@ fn print_instruction(instruction: &str) -> Option<()> {
     }
     let mut text_format = None;
     while let Some(part) = parts.next() {
-        if part == "\\*" {
-            if !accept_field_format_switch(parts.next()?, &mut text_format) {
-                return None;
-            }
+        if accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        })? {
             continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if accept_field_format_switch(format, &mut text_format) {
-                continue;
-            }
         }
         return None;
     }
@@ -7590,17 +7531,9 @@ fn action_instruction(instruction: &str) -> Option<ActionInstruction> {
     let mut text_format = None;
     let mut saw_format = false;
     while let Some(part) = parts.next() {
-        if part == "\\*" {
-            if !accept_field_format_switch(parts.next()?, &mut text_format) {
-                return None;
-            }
-            saw_format = true;
-            continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if !accept_field_format_switch(format, &mut text_format) {
-                return None;
-            }
+        if accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        })? {
             saw_format = true;
             continue;
         }
@@ -7667,16 +7600,10 @@ fn advance_instruction(instruction: &str) -> Option<()> {
     }
     let mut text_format = None;
     while let Some(part) = parts.next() {
-        if part == "\\*" {
-            if !accept_field_format_switch(parts.next()?, &mut text_format) {
-                return None;
-            }
+        if accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        })? {
             continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if accept_field_format_switch(format, &mut text_format) {
-                continue;
-            }
         }
         if accept_advance_switch(part, &mut parts).is_some() {
             continue;
@@ -7734,16 +7661,9 @@ fn eq_instruction(instruction: &str) -> Option<EqInstruction> {
     let mut expression_parts = Vec::new();
     let mut text_format = None;
     while let Some(part) = parts.next() {
-        if part == "\\*" {
-            if !accept_field_format_switch(parts.next()?, &mut text_format) {
-                return None;
-            }
-            continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if !accept_field_format_switch(format, &mut text_format) {
-                return None;
-            }
+        if accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        })? {
             continue;
         }
         expression_parts.push(part);
@@ -8433,16 +8353,10 @@ fn symbol_instruction(instruction: &str) -> Option<SymbolInstruction> {
             parse_symbol_size(size)?;
             continue;
         }
-        if part == "\\*" {
-            if !accept_field_format_switch(parts.next()?, &mut text_format) {
-                return None;
-            }
+        if accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        })? {
             continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if accept_field_format_switch(format, &mut text_format) {
-                continue;
-            }
         }
         return None;
     }
@@ -8659,16 +8573,9 @@ fn style_ref_instruction(instruction: &str) -> Option<StyleRefInstruction> {
     let mut result = StyleRefResult::Text;
     let mut suppress_non_numeric = false;
     while let Some(part) = parts.next() {
-        if part == "\\*" {
-            if !accept_field_format_switch(parts.next()?, &mut text_format) {
-                return None;
-            }
-            continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if !accept_field_format_switch(format, &mut text_format) {
-                return None;
-            }
+        if accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        })? {
             continue;
         }
         if part.starts_with('\\') {
@@ -8807,16 +8714,9 @@ fn sequence_instruction_with_reset_policy(
     let mut hidden = false;
     let mut number_format = None;
     while let Some(part) = parts.next() {
-        if part == "\\*" {
-            if !accept_page_number_format_switch(parts.next()?, &mut number_format) {
-                return None;
-            }
-            continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if !accept_page_number_format_switch(format, &mut number_format) {
-                return None;
-            }
+        if accept_general_format_switch(part, &mut parts, |format| {
+            accept_page_number_format_switch(format, &mut number_format)
+        })? {
             continue;
         }
         if part.eq_ignore_ascii_case("\\n") {
@@ -8924,23 +8824,10 @@ pub(crate) fn computed_numbering_result(
     let mut number_format = None;
     let mut separator = None;
     while let Some(part) = parts.next() {
-        if part == "\\*" {
-            let switch = parts.next()?;
-            if is_neutral_field_format_switch(switch) {
-                continue;
-            }
-            if !accept_page_number_format_switch(switch, &mut number_format) {
-                return None;
-            }
-            continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if is_neutral_field_format_switch(format) {
-                continue;
-            }
-            if !accept_page_number_format_switch(format, &mut number_format) {
-                return None;
-            }
+        if accept_general_format_switch(part, &mut parts, |format| {
+            is_neutral_field_format_switch(format)
+                || accept_page_number_format_switch(format, &mut number_format)
+        })? {
             continue;
         }
         if accepts_separator_switch && part.eq_ignore_ascii_case("\\s") {
@@ -9005,16 +8892,9 @@ pub(crate) fn computed_listnum_result(
     let mut reset_start = None;
     let mut number_format = None;
     while let Some(part) = parts.next() {
-        if part == "\\*" {
-            if !accept_page_number_format_switch(parts.next()?, &mut number_format) {
-                return None;
-            }
-            continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if !accept_page_number_format_switch(format, &mut number_format) {
-                return None;
-            }
+        if accept_general_format_switch(part, &mut parts, |format| {
+            accept_page_number_format_switch(format, &mut number_format)
+        })? {
             continue;
         }
         if part.eq_ignore_ascii_case("\\l") {
@@ -9060,19 +8940,12 @@ fn supports_listnum_field_syntax<'a>(mut parts: impl Iterator<Item = &'a str>) -
     let mut reset_start = None;
     let mut number_format = None;
     while let Some(part) = parts.next() {
-        if part == "\\*" {
-            let Some(format) = parts.next() else {
-                return false;
-            };
-            if !accept_page_number_format_switch(format, &mut number_format) {
-                return false;
-            }
-            continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if !accept_page_number_format_switch(format, &mut number_format) {
-                return false;
-            }
+        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
+            accept_page_number_format_switch(format, &mut number_format)
+        }) else {
+            return false;
+        };
+        if accepted {
             continue;
         }
         if part.eq_ignore_ascii_case("\\l") {
@@ -9167,17 +9040,9 @@ fn page_instruction(instruction: &str) -> Option<PageInstruction> {
     let mut number_format = None;
     let mut text_format = None;
     while let Some(part) = parts.next() {
-        if part == "\\*" {
-            if !accept_page_field_format_switch(parts.next()?, &mut number_format, &mut text_format)
-            {
-                return None;
-            }
-            continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if !accept_page_field_format_switch(format, &mut number_format, &mut text_format) {
-                return None;
-            }
+        if accept_general_format_switch(part, &mut parts, |format| {
+            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
+        })? {
             continue;
         }
         return None;
@@ -9200,17 +9065,9 @@ fn page_ref_instruction(instruction: &str) -> Option<PageRefInstruction> {
     let mut text_format = None;
     let mut relative = false;
     while let Some(part) = parts.next() {
-        if part == "\\*" {
-            if !accept_page_field_format_switch(parts.next()?, &mut number_format, &mut text_format)
-            {
-                return None;
-            }
-            continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if !accept_page_field_format_switch(format, &mut number_format, &mut text_format) {
-                return None;
-            }
+        if accept_general_format_switch(part, &mut parts, |format| {
+            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
+        })? {
             continue;
         }
         if part.starts_with('\\') {
@@ -9267,16 +9124,9 @@ fn note_ref_instruction(instruction: &str) -> Option<NoteRefInstruction> {
     let mut relative = false;
     let mut formatted = false;
     while let Some(part) = parts.next() {
-        if part == "\\*" {
-            if !accept_field_format_switch(parts.next()?, &mut text_format) {
-                return None;
-            }
-            continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if !accept_field_format_switch(format, &mut text_format) {
-                return None;
-            }
+        if accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        })? {
             continue;
         }
         if part.starts_with('\\') {
@@ -9675,16 +9525,9 @@ fn parse_ref_instruction_parts<'a>(
     let mut relative_context_number = false;
     let mut suppress_non_numeric = false;
     while let Some(part) = parts.next() {
-        if part == "\\*" {
-            if !accept_field_format_switch(parts.next()?, &mut text_format) {
-                return None;
-            }
-            continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if !accept_field_format_switch(format, &mut text_format) {
-                return None;
-            }
+        if accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        })? {
             continue;
         }
         if part.starts_with('\\') {
@@ -10002,17 +9845,9 @@ fn toc_spec(instruction: &str) -> Option<TocSpec> {
     let mut saw_default_toc_neutral_switch = false;
     while let Some(part) = parts.next() {
         saw_switch = true;
-        if part == "\\*" {
-            if !accept_field_format_switch(parts.next()?, &mut text_format) {
-                return None;
-            }
-            saw_default_toc_neutral_switch = true;
-            continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if !accept_field_format_switch(format, &mut text_format) {
-                return None;
-            }
+        if accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        })? {
             saw_default_toc_neutral_switch = true;
             continue;
         }

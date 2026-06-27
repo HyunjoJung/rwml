@@ -1582,16 +1582,12 @@ fn supported_filename_syntax(instruction: &str) -> bool {
             path = true;
             continue;
         }
-        if part == "\\*" {
-            if !accept_field_format_switch(parts.next().unwrap_or_default(), &mut text_format) {
-                return false;
-            }
-            continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if !accept_field_format_switch(format, &mut text_format) {
-                return false;
-            }
+        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        }) else {
+            return false;
+        };
+        if accepted {
             continue;
         }
         return false;
@@ -1666,20 +1662,12 @@ fn supported_page_syntax(instruction: &str) -> bool {
     let mut number_format = false;
     let mut text_format = false;
     while let Some(part) = parts.next() {
-        if part == "\\*" {
-            if !accept_page_field_format_switch(
-                parts.next().unwrap_or_default(),
-                &mut number_format,
-                &mut text_format,
-            ) {
-                return false;
-            }
-            continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if !accept_page_field_format_switch(format, &mut number_format, &mut text_format) {
-                return false;
-            }
+        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
+            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
+        }) else {
+            return false;
+        };
+        if accepted {
             continue;
         }
         return false;
@@ -1711,20 +1699,12 @@ fn supported_section_document_structure_syntax(instruction: &str) -> bool {
     let mut number_format = false;
     let mut text_format = false;
     while let Some(part) = parts.next() {
-        if part == "\\*" {
-            if !accept_page_field_format_switch(
-                parts.next().unwrap_or_default(),
-                &mut number_format,
-                &mut text_format,
-            ) {
-                return false;
-            }
-            continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if !accept_page_field_format_switch(format, &mut number_format, &mut text_format) {
-                return false;
-            }
+        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
+            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
+        }) else {
+            return false;
+        };
+        if accepted {
             continue;
         }
         return false;
@@ -1969,16 +1949,9 @@ fn supported_ref_syntax_parts<'a>(
     let mut relative_context_number = false;
     let mut suppress_non_numeric = false;
     while let Some(part) = parts.next() {
-        if part == "\\*" {
-            if !accept_field_format_switch(parts.next()?, &mut text_format) {
-                return None;
-            }
-            continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if !accept_field_format_switch(format, &mut text_format) {
-                return None;
-            }
+        if accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        })? {
             continue;
         }
         if part.starts_with('\\') {
@@ -2095,17 +2068,9 @@ fn supported_page_ref_syntax(instruction: &str) -> Option<PageRefDiagnosticSynta
     let mut text_format = false;
     let mut relative = false;
     while let Some(part) = parts.next() {
-        if part == "\\*" {
-            if !accept_page_field_format_switch(parts.next()?, &mut number_format, &mut text_format)
-            {
-                return None;
-            }
-            continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if !accept_page_field_format_switch(format, &mut number_format, &mut text_format) {
-                return None;
-            }
+        if accept_general_format_switch(part, &mut parts, |format| {
+            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
+        })? {
             continue;
         }
         if part.starts_with('\\') {
@@ -2201,16 +2166,9 @@ fn supported_note_ref_target(instruction: &str) -> Option<String> {
     let mut formatted = false;
     let mut text_format = false;
     while let Some(part) = parts.next() {
-        if part == "\\*" {
-            if !accept_note_ref_format_switch(parts.next()?, &mut text_format) {
-                return None;
-            }
-            continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if !accept_note_ref_format_switch(format, &mut text_format) {
-                return None;
-            }
+        if accept_general_format_switch(part, &mut parts, |format| {
+            accept_note_ref_format_switch(format, &mut text_format)
+        })? {
             continue;
         }
         if part.starts_with('\\') {
@@ -2267,6 +2225,23 @@ fn diagnostic_literal_token(value: &str) -> Option<&str> {
 
 fn is_neutral_field_format_switch(part: &str) -> bool {
     part.eq_ignore_ascii_case("MERGEFORMAT") || part.eq_ignore_ascii_case("CHARFORMAT")
+}
+
+fn accept_general_format_switch<'a, I>(
+    part: &'a str,
+    parts: &mut I,
+    accept: impl FnOnce(&str) -> bool,
+) -> Option<bool>
+where
+    I: Iterator<Item = &'a str>,
+{
+    if part == "\\*" {
+        return accept(parts.next()?).then_some(true);
+    }
+    if let Some(format) = part.strip_prefix("\\*") {
+        return accept(format).then_some(true);
+    }
+    Some(false)
 }
 
 fn accept_note_ref_format_switch(part: &str, text_format: &mut bool) -> bool {
@@ -2328,17 +2303,9 @@ fn supported_toc_bookmark_scope(instruction: &str) -> Option<Option<String>> {
     let mut text_format = false;
     while let Some(part) = parts.next() {
         saw_switch = true;
-        if part == "\\*" {
-            if !accept_field_format_switch(parts.next()?, &mut text_format) {
-                return None;
-            }
-            saw_default_toc_neutral_switch = true;
-            continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if !accept_field_format_switch(format, &mut text_format) {
-                return None;
-            }
+        if accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        })? {
             saw_default_toc_neutral_switch = true;
             continue;
         }

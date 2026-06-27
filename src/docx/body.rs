@@ -2365,32 +2365,11 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Table {
         return Table::default();
     }
     let mut rows: Vec<(Vec<CellRaw>, bool)> = Vec::new();
-    let mut fixed_layout = false;
-    let mut indent_twips = None;
-    let mut align = None;
-    let mut width_pct = None;
-    let mut border_color = None;
-    let mut border_colors = TableBorderColors::default();
-    let mut border_size_eighths = None;
-    let mut border_sizes = TableBorderSizes::default();
-    let mut border_style = None;
-    let mut border_styles = TableBorderStyles::default();
+    let mut props = TableProps::default();
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
-                b"tblPr" => {
-                    let tblpr = read_tblpr(r);
-                    fixed_layout = tblpr.0;
-                    indent_twips = tblpr.1;
-                    align = tblpr.2;
-                    width_pct = tblpr.3;
-                    border_color = tblpr.4;
-                    border_colors = tblpr.5;
-                    border_size_eighths = tblpr.6;
-                    border_sizes = tblpr.7;
-                    border_style = tblpr.8;
-                    border_styles = tblpr.9;
-                }
+                b"tblPr" => props = read_tblpr(r),
                 b"tr" => rows.push(read_row(r, ctx, depth)),
                 _ => skip_subtree(r), // tblGrid, …
             },
@@ -2398,68 +2377,48 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Table {
             _ => {}
         }
     }
-    build_table(
-        rows,
-        fixed_layout,
-        indent_twips,
-        align,
-        width_pct,
-        border_color,
-        border_colors,
-        border_size_eighths,
-        border_sizes,
-        border_style,
-        border_styles,
-    )
+    build_table(rows, props)
+}
+
+#[derive(Default)]
+struct TableProps {
+    fixed_layout: bool,
+    indent_twips: Option<i32>,
+    align: Option<Align>,
+    width_pct: Option<f32>,
+    border_color: Option<Color>,
+    border_colors: TableBorderColors,
+    border_size_eighths: Option<u16>,
+    border_sizes: TableBorderSizes,
+    border_style: Option<TableBorderStyle>,
+    border_styles: TableBorderStyles,
 }
 
 /// Read `<w:tblPr>` layout metadata.
-fn read_tblpr(
-    r: &mut Xml<'_>,
-) -> (
-    bool,
-    Option<i32>,
-    Option<Align>,
-    Option<f32>,
-    Option<Color>,
-    TableBorderColors,
-    Option<u16>,
-    TableBorderSizes,
-    Option<TableBorderStyle>,
-    TableBorderStyles,
-) {
-    let mut fixed_layout = false;
-    let mut indent_twips = None;
-    let mut align = None;
-    let mut width_pct = None;
-    let mut border_color = None;
-    let mut border_colors = TableBorderColors::default();
-    let mut border_size_eighths = None;
-    let mut border_sizes = TableBorderSizes::default();
-    let mut border_style = None;
-    let mut border_styles = TableBorderStyles::default();
+fn read_tblpr(r: &mut Xml<'_>) -> TableProps {
+    let mut props = TableProps::default();
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"tblW"
                     && attr_local(&e, b"type").as_deref() == Some("pct") =>
             {
-                width_pct = attr_local(&e, b"w")
+                props.width_pct = attr_local(&e, b"w")
                     .and_then(|v| v.trim().parse::<f32>().ok())
                     .map(|p| p / 5000.0);
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"tblLayout" =>
             {
-                fixed_layout = attr_local(&e, b"type").as_deref() == Some("fixed");
+                props.fixed_layout = attr_local(&e, b"type").as_deref() == Some("fixed");
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"tblInd" => {
                 if matches!(attr_local(&e, b"type").as_deref(), None | Some("dxa")) {
-                    indent_twips = attr_local(&e, b"w").and_then(|v| v.trim().parse().ok());
+                    props.indent_twips = attr_local(&e, b"w").and_then(|v| v.trim().parse().ok());
                 }
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"jc" => {
-                align = match attr_local(&e, b"val").as_deref() {
+                props.align = match attr_local(&e, b"val").as_deref() {
                     Some("center") => Some(Align::Center),
                     Some("right") => Some(Align::Right),
                     Some("both") => Some(Align::Justify),
@@ -2469,30 +2428,19 @@ fn read_tblpr(
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblBorders" => {
                 let borders = read_tbl_borders(r);
-                border_color = borders.0;
-                border_colors = borders.1;
-                border_size_eighths = borders.2;
-                border_sizes = borders.3;
-                border_style = borders.4;
-                border_styles = borders.5;
+                props.border_color = borders.0;
+                props.border_colors = borders.1;
+                props.border_size_eighths = borders.2;
+                props.border_sizes = borders.3;
+                props.border_style = borders.4;
+                props.border_styles = borders.5;
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"tblPr" => break,
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
     }
-    (
-        fixed_layout,
-        indent_twips,
-        align,
-        width_pct,
-        border_color,
-        border_colors,
-        border_size_eighths,
-        border_sizes,
-        border_style,
-        border_styles,
-    )
+    props
 }
 
 fn read_tbl_borders(
@@ -2797,19 +2745,7 @@ fn apply_tc_mar_side(margins: &mut CellMargins, seen: &mut bool, e: &BytesStart<
 /// (`vMerge="restart"` opens a span, a later `vMerge` continuation at the same
 /// starting column grows the owner's `row_span` and is dropped) — the OOXML
 /// analogue of `table.rs` Phase B.
-fn build_table(
-    raw_rows: Vec<(Vec<CellRaw>, bool)>,
-    fixed_layout: bool,
-    indent_twips: Option<i32>,
-    align: Option<Align>,
-    width_pct: Option<f32>,
-    border_color: Option<Color>,
-    border_colors: TableBorderColors,
-    border_size_eighths: Option<u16>,
-    border_sizes: TableBorderSizes,
-    border_style: Option<TableBorderStyle>,
-    border_styles: TableBorderStyles,
-) -> Table {
+fn build_table(raw_rows: Vec<(Vec<CellRaw>, bool)>, props: TableProps) -> Table {
     let header_rows = raw_rows.iter().take_while(|(_, h)| *h).count();
 
     struct Placed {
@@ -2896,16 +2832,16 @@ fn build_table(
     Table {
         rows,
         header_rows,
-        fixed_layout,
-        indent_twips,
-        align,
-        width_pct,
-        border_color,
-        border_colors,
-        border_size_eighths,
-        border_sizes,
-        border_style,
-        border_styles,
+        fixed_layout: props.fixed_layout,
+        indent_twips: props.indent_twips,
+        align: props.align,
+        width_pct: props.width_pct,
+        border_color: props.border_color,
+        border_colors: props.border_colors,
+        border_size_eighths: props.border_size_eighths,
+        border_sizes: props.border_sizes,
+        border_style: props.border_style,
+        border_styles: props.border_styles,
         ..Default::default()
     }
 }
@@ -3360,19 +3296,7 @@ mod tests {
             (0..u16::MAX as usize).map(|_| (vec![raw_merge_cell(VMerge::Continue)], false)),
         );
 
-        let table = build_table(
-            rows,
-            false,
-            None,
-            None,
-            None,
-            None,
-            TableBorderColors::default(),
-            None,
-            TableBorderSizes::default(),
-            None,
-            TableBorderStyles::default(),
-        );
+        let table = build_table(rows, TableProps::default());
 
         assert_eq!(table.rows[0].cells[0].row_span, u16::MAX);
     }
