@@ -485,9 +485,15 @@ def corpus_manifest_summary(path: Path) -> dict[str, Any]:
             warnings = row[warning_index]
             if warnings == "-":
                 continue
+            row_warnings: set[str] = set()
             for warning in warnings.split("|"):
                 warning = warning.strip()
                 if warning:
+                    if warning in row_warnings:
+                        raise ValueError(
+                            f"{path} row has duplicate warning token: {warning}"
+                        )
+                    row_warnings.add(warning)
                     warning_counts[warning] = warning_counts.get(warning, 0) + 1
 
     return {

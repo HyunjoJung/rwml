@@ -453,6 +453,22 @@ class ReleaseManifestTests(unittest.TestCase):
             ):
                 release_manifest.corpus_manifest_summary(corpus)
 
+    def test_manifest_rejects_duplicate_public_corpus_warning_tokens(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            corpus.write_text(
+                "# path\tfields\twarnings\n"
+                "synthetic/fields.docx\t1\tUnsupportedFieldEvaluation|UnsupportedFieldEvaluation\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "duplicate warning token: UnsupportedFieldEvaluation",
+            ):
+                release_manifest.corpus_manifest_summary(corpus)
+
     def test_manifest_embeds_named_release_policy(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
