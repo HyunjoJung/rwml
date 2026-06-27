@@ -2995,6 +2995,16 @@ impl PageRefPageState {
         *source_order += 1;
     }
 
+    fn advance_page_break_before(&mut self, source_order: &mut usize) {
+        self.leading_page_number += 1;
+        self.leading_display_page_number += 1;
+        self.rendered_page_number += 1;
+        self.rendered_display_page_number += 1;
+        self.rendered_context_trusted = true;
+        self.display_only_restart_target = None;
+        *source_order += 1;
+    }
+
     fn advance_last_rendered_page_break(&mut self, source_order: &mut usize) {
         self.rendered_page_number += 1;
         self.rendered_display_page_number += 1;
@@ -3373,11 +3383,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                     b"pageBreakBefore"
                         if paragraph_properties_depth > 0 && page_ref_on_off_enabled(&e) =>
                     {
-                        pages.advance_explicit_break(
-                            saw_visible_content,
-                            saw_rendered_page_break,
-                            &mut source_order,
-                        );
+                        pages.advance_page_break_before(&mut source_order);
                     }
                     b"sectPr" => {
                         section_properties_depth += 1;
@@ -3504,11 +3510,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                     b"pageBreakBefore"
                         if paragraph_properties_depth > 0 && page_ref_on_off_enabled(&e) =>
                     {
-                        pages.advance_explicit_break(
-                            saw_visible_content,
-                            saw_rendered_page_break,
-                            &mut source_order,
-                        );
+                        pages.advance_page_break_before(&mut source_order);
                     }
                     b"sectPr" if paragraph_properties_depth > 0 => {
                         pages.advance_section_break(
