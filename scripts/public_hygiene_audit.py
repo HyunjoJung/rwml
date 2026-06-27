@@ -83,6 +83,10 @@ LOCAL_PATH_PATTERNS = [
         re.compile(r"(?<![A-Za-z])[A-Za-z]:[/\\](?!Users[/\\])", re.IGNORECASE),
     ),
     (
+        "windows_unc_path",
+        re.compile(r"(?<!\\)\\\\[A-Za-z0-9._-]{2,}\\[^\\\s]{2,}\\"),
+    ),
+    (
         "windows_profile_env_path",
         re.compile(r"%(?:USERPROFILE|APPDATA|LOCALAPPDATA)%[/\\]", re.IGNORECASE),
     ),

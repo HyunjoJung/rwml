@@ -110,6 +110,33 @@ class PublicHygieneAuditTests(unittest.TestCase):
             [(1, "windows_drive_path")],
         )
 
+    def test_text_audit_flags_windows_unc_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            doc = root / "README.md"
+            unc_path = "\\\\" + "buildhost\\share\\private.doc"
+            doc.write_text("path=" + unc_path + "\n", encoding="utf-8")
+
+            with audit_root(root):
+                findings = public_hygiene_audit.audit_text_file(doc)
+
+        self.assertEqual(
+            [(finding.line, finding.kind) for finding in findings],
+            [(1, "windows_unc_path")],
+        )
+
+    def test_text_audit_does_not_flag_escaped_markdown_literals_as_unc_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            doc = root / "README.md"
+            text = "literal=\"Cover" + "\\n\\n" + "\\\\pagebreak" + "\\n\\nDetail\""
+            doc.write_text(text + "\n", encoding="utf-8")
+
+            with audit_root(root):
+                findings = public_hygiene_audit.audit_text_file(doc)
+
+        self.assertEqual(findings, [])
+
     def test_text_audit_flags_windows_profile_env_paths(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
