@@ -63,6 +63,16 @@ class RenderValidateReportTests(unittest.TestCase):
         )
         self.assertEqual(report["rows"][2]["reason"], "render failed")
 
+    def test_validation_report_rejects_document_paths(self):
+        row = render_validate.ValidationRow(
+            document="private" + "/sample.docx",
+            status="skip",
+            reason="render failed",
+        )
+
+        with self.assertRaisesRegex(ValueError, "document path is invalid"):
+            render_validate.validation_report([row], recall_min=0.8)
+
     def test_validation_report_evaluates_release_thresholds(self):
         rows = [
             render_validate.ValidationRow(

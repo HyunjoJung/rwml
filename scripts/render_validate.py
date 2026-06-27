@@ -192,6 +192,9 @@ def validation_report(
     recall_min: float,
     thresholds: dict | None = None,
 ) -> dict:
+    for row in rows:
+        if "/" in row.document or "\\" in row.document:
+            raise ValueError(f"document path is invalid: {row.document}")
     if not is_finite_number(recall_min):
         raise ValueError(f"non-finite recall threshold: {recall_min}")
     if recall_min < 0:
