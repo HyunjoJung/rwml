@@ -54,6 +54,7 @@ pub(crate) fn parse_fields(xml: &str) -> Vec<Field> {
             extended: &extended_properties,
             file_size_bytes: None,
         },
+        false,
     )
 }
 
@@ -238,6 +239,9 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         .map(parse_document_variables)
         .unwrap_or_default();
     let document_id = settings_xml.as_deref().and_then(parse_document_id);
+    let preserve_legacy_form_cache = settings_xml
+        .as_deref()
+        .is_some_and(settings_preserves_legacy_form_cache);
     let ref_targets = fields::ref_targets(&doc_xml);
     let ref_position_context = fields::ref_position_context(&doc_xml, &numbering);
     let ref_number_context = fields::ref_number_context(&doc_xml, &numbering);
@@ -245,7 +249,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     let note_ref_context = fields::note_ref_context(&doc_xml);
     let section_context = fields::section_context(&doc_xml);
     let style_ref_context = fields::style_ref_context(&doc_xml, &styles, &numbering);
-    let legacy_form_context = fields::legacy_form_context(&doc_xml);
+    let legacy_form_context = fields::legacy_form_context(&doc_xml, preserve_legacy_form_cache);
     let table_formula_context = fields::table_formula_context(&doc_xml);
     let toc_entries = fields::toc_entries(&doc_xml, &styles);
     let document_properties = DocumentPropertyRefs {
@@ -355,6 +359,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
             extended: &extended_properties,
             file_size_bytes: Some(bytes.len()),
         },
+        preserve_legacy_form_cache,
     );
     let revisions = revisions::parse(&doc_xml);
     // Stats reflect the full visible content (body + notes).
@@ -1675,6 +1680,27 @@ fn parse_document_variables(xml: &str) -> HashMap<String, String> {
         }
     }
     vars
+}
+
+fn settings_preserves_legacy_form_cache(xml: &str) -> bool {
+    let mut r = Reader::from_str(xml);
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if local(e.name().as_ref()) == b"documentProtection" =>
+            {
+                let edit_forms = attr_local(&e, b"edit")
+                    .as_deref()
+                    .is_some_and(|edit| edit.eq_ignore_ascii_case("forms"));
+                if edit_forms && toggle_on(attr_local(&e, b"enforcement")) {
+                    return true;
+                }
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    false
 }
 
 fn parse_document_id(xml: &str) -> Option<String> {

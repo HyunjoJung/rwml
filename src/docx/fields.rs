@@ -59,6 +59,7 @@ pub(crate) fn parse(
     toc_entries: &[TocEntry],
     numbering: &Numbering,
     properties: FieldDocumentProperties<'_>,
+    preserve_legacy_form_cache: bool,
 ) -> Vec<Field> {
     let bookmarks = ref_targets(xml);
     let ref_positions = ref_position_context(xml, numbering);
@@ -67,7 +68,7 @@ pub(crate) fn parse(
     let note_refs = note_ref_context(xml);
     let sections = section_context(xml);
     let style_refs = style_ref_context(xml, styles, numbering);
-    let legacy_forms = legacy_form_context(xml);
+    let legacy_forms = legacy_form_context(xml, preserve_legacy_form_cache);
     let table_formulas = table_formula_context(xml);
     let mut r = Reader::from_str(xml);
     let mut fields = Vec::new();
@@ -2837,6 +2838,7 @@ impl Default for PageRefDisplayFormat {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct LegacyFormContext {
     results: Vec<Option<String>>,
+    preserve_cached: bool,
 }
 
 impl LegacyFormContext {
@@ -2846,6 +2848,10 @@ impl LegacyFormContext {
 
     fn field_result(&self, index: usize) -> Option<String> {
         self.results.get(index).cloned().flatten()
+    }
+
+    fn preserves_cached(&self) -> bool {
+        self.preserve_cached
     }
 }
 
@@ -3018,7 +3024,7 @@ impl PageRefPageState {
     }
 }
 
-pub(crate) fn legacy_form_context(xml: &str) -> LegacyFormContext {
+pub(crate) fn legacy_form_context(xml: &str, preserve_cached: bool) -> LegacyFormContext {
     let mut r = Reader::from_str(xml);
     let mut results = Vec::new();
     let mut current: Option<LegacyFormScanField> = None;
@@ -3110,7 +3116,10 @@ pub(crate) fn legacy_form_context(xml: &str) -> LegacyFormContext {
             _ => {}
         }
     }
-    LegacyFormContext { results }
+    LegacyFormContext {
+        results,
+        preserve_cached,
+    }
 }
 
 fn record_simple_legacy_form_result(
@@ -3323,6 +3332,9 @@ pub(crate) fn computed_legacy_form_result(
     legacy_forms: &LegacyFormContext,
     field_index: usize,
 ) -> Option<String> {
+    if legacy_forms.preserves_cached() {
+        return None;
+    }
     match field_kind(instruction) {
         FieldKind::FormField(kind) if kind == "FORMTEXT" && !current_result.is_empty() => {
             Some(current_result.to_string())
