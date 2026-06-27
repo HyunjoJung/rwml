@@ -1874,6 +1874,7 @@ fn display_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
             || supported_eq_radical_syntax(instruction)
             || supported_eq_list_syntax(instruction)
             || supported_eq_overstrike_syntax(instruction)
+            || supported_eq_box_syntax(instruction)
         {
             return FieldEvaluationReason::NoComputedResult;
         }
@@ -2403,6 +2404,45 @@ fn supported_eq_overstrike_syntax(instruction: &str) -> bool {
             .iter()
             .all(|operand| eq_operand_for_report(operand))
     })
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_eq_box_syntax(instruction: &str) -> bool {
+    let Some(expression) = eq_expression_for_report(instruction) else {
+        return false;
+    };
+    let Some(inner) = eq_enclosed_operand_with_prefixes_for_report(
+        expression.trim_start(),
+        "\\x",
+        &["\\to", "\\bo", "\\le", "\\ri"],
+    ) else {
+        return false;
+    };
+    eq_operand_for_report(inner)
+}
+
+#[cfg(not(feature = "docx"))]
+fn eq_enclosed_operand_with_prefixes_for_report<'a>(
+    expression: &'a str,
+    switch: &str,
+    options: &[&str],
+) -> Option<&'a str> {
+    let mut body = strip_ascii_switch_prefix(expression, switch)?.trim_start();
+    loop {
+        let mut consumed = false;
+        for option in options {
+            if let Some(rest) = consume_eq_prefix_switch_for_report(body, option) {
+                body = rest.trim_start();
+                consumed = true;
+                break;
+            }
+        }
+        if !consumed {
+            break;
+        }
+    }
+    let (inner, rest) = take_eq_parenthesized_operand_for_report(body)?;
+    rest.trim().is_empty().then_some(inner)
 }
 
 fn action_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -4996,6 +5036,19 @@ mod tests {
         );
         assert_eq!(
             super::display_uncomputed_reason(r"EQ \o()"),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_display_diagnostics_accept_valid_eq_box() {
+        assert_eq!(
+            super::display_uncomputed_reason(r"EQ \x \to(A)"),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::display_uncomputed_reason(r"EQ \x()"),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
     }
