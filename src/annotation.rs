@@ -386,6 +386,28 @@ pub(crate) fn is_neutral_field_format_switch(part: &str) -> bool {
     part.eq_ignore_ascii_case("MERGEFORMAT") || part.eq_ignore_ascii_case("CHARFORMAT")
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FieldTextFormat {
+    Upper,
+    Lower,
+    Caps,
+    FirstCap,
+}
+
+pub(crate) fn field_text_format_switch(part: &str) -> Option<FieldTextFormat> {
+    if part.eq_ignore_ascii_case("Upper") {
+        Some(FieldTextFormat::Upper)
+    } else if part.eq_ignore_ascii_case("Lower") {
+        Some(FieldTextFormat::Lower)
+    } else if part.eq_ignore_ascii_case("Caps") {
+        Some(FieldTextFormat::Caps)
+    } else if part.eq_ignore_ascii_case("FirstCap") {
+        Some(FieldTextFormat::FirstCap)
+    } else {
+        None
+    }
+}
+
 pub(crate) fn accept_general_format_switch<'a, I>(
     part: &'a str,
     parts: &mut I,

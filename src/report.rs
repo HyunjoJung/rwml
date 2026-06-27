@@ -5,7 +5,8 @@
 //! construct is fully modeled, editable, or renderable.
 
 use crate::annotation::{
-    accept_general_format_switch, is_neutral_field_format_switch, Field, FieldKind,
+    accept_general_format_switch, field_text_format_switch, is_neutral_field_format_switch, Field,
+    FieldKind,
 };
 use crate::model::{Block, FieldRole, Stats, Table};
 use crate::CoreProperties;
@@ -2281,11 +2282,7 @@ fn accept_field_format_switch(part: &str, text_format: &mut bool) -> bool {
     if is_neutral_field_format_switch(part) {
         return true;
     }
-    if part.eq_ignore_ascii_case("Upper")
-        || part.eq_ignore_ascii_case("Lower")
-        || part.eq_ignore_ascii_case("Caps")
-        || part.eq_ignore_ascii_case("FirstCap")
-    {
+    if field_text_format_switch(part).is_some() {
         if *text_format {
             return false;
         }

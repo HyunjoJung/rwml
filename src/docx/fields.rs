@@ -6,7 +6,8 @@ use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 
 use crate::annotation::{
-    accept_general_format_switch, is_neutral_field_format_switch, Field, FieldKind,
+    accept_general_format_switch, field_text_format_switch, is_neutral_field_format_switch, Field,
+    FieldKind, FieldTextFormat,
 };
 use crate::{numfmt, CoreProperties};
 
@@ -9526,14 +9527,6 @@ struct RefInstruction {
     suppress_non_numeric: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FieldTextFormat {
-    Upper,
-    Lower,
-    Caps,
-    FirstCap,
-}
-
 fn ref_instruction(instruction: &str) -> Option<RefInstruction> {
     let tokens = instruction_parts(instruction);
     let mut parts = tokens.iter().map(String::as_str);
@@ -9682,18 +9675,7 @@ fn accept_field_format_switch(part: &str, text_format: &mut Option<FieldTextForm
     if is_neutral_field_format_switch(part) {
         return true;
     }
-    let format = if part.eq_ignore_ascii_case("Upper") {
-        FieldTextFormat::Upper
-    } else if part.eq_ignore_ascii_case("Lower") {
-        FieldTextFormat::Lower
-    } else if part.eq_ignore_ascii_case("Caps") {
-        FieldTextFormat::Caps
-    } else if part.eq_ignore_ascii_case("FirstCap") {
-        FieldTextFormat::FirstCap
-    } else {
-        return false;
-    };
-    text_format.replace(format).is_none()
+    field_text_format_switch(part).is_some_and(|format| text_format.replace(format).is_none())
 }
 
 fn capitalize_first_word(text: &str) -> String {
