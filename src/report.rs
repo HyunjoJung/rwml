@@ -2053,6 +2053,7 @@ fn supported_ref_syntax_parts<'a>(
 
 struct PageRefDiagnosticSyntax {
     target: String,
+    #[cfg(feature = "docx")]
     uses_target_section_number_format: bool,
 }
 
@@ -2093,6 +2094,7 @@ fn supported_page_ref_syntax(instruction: &str) -> Option<PageRefDiagnosticSynta
     }
     Some(PageRefDiagnosticSyntax {
         target: target?,
+        #[cfg(feature = "docx")]
         uses_target_section_number_format: !number_format,
     })
 }
@@ -2140,6 +2142,7 @@ fn docx_page_ref_uncomputed_reason(
     FieldEvaluationReason::NoComputedResult
 }
 
+#[cfg(feature = "docx")]
 fn note_ref_uncomputed_reason(
     instruction: &str,
     bookmark_names: Option<&HashSet<String>>,

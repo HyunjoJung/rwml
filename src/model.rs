@@ -224,6 +224,7 @@ pub enum SectionBreakKind {
     OddPage,
 }
 
+#[cfg(feature = "docx")]
 impl SectionBreakKind {
     pub(crate) fn wml_value(self) -> &'static str {
         match self {
@@ -486,6 +487,7 @@ pub enum TableBorderStyle {
     Double,
 }
 
+#[cfg(feature = "docx")]
 impl TableBorderStyle {
     pub(crate) fn wml_value(self) -> &'static str {
         match self {
@@ -1124,6 +1126,7 @@ pub enum PageNumberFormat {
     OrdinalText,
 }
 
+#[cfg(feature = "docx")]
 impl PageNumberFormat {
     pub(crate) fn wml_value(self) -> &'static str {
         match self {
@@ -1198,6 +1201,7 @@ pub enum TextDirection {
     TopToBottomLeftToRightVertical,
 }
 
+#[cfg(feature = "docx")]
 impl TextDirection {
     pub(crate) fn wml_value(self) -> &'static str {
         match self {
@@ -1236,6 +1240,7 @@ pub enum DocGridType {
     SnapToChars,
 }
 
+#[cfg(feature = "docx")]
 impl DocGridType {
     pub(crate) fn wml_value(self) -> &'static str {
         match self {
