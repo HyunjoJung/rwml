@@ -8704,7 +8704,7 @@ fn style_ref_instruction(instruction: &str) -> Option<StyleRefInstruction> {
     if !kind.eq_ignore_ascii_case("STYLEREF") {
         return None;
     }
-    let mut style_identifier = None;
+    let style_identifier = field_name_token(parts.next()?)?.to_string();
     let mut text_format = None;
     let mut result = StyleRefResult::Text;
     let mut suppress_non_numeric = false;
@@ -8752,10 +8752,7 @@ fn style_ref_instruction(instruction: &str) -> Option<StyleRefInstruction> {
             }
             return None;
         }
-        let candidate = field_name_token(part)?;
-        if style_identifier.replace(candidate.to_string()).is_some() {
-            return None;
-        }
+        return None;
     }
     if suppress_non_numeric
         && !matches!(
@@ -8768,7 +8765,7 @@ fn style_ref_instruction(instruction: &str) -> Option<StyleRefInstruction> {
         return None;
     }
     Some(StyleRefInstruction {
-        style_identifier: style_identifier?,
+        style_identifier,
         text_format,
         result,
         suppress_non_numeric,
