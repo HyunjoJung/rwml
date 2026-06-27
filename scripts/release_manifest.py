@@ -423,6 +423,7 @@ def parse_manifest_header(line: str) -> list[str]:
 def corpus_manifest_summary(path: Path) -> dict[str, Any]:
     header: list[str] | None = None
     rows: list[list[str]] = []
+    seen_paths: set[str] = set()
     for line in path.read_text(encoding="utf-8").splitlines():
         trimmed = line.strip()
         if not trimmed:
@@ -441,6 +442,10 @@ def corpus_manifest_summary(path: Path) -> dict[str, Any]:
             raise ValueError(
                 f"{path} row has {len(cols)} columns, expected {len(header)}: {line}"
             )
+        document_path = cols[0]
+        if document_path in seen_paths:
+            raise ValueError(f"{path} has duplicate document path: {document_path}")
+        seen_paths.add(document_path)
         rows.append(cols)
 
     if header is None:

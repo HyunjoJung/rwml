@@ -404,6 +404,28 @@ class ReleaseManifestTests(unittest.TestCase):
             ):
                 release_manifest.corpus_manifest_summary(corpus)
 
+    def test_manifest_rejects_duplicate_public_corpus_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            corpus.write_text(
+                "\n".join(
+                    [
+                        "# path\tfields\twarnings",
+                        "synthetic/fields.docx\t1\t-",
+                        "synthetic/fields.docx\t2\t-",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "duplicate document path: synthetic/fields.docx",
+            ):
+                release_manifest.corpus_manifest_summary(corpus)
+
     def test_manifest_embeds_named_release_policy(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
