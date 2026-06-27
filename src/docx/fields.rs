@@ -7384,11 +7384,12 @@ pub(crate) fn supports_reference_index_marker_syntax(instruction: &str) -> bool 
 
 fn reference_index_rd_instruction<'a>(mut parts: impl Iterator<Item = &'a str>) -> Option<()> {
     reference_index_literal(parts.next()?)?;
+    let mut text_format = None;
     while let Some(part) = parts.next() {
         if part.eq_ignore_ascii_case("\\f") {
             continue;
         }
-        if accept_reference_index_field_format(part, &mut parts).is_some() {
+        if accept_reference_index_field_format(part, &mut parts, &mut text_format).is_some() {
             continue;
         }
         return None;
@@ -7398,6 +7399,7 @@ fn reference_index_rd_instruction<'a>(mut parts: impl Iterator<Item = &'a str>) 
 
 fn reference_index_ta_instruction<'a>(mut parts: impl Iterator<Item = &'a str>) -> Option<()> {
     let mut has_entry_text = false;
+    let mut text_format = None;
     while let Some(part) = parts.next() {
         if part.eq_ignore_ascii_case("\\l") || part.eq_ignore_ascii_case("\\s") {
             reference_index_literal(parts.next()?)?;
@@ -7425,7 +7427,7 @@ fn reference_index_ta_instruction<'a>(mut parts: impl Iterator<Item = &'a str>) 
             parse_reference_index_category(category)?;
             continue;
         }
-        if accept_reference_index_field_format(part, &mut parts).is_some() {
+        if accept_reference_index_field_format(part, &mut parts, &mut text_format).is_some() {
             continue;
         }
         return None;
@@ -7435,6 +7437,7 @@ fn reference_index_ta_instruction<'a>(mut parts: impl Iterator<Item = &'a str>) 
 
 fn reference_index_xe_instruction<'a>(mut parts: impl Iterator<Item = &'a str>) -> Option<()> {
     reference_index_literal(parts.next()?)?;
+    let mut text_format = None;
     while let Some(part) = parts.next() {
         if part.eq_ignore_ascii_case("\\b") || part.eq_ignore_ascii_case("\\i") {
             continue;
@@ -7463,7 +7466,7 @@ fn reference_index_xe_instruction<'a>(mut parts: impl Iterator<Item = &'a str>) 
             reference_index_literal(value)?;
             continue;
         }
-        if accept_reference_index_field_format(part, &mut parts).is_some() {
+        if accept_reference_index_field_format(part, &mut parts, &mut text_format).is_some() {
             continue;
         }
         return None;
@@ -7491,10 +7494,10 @@ fn parse_reference_index_category(value: &str) -> Option<u8> {
 fn accept_reference_index_field_format<'a>(
     part: &'a str,
     parts: &mut impl Iterator<Item = &'a str>,
+    text_format: &mut Option<FieldTextFormat>,
 ) -> Option<()> {
-    let mut text_format = None;
     accept_general_format_switch(part, parts, |format| {
-        accept_field_format_switch(format, &mut text_format)
+        accept_field_format_switch(format, text_format)
     })
     .and_then(|accepted| accepted.then_some(()))
 }
