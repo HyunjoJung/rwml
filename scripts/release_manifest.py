@@ -230,6 +230,16 @@ def hygiene_summary(path: Path | None) -> dict[str, Any] | None:
             raise ValueError(f"{path} hygiene finding path is invalid")
         if not finding["path"] or finding["path"] != finding["path"].strip():
             raise ValueError(f"{path} hygiene finding path is invalid")
+        if (
+            finding["path"].startswith(("/", "\\"))
+            or "\\" in finding["path"]
+            or (
+                len(finding["path"]) >= 3
+                and finding["path"][1] == ":"
+                and finding["path"][2] == "/"
+            )
+        ):
+            raise ValueError(f"{path} hygiene finding path is invalid")
         if not (
             finding["line"] is None
             or (

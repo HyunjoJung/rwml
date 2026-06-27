@@ -399,6 +399,36 @@ class ReleaseManifestTests(unittest.TestCase):
                     ):
                         release_manifest.hygiene_summary(hygiene)
 
+    def test_hygiene_summary_rejects_local_finding_paths(self):
+        unix_path = "/".join(("", "Users", "alice", "private.docx"))
+        windows_path = "C:" + unix_path
+        for finding_path in (unix_path, windows_path):
+            with self.subTest(finding_path=finding_path):
+                with tempfile.TemporaryDirectory() as tmp:
+                    hygiene = pathlib.Path(tmp) / "public-hygiene.json"
+                    hygiene.write_text(
+                        json.dumps(
+                            {
+                                "passed": False,
+                                "findings": [
+                                    {
+                                        "path": finding_path,
+                                        "line": 1,
+                                        "kind": "private",
+                                        "detail": "blocked",
+                                    }
+                                ],
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
+
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        "hygiene finding path is invalid",
+                    ):
+                        release_manifest.hygiene_summary(hygiene)
+
     def test_hygiene_summary_rejects_non_canonical_finding_kind(self):
         for kind in ("local path", "\u8b66\u544a"):
             with self.subTest(kind=kind):
