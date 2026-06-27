@@ -488,6 +488,8 @@ def read_corpus_manifest(path: Path) -> tuple[list[str], list[list[str]]]:
                 seen_columns.add(column)
             if "warnings" not in seen_columns:
                 raise ValueError(f"{path} missing required TSV column: warnings")
+            if not any(column not in {"path", "warnings"} for column in seen_columns):
+                raise ValueError(f"{path} missing TSV count columns")
             continue
         if trimmed.startswith("#"):
             continue
