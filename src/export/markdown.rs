@@ -119,7 +119,7 @@ fn render_table(t: &Table) -> String {
         .unwrap_or(0)
         .min(MAX_MD_COLS);
     if ncols == 0 {
-        return String::new();
+        return super::html::render_table_fragment(t);
     }
     let cell_text = |row: &crate::model::Row, c: usize| -> String {
         row.cells
@@ -265,6 +265,21 @@ mod tests {
         let header_line = render_table(&t).lines().next().unwrap().to_string();
         // 64 capped columns ⇒ 65 pipe characters, not 1001.
         assert_eq!(header_line.matches('|').count(), 65);
+    }
+
+    #[test]
+    fn zero_column_table_falls_back_to_html() {
+        let t = Table {
+            rows: vec![Row { cells: Vec::new() }],
+            header_rows: 0,
+            ..Default::default()
+        };
+        let md = render(&DocModel {
+            blocks: vec![Block::Table(t)],
+            meta: DocMeta::default(),
+            ..Default::default()
+        });
+        assert_eq!(md, "<table><tbody><tr></tr></tbody></table>");
     }
 
     #[test]
