@@ -437,11 +437,19 @@ def release_evidence_summary(
             benchmark_reports=benchmark_reports,
             corpus_manifests=corpus_manifests,
         )
+    strict_inputs_complete = not strict_missing
+    if enforce_policy_inputs and strict_inputs_complete:
+        strict_status = "enforced"
+    elif strict_inputs_complete:
+        strict_status = "inputs_complete_not_enforced"
+    else:
+        strict_status = "missing_inputs"
 
     return {
         "policy": name,
+        "strict_policy_status": strict_status,
         "strict_policy_enforced": enforce_policy_inputs,
-        "strict_policy_inputs_complete": not strict_missing,
+        "strict_policy_inputs_complete": strict_inputs_complete,
         "strict_missing": strict_missing,
         "provided": {
             "hygiene_report": hygiene_report.as_posix() if hygiene_report else None,

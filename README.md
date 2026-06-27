@@ -741,8 +741,9 @@ the named `public-release` policy: required public hygiene audit,
 fmt/clippy/default/render test gates, and selected optional local thresholds
 (`0.95` POI recall/F1, `0.90` render mean recall, `0` extractor errors/skips).
 The same manifest records a compact `release_evidence` section so consumers can
-tell whether strict local evidence was enforced, which report inputs were
-provided, and which strict public-release inputs are still missing.
+tell whether strict local evidence was enforced, whether complete inputs were
+provided without enforcement, and which strict public-release inputs are still
+missing.
 The hygiene audit covers normal text files, bounded decoded byte text views from
 legacy `.doc` files, and textual Office package parts from `.docx`, `.xlsx`, and
 related OPC packages, including core metadata, relationships, content types,
@@ -754,11 +755,10 @@ evidence: the command then requires a passing public hygiene report, render
 validation, extraction benchmark, and exactly the public `MANIFEST.tsv` plus
 `RENDER_MANIFEST.tsv` corpus manifests, and rejects hygiene, validation, or
 benchmark reports whose compact gates failed or were generated with weaker
-thresholds than the named `public-release` policy. The release workflow runs the
-required gates, generates `dist/rdoc-release-manifest.json` from the packaged
-`.crate` artifact, public hygiene report, and public
-corpus manifests, then uploads the manifest and crate package as
-workflow artifacts before publishing.
+thresholds than the named `public-release` policy. The release workflow
+intentionally emits the non-strict policy manifest from the packaged `.crate`
+artifact, public hygiene report, and public corpus manifests, then uploads the
+manifest and crate package as workflow artifacts before publishing.
 The renderer also maps a small common Symbol/Wingdings display subset to Unicode,
 including the Symbol `0xB7` bullet, before PDF shaping; text extraction and exporters still preserve the source
 code points.

@@ -1021,9 +1021,9 @@ Initial status:
   as `scripts/render_validate.py --json`, compact public hygiene,
   validation/benchmark gate metadata, compact public corpus TSV manifest
   summaries with document counts, numeric totals, and warning counts. Its
-  `release_evidence` metadata distinguishes embedded policy from enforced
-  strict local evidence, including missing strict public-release inputs. It also
-  provides
+  `release_evidence` metadata distinguishes embedded policy,
+  complete-but-not-enforced inputs, enforced strict local evidence, and missing
+  strict public-release inputs. It also provides
   `--enforce-policy-inputs` validation that requires a passing public hygiene
   report, render validation, extraction benchmark, and exactly the public
   `MANIFEST.tsv` plus `RENDER_MANIFEST.tsv` corpus manifest pair and rejects
@@ -1120,13 +1120,13 @@ The next useful implementation batch is:
    render validation, extraction benchmark, and the exact public
    `MANIFEST.tsv`/`RENDER_MANIFEST.tsv` corpus pair mandatory with passing
    compact gates and policy-strength thresholds for strict public manifests.
-   Manifests now record
-   `release_evidence.strict_policy_enforced`,
-   `strict_policy_inputs_complete`, and missing strict inputs so tagged
-   automation that only embeds the policy remains distinguishable from strict
-   local release evidence. The remaining policy work is deciding when tagged
-   automation should provide those local reports rather than relying on an
-   explicit strict manifest generation step.
+   Manifests now record `release_evidence.strict_policy_status`,
+   `strict_policy_enforced`, `strict_policy_inputs_complete`, and missing
+   strict inputs so tagged automation that only embeds the policy remains
+   distinguishable from strict local release evidence. Tagged automation
+   intentionally emits the non-strict policy manifest until local render and
+   extraction reports are generated in the workflow; strict public manifests
+   remain an explicit local generation step.
 
 These are deliberately deeper roadmap items: the diagnostics, corpus, `.docx`
 comment/field/revision side tables, metadata query surface, preservation edits,

@@ -1301,9 +1301,12 @@ metadata only so downstream users can verify the artifacts and reproduce the
 corpus checks without ingesting large row data. The manifest can also embed the
 named `public-release` policy, which records the public hygiene audit, required
 Rust gates, and optional local render/extraction threshold values. A compact
-`release_evidence` section records whether strict local evidence enforcement was
-enabled, which evidence paths were provided, whether the strict public-release
-input set is complete, and which strict inputs are still missing. When invoked
+`release_evidence` section records a strict-policy status, whether strict local
+evidence enforcement was enabled, which evidence paths were provided, whether
+the strict public-release input set is complete, and which strict inputs are
+still missing. Tagged release automation intentionally emits the non-strict
+policy manifest until local render and extraction reports are generated in the
+workflow. When invoked
 with `--enforce-policy-inputs`, the manifest generator requires a passing public
 hygiene report, the local render-validation report, at least one extraction
 benchmark report, and exactly the public `MANIFEST.tsv` plus

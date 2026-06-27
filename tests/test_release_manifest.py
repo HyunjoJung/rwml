@@ -357,6 +357,7 @@ class ReleaseManifestTests(unittest.TestCase):
             manifest["release_evidence"],
             {
                 "policy": "public-release",
+                "strict_policy_status": "missing_inputs",
                 "strict_policy_enforced": False,
                 "strict_policy_inputs_complete": False,
                 "strict_missing": [
@@ -400,8 +401,33 @@ class ReleaseManifestTests(unittest.TestCase):
             manifest = json.loads(output.read_text(encoding="utf-8"))
 
         self.assertEqual(manifest["release_policy"]["name"], "public-release")
+        self.assertEqual(
+            manifest["release_evidence"]["strict_policy_status"],
+            "missing_inputs",
+        )
         self.assertFalse(manifest["release_evidence"]["strict_policy_enforced"])
         self.assertFalse(manifest["release_evidence"]["strict_policy_inputs_complete"])
+
+    def test_release_evidence_status_names_complete_unenforced_inputs(self):
+        evidence = release_manifest.release_evidence_summary(
+            "public-release",
+            enforce_policy_inputs=False,
+            hygiene_report=pathlib.Path("public-hygiene.json"),
+            validation_report=pathlib.Path("render-validation.json"),
+            benchmark_reports=[pathlib.Path("extract-benchmark.json")],
+            corpus_manifests=[
+                pathlib.Path("MANIFEST.tsv"),
+                pathlib.Path("RENDER_MANIFEST.tsv"),
+            ],
+        )
+
+        self.assertEqual(
+            evidence["strict_policy_status"],
+            "inputs_complete_not_enforced",
+        )
+        self.assertFalse(evidence["strict_policy_enforced"])
+        self.assertTrue(evidence["strict_policy_inputs_complete"])
+        self.assertEqual(evidence["strict_missing"], [])
 
     def test_enforced_public_release_policy_requires_local_reports(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -969,6 +995,7 @@ class ReleaseManifestTests(unittest.TestCase):
             manifest["release_evidence"],
             {
                 "policy": "public-release",
+                "strict_policy_status": "enforced",
                 "strict_policy_enforced": True,
                 "strict_policy_inputs_complete": True,
                 "strict_missing": [],
