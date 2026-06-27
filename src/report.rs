@@ -1553,7 +1553,7 @@ fn unsupported_field_reason(field: &Field) -> Option<FieldEvaluationReason> {
         FieldKind::Display(_) => Some(display_uncomputed_reason(&field.instruction)),
         FieldKind::Action(_) => Some(action_uncomputed_reason(&field.instruction)),
         FieldKind::Compatibility(_) => Some(FieldEvaluationReason::NoComputedResult),
-        FieldKind::Barcode(_) => Some(FieldEvaluationReason::NoComputedResult),
+        FieldKind::Barcode(_) => Some(barcode_uncomputed_reason(&field.instruction)),
         FieldKind::FormField(_) => Some(FieldEvaluationReason::NoComputedResult),
         FieldKind::Filename => Some(filename_uncomputed_reason(&field.instruction)),
         FieldKind::Hyperlink => Some(FieldEvaluationReason::UnsupportedSwitch),
@@ -1793,6 +1793,45 @@ fn action_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     #[cfg(not(feature = "docx"))]
     let _ = instruction;
     FieldEvaluationReason::UnsupportedSwitch
+}
+
+fn barcode_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
+    if supported_barcode_syntax(instruction) {
+        FieldEvaluationReason::NoComputedResult
+    } else {
+        FieldEvaluationReason::UnsupportedSwitch
+    }
+}
+
+fn supported_barcode_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    let required_value_tokens = if kind.eq_ignore_ascii_case("BARCODE") {
+        1
+    } else if kind.eq_ignore_ascii_case("DISPLAYBARCODE")
+        || kind.eq_ignore_ascii_case("MERGEBARCODE")
+    {
+        2
+    } else {
+        return false;
+    };
+    let mut value_tokens = 0usize;
+    for part in parts {
+        if part.starts_with('\\') {
+            if part.contains('"') {
+                return false;
+            }
+            continue;
+        }
+        if diagnostic_literal_token(part).is_none() {
+            return false;
+        }
+        value_tokens += 1;
+    }
+    value_tokens >= required_value_tokens
 }
 
 fn is_reference_index_marker_kind(kind: &str) -> bool {

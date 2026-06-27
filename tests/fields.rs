@@ -6412,6 +6412,69 @@ fn docx_barcode_fields_are_named_noncomputed_fields() {
 }
 
 #[test]
+fn docx_barcode_diagnostics_split_valid_broader_fields_from_malformed_syntax() {
+    let doc = Document::open(&docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" DISPLAYBARCODE &quot;https://example.com&quot; QR \q H "><w:r><w:t>QR preview</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DISPLAYBARCODE &quot;https://example.com QR "><w:r><w:t>cached malformed barcode</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ]))
+    .expect("fixture opens");
+
+    let fields = doc.fields();
+    assert_eq!(fields.len(), 2);
+    assert_eq!(
+        fields[0].kind,
+        FieldKind::Barcode("DISPLAYBARCODE".to_string())
+    );
+    assert_eq!(
+        fields[0].instruction,
+        r#"DISPLAYBARCODE "https://example.com" QR \q H"#
+    );
+    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(
+        fields[1].kind,
+        FieldKind::Barcode("DISPLAYBARCODE".to_string())
+    );
+    assert_eq!(
+        fields[1].instruction,
+        r#"DISPLAYBARCODE "https://example.com QR "#
+    );
+    assert_eq!(fields[1].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Barcode("DISPLAYBARCODE".to_string()),
+            count: 2,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::NoComputedResult,
+                count: 1,
+            },
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::UnsupportedSwitch,
+                count: 1,
+            },
+        ]
+    );
+    assert!(doc.main_text().contains("cached malformed barcode"));
+}
+
+#[test]
 fn docx_legacy_form_fields_materialize_deterministic_values() {
     let doc = Document::open(&legacy_form_field_docx()).expect("fixture opens");
     let fields = doc.fields();
