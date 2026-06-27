@@ -555,8 +555,9 @@ Implementation:
   documented `\al`, `\ac`, and `\ar` alignment options, as source-order overlay
   operand plain text over the supported operand subset;
 - compute deterministic `.docx` `EQ \d` displacement controls with documented
-  `\fo n`, `\ba n`, and `\li` options as empty output in
-  `Field::computed_result`, without applying visual offsets or underlines;
+  `\fo n`, `\ba n`, and `\li` options as supported operand text, or empty
+  output for empty controls, in `Field::computed_result`, without applying
+  visual offsets or underlines;
 - compute deterministic `.docx` `ADVANCE` fields with validated point movement
   switches (`\d`, `\u`, `\l`, `\r`, `\x`, `\y`) as hidden output in
   `Field::computed_result`, accepting field-result format switches without applying
@@ -629,7 +630,7 @@ Implementation:
   numbering/list fields, document-structure
   fields beyond computed `REVNUM`/`SECTION`, structurally bounded `SECTIONPAGES`, and
   deterministic body paragraph- and character-style `STYLEREF`,
-  hidden validated `ADVANCE`, deterministic literal simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, hidden displacement controls, and `SYMBOL`,
+  hidden validated `ADVANCE`, deterministic literal simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, operand-preserving or hidden empty displacement controls, and `SYMBOL`,
   invalid display/layout syntax, remaining valid broader display/layout fields,
   invalid action/automation syntax, action/automation fields beyond deterministic quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms,
   compatibility/private fields, barcode fields, and legacy form fields beyond
@@ -656,7 +657,7 @@ Implementation:
   inserted-content, mail-merge helper, reference/index, numbering/list,
   document-structure fields beyond computed `REVNUM`/`SECTION`, structurally bounded
   `SECTIONPAGES`, and deterministic body paragraph- and character-style
-  `STYLEREF`, hidden validated `ADVANCE`, deterministic simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, hidden displacement controls, and `SYMBOL`,
+  `STYLEREF`, hidden validated `ADVANCE`, deterministic simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, operand-preserving or hidden empty displacement controls, and `SYMBOL`,
   remaining display/layout, action/automation fields beyond deterministic quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms,
   compatibility/private fields including `PRIVATE`/`ADDIN`/`DATA`/`GLOSSARY`/
   `HTMLACTIVEX`, barcode, or legacy form fields outside deterministic
@@ -720,7 +721,7 @@ Acceptance:
   numbering/list fields, document-structure fields including computed
   `SECTION`, structurally bounded `SECTIONPAGES`, and deterministic body
   paragraph- and character-style `STYLEREF`, deterministic simple `EQ`
-  fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, hidden displacement controls, and `SYMBOL`, display/layout fields, action/automation fields including deterministic
+  fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, operand-preserving or hidden empty displacement controls, and `SYMBOL`, display/layout fields, action/automation fields including deterministic
   `GOTOBUTTON`/`MACROBUTTON` quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms with field-result format switches,
   compatibility/private fields, barcode fields, legacy form fields, and unknown
   fields are distinguishable.
@@ -1153,7 +1154,7 @@ open and edit the chart data.
   numbering/list fields, document-structure
   fields beyond computed `REVNUM`/`SECTION`, structurally bounded `SECTIONPAGES`, and
   deterministic body paragraph- and character-style `STYLEREF`,
-  hidden validated `ADVANCE`, deterministic simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, hidden displacement controls, and `SYMBOL`,
+  hidden validated `ADVANCE`, deterministic simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, operand-preserving or hidden empty displacement controls, and `SYMBOL`,
   remaining display/layout fields,
   action/automation fields beyond deterministic quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms,
   compatibility/private fields, barcode fields, and legacy form fields beyond
@@ -1182,7 +1183,7 @@ open and edit the chart data.
   literal `RD`/`TA`/`XE` markers, numbering/list,
   document-structure fields beyond computed `REVNUM`/`SECTION`, structurally bounded
   `SECTIONPAGES`, and deterministic body paragraph- and character-style
-  `STYLEREF`, hidden validated `ADVANCE`, deterministic simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, hidden displacement controls, and `SYMBOL`,
+  `STYLEREF`, hidden validated `ADVANCE`, deterministic simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, operand-preserving or hidden empty displacement controls, and `SYMBOL`,
   remaining display/layout, action/automation fields beyond deterministic quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms,
   compatibility/private fields including `PRIVATE`/`ADDIN`/`DATA`/`GLOSSARY`/
   `HTMLACTIVEX`, barcode, or legacy form fields outside deterministic

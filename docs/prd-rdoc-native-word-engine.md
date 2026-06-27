@@ -373,8 +373,9 @@ The first public maturity release should meet these requirements.
   display/layout fields (`ADVANCE`, `EQ`, `SYMBOL`) are named diagnostics, with
   deterministic `ADVANCE` fields with validated point movement switches (`\d`,
   `\u`, `\l`, `\r`, `\x`, `\y`) rendered as hidden output while leaving actual
-  layout offsets unapplied, validated `EQ \d` displacement controls rendered as
-  empty output while leaving visual offsets and underlines unapplied,
+  layout offsets unapplied, validated `EQ \d` displacement controls preserving
+  supported operand text, or hidden empty controls, while leaving visual offsets
+  and underlines unapplied,
   deterministic `EQ \f(n,d)` simple fractions computed as plain `n/d` text for
   comma or semicolon separators, quoted/spaced operands, documented escaped
   operand characters, and parenthesized nested simple `EQ \f`/`\r` operands,

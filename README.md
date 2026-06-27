@@ -529,8 +529,8 @@ remaining document-structure cases preserve cached result text with
 display/layout fields (`ADVANCE`, `EQ`, `SYMBOL`) are named separately from
 unknown fields, deterministic `ADVANCE` fields with validated point movement
 switches (`\d`, `\u`, `\l`, `\r`, `\x`, `\y`) render as hidden output without
-applying layout offsets while accepting field-result format switches, validated `EQ \d` displacement controls render as empty
-output without applying visual offsets or underlines, deterministic `EQ \f(n,d)` simple fractions with literal,
+applying layout offsets while accepting field-result format switches, validated `EQ \d` displacement controls preserve
+supported operand text, or hidden empty controls, without applying visual offsets or underlines, deterministic `EQ \f(n,d)` simple fractions with literal,
 spaced, quoted, comma- or semicolon-separated operands plus documented escaped
 comma/semicolon/parenthesis/backslash characters compute plain `n/d` text, nested
 simple `EQ \f`/`\r` operands are parenthesized in plain text, simple
@@ -670,7 +670,7 @@ deterministic literal `EQ \f(n,d)` simple fractions with supported operand
 separators/escapes and parenthesized nested simple `EQ` operands, simple
 `EQ \r` radicals, default/custom `EQ \b` brackets, boxed `EQ \x` operands,
 `EQ \l` lists, `EQ \a` arrays, `EQ \s` scripts, `EQ \i` integrals/sums/products,
-`EQ \o` overstrikes, hidden `EQ \d` displacement controls,
+`EQ \o` overstrikes, operand-preserving or hidden empty `EQ \d` displacement controls,
 deterministic `SYMBOL`,
 remaining display/layout fields beyond hidden validated `ADVANCE`, action/automation fields beyond deterministic quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms,
 compatibility/private fields,
@@ -956,7 +956,7 @@ The long-term native Word engine plan is split into the
       inserted-content fields, mail-merge helper fields, reference/index fields beyond hidden simple `RD`/`TA`/`XE` markers,
       numbering/list fields, document-structure fields beyond computed `REVNUM`/`SECTION`,
       structurally bounded `SECTIONPAGES`, and
-      deterministic body paragraph- and character-style `STYLEREF`, display/layout fields beyond hidden validated `ADVANCE`, deterministic simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, hidden displacement controls, and `SYMBOL`, action/automation fields beyond deterministic quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms,
+      deterministic body paragraph- and character-style `STYLEREF`, display/layout fields beyond hidden validated `ADVANCE`, deterministic simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, operand-preserving or hidden empty displacement controls, and `SYMBOL`, action/automation fields beyond deterministic quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms,
       compatibility/private fields, barcode fields, legacy form fields beyond
       deterministic `w:ffData` checkbox checked/default states, dropdown
       result/default selections, explicit non-empty text-input current results,
@@ -995,7 +995,7 @@ The long-term native Word engine plan is split into the
       inserted-content fields, mail-merge helper fields, reference/index fields beyond hidden simple `RD`/`TA`/`XE` markers,
       numbering/list fields, document-structure fields beyond computed `REVNUM`/`SECTION`,
       structurally bounded `SECTIONPAGES`, and
-      deterministic body paragraph- and character-style `STYLEREF`, display/layout fields beyond hidden validated `ADVANCE`, deterministic simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, hidden displacement controls, and `SYMBOL`, action/automation fields beyond deterministic quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms,
+      deterministic body paragraph- and character-style `STYLEREF`, display/layout fields beyond hidden validated `ADVANCE`, deterministic simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, operand-preserving or hidden empty displacement controls, and `SYMBOL`, action/automation fields beyond deterministic quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms,
       compatibility/private fields, barcode fields, legacy form fields beyond
       deterministic `w:ffData` checkbox checked/default states, dropdown
       result/default selections, explicit non-empty text-input current results,

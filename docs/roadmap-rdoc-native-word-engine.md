@@ -366,8 +366,8 @@ Initial status:
   display/layout fields (`ADVANCE`, `EQ`, `SYMBOL`) are named separately from
   unknown fields; deterministic `ADVANCE` fields with validated point movement
   switches (`\d`, `\u`, `\l`, `\r`, `\x`, `\y`) render as hidden output without
-  applying layout offsets while accepting field-result format switches, validated `EQ \d` displacement controls render as
-  empty output without applying visual offsets or underlines, deterministic `EQ \f(n,d)` simple fractions with literal,
+  applying layout offsets while accepting field-result format switches, validated `EQ \d` displacement controls preserve
+  supported operand text, or hidden empty controls, without applying visual offsets or underlines, deterministic `EQ \f(n,d)` simple fractions with literal,
   spaced, quoted, comma- or semicolon-separated operands plus documented escaped
   comma/semicolon/parenthesis/backslash characters compute plain `n/d` text, nested
   simple `EQ \f`/`\r` operands are parenthesized in plain text, simple
@@ -836,7 +836,7 @@ Initial status:
   `EQ \r` radicals, default/custom `EQ \b` brackets, boxed `EQ \x` operands,
   `EQ \l` lists, `EQ \a` arrays, `EQ \s` scripts including empty
   `\ai n()`/`\di n()` layout controls, `EQ \i` integrals/sums/products,
-  `EQ \o` overstrikes, hidden `EQ \d` displacement controls, and
+  `EQ \o` overstrikes, operand-preserving or hidden empty `EQ \d` displacement controls, and
   `SYMBOL` fields compute supported separated or compact
   font switches and quoted or unquoted separated/compact size switches; invalid
   display/layout syntax reports `UnsupportedSwitch`, while valid broader
@@ -1092,7 +1092,7 @@ The next useful implementation batch is:
    numbering/list fields, document-structure fields
    beyond computed `REVNUM`/`SECTION`, structurally bounded `SECTIONPAGES`,
    deterministic body paragraph- and character-style `STYLEREF`,
-   hidden validated `ADVANCE`, deterministic simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, hidden displacement controls and `SYMBOL`,
+   hidden validated `ADVANCE`, deterministic simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, operand-preserving or hidden empty displacement controls and `SYMBOL`,
    remaining display/layout fields, action/automation fields beyond deterministic quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms,
    compatibility/private fields, barcode
    fields, legacy form fields beyond deterministic `w:ffData` checkbox checked/default states,

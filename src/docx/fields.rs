@@ -7742,9 +7742,6 @@ fn eq_displace_text(expression: &str) -> Option<String> {
     let mut body = strip_ascii_switch_prefix(expression, "\\d")?.trim_start();
     let mut has_option = false;
     loop {
-        if body == "()" {
-            return has_option.then_some(String::new());
-        }
         if let Some((_value, rest)) = consume_eq_numeric_prefix_option(body, "\\fo")
             .or_else(|| consume_eq_numeric_prefix_option(body, "\\ba"))
         {
@@ -7754,8 +7751,17 @@ fn eq_displace_text(expression: &str) -> Option<String> {
             has_option = true;
             body = rest.trim_start();
         } else {
-            return None;
+            break;
         }
+    }
+    if !has_option {
+        return None;
+    }
+    let inner = take_eq_enclosed_operand(body)?;
+    if inner.trim().is_empty() {
+        Some(String::new())
+    } else {
+        eq_operand_text(inner)
     }
 }
 
@@ -10967,6 +10973,19 @@ mod tests {
             computed_display_result(r#"EQ \f(A\;B;C)"#).as_deref(),
             Some("A;B/C")
         );
+    }
+
+    #[test]
+    fn eq_displacement_controls_preserve_literal_operand_text() {
+        assert_eq!(
+            computed_display_result(r#"EQ \d \fo10(A)"#).as_deref(),
+            Some("A")
+        );
+        assert_eq!(
+            computed_display_result(r#"EQ \d \ba2(\f(1,2))"#).as_deref(),
+            Some("(1/2)")
+        );
+        assert_eq!(computed_display_result(r#"EQ \d(A)"#), None);
     }
 
     #[test]
