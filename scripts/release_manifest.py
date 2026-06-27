@@ -597,7 +597,7 @@ def read_corpus_manifest(path: Path) -> tuple[list[str], list[list[str]]]:
             if not any(column not in {"path", "warnings"} for column in seen_columns):
                 raise ValueError(f"{path} missing TSV count columns")
             continue
-        if parse_manifest_header(line) == header:
+        if parse_manifest_header(trimmed) == header:
             raise ValueError(f"{path} has repeated TSV header row")
         if trimmed.startswith("#"):
             continue
