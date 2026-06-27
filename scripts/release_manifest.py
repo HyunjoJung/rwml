@@ -554,6 +554,8 @@ def corpus_manifest_summary(path: Path) -> dict[str, Any]:
                 warning = warning.strip()
                 if not warning:
                     raise ValueError(f"{path} row has empty warning token")
+                if warning == "-":
+                    raise ValueError(f"{path} row has invalid warning token: -")
                 if warning in row_warnings:
                     raise ValueError(
                         f"{path} row has duplicate warning token: {warning}"
