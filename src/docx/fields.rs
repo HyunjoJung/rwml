@@ -8987,7 +8987,7 @@ pub(crate) fn supports_numbering_field_syntax(instruction: &str) -> bool {
         }
         return supports_listnum_field_syntax(parts);
     }
-    kind.eq_ignore_ascii_case("BIDIOUTLINE")
+    kind.eq_ignore_ascii_case("BIDIOUTLINE") && parts.next().is_none()
 }
 
 pub(crate) fn computed_listnum_result(
