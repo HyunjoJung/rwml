@@ -46,6 +46,11 @@ except ImportError:
 
 
 COUNT_THRESHOLD_METRICS = {"below_recall_min", "skipped"}
+SCORE_THRESHOLD_METRICS = {
+    "mean_recall",
+    "mean_page_ratio",
+    "mean_ahash_similarity",
+}
 
 
 @dataclass
@@ -103,6 +108,8 @@ def add_threshold_check(
         raise ValueError(f"non-finite threshold for {metric}: {threshold}")
     if metric in COUNT_THRESHOLD_METRICS and threshold < 0:
         raise ValueError(f"negative count threshold for {metric}: {threshold}")
+    if op == ">=" and metric in SCORE_THRESHOLD_METRICS and threshold < 0:
+        raise ValueError(f"negative score threshold for {metric}: {threshold}")
     if actual is None:
         passed = False
     elif op == ">=":
