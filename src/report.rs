@@ -1866,7 +1866,10 @@ fn display_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     }
     #[cfg(not(feature = "docx"))]
     {
-        if supported_advance_syntax(instruction) || supported_symbol_syntax(instruction) {
+        if supported_advance_syntax(instruction)
+            || supported_symbol_syntax(instruction)
+            || supported_eq_displacement_syntax(instruction)
+        {
             return FieldEvaluationReason::NoComputedResult;
         }
     }
@@ -2018,6 +2021,104 @@ fn parse_symbol_size_for_report(token: &str) -> Option<f32> {
         .parse::<f32>()
         .ok()
         .filter(|value| value.is_finite() && *value > 0.0)
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_eq_displacement_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if !kind.eq_ignore_ascii_case("EQ") {
+        return false;
+    }
+    let mut expression_parts = Vec::new();
+    let mut text_format = false;
+    while let Some(part) = parts.next() {
+        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        }) else {
+            return false;
+        };
+        if accepted {
+            continue;
+        }
+        expression_parts.push(part);
+    }
+    let expression = expression_parts.join(" ");
+    let Some(mut body) = strip_ascii_switch_prefix(expression.trim_start(), "\\d") else {
+        return false;
+    };
+    body = body.trim_start();
+    let mut has_option = false;
+    loop {
+        if let Some(rest) = consume_eq_numeric_prefix_option_for_report(body, "\\fo")
+            .or_else(|| consume_eq_numeric_prefix_option_for_report(body, "\\ba"))
+        {
+            has_option = true;
+            body = rest.trim_start();
+            continue;
+        }
+        if let Some(rest) = consume_eq_prefix_switch_for_report(body, "\\li") {
+            has_option = true;
+            body = rest.trim_start();
+            continue;
+        }
+        break;
+    }
+    let Some(inner) = body
+        .strip_prefix('(')
+        .and_then(|body| body.strip_suffix(')'))
+    else {
+        return false;
+    };
+    has_option
+        && (inner.trim().is_empty()
+            || diagnostic_literal_token(inner).is_some_and(|text| !text.trim().is_empty()))
+}
+
+#[cfg(not(feature = "docx"))]
+fn consume_eq_numeric_prefix_option_for_report<'a>(
+    value: &'a str,
+    option: &str,
+) -> Option<&'a str> {
+    let rest = strip_ascii_switch_prefix(value, option)?;
+    if matches!(
+        rest.chars().next(),
+        Some(ch) if ch.is_ascii_alphabetic()
+    ) {
+        return None;
+    }
+    let rest = rest.trim_start();
+    let mut end = 0usize;
+    for (index, ch) in rest.char_indices() {
+        if index == 0 && (ch == '-' || ch == '+') {
+            end = ch.len_utf8();
+            continue;
+        }
+        if !ch.is_ascii_digit() && ch != '.' && ch != 'e' && ch != 'E' && ch != '-' && ch != '+' {
+            break;
+        }
+        end = index + ch.len_utf8();
+    }
+    if end == 0 || matches!(rest.get(..end), Some("+") | Some("-")) {
+        return None;
+    }
+    parse_advance_points_for_report(&rest[..end])?;
+    Some(&rest[end..])
+}
+
+#[cfg(not(feature = "docx"))]
+fn consume_eq_prefix_switch_for_report<'a>(value: &'a str, switch: &str) -> Option<&'a str> {
+    let rest = strip_ascii_switch_prefix(value, switch)?;
+    if matches!(
+        rest.chars().next(),
+        Some(ch) if ch.is_ascii_alphabetic()
+    ) {
+        return None;
+    }
+    Some(rest)
 }
 
 fn action_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -4533,6 +4634,19 @@ mod tests {
         );
         assert_eq!(
             super::display_uncomputed_reason(r#"SYMBOL 65 \f "Wingdings"#),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_display_diagnostics_accept_valid_eq_displacement() {
+        assert_eq!(
+            super::display_uncomputed_reason(r"EQ \d \fo10 \li(Title)"),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::display_uncomputed_reason(r"EQ \d \fo10 \li(Title"),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
     }
