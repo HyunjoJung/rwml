@@ -780,6 +780,7 @@ class ReleaseManifestTests(unittest.TestCase):
                         "summary": {
                             "documents": 1,
                             "recall_min": 0.97,
+                            "below_recall_min": 0,
                             "mean_recall": 0.97,
                             "skipped": 0,
                         },
@@ -861,6 +862,93 @@ class ReleaseManifestTests(unittest.TestCase):
                     benchmark_reports=[benchmark],
                     corpus_manifests=[corpus, render_corpus],
                 )
+
+    def test_enforced_public_release_policy_rejects_weak_benchmark_summary(self):
+        report = {
+            "summary": {"poi_recall_mean": 0.5, "poi_f1_mean": 1.0, "errors": 0},
+            "gate": {
+                "passed": True,
+                "checks": [
+                    {
+                        "metric": "poi_recall_mean",
+                        "op": ">=",
+                        "threshold": 0.95,
+                        "actual": 0.99,
+                        "passed": True,
+                    },
+                    {
+                        "metric": "poi_f1_mean",
+                        "op": ">=",
+                        "threshold": 0.95,
+                        "actual": 1.0,
+                        "passed": True,
+                    },
+                    {
+                        "metric": "errors",
+                        "op": "<=",
+                        "threshold": 0,
+                        "actual": 0,
+                        "passed": True,
+                    },
+                ],
+            },
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "public-release benchmark report summary poi_recall_mean must be at least 0.95",
+        ):
+            release_manifest.require_public_release_report_thresholds(
+                "public-release",
+                report,
+                "benchmark",
+            )
+
+    def test_enforced_public_release_policy_rejects_weak_validation_summary(self):
+        report = {
+            "summary": {
+                "recall_min": 0.97,
+                "below_recall_min": 0,
+                "mean_recall": 0.5,
+                "skipped": 0,
+            },
+            "gate": {
+                "passed": True,
+                "checks": [
+                    {
+                        "metric": "below_recall_min",
+                        "op": "<=",
+                        "threshold": 0,
+                        "actual": 0,
+                        "passed": True,
+                    },
+                    {
+                        "metric": "mean_recall",
+                        "op": ">=",
+                        "threshold": 0.9,
+                        "actual": 0.99,
+                        "passed": True,
+                    },
+                    {
+                        "metric": "skipped",
+                        "op": "<=",
+                        "threshold": 0,
+                        "actual": 0,
+                        "passed": True,
+                    },
+                ],
+            },
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "public-release validation report summary mean_recall must be at least 0.9",
+        ):
+            release_manifest.require_public_release_report_thresholds(
+                "public-release",
+                report,
+                "validation",
+            )
 
     def test_enforced_public_release_policy_rejects_failed_policy_threshold_check(self):
         report = {
@@ -948,6 +1036,7 @@ class ReleaseManifestTests(unittest.TestCase):
                         "summary": {
                             "documents": 1,
                             "recall_min": 0.97,
+                            "below_recall_min": 0,
                             "mean_recall": 0.97,
                             "skipped": 0,
                         },

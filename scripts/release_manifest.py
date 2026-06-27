@@ -233,6 +233,13 @@ def require_public_release_report_thresholds(
             "recall_min",
             thresholds["recall_min"],
         )
+        require_summary_threshold_at_most(
+            policy,
+            report,
+            label,
+            "below_recall_min",
+            0,
+        )
         require_gate_check_threshold(
             policy,
             report,
@@ -249,12 +256,26 @@ def require_public_release_report_thresholds(
             ">=",
             thresholds["min_mean_recall"],
         )
+        require_summary_threshold_at_least(
+            policy,
+            report,
+            label,
+            "mean_recall",
+            thresholds["min_mean_recall"],
+        )
         require_gate_check_threshold(
             policy,
             report,
             label,
             "skipped",
             "<=",
+            thresholds["max_skipped"],
+        )
+        require_summary_threshold_at_most(
+            policy,
+            report,
+            label,
+            "skipped",
             thresholds["max_skipped"],
         )
     elif label == "benchmark":
@@ -267,6 +288,13 @@ def require_public_release_report_thresholds(
             ">=",
             thresholds["min_poi_recall_mean"],
         )
+        require_summary_threshold_at_least(
+            policy,
+            report,
+            label,
+            "poi_recall_mean",
+            thresholds["min_poi_recall_mean"],
+        )
         require_gate_check_threshold(
             policy,
             report,
@@ -275,12 +303,26 @@ def require_public_release_report_thresholds(
             ">=",
             thresholds["min_poi_f1_mean"],
         )
+        require_summary_threshold_at_least(
+            policy,
+            report,
+            label,
+            "poi_f1_mean",
+            thresholds["min_poi_f1_mean"],
+        )
         require_gate_check_threshold(
             policy,
             report,
             label,
             "errors",
             "<=",
+            thresholds["max_errors"],
+        )
+        require_summary_threshold_at_most(
+            policy,
+            report,
+            label,
+            "errors",
             thresholds["max_errors"],
         )
 
@@ -299,6 +341,23 @@ def require_summary_threshold_at_least(
     if not isinstance(actual, (int, float)) or actual < minimum:
         raise ValueError(
             f"{policy} {label} report summary {metric} must be at least {minimum}"
+        )
+
+
+def require_summary_threshold_at_most(
+    policy: str,
+    report: dict[str, Any],
+    label: str,
+    metric: str,
+    maximum: float | int,
+) -> None:
+    summary = report.get("summary")
+    if not isinstance(summary, dict):
+        raise ValueError(f"{policy} {label} report does not contain a summary")
+    actual = summary.get(metric)
+    if not isinstance(actual, (int, float)) or actual > maximum:
+        raise ValueError(
+            f"{policy} {label} report summary {metric} must be at most {maximum}"
         )
 
 
