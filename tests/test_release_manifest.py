@@ -998,6 +998,54 @@ class ReleaseManifestTests(unittest.TestCase):
                 0.9,
             )
 
+    def test_enforced_public_release_policy_rejects_nan_summary_metric(self):
+        report = {
+            "summary": {"poi_recall_mean": float("nan")},
+            "gate": {"passed": True, "checks": []},
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "public-release benchmark report summary poi_recall_mean must be at least 0.95",
+        ):
+            release_manifest.require_summary_threshold_at_least(
+                "public-release",
+                report,
+                "benchmark",
+                "poi_recall_mean",
+                0.95,
+            )
+
+    def test_enforced_public_release_policy_rejects_infinite_gate_actual(self):
+        report = {
+            "summary": {"documents": 1, "recall_min": 0.97, "mean_recall": 1.0},
+            "gate": {
+                "passed": True,
+                "checks": [
+                    {
+                        "metric": "mean_recall",
+                        "op": ">=",
+                        "threshold": 0.9,
+                        "actual": float("inf"),
+                        "passed": True,
+                    }
+                ],
+            },
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "public-release validation report gate check actual failed policy threshold: mean_recall >= 0.9",
+        ):
+            release_manifest.require_gate_check_threshold(
+                "public-release",
+                report,
+                "validation",
+                "mean_recall",
+                ">=",
+                0.9,
+            )
+
     def test_enforced_public_release_policy_rejects_failed_policy_threshold_check(self):
         report = {
             "summary": {"documents": 1, "recall_min": 0.97, "mean_recall": 0.50},

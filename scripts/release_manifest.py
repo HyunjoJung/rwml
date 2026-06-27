@@ -33,6 +33,7 @@ import argparse
 import copy
 import hashlib
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any
@@ -97,7 +98,11 @@ def path_sort_key(path: Path) -> str:
 
 
 def is_number(value: Any) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+    )
 
 
 def report_summary(path: Path) -> dict[str, Any]:
