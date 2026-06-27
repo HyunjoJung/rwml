@@ -42,6 +42,7 @@ from typing import Any
 SCHEMA = "rdoc.release-manifest.v1"
 PUBLIC_RELEASE_CORPUS_MANIFESTS = ("MANIFEST.tsv", "RENDER_MANIFEST.tsv")
 COUNT_POLICY_METRICS = {"below_recall_min", "skipped", "errors"}
+BOUNDED_SCORE_POLICY_METRICS = {"recall_min", "mean_recall", "poi_recall_mean", "poi_f1_mean"}
 RELEASE_POLICIES: dict[str, dict[str, Any]] = {
     "public-release": {
         "name": "public-release",
@@ -361,6 +362,10 @@ def require_summary_threshold_at_least(
     if not isinstance(summary, dict):
         raise ValueError(f"{policy} {label} report does not contain a summary")
     actual = summary.get(metric)
+    if metric in BOUNDED_SCORE_POLICY_METRICS and is_number(actual) and actual > 1:
+        raise ValueError(
+            f"{policy} {label} report summary {metric} must not be above one"
+        )
     if not is_number(actual) or actual < minimum:
         raise ValueError(
             f"{policy} {label} report summary {metric} must be at least {minimum}"
@@ -413,6 +418,11 @@ def require_gate_check_threshold(
                 f"{policy} {label} report gate check threshold must not be negative: "
                 f"{metric}"
             )
+        if metric in BOUNDED_SCORE_POLICY_METRICS and threshold > 1:
+            raise ValueError(
+                f"{policy} {label} report gate check threshold must not be above one: "
+                f"{metric}"
+            )
         if (op == ">=" and threshold >= policy_threshold) or (
             op == "<=" and threshold <= policy_threshold
         ):
@@ -425,6 +435,11 @@ def require_gate_check_threshold(
             if metric in COUNT_POLICY_METRICS and is_number(actual) and actual < 0:
                 raise ValueError(
                     f"{policy} {label} report gate check actual must not be negative: "
+                    f"{metric}"
+                )
+            if metric in BOUNDED_SCORE_POLICY_METRICS and is_number(actual) and actual > 1:
+                raise ValueError(
+                    f"{policy} {label} report gate check actual must not be above one: "
                     f"{metric}"
                 )
             if not is_number(actual) or not (

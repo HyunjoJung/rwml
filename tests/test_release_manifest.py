@@ -1159,6 +1159,24 @@ class ReleaseManifestTests(unittest.TestCase):
                 0,
             )
 
+    def test_enforced_public_release_policy_rejects_summary_score_above_one(self):
+        report = {
+            "summary": {"mean_recall": 1.1},
+            "gate": {"passed": True, "checks": []},
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "public-release validation report summary mean_recall must not be above one",
+        ):
+            release_manifest.require_summary_threshold_at_least(
+                "public-release",
+                report,
+                "validation",
+                "mean_recall",
+                0.9,
+            )
+
     def test_enforced_public_release_policy_rejects_boolean_gate_threshold(self):
         report = {
             "summary": {"documents": 1, "recall_min": 0.97, "mean_recall": 1.0},
@@ -1247,6 +1265,66 @@ class ReleaseManifestTests(unittest.TestCase):
                 "skipped",
                 "<=",
                 0,
+            )
+
+    def test_enforced_public_release_policy_rejects_gate_score_threshold_above_one(self):
+        report = {
+            "summary": {"documents": 1, "recall_min": 0.97, "mean_recall": 1.0},
+            "gate": {
+                "passed": True,
+                "checks": [
+                    {
+                        "metric": "mean_recall",
+                        "op": ">=",
+                        "threshold": 1.1,
+                        "actual": 1.0,
+                        "passed": True,
+                    }
+                ],
+            },
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "public-release validation report gate check threshold must not be above one: mean_recall",
+        ):
+            release_manifest.require_gate_check_threshold(
+                "public-release",
+                report,
+                "validation",
+                "mean_recall",
+                ">=",
+                0.9,
+            )
+
+    def test_enforced_public_release_policy_rejects_gate_score_actual_above_one(self):
+        report = {
+            "summary": {"documents": 1, "recall_min": 0.97, "mean_recall": 1.1},
+            "gate": {
+                "passed": True,
+                "checks": [
+                    {
+                        "metric": "mean_recall",
+                        "op": ">=",
+                        "threshold": 0.9,
+                        "actual": 1.1,
+                        "passed": True,
+                    }
+                ],
+            },
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "public-release validation report gate check actual must not be above one: mean_recall",
+        ):
+            release_manifest.require_gate_check_threshold(
+                "public-release",
+                report,
+                "validation",
+                "mean_recall",
+                ">=",
+                0.9,
             )
 
     def test_enforced_public_release_policy_rejects_nan_summary_metric(self):
