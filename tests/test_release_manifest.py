@@ -399,6 +399,34 @@ class ReleaseManifestTests(unittest.TestCase):
                     ):
                         release_manifest.hygiene_summary(hygiene)
 
+    def test_hygiene_summary_rejects_non_canonical_finding_kind(self):
+        for kind in ("local path", "\u8b66\u544a"):
+            with self.subTest(kind=kind):
+                with tempfile.TemporaryDirectory() as tmp:
+                    hygiene = pathlib.Path(tmp) / "public-hygiene.json"
+                    hygiene.write_text(
+                        json.dumps(
+                            {
+                                "passed": False,
+                                "findings": [
+                                    {
+                                        "path": "private.docx",
+                                        "line": 1,
+                                        "kind": kind,
+                                        "detail": "blocked",
+                                    }
+                                ],
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
+
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        "hygiene finding kind is invalid",
+                    ):
+                        release_manifest.hygiene_summary(hygiene)
+
     def test_hygiene_summary_rejects_boolean_finding_line(self):
         with tempfile.TemporaryDirectory() as tmp:
             hygiene = pathlib.Path(tmp) / "public-hygiene.json"
