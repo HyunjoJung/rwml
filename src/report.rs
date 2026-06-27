@@ -1571,6 +1571,12 @@ fn filename_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     }
 }
 
+#[cfg(feature = "docx")]
+fn supported_filename_syntax(instruction: &str) -> bool {
+    crate::docx::supports_filename_field_syntax(instruction)
+}
+
+#[cfg(not(feature = "docx"))]
 fn supported_filename_syntax(instruction: &str) -> bool {
     let tokens = instruction_parts(instruction);
     let mut parts = tokens.iter().map(String::as_str);

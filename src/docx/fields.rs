@@ -5050,6 +5050,37 @@ fn computed_merge_control_result(instruction: &str) -> Option<String> {
     Some(String::new())
 }
 
+pub(crate) fn supports_filename_field_syntax(instruction: &str) -> bool {
+    filename_instruction(instruction).is_some()
+}
+
+fn filename_instruction(instruction: &str) -> Option<()> {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let kind = parts.next()?;
+    if !kind.eq_ignore_ascii_case("FILENAME") {
+        return None;
+    }
+    let mut path = false;
+    let mut text_format = None;
+    while let Some(part) = parts.next() {
+        if part.eq_ignore_ascii_case("\\p") {
+            if path {
+                return None;
+            }
+            path = true;
+            continue;
+        }
+        if accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        })? {
+            continue;
+        }
+        return None;
+    }
+    Some(())
+}
+
 fn merge_control_instruction(instruction: &str) -> Option<()> {
     let tokens = instruction_parts(instruction);
     let mut parts = tokens.iter().map(String::as_str);

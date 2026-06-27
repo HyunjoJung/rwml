@@ -77,6 +77,10 @@ pub(crate) fn supports_hyperlink_field_syntax(instruction: &str) -> bool {
     body::hyperlink_instr_url(instruction).is_some()
 }
 
+pub(crate) fn supports_filename_field_syntax(instruction: &str) -> bool {
+    fields::supports_filename_field_syntax(instruction)
+}
+
 pub(crate) fn supports_page_field_syntax(instruction: &str) -> bool {
     fields::supports_page_field_syntax(instruction)
 }
