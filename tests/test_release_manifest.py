@@ -194,6 +194,49 @@ class ReleaseManifestTests(unittest.TestCase):
             ],
         )
 
+    def test_manifest_sorts_same_named_inputs_by_full_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            alpha = root / "alpha"
+            zeta = root / "zeta"
+            alpha.mkdir()
+            zeta.mkdir()
+            artifact_alpha = alpha / "rdoc.tar.gz"
+            artifact_zeta = zeta / "rdoc.tar.gz"
+            benchmark_alpha = alpha / "benchmark.json"
+            benchmark_zeta = zeta / "benchmark.json"
+            artifact_alpha.write_bytes(b"alpha artifact")
+            artifact_zeta.write_bytes(b"zeta artifact")
+            for path, files in [(benchmark_alpha, 1), (benchmark_zeta, 2)]:
+                path.write_text(
+                    json.dumps(
+                        {
+                            "summary": {"files": files},
+                            "gate": {"passed": True, "checks": []},
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+
+            manifest = release_manifest.release_manifest(
+                [artifact_zeta, artifact_alpha],
+                benchmark_reports=[benchmark_zeta, benchmark_alpha],
+                release_policy="public-release",
+            )
+
+        self.assertEqual(
+            [artifact["path"] for artifact in manifest["artifacts"]],
+            [artifact_alpha.as_posix(), artifact_zeta.as_posix()],
+        )
+        self.assertEqual(
+            [benchmark["path"] for benchmark in manifest["benchmarks"]],
+            [benchmark_alpha.as_posix(), benchmark_zeta.as_posix()],
+        )
+        self.assertEqual(
+            manifest["release_evidence"]["provided"]["benchmark_reports"],
+            [benchmark_alpha.as_posix(), benchmark_zeta.as_posix()],
+        )
+
     def test_cli_writes_manifest_json(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)

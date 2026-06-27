@@ -92,6 +92,10 @@ def artifact_record(path: Path) -> dict[str, Any]:
     }
 
 
+def path_sort_key(path: Path) -> str:
+    return path.as_posix()
+
+
 def report_summary(path: Path) -> dict[str, Any]:
     data = json.loads(path.read_text(encoding="utf-8"))
     summary = data.get("summary")
@@ -130,7 +134,7 @@ def hygiene_summary(path: Path | None) -> dict[str, Any] | None:
 
 
 def benchmark_summaries(paths: list[Path] | None) -> list[dict[str, Any]]:
-    return [report_summary(path) for path in sorted(paths or [], key=lambda p: p.name)]
+    return [report_summary(path) for path in sorted(paths or [], key=path_sort_key)]
 
 
 def release_policy_summary(name: str | None) -> dict[str, Any] | None:
@@ -411,7 +415,7 @@ def corpus_manifest_summary(path: Path) -> dict[str, Any]:
 def corpus_manifest_summaries(paths: list[Path] | None) -> list[dict[str, Any]]:
     return [
         {"path": path.as_posix(), "summary": corpus_manifest_summary(path)}
-        for path in sorted(paths or [], key=lambda p: p.name)
+        for path in sorted(paths or [], key=path_sort_key)
     ]
 
 
@@ -455,10 +459,10 @@ def release_evidence_summary(
             "hygiene_report": hygiene_report.as_posix() if hygiene_report else None,
             "validation_report": validation_report.as_posix() if validation_report else None,
             "benchmark_reports": [
-                path.as_posix() for path in sorted(benchmark_reports or [], key=lambda p: p.name)
+                path.as_posix() for path in sorted(benchmark_reports or [], key=path_sort_key)
             ],
             "corpus_manifests": [
-                path.as_posix() for path in sorted(corpus_manifests or [], key=lambda p: p.name)
+                path.as_posix() for path in sorted(corpus_manifests or [], key=path_sort_key)
             ],
         },
     }
@@ -493,7 +497,7 @@ def release_manifest(
 
     manifest: dict[str, Any] = {
         "schema": SCHEMA,
-        "artifacts": [artifact_record(path) for path in sorted(resolved, key=lambda p: p.name)],
+        "artifacts": [artifact_record(path) for path in sorted(resolved, key=path_sort_key)],
     }
     if version is not None:
         manifest["version"] = version
