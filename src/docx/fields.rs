@@ -7531,10 +7531,29 @@ fn print_instruction(instruction: &str) -> Option<()> {
             return None;
         }
     } else {
-        let instructions = field_literal_token(first)?;
-        if instructions.is_empty() || instructions.starts_with('\\') {
-            return None;
+        accept_print_direct_token(first)?;
+        let mut text_format = None;
+        let mut saw_format = false;
+        while let Some(part) = parts.next() {
+            if part == "\\*" {
+                if !accept_field_format_switch(parts.next()?, &mut text_format) {
+                    return None;
+                }
+                saw_format = true;
+                continue;
+            }
+            if let Some(format) = part.strip_prefix("\\*") {
+                if accept_field_format_switch(format, &mut text_format) {
+                    saw_format = true;
+                    continue;
+                }
+            }
+            if saw_format {
+                return None;
+            }
+            accept_print_direct_token(part)?;
         }
+        return Some(());
     }
     let mut text_format = None;
     while let Some(part) = parts.next() {
@@ -7552,6 +7571,11 @@ fn print_instruction(instruction: &str) -> Option<()> {
         return None;
     }
     Some(())
+}
+
+fn accept_print_direct_token(token: &str) -> Option<()> {
+    let instructions = field_literal_token(token)?;
+    (!instructions.is_empty() && !instructions.starts_with('\\')).then_some(())
 }
 
 fn action_instruction(instruction: &str) -> Option<ActionInstruction> {
