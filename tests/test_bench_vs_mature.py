@@ -79,6 +79,12 @@ class BenchVsMatureReportTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, message):
                     bench_vs_mature.benchmark_report(rows, **kwargs)
 
+    def test_benchmark_report_rejects_file_paths(self):
+        rows = [{"file": "private" + "/alpha", "poi_recall": 1.0, "poi_f1": 1.0}]
+
+        with self.assertRaisesRegex(ValueError, "file path is invalid"):
+            bench_vs_mature.benchmark_report(rows)
+
     def test_benchmark_report_evaluates_release_thresholds(self):
         rows = [
             {
