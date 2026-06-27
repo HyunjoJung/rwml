@@ -446,6 +446,10 @@ pub(crate) fn referenceable_bookmark_name(name: &str) -> bool {
         && !name.chars().any(char::is_whitespace)
 }
 
+pub(crate) fn normalize_field_instruction(instruction: &str) -> String {
+    instruction.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 /// An sRGB color.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub struct Color {

@@ -16,11 +16,11 @@
 use super::opc::{Package, Rel};
 use super::{esc_attr, esc_text};
 use crate::model::{
-    referenceable_bookmark_name, Align, AuthoredComment, AuthoredContentControl, AuthoredNote,
-    AuthoredRevision, Block, CellMargins, CharProps, Chart, ChartKind, ChartSeries, ChartShape,
-    Color, FieldRole, Image, Indent, ParaProps, Paragraph, ParagraphStyle, SectionBreakKind,
-    SectionSetup, Spacing, Table, TableBorderSide, TableBorderStyle, VertAlign,
-    WebExtensionTaskPane,
+    normalize_field_instruction, referenceable_bookmark_name, Align, AuthoredComment,
+    AuthoredContentControl, AuthoredNote, AuthoredRevision, Block, CellMargins, CharProps, Chart,
+    ChartKind, ChartSeries, ChartShape, Color, FieldRole, Image, Indent, ParaProps, Paragraph,
+    ParagraphStyle, SectionBreakKind, SectionSetup, Spacing, Table, TableBorderSide,
+    TableBorderStyle, VertAlign, WebExtensionTaskPane,
 };
 use crate::{NoteKind, RevisionKind};
 
@@ -724,17 +724,21 @@ impl Ctx {
             }
             FieldRole::Simple { instruction } => {
                 let instruction = normalize_field_instruction(instruction);
-                let dirty = if r.field_dirty {
-                    r#" w:dirty="true""#
+                if instruction.is_empty() {
+                    self.write_run_inner(&mut run_xml, r, deleted);
                 } else {
-                    ""
-                };
-                run_xml.push_str(&format!(
-                    r#"<w:fldSimple w:instr=" {} "{dirty}>"#,
-                    esc_attr(&instruction)
-                ));
-                self.write_run_inner(&mut run_xml, r, deleted);
-                run_xml.push_str("</w:fldSimple>");
+                    let dirty = if r.field_dirty {
+                        r#" w:dirty="true""#
+                    } else {
+                        ""
+                    };
+                    run_xml.push_str(&format!(
+                        r#"<w:fldSimple w:instr=" {} "{dirty}>"#,
+                        esc_attr(&instruction)
+                    ));
+                    self.write_run_inner(&mut run_xml, r, deleted);
+                    run_xml.push_str("</w:fldSimple>");
+                }
             }
             _ => self.write_run_inner(&mut run_xml, r, deleted),
         }
@@ -1331,10 +1335,6 @@ fn write_run_text_element(out: &mut String, text: &str, tag: &str) {
         }
     }
     flush(out, &mut buf);
-}
-
-fn normalize_field_instruction(instruction: &str) -> String {
-    instruction.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// Extension + content type for an image MIME (reverse of the reader's

@@ -1,11 +1,12 @@
 //! Ergonomic authoring helpers over [`crate::DocModel`].
 
 use crate::model::{
-    referenceable_bookmark_name, Align, AuthoredComment, AuthoredContentControl, AuthoredNote,
-    AuthoredRevision, Block, Cell, CharProps, Chart, ChartKind, ChartSeries, ChartShape, Color,
-    CustomXmlItem, DocGrid, DocGridType, DocModel, FieldRole, Image, ListInfo, PageNumberFormat,
-    PageSetup, ParaProps, Paragraph, ParagraphStyle, Row, Run, SectionBreakKind, SectionSetup,
-    Table, TableBorderSide, TableBorderStyle, TextDirection, VCell, WebExtensionTaskPane,
+    normalize_field_instruction, referenceable_bookmark_name, Align, AuthoredComment,
+    AuthoredContentControl, AuthoredNote, AuthoredRevision, Block, Cell, CharProps, Chart,
+    ChartKind, ChartSeries, ChartShape, Color, CustomXmlItem, DocGrid, DocGridType, DocModel,
+    FieldRole, Image, ListInfo, PageNumberFormat, PageSetup, ParaProps, Paragraph, ParagraphStyle,
+    Row, Run, SectionBreakKind, SectionSetup, Table, TableBorderSide, TableBorderStyle,
+    TextDirection, VCell, WebExtensionTaskPane,
 };
 use crate::{NoteKind, RevisionKind};
 
@@ -82,9 +83,10 @@ impl RunBuilder {
 
     /// Mark the run as the cached result of a simple Word field.
     pub fn field(mut self, instruction: impl Into<String>) -> Self {
-        self.run.field = FieldRole::Simple {
-            instruction: normalize_field_instruction(&instruction.into()),
-        };
+        let instruction = normalize_field_instruction(&instruction.into());
+        if !instruction.is_empty() {
+            self.run.field = FieldRole::Simple { instruction };
+        }
         self
     }
 
@@ -1843,11 +1845,16 @@ impl DocBuilder {
     /// Add a paragraph containing one simple field result.
     pub fn field(mut self, instruction: impl Into<String>, result: impl Into<String>) -> Self {
         let instruction = normalize_field_instruction(&instruction.into());
+        let field = if instruction.is_empty() {
+            FieldRole::None
+        } else {
+            FieldRole::Simple { instruction }
+        };
         self.model.blocks.push(Block::Paragraph(Paragraph {
             props: ParaProps::default(),
             runs: vec![Run {
                 text: result.into(),
-                field: FieldRole::Simple { instruction },
+                field,
                 ..Run::default()
             }],
         }));
@@ -2173,10 +2180,6 @@ fn plain_cell(text: String, is_header: bool) -> Cell {
         is_header,
         ..Cell::default()
     }
-}
-
-fn normalize_field_instruction(instruction: &str) -> String {
-    instruction.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn plain_run(text: String, props: CharProps) -> Run {

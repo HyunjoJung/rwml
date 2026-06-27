@@ -971,6 +971,37 @@ fn run_builder_adds_simple_field_runs() {
 }
 
 #[test]
+fn field_helpers_skip_empty_instructions() {
+    let model = DocBuilder::new()
+        .paragraph_runs([RunBuilder::new("raw").field(" \t\r\n ").build()])
+        .field("   ", "cached")
+        .build();
+
+    let Block::Paragraph(run_paragraph) = &model.blocks[0] else {
+        panic!("expected run paragraph");
+    };
+    assert!(matches!(run_paragraph.runs[0].field, FieldRole::None));
+
+    let Block::Paragraph(doc_paragraph) = &model.blocks[1] else {
+        panic!("expected doc field paragraph");
+    };
+    assert!(matches!(doc_paragraph.runs[0].field, FieldRole::None));
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    assert!(
+        !document_xml.contains("<w:fldSimple"),
+        "empty field instructions should serialize as plain runs: {document_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("empty-field .docx reopens");
+    assert_eq!(reopened.fields().len(), 0);
+    assert!(reopened.text().contains("raw"));
+    assert!(reopened.text().contains("cached"));
+}
+
+#[test]
 fn doc_builder_adds_dirty_toc_heading_range() {
     let model = DocBuilder::new()
         .heading(1, "Executive Summary")
