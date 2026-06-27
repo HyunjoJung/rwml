@@ -2343,9 +2343,106 @@ fn compare_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     }
     #[cfg(not(feature = "docx"))]
     {
-        let _ = instruction;
-        FieldEvaluationReason::NoComputedResult
+        if supported_compare_syntax(instruction) {
+            FieldEvaluationReason::NoComputedResult
+        } else {
+            FieldEvaluationReason::UnsupportedSwitch
+        }
     }
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_compare_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if !kind.eq_ignore_ascii_case("COMPARE") {
+        return false;
+    }
+    let Some(first) = parts.next() else {
+        return false;
+    };
+    if !supported_comparison_operands(first, &mut parts) {
+        return false;
+    }
+    let mut text_format = false;
+    while let Some(part) = parts.next() {
+        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        }) else {
+            return false;
+        };
+        if !accepted {
+            return false;
+        }
+    }
+    true
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_comparison_operands<'a>(
+    first: &str,
+    parts: &mut impl Iterator<Item = &'a str>,
+) -> bool {
+    if let Some((left, operator, right)) = compact_comparison_operands(first) {
+        return comparison_operand_for_report(left)
+            && comparison_operator_for_report(operator)
+            && comparison_operand_for_report(right);
+    }
+    let Some(operator) = parts.next() else {
+        return false;
+    };
+    let Some(right) = parts.next() else {
+        return false;
+    };
+    comparison_operand_for_report(first)
+        && comparison_operator_for_report(operator)
+        && comparison_operand_for_report(right)
+}
+
+#[cfg(not(feature = "docx"))]
+fn compact_comparison_operands(token: &str) -> Option<(&str, &str, &str)> {
+    for operator in [">=", "<=", "<>", "=", ">", "<"] {
+        let Some(index) = find_unquoted_operator_for_report(token, operator) else {
+            continue;
+        };
+        let (left, right_with_operator) = token.split_at(index);
+        let right = &right_with_operator[operator.len()..];
+        if left.is_empty() || right.is_empty() {
+            return None;
+        }
+        return Some((left, operator, right));
+    }
+    None
+}
+
+#[cfg(not(feature = "docx"))]
+fn find_unquoted_operator_for_report(token: &str, operator: &str) -> Option<usize> {
+    let mut in_quotes = false;
+    for (index, ch) in token.char_indices() {
+        if ch == '"' {
+            in_quotes = !in_quotes;
+        } else if !in_quotes && token[index..].starts_with(operator) {
+            return Some(index);
+        }
+    }
+    None
+}
+
+#[cfg(not(feature = "docx"))]
+fn comparison_operator_for_report(token: &str) -> bool {
+    matches!(token, "=" | "<>" | ">" | "<" | ">=" | "<=")
+}
+
+#[cfg(not(feature = "docx"))]
+fn comparison_operand_for_report(token: &str) -> bool {
+    if token.parse::<f64>().is_ok_and(f64::is_finite) {
+        return true;
+    }
+    diagnostic_literal_token(token)
+        .is_some_and(|value| !value.is_empty() && !value.starts_with('\\'))
 }
 
 fn formula_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -3998,6 +4095,19 @@ mod tests {
         );
         assert_eq!(
             super::numbering_uncomputed_reason(r"BIDIOUTLINE \x"),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_compare_diagnostics_reject_malformed_operands() {
+        assert_eq!(
+            super::compare_uncomputed_reason(r#"COMPARE "98512" = "985*""#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::compare_uncomputed_reason(r#"COMPARE \o = "Gold""#),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
     }
