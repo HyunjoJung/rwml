@@ -835,6 +835,23 @@ fn section_field_docx() -> Vec<u8> {
     ])
 }
 
+fn section_field_invalid_switch_alignment_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SECTION \* Unknown "><w:r><w:t>cached invalid section</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SECTION "><w:r><w:t>stale valid section</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn section_alternate_content_break_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -5778,6 +5795,51 @@ fn docx_section_field_computes_current_structural_section_number() {
     assert!(main_text.contains("1"), "{main_text:?}");
     assert!(main_text.contains("2"), "{main_text:?}");
     assert!(main_text.contains("3"), "{main_text:?}");
+}
+
+#[test]
+fn docx_section_field_invalid_switch_does_not_shift_later_fields() {
+    let doc =
+        Document::open(&section_field_invalid_switch_alignment_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(
+        fields[0].kind,
+        FieldKind::DocumentStructure("SECTION".to_string())
+    );
+    assert_eq!(fields[0].instruction, "SECTION \\* Unknown");
+    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(
+        fields[1].kind,
+        FieldKind::DocumentStructure("SECTION".to_string())
+    );
+    assert_eq!(fields[1].instruction, "SECTION");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("1"));
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::DocumentStructure("SECTION".to_string()),
+            count: 1,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnsupportedSwitch,
+            count: 1,
+        }]
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("cached invalid section"),
+        "{main_text:?}"
+    );
+    assert!(!main_text.contains("stale valid section"), "{main_text:?}");
+    assert!(main_text.contains("1"), "{main_text:?}");
 }
 
 #[test]

@@ -4659,9 +4659,13 @@ fn apply_computed_results(fields: &mut [Field], ctx: ComputedResultContexts<'_>)
                 computed_revision_number_result(&field.instruction, ctx.core_properties)
             }
             FieldKind::DocumentStructure(kind) if kind == "SECTION" || kind == "SECTIONPAGES" => {
-                let position = ctx.sections.field_position(section_field_index);
-                section_field_index += 1;
-                computed_section_result(&field.instruction, position)
+                if is_section_field_instruction(&field.instruction) {
+                    let position = ctx.sections.field_position(section_field_index);
+                    section_field_index += 1;
+                    computed_section_result(&field.instruction, position)
+                } else {
+                    None
+                }
             }
             FieldKind::DocumentStructure(kind) if kind == "STYLEREF" => {
                 let position = ctx.style_refs.field_position(style_ref_field_index);
