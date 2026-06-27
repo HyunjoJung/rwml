@@ -24,6 +24,9 @@ rendering moving toward one coherent Rust-native document model.
 - Avoid duplicate process ceremony. For roadmap work that already has PRD/TRD
   approval, skip fresh brainstorming/spec gates unless the user asks for them;
   keep minimal-diff discipline, TDD for behavior changes, and fresh verification.
+- Keep skill usage narrow. Select the smallest directly relevant skill set,
+  avoid overlapping skills for the same decision, and reuse skill guidance that
+  is already present in the current context instead of rereading adjacent docs.
 - Keep agent-token output small: prefer `rg` plus narrow file windows, avoid full
   `git diff` dumps, cap broad search output, and summarize long test logs by
   exit status plus failures.
@@ -45,6 +48,9 @@ rendering moving toward one coherent Rust-native document model.
 - Keep worker lanes read-only for investigation unless the task explicitly needs
   isolated writable worktrees. The parent agent remains responsible for reading
   worker output, integrating changes, and running verification.
+- Avoid duplicate local/worker inspection. Before launching a worker, give it a
+  bounded question that does not overlap with the parent agent's active local
+  search; if the parent can answer the question cheaply, skip the worker.
 - Do not launch Ultracode for genuinely trivial edits or direct local commands.
 
 ## Project Invariants
