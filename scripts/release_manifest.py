@@ -709,6 +709,8 @@ def release_manifest(
 ) -> dict[str, Any]:
     if not artifacts:
         raise ValueError("at least one artifact path is required")
+    if enforce_policy_inputs and release_policy is None:
+        raise ValueError("enforce_policy_inputs requires release policy")
     if enforce_policy_inputs:
         check_required_policy_inputs(
             release_policy,

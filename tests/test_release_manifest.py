@@ -1206,6 +1206,21 @@ class ReleaseManifestTests(unittest.TestCase):
                     enforce_policy_inputs=True,
                 )
 
+    def test_enforced_policy_inputs_requires_release_policy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            artifact = root / "rdoc.tar.gz"
+            artifact.write_bytes(b"release artifact")
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "enforce_policy_inputs requires release policy",
+            ):
+                release_manifest.release_manifest(
+                    [artifact],
+                    enforce_policy_inputs=True,
+                )
+
     def test_enforced_public_release_policy_requires_both_public_corpus_manifests(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
