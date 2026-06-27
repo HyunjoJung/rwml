@@ -1870,6 +1870,7 @@ fn display_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
             || supported_symbol_syntax(instruction)
             || supported_eq_displacement_syntax(instruction)
             || supported_eq_script_syntax(instruction)
+            || supported_eq_fraction_syntax(instruction)
         {
             return FieldEvaluationReason::NoComputedResult;
         }
@@ -2186,6 +2187,76 @@ fn take_eq_parenthesized_operand_for_report(value: &str) -> Option<(&str, &str)>
     let rest = value.strip_prefix('(')?;
     let end = rest.find(')')?;
     Some((&rest[..end], &rest[end + 1..]))
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_eq_fraction_syntax(instruction: &str) -> bool {
+    let Some(expression) = eq_expression_for_report(instruction) else {
+        return false;
+    };
+    let Some(body) = strip_ascii_switch_prefix(expression.trim_start(), "\\f") else {
+        return false;
+    };
+    let Some(inner) = body
+        .strip_prefix('(')
+        .and_then(|body| body.strip_suffix(')'))
+    else {
+        return false;
+    };
+    let Some((numerator, denominator)) = split_eq_fraction_operands_for_report(inner) else {
+        return false;
+    };
+    eq_operand_for_report(numerator) && eq_operand_for_report(denominator)
+}
+
+#[cfg(not(feature = "docx"))]
+fn split_eq_fraction_operands_for_report(inner: &str) -> Option<(&str, &str)> {
+    let mut depth = 0usize;
+    let mut separator = None;
+    let mut in_quotes = false;
+    let mut escaped = false;
+    for (index, ch) in inner.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' => escaped = true,
+            '"' => in_quotes = !in_quotes,
+            '(' if !in_quotes => depth += 1,
+            ')' if !in_quotes => depth = depth.checked_sub(1)?,
+            ',' | ';' if !in_quotes && depth == 0 && separator.replace(index).is_some() => {
+                return None;
+            }
+            _ => {}
+        }
+    }
+    if in_quotes || escaped || depth != 0 {
+        return None;
+    }
+    let index = separator?;
+    Some((&inner[..index], &inner[index + 1..]))
+}
+
+#[cfg(not(feature = "docx"))]
+fn eq_operand_for_report(operand: &str) -> bool {
+    let operand = operand.trim();
+    if operand.is_empty() {
+        return false;
+    }
+    let Some(text) = diagnostic_literal_token(operand) else {
+        return false;
+    };
+    let mut chars = text.chars();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            continue;
+        }
+        if !matches!(chars.next(), Some(',' | ';' | '(' | ')' | '\\')) {
+            return false;
+        }
+    }
+    true
 }
 
 fn action_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -4727,6 +4798,19 @@ mod tests {
         );
         assert_eq!(
             super::display_uncomputed_reason(r"EQ \s\ai4(Above"),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_display_diagnostics_accept_valid_eq_fraction() {
+        assert_eq!(
+            super::display_uncomputed_reason(r"EQ \f(1,2)"),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::display_uncomputed_reason(r"EQ \f(1)"),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
     }
