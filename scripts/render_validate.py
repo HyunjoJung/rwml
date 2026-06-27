@@ -205,6 +205,15 @@ def validation_report(
             raise ValueError(f"document path is invalid: {row.document}")
         if row.status not in {"pass", "fail", "skip"}:
             raise ValueError(f"status is invalid: {row.status}")
+        for metric in (
+            "recall",
+            "page_ratio",
+            "ahash_similarity",
+            "render_warnings",
+        ):
+            value = getattr(row, metric)
+            if value is not None and not is_finite_number(value):
+                raise ValueError(f"metric is invalid: {metric}")
     if not is_finite_number(recall_min):
         raise ValueError(f"non-finite recall threshold: {recall_min}")
     if recall_min < 0:

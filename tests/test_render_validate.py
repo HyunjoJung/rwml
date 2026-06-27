@@ -108,6 +108,22 @@ class RenderValidateReportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "status is invalid"):
             render_validate.validation_report([row], recall_min=0.8)
 
+    def test_validation_report_rejects_non_numeric_metrics(self):
+        row = render_validate.ValidationRow(
+            document="sample.docx",
+            status="pass",
+            recall="1.0",
+        )
+
+        try:
+            render_validate.validation_report([row], recall_min=0.8)
+        except ValueError as exc:
+            self.assertRegex(str(exc), "metric is invalid: recall")
+        except Exception as exc:
+            self.fail(f"expected ValueError, got {type(exc).__name__}: {exc}")
+        else:
+            self.fail("ValueError not raised")
+
     def test_validation_report_evaluates_release_thresholds(self):
         rows = [
             render_validate.ValidationRow(
