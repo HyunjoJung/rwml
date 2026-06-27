@@ -621,6 +621,8 @@ def read_corpus_manifest(path: Path) -> tuple[list[str], list[list[str]]]:
             raise ValueError(f"{path} has unsafe document path: {document_path}")
         if document_path != document_path.strip():
             raise ValueError(f"{path} has whitespace-padded document path: {document_path}")
+        if not document_path.isascii() or any(char.isspace() for char in document_path):
+            raise ValueError(f"{path} has unsafe document path: {document_path}")
         if document_path in seen_paths:
             raise ValueError(f"{path} has duplicate document path: {document_path}")
         seen_paths.add(document_path)
