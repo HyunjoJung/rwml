@@ -2247,6 +2247,14 @@ pub(crate) fn hyperlink_instr_url(instr: &str) -> Option<String> {
     if matches!(after.chars().next(), Some(ch) if !ch.is_whitespace()) {
         return None;
     }
+    let after = after.trim_start();
+    if after.starts_with('\\')
+        && !after
+            .get(..2)
+            .is_some_and(|switch| switch.eq_ignore_ascii_case("\\l"))
+    {
+        return None;
+    }
     let q = after.find('"')?;
     let rest = &after[q + 1..];
     let end = rest.find('"')?;

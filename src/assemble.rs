@@ -749,6 +749,14 @@ fn parse_hyperlink(instr: &str) -> Option<String> {
     if matches!(after.chars().next(), Some(ch) if !ch.is_whitespace()) {
         return None;
     }
+    let after = after.trim_start();
+    if after.starts_with('\\')
+        && !after
+            .get(..2)
+            .is_some_and(|switch| switch.eq_ignore_ascii_case("\\l"))
+    {
+        return None;
+    }
     let start = after.find('"')?;
     let rest = &after[start + 1..];
     let end = rest.find('"')?;
@@ -1061,5 +1069,6 @@ mod tests {
             parse_hyperlink(" HYPERLINK \\l \"anchor\" ").as_deref(),
             Some("anchor")
         );
+        assert_eq!(parse_hyperlink(" HYPERLINK \\o \"tip\" "), None);
     }
 }
