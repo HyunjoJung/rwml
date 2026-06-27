@@ -93,6 +93,24 @@ class PublicHygieneAuditTests(unittest.TestCase):
             [(1, "windows_home_path")],
         )
 
+    def test_text_audit_flags_yaml_private_corpus_defaults(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            doc = root / ".github" / "workflows" / "release.yml"
+            doc.parent.mkdir(parents=True)
+            doc.write_text(
+                "RDOC_" + "RENDER_CORPUS" + ": corpus/private/render\n",
+                encoding="utf-8",
+            )
+
+            with audit_root(root):
+                findings = public_hygiene_audit.audit_text_file(doc)
+
+        self.assertEqual(
+            [(finding.line, finding.kind) for finding in findings],
+            [(1, "private_corpus_default")],
+        )
+
     def test_skip_policy_ignores_binary_suffixes_and_generated_dirs(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)

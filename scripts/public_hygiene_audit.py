@@ -195,7 +195,7 @@ def audit_text_lines(path: str, lines: list[str]) -> list[Finding]:
                 findings.append(
                     Finding(path, line_no, kind, "absolute local filesystem path")
                 )
-        if re.search(r"RDOC_(?:BENCH_CORPUS|RENDER_CORPUS|PRIVATE_FIXTURES)\s*=", line):
+        if re.search(r"RDOC_(?:BENCH_CORPUS|RENDER_CORPUS|PRIVATE_FIXTURES)\s*[:=]", line):
             findings.append(
                 Finding(
                     path,
@@ -239,7 +239,7 @@ def audit_text_blob(path: str, text: str, detail_context: str) -> list[Finding]:
                     f"absolute local filesystem path in {detail_context}",
                 )
             )
-    if re.search(r"RDOC_(?:BENCH_CORPUS|RENDER_CORPUS|PRIVATE_FIXTURES)\s*=", text):
+    if re.search(r"RDOC_(?:BENCH_CORPUS|RENDER_CORPUS|PRIVATE_FIXTURES)\s*[:=]", text):
         findings.append(
             Finding(
                 path,
