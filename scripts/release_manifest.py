@@ -527,20 +527,19 @@ def corpus_manifest_summary(path: Path) -> dict[str, Any]:
         if name in {"path", "warnings"}:
             continue
         total = 0
-        numeric = True
         for row in rows:
             try:
                 value = int(row[index])
             except ValueError:
-                numeric = False
-                break
+                raise ValueError(
+                    f"{path} row has non-numeric value for {name}: {row[index]}"
+                )
             if value < 0:
                 raise ValueError(
                     f"{path} row has negative numeric value for {name}: {row[index]}"
                 )
             total += value
-        if numeric:
-            numeric_totals[name] = total
+        numeric_totals[name] = total
 
     if "warnings" in header:
         warning_index = header.index("warnings")

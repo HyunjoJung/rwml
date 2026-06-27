@@ -415,6 +415,21 @@ class ReleaseManifestTests(unittest.TestCase):
             ):
                 release_manifest.corpus_manifest_summary(corpus)
 
+    def test_manifest_rejects_non_numeric_public_corpus_counts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            corpus.write_text(
+                "# path\tfields\twarnings\nsynthetic/fields.docx\tmany\t-\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "non-numeric value for fields: many",
+            ):
+                release_manifest.corpus_manifest_summary(corpus)
+
     def test_manifest_rejects_duplicate_public_corpus_paths(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
