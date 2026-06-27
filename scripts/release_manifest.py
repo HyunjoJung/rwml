@@ -490,7 +490,7 @@ def read_corpus_manifest(path: Path) -> tuple[list[str], list[list[str]]]:
         if trimmed.startswith("#"):
             continue
         if trimmed.startswith("path\t"):
-            continue
+            raise ValueError(f"{path} has repeated TSV header row")
         cols = line.split("\t")
         if len(cols) != len(header):
             raise ValueError(
