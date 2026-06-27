@@ -512,10 +512,11 @@ def require_gate_check_threshold(
 
 
 def parse_manifest_header(line: str) -> list[str]:
-    trimmed = line.strip()
-    if trimmed.startswith("#"):
-        trimmed = trimmed[1:].strip()
-    return trimmed.split("\t")
+    if line.startswith("#"):
+        line = line[1:]
+        if line.startswith(" "):
+            line = line[1:]
+    return line.split("\t")
 
 
 def read_corpus_manifest(path: Path) -> tuple[list[str], list[list[str]]]:
@@ -527,7 +528,7 @@ def read_corpus_manifest(path: Path) -> tuple[list[str], list[list[str]]]:
         if not trimmed:
             continue
         if header is None:
-            header = parse_manifest_header(trimmed)
+            header = parse_manifest_header(line)
             if not header or header[0] != "path":
                 raise ValueError(f"{path} does not start with a TSV path header")
             seen_columns: set[str] = set()
