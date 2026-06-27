@@ -72,6 +72,7 @@ LOCAL_PATH_PATTERNS = [
     ("mac_home_path", re.compile(r"(?<![A-Za-z]:)/Users/[A-Za-z0-9._-]+/")),
     ("linux_home_path", re.compile(r"/home/[A-Za-z0-9._-]+/")),
     ("windows_home_path", re.compile(r"[A-Za-z]:[/\\]Users[/\\][^/\\\s]+[/\\]")),
+    ("windows_profile_env_path", re.compile(r"%USERPROFILE%[/\\]", re.IGNORECASE)),
 ]
 
 OFFICE_TEXT_PART_SUFFIXES = (".xml", ".rels")
