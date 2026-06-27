@@ -1869,6 +1869,7 @@ fn display_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
         if supported_advance_syntax(instruction)
             || supported_symbol_syntax(instruction)
             || supported_eq_displacement_syntax(instruction)
+            || supported_eq_script_syntax(instruction)
         {
             return FieldEvaluationReason::NoComputedResult;
         }
@@ -2025,28 +2026,9 @@ fn parse_symbol_size_for_report(token: &str) -> Option<f32> {
 
 #[cfg(not(feature = "docx"))]
 fn supported_eq_displacement_syntax(instruction: &str) -> bool {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let Some(kind) = parts.next() else {
+    let Some(expression) = eq_expression_for_report(instruction) else {
         return false;
     };
-    if !kind.eq_ignore_ascii_case("EQ") {
-        return false;
-    }
-    let mut expression_parts = Vec::new();
-    let mut text_format = false;
-    while let Some(part) = parts.next() {
-        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        }) else {
-            return false;
-        };
-        if accepted {
-            continue;
-        }
-        expression_parts.push(part);
-    }
-    let expression = expression_parts.join(" ");
     let Some(mut body) = strip_ascii_switch_prefix(expression.trim_start(), "\\d") else {
         return false;
     };
@@ -2119,6 +2101,91 @@ fn consume_eq_prefix_switch_for_report<'a>(value: &'a str, switch: &str) -> Opti
         return None;
     }
     Some(rest)
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_eq_script_syntax(instruction: &str) -> bool {
+    let Some(expression) = eq_expression_for_report(instruction) else {
+        return false;
+    };
+    let mut body = expression.trim_start();
+    loop {
+        let Some(rest) = strip_ascii_switch_prefix(body, "\\s") else {
+            return false;
+        };
+        let Some(remaining) = eq_script_syntax_segment_for_report(rest.trim_start()) else {
+            return false;
+        };
+        body = remaining.trim_start();
+        if body.is_empty() {
+            return true;
+        }
+    }
+}
+
+#[cfg(not(feature = "docx"))]
+fn eq_expression_for_report(instruction: &str) -> Option<String> {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let kind = parts.next()?;
+    if !kind.eq_ignore_ascii_case("EQ") {
+        return None;
+    }
+    let mut expression_parts = Vec::new();
+    let mut text_format = false;
+    while let Some(part) = parts.next() {
+        if accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        })? {
+            continue;
+        }
+        expression_parts.push(part);
+    }
+    (!expression_parts.is_empty()).then(|| expression_parts.join(" "))
+}
+
+#[cfg(not(feature = "docx"))]
+fn eq_script_syntax_segment_for_report(mut body: &str) -> Option<&str> {
+    let mut saw_option = false;
+    loop {
+        if body.is_empty() || consume_eq_prefix_switch_for_report(body, "\\s").is_some() {
+            return saw_option.then_some(body);
+        }
+        if let Some(rest) = consume_eq_script_option_for_report(body, "\\up", false)
+            .or_else(|| consume_eq_script_option_for_report(body, "\\do", false))
+            .or_else(|| consume_eq_script_option_for_report(body, "\\ai", true))
+            .or_else(|| consume_eq_script_option_for_report(body, "\\di", true))
+        {
+            body = rest.trim_start();
+            saw_option = true;
+            continue;
+        }
+        return None;
+    }
+}
+
+#[cfg(not(feature = "docx"))]
+fn consume_eq_script_option_for_report<'a>(
+    value: &'a str,
+    option: &str,
+    allow_empty: bool,
+) -> Option<&'a str> {
+    let rest = consume_eq_numeric_prefix_option_for_report(value, option)?;
+    let (operand, rest) = take_eq_parenthesized_operand_for_report(rest)?;
+    if operand.trim().is_empty() {
+        return allow_empty.then_some(rest);
+    }
+    diagnostic_literal_token(operand)
+        .is_some_and(|text| !text.trim().is_empty())
+        .then_some(rest)
+}
+
+#[cfg(not(feature = "docx"))]
+fn take_eq_parenthesized_operand_for_report(value: &str) -> Option<(&str, &str)> {
+    let value = value.trim_start();
+    let rest = value.strip_prefix('(')?;
+    let end = rest.find(')')?;
+    Some((&rest[..end], &rest[end + 1..]))
 }
 
 fn action_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -4647,6 +4714,19 @@ mod tests {
         );
         assert_eq!(
             super::display_uncomputed_reason(r"EQ \d \fo10 \li(Title"),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_display_diagnostics_accept_valid_eq_script() {
+        assert_eq!(
+            super::display_uncomputed_reason(r"EQ \s\ai4(Above)\di3(Below)"),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::display_uncomputed_reason(r"EQ \s\ai4(Above"),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
     }
