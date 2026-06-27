@@ -6,8 +6,8 @@ use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 
 use crate::annotation::{
-    accept_general_format_switch, field_text_format_switch, is_neutral_field_format_switch, Field,
-    FieldKind, FieldTextFormat,
+    accept_general_format_switch, field_number_format_switch, field_text_format_switch,
+    is_neutral_field_format_switch, Field, FieldKind, FieldNumberFormat, FieldTextFormat,
 };
 use crate::{numfmt, CoreProperties};
 
@@ -9209,17 +9209,17 @@ fn accept_page_number_format_switch(
     if is_neutral_field_format_switch(part) {
         return true;
     }
-    let format = match part {
-        _ if part.eq_ignore_ascii_case("Arabic") => PageNumberFormat::Arabic,
-        "alphabetic" => PageNumberFormat::AlphabeticLower,
-        "ALPHABETIC" => PageNumberFormat::AlphabeticUpper,
-        "roman" => PageNumberFormat::RomanLower,
-        "ROMAN" => PageNumberFormat::RomanUpper,
-        _ if part.eq_ignore_ascii_case("Ordinal") => PageNumberFormat::Ordinal,
-        _ if part.eq_ignore_ascii_case("CardText") => PageNumberFormat::CardText,
-        _ if part.eq_ignore_ascii_case("OrdText") => PageNumberFormat::OrdText,
-        _ if part.eq_ignore_ascii_case("ArabicDash") => PageNumberFormat::ArabicDash,
-        _ => return false,
+    let format = match field_number_format_switch(part) {
+        Some(FieldNumberFormat::Arabic) => PageNumberFormat::Arabic,
+        Some(FieldNumberFormat::ArabicDash) => PageNumberFormat::ArabicDash,
+        Some(FieldNumberFormat::AlphabeticLower) => PageNumberFormat::AlphabeticLower,
+        Some(FieldNumberFormat::AlphabeticUpper) => PageNumberFormat::AlphabeticUpper,
+        Some(FieldNumberFormat::RomanLower) => PageNumberFormat::RomanLower,
+        Some(FieldNumberFormat::RomanUpper) => PageNumberFormat::RomanUpper,
+        Some(FieldNumberFormat::Ordinal) => PageNumberFormat::Ordinal,
+        Some(FieldNumberFormat::CardText) => PageNumberFormat::CardText,
+        Some(FieldNumberFormat::OrdText) => PageNumberFormat::OrdText,
+        None => return false,
     };
     number_format.replace(format).is_none()
 }

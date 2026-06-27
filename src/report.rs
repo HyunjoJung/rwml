@@ -5,8 +5,8 @@
 //! construct is fully modeled, editable, or renderable.
 
 use crate::annotation::{
-    accept_general_format_switch, field_text_format_switch, is_neutral_field_format_switch, Field,
-    FieldKind,
+    accept_general_format_switch, field_number_format_switch, field_text_format_switch,
+    is_neutral_field_format_switch, Field, FieldKind,
 };
 use crate::model::{Block, FieldRole, Stats, Table};
 use crate::CoreProperties;
@@ -2265,13 +2265,7 @@ fn accept_page_number_format_switch(part: &str, number_format: &mut bool) -> boo
     if is_neutral_field_format_switch(part) {
         return true;
     }
-    let supported_number_format = part.eq_ignore_ascii_case("Arabic")
-        || matches!(part, "alphabetic" | "ALPHABETIC" | "roman" | "ROMAN")
-        || part.eq_ignore_ascii_case("Ordinal")
-        || part.eq_ignore_ascii_case("CardText")
-        || part.eq_ignore_ascii_case("OrdText")
-        || part.eq_ignore_ascii_case("ArabicDash");
-    if !supported_number_format || *number_format {
+    if field_number_format_switch(part).is_none() || *number_format {
         return false;
     }
     *number_format = true;

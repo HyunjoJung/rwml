@@ -408,6 +408,34 @@ pub(crate) fn field_text_format_switch(part: &str) -> Option<FieldTextFormat> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FieldNumberFormat {
+    Arabic,
+    ArabicDash,
+    AlphabeticLower,
+    AlphabeticUpper,
+    RomanLower,
+    RomanUpper,
+    Ordinal,
+    CardText,
+    OrdText,
+}
+
+pub(crate) fn field_number_format_switch(part: &str) -> Option<FieldNumberFormat> {
+    match part {
+        _ if part.eq_ignore_ascii_case("Arabic") => Some(FieldNumberFormat::Arabic),
+        "alphabetic" => Some(FieldNumberFormat::AlphabeticLower),
+        "ALPHABETIC" => Some(FieldNumberFormat::AlphabeticUpper),
+        "roman" => Some(FieldNumberFormat::RomanLower),
+        "ROMAN" => Some(FieldNumberFormat::RomanUpper),
+        _ if part.eq_ignore_ascii_case("Ordinal") => Some(FieldNumberFormat::Ordinal),
+        _ if part.eq_ignore_ascii_case("CardText") => Some(FieldNumberFormat::CardText),
+        _ if part.eq_ignore_ascii_case("OrdText") => Some(FieldNumberFormat::OrdText),
+        _ if part.eq_ignore_ascii_case("ArabicDash") => Some(FieldNumberFormat::ArabicDash),
+        _ => None,
+    }
+}
+
 pub(crate) fn accept_general_format_switch<'a, I>(
     part: &'a str,
     parts: &mut I,
