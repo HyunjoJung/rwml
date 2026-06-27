@@ -1532,7 +1532,7 @@ fn unsupported_field_reason(field: &Field) -> Option<FieldEvaluationReason> {
         FieldKind::InsertedContent(_) => {
             Some(inserted_content_uncomputed_reason(&field.instruction))
         }
-        FieldKind::MailMerge(_) => Some(FieldEvaluationReason::NoComputedResult),
+        FieldKind::MailMerge(_) => Some(mail_merge_uncomputed_reason(&field.instruction)),
         FieldKind::ReferenceIndex(ref kind) if is_reference_index_marker_kind(kind.as_str()) => {
             Some(reference_index_marker_uncomputed_reason(&field.instruction))
         }
@@ -1831,6 +1831,33 @@ fn is_inserted_content_kind(kind: &str) -> bool {
             | "INCLUDEPICTURE"
             | "INCLUDETEXT"
             | "LINK"
+    )
+}
+
+fn mail_merge_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
+    if supported_mail_merge_syntax(instruction) {
+        FieldEvaluationReason::NoComputedResult
+    } else {
+        FieldEvaluationReason::UnsupportedSwitch
+    }
+}
+
+fn supported_mail_merge_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if !is_mail_merge_kind(kind) {
+        return false;
+    }
+    parts.all(diagnostic_field_token_well_formed)
+}
+
+fn is_mail_merge_kind(kind: &str) -> bool {
+    matches!(
+        kind.to_ascii_uppercase().as_str(),
+        "ADDRESSBLOCK" | "GREETINGLINE" | "MERGEREC" | "MERGESEQ"
     )
 }
 

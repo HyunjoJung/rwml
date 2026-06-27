@@ -494,7 +494,8 @@ result text, malformed quoted instruction syntax reports `UnsupportedSwitch`,
 and valid broader forms report `NoComputedResult` diagnostics;
 mail-merge helper fields (`ADDRESSBLOCK`, `GREETINGLINE`, `MERGEREC`,
 `MERGESEQ`) are named separately from unknown fields, preserve cached result
-text, and report `NoComputedResult` diagnostics;
+text, malformed quoted instruction syntax reports `UnsupportedSwitch`, and
+valid broader forms report `NoComputedResult` diagnostics;
 reference/index fields (`BIBLIOGRAPHY`, `CITATION`, `INDEX`, `RD`, `TA`,
 `TOA`, `XE`) are named separately from unknown fields, deterministic simple
 literal `RD`/`TA`/`XE` marker fields with field-result format switches render as
@@ -954,7 +955,8 @@ The long-term native Word engine plan is split into the
       results, explicit-default `FILLIN`/`ASK` prompt fields, and literal quoted or single-token `SET` bookmark assignments feeding later plain
       `REF`/direct bookmark references,
       malformed `SET` syntax reporting `UnsupportedSwitch`,
-      inserted-content malformed-syntax diagnostics, mail-merge helper fields,
+      inserted-content malformed-syntax diagnostics, mail-merge helper
+      malformed-syntax diagnostics,
       reference/index fields beyond hidden simple `RD`/`TA`/`XE` markers,
       numbering/list fields, document-structure fields beyond computed `REVNUM`/`SECTION`,
       structurally bounded `SECTIONPAGES`, and
@@ -994,7 +996,8 @@ The long-term native Word engine plan is split into the
       results, explicit-default `FILLIN`/`ASK` prompt fields, and literal quoted or single-token `SET` bookmark assignments feeding later plain
       `REF`/direct bookmark references,
       malformed `SET` syntax reporting `UnsupportedSwitch`,
-      inserted-content malformed-syntax diagnostics, mail-merge helper fields,
+      inserted-content malformed-syntax diagnostics, mail-merge helper
+      malformed-syntax diagnostics,
       reference/index fields beyond hidden simple `RD`/`TA`/`XE` markers,
       numbering/list fields, document-structure fields beyond computed `REVNUM`/`SECTION`,
       structurally bounded `SECTIONPAGES`, and

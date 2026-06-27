@@ -330,8 +330,10 @@ Initial status:
   instruction syntax reports `UnsupportedSwitch`, and valid broader forms report
   `NoComputedResult` until native evaluation is implemented. Mail-merge helper
   fields (`ADDRESSBLOCK`, `GREETINGLINE`,
-  `MERGEREC`, `MERGESEQ`) are named separately from unknown fields and report
-  `NoComputedResult` until native merge-record evaluation is implemented. The
+  `MERGEREC`, `MERGESEQ`) are named separately from unknown fields, malformed
+  quoted instruction syntax reports `UnsupportedSwitch`, and valid broader forms
+  report `NoComputedResult` until native merge-record evaluation is implemented.
+  The
   reference/index fields (`BIBLIOGRAPHY`, `CITATION`, `INDEX`, `RD`, `TA`,
   `TOA`, `XE`) are named separately from unknown fields, deterministic simple
   literal `RD`/`TA`/`XE` marker fields with field-result format switches render
@@ -803,7 +805,9 @@ Initial status:
   from unknown fields, preserve cached text, report malformed quoted syntax as
   `UnsupportedSwitch`, and keep valid broader forms as `NoComputedResult`
   diagnostics. Mail-merge helper fields are named separately from unknown
-  fields and preserve cached text with `NoComputedResult` diagnostics.
+  fields, preserve cached text, report malformed quoted syntax as
+  `UnsupportedSwitch`, and keep valid broader forms as `NoComputedResult`
+  diagnostics.
   Reference/index fields are named separately from unknown fields; simple
   literal `RD`/`TA`/`XE` marker fields with field-result format switches render
   as hidden output, invalid marker syntax reports `UnsupportedSwitch`, while
@@ -1091,7 +1095,7 @@ The next useful implementation batch is:
    prompt fields, and literal quoted or single-token `SET` bookmark
    assignments feeding later plain `REF`/direct bookmark references,
    malformed `SET` syntax reporting `UnsupportedSwitch`,
-   inserted-content fields, mail-merge helper fields,
+   inserted-content fields, mail-merge helper malformed-syntax diagnostics,
    reference/index fields beyond hidden simple `RD`/`TA`/`XE` markers,
    numbering/list fields, document-structure fields
    beyond computed `REVNUM`/`SECTION`, structurally bounded `SECTIONPAGES`,
