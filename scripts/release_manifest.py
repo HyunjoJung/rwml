@@ -683,6 +683,10 @@ def corpus_manifest_summary(path: Path) -> dict[str, Any]:
                     )
                 if warning == "-":
                     raise ValueError(f"{path} row has invalid warning token: -")
+                if not warning.isidentifier():
+                    raise ValueError(
+                        f"{path} row has non-canonical warning token: {warning}"
+                    )
                 if warning in row_warnings:
                     raise ValueError(
                         f"{path} row has duplicate warning token: {warning}"
