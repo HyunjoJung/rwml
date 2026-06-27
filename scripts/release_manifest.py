@@ -139,6 +139,8 @@ def hygiene_summary(path: Path | None) -> dict[str, Any] | None:
         raise ValueError(f"{path} does not contain a boolean field named 'passed'")
     if not isinstance(findings, list):
         raise ValueError(f"{path} does not contain a list field named 'findings'")
+    if any(not isinstance(finding, dict) for finding in findings):
+        raise ValueError(f"{path} hygiene finding is not an object")
     if passed and findings:
         raise ValueError(f"{path} cannot pass with hygiene findings")
     if not passed and not findings:
