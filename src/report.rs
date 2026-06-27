@@ -2036,9 +2036,69 @@ fn toc_entry_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     }
     #[cfg(not(feature = "docx"))]
     {
-        let _ = instruction;
-        FieldEvaluationReason::NoComputedResult
+        if supported_toc_entry_syntax(instruction) {
+            FieldEvaluationReason::NoComputedResult
+        } else {
+            FieldEvaluationReason::UnsupportedSwitch
+        }
     }
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_toc_entry_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str).peekable();
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if !kind.eq_ignore_ascii_case("TC")
+        || diagnostic_name_token(parts.next().unwrap_or("")).is_none()
+    {
+        return false;
+    }
+    let mut entry_type = false;
+    let mut level = false;
+    while let Some(part) = parts.next() {
+        if part.eq_ignore_ascii_case("\\f") {
+            let Some(value) = parts.next_if(|next| !next.starts_with('\\')) else {
+                return false;
+            };
+            if entry_type || diagnostic_identifier_token(value).is_none() {
+                return false;
+            }
+            entry_type = true;
+            continue;
+        }
+        if let Some(value) = strip_ascii_switch_prefix(part, "\\f") {
+            if value.is_empty() || entry_type || diagnostic_identifier_token(value).is_none() {
+                return false;
+            }
+            entry_type = true;
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\l") {
+            let Some(value) = parts.next_if(|next| !next.starts_with('\\')) else {
+                return false;
+            };
+            if level || parse_toc_level_for_report(value).is_none() {
+                return false;
+            }
+            level = true;
+            continue;
+        }
+        if let Some(value) = strip_ascii_switch_prefix(part, "\\l") {
+            if value.is_empty() || level || parse_toc_level_for_report(value).is_none() {
+                return false;
+            }
+            level = true;
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\n") {
+            continue;
+        }
+        return false;
+    }
+    true
 }
 
 fn numbering_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -2770,6 +2830,12 @@ fn parse_toc_outline_range_for_report(range: &str) -> Option<(u8, u8)> {
     ((1..=9).contains(&start) && start <= end && end <= 9).then_some((start, end))
 }
 
+#[cfg(not(feature = "docx"))]
+fn parse_toc_level_for_report(value: &str) -> Option<u8> {
+    let level = diagnostic_name_token(value)?.parse::<u8>().ok()?;
+    (1..=9).contains(&level).then_some(level)
+}
+
 fn instruction_parts(s: &str) -> Vec<String> {
     let mut parts = Vec::new();
     let mut current = String::new();
@@ -3407,6 +3473,19 @@ mod tests {
         );
         assert_eq!(
             super::revision_number_uncomputed_reason(r"REVNUM \x"),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_toc_entry_diagnostics_reject_malformed_tails() {
+        assert_eq!(
+            super::toc_entry_uncomputed_reason(r#"TC "Entry" \f A \l 2"#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::toc_entry_uncomputed_reason(r#"TC "Entry" \l "2"#),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
     }
