@@ -144,6 +144,17 @@ class RenderValidateReportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "count is invalid: render_warnings"):
             render_validate.validation_report([row], recall_min=0.8)
 
+    def test_validation_report_rejects_measured_skip_rows(self):
+        row = render_validate.ValidationRow(
+            document="sample.docx",
+            status="skip",
+            recall=1.0,
+            reason="render failed",
+        )
+
+        with self.assertRaisesRegex(ValueError, "skipped row has metrics"):
+            render_validate.validation_report([row], recall_min=0.8)
+
     def test_validation_report_evaluates_release_thresholds(self):
         rows = [
             render_validate.ValidationRow(

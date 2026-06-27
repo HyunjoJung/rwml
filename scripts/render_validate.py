@@ -223,6 +223,19 @@ def validation_report(
                 not isinstance(value, int) or isinstance(value, bool) or value < 0
             ):
                 raise ValueError(f"count is invalid: {metric}")
+        if row.status == "skip" and any(
+            getattr(row, metric) is not None
+            for metric in (
+                "recall",
+                "rdoc_pages",
+                "reference_pages",
+                "page_ratio",
+                "ahash_similarity",
+                "render_warnings",
+                "render_warning_kinds",
+            )
+        ):
+            raise ValueError("skipped row has metrics")
     if not is_finite_number(recall_min):
         raise ValueError(f"non-finite recall threshold: {recall_min}")
     if recall_min < 0:
