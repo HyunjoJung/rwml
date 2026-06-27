@@ -513,6 +513,27 @@ class ReleaseManifestTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "gate contains non-finite value"):
                 release_manifest.report_summary(validation)
 
+    def test_report_summary_rejects_non_canonical_gate_keys(self):
+        for key in ("mean recall", "\u8a08"):
+            with self.subTest(key=key):
+                with tempfile.TemporaryDirectory() as tmp:
+                    validation = pathlib.Path(tmp) / "render-validation.json"
+                    validation.write_text(
+                        json.dumps(
+                            {
+                                "summary": {"documents": 1},
+                                "gate": {"passed": True, "checks": [], key: 1},
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
+
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        f"gate key is invalid: {key}",
+                    ):
+                        release_manifest.report_summary(validation)
+
     def test_report_summary_rejects_non_object_gate(self):
         with tempfile.TemporaryDirectory() as tmp:
             validation = pathlib.Path(tmp) / "render-validation.json"

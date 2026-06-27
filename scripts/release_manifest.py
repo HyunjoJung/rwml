@@ -135,6 +135,9 @@ def report_summary(path: Path) -> dict[str, Any]:
     if gate is not None and not isinstance(gate, dict):
         raise ValueError(f"{path} gate is not a JSON object")
     if gate is not None:
+        for key in gate:
+            if not key or not key.isascii() or not key.isidentifier():
+                raise ValueError(f"{path} gate key is invalid: {key}")
         if not isinstance(gate.get("passed"), bool):
             raise ValueError(f"{path} gate passed is not a boolean")
         if not isinstance(gate.get("checks"), list):
