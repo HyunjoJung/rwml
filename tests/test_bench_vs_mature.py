@@ -112,6 +112,13 @@ class BenchVsMatureReportTests(unittest.TestCase):
         self.assertEqual(checks["scored"]["actual"], 2)
         self.assertFalse(checks["scored"]["passed"])
 
+    def test_benchmark_gate_rejects_non_finite_thresholds(self):
+        with self.assertRaisesRegex(ValueError, "non-finite threshold"):
+            bench_vs_mature.benchmark_gate(
+                {"poi_recall_mean": 1.0},
+                {"min_poi_recall_mean": float("nan")},
+            )
+
     def test_write_json_report_rejects_non_finite_values(self):
         with tempfile.TemporaryDirectory() as tmp:
             output = pathlib.Path(tmp) / "benchmark.json"
