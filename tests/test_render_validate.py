@@ -73,6 +73,31 @@ class RenderValidateReportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "document path is invalid"):
             render_validate.validation_report([row], recall_min=0.8)
 
+    def test_validation_report_rejects_malformed_documents(self):
+        cases = [
+            (1, "document must be a string"),
+            ("", "document must not be empty"),
+            (" sample.docx", "document must not have surrounding whitespace"),
+        ]
+        for document, message in cases:
+            with self.subTest(document=document):
+                row = render_validate.ValidationRow(
+                    document=document,
+                    status="skip",
+                    reason="render failed",
+                )
+
+                try:
+                    render_validate.validation_report([row], recall_min=0.8)
+                except ValueError as exc:
+                    self.assertRegex(str(exc), message)
+                except Exception as exc:
+                    self.fail(
+                        f"expected ValueError, got {type(exc).__name__}: {exc}"
+                    )
+                else:
+                    self.fail("ValueError not raised")
+
     def test_validation_report_rejects_invalid_status(self):
         row = render_validate.ValidationRow(
             document="sample.docx",

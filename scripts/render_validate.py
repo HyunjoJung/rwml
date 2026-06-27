@@ -193,6 +193,14 @@ def validation_report(
     thresholds: dict | None = None,
 ) -> dict:
     for row in rows:
+        if not isinstance(row.document, str):
+            raise ValueError("document must be a string")
+        if not row.document.strip():
+            raise ValueError("document must not be empty")
+        if row.document != row.document.strip():
+            raise ValueError(
+                f"document must not have surrounding whitespace: {row.document}"
+            )
         if "/" in row.document or "\\" in row.document:
             raise ValueError(f"document path is invalid: {row.document}")
         if row.status not in {"pass", "fail", "skip"}:
