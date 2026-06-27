@@ -1402,7 +1402,7 @@ fn note_ref_field_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" NOTEREF LaterNote \p "><w:r><w:t>stale below note</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NOTEREF LaterNote \p \* Upper "><w:r><w:t>stale uppercase below note</w:t></w:r></w:fldSimple></w:p><w:del><w:r><w:footnoteReference w:id="99"/></w:r></w:del><w:p><w:r><w:t>First reference</w:t></w:r><w:bookmarkStart w:id="7" w:name="FootOne"/><w:r><w:footnoteReference w:id="1"/></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:r><w:t>Second reference</w:t></w:r><w:bookmarkStart w:id="8" w:name="LaterNote"/><w:r><w:footnoteReference w:id="2"/></w:r><w:bookmarkEnd w:id="8"/></w:p><w:p><w:fldSimple w:instr=" NOTEREF FootOne \h "><w:r><w:t>stale note mark</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NOTEREF FootOne \f \* MERGEFORMAT "><w:r><w:t>stale formatted note mark</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NOTEREF FootOne \p "><w:r><w:t>stale above note</w:t></w:r></w:fldSimple></w:p><w:p><w:bookmarkStart w:id="9" w:name="EndOne"/><w:r><w:endnoteReference w:id="3"/></w:r><w:bookmarkEnd w:id="9"/></w:p><w:p><w:fldSimple w:instr=" NOTEREF EndOne "><w:r><w:t>stale endnote mark</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> NOTEREF LaterNote </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale complex note mark</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:p><w:fldSimple w:instr=" NOTEREF MissingNote "><w:r><w:t>stale missing note</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" NOTEREF LaterNote \p "><w:r><w:t>stale below note</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NOTEREF LaterNote \p \* Upper "><w:r><w:t>stale uppercase below note</w:t></w:r></w:fldSimple></w:p><w:del><w:r><w:footnoteReference w:id="99"/></w:r></w:del><w:p><w:r><w:t>First reference</w:t></w:r><w:bookmarkStart w:id="7" w:name="FootOne"/><w:r><w:footnoteReference w:id="1"/></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:r><w:t>Second reference</w:t></w:r><w:bookmarkStart w:id="8" w:name="LaterNote"/><w:r><w:footnoteReference w:id="2"/></w:r><w:bookmarkEnd w:id="8"/></w:p><w:p><w:fldSimple w:instr=" NOTEREF FootOne \h "><w:r><w:t>stale note mark</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FTNREF FootOne "><w:r><w:t>stale legacy note mark</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NOTEREF FootOne \f \* MERGEFORMAT "><w:r><w:t>stale formatted note mark</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NOTEREF FootOne \p "><w:r><w:t>stale above note</w:t></w:r></w:fldSimple></w:p><w:p><w:bookmarkStart w:id="9" w:name="EndOne"/><w:r><w:endnoteReference w:id="3"/></w:r><w:bookmarkEnd w:id="9"/></w:p><w:p><w:fldSimple w:instr=" NOTEREF EndOne "><w:r><w:t>stale endnote mark</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> NOTEREF LaterNote </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale complex note mark</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:p><w:fldSimple w:instr=" NOTEREF MissingNote "><w:r><w:t>stale missing note</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
         (
             "word/footnotes.xml",
@@ -7551,7 +7551,7 @@ fn docx_note_ref_field_computes_bookmarked_note_marks_and_relative_position() {
     let doc = Document::open(&note_ref_field_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 8);
+    assert_eq!(fields.len(), 9);
     assert!(fields.iter().all(|field| field.kind == FieldKind::NoteRef));
     assert_eq!(fields[0].instruction, "NOTEREF LaterNote \\p");
     assert_eq!(fields[0].result, "stale below note");
@@ -7561,23 +7561,26 @@ fn docx_note_ref_field_computes_bookmarked_note_marks_and_relative_position() {
     assert_eq!(fields[1].computed_result.as_deref(), Some("BELOW"));
     assert_eq!(fields[2].instruction, "NOTEREF FootOne \\h");
     assert_eq!(fields[2].computed_result.as_deref(), Some("1"));
-    assert_eq!(fields[3].instruction, "NOTEREF FootOne \\f \\* MERGEFORMAT");
+    assert_eq!(fields[3].instruction, "FTNREF FootOne");
     assert_eq!(fields[3].computed_result.as_deref(), Some("1"));
-    assert_eq!(fields[4].instruction, "NOTEREF FootOne \\p");
-    assert_eq!(fields[4].computed_result.as_deref(), Some("above"));
-    assert_eq!(fields[5].instruction, "NOTEREF EndOne");
-    assert_eq!(fields[5].computed_result.as_deref(), Some("1"));
-    assert_eq!(fields[6].instruction, "NOTEREF LaterNote");
-    assert_eq!(fields[6].result, "stale complex note mark");
-    assert_eq!(fields[6].computed_result.as_deref(), Some("2"));
-    assert_eq!(fields[7].instruction, "NOTEREF MissingNote");
-    assert_eq!(fields[7].computed_result, None);
+    assert_eq!(fields[4].instruction, "NOTEREF FootOne \\f \\* MERGEFORMAT");
+    assert_eq!(fields[4].computed_result.as_deref(), Some("1"));
+    assert_eq!(fields[5].instruction, "NOTEREF FootOne \\p");
+    assert_eq!(fields[5].computed_result.as_deref(), Some("above"));
+    assert_eq!(fields[6].instruction, "NOTEREF EndOne");
+    assert_eq!(fields[6].computed_result.as_deref(), Some("1"));
+    assert_eq!(fields[7].instruction, "NOTEREF LaterNote");
+    assert_eq!(fields[7].result, "stale complex note mark");
+    assert_eq!(fields[7].computed_result.as_deref(), Some("2"));
+    assert_eq!(fields[8].instruction, "NOTEREF MissingNote");
+    assert_eq!(fields[8].computed_result, None);
 
     let main_text = doc.main_text();
     assert!(
         !main_text.contains("stale below note")
             && !main_text.contains("stale uppercase below note")
             && !main_text.contains("stale note mark")
+            && !main_text.contains("stale legacy note mark")
             && !main_text.contains("stale formatted note mark")
             && !main_text.contains("stale above note")
             && !main_text.contains("stale endnote mark")
