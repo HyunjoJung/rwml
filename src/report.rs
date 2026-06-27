@@ -1877,8 +1877,118 @@ fn action_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
         }
     }
     #[cfg(not(feature = "docx"))]
-    let _ = instruction;
+    {
+        if supported_action_syntax(instruction) {
+            return FieldEvaluationReason::NoComputedResult;
+        }
+    }
     FieldEvaluationReason::UnsupportedSwitch
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_action_syntax(instruction: &str) -> bool {
+    supported_print_syntax(instruction) || supported_action_button_syntax(instruction)
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_print_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if !kind.eq_ignore_ascii_case("PRINT") {
+        return false;
+    }
+    let Some(first) = parts.next() else {
+        return false;
+    };
+    if first.eq_ignore_ascii_case("\\p") {
+        let Some(group) = parts.next() else {
+            return false;
+        };
+        let mut text_format = false;
+        return diagnostic_identifier_token(group).is_some()
+            && quoted_action_text_for_report(parts.next()).is_some()
+            && supported_field_format_tail_for_report(&mut parts, &mut text_format);
+    }
+    if let Some(group) = strip_ascii_switch_prefix(first, "\\p") {
+        let mut text_format = false;
+        return diagnostic_identifier_token(group).is_some()
+            && quoted_action_text_for_report(parts.next()).is_some()
+            && supported_field_format_tail_for_report(&mut parts, &mut text_format);
+    }
+    if action_text_for_report(first).is_none() {
+        return false;
+    }
+    let mut text_format = false;
+    let mut saw_format = false;
+    while let Some(part) = parts.next() {
+        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        }) else {
+            return false;
+        };
+        if accepted {
+            saw_format = true;
+            continue;
+        }
+        if saw_format || action_text_for_report(part).is_none() {
+            return false;
+        }
+    }
+    true
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_action_button_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if !kind.eq_ignore_ascii_case("GOTOBUTTON") && !kind.eq_ignore_ascii_case("MACROBUTTON") {
+        return false;
+    }
+    let Some(target) = parts.next() else {
+        return false;
+    };
+    if diagnostic_identifier_token(target).is_none() {
+        return false;
+    }
+    let mut display_parts = Vec::new();
+    let mut text_format = false;
+    let mut saw_format = false;
+    while let Some(part) = parts.next() {
+        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        }) else {
+            return false;
+        };
+        if accepted {
+            saw_format = true;
+            continue;
+        }
+        if saw_format || part.starts_with('\\') {
+            return false;
+        }
+        display_parts.push(part);
+    }
+    display_parts.is_empty() || action_text_for_report(&display_parts.join(" ")).is_some()
+}
+
+#[cfg(not(feature = "docx"))]
+fn action_text_for_report(token: &str) -> Option<&str> {
+    let text = diagnostic_literal_token(token)?;
+    (!text.is_empty() && !text.starts_with('\\')).then_some(text)
+}
+
+#[cfg(not(feature = "docx"))]
+fn quoted_action_text_for_report(token: Option<&str>) -> Option<&str> {
+    let token = token?;
+    token
+        .starts_with('"')
+        .then(|| action_text_for_report(token))?
 }
 
 fn inserted_content_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -4229,6 +4339,23 @@ mod tests {
         );
         assert_eq!(
             super::numbering_uncomputed_reason(r"BIDIOUTLINE \x"),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_action_diagnostics_reject_malformed_format_tails() {
+        assert_eq!(
+            super::action_uncomputed_reason(r#"PRINT \p ReportBox "0 0 moveto""#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::action_uncomputed_reason(r#"MACROBUTTON RunReport \* MERGEFORMAT"#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::action_uncomputed_reason(r#"MACROBUTTON RunReport Run \* Upper Again"#),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
     }
