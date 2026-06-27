@@ -357,6 +357,17 @@ class ReleaseManifestTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "gate is not a JSON object"):
                 release_manifest.report_summary(validation)
 
+    def test_report_summary_rejects_non_boolean_gate_passed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            validation = pathlib.Path(tmp) / "render-validation.json"
+            validation.write_text(
+                json.dumps({"summary": {"documents": 1}, "gate": {"passed": "yes"}}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "gate passed is not a boolean"):
+                release_manifest.report_summary(validation)
+
     def test_cli_writes_manifest_json(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
