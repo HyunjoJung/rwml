@@ -1556,7 +1556,7 @@ fn unsupported_field_reason(field: &Field) -> Option<FieldEvaluationReason> {
         FieldKind::Action(_) => Some(action_uncomputed_reason(&field.instruction)),
         FieldKind::Compatibility(_) => Some(compatibility_uncomputed_reason(&field.instruction)),
         FieldKind::Barcode(_) => Some(barcode_uncomputed_reason(&field.instruction)),
-        FieldKind::FormField(_) => Some(FieldEvaluationReason::NoComputedResult),
+        FieldKind::FormField(_) => Some(form_field_uncomputed_reason(&field.instruction)),
         FieldKind::Filename => Some(filename_uncomputed_reason(&field.instruction)),
         FieldKind::Hyperlink => Some(FieldEvaluationReason::UnsupportedSwitch),
         FieldKind::MergeField => Some(FieldEvaluationReason::UnsupportedSwitch),
@@ -1898,6 +1898,25 @@ fn supported_barcode_syntax(instruction: &str) -> bool {
         value_tokens += 1;
     }
     value_tokens >= required_value_tokens
+}
+
+fn form_field_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
+    if supported_form_field_syntax(instruction) {
+        FieldEvaluationReason::NoComputedResult
+    } else {
+        FieldEvaluationReason::UnsupportedSwitch
+    }
+}
+
+fn supported_form_field_syntax(instruction: &str) -> bool {
+    supported_opaque_field_syntax(instruction, is_form_field_kind)
+}
+
+fn is_form_field_kind(kind: &str) -> bool {
+    matches!(
+        kind.to_ascii_uppercase().as_str(),
+        "FORMCHECKBOX" | "FORMDROPDOWN" | "FORMTEXT"
+    )
 }
 
 fn supported_opaque_field_syntax(instruction: &str, is_kind: fn(&str) -> bool) -> bool {

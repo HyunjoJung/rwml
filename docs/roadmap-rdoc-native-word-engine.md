@@ -414,7 +414,8 @@ Initial status:
   separately from unknown fields; deterministic `w:ffData` checkbox
   checked/default states, dropdown result/default selections, explicit
   non-empty text-input current values, and empty-current text-input defaults
-  compute when available, while broader protected-form behavior reports
+  compute when available; malformed quoted instruction syntax reports
+  `UnsupportedSwitch`, while valid broader protected-form behavior reports
   `NoComputedResult`. The
   `.docx` field side table follows the accepted/current revision and
   `mc:AlternateContent` first-branch policies, including direct, inserted, and
@@ -866,8 +867,9 @@ Initial status:
   Legacy form fields are named separately from unknown fields; deterministic
   `w:ffData` checkbox checked/default states, dropdown result/default
   selections, explicit non-empty text-input current values, and empty-current
-  text-input defaults compute when available, while broader protected-form
-  behavior preserves cached text with `NoComputedResult` diagnostics.
+  text-input defaults compute when available; malformed quoted syntax reports
+  `UnsupportedSwitch`, while valid broader protected-form behavior preserves
+  cached text with `NoComputedResult` diagnostics.
   Unambiguous
   `.docx` `REF` bookmark fields, including multi-paragraph bookmark ranges and
   simple inline tabs, line breaks, no-break hyphens, and deterministic
@@ -1105,7 +1107,7 @@ The next useful implementation batch is:
    hidden validated `ADVANCE`, deterministic simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, operand-preserving or hidden empty displacement controls and `SYMBOL`,
    remaining display/layout fields, action/automation fields beyond deterministic quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms,
    compatibility/private malformed-syntax diagnostics, barcode
-   fields, legacy form fields beyond deterministic `w:ffData` checkbox checked/default states,
+   fields, legacy form malformed-syntax diagnostics and fields beyond deterministic `w:ffData` checkbox checked/default states,
    dropdown result/default selections, explicit non-empty text-input current
    values, and empty-current text-input default results, and `NOTEREF`/`FTNREF`, remaining unsupported
    value-changing REF cases beyond explicit numbered-paragraph `\n`/`\n \t`/

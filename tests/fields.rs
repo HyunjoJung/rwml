@@ -6831,6 +6831,69 @@ fn docx_protected_legacy_form_fields_preserve_cached_text() {
 }
 
 #[test]
+fn docx_protected_legacy_form_diagnostics_split_valid_cached_from_malformed_syntax() {
+    let doc = Document::open(&docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/settings.xml",
+            r#"<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:documentProtection w:edit="forms" w:enforcement="1"/></w:settings>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" FORMCHECKBOX "><w:ffData><w:checkBox><w:checked w:val="true"/></w:checkBox></w:ffData><w:r><w:t>cached protected checked</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FORMTEXT &quot;bad "><w:r><w:t>cached malformed form text</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ]))
+    .expect("fixture opens");
+
+    let fields = doc.fields();
+    assert_eq!(fields.len(), 2);
+    assert_eq!(
+        fields[0].kind,
+        FieldKind::FormField("FORMCHECKBOX".to_string())
+    );
+    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(fields[1].kind, FieldKind::FormField("FORMTEXT".to_string()));
+    assert_eq!(fields[1].instruction, r#"FORMTEXT "bad "#);
+    assert_eq!(fields[1].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![
+            FieldKindCount {
+                kind: FieldKind::FormField("FORMCHECKBOX".to_string()),
+                count: 1,
+            },
+            FieldKindCount {
+                kind: FieldKind::FormField("FORMTEXT".to_string()),
+                count: 1,
+            },
+        ]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::NoComputedResult,
+                count: 1,
+            },
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::UnsupportedSwitch,
+                count: 1,
+            },
+        ]
+    );
+    assert!(doc.main_text().contains("cached malformed form text"));
+}
+
+#[test]
 fn docx_simple_field_result_preserves_cached_inline_markers() {
     let doc = Document::open(&simple_cached_result_inline_marker_docx()).expect("fixture opens");
     let fields = doc.fields();
