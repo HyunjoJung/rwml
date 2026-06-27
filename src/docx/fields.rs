@@ -5840,26 +5840,8 @@ fn formula_instruction(instruction: &str) -> Option<FormulaInstruction> {
     if format_index == 0 {
         return None;
     }
-    let mut index = tail_start;
-    while index < tokens.len() {
-        let part = &tokens[index];
-        if part == "\\*" {
-            index += 1;
-            if !is_neutral_field_format_switch(tokens.get(index)?) {
-                return None;
-            }
-            index += 1;
-            continue;
-        }
-        if let Some(format) = part.strip_prefix("\\*") {
-            if !is_neutral_field_format_switch(format) {
-                return None;
-            }
-            index += 1;
-            continue;
-        }
-        return None;
-    }
+    let mut tail = tokens[tail_start..].iter().map(String::as_str);
+    accept_neutral_field_format_tail(&mut tail)?;
     Some(FormulaInstruction {
         expression: tokens[..format_index].join(" "),
         number_format: Some(picture),
@@ -10320,6 +10302,22 @@ mod tests {
         assert_eq!(
             format_page_number(1_005, Some(PageNumberFormat::CardText)).as_deref(),
             Some("one thousand five")
+        );
+    }
+
+    #[test]
+    fn formula_numeric_pictures_use_common_neutral_format_tail() {
+        assert_eq!(
+            computed_dynamic_result(r#"= 10 / 4 \# "0.00" \* MERGEFORMAT"#).as_deref(),
+            Some("2.50")
+        );
+        assert_eq!(
+            computed_dynamic_result(r#"= 10 / 4 \#"0.0" \*CHARFORMAT"#).as_deref(),
+            Some("2.5")
+        );
+        assert_eq!(
+            computed_dynamic_result(r#"= 10 / 4 \# "0.00" \* Upper"#),
+            None
         );
     }
 
