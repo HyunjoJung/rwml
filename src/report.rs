@@ -1872,6 +1872,7 @@ fn display_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
             || supported_eq_script_syntax(instruction)
             || supported_eq_fraction_syntax(instruction)
             || supported_eq_radical_syntax(instruction)
+            || supported_eq_list_syntax(instruction)
         {
             return FieldEvaluationReason::NoComputedResult;
         }
@@ -2313,6 +2314,66 @@ fn split_eq_radical_operands_for_report(inner: &str) -> Option<(&str, Option<&st
         Some(index) => Some((&inner[..index], Some(&inner[index + 1..]))),
         None => Some((inner, None)),
     }
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_eq_list_syntax(instruction: &str) -> bool {
+    let Some(expression) = eq_expression_for_report(instruction) else {
+        return false;
+    };
+    let Some(body) = strip_ascii_switch_prefix(expression.trim_start(), "\\l") else {
+        return false;
+    };
+    let Some(inner) = body
+        .strip_prefix('(')
+        .and_then(|body| body.strip_suffix(')'))
+    else {
+        return false;
+    };
+    split_eq_list_operands_for_report(inner).is_some_and(|operands| {
+        operands
+            .iter()
+            .all(|operand| eq_operand_for_report(operand))
+    })
+}
+
+#[cfg(not(feature = "docx"))]
+fn split_eq_list_operands_for_report(inner: &str) -> Option<Vec<&str>> {
+    let mut depth = 0usize;
+    let mut operands = Vec::new();
+    let mut start = 0usize;
+    let mut in_quotes = false;
+    let mut escaped = false;
+    for (index, ch) in inner.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' => escaped = true,
+            '"' => in_quotes = !in_quotes,
+            '(' if !in_quotes => depth += 1,
+            ')' if !in_quotes => depth = depth.checked_sub(1)?,
+            ',' | ';' if !in_quotes && depth == 0 => {
+                let operand = &inner[start..index];
+                if operand.trim().is_empty() {
+                    return None;
+                }
+                operands.push(operand);
+                start = index + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    if in_quotes || escaped || depth != 0 {
+        return None;
+    }
+    let operand = &inner[start..];
+    if operand.trim().is_empty() {
+        return None;
+    }
+    operands.push(operand);
+    Some(operands)
 }
 
 fn action_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -4880,6 +4941,19 @@ mod tests {
         );
         assert_eq!(
             super::display_uncomputed_reason(r"EQ \r()"),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_display_diagnostics_accept_valid_eq_list() {
+        assert_eq!(
+            super::display_uncomputed_reason(r"EQ \l(A,B)"),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::display_uncomputed_reason(r"EQ \l()"),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
     }
