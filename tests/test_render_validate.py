@@ -134,6 +134,16 @@ class RenderValidateReportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "metric is out of range: recall"):
             render_validate.validation_report([row], recall_min=0.8)
 
+    def test_validation_report_rejects_invalid_count_metrics(self):
+        row = render_validate.ValidationRow(
+            document="sample.docx",
+            status="pass",
+            render_warnings=-1,
+        )
+
+        with self.assertRaisesRegex(ValueError, "count is invalid: render_warnings"):
+            render_validate.validation_report([row], recall_min=0.8)
+
     def test_validation_report_evaluates_release_thresholds(self):
         rows = [
             render_validate.ValidationRow(
