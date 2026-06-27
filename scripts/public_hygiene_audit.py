@@ -82,6 +82,10 @@ LOCAL_PATH_PATTERNS = [
         "windows_profile_env_path",
         re.compile(r"%(?:USERPROFILE|APPDATA|LOCALAPPDATA)%[/\\]", re.IGNORECASE),
     ),
+    (
+        "powershell_profile_env_path",
+        re.compile(r"\$env:(?:USERPROFILE|APPDATA|LOCALAPPDATA)[/\\]", re.IGNORECASE),
+    ),
 ]
 
 OFFICE_TEXT_PART_SUFFIXES = (".xml", ".rels")
