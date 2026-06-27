@@ -285,6 +285,43 @@ class ReleaseManifestTests(unittest.TestCase):
             },
         )
 
+    def test_cli_rejects_non_finite_manifest_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            artifact = root / "rdoc.tar.gz"
+            validation = root / "render-validation.json"
+            output = root / "manifest.json"
+            artifact.write_bytes(b"release artifact")
+            validation.write_text(
+                json.dumps(
+                    {
+                        "summary": {"documents": 1, "mean_recall": float("nan")},
+                        "gate": {"passed": True, "checks": []},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--validation-report",
+                    str(validation),
+                    "--output",
+                    str(output),
+                    str(artifact),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertFalse(output.exists())
+
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("Out of range float values", completed.stderr)
+
     def test_manifest_embeds_public_corpus_manifest_summaries_without_rows(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)

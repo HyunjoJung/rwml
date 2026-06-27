@@ -680,7 +680,20 @@ def main(argv: list[str] | None = None) -> int:
         print(f"release_manifest: {error}", file=sys.stderr)
         return 2
 
-    payload = json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    try:
+        payload = (
+            json.dumps(
+                manifest,
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+                allow_nan=False,
+            )
+            + "\n"
+        )
+    except ValueError as error:
+        print(f"release_manifest: {error}", file=sys.stderr)
+        return 2
     if args.output is None:
         sys.stdout.write(payload)
     else:
