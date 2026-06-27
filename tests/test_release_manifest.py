@@ -329,8 +329,10 @@ class ReleaseManifestTests(unittest.TestCase):
                         "python3 scripts/public_hygiene_audit.py",
                         "cargo fmt --all -- --check",
                         "cargo clippy --all-targets -- -D warnings",
+                        "cargo clippy --all-targets --all-features -- -D warnings",
                         "cargo test --all-targets",
-                        "cargo test --doc",
+                        "cargo test --doc --all-features",
+                        "cargo doc --no-deps --all-features",
                     ],
                     "render": [
                         "cargo test --all-targets --features render",

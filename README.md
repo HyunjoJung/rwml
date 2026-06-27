@@ -1028,9 +1028,12 @@ The long-term native Word engine plan is split into the
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). The local gate is `cargo fmt --all -- --check`,
-`cargo clippy --all-targets --all-features -- -D warnings`, `cargo test --all-features`,
-`cargo doc --no-deps`.
+See [CONTRIBUTING.md](CONTRIBUTING.md). The full local gate is
+`python3 scripts/public_hygiene_audit.py`, `cargo fmt --all -- --check`,
+`cargo clippy --all-targets -- -D warnings`,
+`cargo clippy --all-targets --all-features -- -D warnings`,
+`cargo test --all-targets`, `cargo test --all-targets --features render`,
+`cargo test --doc --all-features`, and `cargo doc --no-deps --all-features`.
 
 ## License
 
