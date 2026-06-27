@@ -2463,9 +2463,65 @@ fn formula_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     }
     #[cfg(not(feature = "docx"))]
     {
-        let _ = instruction;
-        FieldEvaluationReason::NoComputedResult
+        if supported_formula_syntax(instruction) {
+            FieldEvaluationReason::NoComputedResult
+        } else {
+            FieldEvaluationReason::UnsupportedSwitch
+        }
     }
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_formula_syntax(instruction: &str) -> bool {
+    let Some(body) = instruction.trim().strip_prefix('=') else {
+        return false;
+    };
+    let body = body.trim();
+    if body.is_empty() {
+        return false;
+    }
+    let tokens = instruction_parts(body);
+    let Some(format_index) = tokens.iter().position(|part| {
+        part == "\\#"
+            || strip_ascii_switch_prefix(part, "\\#").is_some_and(|picture| !picture.is_empty())
+    }) else {
+        if let Some(tail_index) = tokens
+            .iter()
+            .position(|part| part == "\\*" || part.starts_with("\\*"))
+        {
+            if tail_index == 0 {
+                return false;
+            }
+            let mut tail = tokens[tail_index..].iter().map(String::as_str);
+            let mut text_format = false;
+            return supported_field_format_tail_for_report(&mut tail, &mut text_format);
+        }
+        return true;
+    };
+    if format_index == 0 {
+        return false;
+    }
+    let (picture, tail_start) = if tokens[format_index] == "\\#" {
+        let Some(picture) = tokens.get(format_index + 1) else {
+            return false;
+        };
+        (picture.as_str(), format_index + 2)
+    } else if let Some(picture) = strip_ascii_switch_prefix(&tokens[format_index], "\\#") {
+        (picture, format_index + 1)
+    } else {
+        return false;
+    };
+    let valid_picture = if picture.starts_with('"') {
+        diagnostic_literal_token(picture).is_some()
+    } else {
+        diagnostic_literal_token(picture).is_some_and(|picture| !picture.starts_with('\\'))
+    };
+    if !valid_picture {
+        return false;
+    }
+    let mut tail = tokens[tail_start..].iter().map(String::as_str);
+    let mut text_format = false;
+    supported_field_format_tail_for_report(&mut tail, &mut text_format)
 }
 
 fn sequence_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -4186,6 +4242,19 @@ mod tests {
         );
         assert_eq!(
             super::compare_uncomputed_reason(r#"COMPARE \o = "Gold""#),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_formula_diagnostics_reject_malformed_switches() {
+        assert_eq!(
+            super::formula_uncomputed_reason(r#"= CustomerTotal \# "0.00""#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::formula_uncomputed_reason(r#"= 1 \# "0.00"#),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
     }
