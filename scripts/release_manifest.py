@@ -481,6 +481,8 @@ def read_corpus_manifest(path: Path) -> tuple[list[str], list[list[str]]]:
             for column in header:
                 if not column:
                     raise ValueError(f"{path} has empty TSV column")
+                if column != column.strip():
+                    raise ValueError(f"{path} has whitespace-padded TSV column: {column}")
                 if column in seen_columns:
                     raise ValueError(f"{path} has duplicate TSV column: {column}")
                 seen_columns.add(column)
