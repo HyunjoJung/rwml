@@ -785,7 +785,7 @@ impl Ctx {
     }
 
     fn bookmark_wrapper(&mut self, name: Option<&str>, run_xml: &str) -> String {
-        let Some(name) = name.filter(|name| !name.is_empty()) else {
+        let Some(name) = name.filter(|name| Self::valid_bookmark_name(name)) else {
             return run_xml.to_string();
         };
         let id = self.bookmark_id;
@@ -794,6 +794,13 @@ impl Ctx {
             r#"<w:bookmarkStart w:id="{id}" w:name="{}"/>{run_xml}<w:bookmarkEnd w:id="{id}"/>"#,
             esc_attr(name)
         )
+    }
+
+    fn valid_bookmark_name(name: &str) -> bool {
+        !name.trim().is_empty()
+            && !name.starts_with('\\')
+            && !name.contains('"')
+            && !name.chars().any(char::is_whitespace)
     }
 
     fn write_revision_wrapper(

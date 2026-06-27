@@ -1221,6 +1221,26 @@ fn run_builder_adds_bookmark_for_ref_fields() {
 }
 
 #[test]
+fn run_builder_skips_unreferenceable_bookmark_names() {
+    let model = DocBuilder::new()
+        .paragraph_runs([RunBuilder::new("Figure 1").bookmark("Figure 1").build()])
+        .build();
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    assert!(
+        document_xml.contains(r#"<w:t xml:space="preserve">Figure 1</w:t>"#)
+            && !document_xml.contains("<w:bookmarkStart")
+            && !document_xml.contains("<w:bookmarkEnd"),
+        "invalid bookmark name should not be serialized: {document_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("bookmark-sanitized .docx reopens");
+    assert_eq!(reopened.main_text(), "Figure 1");
+}
+
+#[test]
 fn run_builder_adds_page_ref_field() {
     let model = DocBuilder::new()
         .paragraph_runs([RunBuilder::new("Figure 1").bookmark("Figure1").build()])
