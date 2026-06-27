@@ -7617,6 +7617,9 @@ pub(crate) fn supports_display_field_syntax(instruction: &str) -> bool {
     if computed_display_result(instruction).is_some() {
         return true;
     }
+    if symbol_instruction(instruction).is_some() {
+        return true;
+    }
     let Some(spec) = eq_instruction(instruction) else {
         return false;
     };
