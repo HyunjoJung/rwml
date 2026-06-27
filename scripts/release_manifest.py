@@ -656,6 +656,10 @@ def corpus_manifest_summary(path: Path) -> dict[str, Any]:
                 raise ValueError(
                     f"{path} row has non-numeric value for {name}: {row[index]}"
                 )
+            if value >= 0 and str(value) != row[index]:
+                raise ValueError(
+                    f"{path} row has non-canonical numeric value for {name}: {row[index]}"
+                )
             if value < 0:
                 raise ValueError(
                     f"{path} row has negative numeric value for {name}: {row[index]}"
