@@ -1306,15 +1306,17 @@ Rust gates, and optional local render/extraction threshold values. A compact
 `release_evidence` section records a strict-policy status, whether strict local
 evidence enforcement was enabled, which evidence paths were provided, whether
 the strict public-release input set is complete, and which strict inputs are
-still missing. Tagged release automation intentionally emits the non-strict
-policy manifest until local render and extraction reports are generated in the
-workflow. When invoked
+still missing, including public corpus manifest pairs whose document path lists
+do not match. Tagged release automation intentionally emits the non-strict policy
+manifest until local render and extraction reports are generated in the workflow.
+When invoked
 with `--enforce-policy-inputs`, the manifest generator requires a passing public
 hygiene report, the local render-validation report, at least one extraction
 benchmark report, and exactly the public `MANIFEST.tsv` plus
-`RENDER_MANIFEST.tsv` corpus manifest pair, then rejects hygiene, validation, or
-benchmark reports whose compact `gate.passed` is not true or whose recorded
-thresholds are weaker than the named `public-release` policy.
+`RENDER_MANIFEST.tsv` corpus manifest pair with matching document paths, then
+rejects hygiene, validation, or benchmark reports whose compact `gate.passed` is
+not true or whose recorded thresholds are weaker than the named `public-release`
+policy.
 The public hygiene audit also scans bounded decoded byte text views from legacy
 `.doc` files and rejects oversized legacy binaries rather than passing them
 uninspected. For Office OPC packages such as `.docx` and `.xlsx`, it scans
