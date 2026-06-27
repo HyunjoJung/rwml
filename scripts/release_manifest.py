@@ -550,13 +550,14 @@ def corpus_manifest_summary(path: Path) -> dict[str, Any]:
             row_warnings: set[str] = set()
             for warning in warnings.split("|"):
                 warning = warning.strip()
-                if warning:
-                    if warning in row_warnings:
-                        raise ValueError(
-                            f"{path} row has duplicate warning token: {warning}"
-                        )
-                    row_warnings.add(warning)
-                    warning_counts[warning] = warning_counts.get(warning, 0) + 1
+                if not warning:
+                    raise ValueError(f"{path} row has empty warning token")
+                if warning in row_warnings:
+                    raise ValueError(
+                        f"{path} row has duplicate warning token: {warning}"
+                    )
+                row_warnings.add(warning)
+                warning_counts[warning] = warning_counts.get(warning, 0) + 1
 
     return {
         "documents": len(rows),
