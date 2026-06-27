@@ -604,15 +604,25 @@ class ReleaseManifestTests(unittest.TestCase):
                         "summary": {"documents": 1},
                         "gate": {
                             "passed": True,
-                            "checks": [],
-                            "mean_recall": float("nan"),
+                            "checks": [
+                                {
+                                    "metric": "mean_recall",
+                                    "op": ">=",
+                                    "threshold": float("nan"),
+                                    "actual": 1.0,
+                                    "passed": True,
+                                }
+                            ],
                         },
                     }
                 ),
                 encoding="utf-8",
             )
 
-            with self.assertRaisesRegex(ValueError, "gate contains non-finite value"):
+            with self.assertRaisesRegex(
+                ValueError,
+                "gate check threshold is not a finite number",
+            ):
                 release_manifest.report_summary(validation)
 
     def test_report_summary_rejects_non_canonical_gate_keys(self):
@@ -635,6 +645,22 @@ class ReleaseManifestTests(unittest.TestCase):
                         f"gate key is invalid: {key}",
                     ):
                         release_manifest.report_summary(validation)
+
+    def test_report_summary_rejects_unexpected_gate_keys(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            validation = pathlib.Path(tmp) / "render-validation.json"
+            validation.write_text(
+                json.dumps(
+                    {
+                        "summary": {"documents": 1},
+                        "gate": {"passed": True, "checks": [], "note": "extra"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "gate key is invalid: note"):
+                release_manifest.report_summary(validation)
 
     def test_report_summary_rejects_non_object_gate(self):
         with tempfile.TemporaryDirectory() as tmp:
