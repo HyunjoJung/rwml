@@ -455,6 +455,8 @@ def corpus_manifest_summary(path: Path) -> dict[str, Any]:
 
     if header is None:
         raise ValueError(f"{path} is empty")
+    if not rows:
+        raise ValueError(f"{path} does not contain document rows")
 
     numeric_totals: dict[str, int] = {}
     warning_counts: dict[str, int] = {}
