@@ -2528,9 +2528,124 @@ fn prompt_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     }
     #[cfg(not(feature = "docx"))]
     {
-        let _ = instruction;
-        FieldEvaluationReason::NoComputedResult
+        if supported_prompt_syntax(instruction) {
+            FieldEvaluationReason::NoComputedResult
+        } else {
+            FieldEvaluationReason::UnsupportedSwitch
+        }
     }
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_prompt_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if kind.eq_ignore_ascii_case("FILLIN") {
+        return supported_fillin_syntax(parts);
+    }
+    if kind.eq_ignore_ascii_case("ASK") {
+        return supported_ask_syntax(parts);
+    }
+    false
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_fillin_syntax<'a>(mut parts: impl Iterator<Item = &'a str>) -> bool {
+    let mut default = false;
+    let mut text_format = false;
+    let mut ask_once = false;
+    let mut prompt_seen = false;
+    while let Some(part) = parts.next() {
+        if accept_prompt_default_switch(part, &mut parts, &mut default) {
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\o") {
+            if ask_once {
+                return false;
+            }
+            ask_once = true;
+            continue;
+        }
+        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        }) else {
+            return false;
+        };
+        if accepted {
+            continue;
+        }
+        if prompt_seen || prompt_text_token_for_report(part).is_none() {
+            return false;
+        }
+        prompt_seen = true;
+    }
+    true
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_ask_syntax<'a>(mut parts: impl Iterator<Item = &'a str>) -> bool {
+    if diagnostic_identifier_token(parts.next().unwrap_or("")).is_none() {
+        return false;
+    }
+    let Some(prompt) = parts.next() else {
+        return false;
+    };
+    if prompt_text_token_for_report(prompt).is_none() {
+        return false;
+    }
+    let mut default = false;
+    let mut text_format = false;
+    let mut ask_once = false;
+    while let Some(part) = parts.next() {
+        if accept_prompt_default_switch(part, &mut parts, &mut default) {
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\o") {
+            if ask_once {
+                return false;
+            }
+            ask_once = true;
+            continue;
+        }
+        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        }) else {
+            return false;
+        };
+        if !accepted {
+            return false;
+        }
+    }
+    true
+}
+
+#[cfg(not(feature = "docx"))]
+fn accept_prompt_default_switch<'a>(
+    part: &str,
+    parts: &mut impl Iterator<Item = &'a str>,
+    default: &mut bool,
+) -> bool {
+    let value = if part.eq_ignore_ascii_case("\\d") {
+        parts.next().and_then(prompt_default_token_for_report)
+    } else {
+        strip_ascii_switch_prefix(part, "\\d").and_then(prompt_default_token_for_report)
+    };
+    value.is_some() && !std::mem::replace(default, true)
+}
+
+#[cfg(not(feature = "docx"))]
+fn prompt_default_token_for_report(token: &str) -> Option<&str> {
+    let value = diagnostic_literal_token(token)?;
+    (!value.starts_with('\\')).then_some(value)
+}
+
+#[cfg(not(feature = "docx"))]
+fn prompt_text_token_for_report(token: &str) -> Option<&str> {
+    let value = prompt_default_token_for_report(token)?;
+    (!value.is_empty()).then_some(value)
 }
 
 fn set_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -3922,6 +4037,27 @@ mod tests {
         );
         assert_eq!(
             super::sequence_uncomputed_reason(r"SEQ Figure \x"),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_prompt_diagnostics_reject_malformed_syntax() {
+        assert_eq!(
+            super::prompt_uncomputed_reason(r#"FILLIN "Client?" \d Acme"#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::prompt_uncomputed_reason(r#"ASK ClientCode "Client code?" \d "ac-42""#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::prompt_uncomputed_reason(r#"FILLIN \z \d Acme"#),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+        assert_eq!(
+            super::prompt_uncomputed_reason(r#"ASK ClientCode \o \d ac-42"#),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
     }
