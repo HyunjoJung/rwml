@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import subprocess
 import sys
 import tempfile
@@ -56,6 +57,14 @@ class ValidationRow:
     render_warnings: int | None = None
     render_warning_kinds: list[str] | None = None
     reason: str | None = None
+
+
+def is_finite_number(value: object) -> bool:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+    )
 
 
 def require_pdf_deps() -> None:
@@ -87,6 +96,8 @@ def add_threshold_check(
 ) -> None:
     if threshold is None:
         return
+    if not is_finite_number(threshold):
+        raise ValueError(f"non-finite threshold for {metric}: {threshold}")
     if actual is None:
         passed = False
     elif op == ">=":

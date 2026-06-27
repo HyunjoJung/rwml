@@ -120,6 +120,13 @@ class RenderValidateReportTests(unittest.TestCase):
         self.assertEqual(checks["skipped"]["actual"], 1)
         self.assertFalse(checks["skipped"]["passed"])
 
+    def test_validation_gate_rejects_non_finite_thresholds(self):
+        with self.assertRaisesRegex(ValueError, "non-finite threshold"):
+            render_validate.validation_gate(
+                {"below_recall_min": 0, "mean_recall": 1.0},
+                {"min_mean_recall": float("nan")},
+            )
+
     def test_json_report_payload_rejects_non_finite_values(self):
         with self.assertRaisesRegex(ValueError, "Out of range float values"):
             render_validate.json_report_payload(
