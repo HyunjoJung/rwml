@@ -237,6 +237,14 @@ class ReleaseManifestTests(unittest.TestCase):
             [benchmark_alpha.as_posix(), benchmark_zeta.as_posix()],
         )
 
+    def test_manifest_rejects_duplicate_artifact_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact = pathlib.Path(tmp) / "rdoc.tar.gz"
+            artifact.write_bytes(b"release artifact")
+
+            with self.assertRaisesRegex(ValueError, "duplicate artifact path"):
+                release_manifest.release_manifest([artifact, artifact])
+
     def test_hygiene_summary_rejects_passed_report_with_findings(self):
         with tempfile.TemporaryDirectory() as tmp:
             hygiene = pathlib.Path(tmp) / "public-hygiene.json"
