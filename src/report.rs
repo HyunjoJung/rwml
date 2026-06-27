@@ -2451,14 +2451,45 @@ fn supported_eq_bracket_syntax(instruction: &str) -> bool {
     let Some(expression) = eq_expression_for_report(instruction) else {
         return false;
     };
-    let Some(body) = strip_ascii_switch_prefix(expression.trim_start(), "\\b") else {
+    let Some(mut body) = strip_ascii_switch_prefix(expression.trim_start(), "\\b") else {
         return false;
     };
+    body = body.trim_start();
+    loop {
+        if let Some((_, rest)) = consume_eq_bracket_option_for_report(body, "\\bc")
+            .or_else(|| consume_eq_bracket_option_for_report(body, "\\lc"))
+            .or_else(|| consume_eq_bracket_option_for_report(body, "\\rc"))
+        {
+            body = rest.trim_start();
+            continue;
+        }
+        break;
+    }
     let (inner, rest) = match take_eq_parenthesized_operand_for_report(body.trim_start()) {
         Some(value) => value,
         None => return false,
     };
     rest.trim().is_empty() && eq_operand_for_report(inner)
+}
+
+#[cfg(not(feature = "docx"))]
+fn consume_eq_bracket_option_for_report<'a>(
+    value: &'a str,
+    option: &str,
+) -> Option<(char, &'a str)> {
+    let rest = strip_ascii_switch_prefix(value, option)?;
+    consume_eq_bracket_char_for_report(rest)
+}
+
+#[cfg(not(feature = "docx"))]
+fn consume_eq_bracket_char_for_report(value: &str) -> Option<(char, &str)> {
+    let rest = value.trim_start();
+    let rest = rest.strip_prefix('\\').unwrap_or(rest);
+    let ch = rest.chars().next()?;
+    if ch.is_whitespace() {
+        return None;
+    }
+    Some((ch, &rest[ch.len_utf8()..]))
 }
 
 fn action_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -5078,6 +5109,19 @@ mod tests {
         );
         assert_eq!(
             super::display_uncomputed_reason(r"EQ \b()"),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_display_diagnostics_accept_valid_eq_bracket_options() {
+        assert_eq!(
+            super::display_uncomputed_reason(r"EQ \b \bc\{ (Range)"),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::display_uncomputed_reason(r"EQ \b \bc (Range)"),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
     }
