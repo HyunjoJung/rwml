@@ -268,6 +268,24 @@ fn malformed_hyperlink_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn mixed_case_hyperlink_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" hYpErLiNk &quot;https://example.com/mixed&quot; "><w:r><w:t>Mixed link</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn page_unsupported_switch_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -1733,6 +1751,23 @@ fn report_malformed_hyperlink_reports_unsupported_switch() {
             count: 1,
         }]
     );
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_mixed_case_hyperlink_field_is_supported() {
+    let doc = Document::open(&mixed_case_hyperlink_diagnostics_docx()).expect("fixture opens");
+    let fields = doc.fields();
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::Hyperlink);
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+    assert!(report
+        .warnings
+        .iter()
+        .all(|warning| !matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })));
 }
 
 #[cfg(feature = "docx")]
