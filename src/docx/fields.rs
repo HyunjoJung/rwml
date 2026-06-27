@@ -9193,7 +9193,7 @@ fn page_ref_instruction(instruction: &str) -> Option<PageRefInstruction> {
     if !kind.eq_ignore_ascii_case("PAGEREF") {
         return None;
     }
-    let mut target = None;
+    let target = bookmark_target_identifier(parts.next()?)?.to_string();
     let mut number_format = None;
     let mut text_format = None;
     let mut relative = false;
@@ -9216,13 +9216,10 @@ fn page_ref_instruction(instruction: &str) -> Option<PageRefInstruction> {
             }
             return None;
         }
-        let candidate = bookmark_target_identifier(part)?;
-        if target.replace(candidate.to_string()).is_some() {
-            return None;
-        }
+        return None;
     }
     Some(PageRefInstruction {
-        target: target?,
+        target,
         number_format,
         text_format,
         relative,
@@ -9252,7 +9249,7 @@ fn note_ref_instruction(instruction: &str) -> Option<NoteRefInstruction> {
     if !is_note_ref_kind(kind) {
         return None;
     }
-    let mut target = None;
+    let target = bookmark_target_identifier(parts.next()?)?.to_string();
     let mut text_format = None;
     let mut relative = false;
     let mut formatted = false;
@@ -9282,13 +9279,10 @@ fn note_ref_instruction(instruction: &str) -> Option<NoteRefInstruction> {
             }
             return None;
         }
-        let candidate = bookmark_target_identifier(part)?;
-        if target.replace(candidate.to_string()).is_some() {
-            return None;
-        }
+        return None;
     }
     Some(NoteRefInstruction {
-        target: target?,
+        target,
         text_format,
         relative,
     })
@@ -9640,7 +9634,7 @@ fn ref_instruction(instruction: &str) -> Option<RefInstruction> {
 fn parse_ref_instruction_parts<'a>(
     mut parts: impl Iterator<Item = &'a str>,
 ) -> Option<RefInstruction> {
-    let mut target = None;
+    let target = bookmark_target_identifier(parts.next()?)?.to_string();
     let mut text_format = None;
     let mut note_reference = false;
     let mut sequence_separator = false;
@@ -9725,10 +9719,7 @@ fn parse_ref_instruction_parts<'a>(
             }
             return None;
         }
-        let candidate = bookmark_target_identifier(part)?;
-        if target.replace(candidate.to_string()).is_some() {
-            return None;
-        }
+        return None;
     }
     if suppress_non_numeric && !(paragraph_number || full_context_number || relative_context_number)
     {
@@ -9745,7 +9736,7 @@ fn parse_ref_instruction_parts<'a>(
         return None;
     }
     Some(RefInstruction {
-        target: target?,
+        target,
         text_format,
         note_reference,
         sequence_separator,
@@ -10843,6 +10834,14 @@ mod tests {
         assert!(direct_bookmark_ref_instruction(r#"" \p""#).is_none());
         assert!(page_ref_instruction(r#"PAGEREF " \p""#).is_none());
         assert!(note_ref_instruction(r#"NOTEREF " \p""#).is_none());
+    }
+
+    #[test]
+    fn reference_targets_reject_switch_first_names() {
+        assert!(ref_instruction(r#"REF \h Figure1"#).is_none());
+        assert!(direct_bookmark_ref_instruction(r#"\h Figure1"#).is_none());
+        assert!(page_ref_instruction(r#"PAGEREF \p Figure1"#).is_none());
+        assert!(note_ref_instruction(r#"NOTEREF \p FootOne"#).is_none());
     }
 
     #[test]

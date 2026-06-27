@@ -2152,7 +2152,7 @@ fn merge_control_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
 fn supported_ref_syntax_parts<'a>(
     mut parts: impl Iterator<Item = &'a str>,
 ) -> Option<RefDiagnosticSyntax> {
-    let mut target = None;
+    let target = diagnostic_identifier_token(parts.next()?)?.to_string();
     let mut text_format = false;
     let mut note_reference = false;
     let mut sequence_separator = false;
@@ -2237,10 +2237,7 @@ fn supported_ref_syntax_parts<'a>(
             }
             return None;
         }
-        let candidate = diagnostic_identifier_token(part)?;
-        if target.replace(candidate.to_string()).is_some() {
-            return None;
-        }
+        return None;
     }
     if suppress_non_numeric && !(paragraph_number || full_context_number || relative_context_number)
     {
@@ -2256,7 +2253,6 @@ fn supported_ref_syntax_parts<'a>(
     {
         return None;
     }
-    let target = target?;
     Some(RefDiagnosticSyntax {
         target,
         note_reference,
@@ -2277,7 +2273,7 @@ fn supported_page_ref_syntax(instruction: &str) -> Option<PageRefDiagnosticSynta
     if !kind.eq_ignore_ascii_case("PAGEREF") {
         return None;
     }
-    let mut target = None;
+    let target = diagnostic_identifier_token(parts.next()?)?.to_string();
     let mut number_format = false;
     let mut text_format = false;
     let mut relative = false;
@@ -2300,13 +2296,10 @@ fn supported_page_ref_syntax(instruction: &str) -> Option<PageRefDiagnosticSynta
             }
             return None;
         }
-        let candidate = diagnostic_identifier_token(part)?;
-        if target.replace(candidate.to_string()).is_some() {
-            return None;
-        }
+        return None;
     }
     Some(PageRefDiagnosticSyntax {
-        target: target?,
+        target,
         #[cfg(feature = "docx")]
         uses_target_section_number_format: !number_format,
     })
@@ -2381,7 +2374,7 @@ fn supported_note_ref_target(instruction: &str) -> Option<String> {
     if !kind.eq_ignore_ascii_case("NOTEREF") && !kind.eq_ignore_ascii_case("FTNREF") {
         return None;
     }
-    let mut target = None;
+    let target = diagnostic_identifier_token(parts.next()?)?.to_string();
     let mut relative = false;
     let mut formatted = false;
     let mut text_format = false;
@@ -2411,12 +2404,9 @@ fn supported_note_ref_target(instruction: &str) -> Option<String> {
             }
             return None;
         }
-        let candidate = diagnostic_identifier_token(part)?;
-        if target.replace(candidate.to_string()).is_some() {
-            return None;
-        }
+        return None;
     }
-    target
+    Some(target)
 }
 
 fn diagnostic_name_token(value: &str) -> Option<&str> {
@@ -3371,6 +3361,14 @@ mod tests {
     #[test]
     fn supported_page_ref_syntax_accepts_mixed_case_arabic() {
         assert!(super::supported_page_ref_syntax(r"PAGEREF Figure1 \* ArAbIc").is_some());
+    }
+
+    #[test]
+    fn reference_diagnostics_reject_switch_first_names() {
+        assert!(super::supported_ref_syntax(r"REF \h Figure1").is_none());
+        assert!(super::supported_direct_ref_syntax(r"\h Figure1").is_none());
+        assert!(super::supported_page_ref_syntax(r"PAGEREF \p Figure1").is_none());
+        assert!(super::supported_note_ref_target(r"NOTEREF \p FootOne").is_none());
     }
 
     #[test]
