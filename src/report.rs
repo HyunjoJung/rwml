@@ -1551,7 +1551,7 @@ fn unsupported_field_reason(field: &Field) -> Option<FieldEvaluationReason> {
         FieldKind::MergeField => Some(FieldEvaluationReason::UnsupportedSwitch),
         FieldKind::DocumentInfo(_) => Some(FieldEvaluationReason::UnsupportedSwitch),
         FieldKind::Sequence => Some(sequence_uncomputed_reason(&field.instruction)),
-        FieldKind::TocEntry => Some(FieldEvaluationReason::NoComputedResult),
+        FieldKind::TocEntry => Some(toc_entry_uncomputed_reason(&field.instruction)),
     }
 }
 
@@ -1804,6 +1804,21 @@ fn reference_index_marker_uncomputed_reason(instruction: &str) -> FieldEvaluatio
     #[cfg(not(feature = "docx"))]
     let _ = instruction;
     FieldEvaluationReason::UnsupportedSwitch
+}
+
+fn toc_entry_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
+    #[cfg(feature = "docx")]
+    {
+        if crate::docx::supports_toc_entry_field_syntax(instruction) {
+            return FieldEvaluationReason::NoComputedResult;
+        }
+        FieldEvaluationReason::UnsupportedSwitch
+    }
+    #[cfg(not(feature = "docx"))]
+    {
+        let _ = instruction;
+        FieldEvaluationReason::NoComputedResult
+    }
 }
 
 fn numbering_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {

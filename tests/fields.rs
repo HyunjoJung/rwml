@@ -6829,7 +6829,7 @@ fn docx_toc_entries_use_single_alternate_content_branch() {
 }
 
 #[test]
-fn docx_invalid_toc_entry_reports_no_computed_result() {
+fn docx_invalid_toc_entry_reports_unsupported_switch() {
     let doc = Document::open(&invalid_toc_entry_docx()).expect("fixture opens");
     let fields = doc.fields();
 
@@ -6850,7 +6850,7 @@ fn docx_invalid_toc_entry_reports_no_computed_result() {
     assert_eq!(
         report.features.unsupported_field_reasons,
         vec![FieldEvaluationReasonCount {
-            reason: FieldEvaluationReason::NoComputedResult,
+            reason: FieldEvaluationReason::UnsupportedSwitch,
             count: 1,
         }]
     );
