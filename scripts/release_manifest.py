@@ -123,6 +123,10 @@ def report_summary(path: Path) -> dict[str, Any]:
     summary = data.get("summary")
     if not isinstance(summary, dict):
         raise ValueError(f"{path} does not contain a JSON object field named 'summary'")
+    try:
+        json.dumps(summary, allow_nan=False)
+    except ValueError as error:
+        raise ValueError(f"{path} summary contains non-finite value") from error
     report = {"path": path.as_posix(), "summary": summary}
     gate = data.get("gate")
     if gate is not None and not isinstance(gate, dict):

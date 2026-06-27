@@ -466,6 +466,17 @@ class ReleaseManifestTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "does not contain a JSON object"):
                 release_manifest.report_summary(validation)
 
+    def test_report_summary_rejects_non_finite_summary_values(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            validation = pathlib.Path(tmp) / "render-validation.json"
+            validation.write_text(
+                json.dumps({"summary": {"mean_recall": float("nan")}}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "summary contains non-finite value"):
+                release_manifest.report_summary(validation)
+
     def test_report_summary_rejects_non_object_gate(self):
         with tempfile.TemporaryDirectory() as tmp:
             validation = pathlib.Path(tmp) / "render-validation.json"
@@ -887,7 +898,7 @@ class ReleaseManifestTests(unittest.TestCase):
             self.assertFalse(output.exists())
 
         self.assertEqual(completed.returncode, 2)
-        self.assertIn("Out of range float values", completed.stderr)
+        self.assertIn("summary contains non-finite value", completed.stderr)
 
     def test_manifest_embeds_public_corpus_manifest_summaries_without_rows(self):
         with tempfile.TemporaryDirectory() as tmp:
