@@ -123,6 +123,8 @@ def report_summary(path: Path) -> dict[str, Any]:
             raise ValueError(f"{path} gate passed is not a boolean")
         if not isinstance(gate.get("checks"), list):
             raise ValueError(f"{path} gate checks is not a list")
+        if any(not isinstance(check, dict) for check in gate["checks"]):
+            raise ValueError(f"{path} gate check is not a JSON object")
         report["gate"] = gate
     return report
 
