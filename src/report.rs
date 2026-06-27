@@ -1795,9 +1795,66 @@ fn style_ref_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     }
     #[cfg(not(feature = "docx"))]
     {
-        let _ = instruction;
-        FieldEvaluationReason::NoComputedResult
+        if supported_style_ref_syntax(instruction) {
+            FieldEvaluationReason::NoComputedResult
+        } else {
+            FieldEvaluationReason::UnsupportedSwitch
+        }
     }
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_style_ref_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if !kind.eq_ignore_ascii_case("STYLEREF") {
+        return false;
+    }
+    let Some(style_identifier) = parts.next() else {
+        return false;
+    };
+    if diagnostic_name_token(style_identifier).is_none() {
+        return false;
+    }
+    let mut text_format = false;
+    let mut result = 0u8;
+    let mut suppress_non_numeric = false;
+    while let Some(part) = parts.next() {
+        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        }) else {
+            return false;
+        };
+        if accepted {
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\t") {
+            if suppress_non_numeric {
+                return false;
+            }
+            suppress_non_numeric = true;
+            continue;
+        }
+        let next_result = if part.eq_ignore_ascii_case("\\n") {
+            1
+        } else if part.eq_ignore_ascii_case("\\r") {
+            2
+        } else if part.eq_ignore_ascii_case("\\w") {
+            3
+        } else if part.eq_ignore_ascii_case("\\p") {
+            4
+        } else {
+            return false;
+        };
+        if result != 0 {
+            return false;
+        }
+        result = next_result;
+    }
+    !suppress_non_numeric || matches!(result, 1..=3)
 }
 
 fn display_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -3507,6 +3564,19 @@ mod tests {
         );
         assert_eq!(
             super::revision_number_uncomputed_reason(r"REVNUM \x"),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_style_ref_diagnostics_reject_malformed_tails() {
+        assert_eq!(
+            super::style_ref_uncomputed_reason(r"STYLEREF Heading1 \n \t"),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::style_ref_uncomputed_reason(r"STYLEREF Heading1 \t"),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
     }
