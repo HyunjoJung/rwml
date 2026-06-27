@@ -348,6 +348,33 @@ class ReleaseManifestTests(unittest.TestCase):
             ):
                 release_manifest.hygiene_summary(hygiene)
 
+    def test_hygiene_summary_rejects_unexpected_finding_keys(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            hygiene = pathlib.Path(tmp) / "public-hygiene.json"
+            hygiene.write_text(
+                json.dumps(
+                    {
+                        "passed": False,
+                        "findings": [
+                            {
+                                "path": "private.docx",
+                                "line": 1,
+                                "kind": "private",
+                                "detail": "blocked",
+                                "note": "extra",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "hygiene finding key is invalid: note",
+            ):
+                release_manifest.hygiene_summary(hygiene)
+
     def test_hygiene_summary_rejects_findings_with_invalid_field_types(self):
         with tempfile.TemporaryDirectory() as tmp:
             hygiene = pathlib.Path(tmp) / "public-hygiene.json"

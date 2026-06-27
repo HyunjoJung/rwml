@@ -219,13 +219,17 @@ def hygiene_summary(path: Path | None) -> dict[str, Any] | None:
         raise ValueError(f"{path} cannot pass with hygiene findings")
     if not passed and not findings:
         raise ValueError(f"{path} cannot fail without hygiene findings")
+    finding_fields = ("path", "line", "kind", "detail")
     seen_findings: set[tuple[str, int | None, str, str]] = set()
     for finding in findings:
-        for field in ("path", "line", "kind", "detail"):
+        for field in finding_fields:
             if field not in finding:
                 raise ValueError(
                     f"{path} hygiene finding missing required field: {field}"
                 )
+        for field in finding:
+            if field not in finding_fields:
+                raise ValueError(f"{path} hygiene finding key is invalid: {field}")
         if not isinstance(finding["path"], str):
             raise ValueError(f"{path} hygiene finding path is invalid")
         if not finding["path"] or finding["path"] != finding["path"].strip():
