@@ -13,7 +13,7 @@
 //! crate, no JVM, no external `.docx` dependency) — see the README on how it
 //! relates to the mature `docx-rs` crate.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::Read;
 
 use quick_xml::events::{BytesStart, Event};
@@ -123,6 +123,10 @@ pub(crate) fn supports_sequence_field_syntax(instruction: &str) -> bool {
 
 pub(crate) fn supports_style_ref_field_syntax(instruction: &str) -> bool {
     fields::supports_style_ref_field_syntax(instruction)
+}
+
+pub(crate) fn note_ref_target_names(xml: &str) -> HashSet<String> {
+    fields::note_ref_target_names(xml)
 }
 
 /// Relationship table: `Id` → `(Target, is_external)`.

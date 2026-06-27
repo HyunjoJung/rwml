@@ -3180,16 +3180,12 @@ fn report_note_ref_field_warning_tracks_unresolved_and_unsupported_cases() {
         report.features.unsupported_field_reasons,
         vec![
             FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::NoComputedResult,
-                count: 1,
+                reason: FieldEvaluationReason::UnsupportedSwitch,
+                count: 2,
             },
             FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::UnresolvedBookmark,
                 count: 2,
-            },
-            FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::UnsupportedSwitch,
-                count: 1,
             },
         ]
     );
@@ -3216,7 +3212,7 @@ fn report_note_ref_field_warning_tracks_unresolved_and_unsupported_cases() {
         json.contains(r#""unsupported_field_kinds":[{"kind":"NOTEREF","count":4}]"#),
         "{json}"
     );
-    assert!(json.contains(r#""unsupported_field_reasons":[{"reason":"NoComputedResult","count":1},{"reason":"UnresolvedBookmark","count":2},{"reason":"UnsupportedSwitch","count":1}]"#), "{json}");
+    assert!(json.contains(r#""unsupported_field_reasons":[{"reason":"UnsupportedSwitch","count":2},{"reason":"UnresolvedBookmark","count":2}]"#), "{json}");
 }
 
 #[cfg(feature = "docx")]

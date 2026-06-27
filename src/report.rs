@@ -1417,6 +1417,9 @@ fn count_docx_unsupported_field_reasons(
 ) -> Vec<FieldEvaluationReasonCount> {
     let document_xml = document_xml.map(String::from_utf8_lossy);
     let bookmark_names = document_xml.as_deref().map(docx_bookmark_names);
+    let note_ref_target_names = document_xml
+        .as_deref()
+        .map(crate::docx::note_ref_target_names);
     let unsupported_page_ref_section_format_targets = document_xml
         .as_deref()
         .map(docx_page_ref_unsupported_section_format_targets);
@@ -1425,6 +1428,7 @@ fn count_docx_unsupported_field_reasons(
         if let Some(reason) = unsupported_docx_field_reason(
             field,
             bookmark_names.as_ref(),
+            note_ref_target_names.as_ref(),
             unsupported_page_ref_section_format_targets.as_ref(),
         ) {
             increment_field_evaluation_reason_count(&mut counts, reason);
@@ -1448,6 +1452,7 @@ fn increment_field_evaluation_reason_count(
 fn unsupported_docx_field_reason(
     field: &Field,
     bookmark_names: Option<&HashSet<String>>,
+    note_ref_target_names: Option<&HashSet<String>>,
     unsupported_page_ref_section_format_targets: Option<&HashSet<String>>,
 ) -> Option<FieldEvaluationReason> {
     if supports_field_evaluation(field) {
@@ -1467,6 +1472,7 @@ fn unsupported_docx_field_reason(
         return Some(note_ref_uncomputed_reason(
             &field.instruction,
             bookmark_names,
+            note_ref_target_names,
         ));
     }
     if field.kind == FieldKind::Toc {
@@ -2146,12 +2152,16 @@ fn docx_page_ref_uncomputed_reason(
 fn note_ref_uncomputed_reason(
     instruction: &str,
     bookmark_names: Option<&HashSet<String>>,
+    note_ref_target_names: Option<&HashSet<String>>,
 ) -> FieldEvaluationReason {
     let Some(target) = supported_note_ref_target(instruction) else {
         return FieldEvaluationReason::UnsupportedSwitch;
     };
+    if note_ref_target_names.is_some_and(|names| names.contains(&target)) {
+        return FieldEvaluationReason::NoComputedResult;
+    }
     match bookmark_names {
-        Some(names) if names.contains(&target) => FieldEvaluationReason::NoComputedResult,
+        Some(names) if names.contains(&target) => FieldEvaluationReason::UnsupportedSwitch,
         Some(_) => FieldEvaluationReason::UnresolvedBookmark,
         None => FieldEvaluationReason::UnresolvedBookmark,
     }

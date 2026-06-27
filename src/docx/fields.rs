@@ -1,6 +1,6 @@
 //! `.docx` field marker parsing.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
@@ -1785,6 +1785,10 @@ pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
         markers,
         generated_ref_note_fields,
     }
+}
+
+pub(crate) fn note_ref_target_names(xml: &str) -> HashSet<String> {
+    note_ref_context(xml).targets.into_keys().collect()
 }
 
 fn record_note_ref_target(
