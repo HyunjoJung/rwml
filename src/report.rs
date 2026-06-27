@@ -4,7 +4,9 @@
 //! observed format markers for a construct, not that every behavior of that
 //! construct is fully modeled, editable, or renderable.
 
-use crate::annotation::{Field, FieldKind};
+use crate::annotation::{
+    accept_general_format_switch, is_neutral_field_format_switch, Field, FieldKind,
+};
 use crate::model::{Block, FieldRole, Stats, Table};
 use crate::CoreProperties;
 #[cfg(feature = "docx")]
@@ -2236,27 +2238,6 @@ fn diagnostic_literal_token(value: &str) -> Option<&str> {
     (!value.contains('"')).then_some(value)
 }
 
-fn is_neutral_field_format_switch(part: &str) -> bool {
-    part.eq_ignore_ascii_case("MERGEFORMAT") || part.eq_ignore_ascii_case("CHARFORMAT")
-}
-
-fn accept_general_format_switch<'a, I>(
-    part: &'a str,
-    parts: &mut I,
-    accept: impl FnOnce(&str) -> bool,
-) -> Option<bool>
-where
-    I: Iterator<Item = &'a str>,
-{
-    if part == "\\*" {
-        return accept(parts.next()?).then_some(true);
-    }
-    if let Some(format) = part.strip_prefix("\\*") {
-        return accept(format).then_some(true);
-    }
-    Some(false)
-}
-
 fn accept_note_ref_format_switch(part: &str, text_format: &mut bool) -> bool {
     accept_field_format_switch(part, text_format)
 }
@@ -2279,7 +2260,7 @@ fn accept_page_number_format_switch(part: &str, number_format: &mut bool) -> boo
 }
 
 fn accept_field_format_switch(part: &str, text_format: &mut bool) -> bool {
-    if part.eq_ignore_ascii_case("MERGEFORMAT") || part.eq_ignore_ascii_case("CHARFORMAT") {
+    if is_neutral_field_format_switch(part) {
         return true;
     }
     if part.eq_ignore_ascii_case("Upper")

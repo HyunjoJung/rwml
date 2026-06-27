@@ -5,7 +5,9 @@ use std::collections::{HashMap, HashSet};
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 
-use crate::annotation::{Field, FieldKind};
+use crate::annotation::{
+    accept_general_format_switch, is_neutral_field_format_switch, Field, FieldKind,
+};
 use crate::{numfmt, CoreProperties};
 
 use super::numbering::Numbering;
@@ -7425,23 +7427,6 @@ fn is_field_format_start(part: &str) -> bool {
     part == "\\*" || part.starts_with("\\*")
 }
 
-fn accept_general_format_switch<'a, I>(
-    part: &'a str,
-    parts: &mut I,
-    accept: impl FnOnce(&str) -> bool,
-) -> Option<bool>
-where
-    I: Iterator<Item = &'a str>,
-{
-    if part == "\\*" {
-        return accept(parts.next()?).then_some(true);
-    }
-    if let Some(format) = part.strip_prefix("\\*") {
-        return accept(format).then_some(true);
-    }
-    Some(false)
-}
-
 fn accept_if_format_switch(
     part: &str,
     next: Option<&str>,
@@ -9169,10 +9154,6 @@ fn is_note_ref_kind(kind: &str) -> bool {
     kind.eq_ignore_ascii_case("NOTEREF") || kind.eq_ignore_ascii_case("FTNREF")
 }
 
-fn is_neutral_field_format_switch(part: &str) -> bool {
-    part.eq_ignore_ascii_case("MERGEFORMAT") || part.eq_ignore_ascii_case("CHARFORMAT")
-}
-
 fn accept_page_number_format_switch(
     part: &str,
     number_format: &mut Option<PageNumberFormat>,
@@ -9651,7 +9632,7 @@ fn is_ref_value_neutral_switch(part: &str) -> bool {
 }
 
 fn accept_field_format_switch(part: &str, text_format: &mut Option<FieldTextFormat>) -> bool {
-    if part.eq_ignore_ascii_case("MERGEFORMAT") || part.eq_ignore_ascii_case("CHARFORMAT") {
+    if is_neutral_field_format_switch(part) {
         return true;
     }
     let format = if part.eq_ignore_ascii_case("Upper") {

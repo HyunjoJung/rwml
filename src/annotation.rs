@@ -382,6 +382,27 @@ impl FieldKind {
     }
 }
 
+pub(crate) fn is_neutral_field_format_switch(part: &str) -> bool {
+    part.eq_ignore_ascii_case("MERGEFORMAT") || part.eq_ignore_ascii_case("CHARFORMAT")
+}
+
+pub(crate) fn accept_general_format_switch<'a, I>(
+    part: &'a str,
+    parts: &mut I,
+    accept: impl FnOnce(&str) -> bool,
+) -> Option<bool>
+where
+    I: Iterator<Item = &'a str>,
+{
+    if part == "\\*" {
+        return accept(parts.next()?).then_some(true);
+    }
+    if let Some(format) = part.strip_prefix("\\*") {
+        return accept(format).then_some(true);
+    }
+    Some(false)
+}
+
 fn is_document_info_field(token: &str) -> bool {
     matches!(
         token,
