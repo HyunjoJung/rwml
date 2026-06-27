@@ -143,6 +143,8 @@ def report_summary(path: Path) -> dict[str, Any]:
                 raise ValueError(f"{path} gate check actual is not a finite number")
         if any(not isinstance(check.get("passed"), bool) for check in gate["checks"]):
             raise ValueError(f"{path} gate check passed is not a boolean")
+        if gate["passed"] and any(not check["passed"] for check in gate["checks"]):
+            raise ValueError(f"{path} gate passed with failed checks")
         report["gate"] = gate
     return report
 
