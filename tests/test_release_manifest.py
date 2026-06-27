@@ -270,6 +270,20 @@ class ReleaseManifestTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "hygiene finding is not an object"):
                 release_manifest.hygiene_summary(hygiene)
 
+    def test_hygiene_summary_rejects_findings_missing_required_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            hygiene = pathlib.Path(tmp) / "public-hygiene.json"
+            hygiene.write_text(
+                json.dumps({"passed": False, "findings": [{"path": "private.docx"}]}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "hygiene finding missing required field: line",
+            ):
+                release_manifest.hygiene_summary(hygiene)
+
     def test_hygiene_summary_rejects_non_object_report(self):
         with tempfile.TemporaryDirectory() as tmp:
             hygiene = pathlib.Path(tmp) / "public-hygiene.json"

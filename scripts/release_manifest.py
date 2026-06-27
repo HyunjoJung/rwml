@@ -145,6 +145,12 @@ def hygiene_summary(path: Path | None) -> dict[str, Any] | None:
         raise ValueError(f"{path} cannot pass with hygiene findings")
     if not passed and not findings:
         raise ValueError(f"{path} cannot fail without hygiene findings")
+    for finding in findings:
+        for field in ("path", "line", "kind", "detail"):
+            if field not in finding:
+                raise ValueError(
+                    f"{path} hygiene finding missing required field: {field}"
+                )
     return {
         "path": path.as_posix(),
         "gate": {
