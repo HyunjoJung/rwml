@@ -7480,6 +7480,10 @@ struct ActionInstruction {
     text_format: Option<FieldTextFormat>,
 }
 
+pub(crate) fn supports_action_field_syntax(instruction: &str) -> bool {
+    computed_action_result(instruction).is_some()
+}
+
 pub(crate) fn computed_action_result(instruction: &str) -> Option<String> {
     if print_instruction(instruction).is_some() {
         return Some(String::new());
@@ -10219,8 +10223,8 @@ mod tests {
         computed_set_result, computed_toc_entry_result, direct_bookmark_ref_instruction,
         document_info_instruction, format_page_number, note_ref_instruction,
         ordinal_page_number_text, page_ref_instruction, ref_instruction,
-        seq_identifier_from_instruction, style_ref_instruction, table_formula_context, toc_entries,
-        toc_spec, PageNumberFormat, TocEntrySource,
+        seq_identifier_from_instruction, style_ref_instruction, supports_action_field_syntax,
+        table_formula_context, toc_entries, toc_spec, PageNumberFormat, TocEntrySource,
     };
     use crate::docx::styles::Styles;
     use std::collections::HashMap;
@@ -10972,6 +10976,19 @@ mod tests {
             computed_action_result(r#"MACROBUTTON RunReport Run Now""#),
             None
         );
+    }
+
+    #[test]
+    fn action_syntax_support_matches_computed_action_forms() {
+        assert!(supports_action_field_syntax(
+            r#"GOTOBUTTON TargetBookmark "Jump Now""#
+        ));
+        assert!(supports_action_field_syntax(
+            r#"PRINT \p ReportBox "0 0 moveto""#
+        ));
+        assert!(!supports_action_field_syntax(
+            r#"MACROBUTTON RunReport Run \* Upper Again"#
+        ));
     }
 
     #[test]
