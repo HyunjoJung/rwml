@@ -155,6 +155,15 @@ class RenderValidateReportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "skipped row has metrics"):
             render_validate.validation_report([row], recall_min=0.8)
 
+    def test_validation_report_rejects_unmeasured_non_skip_rows(self):
+        row = render_validate.ValidationRow(
+            document="sample.docx",
+            status="pass",
+        )
+
+        with self.assertRaisesRegex(ValueError, "non-skip row is missing recall"):
+            render_validate.validation_report([row], recall_min=0.8)
+
     def test_validation_report_evaluates_release_thresholds(self):
         rows = [
             render_validate.ValidationRow(

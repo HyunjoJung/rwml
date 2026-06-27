@@ -236,6 +236,8 @@ def validation_report(
             )
         ):
             raise ValueError("skipped row has metrics")
+        if row.status != "skip" and row.recall is None:
+            raise ValueError("non-skip row is missing recall")
     if not is_finite_number(recall_min):
         raise ValueError(f"non-finite recall threshold: {recall_min}")
     if recall_min < 0:
