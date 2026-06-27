@@ -419,8 +419,10 @@ The first public maturity release should meet these requirements.
   trusted leading structural or source-rendered current-page context, including
   accepted/current wrappers, single-branch `mc:AlternateContent` page markers,
   trusted section `w:pgNumType` displayed page-number restarts/styles and
-  deterministic page-number format switches plus common field-result format
-  switches, while visible-content manual-break and broader layout-derived
+  deterministic display-only explicit `w:start` labels for immediate
+  section-start `PAGE` fields after visible intro text, deterministic
+  page-number format switches plus common
+  field-result format switches, while visible-content manual-break and broader layout-derived
   current-page cases preserve cached text with
   `NoComputedResult` diagnostics; `PAGEREF` fields are named, compute page
   numbers only when leading explicit page breaks before any visible body content, enabled

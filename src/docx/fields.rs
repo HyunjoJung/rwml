@@ -2860,6 +2860,7 @@ struct LegacyFormScanField {
 #[derive(Debug, Clone)]
 struct PageRefScanField {
     instruction: String,
+    page_position: Option<PageRefPosition>,
     phase: FieldPhase,
 }
 
@@ -3390,6 +3391,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                     b"fldSimple" => record_page_ref_field_position(
                         attr_local(&e, b"instr").as_deref(),
                         current_page_ref_position(&pages, source_order),
+                        current_page_field_position(&pages, source_order),
                         &mut source_order,
                         &mut field_positions,
                         &mut page_field_positions,
@@ -3397,6 +3399,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                     b"fldChar" => apply_page_ref_scan_fld_char(
                         &e,
                         current_page_ref_position(&pages, source_order),
+                        current_page_field_position(&pages, source_order),
                         &mut source_order,
                         &mut current,
                         &mut field_positions,
@@ -3519,6 +3522,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                     b"fldSimple" => record_page_ref_field_position(
                         attr_local(&e, b"instr").as_deref(),
                         current_page_ref_position(&pages, source_order),
+                        current_page_field_position(&pages, source_order),
                         &mut source_order,
                         &mut field_positions,
                         &mut page_field_positions,
@@ -3526,6 +3530,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                     b"fldChar" => apply_page_ref_scan_fld_char(
                         &e,
                         current_page_ref_position(&pages, source_order),
+                        current_page_field_position(&pages, source_order),
                         &mut source_order,
                         &mut current,
                         &mut field_positions,
@@ -3850,9 +3855,26 @@ fn current_page_ref_position(
     })
 }
 
+fn current_page_field_position(
+    pages: &PageRefPageState,
+    source_order: usize,
+) -> Option<PageRefPosition> {
+    current_page_ref_position(pages, source_order).or_else(|| {
+        pages
+            .display_only_restart_target
+            .map(|target| PageRefPosition {
+                physical_page: pages.leading_page_number,
+                display_page: target.display_page,
+                display_format: target.display_format,
+                order: source_order,
+            })
+    })
+}
+
 fn record_page_ref_field_position(
     instruction: Option<&str>,
-    position: Option<PageRefPosition>,
+    page_ref_position: Option<PageRefPosition>,
+    page_position: Option<PageRefPosition>,
     source_order: &mut usize,
     field_positions: &mut Vec<Option<PageRefPosition>>,
     page_field_positions: &mut Vec<Option<PageRefPosition>>,
@@ -3863,11 +3885,11 @@ fn record_page_ref_field_position(
         .map(field_kind)
     {
         Some(FieldKind::PageRef) => {
-            field_positions.push(position);
+            field_positions.push(page_ref_position);
             *source_order += 1;
         }
         Some(FieldKind::Page) => {
-            page_field_positions.push(position);
+            page_field_positions.push(page_position);
             *source_order += 1;
         }
         _ => {}
@@ -3876,7 +3898,8 @@ fn record_page_ref_field_position(
 
 fn apply_page_ref_scan_fld_char(
     e: &BytesStart<'_>,
-    position: Option<PageRefPosition>,
+    page_ref_position: Option<PageRefPosition>,
+    page_position: Option<PageRefPosition>,
     source_order: &mut usize,
     current: &mut Option<PageRefScanField>,
     field_positions: &mut Vec<Option<PageRefPosition>>,
@@ -3886,6 +3909,7 @@ fn apply_page_ref_scan_fld_char(
         Some("begin") => {
             *current = Some(PageRefScanField {
                 instruction: String::new(),
+                page_position,
                 phase: FieldPhase::Instruction,
             });
         }
@@ -3898,7 +3922,8 @@ fn apply_page_ref_scan_fld_char(
             if let Some(field) = current.take() {
                 record_page_ref_field_position(
                     Some(&field.instruction),
-                    position,
+                    page_ref_position,
+                    field.page_position,
                     source_order,
                     field_positions,
                     page_field_positions,

@@ -218,7 +218,9 @@ Initial status:
   structural or source-rendered current-page context, including
   accepted/current wrappers, single-branch `mc:AlternateContent` page markers,
   section `w:pgNumType` displayed page-number restarts/styles and
-  deterministic page-number format switches plus common field-result format switches, while
+  deterministic display-only explicit `w:start` labels for immediate
+  section-start `PAGE` fields after visible intro text, deterministic
+  page-number format switches plus common field-result format switches, while
   visible-content manual-break and broader layout-derived current-page cases
   preserve cached text with `NoComputedResult`
   diagnostics. `PAGEREF` is
@@ -893,7 +895,9 @@ Initial status:
   for simple and common complex fields. `PAGE` computes current page numbers
   from trusted leading structural and source-rendered current-page contexts,
   including accepted/current wrappers, single-branch `mc:AlternateContent`
-  page markers, page-number format switches, and common field-result format
+  page markers, deterministic display-only explicit `w:start` labels for
+  immediate section-start `PAGE` fields after visible intro text, page-number
+  format switches, and common field-result format
   switches, preserving cached text for broader layout-derived cases with
   `NoComputedResult` diagnostics. `PAGEREF` computes
   target pages only from leading explicit page breaks before visible body content, enabled

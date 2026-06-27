@@ -574,8 +574,10 @@ Implementation:
 - compute body `PAGE` fields from trusted leading structural or source-rendered
   current-page context, including accepted/current wrappers, single-branch
   `mc:AlternateContent` page markers, section `w:pgNumType` displayed
-  page-number restarts/styles, deterministic page-number format switches, and
-  common field-result format switches; preserve cached text for
+  page-number restarts/styles, deterministic display-only explicit `w:start`
+  labels for immediate section-start `PAGE` fields after visible intro text,
+  deterministic page-number format switches, and common field-result format
+  switches; preserve cached text for
   visible-content manual-break and broader layout-derived current-page cases
   with `NoComputedResult` diagnostics;
 - classify `PAGEREF` as a named field kind, compute page numbers only when the
@@ -1109,6 +1111,8 @@ open and edit the chart data.
   `TOC \b` bookmark-scoped variants when the bookmark range is recoverable,
   body `PAGE` current-page fields with deterministic page-number and common
   field-result format switches in trusted source-marker contexts,
+  deterministic display-only body `PAGE` `w:start` restart labels for immediate
+  section-start fields after visible intro text,
   deterministic `PAGEREF` `\* Arabic`, `\* alphabetic`/`\* ALPHABETIC`,
   `\* roman`/`\* ROMAN`, `\* Ordinal`, `\* CardText`, `\* OrdText`, and
   page-number-only `\* ArabicDash`
