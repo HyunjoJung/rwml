@@ -232,6 +232,8 @@ def benchmark_report(
             "lo_prec",
             "lo_f1",
         ):
+            if row.get("rdoc") == "ERROR" and metric in row:
+                raise ValueError("error row has scores")
             if metric in row and not is_finite_number(row[metric]):
                 raise ValueError(f"score is invalid: {metric}")
             if metric in row and not 0 <= row[metric] <= 1:
