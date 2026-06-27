@@ -148,6 +148,25 @@ class PublicHygieneAuditTests(unittest.TestCase):
                     [(1, "shell_home_path")],
                 )
 
+    def test_text_audit_flags_common_private_key_headers(self):
+        for key_prefix in ("DSA ", "ENCRYPTED "):
+            with self.subTest(key_prefix=key_prefix):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = pathlib.Path(tmp)
+                    doc = root / "README.md"
+                    doc.write_text(
+                        "key=-----BEGIN " + key_prefix + "PRIVATE KEY-----\n",
+                        encoding="utf-8",
+                    )
+
+                    with audit_root(root):
+                        findings = public_hygiene_audit.audit_text_file(doc)
+
+                self.assertEqual(
+                    [(finding.line, finding.kind) for finding in findings],
+                    [(1, "private_key")],
+                )
+
     def test_text_audit_flags_yaml_private_corpus_defaults(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
