@@ -153,7 +153,10 @@ def hygiene_summary(path: Path | None) -> dict[str, Any] | None:
                 )
         if not isinstance(finding["path"], str):
             raise ValueError(f"{path} hygiene finding path is invalid")
-        if not (finding["line"] is None or isinstance(finding["line"], int)):
+        if not (
+            finding["line"] is None
+            or (isinstance(finding["line"], int) and not isinstance(finding["line"], bool))
+        ):
             raise ValueError(f"{path} hygiene finding line is invalid")
         if not isinstance(finding["kind"], str):
             raise ValueError(f"{path} hygiene finding kind is invalid")

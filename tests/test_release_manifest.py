@@ -307,6 +307,29 @@ class ReleaseManifestTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "hygiene finding line is invalid"):
                 release_manifest.hygiene_summary(hygiene)
 
+    def test_hygiene_summary_rejects_boolean_finding_line(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            hygiene = pathlib.Path(tmp) / "public-hygiene.json"
+            hygiene.write_text(
+                json.dumps(
+                    {
+                        "passed": False,
+                        "findings": [
+                            {
+                                "path": "private.docx",
+                                "line": True,
+                                "kind": "private",
+                                "detail": "blocked",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "hygiene finding line is invalid"):
+                release_manifest.hygiene_summary(hygiene)
+
     def test_hygiene_summary_rejects_non_object_report(self):
         with tempfile.TemporaryDirectory() as tmp:
             hygiene = pathlib.Path(tmp) / "public-hygiene.json"
