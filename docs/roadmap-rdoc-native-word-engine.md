@@ -337,7 +337,8 @@ Initial status:
   reference/index fields (`BIBLIOGRAPHY`, `CITATION`, `INDEX`, `RD`, `TA`,
   `TOA`, `XE`) are named separately from unknown fields, deterministic simple
   literal `RD`/`TA`/`XE` marker fields with field-result format switches render
-  as hidden output, invalid marker syntax reports `UnsupportedSwitch`, and
+  as hidden output, invalid marker syntax reports `UnsupportedSwitch`, malformed
+  generated-field quoted syntax reports `UnsupportedSwitch`, and valid broader
   generated bibliography/citation/index/table-of-authorities fields report
   `NoComputedResult` until native generation is implemented. The
   numbering/list fields compute deterministic source-order plain `AUTONUM`
@@ -813,8 +814,9 @@ Initial status:
   Reference/index fields are named separately from unknown fields; simple
   literal `RD`/`TA`/`XE` marker fields with field-result format switches render
   as hidden output, invalid marker syntax reports `UnsupportedSwitch`, while
-  generated bibliography/citation/index/table-of-authorities fields preserve
-  cached text with `NoComputedResult` diagnostics.
+  malformed generated-field quoted syntax reports `UnsupportedSwitch`, and valid
+  broader generated bibliography/citation/index/table-of-authorities fields
+  preserve cached text with `NoComputedResult` diagnostics.
   Numbering/list fields compute deterministic source-order plain `AUTONUM`
   values with common number-format switches and the documented `\s` separator
   switch, including unquoted or quoted one-character separators, standalone
@@ -1100,7 +1102,8 @@ The next useful implementation batch is:
    assignments feeding later plain `REF`/direct bookmark references,
    malformed `SET` syntax reporting `UnsupportedSwitch`,
    inserted-content fields, mail-merge helper malformed-syntax diagnostics,
-   reference/index fields beyond hidden simple `RD`/`TA`/`XE` markers,
+   reference/index generated malformed-syntax diagnostics and fields beyond
+   hidden simple `RD`/`TA`/`XE` markers,
    numbering/list fields, document-structure fields
    beyond computed `REVNUM`/`SECTION`, structurally bounded `SECTIONPAGES`,
    deterministic body paragraph- and character-style `STYLEREF`,

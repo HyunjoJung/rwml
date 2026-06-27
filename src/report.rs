@@ -1536,7 +1536,7 @@ fn unsupported_field_reason(field: &Field) -> Option<FieldEvaluationReason> {
         FieldKind::ReferenceIndex(ref kind) if is_reference_index_marker_kind(kind.as_str()) => {
             Some(reference_index_marker_uncomputed_reason(&field.instruction))
         }
-        FieldKind::ReferenceIndex(_) => Some(FieldEvaluationReason::NoComputedResult),
+        FieldKind::ReferenceIndex(_) => Some(reference_index_uncomputed_reason(&field.instruction)),
         FieldKind::Numbering(_) => Some(numbering_uncomputed_reason(&field.instruction)),
         FieldKind::DocumentStructure(ref kind)
             if is_section_document_structure_kind(kind.as_str()) =>
@@ -1842,6 +1842,25 @@ fn is_mail_merge_kind(kind: &str) -> bool {
     matches!(
         kind.to_ascii_uppercase().as_str(),
         "ADDRESSBLOCK" | "GREETINGLINE" | "MERGEREC" | "MERGESEQ"
+    )
+}
+
+fn reference_index_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
+    if supported_reference_index_syntax(instruction) {
+        FieldEvaluationReason::NoComputedResult
+    } else {
+        FieldEvaluationReason::UnsupportedSwitch
+    }
+}
+
+fn supported_reference_index_syntax(instruction: &str) -> bool {
+    supported_opaque_field_syntax(instruction, is_generated_reference_index_kind)
+}
+
+fn is_generated_reference_index_kind(kind: &str) -> bool {
+    matches!(
+        kind.to_ascii_uppercase().as_str(),
+        "BIBLIOGRAPHY" | "CITATION" | "INDEX" | "TOA"
     )
 }
 
