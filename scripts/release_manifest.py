@@ -555,9 +555,12 @@ def corpus_manifest_summary(path: Path) -> dict[str, Any]:
                 continue
             row_warnings: set[str] = set()
             for warning in warnings.split("|"):
-                warning = warning.strip()
-                if not warning:
+                if not warning.strip():
                     raise ValueError(f"{path} row has empty warning token")
+                if warning != warning.strip():
+                    raise ValueError(
+                        f"{path} row has whitespace-padded warning token: {warning}"
+                    )
                 if warning == "-":
                     raise ValueError(f"{path} row has invalid warning token: -")
                 if warning in row_warnings:
