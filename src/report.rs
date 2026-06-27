@@ -1752,9 +1752,36 @@ fn revision_number_uncomputed_reason(instruction: &str) -> FieldEvaluationReason
     }
     #[cfg(not(feature = "docx"))]
     {
-        let _ = instruction;
-        FieldEvaluationReason::NoComputedResult
+        if supported_revision_number_syntax(instruction) {
+            FieldEvaluationReason::NoComputedResult
+        } else {
+            FieldEvaluationReason::UnsupportedSwitch
+        }
     }
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_revision_number_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if !kind.eq_ignore_ascii_case("REVNUM") {
+        return false;
+    }
+    let mut text_format = false;
+    while let Some(part) = parts.next() {
+        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        }) else {
+            return false;
+        };
+        if !accepted {
+            return false;
+        }
+    }
+    true
 }
 
 fn style_ref_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -3369,6 +3396,19 @@ mod tests {
         assert!(super::supported_direct_ref_syntax(r"\h Figure1").is_none());
         assert!(super::supported_page_ref_syntax(r"PAGEREF \p Figure1").is_none());
         assert!(super::supported_note_ref_target(r"NOTEREF \p FootOne").is_none());
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_revision_number_diagnostics_reject_malformed_tails() {
+        assert_eq!(
+            super::revision_number_uncomputed_reason(r"REVNUM \* MERGEFORMAT"),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::revision_number_uncomputed_reason(r"REVNUM \x"),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
     }
 
     #[test]
