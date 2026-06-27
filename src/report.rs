@@ -2186,9 +2186,43 @@ fn quote_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     }
     #[cfg(not(feature = "docx"))]
     {
-        let _ = instruction;
-        FieldEvaluationReason::NoComputedResult
+        if supported_quote_syntax(instruction) {
+            FieldEvaluationReason::NoComputedResult
+        } else {
+            FieldEvaluationReason::UnsupportedSwitch
+        }
     }
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_quote_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if !kind.eq_ignore_ascii_case("QUOTE") {
+        return false;
+    }
+    let mut text_parts = Vec::new();
+    let mut text_format = false;
+    let mut saw_format = false;
+    while let Some(part) = parts.next() {
+        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        }) else {
+            return false;
+        };
+        if accepted {
+            saw_format = true;
+            continue;
+        }
+        if saw_format || part.starts_with('\\') {
+            return false;
+        }
+        text_parts.push(part);
+    }
+    diagnostic_literal_token(&text_parts.join(" ")).is_some_and(|text| !text.is_empty())
 }
 
 fn prompt_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -3486,6 +3520,19 @@ mod tests {
         );
         assert_eq!(
             super::toc_entry_uncomputed_reason(r#"TC "Entry" \l "2"#),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_quote_diagnostics_reject_malformed_tails() {
+        assert_eq!(
+            super::quote_uncomputed_reason(r#"QUOTE "Ready" \* Upper"#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::quote_uncomputed_reason(r#"QUOTE "Ready" \z"#),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
     }
