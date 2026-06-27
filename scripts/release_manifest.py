@@ -41,6 +41,7 @@ from typing import Any
 
 SCHEMA = "rdoc.release-manifest.v1"
 PUBLIC_RELEASE_CORPUS_MANIFESTS = ("MANIFEST.tsv", "RENDER_MANIFEST.tsv")
+COUNT_POLICY_METRICS = {"below_recall_min", "skipped", "errors"}
 RELEASE_POLICIES: dict[str, dict[str, Any]] = {
     "public-release": {
         "name": "public-release",
@@ -377,6 +378,10 @@ def require_summary_threshold_at_most(
     if not isinstance(summary, dict):
         raise ValueError(f"{policy} {label} report does not contain a summary")
     actual = summary.get(metric)
+    if metric in COUNT_POLICY_METRICS and is_number(actual) and actual < 0:
+        raise ValueError(
+            f"{policy} {label} report summary {metric} must not be negative"
+        )
     if not is_number(actual) or actual > maximum:
         raise ValueError(
             f"{policy} {label} report summary {metric} must be at most {maximum}"
@@ -403,6 +408,11 @@ def require_gate_check_threshold(
         threshold = check.get("threshold")
         if not is_number(threshold):
             continue
+        if metric in COUNT_POLICY_METRICS and threshold < 0:
+            raise ValueError(
+                f"{policy} {label} report gate check threshold must not be negative: "
+                f"{metric}"
+            )
         if (op == ">=" and threshold >= policy_threshold) or (
             op == "<=" and threshold <= policy_threshold
         ):
@@ -412,6 +422,11 @@ def require_gate_check_threshold(
                     f"{metric} {op} {policy_threshold}"
                 )
             actual = check.get("actual")
+            if metric in COUNT_POLICY_METRICS and is_number(actual) and actual < 0:
+                raise ValueError(
+                    f"{policy} {label} report gate check actual must not be negative: "
+                    f"{metric}"
+                )
             if not is_number(actual) or not (
                 (op == ">=" and actual >= policy_threshold)
                 or (op == "<=" and actual <= policy_threshold)

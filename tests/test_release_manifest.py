@@ -1141,6 +1141,24 @@ class ReleaseManifestTests(unittest.TestCase):
                 0.95,
             )
 
+    def test_enforced_public_release_policy_rejects_negative_summary_count_metric(self):
+        report = {
+            "summary": {"skipped": -1},
+            "gate": {"passed": True, "checks": []},
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "public-release validation report summary skipped must not be negative",
+        ):
+            release_manifest.require_summary_threshold_at_most(
+                "public-release",
+                report,
+                "validation",
+                "skipped",
+                0,
+            )
+
     def test_enforced_public_release_policy_rejects_boolean_gate_threshold(self):
         report = {
             "summary": {"documents": 1, "recall_min": 0.97, "mean_recall": 1.0},
@@ -1169,6 +1187,66 @@ class ReleaseManifestTests(unittest.TestCase):
                 "mean_recall",
                 ">=",
                 0.9,
+            )
+
+    def test_enforced_public_release_policy_rejects_negative_gate_count_threshold(self):
+        report = {
+            "summary": {"documents": 1, "recall_min": 0.97, "skipped": 0},
+            "gate": {
+                "passed": True,
+                "checks": [
+                    {
+                        "metric": "skipped",
+                        "op": "<=",
+                        "threshold": -1,
+                        "actual": 0,
+                        "passed": True,
+                    }
+                ],
+            },
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "public-release validation report gate check threshold must not be negative: skipped",
+        ):
+            release_manifest.require_gate_check_threshold(
+                "public-release",
+                report,
+                "validation",
+                "skipped",
+                "<=",
+                0,
+            )
+
+    def test_enforced_public_release_policy_rejects_negative_gate_count_actual(self):
+        report = {
+            "summary": {"documents": 1, "recall_min": 0.97, "skipped": -1},
+            "gate": {
+                "passed": True,
+                "checks": [
+                    {
+                        "metric": "skipped",
+                        "op": "<=",
+                        "threshold": 0,
+                        "actual": -1,
+                        "passed": True,
+                    }
+                ],
+            },
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "public-release validation report gate check actual must not be negative: skipped",
+        ):
+            release_manifest.require_gate_check_threshold(
+                "public-release",
+                report,
+                "validation",
+                "skipped",
+                "<=",
+                0,
             )
 
     def test_enforced_public_release_policy_rejects_nan_summary_metric(self):
