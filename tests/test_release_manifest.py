@@ -284,6 +284,20 @@ class ReleaseManifestTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, f"{label} must not be empty"):
                         release_manifest.release_manifest([artifact], **kwargs)
 
+    def test_manifest_rejects_non_string_release_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact = pathlib.Path(tmp) / "rdoc.tar.gz"
+            artifact.write_bytes(b"release artifact")
+
+            cases = [
+                ("version", {"version": 1}),
+                ("git_rev", {"git_rev": 1}),
+            ]
+            for label, kwargs in cases:
+                with self.subTest(label=label):
+                    with self.assertRaisesRegex(ValueError, f"{label} must be a string"):
+                        release_manifest.release_manifest([artifact], **kwargs)
+
     def test_manifest_rejects_padded_release_metadata(self):
         with tempfile.TemporaryDirectory() as tmp:
             artifact = pathlib.Path(tmp) / "rdoc.tar.gz"
