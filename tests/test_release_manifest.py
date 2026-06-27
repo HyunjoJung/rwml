@@ -715,6 +715,32 @@ class ReleaseManifestTests(unittest.TestCase):
                     corpus_manifests=[corpus, render_corpus, extra_corpus],
                 )
 
+    def test_enforced_public_release_policy_requires_matching_corpus_manifest_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            render_corpus = root / "RENDER_MANIFEST.tsv"
+            corpus.write_text(
+                "# path\tfields\twarnings\nsynthetic/a.docx\t0\t-\n",
+                encoding="utf-8",
+            )
+            render_corpus.write_text(
+                "# path\tpages\twarnings\nsynthetic/b.docx\t1\t-\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "requires matching corpus manifest document paths",
+            ):
+                release_manifest.check_required_policy_inputs(
+                    "public-release",
+                    hygiene_report=pathlib.Path("public-hygiene.json"),
+                    validation_report=pathlib.Path("render-validation.json"),
+                    benchmark_reports=[pathlib.Path("extract-benchmark.json")],
+                    corpus_manifests=[corpus, render_corpus],
+                )
+
     def test_cli_enforced_policy_rejects_failing_gate_report(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)

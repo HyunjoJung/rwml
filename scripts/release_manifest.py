@@ -216,6 +216,11 @@ def require_public_release_corpus_manifest_pair(name: str, corpus_manifests: lis
     required = " and ".join(PUBLIC_RELEASE_CORPUS_MANIFESTS)
     if not public_release_corpus_manifest_pair_matches(corpus_manifests):
         raise ValueError(f"{name} requires corpus manifests exactly {required}")
+    by_name = {path.name: path for path in corpus_manifests}
+    manifest_paths = corpus_manifest_document_paths(by_name["MANIFEST.tsv"])
+    render_manifest_paths = corpus_manifest_document_paths(by_name["RENDER_MANIFEST.tsv"])
+    if manifest_paths != render_manifest_paths:
+        raise ValueError(f"{name} requires matching corpus manifest document paths")
 
 
 def require_report_gate_passed(policy: str, report: dict[str, Any], label: str) -> None:
@@ -420,7 +425,7 @@ def parse_manifest_header(line: str) -> list[str]:
     return trimmed.split("\t")
 
 
-def corpus_manifest_summary(path: Path) -> dict[str, Any]:
+def read_corpus_manifest(path: Path) -> tuple[list[str], list[list[str]]]:
     header: list[str] | None = None
     rows: list[list[str]] = []
     seen_paths: set[str] = set()
@@ -457,6 +462,16 @@ def corpus_manifest_summary(path: Path) -> dict[str, Any]:
         raise ValueError(f"{path} is empty")
     if not rows:
         raise ValueError(f"{path} does not contain document rows")
+    return header, rows
+
+
+def corpus_manifest_document_paths(path: Path) -> list[str]:
+    _, rows = read_corpus_manifest(path)
+    return [row[0] for row in rows]
+
+
+def corpus_manifest_summary(path: Path) -> dict[str, Any]:
+    header, rows = read_corpus_manifest(path)
 
     numeric_totals: dict[str, int] = {}
     warning_counts: dict[str, int] = {}
