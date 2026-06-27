@@ -1875,6 +1875,7 @@ fn display_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
             || supported_eq_list_syntax(instruction)
             || supported_eq_overstrike_syntax(instruction)
             || supported_eq_box_syntax(instruction)
+            || supported_eq_bracket_syntax(instruction)
         {
             return FieldEvaluationReason::NoComputedResult;
         }
@@ -2443,6 +2444,21 @@ fn eq_enclosed_operand_with_prefixes_for_report<'a>(
     }
     let (inner, rest) = take_eq_parenthesized_operand_for_report(body)?;
     rest.trim().is_empty().then_some(inner)
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_eq_bracket_syntax(instruction: &str) -> bool {
+    let Some(expression) = eq_expression_for_report(instruction) else {
+        return false;
+    };
+    let Some(body) = strip_ascii_switch_prefix(expression.trim_start(), "\\b") else {
+        return false;
+    };
+    let (inner, rest) = match take_eq_parenthesized_operand_for_report(body.trim_start()) {
+        Some(value) => value,
+        None => return false,
+    };
+    rest.trim().is_empty() && eq_operand_for_report(inner)
 }
 
 fn action_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -5049,6 +5065,19 @@ mod tests {
         );
         assert_eq!(
             super::display_uncomputed_reason(r"EQ \x()"),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_display_diagnostics_accept_valid_eq_bracket() {
+        assert_eq!(
+            super::display_uncomputed_reason(r"EQ \b(Chapter)"),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::display_uncomputed_reason(r"EQ \b()"),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
     }
