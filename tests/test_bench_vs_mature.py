@@ -127,6 +127,12 @@ class BenchVsMatureReportTests(unittest.TestCase):
         else:
             self.fail("ValueError not raised")
 
+    def test_benchmark_report_rejects_out_of_range_scores(self):
+        rows = [{"file": "alpha", "poi_recall": 1.1, "poi_f1": 1.0}]
+
+        with self.assertRaisesRegex(ValueError, "score is out of range: poi_recall"):
+            bench_vs_mature.benchmark_report(rows)
+
     def test_benchmark_report_evaluates_release_thresholds(self):
         rows = [
             {

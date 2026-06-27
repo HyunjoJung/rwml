@@ -232,6 +232,8 @@ def benchmark_report(
         ):
             if metric in row and not is_finite_number(row[metric]):
                 raise ValueError(f"score is invalid: {metric}")
+            if metric in row and not 0 <= row[metric] <= 1:
+                raise ValueError(f"score is out of range: {metric}")
     summary = benchmark_summary(rows)
     report = {
         "schema": SCHEMA,
