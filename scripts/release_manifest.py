@@ -844,6 +844,8 @@ def release_manifest(
             raise ValueError(f"{label} must not be empty")
         if value is not None and value != value.strip():
             raise ValueError(f"{label} must not have surrounding whitespace")
+        if value is not None and any(char.isspace() for char in value):
+            raise ValueError(f"{label} must not contain whitespace")
 
     manifest: dict[str, Any] = {
         "schema": SCHEMA,
