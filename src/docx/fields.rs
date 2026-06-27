@@ -7119,16 +7119,14 @@ fn if_instruction(instruction: &str) -> Option<IfInstruction> {
     let mut false_text = String::new();
     let mut text_format = None;
     if let Some(part) = parts.next() {
-        if is_field_format_start(part) {
-            let next = (part == "\\*").then(|| parts.next()).flatten();
-            accept_if_format_switch(part, next, &mut text_format)?;
-        } else {
+        if !accept_if_format_switch(part, &mut parts, &mut text_format)? {
             false_text = if_result_text(part)?;
         }
     }
     while let Some(part) = parts.next() {
-        let next = (part == "\\*").then(|| parts.next()).flatten();
-        accept_if_format_switch(part, next, &mut text_format)?;
+        if !accept_if_format_switch(part, &mut parts, &mut text_format)? {
+            return None;
+        }
     }
     Some(IfInstruction {
         left,
@@ -7156,16 +7154,14 @@ fn if_field_syntax(instruction: &str) -> Option<()> {
     if_result_text(parts.next()?)?;
     let mut text_format = None;
     if let Some(part) = parts.next() {
-        if is_field_format_start(part) {
-            let next = (part == "\\*").then(|| parts.next()).flatten();
-            accept_if_format_switch(part, next, &mut text_format)?;
-        } else {
+        if !accept_if_format_switch(part, &mut parts, &mut text_format)? {
             if_result_text(part)?;
         }
     }
     while let Some(part) = parts.next() {
-        let next = (part == "\\*").then(|| parts.next()).flatten();
-        accept_if_format_switch(part, next, &mut text_format)?;
+        if !accept_if_format_switch(part, &mut parts, &mut text_format)? {
+            return None;
+        }
     }
     Some(())
 }
@@ -7198,8 +7194,9 @@ fn compare_instruction(instruction: &str) -> Option<IfInstruction> {
     let (left, operator, right) = comparison_operands(first, &mut parts)?;
     let mut text_format = None;
     while let Some(part) = parts.next() {
-        let next = (part == "\\*").then(|| parts.next()).flatten();
-        accept_if_format_switch(part, next, &mut text_format)?;
+        if !accept_if_format_switch(part, &mut parts, &mut text_format)? {
+            return None;
+        }
     }
     Some(IfInstruction {
         left,
@@ -7222,8 +7219,9 @@ fn compare_field_syntax(instruction: &str) -> Option<()> {
     comparison_syntax_operands(first, &mut parts)?;
     let mut text_format = None;
     while let Some(part) = parts.next() {
-        let next = (part == "\\*").then(|| parts.next()).flatten();
-        accept_if_format_switch(part, next, &mut text_format)?;
+        if !accept_if_format_switch(part, &mut parts, &mut text_format)? {
+            return None;
+        }
     }
     Some(())
 }
@@ -7530,16 +7528,17 @@ fn is_field_format_start(part: &str) -> bool {
     part == "\\*" || part.starts_with("\\*")
 }
 
-fn accept_if_format_switch(
-    part: &str,
-    next: Option<&str>,
+fn accept_if_format_switch<'a, I>(
+    part: &'a str,
+    parts: &mut I,
     text_format: &mut Option<FieldTextFormat>,
-) -> Option<()> {
-    if part == "\\*" {
-        accept_field_format_switch(next?, text_format).then_some(())
-    } else {
-        accept_field_format_switch(part.strip_prefix("\\*")?, text_format).then_some(())
-    }
+) -> Option<bool>
+where
+    I: Iterator<Item = &'a str>,
+{
+    accept_general_format_switch(part, parts, |format| {
+        accept_field_format_switch(format, text_format)
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -10969,6 +10968,22 @@ mod tests {
     fn text_comparisons_accept_wildcards_on_either_operand() {
         assert_eq!(
             computed_dynamic_result(r#"COMPARE "A*" = "AB""#).as_deref(),
+            Some("1")
+        );
+    }
+
+    #[test]
+    fn if_and_compare_use_common_general_format_switches() {
+        assert_eq!(
+            computed_dynamic_result(r#"IF 1 = 1 "ship" "hold" \* Upper"#).as_deref(),
+            Some("SHIP")
+        );
+        assert_eq!(
+            computed_dynamic_result(r#"IF 1 = 1 "ship" \*Lower"#).as_deref(),
+            Some("ship")
+        );
+        assert_eq!(
+            computed_dynamic_result(r#"COMPARE "A*" = "AB" \* MERGEFORMAT"#).as_deref(),
             Some("1")
         );
     }
