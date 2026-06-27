@@ -809,6 +809,8 @@ def release_manifest(
     for label, value in (("version", version), ("git_rev", git_rev)):
         if value is not None and not value.strip():
             raise ValueError(f"{label} must not be empty")
+        if value is not None and value != value.strip():
+            raise ValueError(f"{label} must not have surrounding whitespace")
 
     manifest: dict[str, Any] = {
         "schema": SCHEMA,

@@ -284,6 +284,23 @@ class ReleaseManifestTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, f"{label} must not be empty"):
                         release_manifest.release_manifest([artifact], **kwargs)
 
+    def test_manifest_rejects_padded_release_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact = pathlib.Path(tmp) / "rdoc.tar.gz"
+            artifact.write_bytes(b"release artifact")
+
+            cases = [
+                ("version", {"version": " 0.1.0"}),
+                ("git_rev", {"git_rev": "abc123 "}),
+            ]
+            for label, kwargs in cases:
+                with self.subTest(label=label):
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        f"{label} must not have surrounding whitespace",
+                    ):
+                        release_manifest.release_manifest([artifact], **kwargs)
+
     def test_hygiene_summary_rejects_passed_report_with_findings(self):
         with tempfile.TemporaryDirectory() as tmp:
             hygiene = pathlib.Path(tmp) / "public-hygiene.json"
