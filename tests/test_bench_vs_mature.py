@@ -103,6 +103,18 @@ class BenchVsMatureReportTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, message):
                     bench_vs_mature.benchmark_report(rows)
 
+    def test_benchmark_report_rejects_non_string_files(self):
+        rows = [{"file": 1, "poi_recall": 1.0, "poi_f1": 1.0}]
+
+        try:
+            bench_vs_mature.benchmark_report(rows)
+        except ValueError as exc:
+            self.assertRegex(str(exc), "file must be a string")
+        except Exception as exc:
+            self.fail(f"expected ValueError, got {type(exc).__name__}: {exc}")
+        else:
+            self.fail("ValueError not raised")
+
     def test_benchmark_report_evaluates_release_thresholds(self):
         rows = [
             {

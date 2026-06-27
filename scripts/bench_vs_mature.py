@@ -214,6 +214,8 @@ def benchmark_report(
         if "file" not in row:
             raise ValueError("file is required")
         file_name = row["file"]
+        if not isinstance(file_name, str):
+            raise ValueError("file must be a string")
         if not file_name.strip():
             raise ValueError("file must not be empty")
         if file_name != file_name.strip():
