@@ -181,7 +181,7 @@ fn document_info_field_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" DATE \@ &quot;yyyy-MM-dd&quot; "><w:r><w:t>2026-06-24</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTHOR \* MERGEFORMAT "><w:r><w:t>Hyunjo Jung</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DOCPROPERTY &quot;Company&quot; "><w:r><w:t>Example Co.</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NUMPAGES "><w:r><w:t>12</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" EDITTIME "><w:r><w:t>42</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DOCPROPERTY &quot;Broken Name "><w:r><w:t>cached broken property</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" DATE \@ &quot;yyyy-MM-dd&quot; "><w:r><w:t>2026-06-24</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TIME \@ &quot;HH:mm&quot; "><w:r><w:t>14:35</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTHOR \* MERGEFORMAT "><w:r><w:t>Hyunjo Jung</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DOCPROPERTY &quot;Company&quot; "><w:r><w:t>Example Co.</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NUMPAGES "><w:r><w:t>12</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" EDITTIME "><w:r><w:t>42</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DOCPROPERTY &quot;Broken Name "><w:r><w:t>cached broken property</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -2843,38 +2843,42 @@ fn docx_document_info_fields_are_named_cached_display_fields() {
     let doc = Document::open(&document_info_field_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 6);
+    assert_eq!(fields.len(), 7);
     assert_eq!(fields[0].kind, FieldKind::DocumentInfo("DATE".to_string()));
     assert_eq!(fields[0].instruction, "DATE \\@ \"yyyy-MM-dd\"");
     assert_eq!(fields[0].result, "2026-06-24");
     assert_eq!(fields[0].computed_result, None);
-    assert_eq!(
-        fields[1].kind,
-        FieldKind::DocumentInfo("AUTHOR".to_string())
-    );
-    assert_eq!(fields[1].result, "Hyunjo Jung");
+    assert_eq!(fields[1].kind, FieldKind::DocumentInfo("TIME".to_string()));
+    assert_eq!(fields[1].instruction, "TIME \\@ \"HH:mm\"");
+    assert_eq!(fields[1].result, "14:35");
+    assert_eq!(fields[1].computed_result, None);
     assert_eq!(
         fields[2].kind,
-        FieldKind::DocumentInfo("DOCPROPERTY".to_string())
+        FieldKind::DocumentInfo("AUTHOR".to_string())
     );
-    assert_eq!(fields[2].result, "Example Co.");
+    assert_eq!(fields[2].result, "Hyunjo Jung");
     assert_eq!(
         fields[3].kind,
-        FieldKind::DocumentInfo("NUMPAGES".to_string())
-    );
-    assert_eq!(fields[3].result, "12");
-    assert_eq!(
-        fields[4].kind,
-        FieldKind::DocumentInfo("EDITTIME".to_string())
-    );
-    assert_eq!(fields[4].result, "42");
-    assert_eq!(
-        fields[5].kind,
         FieldKind::DocumentInfo("DOCPROPERTY".to_string())
     );
-    assert_eq!(fields[5].instruction, "DOCPROPERTY \"Broken Name ");
-    assert_eq!(fields[5].result, "cached broken property");
-    assert_eq!(fields[5].computed_result, None);
+    assert_eq!(fields[3].result, "Example Co.");
+    assert_eq!(
+        fields[4].kind,
+        FieldKind::DocumentInfo("NUMPAGES".to_string())
+    );
+    assert_eq!(fields[4].result, "12");
+    assert_eq!(
+        fields[5].kind,
+        FieldKind::DocumentInfo("EDITTIME".to_string())
+    );
+    assert_eq!(fields[5].result, "42");
+    assert_eq!(
+        fields[6].kind,
+        FieldKind::DocumentInfo("DOCPROPERTY".to_string())
+    );
+    assert_eq!(fields[6].instruction, "DOCPROPERTY \"Broken Name ");
+    assert_eq!(fields[6].result, "cached broken property");
+    assert_eq!(fields[6].computed_result, None);
 
     let report = doc.report();
     assert_eq!(
@@ -2895,6 +2899,7 @@ fn docx_document_info_fields_are_named_cached_display_fields() {
     let main_text = doc.main_text();
     assert!(
         main_text.contains("2026-06-24")
+            && main_text.contains("14:35")
             && main_text.contains("Hyunjo Jung")
             && main_text.contains("Example Co.")
             && main_text.contains("12")
