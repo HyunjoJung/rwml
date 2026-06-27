@@ -1871,6 +1871,7 @@ fn display_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
             || supported_eq_displacement_syntax(instruction)
             || supported_eq_script_syntax(instruction)
             || supported_eq_fraction_syntax(instruction)
+            || supported_eq_radical_syntax(instruction)
         {
             return FieldEvaluationReason::NoComputedResult;
         }
@@ -2257,6 +2258,61 @@ fn eq_operand_for_report(operand: &str) -> bool {
         }
     }
     true
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_eq_radical_syntax(instruction: &str) -> bool {
+    let Some(expression) = eq_expression_for_report(instruction) else {
+        return false;
+    };
+    let Some(body) = strip_ascii_switch_prefix(expression.trim_start(), "\\r") else {
+        return false;
+    };
+    let Some(inner) = body
+        .strip_prefix('(')
+        .and_then(|body| body.strip_suffix(')'))
+    else {
+        return false;
+    };
+    let Some((degree, radicand)) = split_eq_radical_operands_for_report(inner) else {
+        return false;
+    };
+    eq_operand_for_report(degree)
+        && match radicand {
+            Some(radicand) => eq_operand_for_report(radicand),
+            None => true,
+        }
+}
+
+#[cfg(not(feature = "docx"))]
+fn split_eq_radical_operands_for_report(inner: &str) -> Option<(&str, Option<&str>)> {
+    let mut depth = 0usize;
+    let mut separator = None;
+    let mut in_quotes = false;
+    let mut escaped = false;
+    for (index, ch) in inner.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' => escaped = true,
+            '"' => in_quotes = !in_quotes,
+            '(' if !in_quotes => depth += 1,
+            ')' if !in_quotes => depth = depth.checked_sub(1)?,
+            ',' | ';' if !in_quotes && depth == 0 && separator.replace(index).is_some() => {
+                return None;
+            }
+            _ => {}
+        }
+    }
+    if in_quotes || escaped || depth != 0 {
+        return None;
+    }
+    match separator {
+        Some(index) => Some((&inner[..index], Some(&inner[index + 1..]))),
+        None => Some((inner, None)),
+    }
 }
 
 fn action_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -4811,6 +4867,19 @@ mod tests {
         );
         assert_eq!(
             super::display_uncomputed_reason(r"EQ \f(1)"),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_display_diagnostics_accept_valid_eq_radical() {
+        assert_eq!(
+            super::display_uncomputed_reason(r"EQ \r(3,27)"),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::display_uncomputed_reason(r"EQ \r()"),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
     }
