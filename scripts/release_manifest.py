@@ -109,6 +109,8 @@ def is_number(value: Any) -> bool:
 
 def report_summary(path: Path) -> dict[str, Any]:
     data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} does not contain a JSON object")
     summary = data.get("summary")
     if not isinstance(summary, dict):
         raise ValueError(f"{path} does not contain a JSON object field named 'summary'")
@@ -129,6 +131,8 @@ def hygiene_summary(path: Path | None) -> dict[str, Any] | None:
     if path is None:
         return None
     data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} does not contain a JSON object")
     passed = data.get("passed")
     findings = data.get("findings")
     if not isinstance(passed, bool):

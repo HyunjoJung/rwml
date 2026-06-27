@@ -248,6 +248,22 @@ class ReleaseManifestTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "cannot pass with hygiene findings"):
                 release_manifest.hygiene_summary(hygiene)
 
+    def test_hygiene_summary_rejects_non_object_report(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            hygiene = pathlib.Path(tmp) / "public-hygiene.json"
+            hygiene.write_text(json.dumps([]), encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "does not contain a JSON object"):
+                release_manifest.hygiene_summary(hygiene)
+
+    def test_report_summary_rejects_non_object_report(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            validation = pathlib.Path(tmp) / "render-validation.json"
+            validation.write_text(json.dumps([]), encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "does not contain a JSON object"):
+                release_manifest.report_summary(validation)
+
     def test_cli_writes_manifest_json(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
