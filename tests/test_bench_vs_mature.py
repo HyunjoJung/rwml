@@ -133,6 +133,12 @@ class BenchVsMatureReportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "score is out of range: poi_recall"):
             bench_vs_mature.benchmark_report(rows)
 
+    def test_benchmark_report_rejects_invalid_rdoc_markers(self):
+        rows = [{"file": "broken", "rdoc": "FAIL"}]
+
+        with self.assertRaisesRegex(ValueError, "rdoc marker is invalid"):
+            bench_vs_mature.benchmark_report(rows)
+
     def test_benchmark_report_evaluates_release_thresholds(self):
         rows = [
             {

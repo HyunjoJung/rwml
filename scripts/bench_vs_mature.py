@@ -222,6 +222,8 @@ def benchmark_report(
             raise ValueError(f"file must not have surrounding whitespace: {file_name}")
         if "/" in file_name or "\\" in file_name:
             raise ValueError(f"file path is invalid: {file_name}")
+        if "rdoc" in row and row["rdoc"] != "ERROR":
+            raise ValueError("rdoc marker is invalid")
         for metric in (
             "poi_recall",
             "poi_prec",
