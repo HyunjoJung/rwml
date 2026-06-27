@@ -1529,7 +1529,9 @@ fn unsupported_field_reason(field: &Field) -> Option<FieldEvaluationReason> {
             Some(merge_control_uncomputed_reason(&field.instruction))
         }
         FieldKind::Dynamic(_) => Some(FieldEvaluationReason::NoComputedResult),
-        FieldKind::InsertedContent(_) => Some(FieldEvaluationReason::NoComputedResult),
+        FieldKind::InsertedContent(_) => {
+            Some(inserted_content_uncomputed_reason(&field.instruction))
+        }
         FieldKind::MailMerge(_) => Some(FieldEvaluationReason::NoComputedResult),
         FieldKind::ReferenceIndex(ref kind) if is_reference_index_marker_kind(kind.as_str()) => {
             Some(reference_index_marker_uncomputed_reason(&field.instruction))
@@ -1795,6 +1797,43 @@ fn action_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     FieldEvaluationReason::UnsupportedSwitch
 }
 
+fn inserted_content_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
+    if supported_inserted_content_syntax(instruction) {
+        FieldEvaluationReason::NoComputedResult
+    } else {
+        FieldEvaluationReason::UnsupportedSwitch
+    }
+}
+
+fn supported_inserted_content_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if !is_inserted_content_kind(kind) {
+        return false;
+    }
+    parts.all(diagnostic_field_token_well_formed)
+}
+
+fn is_inserted_content_kind(kind: &str) -> bool {
+    matches!(
+        kind.to_ascii_uppercase().as_str(),
+        "AUTOTEXT"
+            | "AUTOTEXTLIST"
+            | "DATABASE"
+            | "DDE"
+            | "DDEAUTO"
+            | "EMBED"
+            | "IMPORT"
+            | "INCLUDE"
+            | "INCLUDEPICTURE"
+            | "INCLUDETEXT"
+            | "LINK"
+    )
+}
+
 fn barcode_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     if supported_barcode_syntax(instruction) {
         FieldEvaluationReason::NoComputedResult
@@ -1820,18 +1859,23 @@ fn supported_barcode_syntax(instruction: &str) -> bool {
     };
     let mut value_tokens = 0usize;
     for part in parts {
-        if part.starts_with('\\') {
-            if part.contains('"') {
-                return false;
-            }
-            continue;
-        }
-        if diagnostic_literal_token(part).is_none() {
+        if !diagnostic_field_token_well_formed(part) {
             return false;
+        }
+        if part.starts_with('\\') {
+            continue;
         }
         value_tokens += 1;
     }
     value_tokens >= required_value_tokens
+}
+
+fn diagnostic_field_token_well_formed(part: &str) -> bool {
+    if part.starts_with('\\') {
+        !part.contains('"')
+    } else {
+        diagnostic_literal_token(part).is_some()
+    }
 }
 
 fn is_reference_index_marker_kind(kind: &str) -> bool {

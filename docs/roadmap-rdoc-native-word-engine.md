@@ -326,7 +326,8 @@ Initial status:
   evaluation is implemented. The
   inserted/external-content fields (`INCLUDETEXT`, `INCLUDEPICTURE`, `LINK`,
   `EMBED`, `DATABASE`, `DDE`, `DDEAUTO`, `IMPORT`, `INCLUDE`, `AUTOTEXT`,
-  `AUTOTEXTLIST`) are named separately from unknown fields and report
+  `AUTOTEXTLIST`) are named separately from unknown fields, malformed quoted
+  instruction syntax reports `UnsupportedSwitch`, and valid broader forms report
   `NoComputedResult` until native evaluation is implemented. Mail-merge helper
   fields (`ADDRESSBLOCK`, `GREETINGLINE`,
   `MERGEREC`, `MERGESEQ`) are named separately from unknown fields and report
@@ -403,8 +404,9 @@ Initial status:
   `HTMLACTIVEX`) are named separately from unknown fields and report
   `NoComputedResult` while leaving opaque payloads uninterpreted. The
   barcode fields (`BARCODE`, `DISPLAYBARCODE`, `MERGEBARCODE`) are named
-  separately from unknown fields and report `NoComputedResult` until native
-  barcode generation is implemented. The
+  separately from unknown fields, malformed syntax reports `UnsupportedSwitch`,
+  and valid broader forms report `NoComputedResult` until native barcode
+  generation is implemented. The
   legacy form fields (`FORMTEXT`, `FORMCHECKBOX`, `FORMDROPDOWN`) are named
   separately from unknown fields; deterministic `w:ffData` checkbox
   checked/default states, dropdown result/default selections, explicit
@@ -798,7 +800,8 @@ Initial status:
   dynamic/control fields preserve cached text with `NoComputedResult`
   diagnostics.
   Inserted/external-content fields are likewise named separately
-  from unknown fields and preserve cached text with `NoComputedResult`
+  from unknown fields, preserve cached text, report malformed quoted syntax as
+  `UnsupportedSwitch`, and keep valid broader forms as `NoComputedResult`
   diagnostics. Mail-merge helper fields are named separately from unknown
   fields and preserve cached text with `NoComputedResult` diagnostics.
   Reference/index fields are named separately from unknown fields; simple
@@ -851,8 +854,9 @@ Initial status:
   preserve cached text with `NoComputedResult` diagnostics.
   Compatibility/private fields are named separately from unknown fields and
   preserve cached text with `NoComputedResult` diagnostics.
-  Barcode fields are named separately from unknown fields and preserve cached
-  text with `NoComputedResult` diagnostics.
+  Barcode fields are named separately from unknown fields, preserve cached text,
+  report malformed syntax as `UnsupportedSwitch`, and keep valid broader forms
+  as `NoComputedResult` diagnostics.
   Legacy form fields are named separately from unknown fields; deterministic
   `w:ffData` checkbox checked/default states, dropdown result/default
   selections, explicit non-empty text-input current values, and empty-current

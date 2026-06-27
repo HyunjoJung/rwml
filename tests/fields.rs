@@ -5008,6 +5008,69 @@ fn docx_inserted_content_fields_are_named_noncomputed_fields() {
 }
 
 #[test]
+fn docx_inserted_content_diagnostics_split_valid_broader_fields_from_malformed_syntax() {
+    let doc = Document::open(&docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" INCLUDETEXT &quot;appendix.docx&quot; "><w:r><w:t>Appendix text</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" INCLUDEPICTURE &quot;chart.png "><w:r><w:t>cached malformed include picture</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ]))
+    .expect("fixture opens");
+
+    let fields = doc.fields();
+    assert_eq!(fields.len(), 2);
+    assert_eq!(
+        fields[0].kind,
+        FieldKind::InsertedContent("INCLUDETEXT".to_string())
+    );
+    assert_eq!(fields[0].instruction, r#"INCLUDETEXT "appendix.docx""#);
+    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(
+        fields[1].kind,
+        FieldKind::InsertedContent("INCLUDEPICTURE".to_string())
+    );
+    assert_eq!(fields[1].instruction, r#"INCLUDEPICTURE "chart.png "#);
+    assert_eq!(fields[1].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![
+            FieldKindCount {
+                kind: FieldKind::InsertedContent("INCLUDETEXT".to_string()),
+                count: 1,
+            },
+            FieldKindCount {
+                kind: FieldKind::InsertedContent("INCLUDEPICTURE".to_string()),
+                count: 1,
+            },
+        ]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::NoComputedResult,
+                count: 1,
+            },
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::UnsupportedSwitch,
+                count: 1,
+            },
+        ]
+    );
+    assert!(doc.main_text().contains("cached malformed include picture"));
+}
+
+#[test]
 fn docx_mail_merge_helper_fields_are_named_noncomputed_fields() {
     let doc = Document::open(&mail_merge_helper_field_docx()).expect("fixture opens");
     let fields = doc.fields();

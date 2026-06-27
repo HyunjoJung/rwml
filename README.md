@@ -490,8 +490,8 @@ remaining dynamic/control fields preserve cached result text and report
 inserted/external-content fields (`INCLUDETEXT`, `INCLUDEPICTURE`, `LINK`,
 `EMBED`, `DATABASE`, `DDE`, `DDEAUTO`, `IMPORT`, `INCLUDE`, `AUTOTEXT`,
 `AUTOTEXTLIST`) are also named separately from unknown fields, preserve cached
-result text, and report
-`NoComputedResult` diagnostics;
+result text, malformed quoted instruction syntax reports `UnsupportedSwitch`,
+and valid broader forms report `NoComputedResult` diagnostics;
 mail-merge helper fields (`ADDRESSBLOCK`, `GREETINGLINE`, `MERGEREC`,
 `MERGESEQ`) are named separately from unknown fields, preserve cached result
 text, and report `NoComputedResult` diagnostics;
@@ -566,8 +566,9 @@ compatibility/private fields (`PRIVATE`, `ADDIN`, `DATA`, `GLOSSARY`,
 text, and report `NoComputedResult` diagnostics while leaving opaque payloads
 uninterpreted;
 barcode fields (`BARCODE`, `DISPLAYBARCODE`, `MERGEBARCODE`) are named
-separately from unknown fields, preserve cached result text, and report
-`NoComputedResult` diagnostics until native barcode generation is implemented;
+separately from unknown fields, preserve cached result text, malformed syntax
+reports `UnsupportedSwitch`, and valid broader forms report `NoComputedResult`
+diagnostics until native barcode generation is implemented;
 legacy form fields (`FORMTEXT`, `FORMCHECKBOX`, `FORMDROPDOWN`) are named
 separately from unknown fields; deterministic `w:ffData` `FORMCHECKBOX`
 checked/default states and `FORMDROPDOWN` result/default selections compute and
@@ -953,11 +954,12 @@ The long-term native Word engine plan is split into the
       results, explicit-default `FILLIN`/`ASK` prompt fields, and literal quoted or single-token `SET` bookmark assignments feeding later plain
       `REF`/direct bookmark references,
       malformed `SET` syntax reporting `UnsupportedSwitch`,
-      inserted-content fields, mail-merge helper fields, reference/index fields beyond hidden simple `RD`/`TA`/`XE` markers,
+      inserted-content malformed-syntax diagnostics, mail-merge helper fields,
+      reference/index fields beyond hidden simple `RD`/`TA`/`XE` markers,
       numbering/list fields, document-structure fields beyond computed `REVNUM`/`SECTION`,
       structurally bounded `SECTIONPAGES`, and
       deterministic body paragraph- and character-style `STYLEREF`, display/layout fields beyond hidden validated `ADVANCE`, deterministic simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, operand-preserving or hidden empty displacement controls, and `SYMBOL`, action/automation fields beyond deterministic quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms,
-      compatibility/private fields, barcode fields, legacy form fields beyond
+      compatibility/private fields, barcode malformed-syntax diagnostics, legacy form fields beyond
       deterministic `w:ffData` checkbox checked/default states, dropdown
       result/default selections, explicit non-empty text-input current results,
       and empty-current text-input default results, and
@@ -992,11 +994,12 @@ The long-term native Word engine plan is split into the
       results, explicit-default `FILLIN`/`ASK` prompt fields, and literal quoted or single-token `SET` bookmark assignments feeding later plain
       `REF`/direct bookmark references,
       malformed `SET` syntax reporting `UnsupportedSwitch`,
-      inserted-content fields, mail-merge helper fields, reference/index fields beyond hidden simple `RD`/`TA`/`XE` markers,
+      inserted-content malformed-syntax diagnostics, mail-merge helper fields,
+      reference/index fields beyond hidden simple `RD`/`TA`/`XE` markers,
       numbering/list fields, document-structure fields beyond computed `REVNUM`/`SECTION`,
       structurally bounded `SECTIONPAGES`, and
       deterministic body paragraph- and character-style `STYLEREF`, display/layout fields beyond hidden validated `ADVANCE`, deterministic simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, operand-preserving or hidden empty displacement controls, and `SYMBOL`, action/automation fields beyond deterministic quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms,
-      compatibility/private fields, barcode fields, legacy form fields beyond
+      compatibility/private fields, barcode malformed-syntax diagnostics, legacy form fields beyond
       deterministic `w:ffData` checkbox checked/default states, dropdown
       result/default selections, explicit non-empty text-input current results,
       and empty-current text-input default results, and
