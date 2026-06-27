@@ -479,6 +479,8 @@ def read_corpus_manifest(path: Path) -> tuple[list[str], list[list[str]]]:
                 raise ValueError(f"{path} does not start with a TSV path header")
             seen_columns: set[str] = set()
             for column in header:
+                if not column:
+                    raise ValueError(f"{path} has empty TSV column")
                 if column in seen_columns:
                     raise ValueError(f"{path} has duplicate TSV column: {column}")
                 seen_columns.add(column)
