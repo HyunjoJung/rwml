@@ -237,6 +237,17 @@ class ReleaseManifestTests(unittest.TestCase):
             [benchmark_alpha.as_posix(), benchmark_zeta.as_posix()],
         )
 
+    def test_hygiene_summary_rejects_passed_report_with_findings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            hygiene = pathlib.Path(tmp) / "public-hygiene.json"
+            hygiene.write_text(
+                json.dumps({"passed": True, "findings": [{"path": "private.docx"}]}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "cannot pass with hygiene findings"):
+                release_manifest.hygiene_summary(hygiene)
+
     def test_cli_writes_manifest_json(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
