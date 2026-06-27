@@ -145,6 +145,12 @@ class BenchVsMatureReportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "error row has scores"):
             bench_vs_mature.benchmark_report(rows)
 
+    def test_benchmark_report_rejects_unclassified_rows(self):
+        rows = [{"file": "empty"}]
+
+        with self.assertRaisesRegex(ValueError, "row has no score or error marker"):
+            bench_vs_mature.benchmark_report(rows)
+
     def test_benchmark_report_evaluates_release_thresholds(self):
         rows = [
             {

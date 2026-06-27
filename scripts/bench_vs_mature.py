@@ -238,6 +238,8 @@ def benchmark_report(
                 raise ValueError(f"score is invalid: {metric}")
             if metric in row and not 0 <= row[metric] <= 1:
                 raise ValueError(f"score is out of range: {metric}")
+        if row.get("rdoc") != "ERROR" and "poi_recall" not in row:
+            raise ValueError("row has no score or error marker")
     summary = benchmark_summary(rows)
     report = {
         "schema": SCHEMA,
