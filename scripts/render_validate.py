@@ -45,6 +45,9 @@ except ImportError:
     Image = None
 
 
+COUNT_THRESHOLD_METRICS = {"below_recall_min", "skipped"}
+
+
 @dataclass
 class ValidationRow:
     document: str
@@ -98,6 +101,8 @@ def add_threshold_check(
         return
     if not is_finite_number(threshold):
         raise ValueError(f"non-finite threshold for {metric}: {threshold}")
+    if metric in COUNT_THRESHOLD_METRICS and threshold < 0:
+        raise ValueError(f"negative count threshold for {metric}: {threshold}")
     if actual is None:
         passed = False
     elif op == ">=":
