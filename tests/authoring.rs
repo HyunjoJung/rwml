@@ -1226,6 +1226,11 @@ fn run_builder_skips_unreferenceable_bookmark_names() {
         .paragraph_runs([RunBuilder::new("Figure 1").bookmark("Figure 1").build()])
         .build();
 
+    let Block::Paragraph(paragraph) = &model.blocks[0] else {
+        panic!("expected bookmark paragraph");
+    };
+    assert_eq!(paragraph.runs[0].bookmark, None);
+
     let bytes = rdoc::write_docx(&model);
     let parts = unzip_parts(&bytes);
     let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
@@ -1270,6 +1275,31 @@ fn run_builder_adds_page_ref_field() {
     assert_eq!(fields[0].kind, FieldKind::PageRef);
     assert_eq!(fields[0].instruction, "PAGEREF Figure1 \\h");
     assert_eq!(fields[0].result, "3");
+}
+
+#[test]
+fn run_builder_skips_unreferenceable_page_ref_targets() {
+    let model = DocBuilder::new()
+        .paragraph_runs([RunBuilder::new("3").page_ref("Figure 1").build()])
+        .build();
+
+    let Block::Paragraph(paragraph) = &model.blocks[0] else {
+        panic!("expected page-ref paragraph");
+    };
+    assert!(matches!(paragraph.runs[0].field, FieldRole::None));
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    assert!(
+        document_xml.contains(r#"<w:t xml:space="preserve">3</w:t>"#)
+            && !document_xml.contains("<w:fldSimple"),
+        "invalid PAGEREF target should not be serialized as a field: {document_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("page-ref-sanitized .docx reopens");
+    assert_eq!(reopened.fields().len(), 0);
+    assert_eq!(reopened.main_text(), "3");
 }
 
 #[test]

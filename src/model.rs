@@ -439,6 +439,13 @@ pub struct Run {
     pub note: Option<AuthoredNote>,
 }
 
+pub(crate) fn referenceable_bookmark_name(name: &str) -> bool {
+    !name.trim().is_empty()
+        && !name.starts_with('\\')
+        && !name.contains('"')
+        && !name.chars().any(char::is_whitespace)
+}
+
 /// An sRGB color.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Hash)]
 pub struct Color {

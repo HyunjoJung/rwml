@@ -16,10 +16,11 @@
 use super::opc::{Package, Rel};
 use super::{esc_attr, esc_text};
 use crate::model::{
-    Align, AuthoredComment, AuthoredContentControl, AuthoredNote, AuthoredRevision, Block,
-    CellMargins, CharProps, Chart, ChartKind, ChartSeries, ChartShape, Color, FieldRole, Image,
-    Indent, ParaProps, Paragraph, ParagraphStyle, SectionBreakKind, SectionSetup, Spacing, Table,
-    TableBorderSide, TableBorderStyle, VertAlign, WebExtensionTaskPane,
+    referenceable_bookmark_name, Align, AuthoredComment, AuthoredContentControl, AuthoredNote,
+    AuthoredRevision, Block, CellMargins, CharProps, Chart, ChartKind, ChartSeries, ChartShape,
+    Color, FieldRole, Image, Indent, ParaProps, Paragraph, ParagraphStyle, SectionBreakKind,
+    SectionSetup, Spacing, Table, TableBorderSide, TableBorderStyle, VertAlign,
+    WebExtensionTaskPane,
 };
 use crate::{NoteKind, RevisionKind};
 
@@ -785,7 +786,7 @@ impl Ctx {
     }
 
     fn bookmark_wrapper(&mut self, name: Option<&str>, run_xml: &str) -> String {
-        let Some(name) = name.filter(|name| Self::valid_bookmark_name(name)) else {
+        let Some(name) = name.filter(|name| referenceable_bookmark_name(name)) else {
             return run_xml.to_string();
         };
         let id = self.bookmark_id;
@@ -794,13 +795,6 @@ impl Ctx {
             r#"<w:bookmarkStart w:id="{id}" w:name="{}"/>{run_xml}<w:bookmarkEnd w:id="{id}"/>"#,
             esc_attr(name)
         )
-    }
-
-    fn valid_bookmark_name(name: &str) -> bool {
-        !name.trim().is_empty()
-            && !name.starts_with('\\')
-            && !name.contains('"')
-            && !name.chars().any(char::is_whitespace)
     }
 
     fn write_revision_wrapper(

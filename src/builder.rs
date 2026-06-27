@@ -1,11 +1,11 @@
 //! Ergonomic authoring helpers over [`crate::DocModel`].
 
 use crate::model::{
-    Align, AuthoredComment, AuthoredContentControl, AuthoredNote, AuthoredRevision, Block, Cell,
-    CharProps, Chart, ChartKind, ChartSeries, ChartShape, Color, CustomXmlItem, DocGrid,
-    DocGridType, DocModel, FieldRole, Image, ListInfo, PageNumberFormat, PageSetup, ParaProps,
-    Paragraph, ParagraphStyle, Row, Run, SectionBreakKind, SectionSetup, Table, TableBorderSide,
-    TableBorderStyle, TextDirection, VCell, WebExtensionTaskPane,
+    referenceable_bookmark_name, Align, AuthoredComment, AuthoredContentControl, AuthoredNote,
+    AuthoredRevision, Block, Cell, CharProps, Chart, ChartKind, ChartSeries, ChartShape, Color,
+    CustomXmlItem, DocGrid, DocGridType, DocModel, FieldRole, Image, ListInfo, PageNumberFormat,
+    PageSetup, ParaProps, Paragraph, ParagraphStyle, Row, Run, SectionBreakKind, SectionSetup,
+    Table, TableBorderSide, TableBorderStyle, TextDirection, VCell, WebExtensionTaskPane,
 };
 use crate::{NoteKind, RevisionKind};
 
@@ -90,7 +90,12 @@ impl RunBuilder {
 
     /// Mark the run as the cached result of a hyperlink-style `PAGEREF` field.
     pub fn page_ref(self, bookmark: impl Into<String>) -> Self {
-        self.field(format!("PAGEREF {} \\h", bookmark.into()))
+        let bookmark = bookmark.into();
+        if referenceable_bookmark_name(&bookmark) {
+            self.field(format!("PAGEREF {bookmark} \\h"))
+        } else {
+            self
+        }
     }
 
     /// Mark the run as a relationship-backed external hyperlink.
@@ -128,7 +133,10 @@ impl RunBuilder {
 
     /// Wrap this run in a generated bookmark.
     pub fn bookmark(mut self, name: impl Into<String>) -> Self {
-        self.run.bookmark = Some(name.into());
+        let name = name.into();
+        if referenceable_bookmark_name(&name) {
+            self.run.bookmark = Some(name);
+        }
         self
     }
 
