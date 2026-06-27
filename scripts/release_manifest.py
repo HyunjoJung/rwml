@@ -486,6 +486,8 @@ def read_corpus_manifest(path: Path) -> tuple[list[str], list[list[str]]]:
                 if column in seen_columns:
                     raise ValueError(f"{path} has duplicate TSV column: {column}")
                 seen_columns.add(column)
+            if "warnings" not in seen_columns:
+                raise ValueError(f"{path} missing required TSV column: warnings")
             continue
         if trimmed.startswith("#"):
             continue

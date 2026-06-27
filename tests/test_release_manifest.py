@@ -527,6 +527,21 @@ class ReleaseManifestTests(unittest.TestCase):
             ):
                 release_manifest.corpus_manifest_summary(corpus)
 
+    def test_manifest_rejects_missing_public_corpus_warnings_column(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            corpus.write_text(
+                "# path\tfields\nsynthetic/fields.docx\t1\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "missing required TSV column: warnings",
+            ):
+                release_manifest.corpus_manifest_summary(corpus)
+
     def test_manifest_rejects_whitespace_public_corpus_columns(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
