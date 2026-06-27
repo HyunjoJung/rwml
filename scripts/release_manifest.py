@@ -202,6 +202,10 @@ def public_release_policy_input_gaps(
         missing.append("corpus manifest")
     elif not public_release_corpus_manifest_pair_matches(corpus_manifests):
         missing.append("exact public corpus manifest pair")
+    elif all(path.is_file() for path in corpus_manifests) and not (
+        public_release_corpus_manifest_documents_match(corpus_manifests)
+    ):
+        missing.append("matching public corpus manifest documents")
     return missing
 
 
@@ -212,14 +216,18 @@ def public_release_corpus_manifest_pair_matches(corpus_manifests: list[Path]) ->
     )
 
 
+def public_release_corpus_manifest_documents_match(corpus_manifests: list[Path]) -> bool:
+    by_name = {path.name: path for path in corpus_manifests}
+    manifest_paths = corpus_manifest_document_paths(by_name["MANIFEST.tsv"])
+    render_manifest_paths = corpus_manifest_document_paths(by_name["RENDER_MANIFEST.tsv"])
+    return manifest_paths == render_manifest_paths
+
+
 def require_public_release_corpus_manifest_pair(name: str, corpus_manifests: list[Path]) -> None:
     required = " and ".join(PUBLIC_RELEASE_CORPUS_MANIFESTS)
     if not public_release_corpus_manifest_pair_matches(corpus_manifests):
         raise ValueError(f"{name} requires corpus manifests exactly {required}")
-    by_name = {path.name: path for path in corpus_manifests}
-    manifest_paths = corpus_manifest_document_paths(by_name["MANIFEST.tsv"])
-    render_manifest_paths = corpus_manifest_document_paths(by_name["RENDER_MANIFEST.tsv"])
-    if manifest_paths != render_manifest_paths:
+    if not public_release_corpus_manifest_documents_match(corpus_manifests):
         raise ValueError(f"{name} requires matching corpus manifest document paths")
 
 

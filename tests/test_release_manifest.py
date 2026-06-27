@@ -589,6 +589,36 @@ class ReleaseManifestTests(unittest.TestCase):
         self.assertTrue(evidence["strict_policy_inputs_complete"])
         self.assertEqual(evidence["strict_missing"], [])
 
+    def test_release_evidence_marks_mismatched_corpus_manifest_paths_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            render_corpus = root / "RENDER_MANIFEST.tsv"
+            corpus.write_text(
+                "# path\tfields\twarnings\nsynthetic/a.docx\t0\t-\n",
+                encoding="utf-8",
+            )
+            render_corpus.write_text(
+                "# path\tpages\twarnings\nsynthetic/b.docx\t1\t-\n",
+                encoding="utf-8",
+            )
+
+            evidence = release_manifest.release_evidence_summary(
+                "public-release",
+                enforce_policy_inputs=False,
+                hygiene_report=pathlib.Path("public-hygiene.json"),
+                validation_report=pathlib.Path("render-validation.json"),
+                benchmark_reports=[pathlib.Path("extract-benchmark.json")],
+                corpus_manifests=[corpus, render_corpus],
+            )
+
+        self.assertEqual(evidence["strict_policy_status"], "missing_inputs")
+        self.assertFalse(evidence["strict_policy_inputs_complete"])
+        self.assertEqual(
+            evidence["strict_missing"],
+            ["matching public corpus manifest documents"],
+        )
+
     def test_enforced_public_release_policy_requires_local_reports(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
