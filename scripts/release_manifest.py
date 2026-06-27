@@ -493,6 +493,14 @@ def read_corpus_manifest(path: Path) -> tuple[list[str], list[list[str]]]:
                 f"{path} row has {len(cols)} columns, expected {len(header)}: {line}"
             )
         document_path = cols[0]
+        if (
+            not document_path
+            or document_path.startswith(("/", "\\"))
+            or "\\" in document_path
+            or ":" in document_path
+            or any(part in {"", ".", ".."} for part in document_path.split("/"))
+        ):
+            raise ValueError(f"{path} has unsafe document path: {document_path}")
         if document_path in seen_paths:
             raise ValueError(f"{path} has duplicate document path: {document_path}")
         seen_paths.add(document_path)

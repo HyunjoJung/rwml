@@ -437,6 +437,21 @@ class ReleaseManifestTests(unittest.TestCase):
             ):
                 release_manifest.corpus_manifest_summary(corpus)
 
+    def test_manifest_rejects_unsafe_public_corpus_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            corpus.write_text(
+                "# path\tfields\twarnings\n../private/source.docx\t1\t-\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "unsafe document path: ../private/source.docx",
+            ):
+                release_manifest.corpus_manifest_summary(corpus)
+
     def test_manifest_rejects_duplicate_public_corpus_columns(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
