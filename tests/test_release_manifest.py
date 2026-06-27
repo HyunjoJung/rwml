@@ -245,6 +245,31 @@ class ReleaseManifestTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "duplicate artifact path"):
                 release_manifest.release_manifest([artifact, artifact])
 
+    def test_manifest_rejects_duplicate_evidence_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            artifact = root / "rdoc.tar.gz"
+            benchmark = root / "benchmark.json"
+            corpus = root / "MANIFEST.tsv"
+            artifact.write_bytes(b"release artifact")
+            benchmark.write_text(
+                json.dumps({"summary": {"files": 1}, "gate": {"passed": True, "checks": []}}),
+                encoding="utf-8",
+            )
+            corpus.write_text(
+                "# path\tfields\twarnings\nsynthetic/a.docx\t0\t-\n",
+                encoding="utf-8",
+            )
+
+            cases = [
+                ("benchmark report", {"benchmark_reports": [benchmark, benchmark]}),
+                ("corpus manifest", {"corpus_manifests": [corpus, corpus]}),
+            ]
+            for label, kwargs in cases:
+                with self.subTest(label=label):
+                    with self.assertRaisesRegex(ValueError, f"duplicate {label} path"):
+                        release_manifest.release_manifest([artifact], **kwargs)
+
     def test_hygiene_summary_rejects_passed_report_with_findings(self):
         with tempfile.TemporaryDirectory() as tmp:
             hygiene = pathlib.Path(tmp) / "public-hygiene.json"

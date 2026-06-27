@@ -99,6 +99,15 @@ def path_sort_key(path: Path) -> str:
     return path.as_posix()
 
 
+def require_unique_paths(label: str, paths: list[Path] | None) -> None:
+    seen: set[Path] = set()
+    for path in paths or []:
+        key = path.resolve()
+        if key in seen:
+            raise ValueError(f"duplicate {label} path: {path.as_posix()}")
+        seen.add(key)
+
+
 def is_number(value: Any) -> bool:
     return (
         isinstance(value, (int, float))
@@ -723,12 +732,9 @@ def release_manifest(
     missing = [path.as_posix() for path in resolved if not path.is_file()]
     if missing:
         raise FileNotFoundError("missing artifact(s): " + ", ".join(missing))
-    seen_artifacts: set[Path] = set()
-    for path in resolved:
-        key = path.resolve()
-        if key in seen_artifacts:
-            raise ValueError(f"duplicate artifact path: {path.as_posix()}")
-        seen_artifacts.add(key)
+    require_unique_paths("artifact", resolved)
+    require_unique_paths("benchmark report", benchmark_reports)
+    require_unique_paths("corpus manifest", corpus_manifests)
 
     manifest: dict[str, Any] = {
         "schema": SCHEMA,
