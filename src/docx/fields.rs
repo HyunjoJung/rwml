@@ -7182,7 +7182,7 @@ fn computed_compare_result(instruction: &str) -> Option<String> {
 }
 
 pub(crate) fn supports_compare_field_syntax(instruction: &str) -> bool {
-    compare_instruction(instruction).is_some()
+    compare_field_syntax(instruction).is_some()
 }
 
 fn compare_instruction(instruction: &str) -> Option<IfInstruction> {
@@ -7207,6 +7207,48 @@ fn compare_instruction(instruction: &str) -> Option<IfInstruction> {
         false_text: "0".to_string(),
         text_format,
     })
+}
+
+fn compare_field_syntax(instruction: &str) -> Option<()> {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let kind = parts.next()?;
+    if !kind.eq_ignore_ascii_case("COMPARE") {
+        return None;
+    }
+    let first = parts.next()?;
+    comparison_syntax_operands(first, &mut parts)?;
+    let mut text_format = None;
+    while let Some(part) = parts.next() {
+        let next = (part == "\\*").then(|| parts.next()).flatten();
+        accept_if_format_switch(part, next, &mut text_format)?;
+    }
+    Some(())
+}
+
+fn comparison_syntax_operands<'a, I>(first: &str, parts: &mut I) -> Option<()>
+where
+    I: Iterator<Item = &'a str>,
+{
+    if let Some((left, operator, right)) = compact_merge_control_comparison(first) {
+        return (comparison_operand_syntax(left)
+            && if_operator(operator).is_some()
+            && comparison_operand_syntax(right))
+        .then_some(());
+    }
+    comparison_operand_syntax(first).then_some(())?;
+    if_operator(parts.next()?)?;
+    comparison_operand_syntax(parts.next()?).then_some(())
+}
+
+fn comparison_operand_syntax(token: &str) -> bool {
+    if quoted_literal_text(token).is_some() {
+        return true;
+    }
+    match token.parse::<f64>() {
+        Ok(value) => value.is_finite(),
+        Err(_) => field_literal_token(token).is_some_and(|value| !value.is_empty()),
+    }
 }
 
 fn comparison_operands<'a, I>(
@@ -10240,9 +10282,9 @@ mod tests {
         document_info_instruction, format_page_number, note_ref_instruction,
         ordinal_page_number_text, page_ref_instruction, ref_instruction,
         seq_identifier_from_instruction, style_ref_instruction, supports_action_field_syntax,
-        supports_prompt_field_syntax, supports_reference_index_marker_syntax,
-        supports_toc_entry_field_syntax, table_formula_context, toc_entries, toc_spec,
-        PageNumberFormat, TocEntrySource,
+        supports_compare_field_syntax, supports_prompt_field_syntax,
+        supports_reference_index_marker_syntax, supports_toc_entry_field_syntax,
+        table_formula_context, toc_entries, toc_spec, PageNumberFormat, TocEntrySource,
     };
     use crate::docx::styles::Styles;
     use std::collections::HashMap;
@@ -10922,6 +10964,21 @@ mod tests {
             computed_dynamic_result(r#"COMPARE "A*" = "AB""#).as_deref(),
             Some("1")
         );
+    }
+
+    #[test]
+    fn compare_syntax_accepts_data_operands_without_computing_them() {
+        assert!(supports_compare_field_syntax(
+            r#"COMPARE CustomerTier = "Gold""#
+        ));
+        assert!(supports_compare_field_syntax(
+            r#"COMPARE CustomerTier="Gold""#
+        ));
+        assert_eq!(
+            computed_dynamic_result(r#"COMPARE CustomerTier = "Gold""#),
+            None
+        );
+        assert!(!supports_compare_field_syntax(r#"COMPARE 1e309 > 0"#));
     }
 
     #[test]

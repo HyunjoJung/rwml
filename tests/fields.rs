@@ -287,6 +287,23 @@ fn if_diagnostics_docx() -> Vec<u8> {
     ])
 }
 
+fn compare_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" COMPARE CustomerTier = &quot;Gold&quot; "><w:r><w:t>cached data compare</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" COMPARE 1e309 &gt; 0 "><w:r><w:t>cached nonfinite compare</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn formula_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -3600,6 +3617,48 @@ fn docx_malformed_if_reports_unsupported_switch_without_flagging_data_dependent_
     assert!(
         main_text.contains("cached data if") && main_text.contains("cached broken if"),
         "uncomputed IF fields should preserve cached text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_malformed_compare_reports_unsupported_switch_without_flagging_data_compare() {
+    let doc = Document::open(&compare_diagnostics_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::Dynamic("COMPARE".to_string()));
+    assert_eq!(fields[0].instruction, r#"COMPARE CustomerTier = "Gold""#);
+    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(fields[1].kind, FieldKind::Dynamic("COMPARE".to_string()));
+    assert_eq!(fields[1].instruction, "COMPARE 1e309 > 0");
+    assert_eq!(fields[1].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Dynamic("COMPARE".to_string()),
+            count: 2,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::NoComputedResult,
+                count: 1,
+            },
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::UnsupportedSwitch,
+                count: 1,
+            },
+        ]
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("cached data compare") && main_text.contains("cached nonfinite compare"),
+        "uncomputed COMPARE fields should preserve cached text: {main_text:?}"
     );
 }
 
