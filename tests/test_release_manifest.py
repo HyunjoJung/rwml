@@ -1295,20 +1295,22 @@ class ReleaseManifestTests(unittest.TestCase):
                 release_manifest.corpus_manifest_summary(corpus)
 
     def test_manifest_rejects_non_canonical_public_corpus_warning_tokens(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = pathlib.Path(tmp)
-            corpus = root / "MANIFEST.tsv"
-            corpus.write_text(
-                "# path\tfields\twarnings\n"
-                "synthetic/fields.docx\t1\tUnsupported Field\n",
-                encoding="utf-8",
-            )
+        for warning in ("Unsupported Field", "\u8b66\u544a"):
+            with self.subTest(warning=warning):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = pathlib.Path(tmp)
+                    corpus = root / "MANIFEST.tsv"
+                    corpus.write_text(
+                        "# path\tfields\twarnings\n"
+                        f"synthetic/fields.docx\t1\t{warning}\n",
+                        encoding="utf-8",
+                    )
 
-            with self.assertRaisesRegex(
-                ValueError,
-                "non-canonical warning token: Unsupported Field",
-            ):
-                release_manifest.corpus_manifest_summary(corpus)
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        f"non-canonical warning token: {warning}",
+                    ):
+                        release_manifest.corpus_manifest_summary(corpus)
 
     def test_manifest_rejects_trailing_public_corpus_warning_token_whitespace(self):
         with tempfile.TemporaryDirectory() as tmp:
