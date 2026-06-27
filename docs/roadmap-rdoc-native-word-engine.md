@@ -415,9 +415,9 @@ Initial status:
   separately from unknown fields; deterministic `w:ffData` checkbox
   checked/default states, dropdown result/default selections, explicit
   non-empty text-input current values, and empty-current text-input defaults
-  compute when available; malformed quoted instruction syntax reports
-  `UnsupportedSwitch`, while valid broader protected-form behavior reports
-  `NoComputedResult`. The
+  compute when available with field-result format switches; malformed quoted or
+  field-result format syntax reports `UnsupportedSwitch`, while valid broader
+  protected-form behavior reports `NoComputedResult`. The
   `.docx` field side table follows the accepted/current revision and
   `mc:AlternateContent` first-branch policies, including direct, inserted, and
   moved-to current fields while omitting deleted and moved-from old fields and
@@ -869,9 +869,10 @@ Initial status:
   Legacy form fields are named separately from unknown fields; deterministic
   `w:ffData` checkbox checked/default states, dropdown result/default
   selections, explicit non-empty text-input current values, and empty-current
-  text-input defaults compute when available; malformed quoted syntax reports
-  `UnsupportedSwitch`, while valid broader protected-form behavior preserves
-  cached text with `NoComputedResult` diagnostics.
+  text-input defaults compute when available with field-result format switches;
+  malformed quoted or field-result format syntax reports `UnsupportedSwitch`,
+  while valid broader protected-form behavior preserves cached text with
+  `NoComputedResult` diagnostics.
   Unambiguous
   `.docx` `REF` bookmark fields, including multi-paragraph bookmark ranges and
   simple inline tabs, line breaks, no-break hyphens, and deterministic

@@ -723,8 +723,8 @@ Acceptance:
   paragraph- and character-style `STYLEREF`, deterministic simple `EQ`
   fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, operand-preserving or hidden empty displacement controls, and `SYMBOL`, display/layout fields, action/automation fields including deterministic
   `GOTOBUTTON`/`MACROBUTTON` quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms with field-result format switches,
-  compatibility/private fields, barcode fields, legacy form fields, and unknown
-  fields are distinguishable.
+  compatibility/private fields, barcode fields, legacy form fields including
+  field-result format switches, and unknown fields are distinguishable.
 - simple source-order `SEQ` fields compute default next numbers, `\n`, `\r`,
   `\c`, hidden `\h`, and common number-format switches, malformed `SEQ` syntax
   reports `UnsupportedSwitch`, while valid broader sequence reset semantics stay

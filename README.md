@@ -575,11 +575,11 @@ diagnostics until native barcode generation is implemented;
 legacy form fields (`FORMTEXT`, `FORMCHECKBOX`, `FORMDROPDOWN`) are named
 separately from unknown fields; deterministic `w:ffData` `FORMCHECKBOX`
 checked/default states and `FORMDROPDOWN` result/default selections compute and
-materialize, and `FORMTEXT` fields materialize explicit non-empty current
-results or empty-current `w:textInput` default text; malformed quoted
-instruction syntax reports `UnsupportedSwitch`, while valid broader
-protected-form behavior preserves cached result text with `NoComputedResult`
-diagnostics;
+materialize with field-result format switches, and `FORMTEXT` fields materialize
+explicit non-empty current results or empty-current `w:textInput` default text
+with field-result format switches; malformed quoted or field-result format
+syntax reports `UnsupportedSwitch`, while valid broader protected-form behavior
+preserves cached result text with `NoComputedResult` diagnostics;
 authored
 bar/stacked bar/100% stacked bar/3-D bar/stacked 3-D bar/100% stacked 3-D bar/column/stacked column/100% stacked column/3-D column/stacked 3-D column/100% stacked 3-D column/line/markerless line/smooth line/stacked line/100% stacked line/3-D line/area/stacked area/100% stacked area/3-D area/stacked 3-D area/100% stacked 3-D area/radar/radar-with-markers/filled radar/scatter/line-only scatter/smooth scatter/smooth markerless scatter/marker-only scatter/bubble/3-D bubble/pie/exploded pie/3-D pie/exploded 3-D pie/doughnut/exploded doughnut/surface/3-D surface/high-low-close stock/stock/pie-of-pie/bar-of-pie
 charts render as native vector preview charts, with wireframe styling available
