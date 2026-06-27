@@ -6,8 +6,9 @@ use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 
 use crate::annotation::{
-    accept_general_format_switch, field_number_format_switch, field_text_format_switch,
-    is_neutral_field_format_switch, Field, FieldKind, FieldNumberFormat, FieldTextFormat,
+    accept_field_text_format_switch as accept_field_format_switch, accept_general_format_switch,
+    field_number_format_switch, is_neutral_field_format_switch, Field, FieldKind,
+    FieldNumberFormat, FieldTextFormat,
 };
 use crate::{numfmt, CoreProperties};
 
@@ -9669,13 +9670,6 @@ fn ref_note_field_target(instruction: &str) -> Option<String> {
 
 fn is_ref_value_neutral_switch(part: &str) -> bool {
     part.eq_ignore_ascii_case("\\h")
-}
-
-fn accept_field_format_switch(part: &str, text_format: &mut Option<FieldTextFormat>) -> bool {
-    if is_neutral_field_format_switch(part) {
-        return true;
-    }
-    field_text_format_switch(part).is_some_and(|format| text_format.replace(format).is_none())
 }
 
 fn capitalize_first_word(text: &str) -> String {

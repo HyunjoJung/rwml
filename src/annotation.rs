@@ -408,6 +408,16 @@ pub(crate) fn field_text_format_switch(part: &str) -> Option<FieldTextFormat> {
     }
 }
 
+pub(crate) fn accept_field_text_format_switch(
+    part: &str,
+    text_format: &mut Option<FieldTextFormat>,
+) -> bool {
+    if is_neutral_field_format_switch(part) {
+        return true;
+    }
+    field_text_format_switch(part).is_some_and(|format| text_format.replace(format).is_none())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FieldNumberFormat {
     Arabic,
