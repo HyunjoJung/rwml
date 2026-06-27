@@ -149,6 +149,10 @@ class RenderValidateReportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "non-finite recall threshold"):
             render_validate.validation_report([], recall_min=float("nan"))
 
+    def test_validation_report_rejects_negative_recall_min(self):
+        with self.assertRaisesRegex(ValueError, "negative recall threshold"):
+            render_validate.validation_report([], recall_min=-0.1)
+
     def test_json_report_payload_rejects_non_finite_values(self):
         with self.assertRaisesRegex(ValueError, "Out of range float values"):
             render_validate.json_report_payload(
