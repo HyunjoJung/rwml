@@ -3302,9 +3302,29 @@ fn on_off_value(e: &BytesStart<'_>) -> bool {
     )
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LegacyFormInstruction {
+    kind: String,
+    text_format: Option<FieldTextFormat>,
+}
+
+fn legacy_form_instruction(instruction: &str) -> Option<LegacyFormInstruction> {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let kind = legacy_form_kind(parts.next()?)?;
+    let text_format = field_format_tail(&mut parts)?;
+    Some(LegacyFormInstruction { kind, text_format })
+}
+
+fn legacy_form_kind(kind: &str) -> Option<String> {
+    let kind = kind.to_ascii_uppercase();
+    matches!(kind.as_str(), "FORMCHECKBOX" | "FORMDROPDOWN" | "FORMTEXT").then_some(kind)
+}
+
 fn legacy_form_field_result(instruction: &str, data: &LegacyFormData) -> Option<String> {
-    match field_kind(instruction) {
-        FieldKind::FormField(kind) if kind == "FORMCHECKBOX" => Some(
+    let spec = legacy_form_instruction(instruction)?;
+    let text = match spec.kind.as_str() {
+        "FORMCHECKBOX" => Some(
             if data.checkbox? {
                 "\u{2612}"
             } else {
@@ -3312,7 +3332,7 @@ fn legacy_form_field_result(instruction: &str, data: &LegacyFormData) -> Option<
             }
             .to_string(),
         ),
-        FieldKind::FormField(kind) if kind == "FORMDROPDOWN" => {
+        "FORMDROPDOWN" => {
             let result = data
                 .dropdown_result
                 .and_then(|index| data.dropdown_entries.get(index));
@@ -3321,9 +3341,10 @@ fn legacy_form_field_result(instruction: &str, data: &LegacyFormData) -> Option<
                 .and_then(|index| data.dropdown_entries.get(index));
             result.or(default).cloned()
         }
-        FieldKind::FormField(kind) if kind == "FORMTEXT" => data.text_default.clone(),
+        "FORMTEXT" => data.text_default.clone(),
         _ => None,
-    }
+    }?;
+    Some(apply_field_text_format(text, spec.text_format))
 }
 
 pub(crate) fn computed_legacy_form_result(
@@ -3335,12 +3356,13 @@ pub(crate) fn computed_legacy_form_result(
     if legacy_forms.preserves_cached() {
         return None;
     }
-    match field_kind(instruction) {
-        FieldKind::FormField(kind) if kind == "FORMTEXT" && !current_result.is_empty() => {
-            Some(current_result.to_string())
-        }
-        FieldKind::FormField(_) => legacy_forms.field_result(field_index),
-        _ => None,
+    let spec = legacy_form_instruction(instruction)?;
+    match spec.kind.as_str() {
+        "FORMTEXT" if !current_result.is_empty() => Some(apply_field_text_format(
+            current_result.to_string(),
+            spec.text_format,
+        )),
+        _ => legacy_forms.field_result(field_index),
     }
 }
 
@@ -5172,7 +5194,7 @@ fn merge_control_operand_syntax(token: &str) -> bool {
     comparison_operand_syntax(token)
 }
 
-fn accept_field_format_tail<'a, I>(parts: &mut I) -> Option<()>
+fn field_format_tail<'a, I>(parts: &mut I) -> Option<Option<FieldTextFormat>>
 where
     I: Iterator<Item = &'a str>,
 {
@@ -5185,7 +5207,14 @@ where
         }
         return None;
     }
-    Some(())
+    Some(text_format)
+}
+
+fn accept_field_format_tail<'a, I>(parts: &mut I) -> Option<()>
+where
+    I: Iterator<Item = &'a str>,
+{
+    field_format_tail(parts).map(|_| ())
 }
 
 fn accept_neutral_field_format_tail<'a, I>(parts: &mut I) -> Option<()>
