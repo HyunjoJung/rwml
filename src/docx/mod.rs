@@ -66,11 +66,11 @@ pub(crate) fn supports_action_field_syntax(instruction: &str) -> bool {
 }
 
 pub(crate) fn supports_reference_index_marker_syntax(instruction: &str) -> bool {
-    fields::computed_reference_index_result(instruction).is_some()
+    fields::supports_reference_index_marker_syntax(instruction)
 }
 
 pub(crate) fn supports_toc_entry_field_syntax(instruction: &str) -> bool {
-    fields::computed_toc_entry_result(instruction).is_some()
+    fields::supports_toc_entry_field_syntax(instruction)
 }
 
 pub(crate) fn supports_hyperlink_field_syntax(instruction: &str) -> bool {

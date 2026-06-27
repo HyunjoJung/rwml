@@ -4340,6 +4340,10 @@ pub(crate) fn computed_toc_entry_result(instruction: &str) -> Option<String> {
     Some(String::new())
 }
 
+pub(crate) fn supports_toc_entry_field_syntax(instruction: &str) -> bool {
+    tc_instruction(instruction).is_some()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TcInstruction {
     text: String,
@@ -7317,6 +7321,10 @@ pub(crate) fn computed_reference_index_result(instruction: &str) -> Option<Strin
     None
 }
 
+pub(crate) fn supports_reference_index_marker_syntax(instruction: &str) -> bool {
+    computed_reference_index_result(instruction).is_some()
+}
+
 fn reference_index_rd_instruction<'a>(mut parts: impl Iterator<Item = &'a str>) -> Option<()> {
     reference_index_literal(parts.next()?)?;
     while let Some(part) = parts.next() {
@@ -10224,6 +10232,7 @@ mod tests {
         document_info_instruction, format_page_number, note_ref_instruction,
         ordinal_page_number_text, page_ref_instruction, ref_instruction,
         seq_identifier_from_instruction, style_ref_instruction, supports_action_field_syntax,
+        supports_reference_index_marker_syntax, supports_toc_entry_field_syntax,
         table_formula_context, toc_entries, toc_spec, PageNumberFormat, TocEntrySource,
     };
     use crate::docx::styles::Styles;
@@ -10726,6 +10735,22 @@ mod tests {
     }
 
     #[test]
+    fn reference_index_syntax_support_matches_marker_forms() {
+        assert!(supports_reference_index_marker_syntax(
+            r#"RD "chapter2.docx" \* Upper"#
+        ));
+        assert!(supports_reference_index_marker_syntax(
+            r#"TA \l "Case" \*Lower"#
+        ));
+        assert!(supports_reference_index_marker_syntax(
+            r#"XE "Mercury" \t "See planets" \* FirstCap"#
+        ));
+        assert!(!supports_reference_index_marker_syntax(
+            r#"TA \l "Case" \c"1"#
+        ));
+    }
+
+    #[test]
     fn toc_bookmark_targets_reject_empty_and_quoted_switch_names() {
         assert!(toc_spec(r#"TOC \b """#).is_none());
         assert!(toc_spec(r#"TOC \b " \o""#).is_none());
@@ -10752,6 +10777,13 @@ mod tests {
         assert!(computed_toc_entry_result(r#"TC "Entry"#).is_none());
         assert!(computed_toc_entry_result(r#"TC Entry""#).is_none());
         assert!(computed_toc_entry_result(r#"TC En"try""#).is_none());
+    }
+
+    #[test]
+    fn toc_entry_syntax_support_matches_tc_forms() {
+        assert!(supports_toc_entry_field_syntax(r#"TC "Entry" \f A \l 2"#));
+        assert!(supports_toc_entry_field_syntax(r#"TC Entry \n"#));
+        assert!(!supports_toc_entry_field_syntax(r#"TC "Entry" \l "2"#));
     }
 
     #[test]
