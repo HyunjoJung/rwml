@@ -2368,9 +2368,17 @@ fn supported_compare_syntax(instruction: &str) -> bool {
         return false;
     }
     let mut text_format = false;
+    supported_field_format_tail_for_report(&mut parts, &mut text_format)
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_field_format_tail_for_report<'a>(
+    parts: &mut impl Iterator<Item = &'a str>,
+    text_format: &mut bool,
+) -> bool {
     while let Some(part) = parts.next() {
-        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
+        let Some(accepted) = accept_general_format_switch(part, parts, |format| {
+            accept_field_format_switch(format, text_format)
         }) else {
             return false;
         };
@@ -2602,17 +2610,7 @@ fn supported_if_syntax(instruction: &str) -> bool {
             return false;
         }
     }
-    while let Some(part) = parts.next() {
-        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        }) else {
-            return false;
-        };
-        if !accepted {
-            return false;
-        }
-    }
-    true
+    supported_field_format_tail_for_report(&mut parts, &mut text_format)
 }
 
 #[cfg(not(feature = "docx"))]
@@ -2870,9 +2868,33 @@ fn merge_control_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     }
     #[cfg(not(feature = "docx"))]
     {
-        let _ = instruction;
-        FieldEvaluationReason::NoComputedResult
+        if supported_merge_control_syntax(instruction) {
+            FieldEvaluationReason::NoComputedResult
+        } else {
+            FieldEvaluationReason::UnsupportedSwitch
+        }
     }
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_merge_control_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    let mut text_format = false;
+    if kind.eq_ignore_ascii_case("NEXT") {
+        return supported_field_format_tail_for_report(&mut parts, &mut text_format);
+    }
+    if kind.eq_ignore_ascii_case("NEXTIF") || kind.eq_ignore_ascii_case("SKIPIF") {
+        let Some(first) = parts.next() else {
+            return false;
+        };
+        return supported_comparison_operands(first, &mut parts)
+            && supported_field_format_tail_for_report(&mut parts, &mut text_format);
+    }
+    false
 }
 
 fn supported_ref_syntax_parts<'a>(
@@ -4177,6 +4199,23 @@ mod tests {
         );
         assert_eq!(
             super::if_uncomputed_reason(r#"IF \o = "Gold" "ship" "hold""#),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_merge_control_diagnostics_reject_malformed_comparisons() {
+        assert_eq!(
+            super::merge_control_uncomputed_reason(r"NEXT \* MERGEFORMAT"),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::merge_control_uncomputed_reason(r#"NEXTIF City = "Tokyo""#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::merge_control_uncomputed_reason(r#"NEXTIF \o = "Tokyo""#),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
     }
