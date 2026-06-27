@@ -3503,20 +3503,9 @@ fn merge_field_name(instruction: &str) -> Option<String> {
     if !kind.eq_ignore_ascii_case("MERGEFIELD") {
         return None;
     }
-    while let Some(part) = parts.next() {
-        if part == "\\*" {
-            let _ = parts.next();
-            continue;
-        }
-        if part.starts_with("\\*") || part.starts_with('\\') {
-            continue;
-        }
-        let name = merge_field_name_token(&part)?;
-        if !name.is_empty() {
-            return Some(name.to_string());
-        }
-    }
-    None
+    let part = parts.next()?;
+    let name = merge_field_name_token(&part)?;
+    Some(name.to_string())
 }
 
 #[cfg(feature = "docx")]

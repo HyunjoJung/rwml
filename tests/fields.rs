@@ -2844,6 +2844,55 @@ fn docx_merge_fields_are_named_field_kind() {
 }
 
 #[test]
+fn docx_merge_field_diagnostics_reject_missing_name_before_format_tail() {
+    let doc = Document::open(&docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" MERGEFIELD ClientName \* MERGEFORMAT "><w:r><w:t>Acme</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" MERGEFIELD \* MERGEFORMAT ClientName "><w:r><w:t>cached missing merge name</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ]))
+    .expect("fixture opens");
+
+    let fields = doc.fields();
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::MergeField);
+    assert_eq!(
+        fields[0].instruction,
+        "MERGEFIELD ClientName \\* MERGEFORMAT"
+    );
+    assert_eq!(fields[1].kind, FieldKind::MergeField);
+    assert_eq!(
+        fields[1].instruction,
+        "MERGEFIELD \\* MERGEFORMAT ClientName"
+    );
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::MergeField,
+            count: 1,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnsupportedSwitch,
+            count: 1,
+        }]
+    );
+    assert!(doc.main_text().contains("cached missing merge name"));
+}
+
+#[test]
 fn docx_sequence_fields_compute_source_order_numbers() {
     let doc = Document::open(&sequence_field_docx()).expect("fixture opens");
     let fields = doc.fields();
