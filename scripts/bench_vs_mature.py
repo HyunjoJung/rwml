@@ -211,6 +211,8 @@ def benchmark_report(
         if value is not None and any(char.isspace() for char in value):
             raise ValueError(f"{label} must not contain whitespace")
     for row in rows:
+        if "file" not in row:
+            raise ValueError("file is required")
         if "/" in row.get("file", "") or "\\" in row.get("file", ""):
             raise ValueError(f"file path is invalid: {row.get('file')}")
     summary = benchmark_summary(rows)
