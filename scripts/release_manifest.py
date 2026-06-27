@@ -121,6 +121,8 @@ def report_summary(path: Path) -> dict[str, Any]:
     if gate is not None:
         if not isinstance(gate.get("passed"), bool):
             raise ValueError(f"{path} gate passed is not a boolean")
+        if not isinstance(gate.get("checks"), list):
+            raise ValueError(f"{path} gate checks is not a list")
         report["gate"] = gate
     return report
 
