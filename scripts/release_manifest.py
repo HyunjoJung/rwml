@@ -96,6 +96,10 @@ def path_sort_key(path: Path) -> str:
     return path.as_posix()
 
 
+def is_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
 def report_summary(path: Path) -> dict[str, Any]:
     data = json.loads(path.read_text(encoding="utf-8"))
     summary = data.get("summary")
@@ -338,7 +342,7 @@ def require_summary_threshold_at_least(
     if not isinstance(summary, dict):
         raise ValueError(f"{policy} {label} report does not contain a summary")
     actual = summary.get(metric)
-    if not isinstance(actual, (int, float)) or actual < minimum:
+    if not is_number(actual) or actual < minimum:
         raise ValueError(
             f"{policy} {label} report summary {metric} must be at least {minimum}"
         )
@@ -355,7 +359,7 @@ def require_summary_threshold_at_most(
     if not isinstance(summary, dict):
         raise ValueError(f"{policy} {label} report does not contain a summary")
     actual = summary.get(metric)
-    if not isinstance(actual, (int, float)) or actual > maximum:
+    if not is_number(actual) or actual > maximum:
         raise ValueError(
             f"{policy} {label} report summary {metric} must be at most {maximum}"
         )
@@ -379,7 +383,7 @@ def require_gate_check_threshold(
         if check.get("metric") != metric or check.get("op") != op:
             continue
         threshold = check.get("threshold")
-        if not isinstance(threshold, (int, float)):
+        if not is_number(threshold):
             continue
         if (op == ">=" and threshold >= policy_threshold) or (
             op == "<=" and threshold <= policy_threshold
@@ -390,7 +394,7 @@ def require_gate_check_threshold(
                     f"{metric} {op} {policy_threshold}"
                 )
             actual = check.get("actual")
-            if not isinstance(actual, (int, float)) or not (
+            if not is_number(actual) or not (
                 (op == ">=" and actual >= policy_threshold)
                 or (op == "<=" and actual <= policy_threshold)
             ):
