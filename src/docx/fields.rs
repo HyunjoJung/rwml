@@ -5155,7 +5155,7 @@ fn compact_merge_control_comparison(token: &str) -> Option<(&str, &str, &str)> {
 }
 
 fn merge_control_operand_syntax(token: &str) -> bool {
-    field_literal_token(token).is_some_and(|value| !value.is_empty())
+    comparison_operand_syntax(token)
 }
 
 fn accept_field_format_tail<'a, I>(parts: &mut I) -> Option<()>
@@ -7247,7 +7247,8 @@ fn comparison_operand_syntax(token: &str) -> bool {
     }
     match token.parse::<f64>() {
         Ok(value) => value.is_finite(),
-        Err(_) => field_literal_token(token).is_some_and(|value| !value.is_empty()),
+        Err(_) => field_literal_token(token)
+            .is_some_and(|value| !value.is_empty() && !value.starts_with('\\')),
     }
 }
 
@@ -10282,7 +10283,8 @@ mod tests {
         document_info_instruction, format_page_number, note_ref_instruction,
         ordinal_page_number_text, page_ref_instruction, ref_instruction,
         seq_identifier_from_instruction, style_ref_instruction, supports_action_field_syntax,
-        supports_compare_field_syntax, supports_prompt_field_syntax,
+        supports_compare_field_syntax, supports_if_field_syntax,
+        supports_merge_control_field_syntax, supports_prompt_field_syntax,
         supports_reference_index_marker_syntax, supports_toc_entry_field_syntax,
         table_formula_context, toc_entries, toc_spec, PageNumberFormat, TocEntrySource,
     };
@@ -10979,6 +10981,16 @@ mod tests {
             None
         );
         assert!(!supports_compare_field_syntax(r#"COMPARE 1e309 > 0"#));
+    }
+
+    #[test]
+    fn comparison_syntax_rejects_switch_like_unquoted_operands() {
+        assert!(!supports_compare_field_syntax(r#"COMPARE \o = "Gold""#));
+        assert!(!supports_if_field_syntax(r#"IF \o = "Gold" "ship" "hold""#));
+        assert!(!supports_merge_control_field_syntax(
+            r#"NEXTIF \o = "Gold""#
+        ));
+        assert!(supports_compare_field_syntax(r#"COMPARE "\o" = "Gold""#));
     }
 
     #[test]

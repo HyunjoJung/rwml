@@ -299,7 +299,7 @@ fn compare_diagnostics_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" COMPARE CustomerTier = &quot;Gold&quot; "><w:r><w:t>cached data compare</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" COMPARE 1e309 &gt; 0 "><w:r><w:t>cached nonfinite compare</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" COMPARE CustomerTier = &quot;Gold&quot; "><w:r><w:t>cached data compare</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" COMPARE 1e309 &gt; 0 "><w:r><w:t>cached nonfinite compare</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" COMPARE \o = &quot;Gold&quot; "><w:r><w:t>cached switch compare</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -3625,20 +3625,23 @@ fn docx_malformed_compare_reports_unsupported_switch_without_flagging_data_compa
     let doc = Document::open(&compare_diagnostics_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 2);
+    assert_eq!(fields.len(), 3);
     assert_eq!(fields[0].kind, FieldKind::Dynamic("COMPARE".to_string()));
     assert_eq!(fields[0].instruction, r#"COMPARE CustomerTier = "Gold""#);
     assert_eq!(fields[0].computed_result, None);
     assert_eq!(fields[1].kind, FieldKind::Dynamic("COMPARE".to_string()));
     assert_eq!(fields[1].instruction, "COMPARE 1e309 > 0");
     assert_eq!(fields[1].computed_result, None);
+    assert_eq!(fields[2].kind, FieldKind::Dynamic("COMPARE".to_string()));
+    assert_eq!(fields[2].instruction, r#"COMPARE \o = "Gold""#);
+    assert_eq!(fields[2].computed_result, None);
 
     let report = doc.report();
     assert_eq!(
         report.features.unsupported_field_kinds,
         vec![FieldKindCount {
             kind: FieldKind::Dynamic("COMPARE".to_string()),
-            count: 2,
+            count: 3,
         }]
     );
     assert_eq!(
@@ -3650,14 +3653,16 @@ fn docx_malformed_compare_reports_unsupported_switch_without_flagging_data_compa
             },
             FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::UnsupportedSwitch,
-                count: 1,
+                count: 2,
             },
         ]
     );
 
     let main_text = doc.main_text();
     assert!(
-        main_text.contains("cached data compare") && main_text.contains("cached nonfinite compare"),
+        main_text.contains("cached data compare")
+            && main_text.contains("cached nonfinite compare")
+            && main_text.contains("cached switch compare"),
         "uncomputed COMPARE fields should preserve cached text: {main_text:?}"
     );
 }
