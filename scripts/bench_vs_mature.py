@@ -201,6 +201,15 @@ def benchmark_report(
     git_rev: str | None = None,
     thresholds: dict | None = None,
 ) -> dict:
+    for label, value in (("version", version), ("git_rev", git_rev)):
+        if value is not None and not isinstance(value, str):
+            raise ValueError(f"{label} must be a string")
+        if value is not None and not value.strip():
+            raise ValueError(f"{label} must not be empty")
+        if value is not None and value != value.strip():
+            raise ValueError(f"{label} must not have surrounding whitespace")
+        if value is not None and any(char.isspace() for char in value):
+            raise ValueError(f"{label} must not contain whitespace")
     summary = benchmark_summary(rows)
     report = {
         "schema": SCHEMA,

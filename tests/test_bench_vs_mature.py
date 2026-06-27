@@ -66,6 +66,19 @@ class BenchVsMatureReportTests(unittest.TestCase):
         self.assertEqual(report["rows"], rows)
         self.assertNotIn("corpus", report)
 
+    def test_benchmark_report_rejects_malformed_release_metadata(self):
+        rows = [{"file": "alpha", "poi_recall": 1.0, "poi_f1": 1.0}]
+        cases = [
+            ("version", {"version": 1}, "version must be a string"),
+            ("version", {"version": ""}, "version must not be empty"),
+            ("version", {"version": "0.1.0 beta"}, "version must not contain whitespace"),
+            ("git_rev", {"git_rev": " abc123"}, "git_rev must not have surrounding whitespace"),
+        ]
+        for label, kwargs, message in cases:
+            with self.subTest(label=label, message=message):
+                with self.assertRaisesRegex(ValueError, message):
+                    bench_vs_mature.benchmark_report(rows, **kwargs)
+
     def test_benchmark_report_evaluates_release_thresholds(self):
         rows = [
             {
