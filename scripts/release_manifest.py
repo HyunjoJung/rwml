@@ -150,7 +150,12 @@ def report_summary(path: Path) -> dict[str, Any]:
                     )
             if not isinstance(check["metric"], str):
                 raise ValueError(f"{path} gate check metric is not a string")
-            if not check["metric"] or check["metric"] != check["metric"].strip():
+            if (
+                not check["metric"]
+                or check["metric"] != check["metric"].strip()
+                or not check["metric"].isascii()
+                or not check["metric"].isidentifier()
+            ):
                 raise ValueError(f"{path} gate check metric is invalid")
             if not isinstance(check["op"], str):
                 raise ValueError(f"{path} gate check op is not a string")

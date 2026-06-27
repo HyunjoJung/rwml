@@ -651,7 +651,7 @@ class ReleaseManifestTests(unittest.TestCase):
                 release_manifest.report_summary(validation)
 
     def test_report_summary_rejects_empty_or_padded_gate_check_metrics(self):
-        for metric in ("", " mean_recall"):
+        for metric in ("", " mean_recall", "mean recall", "\u8a08"):
             with self.subTest(metric=metric):
                 with tempfile.TemporaryDirectory() as tmp:
                     validation = pathlib.Path(tmp) / "render-validation.json"
