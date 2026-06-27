@@ -1865,8 +1865,68 @@ fn display_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
         }
     }
     #[cfg(not(feature = "docx"))]
-    let _ = instruction;
+    {
+        if supported_advance_syntax(instruction) {
+            return FieldEvaluationReason::NoComputedResult;
+        }
+    }
     FieldEvaluationReason::UnsupportedSwitch
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_advance_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if !kind.eq_ignore_ascii_case("ADVANCE") {
+        return false;
+    }
+    let mut text_format = false;
+    while let Some(part) = parts.next() {
+        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        }) else {
+            return false;
+        };
+        if accepted {
+            continue;
+        }
+        if accept_advance_switch_for_report(part, &mut parts).is_none() {
+            return false;
+        }
+    }
+    true
+}
+
+#[cfg(not(feature = "docx"))]
+fn accept_advance_switch_for_report<'a>(
+    part: &str,
+    parts: &mut impl Iterator<Item = &'a str>,
+) -> Option<()> {
+    for switch in ["\\d", "\\u", "\\l", "\\r", "\\x", "\\y"] {
+        if part.eq_ignore_ascii_case(switch) {
+            parse_advance_points_for_report(parts.next()?)?;
+            return Some(());
+        }
+        if let Some(value) = strip_ascii_switch_prefix(part, switch) {
+            if value.is_empty() {
+                return None;
+            }
+            parse_advance_points_for_report(value)?;
+            return Some(());
+        }
+    }
+    None
+}
+
+#[cfg(not(feature = "docx"))]
+fn parse_advance_points_for_report(value: &str) -> Option<f32> {
+    diagnostic_name_token(value)?
+        .parse::<f32>()
+        .ok()
+        .filter(|value| value.is_finite())
 }
 
 fn action_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -4356,6 +4416,19 @@ mod tests {
         );
         assert_eq!(
             super::action_uncomputed_reason(r#"MACROBUTTON RunReport Run \* Upper Again"#),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_display_diagnostics_accept_valid_advance() {
+        assert_eq!(
+            super::display_uncomputed_reason(r"ADVANCE \r 2 \d4 \* MERGEFORMAT"),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::display_uncomputed_reason(r"ADVANCE \z 2"),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
     }
