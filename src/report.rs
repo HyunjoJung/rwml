@@ -1873,6 +1873,7 @@ fn display_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
             || supported_eq_fraction_syntax(instruction)
             || supported_eq_radical_syntax(instruction)
             || supported_eq_list_syntax(instruction)
+            || supported_eq_overstrike_syntax(instruction)
         {
             return FieldEvaluationReason::NoComputedResult;
         }
@@ -2374,6 +2375,34 @@ fn split_eq_list_operands_for_report(inner: &str) -> Option<Vec<&str>> {
     }
     operands.push(operand);
     Some(operands)
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_eq_overstrike_syntax(instruction: &str) -> bool {
+    let Some(expression) = eq_expression_for_report(instruction) else {
+        return false;
+    };
+    let Some(mut body) = strip_ascii_switch_prefix(expression.trim_start(), "\\o") else {
+        return false;
+    };
+    body = body.trim_start();
+    while let Some(rest) = consume_eq_prefix_switch_for_report(body, "\\al")
+        .or_else(|| consume_eq_prefix_switch_for_report(body, "\\ac"))
+        .or_else(|| consume_eq_prefix_switch_for_report(body, "\\ar"))
+    {
+        body = rest.trim_start();
+    }
+    let Some(inner) = body
+        .strip_prefix('(')
+        .and_then(|body| body.strip_suffix(')'))
+    else {
+        return false;
+    };
+    split_eq_list_operands_for_report(inner).is_some_and(|operands| {
+        operands
+            .iter()
+            .all(|operand| eq_operand_for_report(operand))
+    })
 }
 
 fn action_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -4954,6 +4983,19 @@ mod tests {
         );
         assert_eq!(
             super::display_uncomputed_reason(r"EQ \l()"),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_display_diagnostics_accept_valid_eq_overstrike() {
+        assert_eq!(
+            super::display_uncomputed_reason(r"EQ \o \ac(A,/)"),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::display_uncomputed_reason(r"EQ \o()"),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
     }
