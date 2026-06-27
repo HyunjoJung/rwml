@@ -138,6 +138,13 @@ class RenderValidateReportTests(unittest.TestCase):
                 {"min_mean_recall": -0.1},
             )
 
+    def test_validation_gate_rejects_bounded_score_thresholds_above_one(self):
+        with self.assertRaisesRegex(ValueError, "score threshold above one"):
+            render_validate.validation_gate(
+                {"below_recall_min": 0, "mean_recall": 1.0},
+                {"min_mean_recall": 1.1},
+            )
+
     def test_validation_report_rejects_non_finite_recall_min(self):
         with self.assertRaisesRegex(ValueError, "non-finite recall threshold"):
             render_validate.validation_report([], recall_min=float("nan"))
