@@ -91,6 +91,18 @@ class BenchVsMatureReportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "file is required"):
             bench_vs_mature.benchmark_report(rows)
 
+    def test_benchmark_report_rejects_empty_or_padded_files(self):
+        cases = [
+            ("", "file must not be empty"),
+            (" alpha", "file must not have surrounding whitespace"),
+        ]
+        for file_name, message in cases:
+            with self.subTest(file=file_name):
+                rows = [{"file": file_name, "poi_recall": 1.0, "poi_f1": 1.0}]
+
+                with self.assertRaisesRegex(ValueError, message):
+                    bench_vs_mature.benchmark_report(rows)
+
     def test_benchmark_report_evaluates_release_thresholds(self):
         rows = [
             {

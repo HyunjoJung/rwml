@@ -213,8 +213,13 @@ def benchmark_report(
     for row in rows:
         if "file" not in row:
             raise ValueError("file is required")
-        if "/" in row.get("file", "") or "\\" in row.get("file", ""):
-            raise ValueError(f"file path is invalid: {row.get('file')}")
+        file_name = row["file"]
+        if not file_name.strip():
+            raise ValueError("file must not be empty")
+        if file_name != file_name.strip():
+            raise ValueError(f"file must not have surrounding whitespace: {file_name}")
+        if "/" in file_name or "\\" in file_name:
+            raise ValueError(f"file path is invalid: {file_name}")
     summary = benchmark_summary(rows)
     report = {
         "schema": SCHEMA,
