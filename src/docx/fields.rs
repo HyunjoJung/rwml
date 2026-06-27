@@ -7613,6 +7613,16 @@ pub(crate) fn computed_display_result(instruction: &str) -> Option<String> {
         .or_else(|| computed_symbol_result(instruction))
 }
 
+pub(crate) fn supports_display_field_syntax(instruction: &str) -> bool {
+    if computed_display_result(instruction).is_some() {
+        return true;
+    }
+    let Some(spec) = eq_instruction(instruction) else {
+        return false;
+    };
+    supports_eq_script_syntax(&spec.expression)
+}
+
 fn computed_advance_result(instruction: &str) -> Option<String> {
     advance_instruction(instruction)?;
     Some(String::new())
@@ -7826,6 +7836,55 @@ fn eq_script_text(expression: &str) -> Option<String> {
             return Some(text);
         }
     }
+}
+
+fn supports_eq_script_syntax(expression: &str) -> bool {
+    let mut body = expression.trim_start();
+    loop {
+        let Some(rest) = strip_ascii_switch_prefix(body, "\\s") else {
+            return false;
+        };
+        let Some(remaining) = eq_script_syntax_segment(rest.trim_start()) else {
+            return false;
+        };
+        body = remaining.trim_start();
+        if body.is_empty() {
+            return true;
+        }
+    }
+}
+
+fn eq_script_syntax_segment(mut body: &str) -> Option<&str> {
+    let mut saw_option = false;
+    loop {
+        if body.is_empty() || consume_eq_prefix_switch(body, "\\s").is_some() {
+            return saw_option.then_some(body);
+        }
+        if let Some(rest) = consume_eq_script_syntax_option(body, "\\up", false)
+            .or_else(|| consume_eq_script_syntax_option(body, "\\do", false))
+            .or_else(|| consume_eq_script_syntax_option(body, "\\ai", true))
+            .or_else(|| consume_eq_script_syntax_option(body, "\\di", true))
+        {
+            body = rest.trim_start();
+            saw_option = true;
+            continue;
+        }
+        return None;
+    }
+}
+
+fn consume_eq_script_syntax_option<'a>(
+    value: &'a str,
+    option: &str,
+    allow_empty: bool,
+) -> Option<&'a str> {
+    let (_points, rest) = consume_eq_numeric_prefix_option(value, option)?;
+    let (operand, rest) = take_eq_parenthesized_operand(rest)?;
+    if operand.trim().is_empty() {
+        return allow_empty.then_some(rest);
+    }
+    eq_operand_text(operand)?;
+    Some(rest)
 }
 
 fn eq_script_segment(mut body: &str) -> Option<(String, &str)> {

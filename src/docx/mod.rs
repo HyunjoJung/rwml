@@ -58,7 +58,7 @@ pub(crate) fn parse_fields(xml: &str) -> Vec<Field> {
 }
 
 pub(crate) fn supports_display_field_syntax(instruction: &str) -> bool {
-    fields::computed_display_result(instruction).is_some()
+    fields::supports_display_field_syntax(instruction)
 }
 
 pub(crate) fn supports_action_field_syntax(instruction: &str) -> bool {
