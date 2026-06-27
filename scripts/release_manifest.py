@@ -534,6 +534,10 @@ def corpus_manifest_summary(path: Path) -> dict[str, Any]:
             continue
         total = 0
         for row in rows:
+            if row[index] != row[index].strip():
+                raise ValueError(
+                    f"{path} row has whitespace-padded numeric value for {name}: {row[index]}"
+                )
             try:
                 value = int(row[index])
             except ValueError:
