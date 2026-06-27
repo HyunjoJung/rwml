@@ -644,6 +644,39 @@ class ReleaseManifestTests(unittest.TestCase):
             ):
                 release_manifest.report_summary(validation)
 
+    def test_report_summary_rejects_non_canonical_gate_check_keys(self):
+        for key in ("actual value", "\u8a08"):
+            with self.subTest(key=key):
+                with tempfile.TemporaryDirectory() as tmp:
+                    validation = pathlib.Path(tmp) / "render-validation.json"
+                    validation.write_text(
+                        json.dumps(
+                            {
+                                "summary": {"documents": 1},
+                                "gate": {
+                                    "passed": True,
+                                    "checks": [
+                                        {
+                                            "metric": "mean_recall",
+                                            "op": ">=",
+                                            "threshold": 0.9,
+                                            "actual": 1.0,
+                                            "passed": True,
+                                            key: 1,
+                                        }
+                                    ],
+                                },
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
+
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        f"gate check key is invalid: {key}",
+                    ):
+                        release_manifest.report_summary(validation)
+
     def test_report_summary_rejects_non_string_gate_check_fields(self):
         with tempfile.TemporaryDirectory() as tmp:
             validation = pathlib.Path(tmp) / "render-validation.json"

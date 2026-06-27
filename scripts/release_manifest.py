@@ -146,6 +146,9 @@ def report_summary(path: Path) -> dict[str, Any]:
             raise ValueError(f"{path} gate check is not a JSON object")
         seen_gate_checks: set[tuple[str, str]] = set()
         for check in gate["checks"]:
+            for key in check:
+                if not key or not key.isascii() or not key.isidentifier():
+                    raise ValueError(f"{path} gate check key is invalid: {key}")
             for field in ("metric", "op", "threshold", "actual", "passed"):
                 if field not in check:
                     raise ValueError(
