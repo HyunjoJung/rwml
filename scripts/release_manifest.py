@@ -151,6 +151,14 @@ def hygiene_summary(path: Path | None) -> dict[str, Any] | None:
                 raise ValueError(
                     f"{path} hygiene finding missing required field: {field}"
                 )
+        if not isinstance(finding["path"], str):
+            raise ValueError(f"{path} hygiene finding path is invalid")
+        if not (finding["line"] is None or isinstance(finding["line"], int)):
+            raise ValueError(f"{path} hygiene finding line is invalid")
+        if not isinstance(finding["kind"], str):
+            raise ValueError(f"{path} hygiene finding kind is invalid")
+        if not isinstance(finding["detail"], str):
+            raise ValueError(f"{path} hygiene finding detail is invalid")
     return {
         "path": path.as_posix(),
         "gate": {
