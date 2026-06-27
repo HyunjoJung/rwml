@@ -3286,8 +3286,13 @@ fn legacy_form_field_result(instruction: &str, data: &LegacyFormData) -> Option<
             .to_string(),
         ),
         FieldKind::FormField(kind) if kind == "FORMDROPDOWN" => {
-            let index = data.dropdown_result.or(data.dropdown_default)?;
-            data.dropdown_entries.get(index).cloned()
+            let result = data
+                .dropdown_result
+                .and_then(|index| data.dropdown_entries.get(index));
+            let default = data
+                .dropdown_default
+                .and_then(|index| data.dropdown_entries.get(index));
+            result.or(default).cloned()
         }
         FieldKind::FormField(kind) if kind == "FORMTEXT" => data.text_default.clone(),
         _ => None,

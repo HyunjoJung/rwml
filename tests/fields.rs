@@ -1024,7 +1024,7 @@ fn legacy_form_field_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" FORMTEXT "><w:r><w:t>Alice</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FORMTEXT "><w:ffData><w:textInput><w:default w:val="No content."/></w:textInput></w:ffData><w:r><w:t></w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"><w:ffData><w:checkBox><w:checked w:val="true"/></w:checkBox></w:ffData></w:fldChar></w:r><w:r><w:instrText> FORMCHECKBOX </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale checked</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"><w:ffData><w:checkBox><w:checked w:val="false"/></w:checkBox></w:ffData></w:fldChar></w:r><w:r><w:instrText> FORMCHECKBOX </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale unchecked</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"><w:ffData><w:checkBox><w:default w:val="true"/></w:checkBox></w:ffData></w:fldChar></w:r><w:r><w:instrText> FORMCHECKBOX </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale default checked</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:p><w:fldSimple w:instr=" FORMDROPDOWN "><w:ffData><w:ddList><w:default w:val="0"/><w:result w:val="2"/><w:listEntry w:val="Option A"/><w:listEntry w:val="Option B"/><w:listEntry w:val="Option C"/></w:ddList></w:ffData><w:r><w:t>stale option</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FORMDROPDOWN "><w:ffData><w:ddList><w:default w:val="1"/><w:listEntry w:val="Default A"/><w:listEntry w:val="Default B"/></w:ddList></w:ffData><w:r><w:t>stale default option</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" FORMTEXT "><w:r><w:t>Alice</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FORMTEXT "><w:ffData><w:textInput><w:default w:val="No content."/></w:textInput></w:ffData><w:r><w:t></w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"><w:ffData><w:checkBox><w:checked w:val="true"/></w:checkBox></w:ffData></w:fldChar></w:r><w:r><w:instrText> FORMCHECKBOX </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale checked</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"><w:ffData><w:checkBox><w:checked w:val="false"/></w:checkBox></w:ffData></w:fldChar></w:r><w:r><w:instrText> FORMCHECKBOX </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale unchecked</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"><w:ffData><w:checkBox><w:default w:val="true"/></w:checkBox></w:ffData></w:fldChar></w:r><w:r><w:instrText> FORMCHECKBOX </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale default checked</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:p><w:fldSimple w:instr=" FORMDROPDOWN "><w:ffData><w:ddList><w:default w:val="0"/><w:result w:val="2"/><w:listEntry w:val="Option A"/><w:listEntry w:val="Option B"/><w:listEntry w:val="Option C"/></w:ddList></w:ffData><w:r><w:t>stale option</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FORMDROPDOWN "><w:ffData><w:ddList><w:default w:val="1"/><w:listEntry w:val="Default A"/><w:listEntry w:val="Default B"/></w:ddList></w:ffData><w:r><w:t>stale default option</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FORMDROPDOWN "><w:ffData><w:ddList><w:default w:val="1"/><w:result w:val="9"/><w:listEntry w:val="Fallback A"/><w:listEntry w:val="Fallback B"/></w:ddList></w:ffData><w:r><w:t>stale invalid option</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -6076,7 +6076,7 @@ fn docx_legacy_form_fields_materialize_deterministic_values() {
     let doc = Document::open(&legacy_form_field_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 7);
+    assert_eq!(fields.len(), 8);
     assert_eq!(fields[0].kind, FieldKind::FormField("FORMTEXT".to_string()));
     assert_eq!(fields[0].instruction, "FORMTEXT");
     assert_eq!(fields[0].result, "Alice");
@@ -6115,6 +6115,12 @@ fn docx_legacy_form_fields_materialize_deterministic_values() {
     );
     assert_eq!(fields[6].result, "stale default option");
     assert_eq!(fields[6].computed_result.as_deref(), Some("Default B"));
+    assert_eq!(
+        fields[7].kind,
+        FieldKind::FormField("FORMDROPDOWN".to_string())
+    );
+    assert_eq!(fields[7].result, "stale invalid option");
+    assert_eq!(fields[7].computed_result.as_deref(), Some("Fallback B"));
 
     let report = doc.report();
     assert!(report.features.unsupported_field_kinds.is_empty());
@@ -6127,7 +6133,8 @@ fn docx_legacy_form_fields_materialize_deterministic_values() {
             && main_text.contains("☒")
             && main_text.contains("☐")
             && main_text.contains("Option C")
-            && main_text.contains("Default B"),
+            && main_text.contains("Default B")
+            && main_text.contains("Fallback B"),
         "computed legacy form field results should appear in main text: {main_text:?}"
     );
     assert!(
@@ -6135,7 +6142,8 @@ fn docx_legacy_form_fields_materialize_deterministic_values() {
             && !main_text.contains("stale unchecked")
             && !main_text.contains("stale default checked")
             && !main_text.contains("stale option")
-            && !main_text.contains("stale default option"),
+            && !main_text.contains("stale default option")
+            && !main_text.contains("stale invalid option"),
         "computed legacy form field results should replace stale cached text: {main_text:?}"
     );
 }
