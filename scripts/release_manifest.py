@@ -197,6 +197,7 @@ def hygiene_summary(path: Path | None) -> dict[str, Any] | None:
         raise ValueError(f"{path} cannot pass with hygiene findings")
     if not passed and not findings:
         raise ValueError(f"{path} cannot fail without hygiene findings")
+    seen_findings: set[tuple[str, int | None, str, str]] = set()
     for finding in findings:
         for field in ("path", "line", "kind", "detail"):
             if field not in finding:
@@ -224,6 +225,15 @@ def hygiene_summary(path: Path | None) -> dict[str, Any] | None:
             raise ValueError(f"{path} hygiene finding detail is invalid")
         if not finding["detail"] or finding["detail"] != finding["detail"].strip():
             raise ValueError(f"{path} hygiene finding detail is invalid")
+        finding_key = (
+            finding["path"],
+            finding["line"],
+            finding["kind"],
+            finding["detail"],
+        )
+        if finding_key in seen_findings:
+            raise ValueError(f"{path} duplicate hygiene finding")
+        seen_findings.add(finding_key)
     return {
         "path": path.as_posix(),
         "gate": {

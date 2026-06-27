@@ -433,6 +433,23 @@ class ReleaseManifestTests(unittest.TestCase):
                     ):
                         release_manifest.hygiene_summary(hygiene)
 
+    def test_hygiene_summary_rejects_duplicate_findings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            hygiene = pathlib.Path(tmp) / "public-hygiene.json"
+            finding = {
+                "path": "private.docx",
+                "line": 1,
+                "kind": "private",
+                "detail": "blocked",
+            }
+            hygiene.write_text(
+                json.dumps({"passed": False, "findings": [finding, finding]}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "duplicate hygiene finding"):
+                release_manifest.hygiene_summary(hygiene)
+
     def test_hygiene_summary_rejects_non_object_report(self):
         with tempfile.TemporaryDirectory() as tmp:
             hygiene = pathlib.Path(tmp) / "public-hygiene.json"
