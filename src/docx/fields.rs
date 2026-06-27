@@ -7039,14 +7039,19 @@ where
     I: Iterator<Item = &'a str>,
 {
     let value = if part.eq_ignore_ascii_case("\\d") {
-        parts.next().and_then(quoted_literal_text)
+        parts.next().and_then(prompt_default_literal_token)
     } else {
-        strip_ascii_switch_prefix(part, "\\d").and_then(quoted_literal_text)
+        strip_ascii_switch_prefix(part, "\\d").and_then(prompt_default_literal_token)
     };
     let Some(value) = value else {
         return false;
     };
     default.replace(value).is_none()
+}
+
+fn prompt_default_literal_token(token: &str) -> Option<String> {
+    let value = field_literal_token(token)?;
+    (!value.starts_with('\\')).then(|| value.to_string())
 }
 
 fn quoted_literal_text(token: &str) -> Option<String> {
@@ -10212,8 +10217,9 @@ mod tests {
         document_info_instruction, format_page_number, note_ref_instruction,
         ordinal_page_number_text, page_ref_instruction, ref_instruction,
         seq_identifier_from_instruction, style_ref_instruction, supports_action_field_syntax,
-        supports_reference_index_marker_syntax, supports_toc_entry_field_syntax,
-        table_formula_context, toc_entries, toc_spec, PageNumberFormat, TocEntrySource,
+        supports_prompt_field_syntax, supports_reference_index_marker_syntax,
+        supports_toc_entry_field_syntax, table_formula_context, toc_entries, toc_spec,
+        PageNumberFormat, TocEntrySource,
     };
     use crate::docx::styles::Styles;
     use std::collections::HashMap;
@@ -10284,6 +10290,48 @@ mod tests {
             field_bookmarks.get("ClientCode").map(String::as_str),
             Some("ac-42")
         );
+    }
+
+    #[test]
+    fn prompt_defaults_accept_unquoted_single_tokens() {
+        assert_eq!(
+            computed_dynamic_result(r#"FILLIN "Client?" \d Acme"#).as_deref(),
+            Some("Acme")
+        );
+        assert_eq!(
+            computed_dynamic_result(r#"FILLIN "Department?" \d ops \* Upper"#).as_deref(),
+            Some("OPS")
+        );
+
+        let mut field_bookmarks = HashMap::new();
+        assert_eq!(
+            computed_ask_result(
+                r#"ASK ClientCode "Client code?" \d ac-42"#,
+                &mut field_bookmarks,
+            )
+            .as_deref(),
+            Some("")
+        );
+        assert_eq!(
+            field_bookmarks.get("ClientCode").map(String::as_str),
+            Some("ac-42")
+        );
+    }
+
+    #[test]
+    fn prompt_defaults_reject_switch_like_unquoted_tokens() {
+        assert_eq!(computed_dynamic_result(r#"FILLIN "Client?" \d \o"#), None);
+        assert!(!supports_prompt_field_syntax(r#"FILLIN "Client?" \d \o"#));
+
+        let mut field_bookmarks = HashMap::new();
+        assert_eq!(
+            computed_ask_result(
+                r#"ASK ClientCode "Client code?" \d \o"#,
+                &mut field_bookmarks,
+            ),
+            None
+        );
+        assert!(field_bookmarks.is_empty());
     }
 
     #[test]
