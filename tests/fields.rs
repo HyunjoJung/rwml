@@ -973,7 +973,7 @@ fn action_field_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" GOTOBUTTON TargetBookmark &quot;Jump&quot; "><w:r><w:t>stale jump</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" GOTOBUTTON TargetBookmark Jump Now \* Upper "><w:r><w:t>stale jump upper</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" MACROBUTTON RunReport &quot;Run report&quot; "><w:r><w:t>stale run</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PRINT &quot;page \p&quot; "><w:r><w:t>Print instruction</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PRINT status "><w:r><w:t>Unquoted print instruction</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PRINT status ready \* MERGEFORMAT "><w:r><w:t>Multi-token print instruction</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PRINT \p ReportBox &quot;0 0 moveto&quot; \* MERGEFORMAT "><w:r><w:t>PostScript instruction</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PRINT \pReportBox &quot;compact moveto&quot; "><w:r><w:t>Compact PostScript instruction</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PRINT \z &quot;bad&quot; "><w:r><w:t>cached unsupported print</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" GOTOBUTTON TargetBookmark &quot;Jump&quot; "><w:r><w:t>stale jump</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" GOTOBUTTON TargetBookmark Jump Now \* Upper "><w:r><w:t>stale jump upper</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" MACROBUTTON RunReport &quot;Run report&quot; "><w:r><w:t>stale run</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" MACROBUTTON RunReport Run \* Upper Again "><w:r><w:t>cached malformed action</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PRINT &quot;page \p&quot; "><w:r><w:t>Print instruction</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PRINT status "><w:r><w:t>Unquoted print instruction</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PRINT status ready \* MERGEFORMAT "><w:r><w:t>Multi-token print instruction</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PRINT \p ReportBox &quot;0 0 moveto&quot; \* MERGEFORMAT "><w:r><w:t>PostScript instruction</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PRINT \pReportBox &quot;compact moveto&quot; "><w:r><w:t>Compact PostScript instruction</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PRINT \z &quot;bad&quot; "><w:r><w:t>cached unsupported print</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -5970,7 +5970,7 @@ fn docx_action_fields_compute_display_text_without_running_actions() {
     let doc = Document::open(&action_field_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 9);
+    assert_eq!(fields.len(), 10);
     assert_eq!(fields[0].kind, FieldKind::Action("GOTOBUTTON".to_string()));
     assert_eq!(fields[0].instruction, "GOTOBUTTON TargetBookmark \"Jump\"");
     assert_eq!(fields[0].result, "stale jump");
@@ -5985,49 +5985,62 @@ fn docx_action_fields_compute_display_text_without_running_actions() {
     assert_eq!(fields[2].kind, FieldKind::Action("MACROBUTTON".to_string()));
     assert_eq!(fields[2].result, "stale run");
     assert_eq!(fields[2].computed_result.as_deref(), Some("Run report"));
-    assert_eq!(fields[3].kind, FieldKind::Action("PRINT".to_string()));
-    assert_eq!(fields[3].result, "Print instruction");
-    assert_eq!(fields[3].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[3].kind, FieldKind::Action("MACROBUTTON".to_string()));
+    assert_eq!(
+        fields[3].instruction,
+        "MACROBUTTON RunReport Run \\* Upper Again"
+    );
+    assert_eq!(fields[3].result, "cached malformed action");
+    assert_eq!(fields[3].computed_result, None);
     assert_eq!(fields[4].kind, FieldKind::Action("PRINT".to_string()));
-    assert_eq!(fields[4].instruction, "PRINT status");
-    assert_eq!(fields[4].result, "Unquoted print instruction");
+    assert_eq!(fields[4].result, "Print instruction");
     assert_eq!(fields[4].computed_result.as_deref(), Some(""));
     assert_eq!(fields[5].kind, FieldKind::Action("PRINT".to_string()));
-    assert_eq!(fields[5].instruction, "PRINT status ready \\* MERGEFORMAT");
-    assert_eq!(fields[5].result, "Multi-token print instruction");
+    assert_eq!(fields[5].instruction, "PRINT status");
+    assert_eq!(fields[5].result, "Unquoted print instruction");
     assert_eq!(fields[5].computed_result.as_deref(), Some(""));
     assert_eq!(fields[6].kind, FieldKind::Action("PRINT".to_string()));
-    assert_eq!(
-        fields[6].instruction,
-        "PRINT \\p ReportBox \"0 0 moveto\" \\* MERGEFORMAT"
-    );
-    assert_eq!(fields[6].result, "PostScript instruction");
+    assert_eq!(fields[6].instruction, "PRINT status ready \\* MERGEFORMAT");
+    assert_eq!(fields[6].result, "Multi-token print instruction");
     assert_eq!(fields[6].computed_result.as_deref(), Some(""));
     assert_eq!(fields[7].kind, FieldKind::Action("PRINT".to_string()));
     assert_eq!(
         fields[7].instruction,
-        "PRINT \\pReportBox \"compact moveto\""
+        "PRINT \\p ReportBox \"0 0 moveto\" \\* MERGEFORMAT"
     );
-    assert_eq!(fields[7].result, "Compact PostScript instruction");
+    assert_eq!(fields[7].result, "PostScript instruction");
     assert_eq!(fields[7].computed_result.as_deref(), Some(""));
     assert_eq!(fields[8].kind, FieldKind::Action("PRINT".to_string()));
-    assert_eq!(fields[8].instruction, "PRINT \\z \"bad\"");
-    assert_eq!(fields[8].result, "cached unsupported print");
-    assert_eq!(fields[8].computed_result, None);
+    assert_eq!(
+        fields[8].instruction,
+        "PRINT \\pReportBox \"compact moveto\""
+    );
+    assert_eq!(fields[8].result, "Compact PostScript instruction");
+    assert_eq!(fields[8].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[9].kind, FieldKind::Action("PRINT".to_string()));
+    assert_eq!(fields[9].instruction, "PRINT \\z \"bad\"");
+    assert_eq!(fields[9].result, "cached unsupported print");
+    assert_eq!(fields[9].computed_result, None);
 
     let report = doc.report();
     assert_eq!(
         report.features.unsupported_field_kinds,
-        vec![FieldKindCount {
-            kind: FieldKind::Action("PRINT".to_string()),
-            count: 1,
-        }]
+        vec![
+            FieldKindCount {
+                kind: FieldKind::Action("MACROBUTTON".to_string()),
+                count: 1,
+            },
+            FieldKindCount {
+                kind: FieldKind::Action("PRINT".to_string()),
+                count: 1,
+            },
+        ]
     );
     assert_eq!(
         report.features.unsupported_field_reasons,
         vec![FieldEvaluationReasonCount {
             reason: FieldEvaluationReason::UnsupportedSwitch,
-            count: 1,
+            count: 2,
         }]
     );
 
@@ -6036,6 +6049,7 @@ fn docx_action_fields_compute_display_text_without_running_actions() {
         main_text.contains("Jump")
             && main_text.contains("JUMP NOW")
             && main_text.contains("Run report")
+            && main_text.contains("cached malformed action")
             && main_text.contains("cached unsupported print"),
         "computed action display text and cached unsupported PRINT text should appear in main text: {main_text:?}"
     );

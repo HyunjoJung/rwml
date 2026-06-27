@@ -7588,20 +7588,23 @@ fn action_instruction(instruction: &str) -> Option<ActionInstruction> {
     field_identifier_token(parts.next()?)?;
     let mut display_parts = Vec::new();
     let mut text_format = None;
+    let mut saw_format = false;
     while let Some(part) = parts.next() {
         if part == "\\*" {
             if !accept_field_format_switch(parts.next()?, &mut text_format) {
                 return None;
             }
+            saw_format = true;
             continue;
         }
         if let Some(format) = part.strip_prefix("\\*") {
             if !accept_field_format_switch(format, &mut text_format) {
                 return None;
             }
+            saw_format = true;
             continue;
         }
-        if part.starts_with('\\') {
+        if saw_format || part.starts_with('\\') {
             return None;
         }
         display_parts.push(part);
