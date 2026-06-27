@@ -740,6 +740,8 @@ render-validation, and benchmark summaries/gates without copying row data, plus
 the named `public-release` policy: required public hygiene audit,
 fmt/clippy/default/render test gates, and selected optional local thresholds
 (`0.95` POI recall/F1, `0.90` render mean recall, `0` extractor errors/skips).
+Corpus TSV summaries reject empty manifests, duplicate columns or paths,
+negative numeric counts, and duplicate warning tokens before embedding totals.
 The same manifest records a compact `release_evidence` section so consumers can
 tell whether strict local evidence was enforced, whether complete inputs were
 provided without enforcement, and which strict public-release inputs are still

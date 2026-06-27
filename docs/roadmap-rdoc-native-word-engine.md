@@ -1020,7 +1020,9 @@ Initial status:
   `public-release` policy metadata, summary sections from validation reports such
   as `scripts/render_validate.py --json`, compact public hygiene,
   validation/benchmark gate metadata, compact public corpus TSV manifest
-  summaries with document counts, numeric totals, and warning counts. Its
+  summaries with document counts, numeric totals, and warning counts. Corpus TSV
+  summaries reject empty manifests, duplicate columns or paths, negative numeric
+  counts, and duplicate warning tokens before embedding totals. Its
   `release_evidence` metadata distinguishes embedded policy,
   complete-but-not-enforced inputs, enforced strict local evidence, and missing
   strict public-release inputs. It also provides
