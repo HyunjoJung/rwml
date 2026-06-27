@@ -69,9 +69,9 @@ DOMAIN_TRACE_PATTERNS = [
 ]
 
 LOCAL_PATH_PATTERNS = [
-    ("mac_home_path", re.compile(r"/Users/[A-Za-z0-9._-]+/")),
+    ("mac_home_path", re.compile(r"(?<![A-Za-z]:)/Users/[A-Za-z0-9._-]+/")),
     ("linux_home_path", re.compile(r"/home/[A-Za-z0-9._-]+/")),
-    ("windows_home_path", re.compile(r"[A-Za-z]:\\Users\\[^\\\s]+\\")),
+    ("windows_home_path", re.compile(r"[A-Za-z]:[/\\]Users[/\\][^/\\\s]+[/\\]")),
 ]
 
 OFFICE_TEXT_PART_SUFFIXES = (".xml", ".rels")

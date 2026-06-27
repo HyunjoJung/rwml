@@ -76,6 +76,23 @@ class PublicHygieneAuditTests(unittest.TestCase):
             ],
         )
 
+    def test_text_audit_flags_forward_slash_windows_home_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            doc = root / "README.md"
+            doc.write_text(
+                "path=C:" + "/Users/" + "alice/Documents/private.doc\n",
+                encoding="utf-8",
+            )
+
+            with audit_root(root):
+                findings = public_hygiene_audit.audit_text_file(doc)
+
+        self.assertEqual(
+            [(finding.line, finding.kind) for finding in findings],
+            [(1, "windows_home_path")],
+        )
+
     def test_skip_policy_ignores_binary_suffixes_and_generated_dirs(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
