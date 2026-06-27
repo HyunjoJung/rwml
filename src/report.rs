@@ -2373,9 +2373,85 @@ fn sequence_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     }
     #[cfg(not(feature = "docx"))]
     {
-        let _ = instruction;
-        FieldEvaluationReason::NoComputedResult
+        if supported_sequence_syntax(instruction) {
+            FieldEvaluationReason::NoComputedResult
+        } else {
+            FieldEvaluationReason::UnsupportedSwitch
+        }
     }
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_sequence_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if !kind.eq_ignore_ascii_case("SEQ")
+        || diagnostic_identifier_token(parts.next().unwrap_or("")).is_none()
+    {
+        return false;
+    }
+    let mut action_seen = false;
+    let mut hidden = false;
+    let mut number_format = false;
+    while let Some(part) = parts.next() {
+        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
+            accept_page_number_format_switch(format, &mut number_format)
+        }) else {
+            return false;
+        };
+        if accepted {
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\n") || part.eq_ignore_ascii_case("\\c") {
+            if action_seen {
+                return false;
+            }
+            action_seen = true;
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\h") {
+            if hidden {
+                return false;
+            }
+            hidden = true;
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\r") {
+            let Some(reset) = parts.next() else {
+                return false;
+            };
+            if !accept_sequence_reset_for_report(reset, &mut action_seen) {
+                return false;
+            }
+            continue;
+        }
+        if let Some(reset) = strip_ascii_switch_prefix(part, "\\r") {
+            if reset.is_empty() || !accept_sequence_reset_for_report(reset, &mut action_seen) {
+                return false;
+            }
+            continue;
+        }
+        return false;
+    }
+    true
+}
+
+#[cfg(not(feature = "docx"))]
+fn accept_sequence_reset_for_report(part: &str, action_seen: &mut bool) -> bool {
+    if *action_seen {
+        return false;
+    }
+    if diagnostic_name_token(part)
+        .and_then(|part| part.parse::<i64>().ok())
+        .is_none()
+    {
+        return false;
+    }
+    *action_seen = true;
+    true
 }
 
 fn if_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -3833,6 +3909,19 @@ mod tests {
         );
         assert_eq!(
             super::set_uncomputed_reason(r#"SET \r "Acme""#),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_sequence_diagnostics_reject_malformed_tails() {
+        assert_eq!(
+            super::sequence_uncomputed_reason(r"SEQ Figure \r -1"),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::sequence_uncomputed_reason(r"SEQ Figure \x"),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
     }
