@@ -214,6 +214,9 @@ def validation_report(
             value = getattr(row, metric)
             if value is not None and not is_finite_number(value):
                 raise ValueError(f"metric is invalid: {metric}")
+            if value is not None and metric in {"recall", "ahash_similarity"}:
+                if not 0 <= value <= 1:
+                    raise ValueError(f"metric is out of range: {metric}")
     if not is_finite_number(recall_min):
         raise ValueError(f"non-finite recall threshold: {recall_min}")
     if recall_min < 0:

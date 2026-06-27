@@ -124,6 +124,16 @@ class RenderValidateReportTests(unittest.TestCase):
         else:
             self.fail("ValueError not raised")
 
+    def test_validation_report_rejects_out_of_range_bounded_metrics(self):
+        row = render_validate.ValidationRow(
+            document="sample.docx",
+            status="pass",
+            recall=1.1,
+        )
+
+        with self.assertRaisesRegex(ValueError, "metric is out of range: recall"):
+            render_validate.validation_report([row], recall_min=0.8)
+
     def test_validation_report_evaluates_release_thresholds(self):
         rows = [
             render_validate.ValidationRow(
