@@ -6965,7 +6965,7 @@ fn fill_in_instruction(instruction: &str) -> Option<FillInInstruction> {
         })? {
             continue;
         }
-        let prompt = quoted_literal_text(part)?;
+        let prompt = prompt_text_literal_token(part)?;
         if prompt.is_empty() || prompt_seen {
             return None;
         }
@@ -6999,7 +6999,7 @@ fn ask_instruction(instruction: &str) -> Option<AskInstruction> {
         return None;
     }
     let bookmark = field_identifier_token(parts.next()?)?;
-    let prompt = quoted_literal_text(parts.next()?)?;
+    let prompt = prompt_text_literal_token(parts.next()?)?;
     if prompt.is_empty() {
         return None;
     }
@@ -7052,6 +7052,11 @@ where
 fn prompt_default_literal_token(token: &str) -> Option<String> {
     let value = field_literal_token(token)?;
     (!value.starts_with('\\')).then(|| value.to_string())
+}
+
+fn prompt_text_literal_token(token: &str) -> Option<&str> {
+    let value = field_literal_token(token)?;
+    (!value.is_empty() && !value.starts_with('\\')).then_some(value)
 }
 
 fn quoted_literal_text(token: &str) -> Option<String> {
@@ -10329,6 +10334,38 @@ mod tests {
                 r#"ASK ClientCode "Client code?" \d \o"#,
                 &mut field_bookmarks,
             ),
+            None
+        );
+        assert!(field_bookmarks.is_empty());
+    }
+
+    #[test]
+    fn prompt_text_accepts_unquoted_single_tokens() {
+        assert_eq!(
+            computed_dynamic_result(r#"FILLIN Client? \d Acme"#).as_deref(),
+            Some("Acme")
+        );
+
+        let mut field_bookmarks = HashMap::new();
+        assert_eq!(
+            computed_ask_result(r#"ASK ClientCode Client? \d ac-42"#, &mut field_bookmarks)
+                .as_deref(),
+            Some("")
+        );
+        assert_eq!(
+            field_bookmarks.get("ClientCode").map(String::as_str),
+            Some("ac-42")
+        );
+    }
+
+    #[test]
+    fn prompt_text_rejects_switch_like_unquoted_tokens() {
+        assert_eq!(computed_dynamic_result(r#"FILLIN \z \d Acme"#), None);
+        assert!(!supports_prompt_field_syntax(r#"FILLIN \z \d Acme"#));
+
+        let mut field_bookmarks = HashMap::new();
+        assert_eq!(
+            computed_ask_result(r#"ASK ClientCode \o \d ac-42"#, &mut field_bookmarks),
             None
         );
         assert!(field_bookmarks.is_empty());
