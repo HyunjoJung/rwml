@@ -200,7 +200,7 @@ def benchmark_report(
 
 
 def write_json_report(report: dict, output: Path | None) -> None:
-    payload = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
+    payload = json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
     if output is None:
         sys.stdout.write(payload)
     else:

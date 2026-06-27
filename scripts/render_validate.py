@@ -201,6 +201,10 @@ def validation_report(
     }
 
 
+def json_report_payload(report: dict) -> str:
+    return json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False)
+
+
 def warning_kinds(report: dict | None) -> list[str] | None:
     if report is None:
         return None
@@ -394,7 +398,7 @@ def main() -> int:
     }
     report = validation_report(rows, args.recall_min, thresholds=thresholds)
     if args.json:
-        print(json.dumps(report, ensure_ascii=False, indent=2))
+        print(json_report_payload(report))
     elif report["summary"]["measured"]:
         mean_warnings = report["summary"]["mean_render_warnings"]
         print("-" * 80)

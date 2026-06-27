@@ -1,6 +1,7 @@
 import importlib.util
 import pathlib
 import sys
+import tempfile
 import unittest
 
 
@@ -110,6 +111,18 @@ class BenchVsMatureReportTests(unittest.TestCase):
         self.assertFalse(checks["errors"]["passed"])
         self.assertEqual(checks["scored"]["actual"], 2)
         self.assertFalse(checks["scored"]["passed"])
+
+    def test_write_json_report_rejects_non_finite_values(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = pathlib.Path(tmp) / "benchmark.json"
+
+            with self.assertRaisesRegex(ValueError, "Out of range float values"):
+                bench_vs_mature.write_json_report(
+                    {"summary": {"poi_recall_mean": float("nan")}},
+                    output,
+                )
+
+            self.assertFalse(output.exists())
 
 
 if __name__ == "__main__":
