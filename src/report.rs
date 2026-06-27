@@ -2561,9 +2561,65 @@ fn if_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     }
     #[cfg(not(feature = "docx"))]
     {
-        let _ = instruction;
-        FieldEvaluationReason::NoComputedResult
+        if supported_if_syntax(instruction) {
+            FieldEvaluationReason::NoComputedResult
+        } else {
+            FieldEvaluationReason::UnsupportedSwitch
+        }
     }
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_if_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if !kind.eq_ignore_ascii_case("IF") {
+        return false;
+    }
+    let Some(first) = parts.next() else {
+        return false;
+    };
+    if !supported_comparison_operands(first, &mut parts) {
+        return false;
+    }
+    let Some(true_text) = parts.next() else {
+        return false;
+    };
+    if if_result_text_for_report(true_text).is_none() {
+        return false;
+    }
+    let mut text_format = false;
+    if let Some(part) = parts.next() {
+        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        }) else {
+            return false;
+        };
+        if !accepted && if_result_text_for_report(part).is_none() {
+            return false;
+        }
+    }
+    while let Some(part) = parts.next() {
+        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        }) else {
+            return false;
+        };
+        if !accepted {
+            return false;
+        }
+    }
+    true
+}
+
+#[cfg(not(feature = "docx"))]
+fn if_result_text_for_report(token: &str) -> Option<&str> {
+    (!token.starts_with('\\'))
+        .then(|| diagnostic_literal_token(token))
+        .flatten()
 }
 
 fn quote_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -4108,6 +4164,19 @@ mod tests {
         );
         assert_eq!(
             super::compare_uncomputed_reason(r#"COMPARE \o = "Gold""#),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_if_diagnostics_reject_malformed_operands() {
+        assert_eq!(
+            super::if_uncomputed_reason(r#"IF 1 = 1 "yes" "no""#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::if_uncomputed_reason(r#"IF \o = "Gold" "ship" "hold""#),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
     }
