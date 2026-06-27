@@ -779,6 +779,37 @@ class ReleaseManifestTests(unittest.TestCase):
                     ):
                         release_manifest.report_summary(validation)
 
+    def test_report_summary_rejects_unexpected_gate_check_keys(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            validation = pathlib.Path(tmp) / "render-validation.json"
+            validation.write_text(
+                json.dumps(
+                    {
+                        "summary": {"documents": 1},
+                        "gate": {
+                            "passed": True,
+                            "checks": [
+                                {
+                                    "metric": "mean_recall",
+                                    "op": ">=",
+                                    "threshold": 0.9,
+                                    "actual": 1.0,
+                                    "passed": True,
+                                    "note": "extra",
+                                }
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "gate check key is invalid: note",
+            ):
+                release_manifest.report_summary(validation)
+
     def test_report_summary_rejects_non_string_gate_check_fields(self):
         with tempfile.TemporaryDirectory() as tmp:
             validation = pathlib.Path(tmp) / "render-validation.json"

@@ -144,12 +144,18 @@ def report_summary(path: Path) -> dict[str, Any]:
             raise ValueError(f"{path} gate checks is not a list")
         if any(not isinstance(check, dict) for check in gate["checks"]):
             raise ValueError(f"{path} gate check is not a JSON object")
+        gate_check_fields = ("metric", "op", "threshold", "actual", "passed")
         seen_gate_checks: set[tuple[str, str]] = set()
         for check in gate["checks"]:
             for key in check:
-                if not key or not key.isascii() or not key.isidentifier():
+                if (
+                    not key
+                    or not key.isascii()
+                    or not key.isidentifier()
+                    or key not in gate_check_fields
+                ):
                     raise ValueError(f"{path} gate check key is invalid: {key}")
-            for field in ("metric", "op", "threshold", "actual", "passed"):
+            for field in gate_check_fields:
                 if field not in check:
                     raise ValueError(
                         f"{path} gate check missing required field: {field}"
