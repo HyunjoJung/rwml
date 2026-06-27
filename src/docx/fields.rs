@@ -7620,7 +7620,7 @@ pub(crate) fn supports_display_field_syntax(instruction: &str) -> bool {
     let Some(spec) = eq_instruction(instruction) else {
         return false;
     };
-    supports_eq_script_syntax(&spec.expression)
+    supports_eq_displace_syntax(&spec.expression) || supports_eq_script_syntax(&spec.expression)
 }
 
 fn computed_advance_result(instruction: &str) -> Option<String> {
@@ -7759,6 +7759,31 @@ fn eq_displace_text(expression: &str) -> Option<String> {
             return None;
         }
     }
+}
+
+fn supports_eq_displace_syntax(expression: &str) -> bool {
+    let Some(mut body) = strip_ascii_switch_prefix(expression, "\\d") else {
+        return false;
+    };
+    body = body.trim_start();
+    let mut has_option = false;
+    loop {
+        if let Some((_value, rest)) = consume_eq_numeric_prefix_option(body, "\\fo")
+            .or_else(|| consume_eq_numeric_prefix_option(body, "\\ba"))
+        {
+            has_option = true;
+            body = rest.trim_start();
+        } else if let Some(rest) = consume_eq_prefix_switch(body, "\\li") {
+            has_option = true;
+            body = rest.trim_start();
+        } else {
+            break;
+        }
+    }
+    let Some(inner) = take_eq_enclosed_operand(body) else {
+        return false;
+    };
+    has_option && (inner.trim().is_empty() || eq_operand_text(inner).is_some())
 }
 
 fn eq_array_text(expression: &str) -> Option<String> {
