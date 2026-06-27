@@ -477,6 +477,26 @@ class ReleaseManifestTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "summary contains non-finite value"):
                 release_manifest.report_summary(validation)
 
+    def test_report_summary_rejects_non_finite_gate_values(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            validation = pathlib.Path(tmp) / "render-validation.json"
+            validation.write_text(
+                json.dumps(
+                    {
+                        "summary": {"documents": 1},
+                        "gate": {
+                            "passed": True,
+                            "checks": [],
+                            "mean_recall": float("nan"),
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "gate contains non-finite value"):
+                release_manifest.report_summary(validation)
+
     def test_report_summary_rejects_non_object_gate(self):
         with tempfile.TemporaryDirectory() as tmp:
             validation = pathlib.Path(tmp) / "render-validation.json"

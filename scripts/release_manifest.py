@@ -173,6 +173,10 @@ def report_summary(path: Path) -> dict[str, Any]:
             and all(check["passed"] for check in gate["checks"])
         ):
             raise ValueError(f"{path} gate failed without failed checks")
+        try:
+            json.dumps(gate, allow_nan=False)
+        except ValueError as error:
+            raise ValueError(f"{path} gate contains non-finite value") from error
         report["gate"] = gate
     return report
 
