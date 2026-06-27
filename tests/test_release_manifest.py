@@ -599,6 +599,14 @@ class ReleaseManifestTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "does not contain a JSON object"):
                 release_manifest.report_summary(validation)
 
+    def test_report_summary_rejects_empty_summary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            validation = pathlib.Path(tmp) / "render-validation.json"
+            validation.write_text(json.dumps({"summary": {}}), encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "summary must not be empty"):
+                release_manifest.report_summary(validation)
+
     def test_report_summary_rejects_non_finite_summary_values(self):
         with tempfile.TemporaryDirectory() as tmp:
             validation = pathlib.Path(tmp) / "render-validation.json"
