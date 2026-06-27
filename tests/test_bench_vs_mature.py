@@ -123,6 +123,13 @@ class BenchVsMatureReportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "negative count threshold"):
             bench_vs_mature.benchmark_gate({"scored": 0}, {"min_scored": -1})
 
+    def test_benchmark_gate_rejects_negative_score_thresholds(self):
+        with self.assertRaisesRegex(ValueError, "negative score threshold"):
+            bench_vs_mature.benchmark_gate(
+                {"poi_recall_mean": 1.0},
+                {"min_poi_recall_mean": -0.1},
+            )
+
     def test_write_json_report_rejects_non_finite_values(self):
         with tempfile.TemporaryDirectory() as tmp:
             output = pathlib.Path(tmp) / "benchmark.json"

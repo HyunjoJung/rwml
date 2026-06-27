@@ -41,6 +41,7 @@ from pathlib import Path
 SCHEMA = "rdoc.benchmark-report.v1"
 BENCHMARK = "extract-vs-mature"
 COUNT_THRESHOLD_METRICS = {"errors", "scored"}
+SCORE_THRESHOLD_METRICS = {"poi_recall_mean", "poi_f1_mean", "lo_recall_mean"}
 
 
 def is_finite_number(value: object) -> bool:
@@ -127,6 +128,8 @@ def add_threshold_check(
         raise ValueError(f"non-finite threshold for {metric}: {threshold}")
     if metric in COUNT_THRESHOLD_METRICS and threshold < 0:
         raise ValueError(f"negative count threshold for {metric}: {threshold}")
+    if metric in SCORE_THRESHOLD_METRICS and threshold < 0:
+        raise ValueError(f"negative score threshold for {metric}: {threshold}")
     if actual is None:
         passed = False
     elif op == ">=":
