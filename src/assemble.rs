@@ -760,6 +760,10 @@ fn parse_hyperlink(instr: &str) -> Option<String> {
     let start = after.find('"')?;
     let rest = &after[start + 1..];
     let end = rest.find('"')?;
+    let tail = &rest[end + 1..];
+    if !crate::hyperlink_tail_is_well_formed(tail) {
+        return None;
+    }
     let url = rest[..end].trim();
     if url.is_empty() {
         None
@@ -1070,5 +1074,13 @@ mod tests {
             Some("anchor")
         );
         assert_eq!(parse_hyperlink(" HYPERLINK \\o \"tip\" "), None);
+        assert_eq!(
+            parse_hyperlink(" HYPERLINK \"https://example.com\" \"extra "),
+            None
+        );
+        assert_eq!(
+            parse_hyperlink(" HYPERLINK \"https://example.com\" extra "),
+            None
+        );
     }
 }

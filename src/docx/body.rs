@@ -2258,6 +2258,10 @@ pub(crate) fn hyperlink_instr_url(instr: &str) -> Option<String> {
     let q = after.find('"')?;
     let rest = &after[q + 1..];
     let end = rest.find('"')?;
+    let tail = &rest[end + 1..];
+    if !crate::hyperlink_tail_is_well_formed(tail) {
+        return None;
+    }
     let url = rest[..end].trim();
     (!url.is_empty()).then(|| url.to_string())
 }
@@ -2940,6 +2944,22 @@ mod tests {
             counters: Default::default(),
         };
         parse_document(xml, &ctx)
+    }
+
+    #[test]
+    fn hyperlink_instruction_rejects_trailing_non_switch_tokens() {
+        assert_eq!(
+            hyperlink_instr_url(r#"HYPERLINK "https://example.com" \o "tip""#).as_deref(),
+            Some("https://example.com")
+        );
+        assert_eq!(
+            hyperlink_instr_url(r#"HYPERLINK "https://example.com" "extra "#),
+            None
+        );
+        assert_eq!(
+            hyperlink_instr_url(r#"HYPERLINK "https://example.com" extra"#),
+            None
+        );
     }
 
     fn raw_merge_cell(vmerge: VMerge) -> CellRaw {
