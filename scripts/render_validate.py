@@ -196,6 +196,8 @@ def validation_report(
         raise ValueError(f"non-finite recall threshold: {recall_min}")
     if recall_min < 0:
         raise ValueError(f"negative recall threshold: {recall_min}")
+    if recall_min > 1:
+        raise ValueError(f"recall threshold above one: {recall_min}")
     measured = [r for r in rows if r.recall is not None]
     summary = {
         "documents": len(rows),
