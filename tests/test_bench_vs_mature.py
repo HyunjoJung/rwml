@@ -130,6 +130,13 @@ class BenchVsMatureReportTests(unittest.TestCase):
                 {"min_poi_recall_mean": -0.1},
             )
 
+    def test_benchmark_gate_rejects_score_thresholds_above_one(self):
+        with self.assertRaisesRegex(ValueError, "score threshold above one"):
+            bench_vs_mature.benchmark_gate(
+                {"poi_f1_mean": 1.0},
+                {"min_poi_f1_mean": 1.1},
+            )
+
     def test_write_json_report_rejects_non_finite_values(self):
         with tempfile.TemporaryDirectory() as tmp:
             output = pathlib.Path(tmp) / "benchmark.json"

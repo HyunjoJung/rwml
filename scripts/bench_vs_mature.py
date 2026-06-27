@@ -130,6 +130,8 @@ def add_threshold_check(
         raise ValueError(f"negative count threshold for {metric}: {threshold}")
     if metric in SCORE_THRESHOLD_METRICS and threshold < 0:
         raise ValueError(f"negative score threshold for {metric}: {threshold}")
+    if metric in SCORE_THRESHOLD_METRICS and threshold > 1:
+        raise ValueError(f"score threshold above one for {metric}: {threshold}")
     if actual is None:
         passed = False
     elif op == ">=":
