@@ -1658,6 +1658,12 @@ fn page_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     }
 }
 
+#[cfg(feature = "docx")]
+fn supported_page_syntax(instruction: &str) -> bool {
+    crate::docx::supports_page_field_syntax(instruction)
+}
+
+#[cfg(not(feature = "docx"))]
 fn supported_page_syntax(instruction: &str) -> bool {
     let tokens = instruction_parts(instruction);
     let mut parts = tokens.iter().map(String::as_str);
@@ -1695,6 +1701,12 @@ fn section_document_structure_uncomputed_reason(instruction: &str) -> FieldEvalu
     }
 }
 
+#[cfg(feature = "docx")]
+fn supported_section_document_structure_syntax(instruction: &str) -> bool {
+    crate::docx::supports_section_field_syntax(instruction)
+}
+
+#[cfg(not(feature = "docx"))]
 fn supported_section_document_structure_syntax(instruction: &str) -> bool {
     let tokens = instruction_parts(instruction);
     let mut parts = tokens.iter().map(String::as_str);

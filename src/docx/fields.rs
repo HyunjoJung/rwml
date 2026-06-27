@@ -4884,6 +4884,10 @@ pub(crate) fn computed_page_result(
     Some(apply_field_text_format(text, spec.text_format))
 }
 
+pub(crate) fn supports_page_field_syntax(instruction: &str) -> bool {
+    page_instruction(instruction).is_some()
+}
+
 pub(crate) fn computed_page_ref_result(
     instruction: &str,
     page_refs: &PageRefContext,
