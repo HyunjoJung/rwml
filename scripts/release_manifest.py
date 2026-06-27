@@ -491,7 +491,7 @@ def read_corpus_manifest(path: Path) -> tuple[list[str], list[list[str]]]:
             continue
         if trimmed.startswith("path\t"):
             continue
-        cols = trimmed.split("\t")
+        cols = line.split("\t")
         if len(cols) != len(header):
             raise ValueError(
                 f"{path} row has {len(cols)} columns, expected {len(header)}: {line}"
