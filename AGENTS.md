@@ -73,14 +73,20 @@ rendering moving toward one coherent Rust-native document model.
 
 ## Verification
 
-Run the smallest command that proves the change, then broaden with risk:
+Run the smallest command that proves the change, then broaden with risk. For
+focused batches, prefer the narrowest relevant test binary, test name, or script
+plus formatting/hygiene checks when they apply; do not run the full local gate by
+default. Use the broader all-target/default/render gates only when the touched
+surface or risk justifies them.
 
 - Formatting: `cargo fmt --all -- --check`
-- Default Rust tests: `cargo test --all-targets`
+- Focused Rust tests: `cargo test --test <name> <filter>` or
+  `cargo test --lib <filter>`
+- Default Rust gate: `cargo test --all-targets`
 - Render changes: `cargo test --all-targets --features render`
 - Public hygiene: `python3 scripts/public_hygiene_audit.py`
 - Python tooling tests: `python3 -m unittest discover -s tests -p 'test_*.py'`
-- Full local gate for release-sized changes:
+- Full local gate only for release-sized/high-risk changes:
   `cargo fmt --all -- --check`,
   `cargo clippy --all-targets -- -D warnings`,
   `cargo clippy --all-targets --all-features -- -D warnings`,
