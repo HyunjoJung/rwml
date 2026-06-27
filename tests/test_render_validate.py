@@ -73,6 +73,16 @@ class RenderValidateReportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "document path is invalid"):
             render_validate.validation_report([row], recall_min=0.8)
 
+    def test_validation_report_rejects_invalid_status(self):
+        row = render_validate.ValidationRow(
+            document="sample.docx",
+            status="pending",
+            reason="render pending",
+        )
+
+        with self.assertRaisesRegex(ValueError, "status is invalid"):
+            render_validate.validation_report([row], recall_min=0.8)
+
     def test_validation_report_evaluates_release_thresholds(self):
         rows = [
             render_validate.ValidationRow(

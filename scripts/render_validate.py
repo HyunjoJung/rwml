@@ -195,6 +195,8 @@ def validation_report(
     for row in rows:
         if "/" in row.document or "\\" in row.document:
             raise ValueError(f"document path is invalid: {row.document}")
+        if row.status not in {"pass", "fail", "skip"}:
+            raise ValueError(f"status is invalid: {row.status}")
     if not is_finite_number(recall_min):
         raise ValueError(f"non-finite recall threshold: {recall_min}")
     if recall_min < 0:
