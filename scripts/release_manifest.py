@@ -131,6 +131,10 @@ def report_summary(path: Path) -> dict[str, Any]:
                     raise ValueError(
                         f"{path} gate check missing required field: {field}"
                     )
+            if not isinstance(check["metric"], str):
+                raise ValueError(f"{path} gate check metric is not a string")
+            if not isinstance(check["op"], str):
+                raise ValueError(f"{path} gate check op is not a string")
         if any(not isinstance(check.get("passed"), bool) for check in gate["checks"]):
             raise ValueError(f"{path} gate check passed is not a boolean")
         report["gate"] = gate
