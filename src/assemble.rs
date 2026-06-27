@@ -739,8 +739,16 @@ impl<'a, 'l> Asm<'a, 'l> {
 /// Extract the target URL from a `HYPERLINK` field instruction, e.g.
 /// `HYPERLINK "https://example.com" \o "tooltip"` → `https://example.com`.
 fn parse_hyperlink(instr: &str) -> Option<String> {
-    let s = instr.trim();
-    let after = s.find("HYPERLINK").map(|i| &s[i + "HYPERLINK".len()..])?;
+    let s = instr.trim_start();
+    let field_name_len = "HYPERLINK".len();
+    let field_name = s.get(..field_name_len)?;
+    if !field_name.eq_ignore_ascii_case("HYPERLINK") {
+        return None;
+    }
+    let after = s.get(field_name_len..)?;
+    if matches!(after.chars().next(), Some(ch) if !ch.is_whitespace()) {
+        return None;
+    }
     let start = after.find('"')?;
     let rest = &after[start + 1..];
     let end = rest.find('"')?;
@@ -878,6 +886,25 @@ mod tests {
         // The url does not leak onto the post-field tail.
         let tail = p.runs.iter().find(|r| r.text == " tail").unwrap();
         assert_eq!(tail.field, FieldRole::None);
+    }
+
+    #[test]
+    fn mixed_case_hyperlink_field_result_is_linked() {
+        let mut units = vec![FIELD_BEGIN];
+        units.extend(us(" hYpErLiNk \"http://x\" "));
+        units.push(FIELD_SEP);
+        units.extend(us("link"));
+        units.push(FIELD_END);
+        units.push(PARA_MARK);
+        let blocks = run_units(&units);
+        let Block::Paragraph(p) = &blocks[0] else {
+            panic!("expected paragraph");
+        };
+        assert!(matches!(
+            &p.runs[0].field,
+            FieldRole::Hyperlink { url } if url == "http://x"
+        ));
+        assert!(parse_hyperlink(" HYPERLINKBASE \"http://x\" ").is_none());
     }
 
     #[test]
