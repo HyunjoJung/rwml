@@ -137,6 +137,10 @@ def report_summary(path: Path) -> dict[str, Any]:
                 raise ValueError(f"{path} gate check op is not a string")
             if check["op"] not in {">=", "<="}:
                 raise ValueError(f"{path} unsupported gate check operator: {check['op']}")
+            if not is_number(check["threshold"]):
+                raise ValueError(f"{path} gate check threshold is not a finite number")
+            if check["actual"] is not None and not is_number(check["actual"]):
+                raise ValueError(f"{path} gate check actual is not a finite number")
         if any(not isinstance(check.get("passed"), bool) for check in gate["checks"]):
             raise ValueError(f"{path} gate check passed is not a boolean")
         report["gate"] = gate

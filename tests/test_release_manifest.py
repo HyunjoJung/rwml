@@ -510,6 +510,63 @@ class ReleaseManifestTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "unsupported gate check operator: =="):
                 release_manifest.report_summary(validation)
 
+    def test_report_summary_rejects_non_numeric_gate_check_values(self):
+        for field in ("threshold", "actual"):
+            with self.subTest(field=field):
+                with tempfile.TemporaryDirectory() as tmp:
+                    validation = pathlib.Path(tmp) / "render-validation.json"
+                    check = {
+                        "metric": "mean_recall",
+                        "op": ">=",
+                        "threshold": 0.9,
+                        "actual": 1.0,
+                        "passed": True,
+                    }
+                    check[field] = "0.9"
+                    validation.write_text(
+                        json.dumps(
+                            {
+                                "summary": {"documents": 1},
+                                "gate": {"passed": True, "checks": [check]},
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
+
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        f"gate check {field} is not a finite number",
+                    ):
+                        release_manifest.report_summary(validation)
+
+    def test_report_summary_accepts_null_gate_check_actual(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            validation = pathlib.Path(tmp) / "render-validation.json"
+            validation.write_text(
+                json.dumps(
+                    {
+                        "summary": {"documents": 0},
+                        "gate": {
+                            "passed": False,
+                            "checks": [
+                                {
+                                    "metric": "mean_recall",
+                                    "op": ">=",
+                                    "threshold": 0.9,
+                                    "actual": None,
+                                    "passed": False,
+                                }
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = release_manifest.report_summary(validation)
+
+        self.assertIsNone(report["gate"]["checks"][0]["actual"])
+
     def test_cli_writes_manifest_json(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
