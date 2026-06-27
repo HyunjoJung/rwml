@@ -6,9 +6,9 @@ use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 
 use crate::annotation::{
+    accept_field_number_format_switch,
     accept_field_text_format_switch as accept_field_format_switch, accept_general_format_switch,
-    field_number_format_switch, is_neutral_field_format_switch, Field, FieldKind,
-    FieldNumberFormat, FieldTextFormat,
+    is_neutral_field_format_switch, Field, FieldKind, FieldNumberFormat, FieldTextFormat,
 };
 use crate::{numfmt, CoreProperties};
 
@@ -9207,22 +9207,26 @@ fn accept_page_number_format_switch(
     part: &str,
     number_format: &mut Option<PageNumberFormat>,
 ) -> bool {
-    if is_neutral_field_format_switch(part) {
-        return true;
+    let mut format = number_format.map(|_| FieldNumberFormat::Arabic);
+    let accepted = accept_field_number_format_switch(part, &mut format);
+    if accepted {
+        *number_format = format.map(page_number_format_from_field_format);
     }
-    let format = match field_number_format_switch(part) {
-        Some(FieldNumberFormat::Arabic) => PageNumberFormat::Arabic,
-        Some(FieldNumberFormat::ArabicDash) => PageNumberFormat::ArabicDash,
-        Some(FieldNumberFormat::AlphabeticLower) => PageNumberFormat::AlphabeticLower,
-        Some(FieldNumberFormat::AlphabeticUpper) => PageNumberFormat::AlphabeticUpper,
-        Some(FieldNumberFormat::RomanLower) => PageNumberFormat::RomanLower,
-        Some(FieldNumberFormat::RomanUpper) => PageNumberFormat::RomanUpper,
-        Some(FieldNumberFormat::Ordinal) => PageNumberFormat::Ordinal,
-        Some(FieldNumberFormat::CardText) => PageNumberFormat::CardText,
-        Some(FieldNumberFormat::OrdText) => PageNumberFormat::OrdText,
-        None => return false,
-    };
-    number_format.replace(format).is_none()
+    accepted
+}
+
+fn page_number_format_from_field_format(format: FieldNumberFormat) -> PageNumberFormat {
+    match format {
+        FieldNumberFormat::Arabic => PageNumberFormat::Arabic,
+        FieldNumberFormat::ArabicDash => PageNumberFormat::ArabicDash,
+        FieldNumberFormat::AlphabeticLower => PageNumberFormat::AlphabeticLower,
+        FieldNumberFormat::AlphabeticUpper => PageNumberFormat::AlphabeticUpper,
+        FieldNumberFormat::RomanLower => PageNumberFormat::RomanLower,
+        FieldNumberFormat::RomanUpper => PageNumberFormat::RomanUpper,
+        FieldNumberFormat::Ordinal => PageNumberFormat::Ordinal,
+        FieldNumberFormat::CardText => PageNumberFormat::CardText,
+        FieldNumberFormat::OrdText => PageNumberFormat::OrdText,
+    }
 }
 
 fn format_page_number(page: usize, format: Option<PageNumberFormat>) -> Option<String> {

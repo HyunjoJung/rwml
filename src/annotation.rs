@@ -446,6 +446,16 @@ pub(crate) fn field_number_format_switch(part: &str) -> Option<FieldNumberFormat
     }
 }
 
+pub(crate) fn accept_field_number_format_switch(
+    part: &str,
+    number_format: &mut Option<FieldNumberFormat>,
+) -> bool {
+    if is_neutral_field_format_switch(part) {
+        return true;
+    }
+    field_number_format_switch(part).is_some_and(|format| number_format.replace(format).is_none())
+}
+
 pub(crate) fn accept_general_format_switch<'a, I>(
     part: &'a str,
     parts: &mut I,
