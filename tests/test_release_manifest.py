@@ -389,6 +389,21 @@ class ReleaseManifestTests(unittest.TestCase):
         )
         self.assertNotIn("rows", manifest["corpus_manifests"][0])
 
+    def test_manifest_rejects_negative_public_corpus_counts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            corpus.write_text(
+                "# path\tfields\twarnings\nsynthetic/fields.docx\t-1\t-\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "negative numeric value for fields",
+            ):
+                release_manifest.corpus_manifest_summary(corpus)
+
     def test_manifest_embeds_named_release_policy(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)

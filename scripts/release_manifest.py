@@ -455,10 +455,15 @@ def corpus_manifest_summary(path: Path) -> dict[str, Any]:
         numeric = True
         for row in rows:
             try:
-                total += int(row[index])
+                value = int(row[index])
             except ValueError:
                 numeric = False
                 break
+            if value < 0:
+                raise ValueError(
+                    f"{path} row has negative numeric value for {name}: {row[index]}"
+                )
+            total += value
         if numeric:
             numeric_totals[name] = total
 
