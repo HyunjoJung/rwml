@@ -735,6 +735,9 @@ def release_manifest(
     require_unique_paths("artifact", resolved)
     require_unique_paths("benchmark report", benchmark_reports)
     require_unique_paths("corpus manifest", corpus_manifests)
+    for label, value in (("version", version), ("git_rev", git_rev)):
+        if value is not None and not value.strip():
+            raise ValueError(f"{label} must not be empty")
 
     manifest: dict[str, Any] = {
         "schema": SCHEMA,
