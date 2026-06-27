@@ -641,6 +641,33 @@ class ReleaseManifestTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "gate passed with failed checks"):
                 release_manifest.report_summary(validation)
 
+    def test_report_summary_rejects_failed_gate_without_failed_checks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            validation = pathlib.Path(tmp) / "render-validation.json"
+            validation.write_text(
+                json.dumps(
+                    {
+                        "summary": {"documents": 1},
+                        "gate": {
+                            "passed": False,
+                            "checks": [
+                                {
+                                    "metric": "mean_recall",
+                                    "op": ">=",
+                                    "threshold": 0.9,
+                                    "actual": 1.0,
+                                    "passed": True,
+                                }
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "gate failed without failed checks"):
+                release_manifest.report_summary(validation)
+
     def test_cli_writes_manifest_json(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)

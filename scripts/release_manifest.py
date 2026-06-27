@@ -154,6 +154,12 @@ def report_summary(path: Path) -> dict[str, Any]:
             raise ValueError(f"{path} gate check passed is not a boolean")
         if gate["passed"] and any(not check["passed"] for check in gate["checks"]):
             raise ValueError(f"{path} gate passed with failed checks")
+        if (
+            not gate["passed"]
+            and gate["checks"]
+            and all(check["passed"] for check in gate["checks"])
+        ):
+            raise ValueError(f"{path} gate failed without failed checks")
         report["gate"] = gate
     return report
 
