@@ -496,7 +496,7 @@ Implementation:
   `TOC \f` entries from matching `TC "Text"` markers with optional `\f` type
   identifiers and `\l` levels, with supported `TC` marker fields themselves
   rendering as hidden output and unsupported `TC` marker syntax preserving cached
-  text with `NoComputedResult` diagnostics, `TOC \c` full-caption entries and `TOC \a`
+  text with `UnsupportedSwitch` diagnostics, `TOC \c` full-caption entries and `TOC \a`
   label/number-omitted caption-text entries from paragraphs containing
   matching cached `SEQ Identifier` fields,
   and standalone `TOC \u` fields over explicit paragraph outline levels, plus
@@ -1104,7 +1104,7 @@ open and edit the chart data.
   `TOC \f` entries from matching `TC "Text"` markers with optional `\f` type
   identifiers and `\l` levels, with supported `TC` marker fields themselves
   rendering as hidden output and unsupported `TC` marker syntax preserving cached
-  text with `NoComputedResult` diagnostics, `TOC \c` full-caption entries and `TOC \a`
+  text with `UnsupportedSwitch` diagnostics, `TOC \c` full-caption entries and `TOC \a`
   label/number-omitted caption-text entries from paragraphs containing
   matching cached `SEQ Identifier` fields,
   and standalone `TOC \u` fields over explicit paragraph outline levels, plus
