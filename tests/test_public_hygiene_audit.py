@@ -93,6 +93,23 @@ class PublicHygieneAuditTests(unittest.TestCase):
             [(1, "windows_home_path")],
         )
 
+    def test_text_audit_flags_generic_windows_drive_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            doc = root / "README.md"
+            doc.write_text(
+                "path=D:" + "\\build\\private.doc\n",
+                encoding="utf-8",
+            )
+
+            with audit_root(root):
+                findings = public_hygiene_audit.audit_text_file(doc)
+
+        self.assertEqual(
+            [(finding.line, finding.kind) for finding in findings],
+            [(1, "windows_drive_path")],
+        )
+
     def test_text_audit_flags_windows_profile_env_paths(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
