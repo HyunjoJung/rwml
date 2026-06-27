@@ -582,8 +582,9 @@ Implementation:
   bookmark page is structural from leading explicit page breaks before any
   visible body content, enabled paragraph `w:pageBreakBefore`, explicit or
   default `nextPage`, and explicit `evenPage`/`oddPage` section starts in
-  leading or trusted rendered context, including trusted `w:pgNumType w:start`
-  displayed page-number restarts and supported `w:pgNumType w:fmt` styles
+  leading or trusted rendered context, including deterministic display-only
+  `w:pgNumType w:start` page-number restart labels and trusted supported
+  `w:pgNumType w:fmt` styles
   (`decimal`, `decimalZero`, `numberInDash`, `decimalFullWidth`,
   `decimalHalfWidth`, `decimalFullWidth2`, `decimalEnclosedCircle`,
   `decimalEnclosedFullstop`, `decimalEnclosedParen`, `ganada`, `chosung`,
@@ -1113,8 +1114,8 @@ open and edit the chart data.
   page-number-only `\* ArabicDash`
   number-format switches plus common field-result format switches when the
   target page is structural from trusted source markers or trusted hard-break
-  advancement, honoring trusted `w:pgNumType w:start` displayed page-number
-  restarts and supported `w:pgNumType w:fmt` styles on structural section
+  advancement, honoring deterministic display-only `w:pgNumType w:start`
+  page-number restart labels and trusted supported `w:pgNumType w:fmt` styles on structural section
   starts and single-section final `body/sectPr` page-number defaults, and trusted leading-structural or
   source-marker `\p` relative-position results when target and field page/order are known,
   while normalizing simple inline heading tabs, line breaks, and

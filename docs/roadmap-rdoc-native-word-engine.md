@@ -226,8 +226,8 @@ Initial status:
   when leading explicit page breaks before any visible body content, enabled
   paragraph `w:pageBreakBefore`, explicit or default `nextPage`, and explicit
   `evenPage`/`oddPage` section starts in leading or trusted rendered context,
-  including trusted `w:pgNumType w:start` displayed page-number restarts and
-  supported `w:pgNumType w:fmt` styles (`decimal`, `decimalZero`,
+  including deterministic display-only `w:pgNumType w:start` page-number
+  restart labels and trusted supported `w:pgNumType w:fmt` styles (`decimal`, `decimalZero`,
   `numberInDash`, `decimalFullWidth`, `decimalHalfWidth`, `decimalFullWidth2`,
   `decimalEnclosedCircle`, `decimalEnclosedFullstop`, `decimalEnclosedParen`,
   `ganada`, `chosung`, `koreanDigital`, `koreanCounting`, `koreanLegal`,
@@ -899,8 +899,8 @@ Initial status:
   target pages only from leading explicit page breaks before visible body content, enabled
   paragraph `w:pageBreakBefore`, explicit or default `nextPage`, and explicit
   `evenPage`/`oddPage` section starts in leading or trusted rendered context,
-  including trusted `w:pgNumType w:start` displayed page-number restarts and
-  supported `w:pgNumType w:fmt` styles (`decimal`, `decimalZero`,
+  including deterministic display-only `w:pgNumType w:start` page-number
+  restart labels and trusted supported `w:pgNumType w:fmt` styles (`decimal`, `decimalZero`,
   `numberInDash`, `decimalFullWidth`, `decimalHalfWidth`, `decimalFullWidth2`,
   `decimalEnclosedCircle`, `decimalEnclosedFullstop`, `decimalEnclosedParen`,
   `ganada`, `chosung`, `koreanDigital`, `koreanCounting`, `koreanLegal`,
@@ -1069,7 +1069,8 @@ The next useful implementation batch is:
 1. Continue layout-derived `PAGEREF` page-number and relative-position
    computation beyond leading explicit breaks, enabled paragraph
    `w:pageBreakBefore`, structural section-start hints including default
-   `nextPage`, trusted `w:pgNumType w:start` displayed page-number restarts,
+   `nextPage`, deterministic display-only `w:pgNumType w:start` page-number
+   restart labels,
    trusted supported `w:pgNumType w:fmt` styles,
    source-rendered page-break/source-order hints, and trusted rendered-context
    hard-break advancement, remaining unknown fields beyond named

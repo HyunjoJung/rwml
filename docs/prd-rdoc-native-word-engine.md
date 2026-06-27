@@ -426,8 +426,8 @@ The first public maturity release should meet these requirements.
   numbers only when leading explicit page breaks before any visible body content, enabled
   paragraph `w:pageBreakBefore`, explicit or default `nextPage`, and explicit
   `evenPage`/`oddPage` section starts in leading or trusted rendered context,
-  including trusted `w:pgNumType w:start` displayed page-number restarts and
-  supported `w:pgNumType w:fmt` styles (`decimal`, `decimalZero`,
+  including deterministic display-only `w:pgNumType w:start` page-number
+  restart labels and trusted supported `w:pgNumType w:fmt` styles (`decimal`, `decimalZero`,
   `numberInDash`, `decimalFullWidth`, `decimalHalfWidth`, `decimalFullWidth2`,
   `decimalEnclosedCircle`, `decimalEnclosedFullstop`, `decimalEnclosedParen`,
   `ganada`, `chosung`, `koreanDigital`, `koreanCounting`, `koreanLegal`,

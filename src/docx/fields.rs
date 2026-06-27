@@ -2885,6 +2885,7 @@ struct PageRefPageState {
     rendered_display_page_number: usize,
     rendered_display_format: PageRefDisplayFormat,
     rendered_context_trusted: bool,
+    display_only_restart_target: Option<PageRefTarget>,
 }
 
 impl Default for PageRefPageState {
@@ -2897,6 +2898,7 @@ impl Default for PageRefPageState {
             rendered_display_page_number: 1,
             rendered_display_format: PageRefDisplayFormat::default(),
             rendered_context_trusted: true,
+            display_only_restart_target: None,
         }
     }
 }
@@ -2951,11 +2953,16 @@ impl PageRefPageState {
                 self.rendered_display_format = format;
             }
             self.rendered_context_trusted = true;
+            self.display_only_restart_target = None;
         } else {
             if let Some(format) = page_number_format {
                 self.rendered_display_format = format;
             }
             self.rendered_context_trusted = false;
+            self.display_only_restart_target = page_number_start.map(|_| PageRefTarget {
+                display_page: self.leading_display_page_number,
+                display_format: self.leading_display_format,
+            });
         }
         *source_order += 1;
     }
@@ -2975,6 +2982,7 @@ impl PageRefPageState {
         } else {
             self.rendered_context_trusted = false;
         }
+        self.display_only_restart_target = None;
         *source_order += 1;
     }
 
@@ -2982,7 +2990,12 @@ impl PageRefPageState {
         self.rendered_page_number += 1;
         self.rendered_display_page_number += 1;
         self.rendered_context_trusted = true;
+        self.display_only_restart_target = None;
         *source_order += 1;
+    }
+
+    fn note_visible_content(&mut self) {
+        self.display_only_restart_target = None;
     }
 }
 
@@ -3423,6 +3436,8 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                                     display_format: pages.rendered_display_format,
                                     order: source_order,
                                 });
+                            } else if let Some(target) = pages.display_only_restart_target {
+                                targets.entry(name).or_insert(target);
                             }
                             source_order += 1;
                         }
@@ -3432,6 +3447,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                         consumed_element = true;
                         saw_visible_content |= visible_text;
                         if visible_text {
+                            pages.note_visible_content();
                             source_order += 1;
                         }
                     }
@@ -3448,10 +3464,12 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                     }
                     b"tab" | b"cr" | b"noBreakHyphen" | b"drawing" | b"pict" | b"object" => {
                         saw_visible_content = true;
+                        pages.note_visible_content();
                         source_order += 1;
                     }
                     b"br" => {
                         saw_visible_content = true;
+                        pages.note_visible_content();
                         source_order += 1;
                     }
                     _ => {}
@@ -3538,6 +3556,8 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                                     display_format: pages.rendered_display_format,
                                     order: source_order,
                                 });
+                            } else if let Some(target) = pages.display_only_restart_target {
+                                targets.entry(name).or_insert(target);
                             }
                             source_order += 1;
                         }
@@ -3556,6 +3576,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                     b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"drawing" | b"pict"
                     | b"object" => {
                         saw_visible_content = true;
+                        pages.note_visible_content();
                         source_order += 1;
                     }
                     _ => {}

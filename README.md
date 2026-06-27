@@ -633,8 +633,8 @@ diagnostics; `PAGEREF` fields are named, compute page numbers only when leading
 explicit page breaks before any visible body content,
 enabled paragraph `w:pageBreakBefore`, explicit or default `nextPage`, and
 explicit `evenPage`/`oddPage` section starts in leading or trusted rendered
-context, including trusted `w:pgNumType w:start` displayed page-number
-restarts and supported `w:pgNumType w:fmt` styles (`decimal`, `decimalZero`,
+context, including deterministic display-only `w:pgNumType w:start`
+page-number restart labels and trusted supported `w:pgNumType w:fmt` styles (`decimal`, `decimalZero`,
 `numberInDash`, `decimalFullWidth`, `decimalHalfWidth`, `decimalFullWidth2`,
 `decimalEnclosedCircle`, `decimalEnclosedFullstop`, `decimalEnclosedParen`,
 `ganada`, `chosung`, `koreanDigital`, `koreanCounting`, `koreanLegal`,
@@ -932,8 +932,8 @@ The long-term native Word engine plan is split into the
       field-result format switches, named `PAGEREF` classification with leading
       hard-break,
       paragraph page-break-before, structural section-start, default next-page
-      section-start, trusted section page-number restart and supported section
-      page-number format styles, source rendered page-break, and trusted
+      section-start, deterministic section page-number restart labels,
+      supported section page-number format styles, source rendered page-break, and trusted
       rendered-context hard-break target computation,
       deterministic page-number and field-result format switches, trusted
       leading-structural and source-marker `\p` relative-position computation,
