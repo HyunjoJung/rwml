@@ -403,7 +403,8 @@ Initial status:
   while valid broader action/automation forms report `NoComputedResult` without
   executing side effects. The
   compatibility/private fields (`PRIVATE`, `ADDIN`, `DATA`, `GLOSSARY`,
-  `HTMLACTIVEX`) are named separately from unknown fields and report
+  `HTMLACTIVEX`) are named separately from unknown fields, malformed quoted
+  instruction syntax reports `UnsupportedSwitch`, and valid broader forms report
   `NoComputedResult` while leaving opaque payloads uninterpreted. The
   barcode fields (`BARCODE`, `DISPLAYBARCODE`, `MERGEBARCODE`) are named
   separately from unknown fields, malformed syntax reports `UnsupportedSwitch`,
@@ -856,8 +857,9 @@ Initial status:
   executing printer/PostScript instructions; invalid action/automation syntax
   reports `UnsupportedSwitch`, while valid broader action/automation fields
   preserve cached text with `NoComputedResult` diagnostics.
-  Compatibility/private fields are named separately from unknown fields and
-  preserve cached text with `NoComputedResult` diagnostics.
+  Compatibility/private fields are named separately from unknown fields,
+  preserve cached text, report malformed quoted syntax as `UnsupportedSwitch`,
+  and keep valid broader forms as `NoComputedResult` diagnostics.
   Barcode fields are named separately from unknown fields, preserve cached text,
   report malformed syntax as `UnsupportedSwitch`, and keep valid broader forms
   as `NoComputedResult` diagnostics.
@@ -1102,7 +1104,7 @@ The next useful implementation batch is:
    deterministic body paragraph- and character-style `STYLEREF`,
    hidden validated `ADVANCE`, deterministic simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, operand-preserving or hidden empty displacement controls and `SYMBOL`,
    remaining display/layout fields, action/automation fields beyond deterministic quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms,
-   compatibility/private fields, barcode
+   compatibility/private malformed-syntax diagnostics, barcode
    fields, legacy form fields beyond deterministic `w:ffData` checkbox checked/default states,
    dropdown result/default selections, explicit non-empty text-input current
    values, and empty-current text-input default results, and `NOTEREF`/`FTNREF`, remaining unsupported

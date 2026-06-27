@@ -564,8 +564,9 @@ hidden output without executing printer/PostScript instructions; invalid action/
 cached result text and report `NoComputedResult` diagnostics;
 compatibility/private fields (`PRIVATE`, `ADDIN`, `DATA`, `GLOSSARY`,
 `HTMLACTIVEX`) are named separately from unknown fields, preserve cached result
-text, and report `NoComputedResult` diagnostics while leaving opaque payloads
-uninterpreted;
+text, malformed quoted instruction syntax reports `UnsupportedSwitch`, and
+valid broader forms report `NoComputedResult` diagnostics while leaving opaque
+payloads uninterpreted;
 barcode fields (`BARCODE`, `DISPLAYBARCODE`, `MERGEBARCODE`) are named
 separately from unknown fields, preserve cached result text, malformed syntax
 reports `UnsupportedSwitch`, and valid broader forms report `NoComputedResult`
@@ -961,7 +962,7 @@ The long-term native Word engine plan is split into the
       numbering/list fields, document-structure fields beyond computed `REVNUM`/`SECTION`,
       structurally bounded `SECTIONPAGES`, and
       deterministic body paragraph- and character-style `STYLEREF`, display/layout fields beyond hidden validated `ADVANCE`, deterministic simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, operand-preserving or hidden empty displacement controls, and `SYMBOL`, action/automation fields beyond deterministic quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms,
-      compatibility/private fields, barcode malformed-syntax diagnostics, legacy form fields beyond
+      compatibility/private malformed-syntax diagnostics, barcode malformed-syntax diagnostics, legacy form fields beyond
       deterministic `w:ffData` checkbox checked/default states, dropdown
       result/default selections, explicit non-empty text-input current results,
       and empty-current text-input default results, and
@@ -1002,7 +1003,7 @@ The long-term native Word engine plan is split into the
       numbering/list fields, document-structure fields beyond computed `REVNUM`/`SECTION`,
       structurally bounded `SECTIONPAGES`, and
       deterministic body paragraph- and character-style `STYLEREF`, display/layout fields beyond hidden validated `ADVANCE`, deterministic simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, operand-preserving or hidden empty displacement controls, and `SYMBOL`, action/automation fields beyond deterministic quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms,
-      compatibility/private fields, barcode malformed-syntax diagnostics, legacy form fields beyond
+      compatibility/private malformed-syntax diagnostics, barcode malformed-syntax diagnostics, legacy form fields beyond
       deterministic `w:ffData` checkbox checked/default states, dropdown
       result/default selections, explicit non-empty text-input current results,
       and empty-current text-input default results, and

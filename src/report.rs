@@ -1554,7 +1554,7 @@ fn unsupported_field_reason(field: &Field) -> Option<FieldEvaluationReason> {
         FieldKind::DocumentStructure(_) => Some(FieldEvaluationReason::NoComputedResult),
         FieldKind::Display(_) => Some(display_uncomputed_reason(&field.instruction)),
         FieldKind::Action(_) => Some(action_uncomputed_reason(&field.instruction)),
-        FieldKind::Compatibility(_) => Some(FieldEvaluationReason::NoComputedResult),
+        FieldKind::Compatibility(_) => Some(compatibility_uncomputed_reason(&field.instruction)),
         FieldKind::Barcode(_) => Some(barcode_uncomputed_reason(&field.instruction)),
         FieldKind::FormField(_) => Some(FieldEvaluationReason::NoComputedResult),
         FieldKind::Filename => Some(filename_uncomputed_reason(&field.instruction)),
@@ -1806,15 +1806,7 @@ fn inserted_content_uncomputed_reason(instruction: &str) -> FieldEvaluationReaso
 }
 
 fn supported_inserted_content_syntax(instruction: &str) -> bool {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let Some(kind) = parts.next() else {
-        return false;
-    };
-    if !is_inserted_content_kind(kind) {
-        return false;
-    }
-    parts.all(diagnostic_field_token_well_formed)
+    supported_opaque_field_syntax(instruction, is_inserted_content_kind)
 }
 
 fn is_inserted_content_kind(kind: &str) -> bool {
@@ -1843,21 +1835,32 @@ fn mail_merge_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
 }
 
 fn supported_mail_merge_syntax(instruction: &str) -> bool {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let Some(kind) = parts.next() else {
-        return false;
-    };
-    if !is_mail_merge_kind(kind) {
-        return false;
-    }
-    parts.all(diagnostic_field_token_well_formed)
+    supported_opaque_field_syntax(instruction, is_mail_merge_kind)
 }
 
 fn is_mail_merge_kind(kind: &str) -> bool {
     matches!(
         kind.to_ascii_uppercase().as_str(),
         "ADDRESSBLOCK" | "GREETINGLINE" | "MERGEREC" | "MERGESEQ"
+    )
+}
+
+fn compatibility_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
+    if supported_compatibility_syntax(instruction) {
+        FieldEvaluationReason::NoComputedResult
+    } else {
+        FieldEvaluationReason::UnsupportedSwitch
+    }
+}
+
+fn supported_compatibility_syntax(instruction: &str) -> bool {
+    supported_opaque_field_syntax(instruction, is_compatibility_kind)
+}
+
+fn is_compatibility_kind(kind: &str) -> bool {
+    matches!(
+        kind.to_ascii_uppercase().as_str(),
+        "ADDIN" | "DATA" | "GLOSSARY" | "HTMLACTIVEX" | "PRIVATE"
     )
 }
 
@@ -1895,6 +1898,18 @@ fn supported_barcode_syntax(instruction: &str) -> bool {
         value_tokens += 1;
     }
     value_tokens >= required_value_tokens
+}
+
+fn supported_opaque_field_syntax(instruction: &str, is_kind: fn(&str) -> bool) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if !is_kind(kind) {
+        return false;
+    }
+    parts.all(diagnostic_field_token_well_formed)
 }
 
 fn diagnostic_field_token_well_formed(part: &str) -> bool {
