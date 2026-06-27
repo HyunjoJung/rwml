@@ -222,6 +222,16 @@ def benchmark_report(
             raise ValueError(f"file must not have surrounding whitespace: {file_name}")
         if "/" in file_name or "\\" in file_name:
             raise ValueError(f"file path is invalid: {file_name}")
+        for metric in (
+            "poi_recall",
+            "poi_prec",
+            "poi_f1",
+            "lo_recall",
+            "lo_prec",
+            "lo_f1",
+        ):
+            if metric in row and not is_finite_number(row[metric]):
+                raise ValueError(f"score is invalid: {metric}")
     summary = benchmark_summary(rows)
     report = {
         "schema": SCHEMA,

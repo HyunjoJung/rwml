@@ -115,6 +115,18 @@ class BenchVsMatureReportTests(unittest.TestCase):
         else:
             self.fail("ValueError not raised")
 
+    def test_benchmark_report_rejects_non_numeric_scores(self):
+        rows = [{"file": "alpha", "poi_recall": "1.0", "poi_f1": 1.0}]
+
+        try:
+            bench_vs_mature.benchmark_report(rows)
+        except ValueError as exc:
+            self.assertRegex(str(exc), "score is invalid: poi_recall")
+        except Exception as exc:
+            self.fail(f"expected ValueError, got {type(exc).__name__}: {exc}")
+        else:
+            self.fail("ValueError not raised")
+
     def test_benchmark_report_evaluates_release_thresholds(self):
         rows = [
             {
