@@ -177,6 +177,8 @@ def validation_report(
     recall_min: float,
     thresholds: dict | None = None,
 ) -> dict:
+    if not is_finite_number(recall_min):
+        raise ValueError(f"non-finite recall threshold: {recall_min}")
     measured = [r for r in rows if r.recall is not None]
     summary = {
         "documents": len(rows),
