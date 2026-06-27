@@ -2307,9 +2307,53 @@ fn set_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     }
     #[cfg(not(feature = "docx"))]
     {
-        let _ = instruction;
-        FieldEvaluationReason::NoComputedResult
+        if supported_set_syntax(instruction) {
+            FieldEvaluationReason::NoComputedResult
+        } else {
+            FieldEvaluationReason::UnsupportedSwitch
+        }
     }
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_set_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if !kind.eq_ignore_ascii_case("SET") {
+        return false;
+    }
+    if diagnostic_identifier_token(parts.next().unwrap_or("")).is_none() {
+        return false;
+    }
+    let Some(value) = parts.next() else {
+        return false;
+    };
+    let quoted_value = value.trim().starts_with('"');
+    if quoted_value {
+        if diagnostic_literal_token(value).is_none() {
+            return false;
+        }
+    } else if value.is_empty() || value.starts_with('\\') || value.contains('"') {
+        return false;
+    }
+    let mut text_format = false;
+    while let Some(part) = parts.next() {
+        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        }) else {
+            return false;
+        };
+        if accepted {
+            continue;
+        }
+        if quoted_value || part.starts_with('\\') || part.contains('"') {
+            return false;
+        }
+    }
+    true
 }
 
 fn merge_control_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -3603,6 +3647,19 @@ mod tests {
         );
         assert_eq!(
             super::quote_uncomputed_reason(r#"QUOTE "Ready" \z"#),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_set_diagnostics_reject_malformed_names() {
+        assert_eq!(
+            super::set_uncomputed_reason(r#"SET ClientName "Acme" \* Upper"#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::set_uncomputed_reason(r#"SET \r "Acme""#),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
     }
