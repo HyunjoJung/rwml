@@ -559,6 +559,40 @@ class ReleaseManifestTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, "gate check metric is invalid"):
                         release_manifest.report_summary(validation)
 
+    def test_report_summary_rejects_duplicate_gate_check_metric_operator(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            validation = pathlib.Path(tmp) / "render-validation.json"
+            validation.write_text(
+                json.dumps(
+                    {
+                        "summary": {"documents": 1},
+                        "gate": {
+                            "passed": True,
+                            "checks": [
+                                {
+                                    "metric": "mean_recall",
+                                    "op": ">=",
+                                    "threshold": 0.9,
+                                    "actual": 1.0,
+                                    "passed": True,
+                                },
+                                {
+                                    "metric": "mean_recall",
+                                    "op": ">=",
+                                    "threshold": 0.95,
+                                    "actual": 1.0,
+                                    "passed": True,
+                                },
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "duplicate gate check: mean_recall >="):
+                release_manifest.report_summary(validation)
+
     def test_report_summary_rejects_unsupported_gate_check_operator(self):
         with tempfile.TemporaryDirectory() as tmp:
             validation = pathlib.Path(tmp) / "render-validation.json"

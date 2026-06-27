@@ -134,6 +134,7 @@ def report_summary(path: Path) -> dict[str, Any]:
             raise ValueError(f"{path} gate checks is not a list")
         if any(not isinstance(check, dict) for check in gate["checks"]):
             raise ValueError(f"{path} gate check is not a JSON object")
+        seen_gate_checks: set[tuple[str, str]] = set()
         for check in gate["checks"]:
             for field in ("metric", "op", "threshold", "actual", "passed"):
                 if field not in check:
@@ -148,6 +149,12 @@ def report_summary(path: Path) -> dict[str, Any]:
                 raise ValueError(f"{path} gate check op is not a string")
             if check["op"] not in {">=", "<="}:
                 raise ValueError(f"{path} unsupported gate check operator: {check['op']}")
+            gate_check_key = (check["metric"], check["op"])
+            if gate_check_key in seen_gate_checks:
+                raise ValueError(
+                    f"{path} duplicate gate check: {check['metric']} {check['op']}"
+                )
+            seen_gate_checks.add(gate_check_key)
             if not is_number(check["threshold"]):
                 raise ValueError(f"{path} gate check threshold is not a finite number")
             if check["actual"] is not None and not is_number(check["actual"]):
