@@ -1928,7 +1928,26 @@ fn form_field_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
 }
 
 fn supported_form_field_syntax(instruction: &str) -> bool {
-    supported_opaque_field_syntax(instruction, is_form_field_kind)
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if !is_form_field_kind(kind) {
+        return false;
+    }
+    let mut text_format = false;
+    while let Some(part) = parts.next() {
+        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        }) else {
+            return false;
+        };
+        if !accepted {
+            return false;
+        }
+    }
+    true
 }
 
 fn is_form_field_kind(kind: &str) -> bool {
