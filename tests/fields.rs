@@ -1845,7 +1845,7 @@ fn page_ref_page_break_before_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pageBreakBefore/></w:pPr><w:bookmarkStart w:id="7" w:name="BreakBefore"/><w:r><w:t>Break-before target</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:r><w:lastRenderedPageBreak/><w:t>Page two lead.</w:t></w:r></w:p><w:p><w:pPr><w:pageBreakBefore/></w:pPr><w:bookmarkStart w:id="8" w:name="RenderedBreakBefore"/><w:r><w:t>Rendered break-before target</w:t></w:r><w:bookmarkEnd w:id="8"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF BreakBefore \h "><w:r><w:t>stale break-before</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF RenderedBreakBefore \* Ordinal "><w:r><w:t>stale rendered break-before</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF RenderedBreakBefore \p "><w:r><w:t>stale relative</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pageBreakBefore/></w:pPr><w:bookmarkStart w:id="7" w:name="BreakBefore"/><w:r><w:t>Break-before target</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:r><w:t>Visible intro before another break-before paragraph.</w:t></w:r></w:p><w:p><w:pPr><w:pageBreakBefore/></w:pPr><w:bookmarkStart w:id="8" w:name="BreakAfterIntro"/><w:r><w:t>Break-before target after intro</w:t></w:r><w:bookmarkEnd w:id="8"/></w:p><w:p><w:r><w:lastRenderedPageBreak/><w:t>Page after rendered marker.</w:t></w:r></w:p><w:p><w:pPr><w:pageBreakBefore/></w:pPr><w:bookmarkStart w:id="9" w:name="RenderedBreakBefore"/><w:r><w:t>Rendered break-before target</w:t></w:r><w:bookmarkEnd w:id="9"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF BreakBefore \h "><w:r><w:t>stale break-before</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF BreakAfterIntro \h "><w:r><w:t>stale after-intro break-before</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF RenderedBreakBefore \* Ordinal "><w:r><w:t>stale rendered break-before</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF RenderedBreakBefore \p "><w:r><w:t>stale relative</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -8136,23 +8136,26 @@ fn docx_page_ref_computes_page_break_before_targets() {
     let doc = Document::open(&page_ref_page_break_before_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 3);
+    assert_eq!(fields.len(), 4);
     assert_eq!(fields[0].kind, FieldKind::PageRef);
     assert_eq!(fields[0].instruction, "PAGEREF BreakBefore \\h");
     assert_eq!(fields[0].computed_result.as_deref(), Some("2"));
     assert_eq!(fields[1].kind, FieldKind::PageRef);
+    assert_eq!(fields[1].instruction, "PAGEREF BreakAfterIntro \\h");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("3"));
+    assert_eq!(fields[2].kind, FieldKind::PageRef);
     assert_eq!(
-        fields[1].instruction,
+        fields[2].instruction,
         "PAGEREF RenderedBreakBefore \\* Ordinal"
     );
-    assert_eq!(fields[1].computed_result.as_deref(), Some("4th"));
-    assert_eq!(fields[2].kind, FieldKind::PageRef);
-    assert_eq!(fields[2].instruction, "PAGEREF RenderedBreakBefore \\p");
-    assert_eq!(fields[2].computed_result.as_deref(), Some("above"));
+    assert_eq!(fields[2].computed_result.as_deref(), Some("5th"));
+    assert_eq!(fields[3].kind, FieldKind::PageRef);
+    assert_eq!(fields[3].instruction, "PAGEREF RenderedBreakBefore \\p");
+    assert_eq!(fields[3].computed_result.as_deref(), Some("above"));
 
     let main_text = doc.main_text();
     assert!(
-        main_text.contains("2\n4th\nabove"),
+        main_text.contains("2\n3\n5th\nabove"),
         "pageBreakBefore PAGEREF fields should render computed text: {main_text:?}"
     );
     assert!(
