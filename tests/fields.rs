@@ -338,6 +338,23 @@ fn prompt_default_field_docx() -> Vec<u8> {
     ])
 }
 
+fn compact_prompt_default_field_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" FILLIN &quot;Client?&quot; \d&quot;Acme&quot; "><w:r><w:t>stale compact fillin</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" ASK ClientCode &quot;Client code?&quot; \d&quot;ac-42&quot; "><w:r><w:t>cached compact ask</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF ClientCode \* Upper "><w:r><w:t>stale compact ask ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn unquoted_set_field_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -3714,6 +3731,45 @@ fn docx_prompt_fields_compute_explicit_defaults() {
             && !main_text.contains("cached ask default")
             && !main_text.contains("stale ask ref"),
         "computed prompt defaults should replace stale cached text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_prompt_fields_compute_compact_explicit_defaults() {
+    let doc = Document::open(&compact_prompt_default_field_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 3);
+    assert_eq!(fields[0].kind, FieldKind::Dynamic("FILLIN".to_string()));
+    assert_eq!(fields[0].instruction, r#"FILLIN "Client?" \d"Acme""#);
+    assert_eq!(fields[0].result, "stale compact fillin");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("Acme"));
+    assert_eq!(fields[1].kind, FieldKind::Dynamic("ASK".to_string()));
+    assert_eq!(
+        fields[1].instruction,
+        r#"ASK ClientCode "Client code?" \d"ac-42""#
+    );
+    assert_eq!(fields[1].result, "cached compact ask");
+    assert_eq!(fields[1].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[2].kind, FieldKind::Ref);
+    assert_eq!(fields[2].instruction, r#"REF ClientCode \* Upper"#);
+    assert_eq!(fields[2].result, "stale compact ask ref");
+    assert_eq!(fields[2].computed_result.as_deref(), Some("AC-42"));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Acme") && main_text.contains("AC-42"),
+        "computed compact prompt defaults should appear in main text: {main_text:?}"
+    );
+    assert!(
+        !main_text.contains("stale compact fillin")
+            && !main_text.contains("cached compact ask")
+            && !main_text.contains("stale compact ask ref"),
+        "computed compact prompt defaults should replace stale cached text: {main_text:?}"
     );
 }
 
