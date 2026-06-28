@@ -1111,11 +1111,12 @@ impl Document {
     }
 
     /// **Template-fill edit: fill logical template fields by name.** Each
-    /// `(name, text)` pair fills every body, note, or referenced header/footer
-    /// content control whose `w:sdtPr/w:tag/@w:val` exactly equals `name` and
-    /// every body, note, or referenced header/footer `MERGEFIELD` field whose
-    /// instruction names the same merge field. Cached merge-field result text is
-    /// replaced while the field instruction markup is preserved.
+    /// `(name, text)` pair fills every body, note, or accepted-current referenced
+    /// header/footer content control whose `w:sdtPr/w:tag/@w:val` exactly equals
+    /// `name` and every body, note, or accepted-current referenced header/footer
+    /// `MERGEFIELD` field whose instruction names the same merge field. Cached
+    /// merge-field result text is replaced while the field instruction markup is
+    /// preserved.
     ///
     /// All fills are validated first and then committed as one
     /// package-preserving edit. Missing names are ignored, and the return value is
@@ -1849,11 +1850,11 @@ impl Document {
         Ok(changed)
     }
 
-    /// **Element-tree editing: replace text in referenced headers and footers.**
+    /// **Element-tree editing: replace text in accepted-current referenced headers and footers.**
     /// Finds `w:t` runs whose full text equals `old` in the header/footer parts
-    /// referenced from `word/document.xml`, rewrites them to `new`, and returns the
-    /// number of runs changed. The main body and unreferenced header/footer parts are
-    /// not touched.
+    /// accepted-current referenced from `word/document.xml`, rewrites them to
+    /// `new`, and returns the number of runs changed. The main body and
+    /// unreferenced or old-only header/footer parts are not touched.
     ///
     /// This uses the same package-preserving, transactional edit path as
     /// [`Document::replace_body_text`]. Read views such as [`Document::header_text`]
@@ -2979,10 +2980,18 @@ where
 
 #[cfg(feature = "docx")]
 fn header_footer_targets(package: &opc::Package) -> Vec<HeaderFooterTarget> {
+    let Some(document_xml) = package.part("word/document.xml") else {
+        return Vec::new();
+    };
+    let document_xml = String::from_utf8_lossy(&document_xml);
+    let referenced = docx::header_footer_ref_ids(&document_xml);
     let mut seen = std::collections::HashSet::new();
     let mut targets = Vec::new();
     for rel in package.rels_for("word/document.xml") {
         if rel.external {
+            continue;
+        }
+        if !referenced.contains(&rel.id) {
             continue;
         }
         let (root_local, content_type) = match rel.rel_type.as_str() {

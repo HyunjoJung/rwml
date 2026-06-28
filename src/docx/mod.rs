@@ -58,6 +58,15 @@ pub(crate) fn parse_fields(xml: &str) -> Vec<Field> {
     )
 }
 
+pub(crate) fn header_footer_ref_ids(xml: &str) -> HashSet<String> {
+    let mut ids = HashSet::new();
+    for refs in body::scan_hf_ref_sections(xml) {
+        ids.extend(refs.headers.into_iter().map(|r| r.rel_id));
+        ids.extend(refs.footers.into_iter().map(|r| r.rel_id));
+    }
+    ids
+}
+
 pub(crate) fn supports_display_field_syntax(instruction: &str) -> bool {
     fields::supports_display_field_syntax(instruction)
 }

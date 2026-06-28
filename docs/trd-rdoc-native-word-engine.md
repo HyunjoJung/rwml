@@ -945,9 +945,10 @@ Generated WordprocessingML text fragments for added/updated comments and
 added/replaced footnotes/endnotes reuse the central text escaping rule and must
 emit `xml:space="preserve"` on `w:t` when caller text has leading or trailing
 whitespace, plus `w:tab`/`w:br` markers for caller tabs/newlines.
-Body, referenced header/footer, explicit WML part, and body-table-cell text
-replacements use the same marker serialization for caller tabs/newlines while
-keeping the existing single-part or grouped-run transaction boundaries.
+Body, accepted-current referenced header/footer, explicit WML part, and
+body-table-cell text replacements use the same marker serialization for caller
+tabs/newlines while keeping the existing single-part or grouped-run transaction
+boundaries.
 Cached field-result replacement fragments use the same marker serialization for
 caller tabs/newlines in simple and common complex fields.
 
@@ -994,8 +995,9 @@ Authoring grows in stages:
 16. add template fill/mail-merge style helpers.
 
 Step 16 now includes `Document::fill_template_fields()`, a package-preserving
-helper that fills tagged plain-text body plus referenced header/footer content
-controls and cached `MERGEFIELD` results by logical field name. The lower-level
+helper that fills tagged plain-text body plus accepted-current referenced
+header/footer content controls and cached `MERGEFIELD` results by logical field
+name. The lower-level
 `Document::fill_content_control_by_tag()` and
 `Document::fill_content_controls_by_tag()` helpers remain available when callers
 want exact tag-only semantics. These fills preserve `w:sdt` metadata and field

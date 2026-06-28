@@ -1846,6 +1846,55 @@ fn replace_header_footer_text_edits_referenced_parts_only() {
 }
 
 #[test]
+fn replace_header_footer_text_skips_deleted_section_references() {
+    let fixture = docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/header2.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdOld" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rIdCurrent" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header2.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:del w:id="1"><w:p><w:pPr><w:sectPr><w:headerReference w:type="default" r:id="rIdOld"/></w:sectPr></w:pPr></w:p></w:del><w:sectPr><w:headerReference w:type="default" r:id="rIdCurrent"/></w:sectPr></w:body></w:document>"#,
+        ),
+        (
+            "word/header1.xml",
+            r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>OLD</w:t></w:r></w:p></w:hdr>"#,
+        ),
+        (
+            "word/header2.xml",
+            r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>OLD</w:t></w:r></w:p></w:hdr>"#,
+        ),
+    ]);
+    let mut doc = Document::open(&fixture).expect("fixture opens");
+
+    assert_eq!(doc.replace_header_footer_text("OLD", "NEW").unwrap(), 1);
+
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let old_header = String::from_utf8(parts["word/header1.xml"].clone()).unwrap();
+    let current_header = String::from_utf8(parts["word/header2.xml"].clone()).unwrap();
+    assert!(
+        old_header.contains("<w:t>OLD</w:t>"),
+        "old-only header should not be edited: {old_header}"
+    );
+    assert!(
+        current_header.contains("<w:t>NEW</w:t>"),
+        "current header not edited: {current_header}"
+    );
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    assert_eq!(reopened.header_text(), "NEW");
+}
+
+#[test]
 fn replace_body_text_writes_tabs_and_breaks_as_markers() {
     let mut doc = Document::open(&header_footer_docx()).expect("fixture opens");
 

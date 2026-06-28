@@ -160,6 +160,9 @@ pub(crate) fn scan_hf_ref_sections(xml: &str) -> Vec<HeaderFooterRefs> {
     let mut sections = Vec::new();
     loop {
         match r.read_event() {
+            Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
+                skip_subtree(&mut r);
+            }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"sectPr" => {
                 sections.push(read_hf_ref_section(&mut r));
             }

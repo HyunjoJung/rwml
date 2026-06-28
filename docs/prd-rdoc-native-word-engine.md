@@ -485,9 +485,10 @@ The first public maturity release should meet these requirements.
   footnote/endnote text runs preserve intentional leading/trailing whitespace in
   saved OOXML with `xml:space="preserve"` and emit tabs/newlines as
   WordprocessingML markers.
-- Body, referenced header/footer, explicit WML part, and body-table-cell text
-  replacements emit caller tabs/newlines as WordprocessingML markers while
-  preserving unrelated package parts and surrounding XML.
+- Body, accepted-current referenced header/footer, explicit WML part, and
+  body-table-cell text replacements emit caller tabs/newlines as
+  WordprocessingML markers while preserving unrelated package parts and
+  surrounding XML.
 - `set_field_result` cached result replacements emit tabs/newlines as
   WordprocessingML markers for simple and common complex field forms.
 - package validation catches relationship/content-type inconsistencies,
@@ -561,8 +562,8 @@ The public API should keep four paths distinct:
 - authoring: `DocBuilder`, `DocModel`, `write_docx`, `try_write_docx`;
 - preservation editing: `replace_body_text`, `set_field_result`,
   `fill_content_control_by_tag`, `fill_content_controls_by_tag`,
-  `fill_template_fields` for body plus referenced header/footer content controls
-  and `MERGEFIELD` cached results,
+  `fill_template_fields` for body plus accepted-current referenced header/footer
+  content controls and `MERGEFIELD` cached results,
   `accept_all_revisions`, `reject_all_revisions`, `set_hyperlink_target`,
   `set_comment_text`, `add_comment_on_text`,
   `set_table_cell_text` for accepted-current top-level body-table cells using

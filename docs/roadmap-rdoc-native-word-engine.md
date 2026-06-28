@@ -559,24 +559,25 @@ Initial status:
   the control metadata, aliases, tags, and surrounding package; the plural helper
   validates and commits a multi-field template record as one transaction.
 - `Document::fill_template_fields()` is the higher-level template/mail-merge
-  helper: it fills matching body, note, and referenced header/footer
+  helper: it fills matching body, note, and accepted-current referenced header/footer
   content-control tags and cached `MERGEFIELD` results by logical field name in
   one package-preserving edit while preserving control metadata and field
   instructions.
 - `Document::accept_all_revisions()` accepts tracked body/note/header/footer
   revisions in `word/document.xml`, `word/footnotes.xml`, `word/endnotes.xml`,
-  and referenced header/footer parts by unwrapping inserted/move-to content,
-  removing deleted/move-from content, and dropping property-change history while
-  preserving current properties.
+  and accepted-current referenced header/footer parts by unwrapping
+  inserted/move-to content, removing deleted/move-from content, and dropping
+  property-change history while preserving current properties.
 - `Document::reject_all_revisions()` rejects tracked body/note/header/footer
   revisions in `word/document.xml`, `word/footnotes.xml`, `word/endnotes.xml`,
-  and referenced header/footer parts by removing inserted/move-to content,
-  unwrapping deleted/move-from content, normalizing kept `w:delText` to `w:t`,
-  and dropping property-change history while preserving current properties.
+  and accepted-current referenced header/footer parts by removing
+  inserted/move-to content, unwrapping deleted/move-from content, normalizing
+  kept `w:delText` to `w:t`, and dropping property-change history while
+  preserving current properties.
 - `Document::replace_header_footer_text()` rewrites exact `w:t` matches in
-  referenced `.docx` header/footer parts while leaving the body and unreferenced
-  header/footer parts untouched, and emits replacement tabs/newlines as
-  WordprocessingML markers.
+  accepted-current referenced `.docx` header/footer parts while leaving the body
+  and unreferenced or old-only header/footer parts untouched, and emits
+  replacement tabs/newlines as WordprocessingML markers.
 - `Document::replace_text_in_part()` rewrites exact `w:t` matches in one
   explicit existing WordprocessingML XML part; specialized edit APIs remain the
   preferred surface when they can express the semantic operation, and
