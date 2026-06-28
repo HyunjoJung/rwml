@@ -3134,6 +3134,77 @@ fn write_docx_keeps_header_footer_paragraph_layout_props() {
 }
 
 #[test]
+fn write_docx_keeps_header_footer_revision_runs() {
+    let model = DocModel {
+        blocks: vec![Block::Paragraph(plain_paragraph("Body"))],
+        setup: DocSetup {
+            header: vec![Block::Paragraph(Paragraph {
+                runs: vec![
+                    RunBuilder::new("Header added")
+                        .revision(
+                            RevisionBuilder::insertion()
+                                .author(" Alice ")
+                                .date(" 2026-06-24T01:00:00Z "),
+                        )
+                        .bold()
+                        .build(),
+                    RunBuilder::new("Header removed")
+                        .revision(RevisionBuilder::deletion())
+                        .italic()
+                        .build(),
+                ],
+                ..Paragraph::default()
+            })],
+            footer: vec![Block::Paragraph(Paragraph {
+                runs: vec![
+                    RunBuilder::new("Footer added")
+                        .revision(RevisionBuilder::insertion())
+                        .build(),
+                    RunBuilder::new("Footer removed")
+                        .revision(RevisionBuilder::deletion())
+                        .build(),
+                ],
+                ..Paragraph::default()
+            })],
+            ..DocSetup::default()
+        },
+        ..DocModel::default()
+    };
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let header_xml = String::from_utf8(parts["word/header1.xml"].clone()).unwrap();
+    let footer_xml = String::from_utf8(parts["word/footer1.xml"].clone()).unwrap();
+
+    assert!(
+        header_xml.contains(r#"<w:ins w:id="0" w:author="Alice" w:date="2026-06-24T01:00:00Z">"#)
+            && header_xml.contains("<w:b/>")
+            && header_xml.contains(r#"<w:t xml:space="preserve">Header added</w:t>"#)
+            && header_xml.contains(r#"<w:del w:id="1">"#)
+            && header_xml.contains("<w:i/>")
+            && header_xml.contains(r#"<w:delText xml:space="preserve">Header removed</w:delText>"#),
+        "header revision XML missing: {header_xml}"
+    );
+    assert!(
+        footer_xml.contains(r#"<w:ins w:id="2">"#)
+            && footer_xml.contains(r#"<w:t xml:space="preserve">Footer added</w:t>"#)
+            && footer_xml.contains(r#"<w:del w:id="3">"#)
+            && footer_xml.contains(r#"<w:delText xml:space="preserve">Footer removed</w:delText>"#),
+        "footer revision XML missing: {footer_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("header/footer revision .docx reopens");
+    let header_text = reopened.header_text();
+    assert!(
+        header_text.contains("Header added")
+            && header_text.contains("Footer added")
+            && !header_text.contains("Header removed")
+            && !header_text.contains("Footer removed"),
+        "header/footer revisions should reopen as accepted current text: {header_text:?}"
+    );
+}
+
+#[test]
 fn table_builder_adds_rich_table_cells() {
     let navy = Color::rgb(0x1F, 0x38, 0x64);
     let model = DocBuilder::new()

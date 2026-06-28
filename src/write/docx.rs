@@ -193,16 +193,26 @@ fn render_hf_body(ctx: &mut Ctx, blocks: &[crate::model::Block], page_numbers: b
 }
 
 fn write_hf_run(ctx: &mut Ctx, out: &mut String, r: &crate::model::Run) {
+    let deleted = matches!(
+        r.revision.as_ref().map(|revision| revision.kind),
+        Some(RevisionKind::Deletion)
+    );
     let mut run_xml = String::new();
     run_xml.push_str("<w:r>");
     write_rpr(&mut run_xml, &r.props);
     if let Some(img) = &r.image {
-        write_run_text(
-            &mut run_xml,
-            &image_placeholder_text(img, "image unavailable"),
-        );
+        let text = image_placeholder_text(img, "image unavailable");
+        if deleted {
+            write_run_deleted_text(&mut run_xml, &text);
+        } else {
+            write_run_text(&mut run_xml, &text);
+        }
     }
-    write_run_text(&mut run_xml, &r.text);
+    if deleted {
+        write_run_deleted_text(&mut run_xml, &r.text);
+    } else {
+        write_run_text(&mut run_xml, &r.text);
+    }
     run_xml.push_str("</w:r>");
 
     if let FieldRole::Simple { instruction } = &r.field {
@@ -222,7 +232,7 @@ fn write_hf_run(ctx: &mut Ctx, out: &mut String, r: &crate::model::Run) {
 
     let run_xml = content_control_wrapper(r.content_control.as_ref(), &run_xml);
     let run_xml = ctx.bookmark_wrapper(r.bookmark.as_deref(), &run_xml);
-    out.push_str(&run_xml);
+    ctx.write_revision_wrapper(out, r.revision.as_ref(), &run_xml);
 }
 
 fn content_control_wrapper(control: Option<&AuthoredContentControl>, run_xml: &str) -> String {
