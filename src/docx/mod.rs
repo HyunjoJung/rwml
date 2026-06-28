@@ -694,6 +694,7 @@ fn read_hf_parts(
 }
 
 fn normalized_header_footer_type(value: &str) -> &'static str {
+    let value = value.trim();
     match value {
         "first" => "first",
         "even" => "even",
