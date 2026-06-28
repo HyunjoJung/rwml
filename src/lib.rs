@@ -714,7 +714,7 @@ impl Document {
 
     /// Extract recovered field records.
     ///
-    /// For `.docx`, the returned side table includes body and modeled
+    /// For `.docx`, the returned side table includes body, note, and modeled
     /// header/footer simple fields and common complex fields with their
     /// normalized instruction text and cached visible result. For legacy `.doc`,
     /// fields are reconstructed from the rich model's field-marked result runs

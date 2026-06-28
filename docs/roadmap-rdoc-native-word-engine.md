@@ -131,8 +131,8 @@ Initial status:
   anchor text follows the accepted/current revision policy, including direct,
   inserted, and moved-to anchors while leaving deleted and moved-from old-only
   anchors unanchored.
-- `Document::fields()` extracts simple and common complex `.docx` body and
-  modeled header/footer fields
+- `Document::fields()` extracts simple and common complex `.docx` body, note,
+  and modeled header/footer fields
   with typed `FieldKind` (`HYPERLINK`, `PAGE`, `TOC`, `FILENAME`, `MERGEFIELD`,
   `REF`, `PAGEREF`, `NOTEREF`, `TC`, `SEQ`, document-info/date/stat fields,
   dynamic/control fields including deterministic literal arithmetic formula

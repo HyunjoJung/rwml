@@ -413,6 +413,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
             ..crate::model::DocSetup::default()
         },
     };
+    fields.extend(crate::report::fields_for_model(&notes));
     append_model_header_footer_fields(&mut fields, &model);
     let main_text = body_text(&model); // body only
                                        // Full text: body, then notes, then section/final headers/footers.
