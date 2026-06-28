@@ -132,9 +132,10 @@ const WEB_EXTENSION_TASKPANES_NS: &str =
 
 /// Build a `word/header1.xml` / `footer1.xml` part body from running blocks.
 /// Text paragraphs keep run formatting/alignment; image blocks become visible
-/// placeholders because header/footer media relationships are not modeled here.
-/// Appends a centered `PAGE` field when `page_numbers`. A header/footer must
-/// contain at least one paragraph.
+/// placeholders and table blocks fall back to row text because richer
+/// header/footer relationships and table layout are not modeled here. Appends a
+/// centered `PAGE` field when `page_numbers`. A header/footer must contain at
+/// least one paragraph.
 fn render_hf_body(blocks: &[crate::model::Block], page_numbers: bool) -> String {
     use crate::model::Block;
     let mut out = String::new();
@@ -166,6 +167,22 @@ fn render_hf_body(blocks: &[crate::model::Block], page_numbers: bool) -> String 
                 out.push_str("<w:p>");
                 write_image_placeholder(&mut out, img, "image unavailable");
                 out.push_str("</w:p>");
+            }
+            Block::Table(table) => {
+                for row in &table.rows {
+                    let text = row
+                        .cells
+                        .iter()
+                        .map(|cell| cell.text())
+                        .collect::<Vec<_>>()
+                        .join(" | ");
+                    if text.trim().is_empty() {
+                        continue;
+                    }
+                    out.push_str("<w:p><w:r>");
+                    write_run_text(&mut out, &text);
+                    out.push_str("</w:r></w:p>");
+                }
             }
             _ => {}
         }

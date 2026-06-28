@@ -2769,6 +2769,48 @@ fn write_docx_emits_visible_placeholders_for_header_footer_image_blocks() {
 }
 
 #[test]
+fn write_docx_keeps_header_footer_table_text_visible() {
+    let model = DocModel {
+        blocks: vec![Block::Paragraph(plain_paragraph("Body"))],
+        setup: DocSetup {
+            header: vec![Block::Table(
+                TableBuilder::new()
+                    .row([CellBuilder::text("Header metric"), CellBuilder::text("42")])
+                    .into(),
+            )],
+            footer: vec![Block::Table(
+                TableBuilder::new()
+                    .row([CellBuilder::text("Footer note"), CellBuilder::text("ok")])
+                    .into(),
+            )],
+            ..DocSetup::default()
+        },
+        ..DocModel::default()
+    };
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let header_xml = String::from_utf8(parts["word/header1.xml"].clone()).unwrap();
+    let footer_xml = String::from_utf8(parts["word/footer1.xml"].clone()).unwrap();
+
+    assert!(
+        header_xml.contains("Header metric") && header_xml.contains("42"),
+        "header table text missing: {header_xml}"
+    );
+    assert!(
+        footer_xml.contains("Footer note") && footer_xml.contains("ok"),
+        "footer table text missing: {footer_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("header/footer table fallback .docx reopens");
+    let text = reopened.text();
+    assert!(
+        text.contains("Header metric") && text.contains("Footer note"),
+        "header/footer table text not readable after reopen: {text:?}"
+    );
+}
+
+#[test]
 fn table_builder_adds_rich_table_cells() {
     let navy = Color::rgb(0x1F, 0x38, 0x64);
     let model = DocBuilder::new()
