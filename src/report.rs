@@ -619,7 +619,7 @@ fn supports_document_info_field_evaluation(field: &Field) -> bool {
     #[cfg(not(feature = "docx"))]
     {
         let _ = field;
-        true
+        false
     }
 }
 
@@ -1560,10 +1560,210 @@ fn unsupported_field_reason(field: &Field) -> Option<FieldEvaluationReason> {
         FieldKind::Filename => Some(filename_uncomputed_reason(&field.instruction)),
         FieldKind::Hyperlink => Some(FieldEvaluationReason::UnsupportedSwitch),
         FieldKind::MergeField => Some(FieldEvaluationReason::UnsupportedSwitch),
-        FieldKind::DocumentInfo(_) => Some(FieldEvaluationReason::UnsupportedSwitch),
+        FieldKind::DocumentInfo(_) => Some(document_info_uncomputed_reason(&field.instruction)),
         FieldKind::Sequence => Some(sequence_uncomputed_reason(&field.instruction)),
         FieldKind::TocEntry => Some(toc_entry_uncomputed_reason(&field.instruction)),
     }
+}
+
+fn document_info_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
+    #[cfg(feature = "docx")]
+    {
+        if crate::docx::supports_document_info_field_syntax(instruction) {
+            return FieldEvaluationReason::NoComputedResult;
+        }
+    }
+    #[cfg(not(feature = "docx"))]
+    {
+        if supported_document_info_syntax_for_report(instruction) {
+            return FieldEvaluationReason::NoComputedResult;
+        }
+    }
+    FieldEvaluationReason::UnsupportedSwitch
+}
+
+#[cfg(not(feature = "docx"))]
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DocumentInfoSyntaxProperty {
+    FileSize,
+    UserInfo,
+    Other,
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_document_info_syntax_for_report(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    let Some(property) = document_info_syntax_property_for_report(kind, &mut parts) else {
+        return false;
+    };
+    let mut text_format = false;
+    let mut date_format = false;
+    let mut file_size_unit = false;
+    let mut user_override = false;
+    while let Some(part) = parts.next() {
+        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_format_switch(format, &mut text_format)
+        }) else {
+            return false;
+        };
+        if accepted {
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\@") {
+            if date_format || document_info_date_format_for_report(parts.next()).is_none() {
+                return false;
+            }
+            date_format = true;
+            continue;
+        }
+        if let Some(format) = strip_ascii_switch_prefix(part, "\\@") {
+            if date_format
+                || format.is_empty()
+                || document_info_date_format_for_report(Some(format)).is_none()
+            {
+                return false;
+            }
+            date_format = true;
+            continue;
+        }
+        if document_info_file_size_unit_switch_for_report(part) {
+            if property != DocumentInfoSyntaxProperty::FileSize || file_size_unit {
+                return false;
+            }
+            file_size_unit = true;
+            continue;
+        }
+        if property == DocumentInfoSyntaxProperty::UserInfo && !part.starts_with('\\') {
+            if user_override || !document_info_quoted_literal_for_report(part) {
+                return false;
+            }
+            user_override = true;
+            continue;
+        }
+        return false;
+    }
+    true
+}
+
+#[cfg(not(feature = "docx"))]
+fn document_info_syntax_property_for_report<'a>(
+    kind: &str,
+    parts: &mut impl Iterator<Item = &'a str>,
+) -> Option<DocumentInfoSyntaxProperty> {
+    if kind.eq_ignore_ascii_case("DOCPROPERTY") {
+        let name = diagnostic_name_token(parts.next()?)?;
+        return Some(
+            document_info_property_kind_for_report(name)
+                .unwrap_or(DocumentInfoSyntaxProperty::Other),
+        );
+    }
+    if kind.eq_ignore_ascii_case("DOCVARIABLE") {
+        diagnostic_name_token(parts.next()?)?;
+        return Some(DocumentInfoSyntaxProperty::Other);
+    }
+    if kind.eq_ignore_ascii_case("INFO") {
+        diagnostic_name_token(parts.next()?)?;
+        return Some(DocumentInfoSyntaxProperty::Other);
+    }
+    if is_user_info_property_for_report(kind) {
+        return Some(DocumentInfoSyntaxProperty::UserInfo);
+    }
+    if kind.eq_ignore_ascii_case("DATE") || kind.eq_ignore_ascii_case("TIME") {
+        return Some(DocumentInfoSyntaxProperty::Other);
+    }
+    document_info_property_kind_for_report(kind)
+}
+
+#[cfg(not(feature = "docx"))]
+fn document_info_property_kind_for_report(value: &str) -> Option<DocumentInfoSyntaxProperty> {
+    let key = document_property_key_for_report(value);
+    if key == "FILESIZE" {
+        return Some(DocumentInfoSyntaxProperty::FileSize);
+    }
+    if matches!(
+        key.as_str(),
+        "TITLE"
+            | "SUBJECT"
+            | "AUTHOR"
+            | "CREATOR"
+            | "COMMENTS"
+            | "COMMENT"
+            | "DESCRIPTION"
+            | "KEYWORDS"
+            | "KEYWORD"
+            | "CATEGORY"
+            | "CONTENTSTATUS"
+            | "LASTSAVEDBY"
+            | "LASTMODIFIEDBY"
+            | "CREATEDATE"
+            | "SAVEDATE"
+            | "PRINTDATE"
+            | "VERSION"
+            | "APPLICATION"
+            | "APPVERSION"
+            | "COMPANY"
+            | "DOCSECURITY"
+            | "HIDDENSLIDES"
+            | "HYPERLINKBASE"
+            | "HYPERLINKSCHANGED"
+            | "LINES"
+            | "LINKSUPTODATE"
+            | "MANAGER"
+            | "MMCLIPS"
+            | "NOTES"
+            | "PAGES"
+            | "NUMPAGES"
+            | "PARAGRAPHS"
+            | "PRESENTATIONFORMAT"
+            | "SCALECROP"
+            | "SHAREDDOC"
+            | "SLIDES"
+            | "WORDS"
+            | "NUMWORDS"
+            | "CHARACTERS"
+            | "NUMCHARS"
+            | "CHARACTERSWITHSPACES"
+            | "TOTALTIME"
+            | "EDITTIME"
+            | "TEMPLATE"
+    ) {
+        return Some(DocumentInfoSyntaxProperty::Other);
+    }
+    None
+}
+
+#[cfg(not(feature = "docx"))]
+fn document_property_key_for_report(value: &str) -> String {
+    value
+        .chars()
+        .filter(|ch| *ch != '_' && *ch != '-' && !ch.is_whitespace())
+        .collect::<String>()
+        .to_ascii_uppercase()
+}
+
+#[cfg(not(feature = "docx"))]
+fn is_user_info_property_for_report(value: &str) -> bool {
+    let key = document_property_key_for_report(value);
+    matches!(key.as_str(), "USERNAME" | "USERINITIALS" | "USERADDRESS")
+}
+
+#[cfg(not(feature = "docx"))]
+fn document_info_date_format_for_report(value: Option<&str>) -> Option<()> {
+    (!diagnostic_literal_token(value?)?.is_empty()).then_some(())
+}
+
+#[cfg(not(feature = "docx"))]
+fn document_info_file_size_unit_switch_for_report(part: &str) -> bool {
+    part.eq_ignore_ascii_case("\\k") || part.eq_ignore_ascii_case("\\m")
+}
+
+#[cfg(not(feature = "docx"))]
+fn document_info_quoted_literal_for_report(value: &str) -> bool {
+    value.trim().starts_with('"') && diagnostic_literal_token(value).is_some()
 }
 
 fn filename_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -5196,6 +5396,8 @@ fn local(name: &[u8]) -> &[u8] {
 #[cfg(test)]
 mod tests {
     use super::fields_for_model;
+    #[cfg(not(feature = "docx"))]
+    use crate::annotation::Field;
     use crate::annotation::FieldKind;
     use crate::model::{Block, FieldRole, Paragraph, Run};
 
@@ -5235,6 +5437,45 @@ mod tests {
         assert_eq!(
             super::style_ref_uncomputed_reason(r"STYLEREF Heading1 \t"),
             super::FieldEvaluationReason::UnsupportedSwitch
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_document_info_diagnostics_reject_malformed_syntax() {
+        assert_eq!(
+            super::document_info_uncomputed_reason(r#"DOCPROPERTY "Client Name""#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::document_info_uncomputed_reason(r#"CREATEDATE \@"yyyy-MM-dd""#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::document_info_uncomputed_reason(r#"DOCPROPERTY "Client Name"#),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+        assert_eq!(
+            super::document_info_uncomputed_reason(r#"CREATEDATE \@ "yyyy-MM-dd"#),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+
+        let valid = Field {
+            kind: FieldKind::DocumentInfo("DOCPROPERTY".to_string()),
+            instruction: r#"DOCPROPERTY "Client Name""#.to_string(),
+            ..Field::default()
+        };
+        assert_eq!(
+            super::unsupported_field_reason(&valid),
+            Some(super::FieldEvaluationReason::NoComputedResult)
+        );
+        let malformed = Field {
+            instruction: r#"DOCPROPERTY "Client Name"#.to_string(),
+            ..valid
+        };
+        assert_eq!(
+            super::unsupported_field_reason(&malformed),
+            Some(super::FieldEvaluationReason::UnsupportedSwitch)
         );
     }
 
