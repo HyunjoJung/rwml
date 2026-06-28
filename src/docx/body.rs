@@ -1397,7 +1397,7 @@ fn read_ppr_item(pp: &mut PPr, e: &BytesStart<'_>, num_id: &mut Option<String>, 
             }
         }
         b"numId" => *num_id = attr_local_trimmed(e, b"val"),
-        b"jc" => pp.jc = attr_local(e, b"val"),
+        b"jc" => pp.jc = attr_local_trimmed(e, b"val"),
         b"outlineLvl" => pp.outline = attr_u8(e, b"val"),
         b"pageBreakBefore" => pp.page_break_before = toggle_on(attr_local(e, b"val")),
         b"spacing" => {
@@ -1673,11 +1673,12 @@ fn read_rpr(r: &mut Xml<'_>) -> CharProps {
                 b"caps" => p.caps = toggle_on(attr_local(&e, b"val")),
                 // Font family: prefer the East-Asian face (Korean) over the Latin one.
                 b"rFonts" => {
-                    p.font = attr_local(&e, b"eastAsia").or_else(|| attr_local(&e, b"ascii"));
+                    p.font = attr_local_trimmed(&e, b"eastAsia")
+                        .or_else(|| attr_local_trimmed(&e, b"ascii"));
                 }
                 b"sz" => p.size_half_pt = attr_local(&e, b"val").and_then(|v| parse_u16(&v)),
                 b"color" => p.color = attr_local(&e, b"val").and_then(|v| parse_hex_color(&v)),
-                b"highlight" => p.highlight = attr_local(&e, b"val"),
+                b"highlight" => p.highlight = attr_local_trimmed(&e, b"val"),
                 b"vertAlign" => {
                     p.vert_align = match attr_local(&e, b"val").as_deref().map(str::trim) {
                         Some("superscript") => VertAlign::Super,
@@ -3019,6 +3020,22 @@ mod tests {
         assert_eq!(p.text(), "plain bold ital");
         assert!(p.runs[1].props.bold);
         assert!(p.runs[2].props.italic);
+    }
+
+    #[test]
+    fn paragraph_and_run_string_attrs_trim_ooxml_values() {
+        let xml = r#"<w:document><w:body>
+            <w:p><w:pPr><w:jc w:val=" center "/></w:pPr>
+                <w:r><w:rPr><w:rFonts w:ascii=" Arial " w:eastAsia=" 맑은 고딕 "/><w:highlight w:val=" yellow "/></w:rPr><w:t>Styled</w:t></w:r>
+            </w:p>
+        </w:body></w:document>"#;
+        let blocks = parse(xml);
+        let Block::Paragraph(p) = &blocks[0] else {
+            panic!("para");
+        };
+        assert_eq!(p.props.align, Align::Center);
+        assert_eq!(p.runs[0].props.font.as_deref(), Some("맑은 고딕"));
+        assert_eq!(p.runs[0].props.highlight.as_deref(), Some("yellow"));
     }
 
     #[test]
