@@ -544,6 +544,16 @@ fn dynamic_control_field_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn style_ref_field_diagnostics_docx() -> Vec<u8> {
+    field_pair_diagnostics_docx(
+        r#"STYLEREF Heading1 \p"#,
+        "cached missing style ref",
+        r#"STYLEREF &quot;Heading 1"#,
+        "cached malformed style ref",
+    )
+}
+
+#[cfg(feature = "docx")]
 fn merge_field_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -2467,6 +2477,27 @@ fn report_dynamic_control_fields_split_cached_and_malformed_diagnostics() {
         vec![
             field_reason_count(FieldEvaluationReason::NoComputedResult, 6),
             field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 7),
+        ],
+    );
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_style_ref_fields_split_cached_and_malformed_diagnostics() {
+    assert_report_field_diagnostics(
+        style_ref_field_diagnostics_docx(),
+        2,
+        vec![field_kind_count(
+            FieldKind::DocumentStructure("STYLEREF".to_string()),
+            2,
+        )],
+        vec![field_kind_count(
+            FieldKind::DocumentStructure("STYLEREF".to_string()),
+            2,
+        )],
+        vec![
+            field_reason_count(FieldEvaluationReason::NoComputedResult, 1),
+            field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 1),
         ],
     );
 }
