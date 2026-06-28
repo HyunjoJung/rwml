@@ -1124,9 +1124,22 @@ Initial status:
 
 ## Near-Term Cut
 
-The next useful implementation batches are:
+The next useful implementation batches are ordered by evidence. Do not reopen
+old writer-gap claims without checking current code and tests first; the writer,
+authoring charts, edit layer, diagnostics, and release tooling are already broad
+enough that most remaining work is field semantics, layout, fixtures, or
+validation depth.
+
+For parser/evaluator/report work, prefer one bounded parity batch at a time:
+share duplicated helpers or fix a proven report/evaluator drift, verify with a
+focused field/report test pair, and avoid changing cached-result policy unless
+the semantics are deterministic.
+
+The active roadmap slices are:
 
 1. Field evaluation backlog, ordered for focused slices:
+   - parser/evaluator/report parity for value-changing fields where exact
+     duplicate syntax logic remains or diagnostics disagree with computation;
    - layout-derived `PAGE`/`PAGEREF` beyond trusted leading/source-rendered,
      section-start, source-marker, and hard-break contexts: exact pagination
      current-page/page-reference values, target-derived formatting where no

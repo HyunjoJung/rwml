@@ -1,6 +1,7 @@
 # PRD - rdoc native Word engine
 
-**Status:** Draft
+**Status:** Draft, active implementation baseline
+**Updated:** 2026-06-29
 **Owner:** rdoc
 **Scope:** long-term product direction for a native Rust Microsoft Word document
 engine, covering `.doc`, `.docx`, package-preserving editing, `.docx` authoring,
@@ -631,7 +632,37 @@ keeping unmodeled content alive.
   named release policy without copying row-level corpus data;
 - release notes distinguish shipped behavior from roadmap claims.
 
-## 8. Risks
+## 8. Current Maturity Gaps
+
+The current product line is broad enough for a public native engine baseline,
+but the remaining work is concentrated in deeper compatibility areas rather
+than new top-level APIs.
+
+Before support wording moves from diagnostics/cached-result preservation to
+computed behavior, each field or layout slice needs deterministic semantics and
+focused reader/report coverage. The active field backlog is:
+
+- layout-derived `PAGE` and `PAGEREF` outside trusted structural,
+  source-rendered, section-start, source-marker, and hard-break contexts;
+- remaining value-changing `REF`, direct bookmark reference,
+  `NOTEREF`/`FTNREF`, and TOC/REF body policies where source order, note marks,
+  numbering context, or scope membership are not yet unambiguous;
+- broader data, source, layout, generated, action/automation, barcode,
+  compatibility/private, and protected legacy-form field families beyond the
+  deterministic subsets already implemented.
+
+The larger non-field maturity gaps are:
+
+- exact legacy `.doc` body, note, text-box, and shape anchors beyond current
+  source-region anchors;
+- floating-shape exact page/range anchoring, text-wrap reflow, deeper z-order,
+  and non-text Office-Art drawing contents;
+- newer extension chart families and actual metafile drawing beyond bounded
+  diagnostics/header metadata;
+- stricter public-release evidence from local render and extraction benchmark
+  reports before claiming high compatibility.
+
+## 9. Risks
 
 ### Scope growth
 
@@ -655,7 +686,7 @@ Private, sensitive, or domain-specific documents must stay out of the repository
 Local benchmark scripts may support private corpora by environment variable or
 CLI flag only.
 
-## 9. Open Questions
+## 10. Open Questions
 
 - Should comments and tracked changes become first-class `DocModel` blocks, side
   tables keyed by anchors, or both?

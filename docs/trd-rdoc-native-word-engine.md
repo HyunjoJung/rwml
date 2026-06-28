@@ -3,7 +3,8 @@
 Technical design for the long-term direction described in
 [`prd-rdoc-native-word-engine.md`](prd-rdoc-native-word-engine.md).
 
-**Status:** Draft
+**Status:** Draft, active implementation baseline
+**Updated:** 2026-06-29
 **Scope:** architecture and implementation direction for reader depth,
 preservation editing, authoring, rendering, diagnostics, and validation.
 
@@ -1457,3 +1458,19 @@ Implement in this order:
 
 This order makes every deeper feature visible and testable before it becomes an
 editing or rendering promise.
+
+Current implementation focus should treat the broad sequence above as mostly
+established infrastructure and promote only bounded compatibility slices:
+
+- first keep shared field parsers aligned across evaluator and diagnostics when
+  exact duplicated logic or report/evaluator drift is proven;
+- promote `PAGE`, `PAGEREF`, `REF`, direct bookmark references,
+  `NOTEREF`/`FTNREF`, and TOC semantics only for deterministic contexts already
+  represented by the reader;
+- preserve cached field text and report `UnsupportedSwitch`,
+  `NoComputedResult`, or `UnresolvedBookmark` for valid but unresolved
+  compatibility cases;
+- defer legacy `.doc` exact anchors, floating-shape wrap/reflow, extension chart
+  families, and metafile drawing until public synthetic fixtures and expected
+  contracts exist;
+- keep release evidence machine-readable and separate from private corpus data.

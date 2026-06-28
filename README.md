@@ -891,6 +891,13 @@ The long-term native Word engine plan is split into the
 [TRD](docs/trd-rdoc-native-word-engine.md), and
 [maturity roadmap](docs/roadmap-rdoc-native-word-engine.md).
 
+Current maturity work is concentrated in deeper compatibility rather than new
+top-level APIs: keeping field evaluator/report syntax aligned, promoting only
+deterministic `PAGE`/`PAGEREF`/`REF`/`NOTEREF`/TOC subcases from cached text to
+computed results, tightening legacy `.doc` anchors, modeling floating-shape
+layout beyond recovered geometry, and adding public release evidence for
+render/extraction benchmarks.
+
 - [x] Codepage-aware `.doc` text; encryption / Word 6/95 detection gates
 - [x] Full read model: runs (CHPX incl. font/size/color), headings (STSH), tables
       (`sprmTDefTable`), list autonumbers, hyperlinks, inline images
