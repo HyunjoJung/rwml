@@ -172,7 +172,7 @@ fn grid_span_table_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr><w:p><w:r><w:t>Merged AB</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>C1</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>A2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>B2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>C2</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:tc><w:tcPr><w:gridSpan w:val=" 2 "/></w:tcPr><w:p><w:r><w:t>Merged AB</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>C1</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>A2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>B2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>C2</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
         ),
     ])
 }
@@ -189,7 +189,7 @@ fn vmerge_table_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr><w:p><w:r><w:t>A merged</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>B1</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p/></w:tc><w:tc><w:p><w:r><w:t>B2</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:tc><w:tcPr><w:vMerge w:val=" restart "/></w:tcPr><w:p><w:r><w:t>A merged</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>B1</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p/></w:tc><w:tc><w:p><w:r><w:t>B2</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
         ),
     ])
 }
@@ -1528,7 +1528,7 @@ fn set_table_cell_text_uses_grid_span_logical_columns() {
     let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
 
     assert!(
-        body.contains("<w:gridSpan w:val=\"2\"/>"),
+        body.contains("<w:gridSpan w:val=\" 2 \"/>"),
         "gridSpan markup should be preserved: {body}"
     );
     assert!(
@@ -1562,7 +1562,7 @@ fn set_table_cell_text_uses_vmerge_logical_rows() {
     let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
 
     assert!(
-        body.contains(r#"<w:vMerge w:val="restart"/>"#),
+        body.contains(r#"<w:vMerge w:val=" restart "/>"#),
         "vMerge restart markup should be preserved: {body}"
     );
     assert!(

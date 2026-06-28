@@ -1650,6 +1650,7 @@ impl XmlTree {
             if self.resolves_to(c, WML_NS, b"gridSpan", scope) {
                 if let Node::Element { attrs, .. } = &self.nodes[c.0 as usize].node {
                     span = attr_value_local(attrs, b"val")
+                        .map(trim_ascii_whitespace)
                         .and_then(|v| std::str::from_utf8(v).ok())
                         .and_then(|v| v.parse::<usize>().ok())
                         .filter(|&v| v > 0)
@@ -1688,7 +1689,7 @@ impl XmlTree {
             self.push_xmlns(c, scope);
             if self.resolves_to(c, WML_NS, b"vMerge", scope) {
                 vmerge = if let Node::Element { attrs, .. } = &self.nodes[c.0 as usize].node {
-                    match attr_value_local(attrs, b"val") {
+                    match attr_value_local(attrs, b"val").map(trim_ascii_whitespace) {
                         Some(b"restart") => WmlVMerge::Restart,
                         _ => WmlVMerge::Continue,
                     }
