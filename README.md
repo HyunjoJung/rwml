@@ -686,8 +686,8 @@ results, plus unresolved bookmark, unsupported remaining value-changing REF case
 comment/annotation insertion and broader REF semantics,
 unresolved or unsupported NOTEREF switches, existing `NOTEREF` bookmark targets
 without a body note-reference mark, or remaining advanced TOC/REF cases
-still render cached text, including simple inline tabs, line
-breaks, and no-break hyphens, and remain reported as unsupported in diagnostics
+still render cached text, including inline tabs, line breaks, and no-break
+hyphens for simple and common complex body fields, and remain reported as unsupported in diagnostics
 with both field-kind counts and reason counts (`UnknownField`,
 `UnresolvedBookmark`, `UnsupportedSwitch`, `NoComputedResult`), including
 separate missing `PAGEREF` bookmark targets, explicit and direct bookmark-name
@@ -790,8 +790,8 @@ code points.
   in diagnostics with bounded header inflation only, but metafile payloads are
   not rendered);
   unknown or broader fields' *computed* values
-  (cached result text is kept, including simple inline tabs, line breaks, and
-  no-break hyphens; `.docx` REF/TOC cases listed above plus
+  (cached result text is kept, including inline tabs, line breaks, and
+  no-break hyphens for simple and common complex body fields; `.docx` REF/TOC cases listed above plus
   recovered `.doc` field instructions are exposed through `fields()`/diagnostics);
   symbol-font (Symbol/Wingdings) glyph mapping; encrypted files
   (detected and rejected).
@@ -904,8 +904,8 @@ The long-term native Word engine plan is split into the
       unambiguous `.docx` `REF`
       bookmark text computation
       including Word-generated hidden bookmark targets and multi-paragraph
-      bookmark ranges plus simple inline tabs, line breaks, and no-break
-      hyphens plus deterministic `REF \* Upper`/`REF \* Lower`/`REF \* Caps`/
+      bookmark ranges plus inline tabs, line breaks, and no-break
+      hyphens for simple and common complex body fields plus deterministic `REF \* Upper`/`REF \* Lower`/`REF \* Caps`/
       `REF \* FirstCap` text format switches, source-order `REF \p`
       relative-position results, explicit numbered-paragraph `REF \n` labels
       from single-branch source paragraphs including `\n \p` relative suffixes
@@ -949,8 +949,8 @@ The long-term native Word engine plan is split into the
       deterministic page-number and field-result format switches, trusted
       leading-structural and source-marker `\p` relative-position computation,
       plus cached page-reference result preservation for remaining
-      layout-dependent cases, cached field result preservation for simple inline tabs, line
-      breaks, and no-break hyphens, `.docx` running header/footer
+      layout-dependent cases, cached field result preservation for inline tabs, line
+      breaks, and no-break hyphens in simple and common complex body fields, `.docx` running header/footer
       default selection/inheritance, first/even-page variant modeling and
       authoring, plus section-aware first/even-page render selection, and
       Symbol/Wingdings glyph mapping

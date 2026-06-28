@@ -143,10 +143,10 @@ Initial status:
   numbering/list fields, document-structure fields, display/layout fields,
   action/automation fields, compatibility/private
   fields, barcode fields, legacy form fields, or `Unknown`), normalized instruction, cached visible result text preserving
-  simple inline tabs, line breaks, and no-break hyphens, and
+  inline tabs, line breaks, and no-break hyphens for simple and common complex body fields, and
   `computed_result` for unambiguous `.docx` `REF` bookmark targets, including
   Word-generated hidden bookmark targets, multi-paragraph bookmark ranges, and
-  simple inline tabs, line breaks, no-break hyphens, and deterministic
+  inline tabs, line breaks, no-break hyphens for simple and common complex body fields, and deterministic
   `REF \* Upper`/`REF \* Lower`/`REF \* Caps`/`REF \* FirstCap` text format switches,
   source-order `REF \p` relative-position results, direct bookmark-name field
   computation when the bookmark exists with supported text-format switches and
@@ -875,7 +875,7 @@ Initial status:
   `NoComputedResult` diagnostics.
   Unambiguous
   `.docx` `REF` bookmark fields, including multi-paragraph bookmark ranges and
-  simple inline tabs, line breaks, no-break hyphens, and deterministic
+  inline tabs, line breaks, no-break hyphens for simple and common complex body fields, and deterministic
   `REF \* Upper`/`REF \* Lower`/`REF \* Caps`/`REF \* FirstCap` text format switches,
   source-order `REF \p` relative-position results, explicit numbered-paragraph
   `REF \n` labels from single-branch source paragraphs including `\n \p`,
