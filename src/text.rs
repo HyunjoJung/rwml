@@ -214,7 +214,12 @@ pub(crate) fn normalize_lines(text: &str) -> String {
         // Trim trailing whitespace (including the spurious last-cell tab) and
         // leading spaces, but keep a leading tab — it is an empty first table
         // cell whose column position would otherwise be lost.
-        let trimmed = line.trim_end().trim_start_matches(' ');
+        let trimmed_end = if line.chars().all(|ch| ch == '\t') {
+            line
+        } else {
+            line.trim_end()
+        };
+        let trimmed = trimmed_end.trim_start_matches(' ');
         if trimmed.is_empty() {
             continue;
         }
@@ -272,6 +277,7 @@ mod tests {
         // Empty first cell keeps its column; spurious last-cell tab is dropped.
         assert_eq!(normalize_lines("\tB\t\n"), "\tB");
         assert_eq!(normalize_lines("A\tB\t\n"), "A\tB");
+        assert_eq!(normalize_lines("\t\n-\n"), "\t\n-");
         // Leading prose spaces are still trimmed.
         assert_eq!(normalize_lines("   hello  \n"), "hello");
     }

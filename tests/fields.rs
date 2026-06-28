@@ -1160,7 +1160,7 @@ fn complex_cached_result_inline_marker_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> CUSTOM value </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>One</w:t><w:tab/><w:t>Two</w:t><w:br/><w:t>Three</w:t><w:noBreakHyphen/><w:t>Four</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> CUSTOM value </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>One</w:t><w:tab/><w:t>Two</w:t><w:br/><w:t>Three</w:t><w:noBreakHyphen/><w:t>Four</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> CUSTOM markersOnly </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:tab/><w:br/><w:noBreakHyphen/></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -7187,13 +7187,17 @@ fn docx_complex_field_result_preserves_cached_inline_markers() {
     let doc = Document::open(&complex_cached_result_inline_marker_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 1);
+    assert_eq!(fields.len(), 2);
     assert_eq!(fields[0].kind, FieldKind::Unknown("CUSTOM".to_string()));
     assert_eq!(fields[0].instruction, "CUSTOM value");
     assert_eq!(fields[0].result, "One\tTwo\nThree-Four");
     assert_eq!(fields[0].computed_result, None);
+    assert_eq!(fields[1].kind, FieldKind::Unknown("CUSTOM".to_string()));
+    assert_eq!(fields[1].instruction, "CUSTOM markersOnly");
+    assert_eq!(fields[1].result, "\t\n-");
+    assert_eq!(fields[1].computed_result, None);
     assert!(
-        doc.main_text().contains("One\tTwo\nThree-Four"),
+        doc.main_text().contains("One\tTwo\nThree-Four") && doc.main_text().contains("\t\n-"),
         "{:?}",
         doc.main_text()
     );

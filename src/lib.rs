@@ -1654,7 +1654,7 @@ impl Document {
             };
             if tree
                 .wml_table_cell_has_nested_table_under(body, table_index, row_index, cell_index)
-                .ok_or_else(|| index_error())?
+                .ok_or_else(&index_error)?
             {
                 return Err(Error::Docx(format!(
                     "set_table_cell_text: table={table_index} row={row_index} cell={cell_index} contains a nested table"
@@ -1662,7 +1662,7 @@ impl Document {
             }
             let runs = tree
                 .wml_table_cell_text_runs_under(body, table_index, row_index, cell_index)
-                .ok_or_else(|| index_error())?;
+                .ok_or_else(index_error)?;
             if runs.is_empty() {
                 return Err(Error::Docx(format!(
                     "table={table_index} row={row_index} cell={cell_index} has no visible text"
