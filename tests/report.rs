@@ -388,7 +388,7 @@ fn malformed_merge_field_diagnostics_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" MERGEFIELD &quot;client-name "><w:r><w:t>Cached client</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" MERGEFIELD &quot;client-name "><w:r><w:t>Cached client</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" MERGEFIELD \* MERGEFORMAT ClientName "><w:r><w:t>Cached missing name before format</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -2012,14 +2012,14 @@ fn report_malformed_merge_field_reports_unsupported_switch() {
         report.features.unsupported_field_kinds,
         vec![FieldKindCount {
             kind: FieldKind::MergeField,
-            count: 1,
+            count: 2,
         }]
     );
     assert_eq!(
         report.features.unsupported_field_reasons,
         vec![FieldEvaluationReasonCount {
             reason: FieldEvaluationReason::UnsupportedSwitch,
-            count: 1,
+            count: 2,
         }]
     );
 }
