@@ -615,7 +615,8 @@ Initial status:
   `*.jpeg` parts with `image/jpeg` content types.
 - `Document::set_core_property()` updates or creates `docProps/core.xml` for
   typed core metadata such as title, creator, category, content status,
-  revision, and version while preserving document body parts;
+  created/modified/last-printed timestamps, revision, and version while
+  preserving document body parts;
   `Document::core_properties()` provides the paired read/query surface.
 - `Document::edit_capability()` and `DocumentReport.edit` expose typed
   package-preserving edit availability; `PackageReadOnly` diagnostics now report

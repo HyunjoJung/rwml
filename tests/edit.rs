@@ -2312,6 +2312,12 @@ fn set_core_property_updates_existing_core_properties_part_only() {
         .expect("revision updates");
     doc.set_core_property(CoreProperty::Version, "2.0")
         .expect("version updates");
+    doc.set_core_property(CoreProperty::Created, "2026-06-01T02:03:04Z")
+        .expect("created timestamp updates");
+    doc.set_core_property(CoreProperty::Modified, "2026-06-02T03:04:05Z")
+        .expect("modified timestamp updates");
+    doc.set_core_property(CoreProperty::LastPrinted, "2026-06-03T04:05:06Z")
+        .expect("last-printed timestamp updates");
 
     let saved = doc.save().expect("save edited docx");
     let before_parts = unzip_parts(&before);
@@ -2324,6 +2330,17 @@ fn set_core_property_updates_existing_core_properties_part_only() {
     assert!(core.contains("contentStatus") && core.contains(">Final</cp:contentStatus>"));
     assert!(core.contains("revision") && core.contains(">13</cp:revision>"));
     assert!(core.contains("version") && core.contains(">2.0</cp:version>"));
+    assert!(
+        core.contains(r#"xsi:type="dcterms:W3CDTF">2026-06-01T02:03:04Z</dcterms:created>"#),
+        "created timestamp missing W3CDTF type: {core}"
+    );
+    assert!(
+        core.contains(r#"xsi:type="dcterms:W3CDTF">2026-06-02T03:04:05Z</dcterms:modified>"#),
+        "modified timestamp missing W3CDTF type: {core}"
+    );
+    assert!(
+        core.contains("lastPrinted") && core.contains(">2026-06-03T04:05:06Z</cp:lastPrinted>")
+    );
     assert_eq!(
         parts["word/document.xml"], before_parts["word/document.xml"],
         "body should not be rewritten"
@@ -2334,6 +2351,9 @@ fn set_core_property_updates_existing_core_properties_part_only() {
     assert_eq!(props.content_status.as_deref(), Some("Final"));
     assert_eq!(props.revision.as_deref(), Some("13"));
     assert_eq!(props.version.as_deref(), Some("2.0"));
+    assert_eq!(props.created.as_deref(), Some("2026-06-01T02:03:04Z"));
+    assert_eq!(props.modified.as_deref(), Some("2026-06-02T03:04:05Z"));
+    assert_eq!(props.last_printed.as_deref(), Some("2026-06-03T04:05:06Z"));
 }
 
 #[test]

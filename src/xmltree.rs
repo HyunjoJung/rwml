@@ -1462,13 +1462,14 @@ impl XmlTree {
     }
 
     /// Set a direct child element's text by namespace/local-name, appending a new
-    /// namespaced element fragment when the property is absent.
-    pub(crate) fn set_child_text_ns_local(
+    /// namespaced element fragment with extra fallback attributes when absent.
+    pub(crate) fn set_child_text_ns_local_with_attrs(
         &mut self,
         root: NodeId,
         ns: &[u8],
         local: &[u8],
         fallback_qname: &str,
+        fallback_attrs: &[(&str, &str)],
         text: &str,
     ) -> Result<()> {
         let mut scope = self.ns_scope_at(root);
@@ -1495,8 +1496,17 @@ impl XmlTree {
                 escaped_attr(&String::from_utf8_lossy(ns))
             )
         };
+        let mut attrs = String::new();
+        attrs.push_str(&xmlns);
+        for (name, value) in fallback_attrs {
+            attrs.push(' ');
+            attrs.push_str(name);
+            attrs.push_str("=\"");
+            attrs.push_str(&escaped_attr(value));
+            attrs.push('"');
+        }
         let text = escaped_text(text);
-        let xml = format!("<{fallback_qname} {xmlns}>{text}</{fallback_qname}>");
+        let xml = format!("<{fallback_qname} {attrs}>{text}</{fallback_qname}>");
         let pos = self.nodes[root.0 as usize].children.len();
         self.insert_fragment_at(root, pos, xml.as_bytes())
     }

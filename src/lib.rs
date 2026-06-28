@@ -234,6 +234,12 @@ pub enum CoreProperty {
     Category,
     /// Core-properties `cp:contentStatus`.
     ContentStatus,
+    /// Dublin Core Terms `dcterms:created`.
+    Created,
+    /// Dublin Core Terms `dcterms:modified`.
+    Modified,
+    /// Core-properties `cp:lastPrinted`.
+    LastPrinted,
     /// Core-properties `cp:revision`.
     Revision,
     /// Core-properties `cp:version`.
@@ -304,8 +310,10 @@ impl CoreProperty {
             | CoreProperty::LastModifiedBy
             | CoreProperty::Category
             | CoreProperty::ContentStatus
+            | CoreProperty::LastPrinted
             | CoreProperty::Revision
             | CoreProperty::Version => CORE_PROPERTIES_NS,
+            CoreProperty::Created | CoreProperty::Modified => DCTERMS_NS,
         }
     }
 
@@ -319,6 +327,9 @@ impl CoreProperty {
             CoreProperty::LastModifiedBy => b"lastModifiedBy",
             CoreProperty::Category => b"category",
             CoreProperty::ContentStatus => b"contentStatus",
+            CoreProperty::Created => b"created",
+            CoreProperty::Modified => b"modified",
+            CoreProperty::LastPrinted => b"lastPrinted",
             CoreProperty::Revision => b"revision",
             CoreProperty::Version => b"version",
         }
@@ -334,8 +345,18 @@ impl CoreProperty {
             CoreProperty::LastModifiedBy => "cp:lastModifiedBy",
             CoreProperty::Category => "cp:category",
             CoreProperty::ContentStatus => "cp:contentStatus",
+            CoreProperty::Created => "dcterms:created",
+            CoreProperty::Modified => "dcterms:modified",
+            CoreProperty::LastPrinted => "cp:lastPrinted",
             CoreProperty::Revision => "cp:revision",
             CoreProperty::Version => "cp:version",
+        }
+    }
+
+    fn fallback_attrs(self) -> &'static [(&'static str, &'static str)] {
+        match self {
+            CoreProperty::Created | CoreProperty::Modified => DCTERMS_W3CDTF_ATTRS,
+            _ => &[],
         }
     }
 }
@@ -819,11 +840,12 @@ impl Document {
                 b"coreProperties",
                 "cp",
             )?;
-            tree.set_child_text_ns_local(
+            tree.set_child_text_ns_local_with_attrs(
                 root,
                 property.ns(),
                 property.local(),
                 property.qname(),
+                property.fallback_attrs(),
                 value,
             )?;
         }
@@ -2727,6 +2749,13 @@ const CORE_PROPERTIES_NS: &[u8] =
     b"http://schemas.openxmlformats.org/package/2006/metadata/core-properties";
 #[cfg(feature = "docx")]
 const DC_NS: &[u8] = b"http://purl.org/dc/elements/1.1/";
+#[cfg(feature = "docx")]
+const DCTERMS_NS: &[u8] = b"http://purl.org/dc/terms/";
+#[cfg(feature = "docx")]
+const XSI_NS: &str = "http://www.w3.org/2001/XMLSchema-instance";
+#[cfg(feature = "docx")]
+const DCTERMS_W3CDTF_ATTRS: &[(&str, &str)] =
+    &[("xmlns:xsi", XSI_NS), ("xsi:type", "dcterms:W3CDTF")];
 
 #[cfg(feature = "docx")]
 #[derive(Clone, Debug)]
