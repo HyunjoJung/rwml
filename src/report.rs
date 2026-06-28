@@ -3605,9 +3605,12 @@ fn supported_autonum_syntax<'a>(kind: &str, mut parts: impl Iterator<Item = &'a 
     let mut text_format = false;
     let mut separator = false;
     while let Some(part) = parts.next() {
-        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
-            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
-        }) else {
+        let Some(accepted) = accept_page_field_format_switch_for_report(
+            part,
+            &mut parts,
+            &mut number_format,
+            &mut text_format,
+        ) else {
             return false;
         };
         if accepted {
@@ -3643,9 +3646,12 @@ fn supported_listnum_syntax<'a>(mut parts: impl Iterator<Item = &'a str>) -> boo
     let mut number_format = false;
     let mut text_format = false;
     while let Some(part) = parts.next() {
-        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
-            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
-        }) else {
+        let Some(accepted) = accept_page_field_format_switch_for_report(
+            part,
+            &mut parts,
+            &mut number_format,
+            &mut text_format,
+        ) else {
             return false;
         };
         if accepted {
@@ -4528,9 +4534,12 @@ fn supported_page_ref_syntax(instruction: &str) -> Option<PageRefDiagnosticSynta
     let mut text_format = false;
     let mut relative = false;
     while let Some(part) = parts.next() {
-        if accept_general_format_switch(part, &mut parts, |format| {
-            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
-        })? {
+        if accept_page_field_format_switch_for_report(
+            part,
+            &mut parts,
+            &mut number_format,
+            &mut text_format,
+        )? {
             continue;
         }
         if part.starts_with('\\') {
@@ -4564,6 +4573,17 @@ fn accept_page_field_format_switch(
         || accept_field_format_switch(part, text_format)
 }
 
+fn accept_page_field_format_switch_for_report<'a>(
+    part: &'a str,
+    parts: &mut impl Iterator<Item = &'a str>,
+    number_format: &mut bool,
+    text_format: &mut bool,
+) -> Option<bool> {
+    accept_general_format_switch(part, parts, |format| {
+        accept_page_field_format_switch(format, number_format, text_format)
+    })
+}
+
 #[cfg(not(feature = "docx"))]
 fn supported_page_field_format_tail_for_report<'a>(
     parts: &mut impl Iterator<Item = &'a str>,
@@ -4571,9 +4591,12 @@ fn supported_page_field_format_tail_for_report<'a>(
     let mut number_format = false;
     let mut text_format = false;
     while let Some(part) = parts.next() {
-        let Some(accepted) = accept_general_format_switch(part, parts, |format| {
-            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
-        }) else {
+        let Some(accepted) = accept_page_field_format_switch_for_report(
+            part,
+            parts,
+            &mut number_format,
+            &mut text_format,
+        ) else {
             return false;
         };
         if !accepted {

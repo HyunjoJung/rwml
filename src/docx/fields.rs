@@ -5052,9 +5052,12 @@ fn section_instruction(instruction: &str) -> Option<SectionInstruction> {
     let mut number_format = None;
     let mut text_format = None;
     while let Some(part) = parts.next() {
-        if accept_general_format_switch(part, &mut parts, |format| {
-            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
-        })? {
+        if accept_page_field_format_switch_for_tail(
+            part,
+            &mut parts,
+            &mut number_format,
+            &mut text_format,
+        )? {
             continue;
         }
         return None;
@@ -8833,9 +8836,12 @@ fn sequence_instruction_with_reset_policy(
     let mut number_format = None;
     let mut text_format = None;
     while let Some(part) = parts.next() {
-        if accept_general_format_switch(part, &mut parts, |format| {
-            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
-        })? {
+        if accept_page_field_format_switch_for_tail(
+            part,
+            &mut parts,
+            &mut number_format,
+            &mut text_format,
+        )? {
             continue;
         }
         if part.eq_ignore_ascii_case("\\n") {
@@ -8973,9 +8979,12 @@ pub(crate) fn computed_numbering_result(
     let mut text_format = None;
     let mut separator = None;
     while let Some(part) = parts.next() {
-        if accept_general_format_switch(part, &mut parts, |format| {
-            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
-        })? {
+        if accept_page_field_format_switch_for_tail(
+            part,
+            &mut parts,
+            &mut number_format,
+            &mut text_format,
+        )? {
             continue;
         }
         if accepts_separator_switch && part.eq_ignore_ascii_case("\\s") {
@@ -9026,9 +9035,12 @@ pub(crate) fn supports_numbering_field_syntax(instruction: &str) -> bool {
         let mut number_format = None;
         let mut text_format = None;
         while let Some(part) = parts.next() {
-            let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
-                accept_page_field_format_switch(format, &mut number_format, &mut text_format)
-            }) else {
+            let Some(accepted) = accept_page_field_format_switch_for_tail(
+                part,
+                &mut parts,
+                &mut number_format,
+                &mut text_format,
+            ) else {
                 return false;
             };
             if !accepted {
@@ -9056,9 +9068,12 @@ pub(crate) fn computed_listnum_result(
     let mut number_format = None;
     let mut text_format = None;
     while let Some(part) = parts.next() {
-        if accept_general_format_switch(part, &mut parts, |format| {
-            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
-        })? {
+        if accept_page_field_format_switch_for_tail(
+            part,
+            &mut parts,
+            &mut number_format,
+            &mut text_format,
+        )? {
             continue;
         }
         if part.eq_ignore_ascii_case("\\l") {
@@ -9107,9 +9122,12 @@ fn supports_listnum_field_syntax<'a>(mut parts: impl Iterator<Item = &'a str>) -
     let mut number_format = None;
     let mut text_format = None;
     while let Some(part) = parts.next() {
-        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
-            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
-        }) else {
+        let Some(accepted) = accept_page_field_format_switch_for_tail(
+            part,
+            &mut parts,
+            &mut number_format,
+            &mut text_format,
+        ) else {
             return false;
         };
         if accepted {
@@ -9207,9 +9225,12 @@ fn page_instruction(instruction: &str) -> Option<PageInstruction> {
     let mut number_format = None;
     let mut text_format = None;
     while let Some(part) = parts.next() {
-        if accept_general_format_switch(part, &mut parts, |format| {
-            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
-        })? {
+        if accept_page_field_format_switch_for_tail(
+            part,
+            &mut parts,
+            &mut number_format,
+            &mut text_format,
+        )? {
             continue;
         }
         return None;
@@ -9232,9 +9253,12 @@ fn page_ref_instruction(instruction: &str) -> Option<PageRefInstruction> {
     let mut text_format = None;
     let mut relative = false;
     while let Some(part) = parts.next() {
-        if accept_general_format_switch(part, &mut parts, |format| {
-            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
-        })? {
+        if accept_page_field_format_switch_for_tail(
+            part,
+            &mut parts,
+            &mut number_format,
+            &mut text_format,
+        )? {
             continue;
         }
         if part.starts_with('\\') {
@@ -9269,6 +9293,17 @@ fn accept_page_field_format_switch(
         || accept_field_format_switch(part, text_format)
 }
 
+fn accept_page_field_format_switch_for_tail<'a>(
+    part: &'a str,
+    parts: &mut impl Iterator<Item = &'a str>,
+    number_format: &mut Option<PageNumberFormat>,
+    text_format: &mut Option<FieldTextFormat>,
+) -> Option<bool> {
+    accept_general_format_switch(part, parts, |format| {
+        accept_page_field_format_switch(format, number_format, text_format)
+    })
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct NoteRefInstruction {
     target: String,
@@ -9290,9 +9325,12 @@ fn note_ref_instruction(instruction: &str) -> Option<NoteRefInstruction> {
     let mut relative = false;
     let mut formatted = false;
     while let Some(part) = parts.next() {
-        if accept_general_format_switch(part, &mut parts, |format| {
-            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
-        })? {
+        if accept_page_field_format_switch_for_tail(
+            part,
+            &mut parts,
+            &mut number_format,
+            &mut text_format,
+        )? {
             continue;
         }
         if part.starts_with('\\') {
@@ -9686,9 +9724,12 @@ fn parse_ref_instruction_parts<'a>(
     let mut relative_context_number = false;
     let mut suppress_non_numeric = false;
     while let Some(part) = parts.next() {
-        if accept_general_format_switch(part, &mut parts, |format| {
-            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
-        })? {
+        if accept_page_field_format_switch_for_tail(
+            part,
+            &mut parts,
+            &mut number_format,
+            &mut text_format,
+        )? {
             continue;
         }
         if part.starts_with('\\') {
