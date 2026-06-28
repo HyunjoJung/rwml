@@ -8,8 +8,6 @@
 use crate::annotation::field_level_token as diagnostic_level_token;
 #[cfg(not(feature = "docx"))]
 use crate::annotation::field_name_token as diagnostic_name_token;
-#[cfg(not(feature = "docx"))]
-use crate::annotation::filename_field_syntax;
 use crate::annotation::{
     accept_field_number_format_switch, accept_field_text_format_switch,
     accept_general_format_switch, field_identifier_token as diagnostic_identifier_token,
@@ -18,6 +16,8 @@ use crate::annotation::{
     is_ref_value_neutral_switch, is_toc_value_neutral_switch, strip_ascii_switch_prefix,
     toc_style_specs, Field, FieldKind, FieldNumberFormat, FieldTextFormat,
 };
+#[cfg(not(feature = "docx"))]
+use crate::annotation::{document_property_key, filename_field_syntax};
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{
     field_non_empty_non_switch_literal_token, field_non_empty_quoted_literal_token,
@@ -1855,7 +1855,7 @@ fn document_info_syntax_property_for_report<'a>(
 
 #[cfg(not(feature = "docx"))]
 fn document_info_property_kind_for_report(value: &str) -> Option<DocumentInfoSyntaxProperty> {
-    let key = document_property_key_for_report(value);
+    let key = document_property_key(value);
     if key == "FILESIZE" {
         return Some(DocumentInfoSyntaxProperty::FileSize);
     }
@@ -1912,17 +1912,8 @@ fn document_info_property_kind_for_report(value: &str) -> Option<DocumentInfoSyn
 }
 
 #[cfg(not(feature = "docx"))]
-fn document_property_key_for_report(value: &str) -> String {
-    value
-        .chars()
-        .filter(|ch| *ch != '_' && *ch != '-' && !ch.is_whitespace())
-        .collect::<String>()
-        .to_ascii_uppercase()
-}
-
-#[cfg(not(feature = "docx"))]
 fn is_user_info_property_for_report(value: &str) -> bool {
-    let key = document_property_key_for_report(value);
+    let key = document_property_key(value);
     matches!(key.as_str(), "USERNAME" | "USERINITIALS" | "USERADDRESS")
 }
 

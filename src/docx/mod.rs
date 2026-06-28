@@ -20,9 +20,9 @@ use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 
 use crate::annotation::{
-    Comment, Field, FloatingShape, HeaderFooter, HeaderFooterKind, Note, NoteKind, Revision,
-    ShapeDistance, ShapeEffectExtent, ShapeExtent, ShapePoint, ShapePosition, ShapeWrapping,
-    TextAnchor, TextBox,
+    document_property_key, Comment, Field, FloatingShape, HeaderFooter, HeaderFooterKind, Note,
+    NoteKind, Revision, ShapeDistance, ShapeEffectExtent, ShapeExtent, ShapePoint, ShapePosition,
+    ShapeWrapping, TextAnchor, TextBox,
 };
 use crate::assemble;
 use crate::error::{Error, Result};
@@ -237,7 +237,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         .unwrap_or_default();
     let custom_property_fields = custom_properties
         .iter()
-        .map(|(key, value)| (fields::document_property_key(key), value.clone()))
+        .map(|(key, value)| (document_property_key(key), value.clone()))
         .collect::<HashMap<_, _>>();
     let custom_xml_items = read_custom_xml_items(&mut zip);
     let extended_properties = part(&mut zip, "docProps/app.xml")
@@ -1868,10 +1868,7 @@ fn parse_extended_properties(xml: &str) -> HashMap<String, String> {
                 let key = local(e.name().as_ref()).to_vec();
                 if is_extended_property_key(&key) {
                     if let Ok(name) = std::str::from_utf8(&key) {
-                        props.insert(
-                            fields::document_property_key(name),
-                            read_core_property_text(&mut r),
-                        );
+                        props.insert(document_property_key(name), read_core_property_text(&mut r));
                     }
                 }
             }
@@ -1879,7 +1876,7 @@ fn parse_extended_properties(xml: &str) -> HashMap<String, String> {
                 let key = local(e.name().as_ref()).to_vec();
                 if is_extended_property_key(&key) {
                     if let Ok(name) = std::str::from_utf8(&key) {
-                        props.insert(fields::document_property_key(name), String::new());
+                        props.insert(document_property_key(name), String::new());
                     }
                 }
             }
@@ -1927,7 +1924,7 @@ fn parse_document_variables(xml: &str) -> HashMap<String, String> {
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"docVar" => {
                 if let Some(name) = attr_local_trimmed(&e, b"name") {
                     vars.insert(
-                        fields::document_property_key(&name),
+                        document_property_key(&name),
                         attr_local(&e, b"val").unwrap_or_default(),
                     );
                 }

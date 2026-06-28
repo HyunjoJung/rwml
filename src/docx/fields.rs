@@ -8,8 +8,8 @@ use quick_xml::Reader;
 use crate::annotation::{
     accept_field_number_format_switch,
     accept_field_text_format_switch as accept_field_format_switch, accept_general_format_switch,
-    field_identifier_token, field_level_range_token, field_level_token, field_literal_token,
-    field_name_token, field_non_empty_non_switch_literal_token,
+    document_property_key, field_identifier_token, field_level_range_token, field_level_token,
+    field_literal_token, field_name_token, field_non_empty_non_switch_literal_token,
     field_non_empty_quoted_literal_token, field_non_switch_literal_token, field_points_token,
     field_positive_points_token, field_symbol_code_token, filename_field_syntax, instruction_parts,
     is_neutral_field_format_switch, is_note_ref_kind, is_ref_value_neutral_switch,
@@ -5534,14 +5534,6 @@ fn document_info_property(value: &str) -> Option<DocumentInfoProperty> {
         "TEMPLATE" => DocumentInfoProperty::Extended(document_property_key("Template")),
         _ => return None,
     })
-}
-
-pub(crate) fn document_property_key(value: &str) -> String {
-    value
-        .chars()
-        .filter(|ch| *ch != '_' && *ch != '-' && !ch.is_whitespace())
-        .collect::<String>()
-        .to_ascii_uppercase()
 }
 
 pub(crate) fn computed_revision_number_result(

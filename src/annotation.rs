@@ -576,6 +576,14 @@ pub(crate) fn filename_field_syntax(instruction: &str) -> bool {
     true
 }
 
+pub(crate) fn document_property_key(value: &str) -> String {
+    value
+        .chars()
+        .filter(|ch| *ch != '_' && *ch != '-' && !ch.is_whitespace())
+        .collect::<String>()
+        .to_ascii_uppercase()
+}
+
 pub(crate) fn reference_index_literal_token(value: &str) -> Option<&str> {
     let token = value.trim();
     let quoted = token.starts_with('"') && token.ends_with('"') && token.len() >= 2;
