@@ -3456,37 +3456,15 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                             }
                         }
                     }
-                    b"bookmarkStart" => {
-                        if let Some(name) = bookmark_name(&e) {
-                            if pages.leading_page_number > 1 && !saw_visible_content {
-                                targets.entry(name.clone()).or_insert(PageRefTarget {
-                                    display_page: pages.leading_display_page_number,
-                                    display_format: pages.leading_display_format,
-                                });
-                                target_positions_insert(
-                                    &mut target_positions,
-                                    name.clone(),
-                                    PageRefPosition {
-                                        physical_page: pages.leading_page_number,
-                                        display_page: pages.leading_display_page_number,
-                                        display_format: pages.leading_display_format,
-                                        order: source_order,
-                                    },
-                                );
-                            }
-                            if pages.rendered_context_trusted {
-                                rendered_targets.entry(name).or_insert(PageRefPosition {
-                                    physical_page: pages.rendered_page_number,
-                                    display_page: pages.rendered_display_page_number,
-                                    display_format: pages.rendered_display_format,
-                                    order: source_order,
-                                });
-                            } else if let Some(target) = pages.display_only_restart_target {
-                                targets.entry(name).or_insert(target);
-                            }
-                            source_order += 1;
-                        }
-                    }
+                    b"bookmarkStart" => record_page_ref_bookmark_start(
+                        &e,
+                        &pages,
+                        saw_visible_content,
+                        &mut source_order,
+                        &mut targets,
+                        &mut rendered_targets,
+                        &mut target_positions,
+                    ),
                     b"t" => {
                         let visible_text = !read_text(&mut r).is_empty();
                         consumed_element = true;
@@ -3569,37 +3547,15 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                         &mut field_positions,
                         &mut page_field_positions,
                     ),
-                    b"bookmarkStart" => {
-                        if let Some(name) = bookmark_name(&e) {
-                            if pages.leading_page_number > 1 && !saw_visible_content {
-                                targets.entry(name.clone()).or_insert(PageRefTarget {
-                                    display_page: pages.leading_display_page_number,
-                                    display_format: pages.leading_display_format,
-                                });
-                                target_positions_insert(
-                                    &mut target_positions,
-                                    name.clone(),
-                                    PageRefPosition {
-                                        physical_page: pages.leading_page_number,
-                                        display_page: pages.leading_display_page_number,
-                                        display_format: pages.leading_display_format,
-                                        order: source_order,
-                                    },
-                                );
-                            }
-                            if pages.rendered_context_trusted {
-                                rendered_targets.entry(name).or_insert(PageRefPosition {
-                                    physical_page: pages.rendered_page_number,
-                                    display_page: pages.rendered_display_page_number,
-                                    display_format: pages.rendered_display_format,
-                                    order: source_order,
-                                });
-                            } else if let Some(target) = pages.display_only_restart_target {
-                                targets.entry(name).or_insert(target);
-                            }
-                            source_order += 1;
-                        }
-                    }
+                    b"bookmarkStart" => record_page_ref_bookmark_start(
+                        &e,
+                        &pages,
+                        saw_visible_content,
+                        &mut source_order,
+                        &mut targets,
+                        &mut rendered_targets,
+                        &mut target_positions,
+                    ),
                     b"br" if is_page_break_type(&e) => {
                         pages.advance_explicit_break(
                             saw_visible_content,
@@ -3878,6 +3834,47 @@ fn target_positions_insert(
     position: PageRefPosition,
 ) {
     target_positions.entry(name).or_insert(position);
+}
+
+fn record_page_ref_bookmark_start(
+    e: &BytesStart<'_>,
+    pages: &PageRefPageState,
+    saw_visible_content: bool,
+    source_order: &mut usize,
+    targets: &mut HashMap<String, PageRefTarget>,
+    rendered_targets: &mut HashMap<String, PageRefPosition>,
+    target_positions: &mut HashMap<String, PageRefPosition>,
+) {
+    let Some(name) = bookmark_name(e) else {
+        return;
+    };
+    if pages.leading_page_number > 1 && !saw_visible_content {
+        targets.entry(name.clone()).or_insert(PageRefTarget {
+            display_page: pages.leading_display_page_number,
+            display_format: pages.leading_display_format,
+        });
+        target_positions_insert(
+            target_positions,
+            name.clone(),
+            PageRefPosition {
+                physical_page: pages.leading_page_number,
+                display_page: pages.leading_display_page_number,
+                display_format: pages.leading_display_format,
+                order: *source_order,
+            },
+        );
+    }
+    if pages.rendered_context_trusted {
+        rendered_targets.entry(name).or_insert(PageRefPosition {
+            physical_page: pages.rendered_page_number,
+            display_page: pages.rendered_display_page_number,
+            display_format: pages.rendered_display_format,
+            order: *source_order,
+        });
+    } else if let Some(target) = pages.display_only_restart_target {
+        targets.entry(name).or_insert(target);
+    }
+    *source_order += 1;
 }
 
 fn current_page_ref_position(
