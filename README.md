@@ -605,8 +605,9 @@ for authored surface-family charts and `ChartShape` styling available for author
 3-D bar/column-family charts; unambiguous `.docx` `REF`
 bookmark fields, including Word-generated
 hidden bookmark targets, multi-paragraph bookmark ranges, and simple inline
-tabs, line breaks, no-break hyphens, and deterministic `REF \* Upper`/`REF \* Lower`/
-`REF \* Caps`/`REF \* FirstCap` text format switches, source-order `REF \p`
+tabs, line breaks, no-break/soft hyphens, and deterministic
+`REF \* Upper`/`REF \* Lower`/`REF \* Caps`/`REF \* FirstCap` text format
+switches, source-order `REF \p`
 relative-position results, explicit numbered-paragraph `REF \n` labels from
 single-branch source paragraphs and `word/numbering.xml` including `\n \p`
 relative suffixes and `\n \t` numeric-text suppression, `REF \r`
@@ -638,7 +639,7 @@ entries from paragraphs containing matching cached `SEQ Identifier` fields,
 deterministic TOC `\* Upper`/`\* Lower`/`\* Caps`/`\* FirstCap` field-result
 format switches, neutral TOC `\* MERGEFORMAT`/`\* CHARFORMAT`, and standalone `TOC \u` fields over explicit paragraph outline levels, plus
 `TOC \b` bookmark-scoped variants when the bookmark range is recoverable,
-normalize simple inline heading tabs, line breaks, and no-break hyphens and
+normalize simple inline heading tabs, line breaks, and no-break/soft hyphens and
 expose computed results for simple and common complex begin/separate/end fields
 and render/read as computed text; deterministic body paragraph- and
 character-style `STYLEREF` fields compute nearest styled paragraph/run text by
@@ -704,7 +705,7 @@ results, plus unresolved bookmark, unsupported remaining value-changing REF case
 comment/annotation insertion and broader REF semantics,
 unresolved or unsupported NOTEREF switches, existing `NOTEREF` bookmark targets
 without a body note-reference mark, or remaining advanced TOC/REF cases
-still render cached text, including inline tabs, line breaks, and no-break
+still render cached text, including inline tabs, line breaks, and no-break/soft
 hyphens for simple and common complex body fields, and remain reported as unsupported in diagnostics
 with both field-kind counts and reason counts (`UnknownField`,
 `UnresolvedBookmark`, `UnsupportedSwitch`, `NoComputedResult`), including
@@ -812,8 +813,9 @@ code points.
   not rendered);
   unknown or broader fields' *computed* values
   (cached result text is kept, including inline tabs, line breaks, and
-  no-break hyphens for simple and common complex body fields; `.docx` REF/TOC cases listed above plus
-  recovered `.doc` field instructions are exposed through `fields()`/diagnostics);
+  no-break/soft hyphens for simple and common complex body fields; `.docx`
+  REF/TOC cases listed above plus recovered `.doc` field instructions are
+  exposed through `fields()`/diagnostics);
   symbol-font (Symbol/Wingdings) glyph mapping; encrypted files
   (detected and rejected).
 - *`.doc` read only:* per-instance list overrides (`LFOLVL` start-at); Word 6/95.
@@ -929,9 +931,10 @@ The long-term native Word engine plan is split into the
       unambiguous `.docx` `REF`
       bookmark text computation
       including Word-generated hidden bookmark targets and multi-paragraph
-      bookmark ranges plus inline tabs, line breaks, and no-break
-      hyphens for simple and common complex body fields plus deterministic `REF \* Upper`/`REF \* Lower`/`REF \* Caps`/
-      `REF \* FirstCap` text format switches, source-order `REF \p`
+      bookmark ranges plus inline tabs, line breaks, and no-break/soft
+      hyphens for simple and common complex body fields plus deterministic
+      `REF \* Upper`/`REF \* Lower`/`REF \* Caps`/`REF \* FirstCap` text
+      format switches, source-order `REF \p`
       relative-position results, explicit numbered-paragraph `REF \n` labels
       from single-branch source paragraphs including `\n \p` relative suffixes
       and `\n \t` numeric-text suppression, `REF \r` relative-context labels
@@ -963,7 +966,7 @@ The long-term native Word engine plan is split into the
       standalone `TOC \u` explicit paragraph
       outline-level computation and `TOC \b` bookmark-scoped computation when
       the bookmark range is recoverable, with normalized simple inline heading
-      tabs, line breaks, and no-break hyphens for simple and common complex
+      tabs, line breaks, and no-break/soft hyphens for simple and common complex
       fields, body `PAGE` trusted current-page computation with page-number and
       field-result format switches, named `PAGEREF` classification with leading
       hard-break,
@@ -975,7 +978,8 @@ The long-term native Word engine plan is split into the
       leading-structural and source-marker `\p` relative-position computation,
       plus cached page-reference result preservation for remaining
       layout-dependent cases, cached field result preservation for inline tabs, line
-      breaks, and no-break hyphens in simple and common complex body fields, `.docx` running header/footer
+      breaks, and no-break/soft hyphens in simple and common complex body
+      fields, `.docx` running header/footer
       default selection/inheritance, first/even-page variant modeling and
       authoring, plus section-aware first/even-page render selection, and
       Symbol/Wingdings glyph mapping

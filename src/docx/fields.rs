@@ -858,6 +858,7 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
                     }
                     b"cr" => append_ref_text(&active, &mut out, "\n"),
                     b"noBreakHyphen" => append_ref_text(&active, &mut out, "-"),
+                    b"softHyphen" => append_ref_text(&active, &mut out, "\u{00ad}"),
                     _ => {}
                 }
                 xml_depth = xml_depth.saturating_add(1);
@@ -889,6 +890,7 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
                     }
                     b"cr" => append_ref_text(&active, &mut out, "\n"),
                     b"noBreakHyphen" => append_ref_text(&active, &mut out, "-"),
+                    b"softHyphen" => append_ref_text(&active, &mut out, "\u{00ad}"),
                     _ => {}
                 }
             }
@@ -1052,8 +1054,8 @@ pub(crate) fn ref_position_context(xml: &str, numbering: &Numbering) -> RefPosit
                         }
                         consumed_element = true;
                     }
-                    b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"drawing" | b"pict"
-                    | b"object" => {
+                    b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"softHyphen" | b"drawing"
+                    | b"pict" | b"object" => {
                         source_order += 1;
                     }
                     _ => {}
@@ -1115,8 +1117,8 @@ pub(crate) fn ref_position_context(xml: &str, numbering: &Numbering) -> RefPosit
                         );
                         source_order += 1;
                     }
-                    b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"drawing" | b"pict"
-                    | b"object" => {
+                    b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"softHyphen" | b"drawing"
+                    | b"pict" | b"object" => {
                         source_order += 1;
                     }
                     _ => {}
@@ -1682,8 +1684,8 @@ pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
                         }
                         continue;
                     }
-                    b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"drawing" | b"pict"
-                    | b"object" => {
+                    b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"softHyphen" | b"drawing"
+                    | b"pict" | b"object" => {
                         source_order += 1;
                     }
                     _ => {}
@@ -1761,8 +1763,8 @@ pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
                         );
                         source_order += 1;
                     }
-                    b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"drawing" | b"pict"
-                    | b"object" => {
+                    b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"softHyphen" | b"drawing"
+                    | b"pict" | b"object" => {
                         source_order += 1;
                     }
                     _ => {}
@@ -2024,7 +2026,8 @@ pub(crate) fn section_context(xml: &str) -> SectionContext {
                     b"lastRenderedPageBreak" => {
                         current_page += 1;
                     }
-                    b"tab" | b"cr" | b"noBreakHyphen" | b"drawing" | b"pict" | b"object" => {
+                    b"tab" | b"cr" | b"noBreakHyphen" | b"softHyphen" | b"drawing" | b"pict"
+                    | b"object" => {
                         section_has_visible_content = true;
                     }
                     b"br" => {
@@ -2076,8 +2079,8 @@ pub(crate) fn section_context(xml: &str) -> SectionContext {
                     b"lastRenderedPageBreak" => {
                         current_page += 1;
                     }
-                    b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"drawing" | b"pict"
-                    | b"object" => {
+                    b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"softHyphen" | b"drawing"
+                    | b"pict" | b"object" => {
                         section_has_visible_content = true;
                     }
                     _ => {}
@@ -3501,7 +3504,8 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                         saw_rendered_page_break = true;
                         pages.advance_last_rendered_page_break(&mut source_order);
                     }
-                    b"tab" | b"cr" | b"noBreakHyphen" | b"drawing" | b"pict" | b"object" => {
+                    b"tab" | b"cr" | b"noBreakHyphen" | b"softHyphen" | b"drawing" | b"pict"
+                    | b"object" => {
                         saw_visible_content = true;
                         pages.note_visible_content();
                         source_order += 1;
@@ -3610,8 +3614,8 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                         saw_rendered_page_break = true;
                         pages.advance_last_rendered_page_break(&mut source_order);
                     }
-                    b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"drawing" | b"pict"
-                    | b"object" => {
+                    b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"softHyphen" | b"drawing"
+                    | b"pict" | b"object" => {
                         saw_visible_content = true;
                         pages.note_visible_content();
                         source_order += 1;
@@ -4184,6 +4188,7 @@ fn read_toc_paragraph(
                     }
                     b"tab" | b"br" | b"cr" => text.push(' '),
                     b"noBreakHyphen" => text.push('-'),
+                    b"softHyphen" => text.push('\u{00ad}'),
                     b"bookmarkStart" => {
                         if let Some(name) = push_active_bookmark(active_bookmarks, &e) {
                             push_unique(&mut bookmarks, name);
@@ -4225,6 +4230,7 @@ fn read_toc_paragraph(
                     }
                     b"tab" | b"br" | b"cr" => text.push(' '),
                     b"noBreakHyphen" => text.push('-'),
+                    b"softHyphen" => text.push('\u{00ad}'),
                     b"bookmarkStart" => {
                         if let Some(name) = push_active_bookmark(active_bookmarks, &e) {
                             push_unique(&mut bookmarks, name);
@@ -4575,6 +4581,7 @@ fn inline_marker_text(e: &BytesStart<'_>) -> Option<&'static str> {
         }
         b"cr" => Some("\n"),
         b"noBreakHyphen" => Some("-"),
+        b"softHyphen" => Some("\u{00ad}"),
         _ => None,
     }
 }

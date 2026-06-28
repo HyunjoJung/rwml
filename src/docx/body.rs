@@ -713,6 +713,7 @@ fn append_note_anchor_empty_marker(out: &mut String, name: &[u8]) {
         b"tab" => out.push('\t'),
         b"br" | b"cr" => out.push('\n'),
         b"noBreakHyphen" => out.push('-'),
+        b"softHyphen" => out.push('\u{00ad}'),
         _ => {}
     }
 }
@@ -1616,6 +1617,7 @@ fn read_run(
                 }
                 b"cr" => text.push('\n'),
                 b"noBreakHyphen" => text.push('-'),
+                b"softHyphen" => text.push('\u{00ad}'),
                 _ => {}
             },
             Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,

@@ -374,8 +374,8 @@ Implementation:
 
 - parse comments into `AnnotationStore.comments`;
 - attach anchors by comment id and range start/end;
-- treat `w:tab`, `w:br`, and `w:cr` as visible tab/newline text in comment bodies
-  and anchor ranges;
+- treat `w:tab`, `w:br`, `w:cr`, `w:noBreakHyphen`, and `w:softHyphen` as
+  visible inline text markers in comment bodies and anchor ranges;
 - keep comment bodies and anchor text on the accepted/current view: direct,
   inserted, and moved-to text is visible, while deleted and moved-from old-only
   text is omitted;
@@ -435,7 +435,7 @@ Implementation:
   counts from field-marked model runs, coalescing adjacent formatted result runs
   that belong to the same normalized instruction;
 - keep cached result text in visible runs and in `Field::result`, preserving
-  simple inline tabs, line breaks, and no-break hyphens for simple and common
+  simple inline tabs, line breaks, and no-break/soft hyphens for simple and common
   complex body fields;
 - parse field kind and raw instruction;
 - compute only low-risk fields at first (`PAGE` in renderer context and trusted
@@ -467,7 +467,7 @@ Implementation:
   malformed document-info syntax reports `UnsupportedSwitch`);
 - compute unambiguous `.docx` `REF` bookmark targets, including Word-generated
   hidden bookmark targets, multi-paragraph bookmark ranges, and simple inline
-  tabs, line breaks, no-break hyphens, and deterministic `REF \* Upper`/
+  tabs, line breaks, no-break/soft hyphens, and deterministic `REF \* Upper`/
   `REF \* Lower`/`REF \* Caps`/`REF \* FirstCap` text format switches plus
   source-order `REF \p` relative-position results, plus direct bookmark-name
   field computation when the bookmark exists with supported text-format switches
@@ -512,7 +512,7 @@ Implementation:
   and standalone `TOC \u` fields over explicit paragraph outline levels, plus
   `TOC \b` bookmark-scoped variants when the bookmark range is recoverable, as
   `Field::computed_result`, normalizing simple inline heading
-  tabs, line breaks, and no-break hyphens, and use that text in the read/render
+  tabs, line breaks, and no-break/soft hyphens, and use that text in the read/render
   model instead of stale cached text for simple and common complex fields;
 - compute deterministic body paragraph- and character-style `.docx`
   `STYLEREF` fields by matching style id or style name, searching backward from
@@ -683,7 +683,7 @@ Implementation:
   layout-dependent `PAGEREF`,
   missing `TOC \b` scopes, existing `TOC \b` scopes with no matching entries,
   and broader TOC field cases while
-  preserving cached field-result inline tabs, line breaks, and no-break hyphens;
+  preserving cached field-result inline tabs, line breaks, and no-break/soft hyphens;
 - populate `FeatureInventory::unsupported_field_reasons` and diagnostics JSON
   with compact counts for `UnknownField`, `UnresolvedBookmark`,
   `UnsupportedSwitch`, and `NoComputedResult` so downstream gates can distinguish
@@ -1096,7 +1096,7 @@ open and edit the chart data.
   content;
 - compute unambiguous `.docx` `REF` bookmark targets, including Word-generated
   hidden bookmark targets, multi-paragraph bookmark ranges, and simple inline
-  tabs, line breaks, no-break hyphens, and deterministic `REF \* Upper`/
+  tabs, line breaks, no-break/soft hyphens, and deterministic `REF \* Upper`/
   `REF \* Lower`/`REF \* Caps`/`REF \* FirstCap` text format switches,
   source-order `REF \p` relative-position results, explicit numbered-paragraph
   `REF \n` labels from single-branch source paragraphs including `\n \p`,
@@ -1143,8 +1143,8 @@ open and edit the chart data.
   starts and single-section final `body/sectPr` page-number defaults, and trusted leading-structural or
   source-marker `\p` relative-position results when target and field page/order are known,
   while normalizing simple inline heading tabs, line breaks, and
-  no-break hyphens, keep cached field-result inline tabs, line breaks, and
-  no-break hyphens when computation is unsupported, and surface unresolved
+  no-break/soft hyphens, keep cached field-result inline tabs, line breaks, and
+  no-break/soft hyphens when computation is unsupported, and surface unresolved
   bookmark scope, unsupported remaining value-changing REF cases such as
   comment/annotation insertion and broader REF semantics, unresolved or
   unsupported NOTEREF switches, remaining layout-dependent `PAGEREF`, or

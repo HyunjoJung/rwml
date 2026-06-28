@@ -243,6 +243,7 @@ fn inline_marker_text(e: &BytesStart<'_>) -> Option<&'static str> {
         b"tab" => Some("\t"),
         b"br" | b"cr" => Some("\n"),
         b"noBreakHyphen" => Some("-"),
+        b"softHyphen" => Some("\u{00ad}"),
         _ => None,
     }
 }

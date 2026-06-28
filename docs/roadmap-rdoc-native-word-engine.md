@@ -127,8 +127,8 @@ Initial status:
   with id, optional reply parent id, author, initials, date, visible text, and
   body/note/header/footer anchor text when a
   `commentRangeStart`/`commentRangeEnd` pair is present, including visible
-  `w:tab`, `w:br`, `w:cr`, and `w:noBreakHyphen` markers in comment bodies
-  and anchors. Comment bodies and anchor text follow the accepted/current
+  `w:tab`, `w:br`, `w:cr`, `w:noBreakHyphen`, and `w:softHyphen` markers in
+  comment bodies and anchors. Comment bodies and anchor text follow the accepted/current
   revision policy, including direct, inserted, and moved-to text while leaving
   deleted and moved-from old-only text out of the visible view.
 - `Document::fields()` extracts simple and common complex `.docx` body, note,
@@ -144,10 +144,12 @@ Initial status:
   numbering/list fields, document-structure fields, display/layout fields,
   action/automation fields, compatibility/private
   fields, barcode fields, legacy form fields, or `Unknown`), normalized instruction, cached visible result text preserving
-  inline tabs, line breaks, and no-break hyphens for simple and common complex body fields, and
+  inline tabs, line breaks, and no-break/soft hyphens for simple and common
+  complex body fields, and
   `computed_result` for unambiguous `.docx` `REF` bookmark targets, including
   Word-generated hidden bookmark targets, multi-paragraph bookmark ranges, and
-  inline tabs, line breaks, no-break hyphens for simple and common complex body fields, and deterministic
+  inline tabs, line breaks, no-break/soft hyphens for simple and common complex
+  body fields, and deterministic
   `REF \* Upper`/`REF \* Lower`/`REF \* Caps`/`REF \* FirstCap` text format switches,
   source-order `REF \p` relative-position results, direct bookmark-name field
   computation when the bookmark exists with supported text-format switches and
@@ -183,7 +185,7 @@ Initial status:
   containing matching cached `SEQ Identifier` fields, and standalone
   `TOC \u` fields over explicit paragraph
   outline levels with normalized simple inline heading tabs, line
-  breaks, and no-break hyphens, including common complex begin/separate/end
+  breaks, and no-break/soft hyphens, including common complex begin/separate/end
   fields, deterministic literal arithmetic formula fields with finite
   decimal/scientific numeric constants, literal scalar numeric/logical functions (`ABS`, `AND`, `AVERAGE`,
   `COUNT`, `DEFINED`, `FALSE`, `IF`, `INT`, `MAX`, `MIN`, `MOD`, `NOT`, `OR`, `PRODUCT`,
@@ -898,7 +900,8 @@ Initial status:
   `NoComputedResult` diagnostics.
   Unambiguous
   `.docx` `REF` bookmark fields, including multi-paragraph bookmark ranges and
-  inline tabs, line breaks, no-break hyphens for simple and common complex body fields, and deterministic
+  inline tabs, line breaks, no-break/soft hyphens for simple and common complex
+  body fields, and deterministic
   `REF \* Upper`/`REF \* Lower`/`REF \* Caps`/`REF \* FirstCap` text format switches,
   source-order `REF \p` relative-position results, explicit numbered-paragraph
   `REF \n` labels from single-branch source paragraphs including `\n \p`,
@@ -932,7 +935,7 @@ Initial status:
   `TOC \u` fields over explicit paragraph
   outline levels plus `TOC \b` bookmark-scoped variants when the bookmark range
   is recoverable normalize simple inline heading tabs, line breaks,
-  and no-break hyphens, expose computed results, and display the computed text
+  and no-break/soft hyphens, expose computed results, and display the computed text
   for simple and common complex fields. `PAGE` computes current page numbers
   from trusted leading structural and source-rendered current-page contexts,
   including accepted/current wrappers, single-branch `mc:AlternateContent`
@@ -966,7 +969,7 @@ Initial status:
   missing `TOC \b` scopes, existing `TOC \b` scopes with no matching entries,
   and broader TOC body fields as unsupported
   evaluation while preserving cached field-result inline tabs, line breaks, and
-  no-break hyphens, and they expose reason counts alongside unsupported field
+  no-break/soft hyphens, and they expose reason counts alongside unsupported field
   kind counts, distinguishing missing `PAGEREF` targets,
   explicit and direct bookmark-name `REF \d` supported syntax with no computed
   result, missing explicit or direct `REF \f` targets, and existing explicit or

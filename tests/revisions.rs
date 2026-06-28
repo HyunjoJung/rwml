@@ -111,7 +111,7 @@ fn inline_marker_revised_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:ins w:id="5"><w:r><w:t>Col1</w:t><w:tab/><w:t>Col2</w:t><w:br/><w:t>No</w:t><w:noBreakHyphen/><w:t>Break</w:t></w:r></w:ins><w:del w:id="6"><w:r><w:delText>Old</w:delText><w:tab/><w:delText>Text</w:delText><w:cr/><w:delText>End</w:delText></w:r></w:del></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:ins w:id="5"><w:r><w:t>Col1</w:t><w:tab/><w:t>Col2</w:t><w:br/><w:t>No</w:t><w:noBreakHyphen/><w:t>Break</w:t><w:softHyphen/><w:t>Soft</w:t></w:r></w:ins><w:del w:id="6"><w:r><w:delText>Old</w:delText><w:tab/><w:delText>Text</w:delText><w:cr/><w:delText>End</w:delText><w:softHyphen/><w:delText>Soft</w:delText></w:r></w:del></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -241,15 +241,15 @@ fn docx_revision_text_preserves_inline_markers() {
 
     assert_eq!(revisions.len(), 2);
     assert_eq!(revisions[0].kind, RevisionKind::Insertion);
-    assert_eq!(revisions[0].text, "Col1\tCol2\nNo-Break");
+    assert_eq!(revisions[0].text, "Col1\tCol2\nNo-Break\u{00ad}Soft");
     assert_eq!(revisions[1].kind, RevisionKind::Deletion);
-    assert_eq!(revisions[1].text, "Old\tText\nEnd");
+    assert_eq!(revisions[1].text, "Old\tText\nEnd\u{00ad}Soft");
     assert_eq!(
         doc.main_text_with_revision_view(RevisionView::Accepted),
-        "Col1\tCol2\nNo-Break"
+        "Col1\tCol2\nNo-Break\u{00ad}Soft"
     );
     assert_eq!(
         doc.main_text_with_revision_view(RevisionView::Original),
-        "Old\tText\nEnd"
+        "Old\tText\nEnd\u{00ad}Soft"
     );
 }
