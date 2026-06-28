@@ -6812,21 +6812,25 @@ fn docx_symbol_field_diagnostics_split_mapped_wingdings_from_malformed_symbol() 
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SYMBOL 65 \f Wingdings "><w:r><w:t>cached unmapped wingdings</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SYMBOL 65 \f &quot;Wingdings "><w:r><w:t>cached malformed symbol</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SYMBOL 65 \f Wingdings "><w:r><w:t>cached unmapped wingdings</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SYMBOL 74 \f Wingdings "><w:r><w:t>cached smile wingdings</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SYMBOL 65 \f &quot;Wingdings "><w:r><w:t>cached malformed symbol</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ]))
     .expect("fixture opens");
 
     let fields = doc.fields();
-    assert_eq!(fields.len(), 2);
+    assert_eq!(fields.len(), 3);
     assert_eq!(fields[0].kind, FieldKind::Display("SYMBOL".to_string()));
     assert_eq!(fields[0].instruction, r#"SYMBOL 65 \f Wingdings"#);
     assert_eq!(fields[0].result, "cached unmapped wingdings");
     assert_eq!(fields[0].computed_result.as_deref(), Some("\u{270C}"));
     assert_eq!(fields[1].kind, FieldKind::Display("SYMBOL".to_string()));
-    assert_eq!(fields[1].instruction, r#"SYMBOL 65 \f "Wingdings "#);
-    assert_eq!(fields[1].result, "cached malformed symbol");
-    assert_eq!(fields[1].computed_result, None);
+    assert_eq!(fields[1].instruction, r#"SYMBOL 74 \f Wingdings"#);
+    assert_eq!(fields[1].result, "cached smile wingdings");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("\u{263A}"));
+    assert_eq!(fields[2].kind, FieldKind::Display("SYMBOL".to_string()));
+    assert_eq!(fields[2].instruction, r#"SYMBOL 65 \f "Wingdings "#);
+    assert_eq!(fields[2].result, "cached malformed symbol");
+    assert_eq!(fields[2].computed_result, None);
 
     let report = doc.report();
     assert_eq!(
@@ -6846,6 +6850,7 @@ fn docx_symbol_field_diagnostics_split_mapped_wingdings_from_malformed_symbol() 
 
     let main_text = doc.main_text();
     assert!(main_text.contains("\u{270C}"));
+    assert!(main_text.contains("\u{263A}"));
     assert!(main_text.contains("cached malformed symbol"));
 }
 

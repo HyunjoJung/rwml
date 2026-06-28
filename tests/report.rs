@@ -443,7 +443,7 @@ fn display_layout_diagnostics_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" ADVANCE \r 2 "><w:r><w:t>offset</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" EQ \s\up8(A)\ai4(B) "><w:r><w:t>cached broader script</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" EQ \s\up8(A "><w:r><w:t>cached malformed script</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" EQ \d \fo10(A) "><w:r><w:t>cached broader displace</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" EQ \d \fo10(A "><w:r><w:t>cached malformed displace</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SYMBOL 65 \f Wingdings "><w:r><w:t>cached unmapped wingdings</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SYMBOL 65 \f &quot;Wingdings "><w:r><w:t>cached malformed symbol</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" ADVANCE \r 2 "><w:r><w:t>offset</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" EQ \s\up8(A)\ai4(B) "><w:r><w:t>cached broader script</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" EQ \s\up8(A "><w:r><w:t>cached malformed script</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" EQ \d \fo10(A) "><w:r><w:t>cached broader displace</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" EQ \d \fo10(A "><w:r><w:t>cached malformed displace</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SYMBOL 65 \f Wingdings "><w:r><w:t>cached unmapped wingdings</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SYMBOL 74 \f Wingdings "><w:r><w:t>cached smile wingdings</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SYMBOL 65 \f &quot;Wingdings "><w:r><w:t>cached malformed symbol</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -2244,7 +2244,7 @@ fn report_display_layout_fields_split_cached_and_malformed_diagnostics() {
     let doc = Document::open(&display_layout_diagnostics_docx()).expect("fixture opens");
     let report = doc.report();
 
-    assert_eq!(report.features.fields, 7);
+    assert_eq!(report.features.fields, 8);
     assert_eq!(
         report.features.field_kinds,
         vec![
@@ -2258,7 +2258,7 @@ fn report_display_layout_fields_split_cached_and_malformed_diagnostics() {
             },
             FieldKindCount {
                 kind: FieldKind::Display("SYMBOL".to_string()),
-                count: 2,
+                count: 3,
             },
         ]
     );
