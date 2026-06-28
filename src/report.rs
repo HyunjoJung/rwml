@@ -2018,20 +2018,7 @@ fn supported_page_syntax(instruction: &str) -> bool {
     if !kind.eq_ignore_ascii_case("PAGE") {
         return false;
     }
-    let mut number_format = false;
-    let mut text_format = false;
-    while let Some(part) = parts.next() {
-        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
-            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
-        }) else {
-            return false;
-        };
-        if accepted {
-            continue;
-        }
-        return false;
-    }
-    true
+    supported_page_field_format_tail_for_report(&mut parts)
 }
 
 fn is_section_document_structure_kind(kind: &str) -> bool {
@@ -2061,20 +2048,7 @@ fn supported_section_document_structure_syntax(instruction: &str) -> bool {
     if !is_section_document_structure_kind(kind) {
         return false;
     }
-    let mut number_format = false;
-    let mut text_format = false;
-    while let Some(part) = parts.next() {
-        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
-            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
-        }) else {
-            return false;
-        };
-        if accepted {
-            continue;
-        }
-        return false;
-    }
-    true
+    supported_page_field_format_tail_for_report(&mut parts)
 }
 
 fn revision_number_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -4483,6 +4457,25 @@ fn accept_page_field_format_switch(
 ) -> bool {
     accept_page_number_format_switch(part, number_format)
         || accept_field_format_switch(part, text_format)
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_page_field_format_tail_for_report<'a>(
+    parts: &mut impl Iterator<Item = &'a str>,
+) -> bool {
+    let mut number_format = false;
+    let mut text_format = false;
+    while let Some(part) = parts.next() {
+        let Some(accepted) = accept_general_format_switch(part, parts, |format| {
+            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
+        }) else {
+            return false;
+        };
+        if !accepted {
+            return false;
+        }
+    }
+    true
 }
 
 fn page_ref_uncomputed_reason(
