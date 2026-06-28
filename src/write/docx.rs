@@ -130,32 +130,41 @@ const WEB_EXTENSION_NS: &str =
 const WEB_EXTENSION_TASKPANES_NS: &str =
     "http://schemas.microsoft.com/office/webextensions/taskpanes/2010/11";
 
-/// Build a `word/header1.xml` / `footer1.xml` part body from running paragraphs
-/// (text + run formatting + alignment; images/links/tables inside a header are
-/// out of scope — rendered as their text). Appends a centered `PAGE` field when
-/// `page_numbers`. A header/footer must contain at least one paragraph.
+/// Build a `word/header1.xml` / `footer1.xml` part body from running blocks.
+/// Text paragraphs keep run formatting/alignment; image blocks become visible
+/// placeholders because header/footer media relationships are not modeled here.
+/// Appends a centered `PAGE` field when `page_numbers`. A header/footer must
+/// contain at least one paragraph.
 fn render_hf_body(blocks: &[crate::model::Block], page_numbers: bool) -> String {
     use crate::model::Block;
     let mut out = String::new();
     for b in blocks {
-        if let Block::Paragraph(p) = b {
-            out.push_str("<w:p>");
-            let jc = match p.props.align {
-                Align::Center => Some("center"),
-                Align::Right => Some("right"),
-                Align::Justify => Some("both"),
-                Align::Left => None,
-            };
-            if let Some(j) = jc {
-                out.push_str(&format!(r#"<w:pPr><w:jc w:val="{j}"/></w:pPr>"#));
+        match b {
+            Block::Paragraph(p) => {
+                out.push_str("<w:p>");
+                let jc = match p.props.align {
+                    Align::Center => Some("center"),
+                    Align::Right => Some("right"),
+                    Align::Justify => Some("both"),
+                    Align::Left => None,
+                };
+                if let Some(j) = jc {
+                    out.push_str(&format!(r#"<w:pPr><w:jc w:val="{j}"/></w:pPr>"#));
+                }
+                for r in &p.runs {
+                    out.push_str("<w:r>");
+                    write_rpr(&mut out, &r.props);
+                    write_run_text(&mut out, &r.text);
+                    out.push_str("</w:r>");
+                }
+                out.push_str("</w:p>");
             }
-            for r in &p.runs {
-                out.push_str("<w:r>");
-                write_rpr(&mut out, &r.props);
-                write_run_text(&mut out, &r.text);
-                out.push_str("</w:r>");
+            Block::Image(img) => {
+                out.push_str("<w:p>");
+                write_image_placeholder(&mut out, img, "image unavailable");
+                out.push_str("</w:p>");
             }
-            out.push_str("</w:p>");
+            _ => {}
         }
     }
     if page_numbers {
@@ -1357,7 +1366,11 @@ fn write_run_text_element(out: &mut String, text: &str, tag: &str) {
 }
 
 fn write_missing_image_placeholder(out: &mut String, img: &Image) {
-    let label = non_empty_trimmed(img.alt.as_deref()).unwrap_or("bytes unavailable");
+    write_image_placeholder(out, img, "bytes unavailable");
+}
+
+fn write_image_placeholder(out: &mut String, img: &Image, fallback: &str) {
+    let label = non_empty_trimmed(img.alt.as_deref()).unwrap_or(fallback);
     out.push_str("<w:r>");
     write_run_text(out, &format!("[rdoc image placeholder: {label}]"));
     out.push_str("</w:r>");

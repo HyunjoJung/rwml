@@ -2703,6 +2703,54 @@ fn doc_builder_adds_styled_header_and_footer_blocks() {
 }
 
 #[test]
+fn write_docx_emits_visible_placeholders_for_header_footer_image_blocks() {
+    let model = DocModel {
+        blocks: vec![Block::Paragraph(plain_paragraph("Body"))],
+        setup: DocSetup {
+            header: vec![Block::Image(
+                ImageBuilder::new(tiny_png(), "image/png")
+                    .alt("Header <logo>")
+                    .into(),
+            )],
+            footer: vec![Block::Image(
+                ImageBuilder::new(tiny_png(), "image/png")
+                    .alt("Footer <mark>")
+                    .into(),
+            )],
+            ..DocSetup::default()
+        },
+        ..DocModel::default()
+    };
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let header_xml = String::from_utf8(parts["word/header1.xml"].clone()).unwrap();
+    let footer_xml = String::from_utf8(parts["word/footer1.xml"].clone()).unwrap();
+
+    assert!(
+        header_xml.contains("[rdoc image placeholder: Header &lt;logo&gt;]"),
+        "header image placeholder missing: {header_xml}"
+    );
+    assert!(
+        footer_xml.contains("[rdoc image placeholder: Footer &lt;mark&gt;]"),
+        "footer image placeholder missing: {footer_xml}"
+    );
+    assert!(
+        !parts.keys().any(|part| part.starts_with("word/media/")),
+        "header/footer image placeholders should not emit media parts: {:?}",
+        parts.keys().collect::<Vec<_>>()
+    );
+
+    let reopened = Document::open(&bytes).expect("header/footer image placeholder .docx reopens");
+    let text = reopened.text();
+    assert!(
+        text.contains("[rdoc image placeholder: Header <logo>]")
+            && text.contains("[rdoc image placeholder: Footer <mark>]"),
+        "header/footer image placeholders not readable after reopen: {text:?}"
+    );
+}
+
+#[test]
 fn table_builder_adds_rich_table_cells() {
     let navy = Color::rgb(0x1F, 0x38, 0x64);
     let model = DocBuilder::new()
