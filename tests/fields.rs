@@ -5879,6 +5879,64 @@ fn docx_numbering_fields_compute_formatted_autonum_subset() {
 }
 
 #[test]
+fn docx_bidioutline_accepts_format_tail_as_known_noncomputed_syntax() {
+    let doc = Document::open(&docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" BIDIOUTLINE \* MERGEFORMAT "><w:r><w:t>cached bidi mergeformat</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" BIDIOUTLINE \* roman \* Upper "><w:r><w:t>cached bidi formatted</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" BIDIOUTLINE \* BadFormat "><w:r><w:t>cached bad bidi format</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ]))
+    .expect("fixture opens");
+
+    let fields = doc.fields();
+    assert_eq!(fields.len(), 3);
+    assert!(fields
+        .iter()
+        .all(|field| field.kind == FieldKind::Numbering("BIDIOUTLINE".to_string())));
+    assert_eq!(fields[0].instruction, "BIDIOUTLINE \\* MERGEFORMAT");
+    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(fields[1].instruction, "BIDIOUTLINE \\* roman \\* Upper");
+    assert_eq!(fields[1].computed_result, None);
+    assert_eq!(fields[2].instruction, "BIDIOUTLINE \\* BadFormat");
+    assert_eq!(fields[2].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Numbering("BIDIOUTLINE".to_string()),
+            count: 3,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::NoComputedResult,
+                count: 2,
+            },
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::UnsupportedSwitch,
+                count: 1,
+            },
+        ]
+    );
+
+    let main_text = doc.main_text();
+    assert!(main_text.contains("cached bidi mergeformat"));
+    assert!(main_text.contains("cached bidi formatted"));
+    assert!(main_text.contains("cached bad bidi format"));
+}
+
+#[test]
 fn docx_listnum_number_default_computes_level_one_subset() {
     let doc = Document::open(&listnum_number_default_docx()).expect("fixture opens");
     let fields = doc.fields();

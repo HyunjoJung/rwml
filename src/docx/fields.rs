@@ -9050,7 +9050,22 @@ pub(crate) fn supports_numbering_field_syntax(instruction: &str) -> bool {
         }
         return supports_listnum_field_syntax(parts);
     }
-    kind.eq_ignore_ascii_case("BIDIOUTLINE") && parts.next().is_none()
+    if kind.eq_ignore_ascii_case("BIDIOUTLINE") {
+        let mut number_format = None;
+        let mut text_format = None;
+        while let Some(part) = parts.next() {
+            let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
+                accept_page_field_format_switch(format, &mut number_format, &mut text_format)
+            }) else {
+                return false;
+            };
+            if !accepted {
+                return false;
+            }
+        }
+        return true;
+    }
+    false
 }
 
 pub(crate) fn computed_listnum_result(

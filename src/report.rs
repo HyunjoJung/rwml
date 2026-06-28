@@ -3578,7 +3578,23 @@ fn supported_numbering_syntax(instruction: &str) -> bool {
     if kind.eq_ignore_ascii_case("LISTNUM") {
         return supported_listnum_syntax(parts);
     }
-    kind.eq_ignore_ascii_case("BIDIOUTLINE") && parts.next().is_none()
+    if kind.eq_ignore_ascii_case("BIDIOUTLINE") {
+        let mut number_format = false;
+        let mut text_format = false;
+        while let Some(part) = parts.next() {
+            let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
+                accept_page_number_format_switch(format, &mut number_format)
+                    || accept_field_format_switch(format, &mut text_format)
+            }) else {
+                return false;
+            };
+            if !accepted {
+                return false;
+            }
+        }
+        return true;
+    }
+    false
 }
 
 #[cfg(not(feature = "docx"))]
@@ -5801,6 +5817,14 @@ mod tests {
     fn no_default_numbering_diagnostics_reject_malformed_bidi_outline() {
         assert_eq!(
             super::numbering_uncomputed_reason("BIDIOUTLINE"),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::numbering_uncomputed_reason(r"BIDIOUTLINE \* MERGEFORMAT"),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::numbering_uncomputed_reason(r"BIDIOUTLINE \* roman \* Upper"),
             super::FieldEvaluationReason::NoComputedResult
         );
         assert_eq!(
