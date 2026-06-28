@@ -1700,7 +1700,7 @@ fn settings_preserves_legacy_form_cache(xml: &str) -> bool {
             {
                 let edit_forms = attr_local(&e, b"edit")
                     .as_deref()
-                    .is_some_and(|edit| edit.eq_ignore_ascii_case("forms"));
+                    .is_some_and(|edit| edit.trim().eq_ignore_ascii_case("forms"));
                 if edit_forms
                     && attr_local(&e, b"enforcement").is_some_and(|value| toggle_on(Some(value)))
                 {

@@ -7172,7 +7172,7 @@ fn docx_protected_legacy_form_fields_preserve_cached_text() {
         ),
         (
             "word/settings.xml",
-            r#"<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:documentProtection w:edit="forms" w:enforcement="1"/></w:settings>"#,
+            r#"<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:documentProtection w:edit=" forms " w:enforcement="1"/></w:settings>"#,
         ),
         (
             "word/document.xml",
