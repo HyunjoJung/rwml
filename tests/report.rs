@@ -305,7 +305,7 @@ fn field_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
-fn malformed_hyperlink_diagnostics_docx() -> Vec<u8> {
+fn hyperlink_field_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
             "[Content_Types].xml",
@@ -317,7 +317,7 @@ fn malformed_hyperlink_diagnostics_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" HYPERLINK &quot;https://example.com "><w:r><w:t>Cached link</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" HYPERLINK \o &quot;tip&quot; "><w:r><w:t>Cached tooltip-only link</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" HYPERLINK &quot;https://example.com&quot; extra "><w:r><w:t>Cached trailing link</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" HYPERLINK &quot;https://example.com&quot; \o &quot;tip&quot; "><w:r><w:t>Example</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" HYPERLINK &quot;https://example.com "><w:r><w:t>Cached link</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" HYPERLINK \o &quot;tip&quot; "><w:r><w:t>Cached tooltip-only link</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" HYPERLINK &quot;https://example.com&quot; extra "><w:r><w:t>Cached trailing link</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -577,30 +577,11 @@ fn merge_field_diagnostics_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" MERGEFIELD client-name \* MERGEFORMAT "><w:r><w:t>Acme</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> MERGEFIELD &quot;project-name&quot; \* MERGEFORMAT </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Roadmap</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" MERGEFIELD client-name \* MERGEFORMAT "><w:r><w:t>Acme</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> MERGEFIELD &quot;project-name&quot; \* MERGEFORMAT </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Roadmap</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:p><w:fldSimple w:instr=" MERGEFIELD &quot;client-name "><w:r><w:t>Cached client</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" MERGEFIELD \* MERGEFORMAT ClientName "><w:r><w:t>Cached missing name before format</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
 
-#[cfg(feature = "docx")]
-fn malformed_merge_field_diagnostics_docx() -> Vec<u8> {
-    docx_fixture(&[
-        (
-            "[Content_Types].xml",
-            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
-        ),
-        (
-            "_rels/.rels",
-            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
-        ),
-        (
-            "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" MERGEFIELD &quot;client-name "><w:r><w:t>Cached client</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" MERGEFIELD \* MERGEFORMAT ClientName "><w:r><w:t>Cached missing name before format</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
-        ),
-    ])
-}
-
-#[cfg(feature = "docx")]
 fn split_complex_field_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -2040,10 +2021,25 @@ fn report_field_evaluation_warning_only_lists_unsupported_kinds() {
 
 #[cfg(feature = "docx")]
 #[test]
-fn report_malformed_hyperlink_reports_unsupported_switch() {
-    let doc = Document::open(&malformed_hyperlink_diagnostics_docx()).expect("fixture opens");
+fn report_hyperlink_fields_split_supported_and_malformed_diagnostics() {
+    let doc = Document::open(&hyperlink_field_diagnostics_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 4);
+    assert!(fields
+        .iter()
+        .all(|field| field.kind == FieldKind::Hyperlink));
+
     let report = doc.report();
 
+    assert_eq!(report.features.fields, 4);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Hyperlink,
+            count: 4,
+        }]
+    );
     assert_eq!(
         report.features.unsupported_field_kinds,
         vec![FieldKindCount {
@@ -2643,57 +2639,16 @@ fn report_document_structure_fields_split_computed_cached_and_malformed_diagnost
 
 #[cfg(feature = "docx")]
 #[test]
-fn report_treats_merge_fields_as_supported_cached_display_fields() {
-    let doc = Document::open(&merge_field_diagnostics_docx()).expect("fixture opens");
-    let report = doc.report();
-
-    assert_eq!(report.features.fields, 2);
-    assert_eq!(
-        report.features.field_kinds,
-        vec![FieldKindCount {
-            kind: FieldKind::MergeField,
-            count: 2,
-        }]
-    );
-    assert!(report.features.unsupported_field_kinds.is_empty());
-    assert!(report.features.unsupported_field_reasons.is_empty());
-    assert!(
-        !report
-            .warnings
-            .iter()
-            .any(|warning| matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })),
-        "cached MERGEFIELD results should not produce unsupported evaluation warnings: {:?}",
-        report.warnings
-    );
-
-    let json = report.to_json();
-    assert!(
-        json.contains(r#""field_kinds":[{"kind":"MERGEFIELD","count":2}]"#),
-        "{json}"
-    );
-    assert!(json.contains(r#""unsupported_field_kinds":[]"#), "{json}");
-    assert!(json.contains(r#""unsupported_field_reasons":[]"#), "{json}");
-}
-
-#[cfg(feature = "docx")]
-#[test]
-fn report_malformed_merge_field_reports_unsupported_switch() {
-    let doc = Document::open(&malformed_merge_field_diagnostics_docx()).expect("fixture opens");
-    let report = doc.report();
-
-    assert_eq!(
-        report.features.unsupported_field_kinds,
-        vec![FieldKindCount {
-            kind: FieldKind::MergeField,
-            count: 2,
-        }]
-    );
-    assert_eq!(
-        report.features.unsupported_field_reasons,
-        vec![FieldEvaluationReasonCount {
-            reason: FieldEvaluationReason::UnsupportedSwitch,
-            count: 2,
-        }]
+fn report_merge_fields_split_supported_and_malformed_diagnostics() {
+    assert_report_field_diagnostics(
+        merge_field_diagnostics_docx(),
+        4,
+        vec![field_kind_count(FieldKind::MergeField, 4)],
+        vec![field_kind_count(FieldKind::MergeField, 2)],
+        vec![field_reason_count(
+            FieldEvaluationReason::UnsupportedSwitch,
+            2,
+        )],
     );
 }
 
