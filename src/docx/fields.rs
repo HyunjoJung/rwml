@@ -831,14 +831,12 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
                     }
                     b"p" => append_ref_paragraph_breaks(&active, &mut out),
                     b"bookmarkStart" => {
-                        if let (Some(id), Some(name)) =
-                            (attr_local(&e, b"id"), attr_local(&e, b"name"))
-                        {
+                        if let Some((id, name)) = bookmark_start(&e) {
                             active.push((id, name));
                         }
                     }
                     b"bookmarkEnd" => {
-                        if let Some(id) = attr_local(&e, b"id") {
+                        if let Some(id) = bookmark_end_id(&e) {
                             active.retain(|(active_id, _)| active_id != &id);
                         }
                     }
@@ -871,14 +869,12 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
                 }
                 match name {
                     b"bookmarkStart" => {
-                        if let (Some(id), Some(name)) =
-                            (attr_local(&e, b"id"), attr_local(&e, b"name"))
-                        {
+                        if let Some((id, name)) = bookmark_start(&e) {
                             active.push((id, name));
                         }
                     }
                     b"bookmarkEnd" => {
-                        if let Some(id) = attr_local(&e, b"id") {
+                        if let Some(id) = bookmark_end_id(&e) {
                             active.retain(|(active_id, _)| active_id != &id);
                         }
                     }
@@ -1035,16 +1031,14 @@ pub(crate) fn ref_position_context(xml: &str, numbering: &Numbering) -> RefPosit
                         }
                     }
                     b"bookmarkStart" => {
-                        if let (Some(id), Some(name)) =
-                            (attr_local(&e, b"id"), attr_local(&e, b"name"))
-                        {
+                        if let Some((id, name)) = bookmark_start(&e) {
                             active_bookmarks.push((id, name, source_order));
                             source_order += 1;
                         }
                     }
                     b"bookmarkEnd" => {
                         close_ref_position_bookmark(
-                            attr_local(&e, b"id").as_deref(),
+                            bookmark_end_id(&e).as_deref(),
                             source_order,
                             &mut active_bookmarks,
                             &mut target_positions,
@@ -1106,16 +1100,14 @@ pub(crate) fn ref_position_context(xml: &str, numbering: &Numbering) -> RefPosit
                         &mut paragraph,
                     ),
                     b"bookmarkStart" => {
-                        if let (Some(id), Some(name)) =
-                            (attr_local(&e, b"id"), attr_local(&e, b"name"))
-                        {
+                        if let Some((id, name)) = bookmark_start(&e) {
                             active_bookmarks.push((id, name, source_order));
                             source_order += 1;
                         }
                     }
                     b"bookmarkEnd" => {
                         close_ref_position_bookmark(
-                            attr_local(&e, b"id").as_deref(),
+                            bookmark_end_id(&e).as_deref(),
                             source_order,
                             &mut active_bookmarks,
                             &mut target_positions,
@@ -1362,7 +1354,7 @@ pub(crate) fn ref_number_context(xml: &str, numbering: &Numbering) -> RefNumberC
                         paragraph.num_id = attr_local(&e, b"val");
                     }
                     b"bookmarkStart" if paragraph.active() => {
-                        if let Some(name) = attr_local(&e, b"name") {
+                        if let Some(name) = bookmark_name(&e) {
                             push_unique(&mut paragraph.bookmarks, name);
                         }
                     }
@@ -1396,7 +1388,7 @@ pub(crate) fn ref_number_context(xml: &str, numbering: &Numbering) -> RefNumberC
                         paragraph.num_id = attr_local(&e, b"val");
                     }
                     b"bookmarkStart" if paragraph.active() => {
-                        if let Some(name) = attr_local(&e, b"name") {
+                        if let Some(name) = bookmark_name(&e) {
                             push_unique(&mut paragraph.bookmarks, name);
                         }
                     }
@@ -1631,9 +1623,7 @@ pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
                         continue;
                     }
                     b"bookmarkStart" => {
-                        if let (Some(id), Some(name)) =
-                            (attr_local(&e, b"id"), attr_local(&e, b"name"))
-                        {
+                        if let Some((id, name)) = bookmark_start(&e) {
                             active_bookmarks.push(NoteRefActiveBookmark {
                                 id,
                                 name,
@@ -1644,7 +1634,7 @@ pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
                     }
                     b"bookmarkEnd" => {
                         close_note_ref_bookmark(
-                            attr_local(&e, b"id").as_deref(),
+                            bookmark_end_id(&e).as_deref(),
                             source_order,
                             &mut active_bookmarks,
                             &mut targets,
@@ -1722,9 +1712,7 @@ pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
                         &mut generated_ref_note_fields,
                     ),
                     b"bookmarkStart" => {
-                        if let (Some(id), Some(name)) =
-                            (attr_local(&e, b"id"), attr_local(&e, b"name"))
-                        {
+                        if let Some((id, name)) = bookmark_start(&e) {
                             active_bookmarks.push(NoteRefActiveBookmark {
                                 id,
                                 name,
@@ -1735,7 +1723,7 @@ pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
                     }
                     b"bookmarkEnd" => {
                         close_note_ref_bookmark(
-                            attr_local(&e, b"id").as_deref(),
+                            bookmark_end_id(&e).as_deref(),
                             source_order,
                             &mut active_bookmarks,
                             &mut targets,
@@ -3462,7 +3450,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                         }
                     }
                     b"bookmarkStart" => {
-                        if let Some(name) = attr_local(&e, b"name") {
+                        if let Some(name) = bookmark_name(&e) {
                             if pages.leading_page_number > 1 && !saw_visible_content {
                                 targets.entry(name.clone()).or_insert(PageRefTarget {
                                     display_page: pages.leading_display_page_number,
@@ -3580,7 +3568,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                         &mut page_field_positions,
                     ),
                     b"bookmarkStart" => {
-                        if let Some(name) = attr_local(&e, b"name") {
+                        if let Some(name) = bookmark_name(&e) {
                             if pages.leading_page_number > 1 && !saw_visible_content {
                                 targets.entry(name.clone()).or_insert(PageRefTarget {
                                     display_page: pages.leading_display_page_number,
@@ -4018,6 +4006,24 @@ fn append_ref_paragraph_breaks(active: &[(String, String)], out: &mut HashMap<St
             text.push('\n');
         }
     }
+}
+
+fn bookmark_start(e: &BytesStart<'_>) -> Option<(String, String)> {
+    Some((bookmark_attr(e, b"id")?, bookmark_attr(e, b"name")?))
+}
+
+fn bookmark_end_id(e: &BytesStart<'_>) -> Option<String> {
+    bookmark_attr(e, b"id")
+}
+
+fn bookmark_name(e: &BytesStart<'_>) -> Option<String> {
+    bookmark_attr(e, b"name")
+}
+
+fn bookmark_attr(e: &BytesStart<'_>, key: &[u8]) -> Option<String> {
+    attr_local(e, key)
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
 }
 
 pub(crate) fn toc_entries(xml: &str, styles: &Styles) -> Vec<TocEntry> {
@@ -4514,8 +4520,7 @@ fn push_active_bookmark(
     active_bookmarks: &mut Vec<(String, String)>,
     e: &BytesStart<'_>,
 ) -> Option<String> {
-    let id = attr_local(e, b"id")?;
-    let name = attr_local(e, b"name")?;
+    let (id, name) = bookmark_start(e)?;
     if !active_bookmarks
         .iter()
         .any(|(active_id, _)| active_id == &id)
@@ -4526,7 +4531,7 @@ fn push_active_bookmark(
 }
 
 fn remove_active_bookmark(active_bookmarks: &mut Vec<(String, String)>, e: &BytesStart<'_>) {
-    if let Some(id) = attr_local(e, b"id") {
+    if let Some(id) = bookmark_end_id(e) {
         active_bookmarks.retain(|(active_id, _)| active_id != &id);
     }
 }
@@ -10282,14 +10287,15 @@ mod tests {
         computed_display_result, computed_dynamic_result, computed_listnum_result,
         computed_numbering_result, computed_reference_index_result, computed_sequence_result,
         computed_set_result, computed_toc_entry_result, direct_bookmark_ref_instruction,
-        document_info_instruction, format_page_number, note_ref_instruction,
-        ordinal_page_number_text, page_ref_instruction, ref_instruction,
-        seq_identifier_from_instruction, style_ref_instruction, supports_action_field_syntax,
-        supports_compare_field_syntax, supports_if_field_syntax,
+        document_info_instruction, format_page_number, note_ref_context, note_ref_instruction,
+        ordinal_page_number_text, page_ref_context, page_ref_instruction, ref_instruction,
+        ref_position_context, ref_targets, seq_identifier_from_instruction, style_ref_instruction,
+        supports_action_field_syntax, supports_compare_field_syntax, supports_if_field_syntax,
         supports_merge_control_field_syntax, supports_prompt_field_syntax,
         supports_reference_index_marker_syntax, supports_toc_entry_field_syntax,
         table_formula_context, toc_entries, toc_spec, PageNumberFormat, TocEntrySource,
     };
+    use crate::docx::numbering::Numbering;
     use crate::docx::styles::Styles;
     use std::collections::HashMap;
 
@@ -10746,6 +10752,47 @@ mod tests {
         assert_eq!(sequence.sequence_identifier.as_deref(), Some("Figure"));
         assert_eq!(sequence.text, "Figure 1: Nested");
         assert_eq!(sequence.sequence_caption_text.as_deref(), Some("Nested"));
+    }
+
+    #[test]
+    fn bookmark_scanners_trim_ids_and_names() {
+        let xml = r#"<w:document>
+            <w:body>
+                <w:p><w:r><w:br w:type="page"/></w:r></w:p>
+                <w:p>
+                    <w:bookmarkStart w:id=" 7 " w:name=" Figure1 "/>
+                    <w:r><w:t>Figure 1</w:t></w:r>
+                    <w:bookmarkEnd w:id="7"/>
+                </w:p>
+                <w:p><w:r><w:t>Outside</w:t></w:r></w:p>
+                <w:p>
+                    <w:bookmarkStart w:id=" 8 " w:name=" ScopedToc "/>
+                    <w:pPr><w:pStyle w:val="Heading1"/></w:pPr>
+                    <w:r><w:t>Scoped Heading</w:t></w:r>
+                    <w:bookmarkEnd w:id="8"/>
+                </w:p>
+                <w:p>
+                    <w:bookmarkStart w:id=" 9 " w:name=" FootOne "/>
+                    <w:r><w:footnoteReference w:id="1"/></w:r>
+                    <w:bookmarkEnd w:id="9"/>
+                </w:p>
+            </w:body>
+        </w:document>"#;
+
+        assert_eq!(
+            ref_targets(xml).get("Figure1").map(String::as_str),
+            Some("Figure 1")
+        );
+        assert!(ref_position_context(xml, &Numbering::default())
+            .target_position("Figure1")
+            .is_some());
+        assert!(page_ref_context(xml).target_position("Figure1").is_some());
+        assert!(note_ref_context(xml).targets.contains_key("FootOne"));
+        assert!(toc_entries(xml, &Styles::default()).iter().any(|entry| {
+            entry.text == "Scoped Heading"
+                && entry.bookmarks.len() == 1
+                && entry.bookmarks[0] == "ScopedToc"
+        }));
     }
 
     #[test]
