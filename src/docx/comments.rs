@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use crate::annotation::{Comment, TextAnchor};
 
-use super::{attr_local, local};
+use super::{attr_local_trimmed, local};
 
 type Xml<'a> = Reader<&'a [u8]>;
 
@@ -17,10 +17,14 @@ pub(crate) fn parse(xml: &str) -> Vec<Comment> {
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"comment" => {
-                comments.push(read_comment(&mut r, &e));
+                if let Some(comment) = read_comment(&mut r, &e) {
+                    comments.push(comment);
+                }
             }
             Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"comment" => {
-                comments.push(comment_shell(&e));
+                if let Some(comment) = comment_shell(&e) {
+                    comments.push(comment);
+                }
             }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
@@ -59,20 +63,16 @@ pub(crate) fn apply_extended_parent_ids(
     }
 }
 
-fn comment_shell(e: &BytesStart<'_>) -> Comment {
-    Comment {
-        id: attr_local_trimmed(e, b"id").unwrap_or_default(),
+fn comment_shell(e: &BytesStart<'_>) -> Option<Comment> {
+    Some(Comment {
+        id: attr_local_trimmed(e, b"id")?,
         author: attr_local_trimmed(e, b"author"),
         initials: attr_local_trimmed(e, b"initials"),
         date: attr_local_trimmed(e, b"date"),
         parent_comment_id: attr_local_trimmed(e, b"parentId"),
         text: String::new(),
         anchor: None,
-    }
-}
-
-fn attr_local_trimmed(e: &BytesStart<'_>, key: &[u8]) -> Option<String> {
-    attr_local(e, key).map(|value| value.trim().to_owned())
+    })
 }
 
 fn comment_para_ids(xml: &str) -> HashMap<String, String> {
@@ -187,18 +187,26 @@ pub(crate) fn parse_anchors(xml: &str) -> HashMap<String, TextAnchor> {
     anchors
 }
 
-fn read_comment(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Comment {
+fn read_comment(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Option<Comment> {
     let mut c = comment_shell(start);
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"t" => {
-                c.text.push_str(&read_text(r));
+                if let Some(c) = c.as_mut() {
+                    c.text.push_str(&read_text(r));
+                } else {
+                    read_text(r);
+                }
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"delText" => {
-                c.text.push_str(&read_text(r));
+                if let Some(c) = c.as_mut() {
+                    c.text.push_str(&read_text(r));
+                } else {
+                    read_text(r);
+                }
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
-                if let Some(text) = inline_marker_text(&e) {
+                if let (Some(c), Some(text)) = (c.as_mut(), inline_marker_text(&e)) {
                     c.text.push_str(text);
                 }
             }
