@@ -24,6 +24,10 @@ rendering moving toward one coherent Rust-native document model.
 - Avoid duplicate process ceremony. For roadmap work that already has PRD/TRD
   approval, skip fresh brainstorming/spec gates unless the user asks for them;
   keep minimal-diff discipline, TDD for behavior changes, and fresh verification.
+- Use inventory-first roadmap batches. Before editing, list the bounded candidate
+  gaps with evidence, risk, likely files, and focused verification; explicitly
+  mark no-op or ambiguous candidates as skipped, then implement only the top
+  verified slice.
 - Keep skill usage narrow. Select the smallest directly relevant skill set,
   avoid overlapping skills for the same decision, and reuse skill guidance that
   is already present in the current context instead of rereading adjacent docs.
