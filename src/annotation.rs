@@ -602,6 +602,82 @@ pub(crate) fn revision_number_field_text_format(
     Some(text_format)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct StyleRefFieldSyntax {
+    pub(crate) style_identifier: String,
+    pub(crate) text_format: Option<FieldTextFormat>,
+    pub(crate) result: StyleRefResult,
+    pub(crate) suppress_non_numeric: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StyleRefResult {
+    Text,
+    ParagraphNumber,
+    RelativeContextNumber,
+    FullContextNumber,
+    RelativePosition,
+}
+
+pub(crate) fn style_ref_field_syntax(instruction: &str) -> Option<StyleRefFieldSyntax> {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let kind = parts.next()?;
+    if !kind.eq_ignore_ascii_case("STYLEREF") {
+        return None;
+    }
+    let style_identifier = field_name_token(parts.next()?)?.to_string();
+    let mut text_format = None;
+    let mut result = StyleRefResult::Text;
+    let mut suppress_non_numeric = false;
+    while let Some(part) = parts.next() {
+        let accepted = accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_text_format_switch(format, &mut text_format)
+        })?;
+        if accepted {
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\t") {
+            if suppress_non_numeric {
+                return None;
+            }
+            suppress_non_numeric = true;
+            continue;
+        }
+        let next_result = if part.eq_ignore_ascii_case("\\n") {
+            StyleRefResult::ParagraphNumber
+        } else if part.eq_ignore_ascii_case("\\r") {
+            StyleRefResult::RelativeContextNumber
+        } else if part.eq_ignore_ascii_case("\\w") {
+            StyleRefResult::FullContextNumber
+        } else if part.eq_ignore_ascii_case("\\p") {
+            StyleRefResult::RelativePosition
+        } else {
+            return None;
+        };
+        if result != StyleRefResult::Text {
+            return None;
+        }
+        result = next_result;
+    }
+    if suppress_non_numeric
+        && !matches!(
+            result,
+            StyleRefResult::ParagraphNumber
+                | StyleRefResult::RelativeContextNumber
+                | StyleRefResult::FullContextNumber
+        )
+    {
+        return None;
+    }
+    Some(StyleRefFieldSyntax {
+        style_identifier,
+        text_format,
+        result,
+        suppress_non_numeric,
+    })
+}
+
 pub(crate) fn document_property_key(value: &str) -> String {
     value
         .chars()

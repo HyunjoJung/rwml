@@ -16,8 +16,8 @@ use crate::annotation::{
     is_neutral_field_format_switch, is_note_ref_kind, is_ref_value_neutral_switch,
     is_toc_value_neutral_switch, reference_index_category_token, reference_index_literal_token,
     reference_index_plain_value_token, revision_number_field_text_format,
-    strip_ascii_switch_prefix, toc_style_specs, Field, FieldKind, FieldNumberFormat,
-    FieldTextFormat,
+    strip_ascii_switch_prefix, style_ref_field_syntax, toc_style_specs, Field, FieldKind,
+    FieldNumberFormat, FieldTextFormat, StyleRefFieldSyntax, StyleRefResult,
 };
 use crate::{numfmt, CoreProperties};
 
@@ -8485,23 +8485,6 @@ fn wingdings_font_char(code: u32) -> Option<char> {
     })
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct StyleRefInstruction {
-    style_identifier: String,
-    text_format: Option<FieldTextFormat>,
-    result: StyleRefResult,
-    suppress_non_numeric: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum StyleRefResult {
-    Text,
-    ParagraphNumber,
-    RelativeContextNumber,
-    FullContextNumber,
-    RelativePosition,
-}
-
 pub(crate) fn computed_style_ref_result(
     instruction: &str,
     style_refs: &StyleRefContext,
@@ -8540,77 +8523,10 @@ pub(crate) fn supports_style_ref_field_syntax(instruction: &str) -> bool {
 }
 
 fn style_ref_instruction(instruction: &str) -> Option<StyleRefInstruction> {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let kind = parts.next()?;
-    if !kind.eq_ignore_ascii_case("STYLEREF") {
-        return None;
-    }
-    let style_identifier = field_name_token(parts.next()?)?.to_string();
-    let mut text_format = None;
-    let mut result = StyleRefResult::Text;
-    let mut suppress_non_numeric = false;
-    while let Some(part) = parts.next() {
-        if accept_field_format_switch_for_tail(part, &mut parts, &mut text_format)? {
-            continue;
-        }
-        if part.starts_with('\\') {
-            if part.eq_ignore_ascii_case("\\t") {
-                if suppress_non_numeric {
-                    return None;
-                }
-                suppress_non_numeric = true;
-                continue;
-            }
-            if part.eq_ignore_ascii_case("\\n") {
-                if result != StyleRefResult::Text {
-                    return None;
-                }
-                result = StyleRefResult::ParagraphNumber;
-                continue;
-            }
-            if part.eq_ignore_ascii_case("\\r") {
-                if result != StyleRefResult::Text {
-                    return None;
-                }
-                result = StyleRefResult::RelativeContextNumber;
-                continue;
-            }
-            if part.eq_ignore_ascii_case("\\w") {
-                if result != StyleRefResult::Text {
-                    return None;
-                }
-                result = StyleRefResult::FullContextNumber;
-                continue;
-            }
-            if part.eq_ignore_ascii_case("\\p") {
-                if result != StyleRefResult::Text {
-                    return None;
-                }
-                result = StyleRefResult::RelativePosition;
-                continue;
-            }
-            return None;
-        }
-        return None;
-    }
-    if suppress_non_numeric
-        && !matches!(
-            result,
-            StyleRefResult::ParagraphNumber
-                | StyleRefResult::RelativeContextNumber
-                | StyleRefResult::FullContextNumber
-        )
-    {
-        return None;
-    }
-    Some(StyleRefInstruction {
-        style_identifier,
-        text_format,
-        result,
-        suppress_non_numeric,
-    })
+    style_ref_field_syntax(instruction)
 }
+
+type StyleRefInstruction = StyleRefFieldSyntax;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct PageInstruction {
