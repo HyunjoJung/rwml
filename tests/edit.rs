@@ -154,6 +154,30 @@ fn tiny_webp_with_marker(marker: &[u8]) -> Vec<u8> {
     webp
 }
 
+fn tiny_tiff() -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(b"II");
+    out.extend_from_slice(&42u16.to_le_bytes());
+    out.extend_from_slice(&8u32.to_le_bytes());
+    out.extend_from_slice(&2u16.to_le_bytes());
+    out.extend_from_slice(&256u16.to_le_bytes());
+    out.extend_from_slice(&4u16.to_le_bytes());
+    out.extend_from_slice(&1u32.to_le_bytes());
+    out.extend_from_slice(&2u32.to_le_bytes());
+    out.extend_from_slice(&257u16.to_le_bytes());
+    out.extend_from_slice(&4u16.to_le_bytes());
+    out.extend_from_slice(&1u32.to_le_bytes());
+    out.extend_from_slice(&3u32.to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes());
+    out
+}
+
+fn tiny_tiff_with_marker(marker: &[u8]) -> Vec<u8> {
+    let mut tiff = tiny_tiff();
+    tiff.extend_from_slice(marker);
+    tiff
+}
+
 fn unzip_parts(bytes: &[u8]) -> std::collections::BTreeMap<String, Vec<u8>> {
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes.to_vec())).unwrap();
     let mut parts = std::collections::BTreeMap::new();
@@ -544,6 +568,20 @@ fn webp_image_docx(webp: &[u8]) -> Vec<u8> {
         ("word/_rels/document.xml.rels", doc_rels),
         ("word/document.xml", body),
         ("word/media/picture.webp", webp),
+    ])
+}
+
+fn tiff_image_docx(tiff: &[u8]) -> Vec<u8> {
+    let ct = br#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="tiff" ContentType="image/tiff"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#;
+    let root_rels = br#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#;
+    let doc_rels = br#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdImg" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/scan.tiff"/></Relationships>"#;
+    let body = br#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body><w:p><w:r><w:t>BEFORE</w:t></w:r></w:p><w:p><w:r><w:drawing><wp:inline><wp:extent cx="19050" cy="28575"/><wp:docPr id="1" name="image1"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill><a:blip r:embed="rIdImg"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:body></w:document>"#;
+    docx_fixture_bytes(&[
+        ("[Content_Types].xml", ct),
+        ("_rels/.rels", root_rels),
+        ("word/_rels/document.xml.rels", doc_rels),
+        ("word/document.xml", body),
+        ("word/media/scan.tiff", tiff),
     ])
 }
 
@@ -2689,6 +2727,110 @@ fn replace_image_webp_rejects_missing_or_invalid_inputs_without_mutation() {
     let after = doc.save().expect("save after failed edits");
     let after_parts = unzip_parts(&after);
     assert_eq!(after_parts["word/media/picture.webp"], original_webp);
+    assert_eq!(
+        after_parts["word/document.xml"],
+        before_parts["word/document.xml"]
+    );
+    assert_eq!(
+        after_parts["word/_rels/document.xml.rels"],
+        before_parts["word/_rels/document.xml.rels"]
+    );
+}
+
+#[test]
+fn add_image_tiff_inserts_media_relationship_and_content_type() {
+    let tiff = tiny_tiff();
+    let mut doc = Document::open(&no_notes_docx()).expect("fixture opens");
+
+    doc.add_image_tiff(&tiff, "scan.tiff")
+        .expect("insert tiff image");
+
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    assert_eq!(parts["word/media/scan.tiff"], tiff);
+
+    let ct = String::from_utf8(parts["[Content_Types].xml"].clone()).unwrap();
+    assert!(
+        ct.contains(r#"PartName="/word/media/scan.tiff""#)
+            && ct.contains(r#"ContentType="image/tiff""#),
+        "tiff content type missing: {ct}"
+    );
+    let rels = String::from_utf8(parts["word/_rels/document.xml.rels"].clone()).unwrap();
+    assert!(
+        rels.contains(
+            r#"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image""#
+        ) && rels.contains(r#"Target="media/scan.tiff""#),
+        "tiff relationship missing: {rels}"
+    );
+    let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    assert!(
+        body.contains("<w:drawing") && body.contains("r:embed"),
+        "drawing missing: {body}"
+    );
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    let images = reopened.images();
+    assert_eq!(images.len(), 1);
+    assert_eq!(images[0].mime.as_deref(), Some("image/tiff"));
+    assert_eq!(images[0].bytes.as_deref(), Some(tiff.as_slice()));
+    assert_eq!(images[0].width_px, Some(2));
+    assert_eq!(images[0].height_px, Some(3));
+}
+
+#[test]
+fn replace_image_tiff_updates_existing_media_part_only() {
+    let original_tiff = tiny_tiff();
+    let replacement_tiff = tiny_tiff_with_marker(b"rdoc replacement");
+    let before = tiff_image_docx(&original_tiff);
+    let before_parts = unzip_parts(&before);
+    let mut doc = Document::open(&before).expect("fixture opens");
+
+    assert_eq!(
+        doc.images()[0].bytes.as_deref(),
+        Some(original_tiff.as_slice())
+    );
+
+    doc.replace_image_tiff(&replacement_tiff, "scan.tiff")
+        .expect("replace existing tiff");
+
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    assert_eq!(parts["word/media/scan.tiff"], replacement_tiff);
+    assert_eq!(
+        parts["word/document.xml"],
+        before_parts["word/document.xml"]
+    );
+    assert_eq!(
+        parts["word/_rels/document.xml.rels"],
+        before_parts["word/_rels/document.xml.rels"]
+    );
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    assert_eq!(reopened.images()[0].mime.as_deref(), Some("image/tiff"));
+    assert_eq!(
+        reopened.images()[0].bytes.as_deref(),
+        Some(replacement_tiff.as_slice())
+    );
+}
+
+#[test]
+fn replace_image_tiff_rejects_missing_or_invalid_inputs_without_mutation() {
+    let original_tiff = tiny_tiff();
+    let before = tiff_image_docx(&original_tiff);
+    let before_parts = unzip_parts(&before);
+    let mut doc = Document::open(&before).expect("fixture opens");
+
+    assert!(doc.replace_image_tiff(b"not tiff", "scan.tiff").is_err());
+    assert!(doc
+        .replace_image_tiff(&tiny_tiff(), "missing.tiff")
+        .is_err());
+    assert!(doc
+        .replace_image_tiff(&tiny_tiff(), "../scan.tiff")
+        .is_err());
+
+    let after = doc.save().expect("save after failed edits");
+    let after_parts = unzip_parts(&after);
+    assert_eq!(after_parts["word/media/scan.tiff"], original_tiff);
     assert_eq!(
         after_parts["word/document.xml"],
         before_parts["word/document.xml"]

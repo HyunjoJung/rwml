@@ -43,7 +43,7 @@ fn extract_bytes(data: &[u8], fc: usize) -> Option<Image> {
     })
 }
 
-/// Intrinsic pixel dimensions parsed from an image header (PNG/JPEG/GIF/BMP/WebP).
+/// Intrinsic pixel dimensions parsed from an image header (PNG/JPEG/GIF/BMP/TIFF/WebP).
 /// Best-effort: returns `None` for unknown or truncated headers. Bounds-checked,
 /// no allocation — used by the renderer/writer to size embedded pictures.
 pub(crate) fn dims(bytes: &[u8], mime: &str) -> Option<(u32, u32)> {
@@ -52,6 +52,7 @@ pub(crate) fn dims(bytes: &[u8], mime: &str) -> Option<(u32, u32)> {
         "image/jpeg" => jpeg_dims(bytes),
         "image/gif" => gif_dims(bytes),
         "image/bmp" => bmp_dims(bytes),
+        "image/tiff" => tiff_dims(bytes),
         "image/webp" => webp_dims(bytes),
         _ => None,
     }
@@ -85,6 +86,64 @@ fn bmp_dims(b: &[u8]) -> Option<(u32, u32)> {
     let w = i32::from_le_bytes([b[18], b[19], b[20], b[21]]).unsigned_abs();
     let h = i32::from_le_bytes([b[22], b[23], b[24], b[25]]).unsigned_abs();
     (w > 0 && h > 0).then_some((w, h))
+}
+
+fn tiff_dims(b: &[u8]) -> Option<(u32, u32)> {
+    let little = match b.get(0..2)? {
+        b"II" => true,
+        b"MM" => false,
+        _ => return None,
+    };
+    if tiff_u16(b, 2, little)? != 42 {
+        return None;
+    }
+    let ifd = tiff_u32(b, 4, little)? as usize;
+    let count = tiff_u16(b, ifd, little)? as usize;
+    let entries = ifd.checked_add(2)?;
+    let end = entries.checked_add(count.checked_mul(12)?)?;
+    if end.checked_add(4)? > b.len() {
+        return None;
+    }
+
+    let (mut width, mut height) = (None, None);
+    for i in 0..count {
+        let off = entries + i * 12;
+        let tag = tiff_u16(b, off, little)?;
+        let typ = tiff_u16(b, off + 2, little)?;
+        let count = tiff_u32(b, off + 4, little)?;
+        let value = match (typ, count) {
+            (3, 1) => tiff_u16(b, off + 8, little).map(u32::from),
+            (4, 1) => tiff_u32(b, off + 8, little),
+            _ => None,
+        };
+        match tag {
+            256 => width = value,
+            257 => height = value,
+            _ => {}
+        }
+    }
+    let (w, h) = (width?, height?);
+    (w > 0 && h > 0).then_some((w, h))
+}
+
+fn tiff_u16(b: &[u8], off: usize, little: bool) -> Option<u16> {
+    let end = off.checked_add(2)?;
+    let bytes: [u8; 2] = b.get(off..end)?.try_into().ok()?;
+    Some(if little {
+        u16::from_le_bytes(bytes)
+    } else {
+        u16::from_be_bytes(bytes)
+    })
+}
+
+fn tiff_u32(b: &[u8], off: usize, little: bool) -> Option<u32> {
+    let end = off.checked_add(4)?;
+    let bytes: [u8; 4] = b.get(off..end)?.try_into().ok()?;
+    Some(if little {
+        u32::from_le_bytes(bytes)
+    } else {
+        u32::from_be_bytes(bytes)
+    })
 }
 
 fn jpeg_dims(b: &[u8]) -> Option<(u32, u32)> {
@@ -300,6 +359,16 @@ mod tests {
 
         assert_eq!(find_raster(&region), Some((webp_at, "image/webp")));
         assert_eq!(dims(&webp, "image/webp"), Some((2, 3)));
+    }
+
+    #[test]
+    fn reads_tiff_ifd_dimensions() {
+        let tiff = [
+            b'I', b'I', 42, 0, 8, 0, 0, 0, 2, 0, 0, 1, 4, 0, 1, 0, 0, 0, 2, 0, 0, 0, 1, 1, 4, 0, 1,
+            0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        assert_eq!(dims(&tiff, "image/tiff"), Some((2, 3)));
+        assert_eq!(dims(&tiff[..12], "image/tiff"), None);
     }
 
     #[test]

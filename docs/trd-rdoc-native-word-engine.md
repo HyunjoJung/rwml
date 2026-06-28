@@ -161,6 +161,8 @@ Short-term surfaces:
 - `replace_image_gif`;
 - `add_image_bmp`;
 - `replace_image_bmp`;
+- `add_image_tiff`;
+- `replace_image_tiff`;
 - `add_image_webp`;
 - `replace_image_webp`;
 - `edit_capability`;
@@ -1372,6 +1374,8 @@ Targets:
 - `replace_image_gif`;
 - `add_image_bmp`;
 - `replace_image_bmp`;
+- `add_image_tiff`;
+- `replace_image_tiff`;
 - `add_image_webp`;
 - `replace_image_webp`;
 - `set_core_property`;

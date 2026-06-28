@@ -122,7 +122,7 @@ pub fn extract_text(bytes: &[u8]) -> Result<String> {
 /// validate the raster, so the caller must ensure `bytes` really are that format (a
 /// mismatch produces a part Word can't render). The element-tree editor's
 /// [`Document::add_image_png`] / [`Document::replace_image_png`] and
-/// JPEG/GIF/BMP/WebP counterparts do validate, since they accept arbitrary
+/// JPEG/GIF/BMP/TIFF/WebP counterparts do validate, since they accept arbitrary
 /// caller input.
 #[cfg(feature = "docx")]
 pub fn write_docx(model: &DocModel) -> Vec<u8> {
@@ -2180,6 +2180,21 @@ impl Document {
         self.add_image_media(bmp, name, ImageMediaKind::Bmp, "add_image_bmp")
     }
 
+    /// **Element-tree editing: append an inline TIFF image** to the body,
+    /// reconciling the media part, `image/tiff` content type, relationship, and
+    /// drawing markup transactionally. This mirrors [`Document::add_image_png`]
+    /// for plain `*.tif` / `*.tiff` names and bounded structural TIFF dimension
+    /// parsing.
+    ///
+    /// The validation checks a classic TIFF header and first IFD
+    /// `ImageWidth`/`ImageLength` tags; it does not decode image data. Read
+    /// views are stale until the saved bytes are reopened. Available with the
+    /// default `docx` feature.
+    #[cfg(feature = "docx")]
+    pub fn add_image_tiff(&mut self, tiff: &[u8], name: &str) -> Result<()> {
+        self.add_image_media(tiff, name, ImageMediaKind::Tiff, "add_image_tiff")
+    }
+
     /// **Element-tree editing: append an inline WebP image** to the body,
     /// reconciling the media part, `image/webp` content type, relationship, and
     /// drawing markup transactionally. This mirrors [`Document::add_image_png`]
@@ -2235,6 +2250,17 @@ impl Document {
     #[cfg(feature = "docx")]
     pub fn replace_image_bmp(&mut self, bmp: &[u8], name: &str) -> Result<()> {
         self.replace_image_media(bmp, name, ImageMediaKind::Bmp, "replace_image_bmp")
+    }
+
+    /// **Package-preserving edit: replace an existing TIFF media part.** `name`
+    /// is the plain file name of an existing part under `word/media/` (for
+    /// example `scan.tiff`). The new bytes must be a structurally valid classic
+    /// TIFF with first-IFD dimensions; existing drawing markup and relationships
+    /// keep pointing at the same part. Available with the default `docx`
+    /// feature.
+    #[cfg(feature = "docx")]
+    pub fn replace_image_tiff(&mut self, tiff: &[u8], name: &str) -> Result<()> {
+        self.replace_image_media(tiff, name, ImageMediaKind::Tiff, "replace_image_tiff")
     }
 
     /// **Package-preserving edit: replace an existing WebP media part.** `name`
@@ -2796,6 +2822,8 @@ const CT_IMAGE_GIF: &str = "image/gif";
 #[cfg(feature = "docx")]
 const CT_IMAGE_BMP: &str = "image/bmp";
 #[cfg(feature = "docx")]
+const CT_IMAGE_TIFF: &str = "image/tiff";
+#[cfg(feature = "docx")]
 const CT_IMAGE_WEBP: &str = "image/webp";
 
 #[cfg(feature = "docx")]
@@ -2986,6 +3014,7 @@ enum ImageMediaKind {
     Jpeg,
     Gif,
     Bmp,
+    Tiff,
     Webp,
 }
 
@@ -2997,6 +3026,7 @@ impl ImageMediaKind {
             ImageMediaKind::Jpeg => "JPEG",
             ImageMediaKind::Gif => "GIF",
             ImageMediaKind::Bmp => "BMP",
+            ImageMediaKind::Tiff => "TIFF",
             ImageMediaKind::Webp => "WebP",
         }
     }
@@ -3007,6 +3037,7 @@ impl ImageMediaKind {
             ImageMediaKind::Jpeg => CT_IMAGE_JPEG,
             ImageMediaKind::Gif => CT_IMAGE_GIF,
             ImageMediaKind::Bmp => CT_IMAGE_BMP,
+            ImageMediaKind::Tiff => CT_IMAGE_TIFF,
             ImageMediaKind::Webp => CT_IMAGE_WEBP,
         }
     }
@@ -3017,6 +3048,7 @@ impl ImageMediaKind {
             ImageMediaKind::Jpeg => &[".jpg", ".jpeg"],
             ImageMediaKind::Gif => &[".gif"],
             ImageMediaKind::Bmp => &[".bmp"],
+            ImageMediaKind::Tiff => &[".tif", ".tiff"],
             ImageMediaKind::Webp => &[".webp"],
         }
     }
@@ -3027,6 +3059,7 @@ impl ImageMediaKind {
             ImageMediaKind::Jpeg => ".jpg or .jpeg",
             ImageMediaKind::Gif => ".gif",
             ImageMediaKind::Bmp => ".bmp",
+            ImageMediaKind::Tiff => ".tif or .tiff",
             ImageMediaKind::Webp => ".webp",
         }
     }
@@ -3037,6 +3070,7 @@ impl ImageMediaKind {
             ImageMediaKind::Jpeg => jpeg_dimensions(bytes).is_some(),
             ImageMediaKind::Gif => gif_dimensions(bytes).is_some(),
             ImageMediaKind::Bmp => bmp_dimensions(bytes).is_some(),
+            ImageMediaKind::Tiff => crate::image::dims(bytes, CT_IMAGE_TIFF).is_some(),
             ImageMediaKind::Webp => crate::image::dims(bytes, CT_IMAGE_WEBP).is_some(),
         }
     }
@@ -3051,6 +3085,9 @@ impl ImageMediaKind {
                 .map(|(w, h)| extent_emu_from_pixels(w, h))
                 .unwrap_or((FALLBACK_IMAGE_EMU, FALLBACK_IMAGE_EMU)),
             ImageMediaKind::Bmp => bmp_dimensions(bytes)
+                .map(|(w, h)| extent_emu_from_pixels(w, h))
+                .unwrap_or((FALLBACK_IMAGE_EMU, FALLBACK_IMAGE_EMU)),
+            ImageMediaKind::Tiff => crate::image::dims(bytes, CT_IMAGE_TIFF)
                 .map(|(w, h)| extent_emu_from_pixels(w, h))
                 .unwrap_or((FALLBACK_IMAGE_EMU, FALLBACK_IMAGE_EMU)),
             ImageMediaKind::Webp => crate::image::dims(bytes, CT_IMAGE_WEBP)
