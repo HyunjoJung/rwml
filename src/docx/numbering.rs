@@ -219,7 +219,7 @@ pub(crate) fn parse(xml: &str) -> Numbering {
                     }
                 }),
                 b"lvlText" => set_level(&mut nb, &cur_abstract, cur_ilvl, &e, |l, e| {
-                    if let Some(v) = attr_local(e, b"val") {
+                    if let Some(v) = attr_local_trimmed(e, b"val") {
                         l.lvl_text = v;
                     }
                 }),

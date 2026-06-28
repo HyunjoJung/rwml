@@ -1519,7 +1519,7 @@ fn numbered_ref_switch_docx() -> Vec<u8> {
         ),
         (
             "word/numbering.xml",
-            r#"<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="9"><w:lvl w:ilvl="0"><w:start w:val=" 3 "/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum><w:num w:numId="42"><w:abstractNumId w:val=" 9 "/></w:num></w:numbering>"#,
+            r#"<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="9"><w:lvl w:ilvl="0"><w:start w:val=" 3 "/><w:numFmt w:val="decimal"/><w:lvlText w:val=" "/></w:lvl></w:abstractNum><w:num w:numId="42"><w:abstractNumId w:val=" 9 "/></w:num></w:numbering>"#,
         ),
     ])
 }
