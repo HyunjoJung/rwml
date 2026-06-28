@@ -464,6 +464,10 @@ struct WrittenNote {
     text: String,
 }
 
+fn non_empty_trimmed(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|value| !value.is_empty())
+}
+
 impl Ctx {
     fn new() -> Self {
         Ctx {
@@ -841,24 +845,22 @@ impl Ctx {
         let Some(control) = control else {
             return run_xml.to_string();
         };
+        let alias = non_empty_trimmed(control.alias.as_deref());
+        let tag = non_empty_trimmed(control.tag.as_deref());
+        let xpath = non_empty_trimmed(control.data_binding_xpath.as_deref());
+        let store_item_id = non_empty_trimmed(control.data_binding_store_item_id.as_deref());
+        if alias.is_none() && tag.is_none() && (xpath.is_none() || store_item_id.is_none()) {
+            return run_xml.to_string();
+        }
         let mut xml = String::new();
         xml.push_str("<w:sdt><w:sdtPr>");
-        if let Some(alias) = control.alias.as_deref().filter(|value| !value.is_empty()) {
+        if let Some(alias) = alias {
             xml.push_str(&format!(r#"<w:alias w:val="{}"/>"#, esc_attr(alias)));
         }
-        if let Some(tag) = control.tag.as_deref().filter(|value| !value.is_empty()) {
+        if let Some(tag) = tag {
             xml.push_str(&format!(r#"<w:tag w:val="{}"/>"#, esc_attr(tag)));
         }
-        if let (Some(xpath), Some(store_item_id)) = (
-            control
-                .data_binding_xpath
-                .as_deref()
-                .filter(|value| !value.is_empty()),
-            control
-                .data_binding_store_item_id
-                .as_deref()
-                .filter(|value| !value.is_empty()),
-        ) {
+        if let (Some(xpath), Some(store_item_id)) = (xpath, store_item_id) {
             xml.push_str(&format!(
                 r#"<w:dataBinding w:xpath="{}" w:storeItemID="{}"/>"#,
                 esc_attr(xpath),

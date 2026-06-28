@@ -1827,6 +1827,32 @@ fn run_builder_adds_plain_text_content_control() {
 }
 
 #[test]
+fn run_builder_does_not_emit_blank_content_control_metadata() {
+    let model = DocBuilder::new()
+        .paragraph_runs([RunBuilder::new("Loose text")
+            .content_control(
+                ContentControlBuilder::new()
+                    .alias(" ")
+                    .tag("\t")
+                    .data_binding(" ", "\n"),
+            )
+            .build()])
+        .build();
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    assert!(
+        !document_xml.contains("<w:sdt>"),
+        "blank content-control metadata should not emit an SDT wrapper: {document_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("blank content-control metadata .docx reopens");
+    assert_eq!(reopened.text(), "Loose text");
+    assert_eq!(reopened.report().features.content_controls, 0);
+}
+
+#[test]
 fn content_control_builder_adds_data_binding_metadata() {
     let model = DocBuilder::new()
         .paragraph_runs([RunBuilder::new("Bound value")
