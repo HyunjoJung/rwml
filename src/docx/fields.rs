@@ -14,7 +14,7 @@ use crate::{numfmt, CoreProperties};
 
 use super::numbering::Numbering;
 use super::styles::Styles;
-use super::{attr_local, local, toggle_on};
+use super::{attr_local, attr_u8, local, toggle_on};
 
 type Xml<'a> = Reader<&'a [u8]>;
 
@@ -999,7 +999,7 @@ pub(crate) fn ref_position_context(xml: &str, numbering: &Numbering) -> RefPosit
                     }
                     b"pPr" if paragraph.active() => paragraph.properties_depth += 1,
                     b"ilvl" if paragraph.properties_depth > 0 => {
-                        if let Some(value) = attr_local(&e, b"val").and_then(|v| v.parse().ok()) {
+                        if let Some(value) = attr_u8(&e, b"val") {
                             paragraph.ilvl = value;
                         }
                     }
@@ -1079,7 +1079,7 @@ pub(crate) fn ref_position_context(xml: &str, numbering: &Numbering) -> RefPosit
                     }
                     b"pPr" if paragraph.active() => {}
                     b"ilvl" if paragraph.properties_depth > 0 => {
-                        if let Some(value) = attr_local(&e, b"val").and_then(|v| v.parse().ok()) {
+                        if let Some(value) = attr_u8(&e, b"val") {
                             paragraph.ilvl = value;
                         }
                     }
@@ -1348,7 +1348,7 @@ pub(crate) fn ref_number_context(xml: &str, numbering: &Numbering) -> RefNumberC
                     }
                     b"pPr" if paragraph.active() => paragraph.properties_depth += 1,
                     b"ilvl" if paragraph.properties_depth > 0 => {
-                        if let Some(value) = attr_local(&e, b"val").and_then(|v| v.parse().ok()) {
+                        if let Some(value) = attr_u8(&e, b"val") {
                             paragraph.ilvl = value;
                         }
                     }
@@ -1382,7 +1382,7 @@ pub(crate) fn ref_number_context(xml: &str, numbering: &Numbering) -> RefNumberC
                     }
                     b"pPr" if paragraph.active() => {}
                     b"ilvl" if paragraph.properties_depth > 0 => {
-                        if let Some(value) = attr_local(&e, b"val").and_then(|v| v.parse().ok()) {
+                        if let Some(value) = attr_u8(&e, b"val") {
                             paragraph.ilvl = value;
                         }
                     }
@@ -2672,8 +2672,7 @@ fn read_style_ref_ppr(
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
                 b"pStyle" => *style_id = attr_local(&e, b"val"),
                 b"ilvl" => {
-                    if let Some(value) = attr_local(&e, b"val").and_then(|value| value.parse().ok())
-                    {
+                    if let Some(value) = attr_u8(&e, b"val") {
                         *ilvl = value;
                     }
                 }
@@ -4539,7 +4538,7 @@ fn read_toc_ppr(r: &mut Xml<'_>, style_id: &mut Option<String>, outline: &mut Op
         match r.read_event() {
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
                 b"pStyle" => *style_id = attr_local(&e, b"val"),
-                b"outlineLvl" => *outline = attr_local(&e, b"val").and_then(|v| v.parse().ok()),
+                b"outlineLvl" => *outline = attr_u8(&e, b"val"),
                 _ => {}
             },
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"pPr" => break,

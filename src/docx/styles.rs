@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use quick_xml::events::Event;
 use quick_xml::Reader;
 
-use super::{attr_local, local};
+use super::{attr_local, attr_u8, local};
 use crate::stsh::heading_from_name;
 
 /// Resolved per-`styleId` heading level and display name.
@@ -60,7 +60,7 @@ pub(crate) fn parse(xml: &str) -> Styles {
                 }
                 // The style's own paragraph outline level (in its <w:pPr>).
                 b"outlineLvl" => {
-                    cur_outline = attr_local(&e, b"val").and_then(|v| v.parse::<u8>().ok());
+                    cur_outline = attr_u8(&e, b"val");
                 }
                 _ => {}
             },
@@ -94,7 +94,7 @@ mod tests {
             <w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style>
             <w:style w:type="paragraph" w:styleId="KrTitle"><w:name w:val="제목 2"/></w:style>
             <w:style w:type="paragraph" w:styleId="CustomH"><w:name w:val="MyStyle"/>
-                <w:pPr><w:outlineLvl w:val="2"/></w:pPr></w:style>
+                <w:pPr><w:outlineLvl w:val=" 2 "/></w:pPr></w:style>
             <w:style w:type="paragraph" w:styleId="Normal"><w:name w:val="Normal"/></w:style>
         </w:styles>"#;
         let s = parse(xml);

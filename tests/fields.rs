@@ -2223,7 +2223,7 @@ fn toc_heading_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Executive Summary</w:t></w:r></w:p><w:p><w:pPr><w:outlineLvl w:val="1"/></w:pPr><w:r><w:t>Risks</w:t></w:r></w:p><w:p><w:pPr><w:outlineLvl w:val="3"/></w:pPr><w:r><w:t>Excluded Detail</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" TOC \o &quot;1-2&quot; "><w:r><w:t>stale toc</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Executive Summary</w:t></w:r></w:p><w:p><w:pPr><w:outlineLvl w:val=" 1 "/></w:pPr><w:r><w:t>Risks</w:t></w:r></w:p><w:p><w:pPr><w:outlineLvl w:val="3"/></w:pPr><w:r><w:t>Excluded Detail</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" TOC \o &quot;1-2&quot; "><w:r><w:t>stale toc</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }

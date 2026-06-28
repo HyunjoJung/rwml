@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 
-use super::{attr_local, local};
+use super::{attr_local, attr_u8, local};
 
 /// One numbering level's resolved formatting.
 #[derive(Debug, Clone)]
@@ -208,7 +208,7 @@ pub(crate) fn parse(xml: &str) -> Numbering {
                     cur_ilvl = None;
                 }
                 b"lvl" => {
-                    cur_ilvl = attr_local(&e, b"ilvl").and_then(|v| v.parse().ok());
+                    cur_ilvl = attr_u8(&e, b"ilvl");
                     set_level(&mut nb, &cur_abstract, cur_ilvl, &e, |_, _| {});
                 }
                 b"numFmt" => set_level(&mut nb, &cur_abstract, cur_ilvl, &e, |l, e| {

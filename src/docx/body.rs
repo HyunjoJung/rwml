@@ -17,7 +17,7 @@ use quick_xml::Reader;
 use super::fields::TocEntry;
 use super::numbering::Numbering;
 use super::styles::Styles;
-use super::{attr_local, local, toggle_on};
+use super::{attr_local, attr_u8, local, toggle_on};
 use crate::annotation::FieldKind;
 use crate::model::{
     Align, AuthoredContentControl, Block, Cell, CellMargins, CharProps, Color, DocGrid,
@@ -1385,13 +1385,13 @@ fn read_ppr_item(pp: &mut PPr, e: &BytesStart<'_>, num_id: &mut Option<String>, 
     match local(e.name().as_ref()) {
         b"pStyle" => pp.style_id = attr_local(e, b"val"),
         b"ilvl" => {
-            if let Some(v) = attr_local(e, b"val").and_then(|v| v.parse().ok()) {
+            if let Some(v) = attr_u8(e, b"val") {
                 *ilvl = v;
             }
         }
         b"numId" => *num_id = attr_local(e, b"val"),
         b"jc" => pp.jc = attr_local(e, b"val"),
-        b"outlineLvl" => pp.outline = attr_local(e, b"val").and_then(|v| v.parse().ok()),
+        b"outlineLvl" => pp.outline = attr_u8(e, b"val"),
         b"pageBreakBefore" => pp.page_break_before = toggle_on(attr_local(e, b"val")),
         b"spacing" => {
             pp.spacing.before_pt = attr_local(e, b"before").and_then(|v| twips_to_pt(&v));
