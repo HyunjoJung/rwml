@@ -5443,9 +5443,7 @@ fn local(name: &[u8]) -> &[u8] {
 #[cfg(test)]
 mod tests {
     use super::fields_for_model;
-    #[cfg(not(feature = "docx"))]
-    use crate::annotation::Field;
-    use crate::annotation::FieldKind;
+    use crate::annotation::{Field, FieldKind};
     use crate::model::{Block, FieldRole, Paragraph, Run};
 
     #[test]
@@ -5937,6 +5935,51 @@ mod tests {
             super::prompt_uncomputed_reason(r#"ASK ClientCode \o \d ac-42"#),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
+    }
+
+    #[test]
+    fn opaque_field_diagnostics_reject_malformed_quoted_syntax() {
+        for (kind, valid, malformed) in [
+            (
+                FieldKind::InsertedContent("INCLUDETEXT".to_string()),
+                r#"INCLUDETEXT "chapter.docx""#,
+                r#"INCLUDETEXT "chapter.docx"#,
+            ),
+            (
+                FieldKind::MailMerge("ADDRESSBLOCK".to_string()),
+                r#"ADDRESSBLOCK \f "Dear""#,
+                r#"ADDRESSBLOCK \f "Dear"#,
+            ),
+            (
+                FieldKind::ReferenceIndex("INDEX".to_string()),
+                r#"INDEX \c "2""#,
+                r#"INDEX \c "2"#,
+            ),
+            (
+                FieldKind::Compatibility("PRIVATE".to_string()),
+                r#"PRIVATE "payload""#,
+                r#"PRIVATE "payload"#,
+            ),
+        ] {
+            let valid_field = Field {
+                kind: kind.clone(),
+                instruction: valid.to_string(),
+                ..Field::default()
+            };
+            assert_eq!(
+                super::unsupported_field_reason(&valid_field),
+                Some(super::FieldEvaluationReason::NoComputedResult)
+            );
+            let malformed_field = Field {
+                kind,
+                instruction: malformed.to_string(),
+                ..Field::default()
+            };
+            assert_eq!(
+                super::unsupported_field_reason(&malformed_field),
+                Some(super::FieldEvaluationReason::UnsupportedSwitch)
+            );
+        }
     }
 
     #[test]
