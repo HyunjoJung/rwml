@@ -64,6 +64,31 @@ fn header_footer_floating_shape_docx() -> Vec<u8> {
     ])
 }
 
+fn note_floating_shape_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFootnotes" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Body</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:footnote w:id="1"><w:p><w:r><w:t>Before </w:t></w:r><w:r><w:drawing><wp:anchor relativeHeight="61"><wp:extent cx="914400" cy="457200"/><wp:docPr id="61" name="Note direct"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>Direct shape body</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:del w:id="62"><w:r><w:drawing><wp:anchor relativeHeight="62"><wp:extent cx="914400" cy="457200"/><wp:docPr id="62" name="Note deleted"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>Deleted shape body</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r></w:del><w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing><wp:anchor relativeHeight="63"><wp:extent cx="914400" cy="457200"/><wp:docPr id="63" name="Note choice"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>Choice shape body</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></mc:Choice><mc:Fallback><w:drawing><wp:anchor relativeHeight="64"><wp:extent cx="914400" cy="457200"/><wp:docPr id="64" name="Note fallback"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>Fallback shape body</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></mc:Fallback></mc:AlternateContent></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+    ])
+}
+
 fn sdt_wrapped_floating_shape_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -266,6 +291,25 @@ fn docx_header_footer_floating_shapes_are_exposed() {
             cy_emu: 457200,
         })
     );
+}
+
+#[test]
+fn docx_note_floating_shapes_are_exposed_with_current_policy() {
+    let doc = Document::open(&note_floating_shape_docx()).expect("fixture opens");
+    let shapes = doc.floating_shapes();
+
+    assert_eq!(shapes.len(), 2);
+    assert_eq!(shapes[0].id, "61");
+    assert_eq!(shapes[0].name.as_deref(), Some("Note direct"));
+    assert_eq!(shapes[0].text.as_deref(), Some("Direct shape body"));
+    assert_eq!(shapes[0].anchor_block_index, None);
+    assert_eq!(shapes[0].anchor_text, None);
+    assert_eq!(shapes[1].id, "63");
+    assert_eq!(shapes[1].name.as_deref(), Some("Note choice"));
+    assert_eq!(shapes[1].text.as_deref(), Some("Choice shape body"));
+    assert_eq!(shapes[1].anchor_block_index, None);
+    assert_eq!(shapes[1].anchor_text, None);
+    assert_eq!(doc.report().features.floating_shapes, 2);
 }
 
 #[test]

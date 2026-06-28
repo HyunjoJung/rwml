@@ -910,7 +910,7 @@ The long-term native Word engine plan is split into the
 - [x] Reader: `.docx` comments with body/header/footer anchors,
       body/note/header/footer tracked-change views and side-table extraction,
       core document metadata, body/note/header/footer field detection,
-      body/header/footer floating-shape geometry and
+      body/note/header/footer floating-shape geometry and
       containing-block anchor text capture, trusted body `PAGE` computation
       plus `FILENAME`/`MERGEFIELD`
       render support, document-info/date/stat

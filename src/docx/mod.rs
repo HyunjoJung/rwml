@@ -299,7 +299,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
                                                            // Footnotes/endnotes live in their own parts. Keep them SEPARATE from the body
                                                            // (not appended into `model.blocks`); their parts are preserved verbatim on save.
                                                            // They are re-joined for the read/text views below and in `Document::model()`.
-    let (mut notes, mut note_records, mut note_revisions) = read_notes(
+    let (mut notes, mut note_records, mut note_revisions, mut note_floating_shapes) = read_notes(
         &mut zip,
         "word/footnotes.xml",
         b"footnote",
@@ -308,20 +308,23 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         &numbering,
         document_properties,
     );
-    let (endnote_blocks, mut endnote_records, endnote_revisions) = read_notes(
-        &mut zip,
-        "word/endnotes.xml",
-        b"endnote",
-        NoteKind::Endnote,
-        &styles,
-        &numbering,
-        document_properties,
-    );
+    let (endnote_blocks, mut endnote_records, endnote_revisions, endnote_floating_shapes) =
+        read_notes(
+            &mut zip,
+            "word/endnotes.xml",
+            b"endnote",
+            NoteKind::Endnote,
+            &styles,
+            &numbering,
+            document_properties,
+        );
     notes.extend(endnote_blocks);
     note_records.append(&mut endnote_records);
     note_revisions.extend(endnote_revisions);
+    note_floating_shapes.extend(endnote_floating_shapes);
     attach_note_reference_anchors(&mut note_records, &doc_xml);
     let mut floating_shapes = read_floating_shapes(&doc_xml);
+    floating_shapes.extend(note_floating_shapes);
     let mut text_boxes = read_text_boxes(&doc_xml, &ctx, &floating_shapes);
     // Running headers/footers referenced by the body's sectPr(s). `ctx` only holds
     // shared (&) borrows of rels/styles/numbering, so the &mut zip pass is fine.
@@ -902,9 +905,9 @@ fn read_notes(
     styles: &styles::Styles,
     numbering: &numbering::Numbering,
     properties: DocumentPropertyRefs<'_>,
-) -> (Vec<Block>, Vec<Note>, Vec<Revision>) {
+) -> (Vec<Block>, Vec<Note>, Vec<Revision>, Vec<FloatingShape>) {
     let Some(xml) = part(zip, name) else {
-        return (Vec::new(), Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     };
     let part_rels = part(zip, &part_rels_path(name))
         .map(|s| parse_rels(&s))
@@ -957,6 +960,7 @@ fn read_notes(
     let mut blocks = Vec::new();
     let mut records = Vec::new();
     let revisions = revisions::parse(&xml);
+    let floating_shapes = read_floating_shapes(&xml);
     for (id, note_blocks) in body::parse_note_entries(&xml, &ctx, tag) {
         let text = blocks_text(&note_blocks);
         records.push(Note {
@@ -967,7 +971,7 @@ fn read_notes(
         });
         blocks.extend(note_blocks);
     }
-    (blocks, records, revisions)
+    (blocks, records, revisions, floating_shapes)
 }
 
 fn read_text_boxes(
@@ -1048,6 +1052,7 @@ fn text_anchor_from_shape(shape: &FloatingShape) -> Option<TextAnchor> {
 fn read_floating_shapes(doc_xml: &str) -> Vec<FloatingShape> {
     let mut r = Reader::from_str(doc_xml);
     let mut shapes = Vec::new();
+    let mut scan_depth = 0usize;
     let mut in_body = false;
     let mut body_depth = 0usize;
     let mut body_block_candidate_depths = vec![0usize];
@@ -1062,6 +1067,24 @@ fn read_floating_shapes(doc_xml: &str) -> Vec<FloatingShape> {
             Ok(Event::Start(e)) => {
                 let qname = e.name();
                 let name = local(qname.as_ref());
+                if should_skip_redundant_alternate_branch(
+                    &mut alternate_content_stack,
+                    scan_depth,
+                    name,
+                ) {
+                    skip_shape_scan_subtree(&mut r);
+                    continue;
+                }
+                if is_old_revision_content(name) {
+                    skip_shape_scan_subtree(&mut r);
+                    continue;
+                }
+                if name == b"AlternateContent" {
+                    alternate_content_stack.push(AlternateContentState {
+                        branch_depth: scan_depth + 1,
+                        took_branch: false,
+                    });
+                }
                 if name == b"body" {
                     in_body = true;
                     body_depth = 0;
@@ -1072,27 +1095,10 @@ fn read_floating_shapes(doc_xml: &str) -> Vec<FloatingShape> {
                     current_body_block_text.clear();
                     current_body_block_shapes.clear();
                     alternate_content_stack.clear();
+                    scan_depth += 1;
                     continue;
                 }
                 if in_body {
-                    if should_skip_redundant_alternate_branch(
-                        &mut alternate_content_stack,
-                        body_depth,
-                        name,
-                    ) {
-                        skip_shape_scan_subtree(&mut r);
-                        continue;
-                    }
-                    if is_old_revision_content(name) {
-                        skip_shape_scan_subtree(&mut r);
-                        continue;
-                    }
-                    if name == b"AlternateContent" {
-                        alternate_content_stack.push(AlternateContentState {
-                            branch_depth: body_depth + 1,
-                            took_branch: false,
-                        });
-                    }
                     if current_body_block_index.is_none()
                         && body_block_candidate_depths.contains(&body_depth)
                         && is_transparent_body_block_container(name)
@@ -1136,7 +1142,9 @@ fn read_floating_shapes(doc_xml: &str) -> Vec<FloatingShape> {
                         &read_leaf_text(&mut r),
                     );
                     body_depth = body_depth.saturating_sub(1);
+                    continue;
                 }
+                scan_depth += 1;
             }
             Ok(Event::Empty(e)) => {
                 let qname = e.name();
@@ -1174,7 +1182,15 @@ fn read_floating_shapes(doc_xml: &str) -> Vec<FloatingShape> {
                     current_body_block_text.clear();
                     current_body_block_shapes.clear();
                     alternate_content_stack.clear();
+                    scan_depth = scan_depth.saturating_sub(1);
                     continue;
+                }
+                if name == b"AlternateContent"
+                    && alternate_content_stack
+                        .last()
+                        .is_some_and(|state| state.branch_depth == scan_depth)
+                {
+                    alternate_content_stack.pop();
                 }
                 if in_body {
                     let ending_current_body_block = current_body_block_depth == Some(body_depth);
@@ -1188,13 +1204,6 @@ fn read_floating_shapes(doc_xml: &str) -> Vec<FloatingShape> {
                     if body_block_candidate_depths.last().copied() == Some(body_depth) {
                         body_block_candidate_depths.pop();
                     }
-                    if name == b"AlternateContent"
-                        && alternate_content_stack
-                            .last()
-                            .is_some_and(|state| state.branch_depth == body_depth)
-                    {
-                        alternate_content_stack.pop();
-                    }
                     body_depth = body_depth.saturating_sub(1);
                     if ending_current_body_block || body_depth == 0 {
                         current_body_block_index = None;
@@ -1203,6 +1212,7 @@ fn read_floating_shapes(doc_xml: &str) -> Vec<FloatingShape> {
                         current_body_block_shapes.clear();
                     }
                 }
+                scan_depth = scan_depth.saturating_sub(1);
             }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
