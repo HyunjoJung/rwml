@@ -2271,7 +2271,7 @@ fn report_display_layout_fields_split_cached_and_malformed_diagnostics() {
             },
             FieldKindCount {
                 kind: FieldKind::Display("SYMBOL".to_string()),
-                count: 2,
+                count: 1,
             },
         ]
     );
@@ -2280,7 +2280,7 @@ fn report_display_layout_fields_split_cached_and_malformed_diagnostics() {
         vec![
             FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::NoComputedResult,
-                count: 2,
+                count: 1,
             },
             FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::UnsupportedSwitch,

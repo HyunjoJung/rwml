@@ -6800,7 +6800,7 @@ fn docx_symbol_field_computes_deterministic_symbols() {
 }
 
 #[test]
-fn docx_symbol_field_diagnostics_split_valid_unmapped_font_from_malformed_symbol() {
+fn docx_symbol_field_diagnostics_split_mapped_wingdings_from_malformed_symbol() {
     let doc = Document::open(&docx_fixture(&[
         (
             "[Content_Types].xml",
@@ -6822,7 +6822,7 @@ fn docx_symbol_field_diagnostics_split_valid_unmapped_font_from_malformed_symbol
     assert_eq!(fields[0].kind, FieldKind::Display("SYMBOL".to_string()));
     assert_eq!(fields[0].instruction, r#"SYMBOL 65 \f Wingdings"#);
     assert_eq!(fields[0].result, "cached unmapped wingdings");
-    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(fields[0].computed_result.as_deref(), Some("\u{270C}"));
     assert_eq!(fields[1].kind, FieldKind::Display("SYMBOL".to_string()));
     assert_eq!(fields[1].instruction, r#"SYMBOL 65 \f "Wingdings "#);
     assert_eq!(fields[1].result, "cached malformed symbol");
@@ -6833,25 +6833,19 @@ fn docx_symbol_field_diagnostics_split_valid_unmapped_font_from_malformed_symbol
         report.features.unsupported_field_kinds,
         vec![FieldKindCount {
             kind: FieldKind::Display("SYMBOL".to_string()),
-            count: 2,
+            count: 1,
         }]
     );
     assert_eq!(
         report.features.unsupported_field_reasons,
-        vec![
-            FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::NoComputedResult,
-                count: 1,
-            },
-            FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::UnsupportedSwitch,
-                count: 1,
-            },
-        ]
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnsupportedSwitch,
+            count: 1,
+        }]
     );
 
     let main_text = doc.main_text();
-    assert!(main_text.contains("cached unmapped wingdings"));
+    assert!(main_text.contains("\u{270C}"));
     assert!(main_text.contains("cached malformed symbol"));
 }
 

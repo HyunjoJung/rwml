@@ -8616,6 +8616,7 @@ fn symbol_font_char(code: u32) -> Option<char> {
 
 fn wingdings_font_char(code: u32) -> Option<char> {
     Some(match code {
+        0x41 => '\u{270C}',
         0xFC => '\u{2713}',
         0xFB => '\u{2611}',
         0xFE => '\u{2612}',
