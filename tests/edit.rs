@@ -2304,6 +2304,14 @@ fn set_core_property_updates_existing_core_properties_part_only() {
 
     doc.set_core_property(CoreProperty::Title, "New <Title> & Co")
         .expect("title updates");
+    doc.set_core_property(CoreProperty::Category, "Operations")
+        .expect("category updates");
+    doc.set_core_property(CoreProperty::ContentStatus, "Final")
+        .expect("content status updates");
+    doc.set_core_property(CoreProperty::Revision, "13")
+        .expect("revision updates");
+    doc.set_core_property(CoreProperty::Version, "2.0")
+        .expect("version updates");
 
     let saved = doc.save().expect("save edited docx");
     let before_parts = unzip_parts(&before);
@@ -2312,11 +2320,20 @@ fn set_core_property_updates_existing_core_properties_part_only() {
 
     assert!(core.contains("<dc:title>New &lt;Title&gt; &amp; Co</dc:title>"));
     assert!(core.contains("<dc:creator>Old Author</dc:creator>"));
+    assert!(core.contains("category") && core.contains(">Operations</cp:category>"));
+    assert!(core.contains("contentStatus") && core.contains(">Final</cp:contentStatus>"));
+    assert!(core.contains("revision") && core.contains(">13</cp:revision>"));
+    assert!(core.contains("version") && core.contains(">2.0</cp:version>"));
     assert_eq!(
         parts["word/document.xml"], before_parts["word/document.xml"],
         "body should not be rewritten"
     );
-    assert!(Document::open(&saved).is_ok());
+    let reopened = Document::open(&saved).expect("saved core metadata reopens");
+    let props = reopened.core_properties();
+    assert_eq!(props.category.as_deref(), Some("Operations"));
+    assert_eq!(props.content_status.as_deref(), Some("Final"));
+    assert_eq!(props.revision.as_deref(), Some("13"));
+    assert_eq!(props.version.as_deref(), Some("2.0"));
 }
 
 #[test]

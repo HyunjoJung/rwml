@@ -230,6 +230,14 @@ pub enum CoreProperty {
     Keywords,
     /// Core-properties `cp:lastModifiedBy`.
     LastModifiedBy,
+    /// Core-properties `cp:category`.
+    Category,
+    /// Core-properties `cp:contentStatus`.
+    ContentStatus,
+    /// Core-properties `cp:revision`.
+    Revision,
+    /// Core-properties `cp:version`.
+    Version,
 }
 
 /// Core document properties extracted from `docProps/core.xml` or generated
@@ -292,7 +300,12 @@ impl CoreProperty {
             | CoreProperty::Subject
             | CoreProperty::Creator
             | CoreProperty::Description => DC_NS,
-            CoreProperty::Keywords | CoreProperty::LastModifiedBy => CORE_PROPERTIES_NS,
+            CoreProperty::Keywords
+            | CoreProperty::LastModifiedBy
+            | CoreProperty::Category
+            | CoreProperty::ContentStatus
+            | CoreProperty::Revision
+            | CoreProperty::Version => CORE_PROPERTIES_NS,
         }
     }
 
@@ -304,6 +317,10 @@ impl CoreProperty {
             CoreProperty::Description => b"description",
             CoreProperty::Keywords => b"keywords",
             CoreProperty::LastModifiedBy => b"lastModifiedBy",
+            CoreProperty::Category => b"category",
+            CoreProperty::ContentStatus => b"contentStatus",
+            CoreProperty::Revision => b"revision",
+            CoreProperty::Version => b"version",
         }
     }
 
@@ -315,6 +332,10 @@ impl CoreProperty {
             CoreProperty::Description => "dc:description",
             CoreProperty::Keywords => "cp:keywords",
             CoreProperty::LastModifiedBy => "cp:lastModifiedBy",
+            CoreProperty::Category => "cp:category",
+            CoreProperty::ContentStatus => "cp:contentStatus",
+            CoreProperty::Revision => "cp:revision",
+            CoreProperty::Version => "cp:version",
         }
     }
 }

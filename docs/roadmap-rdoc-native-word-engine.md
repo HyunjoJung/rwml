@@ -614,8 +614,9 @@ Initial status:
   same package-preserving image edit path to validated `word/media/*.jpg` and
   `*.jpeg` parts with `image/jpeg` content types.
 - `Document::set_core_property()` updates or creates `docProps/core.xml` for
-  typed core metadata such as title and creator while preserving document body
-  parts; `Document::core_properties()` provides the paired read/query surface.
+  typed core metadata such as title, creator, category, content status,
+  revision, and version while preserving document body parts;
+  `Document::core_properties()` provides the paired read/query surface.
 - `Document::edit_capability()` and `DocumentReport.edit` expose typed
   package-preserving edit availability; `PackageReadOnly` diagnostics now report
   legacy `.doc`, incomplete retained packages, and lossy OPC metadata as
