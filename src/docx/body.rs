@@ -1951,12 +1951,12 @@ fn read_hyperlink(r: &mut Xml<'_>, start: &BytesStart<'_>, ctx: &Ctx<'_>, depth:
 }
 
 fn hyperlink_url(start: &BytesStart<'_>, ctx: &Ctx<'_>) -> Option<String> {
-    if let Some(id) = attr_local(start, b"id") {
-        if let Some((target, _external)) = ctx.rels.get(id.trim()) {
+    if let Some(id) = attr_local_trimmed(start, b"id") {
+        if let Some((target, _external)) = ctx.rels.get(&id) {
             return Some(target.clone());
         }
     }
-    attr_local(start, b"anchor").map(|a| format!("#{a}"))
+    attr_local_trimmed(start, b"anchor").map(|a| format!("#{a}"))
 }
 
 /// Read `<w:fldSimple>`: hyperlinks keep link semantics; other simple fields
@@ -2979,6 +2979,21 @@ mod tests {
             hyperlink_instr_url(r#"HYPERLINK "https://example.com" extra"#),
             None
         );
+    }
+
+    #[test]
+    fn hyperlink_anchor_trims_ooxml_value() {
+        let xml = r#"<w:document><w:body><w:p>
+            <w:hyperlink w:anchor=" TargetBookmark "><w:r><w:t>Jump</w:t></w:r></w:hyperlink>
+        </w:p></w:body></w:document>"#;
+        let blocks = parse(xml);
+        let Block::Paragraph(p) = &blocks[0] else {
+            panic!("para");
+        };
+        assert!(matches!(
+            &p.runs[0].field,
+            FieldRole::Hyperlink { url } if url == "#TargetBookmark"
+        ));
     }
 
     fn raw_merge_cell(vmerge: VMerge) -> CellRaw {
