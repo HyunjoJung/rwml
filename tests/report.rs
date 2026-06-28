@@ -479,7 +479,7 @@ fn compatibility_field_diagnostics_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" PRIVATE legacy-data "><w:r><w:t>cached private payload</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" ADDIN &quot;bad "><w:r><w:t>cached malformed addin</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" PRIVATE legacy-data "><w:r><w:t>cached private payload</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DATA legacy-data "><w:r><w:t>cached data payload</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" GLOSSARY AutoTextName "><w:r><w:t>cached glossary payload</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" HTMLACTIVEX LegacyControl "><w:r><w:t>cached activex payload</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" ADDIN &quot;bad "><w:r><w:t>cached malformed addin</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -2302,12 +2302,24 @@ fn report_compatibility_fields_split_cached_and_malformed_diagnostics() {
     let doc = Document::open(&compatibility_field_diagnostics_docx()).expect("fixture opens");
     let report = doc.report();
 
-    assert_eq!(report.features.fields, 2);
+    assert_eq!(report.features.fields, 5);
     assert_eq!(
         report.features.field_kinds,
         vec![
             FieldKindCount {
                 kind: FieldKind::Compatibility("PRIVATE".to_string()),
+                count: 1,
+            },
+            FieldKindCount {
+                kind: FieldKind::Compatibility("DATA".to_string()),
+                count: 1,
+            },
+            FieldKindCount {
+                kind: FieldKind::Compatibility("GLOSSARY".to_string()),
+                count: 1,
+            },
+            FieldKindCount {
+                kind: FieldKind::Compatibility("HTMLACTIVEX".to_string()),
                 count: 1,
             },
             FieldKindCount {
@@ -2324,6 +2336,18 @@ fn report_compatibility_fields_split_cached_and_malformed_diagnostics() {
                 count: 1,
             },
             FieldKindCount {
+                kind: FieldKind::Compatibility("DATA".to_string()),
+                count: 1,
+            },
+            FieldKindCount {
+                kind: FieldKind::Compatibility("GLOSSARY".to_string()),
+                count: 1,
+            },
+            FieldKindCount {
+                kind: FieldKind::Compatibility("HTMLACTIVEX".to_string()),
+                count: 1,
+            },
+            FieldKindCount {
                 kind: FieldKind::Compatibility("ADDIN".to_string()),
                 count: 1,
             },
@@ -2334,7 +2358,7 @@ fn report_compatibility_fields_split_cached_and_malformed_diagnostics() {
         vec![
             FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::NoComputedResult,
-                count: 1,
+                count: 4,
             },
             FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::UnsupportedSwitch,
