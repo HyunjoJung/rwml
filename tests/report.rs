@@ -2454,24 +2454,41 @@ fn report_field_category_matrix_splits_cached_and_malformed_diagnostics() {
     );
 
     assert_report_field_diagnostics(
-        field_pair_diagnostics_docx(
-            r#"BIBLIOGRAPHY \l 1033"#,
-            "Works cited",
-            r#"INDEX &quot;bad"#,
-            "cached malformed index",
-        ),
-        2,
+        docx_fixture(&[
+            (
+                "[Content_Types].xml",
+                r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+            ),
+            (
+                "_rels/.rels",
+                r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            (
+                "word/document.xml",
+                r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" BIBLIOGRAPHY \l 1033 "><w:r><w:t>Works cited</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" CITATION Smith2026 \l 1033 "><w:r><w:t>(Smith, 2026)</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" INDEX \e &quot; - &quot; "><w:r><w:t>Index preview</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TOA \c &quot;1&quot; "><w:r><w:t>Authorities</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TA \l &quot;Case v. Example&quot; \c 1 "><w:r><w:t>Case v. Example</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" XE &quot;Term&quot; "><w:r><w:t>Term</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" RD &quot;appendix.docx&quot; "><w:r><w:t>Referenced doc</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TA \l&quot;Compact Case&quot; \c2 "><w:r><w:t>Compact Case</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TA \sShortEntry \c3 "><w:r><w:t>Short Entry</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" XE &quot;See Term&quot; \t&quot;See Also&quot; "><w:r><w:t>See Term</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" XE &quot;Duplicate Format&quot; \* Upper \* Lower "><w:r><w:t>Duplicate Format</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TA \l &quot;Broken Case&quot; \c 99 "><w:r><w:t>Broken Case</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            ),
+        ]),
+        12,
         vec![
             field_kind_count(FieldKind::ReferenceIndex("BIBLIOGRAPHY".to_string()), 1),
+            field_kind_count(FieldKind::ReferenceIndex("CITATION".to_string()), 1),
             field_kind_count(FieldKind::ReferenceIndex("INDEX".to_string()), 1),
+            field_kind_count(FieldKind::ReferenceIndex("TOA".to_string()), 1),
+            field_kind_count(FieldKind::ReferenceIndex("TA".to_string()), 4),
+            field_kind_count(FieldKind::ReferenceIndex("XE".to_string()), 3),
+            field_kind_count(FieldKind::ReferenceIndex("RD".to_string()), 1),
         ],
         vec![
             field_kind_count(FieldKind::ReferenceIndex("BIBLIOGRAPHY".to_string()), 1),
+            field_kind_count(FieldKind::ReferenceIndex("CITATION".to_string()), 1),
             field_kind_count(FieldKind::ReferenceIndex("INDEX".to_string()), 1),
+            field_kind_count(FieldKind::ReferenceIndex("TOA".to_string()), 1),
+            field_kind_count(FieldKind::ReferenceIndex("XE".to_string()), 1),
+            field_kind_count(FieldKind::ReferenceIndex("TA".to_string()), 1),
         ],
         vec![
-            field_reason_count(FieldEvaluationReason::NoComputedResult, 1),
-            field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 1),
+            field_reason_count(FieldEvaluationReason::NoComputedResult, 4),
+            field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 2),
         ],
     );
 
