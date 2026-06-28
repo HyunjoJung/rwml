@@ -538,6 +538,33 @@ pub(crate) fn field_level_range_token(value: &str) -> Option<(u8, u8)> {
     ((1..=9).contains(&start) && start <= end && end <= 9).then_some((start, end))
 }
 
+pub(crate) fn field_points_token(value: &str) -> Option<f32> {
+    field_name_token(value)?
+        .parse::<f32>()
+        .ok()
+        .filter(|value| value.is_finite())
+}
+
+pub(crate) fn field_positive_points_token(value: &str) -> Option<f32> {
+    field_points_token(value).filter(|value| *value > 0.0)
+}
+
+pub(crate) fn field_symbol_code_token(value: &str) -> Option<u32> {
+    let value = field_name_token(value)?;
+    if let Some(hex) = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+    {
+        return u32::from_str_radix(hex, 16).ok();
+    }
+    if let Ok(code) = value.parse::<u32>() {
+        return Some(code);
+    }
+    let mut chars = value.chars();
+    let ch = chars.next()?;
+    chars.next().is_none().then_some(ch as u32)
+}
+
 pub(crate) fn toc_style_specs(value: &str) -> Option<Vec<(&str, u8)>> {
     let value = value.trim();
     let value = match (value.starts_with('"'), value.ends_with('"')) {

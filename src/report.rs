@@ -16,6 +16,8 @@ use crate::annotation::{
     is_ref_value_neutral_switch, is_toc_value_neutral_switch, strip_ascii_switch_prefix,
     toc_style_specs, Field, FieldKind, FieldNumberFormat, FieldTextFormat,
 };
+#[cfg(not(feature = "docx"))]
+use crate::annotation::{field_points_token, field_positive_points_token, field_symbol_code_token};
 use crate::model::{Block, FieldRole, Stats, Table};
 use crate::CoreProperties;
 #[cfg(feature = "docx")]
@@ -2250,26 +2252,18 @@ fn accept_advance_switch_for_report<'a>(
 ) -> Option<()> {
     for switch in ["\\d", "\\u", "\\l", "\\r", "\\x", "\\y"] {
         if part.eq_ignore_ascii_case(switch) {
-            parse_advance_points_for_report(parts.next()?)?;
+            field_points_token(parts.next()?)?;
             return Some(());
         }
         if let Some(value) = strip_ascii_switch_prefix(part, switch) {
             if value.is_empty() {
                 return None;
             }
-            parse_advance_points_for_report(value)?;
+            field_points_token(value)?;
             return Some(());
         }
     }
     None
-}
-
-#[cfg(not(feature = "docx"))]
-fn parse_advance_points_for_report(value: &str) -> Option<f32> {
-    diagnostic_name_token(value)?
-        .parse::<f32>()
-        .ok()
-        .filter(|value| value.is_finite())
 }
 
 #[cfg(not(feature = "docx"))]
@@ -2282,7 +2276,7 @@ fn supported_symbol_syntax(instruction: &str) -> bool {
     if !kind.eq_ignore_ascii_case("SYMBOL") {
         return false;
     }
-    if parse_symbol_code_for_report(parts.next()).is_none() {
+    if parts.next().and_then(field_symbol_code_token).is_none() {
         return false;
     }
     let mut text_format = false;
@@ -2315,13 +2309,13 @@ fn supported_symbol_syntax(instruction: &str) -> bool {
             let Some(size) = parts.next() else {
                 return false;
             };
-            if parse_symbol_size_for_report(size).is_none() {
+            if field_positive_points_token(size).is_none() {
                 return false;
             }
             continue;
         }
         if let Some(size) = strip_ascii_switch_prefix(part, "\\s") {
-            if size.is_empty() || parse_symbol_size_for_report(size).is_none() {
+            if size.is_empty() || field_positive_points_token(size).is_none() {
                 return false;
             }
             continue;
@@ -2335,31 +2329,6 @@ fn supported_symbol_syntax(instruction: &str) -> bool {
         }
     }
     true
-}
-
-#[cfg(not(feature = "docx"))]
-fn parse_symbol_code_for_report(token: Option<&str>) -> Option<u32> {
-    let token = diagnostic_name_token(token?)?;
-    if let Some(hex) = token
-        .strip_prefix("0x")
-        .or_else(|| token.strip_prefix("0X"))
-    {
-        return u32::from_str_radix(hex, 16).ok();
-    }
-    if let Ok(code) = token.parse::<u32>() {
-        return Some(code);
-    }
-    let mut chars = token.chars();
-    let ch = chars.next()?;
-    chars.next().is_none().then_some(ch as u32)
-}
-
-#[cfg(not(feature = "docx"))]
-fn parse_symbol_size_for_report(token: &str) -> Option<f32> {
-    diagnostic_name_token(token)?
-        .parse::<f32>()
-        .ok()
-        .filter(|value| value.is_finite() && *value > 0.0)
 }
 
 #[cfg(not(feature = "docx"))]
@@ -2431,7 +2400,7 @@ fn consume_eq_numeric_prefix_value_for_report<'a>(
     if end == 0 || matches!(rest.get(..end), Some("+") | Some("-")) {
         return None;
     }
-    let points = parse_advance_points_for_report(&rest[..end])?;
+    let points = field_points_token(&rest[..end])?;
     Some((points, &rest[end..]))
 }
 

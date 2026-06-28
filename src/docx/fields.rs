@@ -9,7 +9,8 @@ use crate::annotation::{
     accept_field_number_format_switch,
     accept_field_text_format_switch as accept_field_format_switch, accept_general_format_switch,
     field_identifier_token, field_level_range_token, field_level_token, field_literal_token,
-    field_name_token, instruction_parts, is_neutral_field_format_switch, is_note_ref_kind,
+    field_name_token, field_points_token, field_positive_points_token, field_symbol_code_token,
+    instruction_parts, is_neutral_field_format_switch, is_note_ref_kind,
     is_ref_value_neutral_switch, is_toc_value_neutral_switch, strip_ascii_switch_prefix,
     toc_style_specs, Field, FieldKind, FieldNumberFormat, FieldTextFormat,
 };
@@ -7693,25 +7694,18 @@ fn advance_instruction(instruction: &str) -> Option<()> {
 fn accept_advance_switch<'a>(part: &str, parts: &mut impl Iterator<Item = &'a str>) -> Option<()> {
     for switch in ["\\d", "\\u", "\\l", "\\r", "\\x", "\\y"] {
         if part.eq_ignore_ascii_case(switch) {
-            parse_advance_points(parts.next()?)?;
+            field_points_token(parts.next()?)?;
             return Some(());
         }
         if let Some(value) = strip_ascii_switch_prefix(part, switch) {
             if value.is_empty() {
                 return None;
             }
-            parse_advance_points(value)?;
+            field_points_token(value)?;
             return Some(());
         }
     }
     None
-}
-
-fn parse_advance_points(value: &str) -> Option<f32> {
-    field_name_token(value)?
-        .parse::<f32>()
-        .ok()
-        .filter(|value| value.is_finite())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -8207,7 +8201,7 @@ fn consume_eq_numeric_prefix_option<'a>(value: &'a str, option: &str) -> Option<
     if end == 0 || matches!(rest.get(..end), Some("+") | Some("-")) {
         return None;
     }
-    let value = parse_advance_points(&rest[..end])?;
+    let value = field_points_token(&rest[..end])?;
     Some((value, &rest[end..]))
 }
 
@@ -8397,7 +8391,7 @@ fn symbol_instruction(instruction: &str) -> Option<SymbolInstruction> {
     if !kind.eq_ignore_ascii_case("SYMBOL") {
         return None;
     }
-    let code = parse_symbol_code(parts.next()?)?;
+    let code = field_symbol_code_token(parts.next()?)?;
     let mut unicode = false;
     let mut font = None;
     let mut text_format = None;
@@ -8424,14 +8418,14 @@ fn symbol_instruction(instruction: &str) -> Option<SymbolInstruction> {
             continue;
         }
         if part.eq_ignore_ascii_case("\\s") {
-            parse_symbol_size(parts.next()?)?;
+            field_positive_points_token(parts.next()?)?;
             continue;
         }
         if let Some(size) = strip_ascii_switch_prefix(part, "\\s") {
             if size.is_empty() {
                 return None;
             }
-            parse_symbol_size(size)?;
+            field_positive_points_token(size)?;
             continue;
         }
         if accept_field_format_switch_for_tail(part, &mut parts, &mut text_format)? {
@@ -8445,29 +8439,6 @@ fn symbol_instruction(instruction: &str) -> Option<SymbolInstruction> {
         font,
         text_format,
     })
-}
-
-fn parse_symbol_size(token: &str) -> Option<f32> {
-    field_name_token(token)?
-        .parse::<f32>()
-        .ok()
-        .filter(|value| value.is_finite() && *value > 0.0)
-}
-
-fn parse_symbol_code(token: &str) -> Option<u32> {
-    let token = field_name_token(token)?;
-    if let Some(hex) = token
-        .strip_prefix("0x")
-        .or_else(|| token.strip_prefix("0X"))
-    {
-        return u32::from_str_radix(hex, 16).ok();
-    }
-    if let Ok(code) = token.parse::<u32>() {
-        return Some(code);
-    }
-    let mut chars = token.chars();
-    let ch = chars.next()?;
-    chars.next().is_none().then_some(ch as u32)
 }
 
 fn ansi_char(code: u32) -> Option<char> {
