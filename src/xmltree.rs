@@ -1252,24 +1252,9 @@ impl XmlTree {
         row_index: usize,
         cell_index: usize,
     ) -> Option<Vec<NodeId>> {
-        let mut seen = 0usize;
-        let mut scope = self.ns_scope_at(body);
-        for i in 0..self.nodes[body.0 as usize].children.len() {
-            let c = self.nodes[body.0 as usize].children[i];
-            let base = scope.len();
-            self.push_xmlns(c, &mut scope);
-            if self.resolves_to(c, WML_NS, b"tbl", &scope) {
-                if seen == table_index {
-                    let result =
-                        self.wml_table_cell_text_runs(c, &mut scope, row_index, cell_index);
-                    scope.truncate(base);
-                    return result;
-                }
-                seen += 1;
-            }
-            scope.truncate(base);
-        }
-        None
+        let table = self.wml_body_table_at(body, table_index)?;
+        let mut scope = self.ns_scope_at(table);
+        self.wml_table_cell_text_runs(table, &mut scope, row_index, cell_index)
     }
 
     /// Whether a physical cell in a top-level body table contains a nested `w:tbl`.
@@ -1280,24 +1265,68 @@ impl XmlTree {
         row_index: usize,
         cell_index: usize,
     ) -> Option<bool> {
+        let table = self.wml_body_table_at(body, table_index)?;
+        let mut scope = self.ns_scope_at(table);
+        self.wml_table_cell_has_nested_table(table, &mut scope, row_index, cell_index)
+    }
+
+    fn wml_body_table_at(&self, body: NodeId, table_index: usize) -> Option<NodeId> {
         let mut seen = 0usize;
         let mut scope = self.ns_scope_at(body);
         for i in 0..self.nodes[body.0 as usize].children.len() {
             let c = self.nodes[body.0 as usize].children[i];
-            let base = scope.len();
-            self.push_xmlns(c, &mut scope);
-            if self.resolves_to(c, WML_NS, b"tbl", &scope) {
-                if seen == table_index {
-                    let result =
-                        self.wml_table_cell_has_nested_table(c, &mut scope, row_index, cell_index);
-                    scope.truncate(base);
-                    return result;
-                }
-                seen += 1;
+            if let Some(table) = self.find_wml_body_table(c, &mut scope, table_index, &mut seen) {
+                return Some(table);
             }
-            scope.truncate(base);
         }
         None
+    }
+
+    fn find_wml_body_table(
+        &self,
+        id: NodeId,
+        scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+        table_index: usize,
+        seen: &mut usize,
+    ) -> Option<NodeId> {
+        let base = scope.len();
+        self.push_xmlns(id, scope);
+        if self.wml_revision_edit_action(id, scope, WmlRevisionEditPolicy::Accept)
+            == WmlRevisionEditAction::Remove
+        {
+            scope.truncate(base);
+            return None;
+        }
+        if self.resolves_to(id, WML_NS, b"tbl", scope) {
+            let found = (*seen == table_index).then_some(id);
+            *seen += 1;
+            scope.truncate(base);
+            return found;
+        }
+        if self.is_wml_body_table_wrapper(id, scope) {
+            for i in 0..self.nodes[id.0 as usize].children.len() {
+                let c = self.nodes[id.0 as usize].children[i];
+                if let Some(table) = self.find_wml_body_table(c, scope, table_index, seen) {
+                    scope.truncate(base);
+                    return Some(table);
+                }
+            }
+        }
+        scope.truncate(base);
+        None
+    }
+
+    fn is_wml_body_table_wrapper(&self, id: NodeId, scope: &[(Vec<u8>, Vec<u8>)]) -> bool {
+        [
+            b"sdt".as_slice(),
+            b"sdtContent".as_slice(),
+            b"customXml".as_slice(),
+            b"smartTag".as_slice(),
+            b"ins".as_slice(),
+            b"moveTo".as_slice(),
+        ]
+        .into_iter()
+        .any(|local| self.resolves_to(id, WML_NS, local, scope))
     }
 
     /// Cached visible `w:t` nodes for real footnote/endnote entries under a notes root,

@@ -181,8 +181,8 @@ Short-term surfaces:
 - `set_hyperlink_target`;
 - `set_comment_text`;
 - `add_comment_on_text`;
-- `set_table_cell_text` for top-level body-table cells using `gridSpan`-aware
-  logical columns and `vMerge`-aware logical rows.
+- `set_table_cell_text` for accepted-current top-level body-table cells using
+  `gridSpan`-aware logical columns and `vMerge`-aware logical rows.
 
 Each edit must declare:
 

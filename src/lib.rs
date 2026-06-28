@@ -1582,12 +1582,12 @@ impl Document {
     }
 
     /// **Element-tree editing: rewrite one existing `.docx` body table cell.**
-    /// `table_index` and `row_index` are zero-based indexes into top-level `w:tbl`
-    /// elements in `word/document.xml`; `cell_index` is a zero-based logical column
-    /// that accounts for horizontal `w:gridSpan`. A `row_index` inside a vertical
-    /// `w:vMerge` continuation resolves to the restart/origin cell. The target
-    /// cell's visible `w:t` content is replaced by `text`; surrounding table
-    /// structure and other cells are preserved.
+    /// `table_index` and `row_index` are zero-based indexes into accepted-current
+    /// top-level `w:tbl` elements in `word/document.xml`; `cell_index` is a
+    /// zero-based logical column that accounts for horizontal `w:gridSpan`. A
+    /// `row_index` inside a vertical `w:vMerge` continuation resolves to the
+    /// restart/origin cell. The target cell's visible `w:t` content is replaced by
+    /// `text`; surrounding table structure and other cells are preserved.
     ///
     /// This is intentionally a focused body-table edit surface. Parent cells
     /// containing nested tables are rejected before mutation. Read views are stale

@@ -2027,6 +2027,44 @@ fn set_table_cell_text_updates_one_body_table_cell() {
 }
 
 #[test]
+fn set_table_cell_text_edits_accepted_revision_wrapped_tables() {
+    let fixture = docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:ins w:id="1"><w:tbl><w:tr><w:tc><w:p><w:r><w:t>Inserted table</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:ins><w:moveTo w:id="2"><w:tbl><w:tr><w:tc><w:p><w:r><w:t>Moved table</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:moveTo></w:body></w:document>"#,
+        ),
+    ]);
+    let mut doc = Document::open(&fixture).expect("fixture opens");
+
+    doc.set_table_cell_text(0, 0, 0, "Inserted updated")
+        .expect("inserted table cell updates");
+    doc.set_table_cell_text(1, 0, 0, "Moved updated")
+        .expect("moved-to table cell updates");
+
+    let saved = doc.save().expect("save edited docx");
+    let body = String::from_utf8(unzip_parts(&saved)["word/document.xml"].clone()).unwrap();
+    assert!(
+        body.contains(r#"<w:ins w:id="1"><w:tbl>"#) && body.contains("<w:t>Inserted updated</w:t>"),
+        "inserted table was not updated in place: {body}"
+    );
+    assert!(
+        body.contains(r#"<w:moveTo w:id="2"><w:tbl>"#) && body.contains("<w:t>Moved updated</w:t>"),
+        "moved-to table was not updated in place: {body}"
+    );
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    assert_eq!(reopened.main_text(), "Inserted updated\nMoved updated");
+}
+
+#[test]
 fn set_table_cell_text_writes_tabs_and_breaks_as_markers() {
     let mut doc = Document::open(&table_docx()).expect("fixture opens");
 

@@ -594,10 +594,10 @@ Initial status:
   body hyperlink by body order, regenerating only `word/_rels/document.xml.rels`
   while leaving `word/document.xml` byte-preserved.
 - `Document::set_table_cell_text()` rewrites visible text in an existing cell of
-  a top-level `.docx` body table using `w:gridSpan`-aware logical columns and
-  `w:vMerge`-aware logical rows; parent cells containing nested tables are
-  rejected before mutation, and replacement tabs/newlines are emitted as
-  WordprocessingML markers.
+  an accepted-current top-level `.docx` body table using `w:gridSpan`-aware
+  logical columns and `w:vMerge`-aware logical rows; parent cells containing
+  nested tables are rejected before mutation, and replacement tabs/newlines are
+  emitted as WordprocessingML markers.
 - `Document::add_footnote_on_text()` creates `word/footnotes.xml` when needed,
   inserts a body `w:footnoteReference` after the first exact anchor match or
   adjacent run sequence, appends a real `w:footnote`, and validates the footnotes

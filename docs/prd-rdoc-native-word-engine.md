@@ -565,7 +565,7 @@ The public API should keep four paths distinct:
   and `MERGEFIELD` cached results,
   `accept_all_revisions`, `reject_all_revisions`, `set_hyperlink_target`,
   `set_comment_text`, `add_comment_on_text`,
-  `set_table_cell_text` for top-level body-table cells using
+  `set_table_cell_text` for accepted-current top-level body-table cells using
   `gridSpan`-aware logical columns and `vMerge`-aware logical rows,
   `replace_header_footer_text`,
   `replace_text_in_part`, `add_footnote_on_text`, `add_endnote_on_text`,
