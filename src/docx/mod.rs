@@ -162,7 +162,8 @@ pub(crate) struct DocxState {
     /// Footnote/endnote side-table records parsed from `word/footnotes.xml` and
     /// `word/endnotes.xml`.
     pub note_records: Vec<Note>,
-    /// Text-box side-table records parsed from body `w:txbxContent` shapes.
+    /// Text-box side-table records parsed from body/header/footer
+    /// `w:txbxContent` shapes.
     pub text_boxes: Vec<TextBox>,
     /// Floating shape geometry parsed from body `wp:anchor` drawing markup.
     pub floating_shapes: Vec<FloatingShape>,
@@ -320,15 +321,16 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     note_records.append(&mut endnote_records);
     attach_note_reference_anchors(&mut note_records, &doc_xml);
     let floating_shapes = read_floating_shapes(&doc_xml);
-    let text_boxes = read_text_boxes(&doc_xml, &ctx, &floating_shapes);
+    let mut text_boxes = read_text_boxes(&doc_xml, &ctx, &floating_shapes);
     // Running headers/footers referenced by the body's sectPr(s). `ctx` only holds
     // shared (&) borrows of rels/styles/numbering, so the &mut zip pass is fine.
-    let (
-        section_header_footers,
-        final_header_footer,
-        header_footers,
-        header_footer_comment_anchors,
-    ) = read_headers_footers(
+    let HeaderFooterRead {
+        sections: section_header_footers,
+        final_section: final_header_footer,
+        records: header_footers,
+        comment_anchors: header_footer_comment_anchors,
+        text_boxes: header_footer_text_boxes,
+    } = read_headers_footers(
         &mut zip,
         &doc_xml,
         &rels,
@@ -336,6 +338,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         &numbering,
         document_properties,
     );
+    text_boxes.extend(header_footer_text_boxes);
     apply_section_header_footers(&mut blocks, &section_header_footers);
     let comments_xml = part(&mut zip, "word/comments.xml");
     let comments_ext_xml = part(&mut zip, "word/commentsExtended.xml");
@@ -512,6 +515,21 @@ struct HeaderFooterBlocks {
     even: Vec<Block>,
 }
 
+struct HeaderFooterRead {
+    sections: Vec<SectionHeaderFooter>,
+    final_section: SectionHeaderFooter,
+    records: Vec<HeaderFooter>,
+    comment_anchors: HashMap<String, TextAnchor>,
+    text_boxes: Vec<TextBox>,
+}
+
+struct HeaderFooterPartRead {
+    blocks: HeaderFooterBlocks,
+    records: Vec<HeaderFooter>,
+    comment_anchors: HashMap<String, TextAnchor>,
+    text_boxes: Vec<TextBox>,
+}
+
 #[derive(Clone, Copy)]
 struct DocumentPropertyRefs<'a> {
     core: &'a CoreProperties,
@@ -528,24 +546,26 @@ fn read_headers_footers(
     styles: &styles::Styles,
     numbering: &numbering::Numbering,
     properties: DocumentPropertyRefs<'_>,
-) -> (
-    Vec<SectionHeaderFooter>,
-    SectionHeaderFooter,
-    Vec<HeaderFooter>,
-    HashMap<String, TextAnchor>,
-) {
+) -> HeaderFooterRead {
     let section_refs = body::scan_hf_ref_sections(doc_xml);
     let mut sections = Vec::with_capacity(section_refs.len());
     let mut records = Vec::new();
     let mut comment_anchors = HashMap::new();
+    let mut text_boxes = Vec::new();
     let mut seen_records = std::collections::HashSet::new();
+    let mut seen_text_boxes = std::collections::HashSet::new();
     let mut inherited_header = Vec::new();
     let mut inherited_footer = Vec::new();
 
     for refs in section_refs {
         let header_has_default = has_default_header_footer_ref(&refs.headers);
         let footer_has_default = has_default_header_footer_ref(&refs.footers);
-        let (header_blocks, header_records, header_comment_anchors) = read_hf_parts(
+        let HeaderFooterPartRead {
+            blocks: header_blocks,
+            records: header_records,
+            comment_anchors: header_comment_anchors,
+            text_boxes: header_text_boxes,
+        } = read_hf_parts(
             zip,
             &refs.headers,
             HeaderFooterPartKind::Header,
@@ -556,6 +576,7 @@ fn read_headers_footers(
         );
         extend_unique_header_footer_records(&mut records, &mut seen_records, header_records);
         extend_missing_comment_anchors(&mut comment_anchors, header_comment_anchors);
+        extend_unique_text_box_records(&mut text_boxes, &mut seen_text_boxes, header_text_boxes);
         let mut header = header_blocks.default;
         // Omitted odd/default refs inherit the previous section; an explicit
         // default ref, even when blank/unresolved, resets the inherited surface.
@@ -566,7 +587,12 @@ fn read_headers_footers(
             inherited_header = header.clone();
         }
 
-        let (footer_blocks, footer_records, footer_comment_anchors) = read_hf_parts(
+        let HeaderFooterPartRead {
+            blocks: footer_blocks,
+            records: footer_records,
+            comment_anchors: footer_comment_anchors,
+            text_boxes: footer_text_boxes,
+        } = read_hf_parts(
             zip,
             &refs.footers,
             HeaderFooterPartKind::Footer,
@@ -577,6 +603,7 @@ fn read_headers_footers(
         );
         extend_unique_header_footer_records(&mut records, &mut seen_records, footer_records);
         extend_missing_comment_anchors(&mut comment_anchors, footer_comment_anchors);
+        extend_unique_text_box_records(&mut text_boxes, &mut seen_text_boxes, footer_text_boxes);
         let mut footer = footer_blocks.default;
         // Same inheritance rule as headers.
         if !footer_has_default && !inherited_footer.is_empty() {
@@ -596,13 +623,31 @@ fn read_headers_footers(
     }
 
     let final_section = sections.last().cloned().unwrap_or_default();
-    (sections, final_section, records, comment_anchors)
+    HeaderFooterRead {
+        sections,
+        final_section,
+        records,
+        comment_anchors,
+        text_boxes,
+    }
 }
 
 fn extend_unique_header_footer_records(
     records: &mut Vec<HeaderFooter>,
     seen: &mut std::collections::HashSet<String>,
     next: Vec<HeaderFooter>,
+) {
+    for record in next {
+        if seen.insert(record.id.clone()) {
+            records.push(record);
+        }
+    }
+}
+
+fn extend_unique_text_box_records(
+    records: &mut Vec<TextBox>,
+    seen: &mut std::collections::HashSet<String>,
+    next: Vec<TextBox>,
 ) {
     for record in next {
         if seen.insert(record.id.clone()) {
@@ -661,16 +706,14 @@ fn read_hf_parts(
     styles: &styles::Styles,
     numbering: &numbering::Numbering,
     properties: DocumentPropertyRefs<'_>,
-) -> (
-    HeaderFooterBlocks,
-    Vec<HeaderFooter>,
-    HashMap<String, TextAnchor>,
-) {
+) -> HeaderFooterPartRead {
     let mut seen_blocks = std::collections::HashSet::new();
     let mut seen_records = std::collections::HashSet::new();
+    let mut seen_text_boxes = std::collections::HashSet::new();
     let mut blocks = HeaderFooterBlocks::default();
     let mut records = Vec::new();
     let mut comment_anchors = HashMap::new();
+    let mut text_boxes = Vec::new();
     for reference in refs {
         let Some((target, external)) = rels.get(&reference.rel_id) else {
             continue;
@@ -728,9 +771,17 @@ fn read_hf_parts(
             counters: Default::default(),
         };
         if let Some(xml) = part(zip, &path) {
-            extend_missing_comment_anchors(&mut comment_anchors, comments::parse_anchors(&xml));
-            let part_blocks = body::parse_hdrftr(&xml, &hf_ctx);
             let type_name = normalized_header_footer_type(&reference.type_name);
+            extend_missing_comment_anchors(&mut comment_anchors, comments::parse_anchors(&xml));
+            if seen_text_boxes.insert((path.clone(), type_name.to_string())) {
+                text_boxes.extend(read_text_boxes_with_prefix(
+                    &xml,
+                    &hf_ctx,
+                    &[],
+                    &format!("{path}#{type_name}-text-box"),
+                ));
+            }
+            let part_blocks = body::parse_hdrftr(&xml, &hf_ctx);
             if seen_blocks.insert((path.clone(), type_name.to_string())) {
                 match type_name {
                     "first" => blocks.first.extend(part_blocks.clone()),
@@ -750,7 +801,12 @@ fn read_hf_parts(
             }
         }
     }
-    (blocks, records, comment_anchors)
+    HeaderFooterPartRead {
+        blocks,
+        records,
+        comment_anchors,
+        text_boxes,
+    }
 }
 
 fn extend_missing_comment_anchors(
@@ -864,6 +920,15 @@ fn read_text_boxes(
     ctx: &body::Ctx<'_>,
     floating_shapes: &[FloatingShape],
 ) -> Vec<TextBox> {
+    read_text_boxes_with_prefix(doc_xml, ctx, floating_shapes, "docx-text-box")
+}
+
+fn read_text_boxes_with_prefix(
+    doc_xml: &str,
+    ctx: &body::Ctx<'_>,
+    floating_shapes: &[FloatingShape],
+    id_prefix: &str,
+) -> Vec<TextBox> {
     let text_boxes: Vec<_> = body::parse_text_boxes(doc_xml, ctx)
         .into_iter()
         .enumerate()
@@ -874,7 +939,7 @@ fn read_text_boxes(
         .into_iter()
         .enumerate()
         .map(|(text_box_index, (index, text))| TextBox {
-            id: format!("docx-text-box-{index}"),
+            id: format!("{id_prefix}-{index}"),
             anchor: ordered_anchors
                 .get(text_box_index)
                 .and_then(|anchor| anchor.clone())

@@ -416,6 +416,31 @@ fn text_box_docx() -> Vec<u8> {
     ])
 }
 
+fn header_footer_text_box_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:r><w:t>BODY</w:t></w:r></w:p><w:sectPr><w:headerReference w:type="default" r:id="rIdHeader"/></w:sectPr></w:body></w:document>"#,
+        ),
+        (
+            "word/header1.xml",
+            r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:p><w:r><w:drawing><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>HEADER BOX</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></w:drawing></w:r></w:p></w:hdr>"#,
+        ),
+    ])
+}
+
 fn anchored_text_box_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -1773,6 +1798,19 @@ fn docx_text_boxes_are_exposed_as_side_table_once() {
     assert_eq!(text_boxes.len(), 1);
     assert_eq!(text_boxes[0].id, "docx-text-box-0");
     assert_eq!(text_boxes[0].text, "BOX TEXT");
+    assert_eq!(text_boxes[0].anchor, None);
+}
+
+#[test]
+fn docx_header_footer_text_boxes_are_exposed_as_side_table() {
+    let doc = Document::open(&header_footer_text_box_docx()).expect("fixture opens");
+
+    assert_eq!(doc.header_text(), "HEADER BOX");
+    assert_eq!(doc.text_box_text(), "HEADER BOX");
+    let text_boxes = doc.text_boxes();
+    assert_eq!(text_boxes.len(), 1);
+    assert_eq!(text_boxes[0].id, "word/header1.xml#default-text-box-0");
+    assert_eq!(text_boxes[0].text, "HEADER BOX");
     assert_eq!(text_boxes[0].anchor, None);
 }
 
