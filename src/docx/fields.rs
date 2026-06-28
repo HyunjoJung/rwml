@@ -15,8 +15,9 @@ use crate::annotation::{
     field_quoted_literal_token, field_symbol_code_token, filename_field_syntax, instruction_parts,
     is_neutral_field_format_switch, is_note_ref_kind, is_ref_value_neutral_switch,
     is_toc_value_neutral_switch, reference_index_category_token, reference_index_literal_token,
-    reference_index_plain_value_token, strip_ascii_switch_prefix, toc_style_specs, Field,
-    FieldKind, FieldNumberFormat, FieldTextFormat,
+    reference_index_plain_value_token, revision_number_field_text_format,
+    strip_ascii_switch_prefix, toc_style_specs, Field, FieldKind, FieldNumberFormat,
+    FieldTextFormat,
 };
 use crate::{numfmt, CoreProperties};
 
@@ -5538,30 +5539,13 @@ pub(crate) fn computed_revision_number_result(
     instruction: &str,
     core_properties: &CoreProperties,
 ) -> Option<String> {
-    let text_format = revision_number_instruction(instruction)?;
+    let text_format = revision_number_field_text_format(instruction)?;
     let revision = core_properties.revision.clone()?;
     Some(apply_field_text_format(revision, text_format))
 }
 
 pub(crate) fn supports_revision_number_field_syntax(instruction: &str) -> bool {
-    revision_number_instruction(instruction).is_some()
-}
-
-fn revision_number_instruction(instruction: &str) -> Option<Option<FieldTextFormat>> {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let kind = parts.next()?;
-    if !kind.eq_ignore_ascii_case("REVNUM") {
-        return None;
-    }
-    let mut text_format = None;
-    while let Some(part) = parts.next() {
-        if accept_field_format_switch_for_tail(part, &mut parts, &mut text_format)? {
-            continue;
-        }
-        return None;
-    }
-    Some(text_format)
+    revision_number_field_text_format(instruction).is_some()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

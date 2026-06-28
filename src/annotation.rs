@@ -581,6 +581,27 @@ pub(crate) fn filename_field_syntax(instruction: &str) -> bool {
     true
 }
 
+pub(crate) fn revision_number_field_text_format(
+    instruction: &str,
+) -> Option<Option<FieldTextFormat>> {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let kind = parts.next()?;
+    if !kind.eq_ignore_ascii_case("REVNUM") {
+        return None;
+    }
+    let mut text_format = None;
+    while let Some(part) = parts.next() {
+        let accepted = accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_text_format_switch(format, &mut text_format)
+        })?;
+        if !accepted {
+            return None;
+        }
+    }
+    Some(text_format)
+}
+
 pub(crate) fn document_property_key(value: &str) -> String {
     value
         .chars()

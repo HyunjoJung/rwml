@@ -31,7 +31,7 @@ use crate::annotation::{field_points_token, field_positive_points_token, field_s
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{
     reference_index_category_token, reference_index_literal_token,
-    reference_index_plain_value_token,
+    reference_index_plain_value_token, revision_number_field_text_format,
 };
 use crate::model::{Block, FieldRole, Stats, Table};
 use crate::CoreProperties;
@@ -2077,25 +2077,7 @@ fn revision_number_uncomputed_reason(instruction: &str) -> FieldEvaluationReason
 
 #[cfg(not(feature = "docx"))]
 fn supported_revision_number_syntax(instruction: &str) -> bool {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let Some(kind) = parts.next() else {
-        return false;
-    };
-    if !kind.eq_ignore_ascii_case("REVNUM") {
-        return false;
-    }
-    let mut text_format = false;
-    while let Some(part) = parts.next() {
-        let Some(accepted) = accept_field_format_for_report(part, &mut parts, &mut text_format)
-        else {
-            return false;
-        };
-        if !accepted {
-            return false;
-        }
-    }
-    true
+    revision_number_field_text_format(instruction).is_some()
 }
 
 fn style_ref_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
