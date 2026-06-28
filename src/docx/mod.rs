@@ -1428,6 +1428,7 @@ fn apply_shape_srgb_color(
 }
 
 fn parse_rgb_hex_color(value: &str) -> Option<Color> {
+    let value = value.trim();
     if value.len() != 6 {
         return None;
     }
