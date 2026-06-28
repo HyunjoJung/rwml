@@ -1756,13 +1756,13 @@ fn run_builder_adds_authored_revision_runs() {
             RunBuilder::new("added")
                 .revision(
                     RevisionBuilder::insertion()
-                        .author("Alice")
-                        .date("2026-06-24T01:00:00Z"),
+                        .author(" Alice ")
+                        .date(" 2026-06-24T01:00:00Z "),
                 )
                 .bold()
                 .build(),
             RunBuilder::new("removed")
-                .revision(RevisionBuilder::deletion().author("Bob"))
+                .revision(RevisionBuilder::deletion().author(" ").date("\n"))
                 .italic()
                 .build(),
         ])
@@ -1779,6 +1779,12 @@ fn run_builder_adds_authored_revision_runs() {
         paragraph.runs[2].revision.as_ref().map(|r| r.kind),
         Some(RevisionKind::Deletion)
     );
+    let insertion = paragraph.runs[1].revision.as_ref().unwrap();
+    let deletion = paragraph.runs[2].revision.as_ref().unwrap();
+    assert_eq!(insertion.author.as_deref(), Some("Alice"));
+    assert_eq!(insertion.date.as_deref(), Some("2026-06-24T01:00:00Z"));
+    assert_eq!(deletion.author, None);
+    assert_eq!(deletion.date, None);
 
     let bytes = rdoc::write_docx(&model);
     let parts = unzip_parts(&bytes);
@@ -1803,7 +1809,7 @@ fn run_builder_adds_authored_revision_runs() {
     assert!(
         document_xml.contains(r#"<w:ins w:id="0" w:author="Alice" w:date="2026-06-24T01:00:00Z">"#)
             && document_xml.contains("<w:b/>")
-            && document_xml.contains(r#"<w:del w:id="1" w:author="Bob">"#)
+            && document_xml.contains(r#"<w:del w:id="1">"#)
             && document_xml.contains("<w:i/>"),
         "revision metadata or run properties missing: {document_xml}"
     );
@@ -1816,7 +1822,8 @@ fn run_builder_adds_authored_revision_runs() {
     assert_eq!(revisions[0].date.as_deref(), Some("2026-06-24T01:00:00Z"));
     assert_eq!(revisions[0].text, "added");
     assert_eq!(revisions[1].kind, RevisionKind::Deletion);
-    assert_eq!(revisions[1].author.as_deref(), Some("Bob"));
+    assert_eq!(revisions[1].author, None);
+    assert_eq!(revisions[1].date, None);
     assert_eq!(revisions[1].text, "removed");
     assert_eq!(
         reopened.main_text_with_revision_view(RevisionView::Accepted),

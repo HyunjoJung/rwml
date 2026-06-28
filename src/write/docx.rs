@@ -826,10 +826,10 @@ impl Ctx {
         let id = self.revision_id;
         self.revision_id += 1;
         let mut attrs = format!(r#" w:id="{id}""#);
-        if let Some(author) = revision.author.as_deref() {
+        if let Some(author) = non_empty_trimmed(revision.author.as_deref()) {
             attrs.push_str(&format!(r#" w:author="{}""#, esc_attr(author)));
         }
-        if let Some(date) = revision.date.as_deref() {
+        if let Some(date) = non_empty_trimmed(revision.date.as_deref()) {
             attrs.push_str(&format!(r#" w:date="{}""#, esc_attr(date)));
         }
         out.push_str(&format!("<w:{tag}{attrs}>"));

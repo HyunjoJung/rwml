@@ -530,13 +530,15 @@ impl RevisionBuilder {
 
     /// Set the revision author.
     pub fn author(mut self, author: impl Into<String>) -> Self {
-        self.revision.author = Some(author.into());
+        let author = author.into().trim().to_string();
+        self.revision.author = (!author.is_empty()).then_some(author);
         self
     }
 
     /// Set the revision timestamp.
     pub fn date(mut self, date: impl Into<String>) -> Self {
-        self.revision.date = Some(date.into());
+        let date = date.into().trim().to_string();
+        self.revision.date = (!date.is_empty()).then_some(date);
         self
     }
 
