@@ -1849,7 +1849,7 @@ fn apply_image_rotation(img: &mut Option<Image>, e: &BytesStart<'_>) {
     let Some(image) = img.as_mut() else {
         return;
     };
-    let Some(rot) = attr_local(e, b"rot").and_then(|rot| rot.parse::<i64>().ok()) else {
+    let Some(rot) = attr_local(e, b"rot").and_then(|rot| rot.trim().parse::<i64>().ok()) else {
         return;
     };
     let units = rot.rem_euclid(21_600_000);
@@ -2892,10 +2892,13 @@ mod tests {
     use crate::model::Block;
 
     fn parse(xml: &str) -> Vec<Block> {
+        parse_with_media(xml, HashMap::new())
+    }
+
+    fn parse_with_media(xml: &str, media: HashMap<String, Image>) -> Vec<Block> {
         let styles = Styles::default();
         let numbering = Numbering::default();
         let rels = HashMap::new();
-        let media = HashMap::new();
         let ref_targets = HashMap::new();
         let ref_position_context = super::super::fields::RefPositionContext::default();
         let ref_number_context = super::super::fields::RefNumberContext::empty();
@@ -3052,6 +3055,26 @@ mod tests {
             1,
             "shape text doubled: {t:?}"
         );
+    }
+
+    #[test]
+    fn image_rotation_trims_ooxml_units() {
+        let mut media = HashMap::new();
+        media.insert("rIdImg".to_string(), Image::default());
+        let xml = r#"<w:document><w:body><w:p><w:r><w:drawing><wp:inline>
+            <a:blip r:embed="rIdImg"/>
+            <a:xfrm rot=" 5400000 "/>
+        </wp:inline></w:drawing></w:r></w:p></w:body></w:document>"#;
+        let blocks = parse_with_media(xml, media);
+        let Block::Paragraph(p) = &blocks[0] else {
+            panic!("para");
+        };
+        let image = p
+            .runs
+            .iter()
+            .find_map(|run| run.image.as_ref())
+            .expect("image run");
+        assert_eq!(image.rotation_degrees, Some(90));
     }
 
     #[test]
