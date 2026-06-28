@@ -17,6 +17,8 @@ use crate::annotation::{
     toc_style_specs, Field, FieldKind, FieldNumberFormat, FieldTextFormat,
 };
 #[cfg(not(feature = "docx"))]
+use crate::annotation::{field_non_empty_non_switch_literal_token, field_non_switch_literal_token};
+#[cfg(not(feature = "docx"))]
 use crate::annotation::{field_points_token, field_positive_points_token, field_symbol_code_token};
 use crate::model::{Block, FieldRole, Stats, Table};
 use crate::CoreProperties;
@@ -2958,16 +2960,16 @@ fn supported_print_syntax(instruction: &str) -> bool {
         };
         let mut text_format = false;
         return diagnostic_identifier_token(group).is_some()
-            && quoted_action_text_for_report(parts.next()).is_some()
+            && quoted_non_empty_non_switch_literal_for_report(parts.next()).is_some()
             && supported_field_format_tail_for_report(&mut parts, &mut text_format);
     }
     if let Some(group) = strip_ascii_switch_prefix(first, "\\p") {
         let mut text_format = false;
         return diagnostic_identifier_token(group).is_some()
-            && quoted_action_text_for_report(parts.next()).is_some()
+            && quoted_non_empty_non_switch_literal_for_report(parts.next()).is_some()
             && supported_field_format_tail_for_report(&mut parts, &mut text_format);
     }
-    if action_text_for_report(first).is_none() {
+    if field_non_empty_non_switch_literal_token(first).is_none() {
         return false;
     }
     let mut text_format = false;
@@ -2981,7 +2983,7 @@ fn supported_print_syntax(instruction: &str) -> bool {
             saw_format = true;
             continue;
         }
-        if saw_format || action_text_for_report(part).is_none() {
+        if saw_format || field_non_empty_non_switch_literal_token(part).is_none() {
             return false;
         }
     }
@@ -3021,21 +3023,16 @@ fn supported_action_button_syntax(instruction: &str) -> bool {
         }
         display_parts.push(part);
     }
-    display_parts.is_empty() || action_text_for_report(&display_parts.join(" ")).is_some()
+    display_parts.is_empty()
+        || field_non_empty_non_switch_literal_token(&display_parts.join(" ")).is_some()
 }
 
 #[cfg(not(feature = "docx"))]
-fn action_text_for_report(token: &str) -> Option<&str> {
-    let text = diagnostic_literal_token(token)?;
-    (!text.is_empty() && !text.starts_with('\\')).then_some(text)
-}
-
-#[cfg(not(feature = "docx"))]
-fn quoted_action_text_for_report(token: Option<&str>) -> Option<&str> {
+fn quoted_non_empty_non_switch_literal_for_report(token: Option<&str>) -> Option<&str> {
     let token = token?;
     token
         .starts_with('"')
-        .then(|| action_text_for_report(token))?
+        .then(|| field_non_empty_non_switch_literal_token(token))?
 }
 
 fn inserted_content_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -4210,7 +4207,7 @@ fn supported_fillin_syntax<'a>(mut parts: impl Iterator<Item = &'a str>) -> bool
         if accepted {
             continue;
         }
-        if prompt_seen || prompt_text_token_for_report(part).is_none() {
+        if prompt_seen || field_non_empty_non_switch_literal_token(part).is_none() {
             return false;
         }
         prompt_seen = true;
@@ -4226,7 +4223,7 @@ fn supported_ask_syntax<'a>(mut parts: impl Iterator<Item = &'a str>) -> bool {
     let Some(prompt) = parts.next() else {
         return false;
     };
-    if prompt_text_token_for_report(prompt).is_none() {
+    if field_non_empty_non_switch_literal_token(prompt).is_none() {
         return false;
     }
     let mut default = false;
@@ -4261,23 +4258,11 @@ fn accept_prompt_default_switch<'a>(
     default: &mut bool,
 ) -> bool {
     let value = if part.eq_ignore_ascii_case("\\d") {
-        parts.next().and_then(prompt_default_token_for_report)
+        parts.next().and_then(field_non_switch_literal_token)
     } else {
-        strip_ascii_switch_prefix(part, "\\d").and_then(prompt_default_token_for_report)
+        strip_ascii_switch_prefix(part, "\\d").and_then(field_non_switch_literal_token)
     };
     value.is_some() && !std::mem::replace(default, true)
-}
-
-#[cfg(not(feature = "docx"))]
-fn prompt_default_token_for_report(token: &str) -> Option<&str> {
-    let value = diagnostic_literal_token(token)?;
-    (!value.starts_with('\\')).then_some(value)
-}
-
-#[cfg(not(feature = "docx"))]
-fn prompt_text_token_for_report(token: &str) -> Option<&str> {
-    let value = prompt_default_token_for_report(token)?;
-    (!value.is_empty()).then_some(value)
 }
 
 fn set_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {

@@ -9,10 +9,11 @@ use crate::annotation::{
     accept_field_number_format_switch,
     accept_field_text_format_switch as accept_field_format_switch, accept_general_format_switch,
     field_identifier_token, field_level_range_token, field_level_token, field_literal_token,
-    field_name_token, field_points_token, field_positive_points_token, field_symbol_code_token,
-    instruction_parts, is_neutral_field_format_switch, is_note_ref_kind,
-    is_ref_value_neutral_switch, is_toc_value_neutral_switch, strip_ascii_switch_prefix,
-    toc_style_specs, Field, FieldKind, FieldNumberFormat, FieldTextFormat,
+    field_name_token, field_non_empty_non_switch_literal_token, field_non_switch_literal_token,
+    field_points_token, field_positive_points_token, field_symbol_code_token, instruction_parts,
+    is_neutral_field_format_switch, is_note_ref_kind, is_ref_value_neutral_switch,
+    is_toc_value_neutral_switch, strip_ascii_switch_prefix, toc_style_specs, Field, FieldKind,
+    FieldNumberFormat, FieldTextFormat,
 };
 use crate::{numfmt, CoreProperties};
 
@@ -7035,13 +7036,11 @@ where
 }
 
 fn prompt_default_literal_token(token: &str) -> Option<String> {
-    let value = field_literal_token(token)?;
-    (!value.starts_with('\\')).then(|| value.to_string())
+    field_non_switch_literal_token(token).map(str::to_string)
 }
 
 fn prompt_text_literal_token(token: &str) -> Option<&str> {
-    let value = field_literal_token(token)?;
-    (!value.is_empty() && !value.starts_with('\\')).then_some(value)
+    field_non_empty_non_switch_literal_token(token)
 }
 
 fn quoted_literal_text(token: &str) -> Option<String> {
@@ -7586,8 +7585,7 @@ fn print_instruction(instruction: &str) -> Option<()> {
 }
 
 fn accept_print_direct_token(token: &str) -> Option<()> {
-    let instructions = field_literal_token(token)?;
-    (!instructions.is_empty() && !instructions.starts_with('\\')).then_some(())
+    field_non_empty_non_switch_literal_token(token).map(|_| ())
 }
 
 fn action_instruction(instruction: &str) -> Option<ActionInstruction> {

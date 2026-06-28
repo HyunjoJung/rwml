@@ -525,6 +525,16 @@ pub(crate) fn field_literal_token(value: &str) -> Option<&str> {
     (!value.contains('"')).then_some(value)
 }
 
+pub(crate) fn field_non_switch_literal_token(value: &str) -> Option<&str> {
+    let value = field_literal_token(value)?;
+    (!value.starts_with('\\')).then_some(value)
+}
+
+pub(crate) fn field_non_empty_non_switch_literal_token(value: &str) -> Option<&str> {
+    let value = field_non_switch_literal_token(value)?;
+    (!value.is_empty()).then_some(value)
+}
+
 pub(crate) fn field_level_token(value: &str) -> Option<u8> {
     let level = field_name_token(value)?.parse::<u8>().ok()?;
     (1..=9).contains(&level).then_some(level)
