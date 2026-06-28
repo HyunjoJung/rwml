@@ -213,8 +213,9 @@ pub(crate) fn parse(xml: &str) -> Numbering {
                 }
                 b"numFmt" => set_level(&mut nb, &cur_abstract, cur_ilvl, &e, |l, e| {
                     if let Some(v) = attr_local(e, b"val") {
-                        l.ordered = v != "bullet" && v != "none";
-                        l.num_fmt = v;
+                        let value = v.trim();
+                        l.ordered = value != "bullet" && value != "none";
+                        l.num_fmt = value.to_string();
                     }
                 }),
                 b"lvlText" => set_level(&mut nb, &cur_abstract, cur_ilvl, &e, |l, e| {
@@ -279,15 +280,20 @@ mod tests {
                 <w:lvl w:ilvl="1"><w:numFmt w:val="lowerLetter"/></w:lvl>
             </w:abstractNum>
             <w:abstractNum w:abstractNumId="1">
-                <w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/></w:lvl>
+                <w:lvl w:ilvl="0"><w:numFmt w:val=" bullet "/></w:lvl>
+            </w:abstractNum>
+            <w:abstractNum w:abstractNumId="2">
+                <w:lvl w:ilvl="0"><w:numFmt w:val=" none "/></w:lvl>
             </w:abstractNum>
             <w:num w:numId="5"><w:abstractNumId w:val="0"/></w:num>
             <w:num w:numId="6"><w:abstractNumId w:val="1"/></w:num>
+            <w:num w:numId="7"><w:abstractNumId w:val="2"/></w:num>
         </w:numbering>"#;
         let nb = parse(xml);
         assert_eq!(nb.ordered("5", 0), Some(true));
         assert_eq!(nb.ordered("5", 1), Some(true));
         assert_eq!(nb.ordered("6", 0), Some(false));
+        assert_eq!(nb.ordered("7", 0), Some(false));
         assert_eq!(nb.ordered("99", 0), None);
     }
 
@@ -297,7 +303,7 @@ mod tests {
             <w:abstractNum w:abstractNumId="0">
                 <w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl>
                 <w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="lowerLetter"/><w:lvlText w:val="%2)"/></w:lvl>
-                <w:lvl w:ilvl="2"><w:start w:val="1"/><w:numFmt w:val="lowerRoman"/><w:lvlText w:val="%1.%2.%3"/></w:lvl>
+                <w:lvl w:ilvl="2"><w:start w:val="1"/><w:numFmt w:val=" lowerRoman "/><w:lvlText w:val="%1.%2.%3"/></w:lvl>
             </w:abstractNum>
             <w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>
             <w:abstractNum w:abstractNumId="9"><w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/><w:lvlText w:val="•"/></w:lvl></w:abstractNum>
