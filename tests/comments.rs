@@ -325,7 +325,7 @@ fn docx_note_comment_anchors_are_exposed() {
 }
 
 #[test]
-fn docx_comments_preserve_tabs_and_breaks_in_text_and_anchor() {
+fn docx_comments_preserve_inline_markers_in_text_and_anchor() {
     let docx = docx_fixture(&[
         (
             "[Content_Types].xml",
@@ -341,21 +341,21 @@ fn docx_comments_preserve_tabs_and_breaks_in_text_and_anchor() {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:commentRangeStart w:id="4"/><w:r><w:t>Hello</w:t><w:tab/><w:t>anchor</w:t><w:br/><w:t>end</w:t></w:r><w:commentRangeEnd w:id="4"/><w:r><w:commentReference w:id="4"/></w:r></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:commentRangeStart w:id="4"/><w:r><w:t>Hello</w:t><w:tab/><w:t>anchor</w:t><w:br/><w:t>no</w:t><w:noBreakHyphen/><w:t>break</w:t></w:r><w:commentRangeEnd w:id="4"/><w:r><w:commentReference w:id="4"/></w:r></w:p></w:body></w:document>"#,
         ),
         (
             "word/comments.xml",
-            r#"<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:comment w:id="4" w:author="Reviewer"><w:p><w:r><w:t>Line 1</w:t><w:br/><w:t>Line 2</w:t><w:tab/><w:t>Cell</w:t></w:r></w:p></w:comment></w:comments>"#,
+            r#"<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:comment w:id="4" w:author="Reviewer"><w:p><w:r><w:t>Line 1</w:t><w:br/><w:t>Line</w:t><w:noBreakHyphen/><w:t>2</w:t><w:tab/><w:t>Cell</w:t></w:r></w:p></w:comment></w:comments>"#,
         ),
     ]);
     let doc = Document::open(&docx).expect("fixture opens");
     let comments = doc.comments();
 
     assert_eq!(comments.len(), 1);
-    assert_eq!(comments[0].text, "Line 1\nLine 2\tCell");
+    assert_eq!(comments[0].text, "Line 1\nLine-2\tCell");
     assert_eq!(
         comments[0].anchor.as_ref().map(|a| a.text.as_str()),
-        Some("Hello\tanchor\nend")
+        Some("Hello\tanchor\nno-break")
     );
 }
 

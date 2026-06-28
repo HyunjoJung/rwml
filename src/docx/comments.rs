@@ -318,6 +318,7 @@ fn inline_marker_text(e: &BytesStart<'_>) -> Option<&'static str> {
     match local(e.name().as_ref()) {
         b"tab" => Some("\t"),
         b"br" | b"cr" => Some("\n"),
+        b"noBreakHyphen" => Some("-"),
         _ => None,
     }
 }
