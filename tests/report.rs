@@ -412,6 +412,24 @@ fn action_field_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn compatibility_field_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" PRIVATE legacy-data "><w:r><w:t>cached private payload</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" ADDIN &quot;bad "><w:r><w:t>cached malformed addin</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn merge_field_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -2112,6 +2130,54 @@ fn report_action_fields_split_cached_and_malformed_diagnostics() {
             kind: FieldKind::Action("MACROBUTTON".to_string()),
             count: 2,
         },]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::NoComputedResult,
+                count: 1,
+            },
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::UnsupportedSwitch,
+                count: 1,
+            },
+        ]
+    );
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_compatibility_fields_split_cached_and_malformed_diagnostics() {
+    let doc = Document::open(&compatibility_field_diagnostics_docx()).expect("fixture opens");
+    let report = doc.report();
+
+    assert_eq!(report.features.fields, 2);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![
+            FieldKindCount {
+                kind: FieldKind::Compatibility("PRIVATE".to_string()),
+                count: 1,
+            },
+            FieldKindCount {
+                kind: FieldKind::Compatibility("ADDIN".to_string()),
+                count: 1,
+            },
+        ]
+    );
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![
+            FieldKindCount {
+                kind: FieldKind::Compatibility("PRIVATE".to_string()),
+                count: 1,
+            },
+            FieldKindCount {
+                kind: FieldKind::Compatibility("ADDIN".to_string()),
+                count: 1,
+            },
+        ]
     );
     assert_eq!(
         report.features.unsupported_field_reasons,
