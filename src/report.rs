@@ -1315,6 +1315,7 @@ fn scan_docx_story_structure_markers(xml: &str, features: &mut FeatureInventory)
     features.nested_tables += story.nested_tables;
     features.ole_objects += story.ole_objects;
     features.charts += story.charts;
+    features.floating_shapes += story.floating_shapes;
     features.tracked_property_changes += story.tracked_property_changes;
 }
 
