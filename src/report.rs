@@ -2189,9 +2189,7 @@ fn consume_eq_script_option_for_report<'a>(
     if operand.trim().is_empty() {
         return allow_empty.then_some(rest);
     }
-    diagnostic_literal_token(operand)
-        .is_some_and(|text| !text.trim().is_empty())
-        .then_some(rest)
+    eq_operand_for_report(operand).then_some(rest)
 }
 
 #[cfg(not(feature = "docx"))]
@@ -2260,6 +2258,9 @@ fn eq_operand_for_report(operand: &str) -> bool {
     let Some(text) = diagnostic_literal_token(operand) else {
         return false;
     };
+    if supported_eq_operand_expression_for_report(text) {
+        return true;
+    }
     let mut chars = text.chars();
     while let Some(ch) = chars.next() {
         if ch != '\\' {
@@ -2270,6 +2271,21 @@ fn eq_operand_for_report(operand: &str) -> bool {
         }
     }
     true
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_eq_operand_expression_for_report(expression: &str) -> bool {
+    let instruction = format!("EQ {expression}");
+    supported_eq_displacement_syntax(&instruction)
+        || supported_eq_script_syntax(&instruction)
+        || supported_eq_fraction_syntax(&instruction)
+        || supported_eq_radical_syntax(&instruction)
+        || supported_eq_list_syntax(&instruction)
+        || supported_eq_array_syntax(&instruction)
+        || supported_eq_integral_syntax(&instruction)
+        || supported_eq_overstrike_syntax(&instruction)
+        || supported_eq_box_syntax(&instruction)
+        || supported_eq_bracket_syntax(&instruction)
 }
 
 #[cfg(not(feature = "docx"))]
@@ -5117,6 +5133,10 @@ mod tests {
             super::display_uncomputed_reason(r"EQ \d \fo10(\q)"),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
+        assert_eq!(
+            super::display_uncomputed_reason(r"EQ \d \ba2(\f(1,2))"),
+            super::FieldEvaluationReason::NoComputedResult
+        );
     }
 
     #[cfg(not(feature = "docx"))]
@@ -5128,6 +5148,10 @@ mod tests {
         );
         assert_eq!(
             super::display_uncomputed_reason(r"EQ \s\ai4(Above"),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+        assert_eq!(
+            super::display_uncomputed_reason(r"EQ \s\up8(\q)"),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
     }
@@ -5142,6 +5166,10 @@ mod tests {
         assert_eq!(
             super::display_uncomputed_reason(r"EQ \f(1)"),
             super::FieldEvaluationReason::UnsupportedSwitch
+        );
+        assert_eq!(
+            super::display_uncomputed_reason(r"EQ \f(1,\f(2,3))"),
+            super::FieldEvaluationReason::NoComputedResult
         );
     }
 
