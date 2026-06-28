@@ -3601,10 +3601,11 @@ fn supported_numbering_syntax(instruction: &str) -> bool {
 fn supported_autonum_syntax<'a>(kind: &str, mut parts: impl Iterator<Item = &'a str>) -> bool {
     let accepts_separator = kind.eq_ignore_ascii_case("AUTONUM");
     let mut number_format = false;
+    let mut text_format = false;
     let mut separator = false;
     while let Some(part) = parts.next() {
         let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
-            accept_page_number_format_switch(format, &mut number_format)
+            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
         }) else {
             return false;
         };
@@ -3639,9 +3640,10 @@ fn supported_listnum_syntax<'a>(mut parts: impl Iterator<Item = &'a str>) -> boo
     let mut level_seen = false;
     let mut reset_seen = false;
     let mut number_format = false;
+    let mut text_format = false;
     while let Some(part) = parts.next() {
         let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
-            accept_page_number_format_switch(format, &mut number_format)
+            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
         }) else {
             return false;
         };
@@ -5809,6 +5811,31 @@ mod tests {
         assert_eq!(
             super::reference_index_marker_uncomputed_reason(r#"TA \l "Case" \c"1"#),
             super::FieldEvaluationReason::UnsupportedSwitch
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_numbering_diagnostics_accept_text_format_switches() {
+        assert_eq!(
+            super::numbering_uncomputed_reason(r"AUTONUM \* CardText \* Upper"),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::numbering_uncomputed_reason(r"AUTONUMLGL \* OrdText"),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::numbering_uncomputed_reason(r"AUTONUMOUT \* roman \* Upper"),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::numbering_uncomputed_reason(r"LISTNUM NumberDefault \* CardText \* Upper"),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::numbering_uncomputed_reason(r"LISTNUM LegalDefault \* OrdText"),
+            super::FieldEvaluationReason::NoComputedResult
         );
     }
 
