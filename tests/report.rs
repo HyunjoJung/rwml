@@ -226,7 +226,7 @@ fn core_properties_docx() -> Vec<u8> {
         ),
         (
             "docProps/core.xml",
-            r#"<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Quarter &lt;One&gt; &amp; Co</dc:title><dc:creator>Analyst</dc:creator><cp:category>Operations</cp:category><cp:contentStatus>Draft</cp:contentStatus><cp:version>1.2</cp:version></cp:coreProperties>"#,
+            r#"<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/"><dc:title>Quarter &lt;One&gt; &amp; Co</dc:title><dc:subject>Pipeline</dc:subject><dc:creator>Analyst</dc:creator><dc:description>Diagnostics summary</dc:description><cp:keywords>rdoc,metadata</cp:keywords><cp:category>Operations</cp:category><cp:contentStatus>Draft</cp:contentStatus><cp:lastModifiedBy>Reviewer</cp:lastModifiedBy><dcterms:created>2026-06-01T02:03:04Z</dcterms:created><dcterms:modified>2026-06-02T03:04:05Z</dcterms:modified><cp:lastPrinted>2026-06-03T04:05:06Z</cp:lastPrinted><cp:revision>12</cp:revision><cp:version>1.2</cp:version></cp:coreProperties>"#,
         ),
     ])
 }
@@ -3889,11 +3889,18 @@ fn report_includes_core_properties_for_diagnostics_json() {
         report.core_properties,
         CoreProperties {
             title: Some("Quarter <One> & Co".to_string()),
+            subject: Some("Pipeline".to_string()),
             creator: Some("Analyst".to_string()),
+            description: Some("Diagnostics summary".to_string()),
+            keywords: Some("rdoc,metadata".to_string()),
             category: Some("Operations".to_string()),
             content_status: Some("Draft".to_string()),
+            last_modified_by: Some("Reviewer".to_string()),
+            created: Some("2026-06-01T02:03:04Z".to_string()),
+            modified: Some("2026-06-02T03:04:05Z".to_string()),
+            last_printed: Some("2026-06-03T04:05:06Z".to_string()),
+            revision: Some("12".to_string()),
             version: Some("1.2".to_string()),
-            ..CoreProperties::default()
         }
     );
 
@@ -3902,10 +3909,29 @@ fn report_includes_core_properties_for_diagnostics_json() {
         json.contains(r#""core_properties":{"title":"Quarter <One> & Co""#),
         "{json}"
     );
-    assert!(json.contains(r#""subject":null"#), "{json}");
+    assert!(json.contains(r#""subject":"Pipeline""#), "{json}");
     assert!(json.contains(r#""creator":"Analyst""#), "{json}");
+    assert!(
+        json.contains(r#""description":"Diagnostics summary""#),
+        "{json}"
+    );
+    assert!(json.contains(r#""keywords":"rdoc,metadata""#), "{json}");
     assert!(json.contains(r#""category":"Operations""#), "{json}");
     assert!(json.contains(r#""content_status":"Draft""#), "{json}");
+    assert!(json.contains(r#""last_modified_by":"Reviewer""#), "{json}");
+    assert!(
+        json.contains(r#""created":"2026-06-01T02:03:04Z""#),
+        "{json}"
+    );
+    assert!(
+        json.contains(r#""modified":"2026-06-02T03:04:05Z""#),
+        "{json}"
+    );
+    assert!(
+        json.contains(r#""last_printed":"2026-06-03T04:05:06Z""#),
+        "{json}"
+    );
+    assert!(json.contains(r#""revision":"12""#), "{json}");
     assert!(json.contains(r#""version":"1.2""#), "{json}");
 }
 

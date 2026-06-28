@@ -837,7 +837,7 @@ code points.
   and unambiguous anchored text boxes include containing body anchor text;
   `text()` includes headers/footers, `main_text()` is
   body-only; `core_properties()` exposes supported `docProps/core.xml` metadata
-  fields including category, content status, and version.
+  fields including descriptive, package, timestamp, revision, and version values.
 - *Write/edit:* rdoc now **does** preserve arbitrary OOXML parts when editing an
   opened `.docx` (`save()` keeps comments, revisions, charts, content controls, custom
   XML, themes, fonts verbatim). The writer can generate run-anchored comments
