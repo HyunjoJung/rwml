@@ -1094,6 +1094,20 @@ fn doc_builder_adds_string_custom_properties() {
 }
 
 #[test]
+fn doc_builder_ignores_blank_custom_property_names() {
+    let model = DocBuilder::new().custom_property(" ", "ignored").build();
+
+    assert!(model.custom_properties.is_empty());
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    assert!(
+        !parts.contains_key("docProps/custom.xml"),
+        "blank custom property names should not emit a custom properties part"
+    );
+}
+
+#[test]
 fn doc_builder_adds_document_id_setting() {
     let model = DocBuilder::new()
         .document_id(" 6ECD4467 ")

@@ -1541,9 +1541,10 @@ impl DocBuilder {
 
     /// Set a string custom document property.
     pub fn custom_property(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
-        self.model
-            .custom_properties
-            .insert(name.into().trim().to_string(), value.into());
+        let name = name.into().trim().to_string();
+        if !name.is_empty() {
+            self.model.custom_properties.insert(name, value.into());
+        }
         self
     }
 
