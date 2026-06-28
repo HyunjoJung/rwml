@@ -330,6 +330,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         records: header_footers,
         comment_anchors: header_footer_comment_anchors,
         text_boxes: header_footer_text_boxes,
+        revisions: header_footer_revisions,
     } = read_headers_footers(
         &mut zip,
         &doc_xml,
@@ -370,7 +371,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         },
         preserve_legacy_form_cache,
     );
-    let revisions = revisions::parse(&doc_xml);
+    let mut revisions = revisions::parse(&doc_xml);
+    revisions.extend(header_footer_revisions);
     // Stats reflect the full visible content (body + notes).
     let stats = {
         let mut all = blocks.clone();
@@ -521,6 +523,7 @@ struct HeaderFooterRead {
     records: Vec<HeaderFooter>,
     comment_anchors: HashMap<String, TextAnchor>,
     text_boxes: Vec<TextBox>,
+    revisions: Vec<Revision>,
 }
 
 struct HeaderFooterPartRead {
@@ -528,6 +531,7 @@ struct HeaderFooterPartRead {
     records: Vec<HeaderFooter>,
     comment_anchors: HashMap<String, TextAnchor>,
     text_boxes: Vec<TextBox>,
+    revisions: Vec<Revision>,
 }
 
 #[derive(Clone, Copy)]
@@ -552,6 +556,7 @@ fn read_headers_footers(
     let mut records = Vec::new();
     let mut comment_anchors = HashMap::new();
     let mut text_boxes = Vec::new();
+    let mut revisions = Vec::new();
     let mut seen_records = std::collections::HashSet::new();
     let mut seen_text_boxes = std::collections::HashSet::new();
     let mut inherited_header = Vec::new();
@@ -565,6 +570,7 @@ fn read_headers_footers(
             records: header_records,
             comment_anchors: header_comment_anchors,
             text_boxes: header_text_boxes,
+            revisions: header_revisions,
         } = read_hf_parts(
             zip,
             &refs.headers,
@@ -577,6 +583,7 @@ fn read_headers_footers(
         extend_unique_header_footer_records(&mut records, &mut seen_records, header_records);
         extend_missing_comment_anchors(&mut comment_anchors, header_comment_anchors);
         extend_unique_text_box_records(&mut text_boxes, &mut seen_text_boxes, header_text_boxes);
+        extend_unique_revision_records(&mut revisions, header_revisions);
         let mut header = header_blocks.default;
         // Omitted odd/default refs inherit the previous section; an explicit
         // default ref, even when blank/unresolved, resets the inherited surface.
@@ -592,6 +599,7 @@ fn read_headers_footers(
             records: footer_records,
             comment_anchors: footer_comment_anchors,
             text_boxes: footer_text_boxes,
+            revisions: footer_revisions,
         } = read_hf_parts(
             zip,
             &refs.footers,
@@ -604,6 +612,7 @@ fn read_headers_footers(
         extend_unique_header_footer_records(&mut records, &mut seen_records, footer_records);
         extend_missing_comment_anchors(&mut comment_anchors, footer_comment_anchors);
         extend_unique_text_box_records(&mut text_boxes, &mut seen_text_boxes, footer_text_boxes);
+        extend_unique_revision_records(&mut revisions, footer_revisions);
         let mut footer = footer_blocks.default;
         // Same inheritance rule as headers.
         if !footer_has_default && !inherited_footer.is_empty() {
@@ -629,6 +638,7 @@ fn read_headers_footers(
         records,
         comment_anchors,
         text_boxes,
+        revisions,
     }
 }
 
@@ -651,6 +661,14 @@ fn extend_unique_text_box_records(
 ) {
     for record in next {
         if seen.insert(record.id.clone()) {
+            records.push(record);
+        }
+    }
+}
+
+fn extend_unique_revision_records(records: &mut Vec<Revision>, next: Vec<Revision>) {
+    for record in next {
+        if !records.contains(&record) {
             records.push(record);
         }
     }
@@ -710,10 +728,12 @@ fn read_hf_parts(
     let mut seen_blocks = std::collections::HashSet::new();
     let mut seen_records = std::collections::HashSet::new();
     let mut seen_text_boxes = std::collections::HashSet::new();
+    let mut seen_revisions = std::collections::HashSet::new();
     let mut blocks = HeaderFooterBlocks::default();
     let mut records = Vec::new();
     let mut comment_anchors = HashMap::new();
     let mut text_boxes = Vec::new();
+    let mut revisions = Vec::new();
     for reference in refs {
         let Some((target, external)) = rels.get(&reference.rel_id) else {
             continue;
@@ -781,6 +801,9 @@ fn read_hf_parts(
                     &format!("{path}#{type_name}-text-box"),
                 ));
             }
+            if seen_revisions.insert((path.clone(), type_name.to_string())) {
+                revisions.extend(revisions::parse(&xml));
+            }
             let part_blocks = body::parse_hdrftr(&xml, &hf_ctx);
             if seen_blocks.insert((path.clone(), type_name.to_string())) {
                 match type_name {
@@ -806,6 +829,7 @@ fn read_hf_parts(
         records,
         comment_anchors,
         text_boxes,
+        revisions,
     }
 }
 

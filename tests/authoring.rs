@@ -3202,6 +3202,18 @@ fn write_docx_keeps_header_footer_revision_runs() {
     );
 
     let reopened = Document::open(&bytes).expect("header/footer revision .docx reopens");
+    let revisions = reopened.revisions();
+    assert_eq!(revisions.len(), 4);
+    assert_eq!(revisions[0].kind, RevisionKind::Insertion);
+    assert_eq!(revisions[0].author.as_deref(), Some("Alice"));
+    assert_eq!(revisions[0].date.as_deref(), Some("2026-06-24T01:00:00Z"));
+    assert_eq!(revisions[0].text, "Header added");
+    assert_eq!(revisions[1].kind, RevisionKind::Deletion);
+    assert_eq!(revisions[1].text, "Header removed");
+    assert_eq!(revisions[2].kind, RevisionKind::Insertion);
+    assert_eq!(revisions[2].text, "Footer added");
+    assert_eq!(revisions[3].kind, RevisionKind::Deletion);
+    assert_eq!(revisions[3].text, "Footer removed");
     let header_text = reopened.header_text();
     assert!(
         header_text.contains("Header added")

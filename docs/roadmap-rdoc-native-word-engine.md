@@ -431,8 +431,9 @@ Initial status:
   feature inventory JSON also includes
   `unsupported_field_reasons` counts for `UnknownField`, `UnresolvedBookmark`,
   `UnsupportedSwitch`, and `NoComputedResult`.
-- `Document::revisions()` extracts `.docx` insertion, deletion, move-from, and
-  move-to markers with id, author, date, and visible subtree text.
+- `Document::revisions()` extracts `.docx` body/header/footer insertion,
+  deletion, move-from, and move-to markers with id, author, date, and visible
+  subtree text.
 - `Document::main_text_with_revision_view()` exposes accepted, original, and
   annotated flat-text policies for `.docx` tracked changes.
 - The default `.docx` `DocModel`/`main_text()` accepted view descends inline and
