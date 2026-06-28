@@ -1122,41 +1122,28 @@ Initial status:
 
 ## Near-Term Cut
 
-The next useful implementation batch is:
+The next useful implementation batches are:
 
-1. Continue layout-derived `PAGEREF` page-number and relative-position
-   computation beyond leading explicit breaks, enabled paragraph
-   `w:pageBreakBefore`, structural section-start hints including default
-   `nextPage`, deterministic display-only `w:pgNumType w:start` page-number
-   restart labels,
-   trusted supported `w:pgNumType w:fmt` styles,
-   source-rendered page-break/source-order hints, and trusted rendered-context
-   hard-break advancement, remaining unknown fields beyond named
-   document-info/date/stat fields, dynamic/control fields beyond deterministic
-   literal arithmetic/comparison formula fields, literal `QUOTE`, literal `IF`
-   comparisons, literal `COMPARE` results, explicit-default `FILLIN`/`ASK`
-   prompt fields, and literal quoted or single-token `SET` bookmark
-   assignments feeding later plain `REF`/direct bookmark references,
-   malformed `SET` syntax reporting `UnsupportedSwitch`,
-   inserted-content fields, mail-merge helper malformed-syntax diagnostics,
-   reference/index generated malformed-syntax diagnostics and fields beyond
-   hidden simple `RD`/`TA`/`XE` markers,
-   numbering/list fields, document-structure fields
-   beyond computed `REVNUM`/`SECTION`, structurally bounded `SECTIONPAGES`,
-   deterministic body paragraph- and character-style `STYLEREF`,
-   hidden validated `ADVANCE`, deterministic simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, operand-preserving or hidden empty displacement controls and `SYMBOL`,
-   remaining display/layout fields, action/automation fields beyond deterministic quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms,
-   compatibility/private malformed-syntax diagnostics, barcode
-   fields, legacy form malformed-syntax diagnostics and fields beyond deterministic `w:ffData` checkbox checked/default states,
-   dropdown result/default selections, explicit non-empty text-input current
-   values, and empty-current text-input default results, and `NOTEREF`/`FTNREF`, remaining unsupported
-   value-changing REF cases beyond explicit numbered-paragraph `\n`/`\n \t`/
-   `\r`/`\r \t`/`\w`/`\w \t`, body note-reference `\f` marks, and recognized
-   `\d` separator syntax, including comment/annotation insertion and broader
-   REF semantics, unresolved or unsupported NOTEREF switches beyond body
-   note-reference marks, and remaining broader TOC/REF
-   field-evaluation policy: preserve cached text, keep diagnostics precise, and
-   only compute values when semantics are unambiguous.
+1. Field evaluation backlog, ordered for focused slices:
+   - layout-derived `PAGE`/`PAGEREF` beyond trusted leading/source-rendered,
+     section-start, source-marker, and hard-break contexts: exact pagination
+     current-page/page-reference values, target-derived formatting where no
+     trusted marker exists, and remaining layout-dependent `\p` results;
+   - remaining value-changing reference policy: comment/annotation insertion,
+     broader `REF` semantics, unresolved or unsupported `NOTEREF` switches
+     beyond body note-reference marks, and broader TOC/REF body evaluation;
+   - remaining data-, source-, layout-, action-, and generated-field families
+     beyond the deterministic subsets already listed above, including
+     unknown fields, dynamic/control fields that need external state or side
+     effects, generated reference/index output beyond hidden literal
+     `RD`/`TA`/`XE` markers, richer numbering/list semantics, display/layout
+     fields beyond the deterministic `ADVANCE`/`EQ`/`SYMBOL` subset,
+     action/automation beyond display text and validated hidden `PRINT`,
+     compatibility/private payloads, barcode rendering, and protected legacy
+     form behavior.
+   - For each slice, preserve cached text until semantics are unambiguous,
+     distinguish `UnsupportedSwitch` from `NoComputedResult`, and add focused
+     `.docx` and report diagnostics tests before public support wording moves.
 2. Continue legacy `.doc` exact body/shape anchors beyond the current
    source-region anchors for comments, notes, and text boxes, plus richer legacy
    section-level header/footer application semantics beyond recovered/default

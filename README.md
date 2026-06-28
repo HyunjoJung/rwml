@@ -987,32 +987,16 @@ The long-term native Word engine plan is split into the
       default selection/inheritance, first/even-page variant modeling and
       authoring, plus section-aware first/even-page render selection, and
       Symbol/Wingdings glyph mapping
-- [ ] Reader: full layout-derived `PAGE` current-page and `PAGEREF`
-      page-number/relative-position computation, unknown fields beyond named document-info/date/stat fields,
-      dynamic/control fields beyond deterministic literal arithmetic/comparison/scalar-function formula
-      fields, literal `QUOTE`, literal `IF` comparisons, literal `COMPARE`
-      results, explicit-default `FILLIN`/`ASK` prompt fields, and literal quoted or single-token `SET` bookmark assignments feeding later plain
-      `REF`/direct bookmark references,
-      malformed `SET` syntax reporting `UnsupportedSwitch`,
-      inserted-content malformed-syntax diagnostics, mail-merge helper
-      malformed-syntax diagnostics,
-      reference/index generated malformed-syntax diagnostics and fields beyond
-      hidden simple `RD`/`TA`/`XE` markers,
-      numbering/list fields, document-structure fields beyond computed `REVNUM`/`SECTION`,
-      structurally bounded `SECTIONPAGES`, and
-      deterministic body paragraph- and character-style `STYLEREF`, display/layout fields beyond hidden validated `ADVANCE`, deterministic simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, operand-preserving or hidden empty displacement controls, and `SYMBOL`, action/automation fields beyond deterministic quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms,
-      compatibility/private malformed-syntax diagnostics, barcode malformed-syntax diagnostics,
-      legacy form malformed-syntax diagnostics and fields beyond
-      deterministic `w:ffData` checkbox checked/default states, dropdown
-      result/default selections, explicit non-empty text-input current results,
-      and empty-current text-input default results, and
-      `NOTEREF`/`FTNREF`, remaining unsupported value-changing REF cases such as
-      comment/annotation insertion and broader REF semantics outside body
-      note-reference marks, unresolved or unsupported NOTEREF switches beyond
-      body note-reference marks, and remaining broader TOC/REF field
-      evaluation; exact legacy `.doc` note/text-box/body anchors and richer legacy
-      section-level header/footer application semantics beyond recovered/default
-      running stories
+- [ ] Reader: remaining field/layout backlog: full layout-derived `PAGE`
+      current-page and `PAGEREF` page-number/relative-position computation
+      beyond trusted leading/source-rendered, section-start, source-marker, and
+      hard-break contexts; remaining value-changing `REF`, `NOTEREF`/`FTNREF`,
+      and broader TOC/REF policy where semantics are not yet deterministic;
+      data-, source-, layout-, action-, generated-, barcode-, compatibility-,
+      and protected-form behavior beyond the deterministic field subsets
+      listed above; exact legacy `.doc` note/text-box/body anchors and richer
+      legacy section-level header/footer application semantics beyond
+      recovered/default running stories
 - [x] **Package-preserving edit layer** — `Document::open`→edit→`save` keeps every
       unmodeled part verbatim; element-tree edits (`replace_body_text`,
       `set_field_result`, `fill_content_control_by_tag`,
