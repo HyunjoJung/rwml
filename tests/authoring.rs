@@ -1751,8 +1751,8 @@ fn run_builder_adds_plain_text_content_control() {
             RunBuilder::new("Locked clause")
                 .content_control(
                     ContentControlBuilder::new()
-                        .alias("Clause title")
-                        .tag("clause-001"),
+                        .alias(" Clause title ")
+                        .tag(" clause-001 "),
                 )
                 .bold()
                 .build(),

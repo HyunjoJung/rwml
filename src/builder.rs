@@ -576,13 +576,13 @@ impl ContentControlBuilder {
 
     /// Set the content-control alias/title.
     pub fn alias(mut self, alias: impl Into<String>) -> Self {
-        self.control.alias = Some(alias.into());
+        self.control.alias = Some(alias.into().trim().to_string());
         self
     }
 
     /// Set the content-control tag.
     pub fn tag(mut self, tag: impl Into<String>) -> Self {
-        self.control.tag = Some(tag.into());
+        self.control.tag = Some(tag.into().trim().to_string());
         self
     }
 
