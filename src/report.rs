@@ -5192,7 +5192,7 @@ fn docx_bookmark_names(xml: &str) -> HashSet<String> {
                         });
                     }
                     b"bookmarkStart" => {
-                        if let Some(name) = crate::docx::attr_local(&e, b"name") {
+                        if let Some(name) = crate::docx::attr_local_trimmed(&e, b"name") {
                             names.insert(name);
                         }
                     }
@@ -5211,7 +5211,7 @@ fn docx_bookmark_names(xml: &str) -> HashSet<String> {
                     continue;
                 }
                 if name == b"bookmarkStart" {
-                    if let Some(name) = crate::docx::attr_local(&e, b"name") {
+                    if let Some(name) = crate::docx::attr_local_trimmed(&e, b"name") {
                         names.insert(name);
                     }
                 }
@@ -5270,7 +5270,7 @@ fn docx_page_ref_unsupported_section_format_targets(xml: &str) -> HashSet<String
         current_section_bookmarks: &mut Vec<String>,
         unsupported_targets: &mut HashSet<String>,
     ) {
-        if let Some(name) = crate::docx::attr_local(e, b"name") {
+        if let Some(name) = crate::docx::attr_local_trimmed(e, b"name") {
             if current_section_unsupported {
                 unsupported_targets.insert(name.clone());
             }

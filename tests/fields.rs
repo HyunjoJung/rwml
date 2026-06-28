@@ -1964,7 +1964,7 @@ fn page_ref_relative_unsupported_section_page_number_format_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgNumType w:start="2" w:fmt="chicago"/></w:sectPr></w:pPr></w:p><w:p><w:bookmarkStart w:id="7" w:name="UnsupportedFmt"/><w:r><w:t>Unsupported format target</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:r><w:lastRenderedPageBreak/><w:t>Later page lead.</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" PAGEREF UnsupportedFmt \p "><w:r><w:t>stale relative</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgNumType w:start="2" w:fmt="chicago"/></w:sectPr></w:pPr></w:p><w:p><w:bookmarkStart w:id="7" w:name=" UnsupportedFmt "/><w:r><w:t>Unsupported format target</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:r><w:lastRenderedPageBreak/><w:t>Later page lead.</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" PAGEREF UnsupportedFmt \p "><w:r><w:t>stale relative</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
