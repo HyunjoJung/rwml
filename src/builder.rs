@@ -1605,6 +1605,19 @@ impl DocBuilder {
         store: impl Into<String>,
         store_type: impl Into<String>,
     ) -> Self {
+        let extension_id = extension_id.into().trim().to_string();
+        let reference_id = reference_id.into().trim().to_string();
+        let version = version.into().trim().to_string();
+        let store = store.into().trim().to_string();
+        let store_type = store_type.into().trim().to_string();
+        if extension_id.is_empty()
+            || reference_id.is_empty()
+            || version.is_empty()
+            || store.is_empty()
+            || store_type.is_empty()
+        {
+            return self;
+        }
         let mut properties = std::collections::BTreeMap::new();
         properties.insert(
             "Office.AutoShowTaskpaneWithDocument".to_string(),
@@ -1614,11 +1627,11 @@ impl DocBuilder {
             .setup
             .web_extension_task_panes
             .push(WebExtensionTaskPane {
-                extension_id: extension_id.into(),
-                reference_id: reference_id.into(),
-                version: version.into(),
-                store: store.into(),
-                store_type: store_type.into(),
+                extension_id,
+                reference_id,
+                version,
+                store,
+                store_type,
                 properties,
                 dock_state: "right".to_string(),
                 visible: true,

@@ -1141,16 +1141,22 @@ fn doc_builder_adds_document_id_setting() {
 fn doc_builder_adds_web_extension_task_pane() {
     let model = DocBuilder::new()
         .web_extension_task_pane(
-            "{52811C31-4593-43B8-A697-EB873422D156}",
-            "af8fa5ba-4010-4bcc-9e03-a91ddadf6dd3",
-            "1.0.0.0",
-            "EXCatalog",
-            "EXCatalog",
+            " {52811C31-4593-43B8-A697-EB873422D156} ",
+            " af8fa5ba-4010-4bcc-9e03-a91ddadf6dd3 ",
+            " 1.0.0.0 ",
+            " EXCatalog ",
+            " EXCatalog ",
         )
         .paragraph("Body")
         .build();
 
     assert_eq!(model.setup.web_extension_task_panes.len(), 1);
+    let pane = &model.setup.web_extension_task_panes[0];
+    assert_eq!(pane.extension_id, "{52811C31-4593-43B8-A697-EB873422D156}");
+    assert_eq!(pane.reference_id, "af8fa5ba-4010-4bcc-9e03-a91ddadf6dd3");
+    assert_eq!(pane.version, "1.0.0.0");
+    assert_eq!(pane.store, "EXCatalog");
+    assert_eq!(pane.store_type, "EXCatalog");
 
     let bytes = rdoc::write_docx(&model);
     let parts = unzip_parts(&bytes);
@@ -1212,6 +1218,38 @@ fn doc_builder_adds_web_extension_task_pane() {
     assert_eq!(
         saved_parts["word/webextensions/webextension1.xml"],
         parts["word/webextensions/webextension1.xml"]
+    );
+}
+
+#[test]
+fn doc_builder_ignores_blank_web_extension_task_panes() {
+    let mut model = DocBuilder::new()
+        .web_extension_task_pane(" ", "ref", "1.0.0.0", "store", "storeType")
+        .paragraph("Body")
+        .build();
+
+    assert!(model.setup.web_extension_task_panes.is_empty());
+
+    model
+        .setup
+        .web_extension_task_panes
+        .push(rdoc::WebExtensionTaskPane {
+            extension_id: "{52811C31-4593-43B8-A697-EB873422D156}".to_string(),
+            reference_id: " ".to_string(),
+            version: "1.0.0.0".to_string(),
+            store: "EXCatalog".to_string(),
+            store_type: "EXCatalog".to_string(),
+            ..rdoc::WebExtensionTaskPane::default()
+        });
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    assert!(!parts.contains_key("word/webextensions/taskpanes.xml"));
+    assert!(!parts.contains_key("word/webextensions/webextension1.xml"));
+    let root_rels = String::from_utf8(parts["_rels/.rels"].clone()).unwrap();
+    assert!(
+        !root_rels.contains("relationships/webextensiontaskpanes"),
+        "blank web extension pane should not emit root relationship: {root_rels}"
     );
 }
 

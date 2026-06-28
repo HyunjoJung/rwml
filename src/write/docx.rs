@@ -1536,14 +1536,14 @@ fn web_extension_xml(pane: &WebExtensionTaskPane) -> Vec<u8> {
     s.push_str(XML_DECL);
     s.push_str(&format!(
         r#"<we:webextension xmlns:we="{WEB_EXTENSION_NS}" id="{}">"#,
-        esc_attr(&pane.extension_id)
+        esc_attr(pane.extension_id.trim())
     ));
     s.push_str(&format!(
         r#"<we:reference id="{}" version="{}" store="{}" storeType="{}"/>"#,
-        esc_attr(&pane.reference_id),
-        esc_attr(&pane.version),
-        esc_attr(&pane.store),
-        esc_attr(&pane.store_type)
+        esc_attr(pane.reference_id.trim()),
+        esc_attr(pane.version.trim()),
+        esc_attr(pane.store.trim()),
+        esc_attr(pane.store_type.trim())
     ));
     s.push_str("<we:alternateReferences/>");
     if pane.properties.is_empty() {
@@ -1565,7 +1565,15 @@ fn web_extension_xml(pane: &WebExtensionTaskPane) -> Vec<u8> {
     s.into_bytes()
 }
 
-fn web_extension_taskpanes_xml(panes: &[WebExtensionTaskPane]) -> Vec<u8> {
+fn valid_web_extension_task_pane(pane: &WebExtensionTaskPane) -> bool {
+    !pane.extension_id.trim().is_empty()
+        && !pane.reference_id.trim().is_empty()
+        && !pane.version.trim().is_empty()
+        && !pane.store.trim().is_empty()
+        && !pane.store_type.trim().is_empty()
+}
+
+fn web_extension_taskpanes_xml(panes: &[&WebExtensionTaskPane]) -> Vec<u8> {
     let mut s = String::new();
     s.push_str(XML_DECL);
     s.push_str(&format!(
@@ -2709,6 +2717,12 @@ pub(crate) fn try_to_docx(model: &crate::DocModel) -> crate::Result<Vec<u8>> {
             custom_properties_xml(&model.custom_properties),
         );
     }
+    let web_extension_task_panes: Vec<&WebExtensionTaskPane> = model
+        .setup
+        .web_extension_task_panes
+        .iter()
+        .filter(|pane| valid_web_extension_task_pane(pane))
+        .collect();
     for (index, item) in model.custom_xml_items.iter().enumerate() {
         let n = index + 1;
         pkg.add_part(
@@ -2731,14 +2745,14 @@ pub(crate) fn try_to_docx(model: &crate::DocModel) -> crate::Result<Vec<u8>> {
             }],
         );
     }
-    if !model.setup.web_extension_task_panes.is_empty() {
+    if !web_extension_task_panes.is_empty() {
         pkg.add_part(
             "word/webextensions/taskpanes.xml",
             Some(CT_WEB_EXTENSION_TASKPANES),
-            web_extension_taskpanes_xml(&model.setup.web_extension_task_panes),
+            web_extension_taskpanes_xml(&web_extension_task_panes),
         );
         let mut taskpane_rels = Vec::new();
-        for (index, pane) in model.setup.web_extension_task_panes.iter().enumerate() {
+        for (index, pane) in web_extension_task_panes.iter().enumerate() {
             let n = index + 1;
             pkg.add_part(
                 &format!("word/webextensions/webextension{n}.xml"),
@@ -2802,7 +2816,7 @@ pub(crate) fn try_to_docx(model: &crate::DocModel) -> crate::Result<Vec<u8>> {
             external: false,
         });
     }
-    if !model.setup.web_extension_task_panes.is_empty() {
+    if !web_extension_task_panes.is_empty() {
         root_rels.push(Rel {
             id: format!("rId{}", root_rels.len() + 1),
             rel_type: REL_WEB_EXTENSION_TASKPANES.to_string(),
