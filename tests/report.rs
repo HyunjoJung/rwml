@@ -2438,23 +2438,33 @@ fn report_field_category_matrix_splits_cached_and_malformed_diagnostics() {
     );
 
     assert_report_field_diagnostics(
-        field_pair_diagnostics_docx(
-            r#"DISPLAYBARCODE &quot;https://example.com&quot; QR \q H"#,
-            "QR preview",
-            r#"DISPLAYBARCODE &quot;https://example.com&quot; QR \q"#,
-            "cached missing quality operand",
-        ),
-        2,
-        vec![field_kind_count(
-            FieldKind::Barcode("DISPLAYBARCODE".to_string()),
-            2,
-        )],
-        vec![field_kind_count(
-            FieldKind::Barcode("DISPLAYBARCODE".to_string()),
-            2,
-        )],
+        docx_fixture(&[
+            (
+                "[Content_Types].xml",
+                r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+            ),
+            (
+                "_rels/.rels",
+                r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            (
+                "word/document.xml",
+                r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" DISPLAYBARCODE &quot;https://example.com&quot; QR \q H "><w:r><w:t>QR preview</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" MERGEBARCODE CustomerId CODE128 \t "><w:r><w:t>Merge barcode preview</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" BARCODE &quot;9781234567890&quot; "><w:r><w:t>Legacy barcode preview</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DISPLAYBARCODE &quot;https://example.com&quot; QR \q "><w:r><w:t>cached missing quality operand</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            ),
+        ]),
+        4,
         vec![
-            field_reason_count(FieldEvaluationReason::NoComputedResult, 1),
+            field_kind_count(FieldKind::Barcode("DISPLAYBARCODE".to_string()), 2),
+            field_kind_count(FieldKind::Barcode("MERGEBARCODE".to_string()), 1),
+            field_kind_count(FieldKind::Barcode("BARCODE".to_string()), 1),
+        ],
+        vec![
+            field_kind_count(FieldKind::Barcode("DISPLAYBARCODE".to_string()), 2),
+            field_kind_count(FieldKind::Barcode("MERGEBARCODE".to_string()), 1),
+            field_kind_count(FieldKind::Barcode("BARCODE".to_string()), 1),
+        ],
+        vec![
+            field_reason_count(FieldEvaluationReason::NoComputedResult, 3),
             field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 1),
         ],
     );
