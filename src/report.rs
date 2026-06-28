@@ -23,17 +23,17 @@ use crate::annotation::{
 };
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{
+    field_comparison_syntax, page_field_format_syntax_tail, prompt_field_syntax,
+    quote_field_syntax, reference_index_category_token, reference_index_literal_token,
+    reference_index_plain_value_token, revision_number_field_text_format, set_field_syntax,
+    style_ref_field_syntax,
+};
+#[cfg(not(feature = "docx"))]
+use crate::annotation::{
     field_non_empty_non_switch_literal_token, field_non_empty_quoted_literal_token,
 };
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{field_points_token, field_positive_points_token, field_symbol_code_token};
-#[cfg(not(feature = "docx"))]
-use crate::annotation::{
-    page_field_format_syntax_tail, prompt_field_syntax, quote_field_syntax,
-    reference_index_category_token, reference_index_literal_token,
-    reference_index_plain_value_token, revision_number_field_text_format, set_field_syntax,
-    style_ref_field_syntax,
-};
 use crate::model::{Block, FieldRole, Stats, Table};
 use crate::CoreProperties;
 #[cfg(feature = "docx")]
@@ -3658,7 +3658,7 @@ fn supported_compare_syntax(instruction: &str) -> bool {
     let Some(first) = parts.next() else {
         return false;
     };
-    if !supported_comparison_operands(first, &mut parts) {
+    if !field_comparison_syntax(first, &mut parts) {
         return false;
     }
     let mut text_format = false;
@@ -3689,70 +3689,6 @@ fn accept_field_format_for_report<'a>(
     accept_general_format_switch(part, parts, |format| {
         accept_field_format_switch(format, text_format)
     })
-}
-
-#[cfg(not(feature = "docx"))]
-fn supported_comparison_operands<'a>(
-    first: &str,
-    parts: &mut impl Iterator<Item = &'a str>,
-) -> bool {
-    if let Some((left, operator, right)) = compact_comparison_operands(first) {
-        return comparison_operand_for_report(left)
-            && comparison_operator_for_report(operator)
-            && comparison_operand_for_report(right);
-    }
-    let Some(operator) = parts.next() else {
-        return false;
-    };
-    let Some(right) = parts.next() else {
-        return false;
-    };
-    comparison_operand_for_report(first)
-        && comparison_operator_for_report(operator)
-        && comparison_operand_for_report(right)
-}
-
-#[cfg(not(feature = "docx"))]
-fn compact_comparison_operands(token: &str) -> Option<(&str, &str, &str)> {
-    for operator in [">=", "<=", "<>", "=", ">", "<"] {
-        let Some(index) = find_unquoted_operator_for_report(token, operator) else {
-            continue;
-        };
-        let (left, right_with_operator) = token.split_at(index);
-        let right = &right_with_operator[operator.len()..];
-        if left.is_empty() || right.is_empty() {
-            return None;
-        }
-        return Some((left, operator, right));
-    }
-    None
-}
-
-#[cfg(not(feature = "docx"))]
-fn find_unquoted_operator_for_report(token: &str, operator: &str) -> Option<usize> {
-    let mut in_quotes = false;
-    for (index, ch) in token.char_indices() {
-        if ch == '"' {
-            in_quotes = !in_quotes;
-        } else if !in_quotes && token[index..].starts_with(operator) {
-            return Some(index);
-        }
-    }
-    None
-}
-
-#[cfg(not(feature = "docx"))]
-fn comparison_operator_for_report(token: &str) -> bool {
-    matches!(token, "=" | "<>" | ">" | "<" | ">=" | "<=")
-}
-
-#[cfg(not(feature = "docx"))]
-fn comparison_operand_for_report(token: &str) -> bool {
-    if token.parse::<f64>().is_ok_and(f64::is_finite) {
-        return true;
-    }
-    diagnostic_literal_token(token)
-        .is_some_and(|value| !value.is_empty() && !value.starts_with('\\'))
 }
 
 fn formula_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -3981,7 +3917,7 @@ fn supported_if_syntax(instruction: &str) -> bool {
     let Some(first) = parts.next() else {
         return false;
     };
-    if !supported_comparison_operands(first, &mut parts) {
+    if !field_comparison_syntax(first, &mut parts) {
         return false;
     }
     let Some(true_text) = parts.next() else {
@@ -4097,7 +4033,7 @@ fn supported_merge_control_syntax(instruction: &str) -> bool {
         let Some(first) = parts.next() else {
             return false;
         };
-        return supported_comparison_operands(first, &mut parts)
+        return field_comparison_syntax(first, &mut parts)
             && supported_field_format_tail_for_report(&mut parts, &mut text_format);
     }
     false
@@ -5705,6 +5641,14 @@ mod tests {
             super::FieldEvaluationReason::NoComputedResult
         );
         assert_eq!(
+            super::compare_uncomputed_reason(r#"COMPARE "" = """#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::compare_uncomputed_reason(r#"COMPARE 1e309 > 0"#),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+        assert_eq!(
             super::compare_uncomputed_reason(r#"COMPARE \o = "Gold""#),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
@@ -5731,6 +5675,14 @@ mod tests {
             super::FieldEvaluationReason::NoComputedResult
         );
         assert_eq!(
+            super::if_uncomputed_reason(r#"IF "" = "" "yes" "no""#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::if_uncomputed_reason(r#"IF 1e309 = 1 "yes" "no""#),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+        assert_eq!(
             super::if_uncomputed_reason(r#"IF \o = "Gold" "ship" "hold""#),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
@@ -5746,6 +5698,14 @@ mod tests {
         assert_eq!(
             super::merge_control_uncomputed_reason(r#"NEXTIF City = "Tokyo""#),
             super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::merge_control_uncomputed_reason(r#"NEXTIF "" = """#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::merge_control_uncomputed_reason(r#"NEXTIF 1e309 = 1"#),
+            super::FieldEvaluationReason::UnsupportedSwitch
         );
         assert_eq!(
             super::merge_control_uncomputed_reason(r#"NEXTIF \o = "Tokyo""#),

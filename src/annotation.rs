@@ -550,6 +550,67 @@ pub(crate) fn field_non_empty_non_switch_literal_token(value: &str) -> Option<&s
     (!value.is_empty()).then_some(value)
 }
 
+pub(crate) fn field_comparison_syntax<'a>(
+    first: &str,
+    parts: &mut impl Iterator<Item = &'a str>,
+) -> bool {
+    if let Some((left, operator, right)) = compact_field_comparison_syntax(first) {
+        return field_comparison_operand_syntax(left)
+            && field_comparison_operator_syntax(operator)
+            && field_comparison_operand_syntax(right);
+    }
+    let Some(operator) = parts.next() else {
+        return false;
+    };
+    let Some(right) = parts.next() else {
+        return false;
+    };
+    field_comparison_operand_syntax(first)
+        && field_comparison_operator_syntax(operator)
+        && field_comparison_operand_syntax(right)
+}
+
+fn compact_field_comparison_syntax(token: &str) -> Option<(&str, &str, &str)> {
+    for operator in [">=", "<=", "<>", "=", ">", "<"] {
+        let Some(index) = find_unquoted_field_operator(token, operator) else {
+            continue;
+        };
+        let (left, right_with_operator) = token.split_at(index);
+        let right = &right_with_operator[operator.len()..];
+        if left.is_empty() || right.is_empty() {
+            return None;
+        }
+        return Some((left, operator, right));
+    }
+    None
+}
+
+fn find_unquoted_field_operator(token: &str, operator: &str) -> Option<usize> {
+    let mut in_quotes = false;
+    for (index, ch) in token.char_indices() {
+        if ch == '"' {
+            in_quotes = !in_quotes;
+        } else if !in_quotes && token[index..].starts_with(operator) {
+            return Some(index);
+        }
+    }
+    None
+}
+
+fn field_comparison_operator_syntax(token: &str) -> bool {
+    matches!(token, "=" | "<>" | ">" | "<" | ">=" | "<=")
+}
+
+fn field_comparison_operand_syntax(token: &str) -> bool {
+    if field_quoted_literal_token(token).is_some() {
+        return true;
+    }
+    match token.parse::<f64>() {
+        Ok(value) => value.is_finite(),
+        Err(_) => field_non_empty_non_switch_literal_token(token).is_some(),
+    }
+}
+
 pub(crate) fn filename_field_syntax(instruction: &str) -> bool {
     let tokens = instruction_parts(instruction);
     let mut parts = tokens.iter().map(String::as_str);

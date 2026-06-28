@@ -8,11 +8,11 @@ use quick_xml::Reader;
 use crate::annotation::{
     accept_field_number_format_switch,
     accept_field_text_format_switch as accept_field_format_switch, accept_general_format_switch,
-    document_property_key, field_identifier_token, field_level_range_token, field_level_token,
-    field_literal_token, field_name_token, field_non_empty_literal_token,
-    field_non_empty_non_switch_literal_token, field_non_empty_quoted_literal_token,
-    field_points_token, field_positive_points_token, field_quoted_literal_token,
-    field_symbol_code_token, filename_field_syntax, instruction_parts,
+    document_property_key, field_comparison_syntax, field_identifier_token,
+    field_level_range_token, field_level_token, field_literal_token, field_name_token,
+    field_non_empty_literal_token, field_non_empty_non_switch_literal_token,
+    field_non_empty_quoted_literal_token, field_points_token, field_positive_points_token,
+    field_quoted_literal_token, field_symbol_code_token, filename_field_syntax, instruction_parts,
     is_neutral_field_format_switch, is_note_ref_kind, is_ref_value_neutral_switch,
     is_toc_value_neutral_switch, page_field_format_syntax_tail, prompt_field_syntax,
     quote_field_syntax, reference_index_category_token, reference_index_literal_token,
@@ -5107,44 +5107,10 @@ fn merge_control_field_syntax(instruction: &str) -> Option<()> {
     }
     if kind.eq_ignore_ascii_case("NEXTIF") || kind.eq_ignore_ascii_case("SKIPIF") {
         let first = parts.next()?;
-        merge_control_comparison_syntax(first, &mut parts)?;
+        field_comparison_syntax(first, &mut parts).then_some(())?;
         return accept_field_format_tail(&mut parts);
     }
     None
-}
-
-fn merge_control_comparison_syntax<'a, I>(first: &str, parts: &mut I) -> Option<()>
-where
-    I: Iterator<Item = &'a str>,
-{
-    if let Some((left, operator, right)) = compact_merge_control_comparison(first) {
-        return (merge_control_operand_syntax(left)
-            && if_operator(operator).is_some()
-            && merge_control_operand_syntax(right))
-        .then_some(());
-    }
-    merge_control_operand_syntax(first).then_some(())?;
-    if_operator(parts.next()?)?;
-    merge_control_operand_syntax(parts.next()?).then_some(())
-}
-
-fn compact_merge_control_comparison(token: &str) -> Option<(&str, &str, &str)> {
-    for operator in [">=", "<=", "<>", "=", ">", "<"] {
-        let Some(index) = find_unquoted_operator(token, operator) else {
-            continue;
-        };
-        let (left, right_with_operator) = token.split_at(index);
-        let right = &right_with_operator[operator.len()..];
-        if left.is_empty() || right.is_empty() {
-            return None;
-        }
-        return Some((left, operator, right));
-    }
-    None
-}
-
-fn merge_control_operand_syntax(token: &str) -> bool {
-    comparison_operand_syntax(token)
 }
 
 fn field_format_tail<'a, I>(parts: &mut I) -> Option<Option<FieldTextFormat>>
@@ -6925,7 +6891,7 @@ fn if_field_syntax(instruction: &str) -> Option<()> {
         return None;
     }
     let first = parts.next()?;
-    merge_control_comparison_syntax(first, &mut parts)?;
+    field_comparison_syntax(first, &mut parts).then_some(())?;
     if_result_text(parts.next()?)?;
     let mut text_format = None;
     if let Some(part) = parts.next() {
@@ -6991,7 +6957,7 @@ fn compare_field_syntax(instruction: &str) -> Option<()> {
         return None;
     }
     let first = parts.next()?;
-    comparison_syntax_operands(first, &mut parts)?;
+    field_comparison_syntax(first, &mut parts).then_some(())?;
     let mut text_format = None;
     while let Some(part) = parts.next() {
         if !accept_if_format_switch(part, &mut parts, &mut text_format)? {
@@ -6999,32 +6965,6 @@ fn compare_field_syntax(instruction: &str) -> Option<()> {
         }
     }
     Some(())
-}
-
-fn comparison_syntax_operands<'a, I>(first: &str, parts: &mut I) -> Option<()>
-where
-    I: Iterator<Item = &'a str>,
-{
-    if let Some((left, operator, right)) = compact_merge_control_comparison(first) {
-        return (comparison_operand_syntax(left)
-            && if_operator(operator).is_some()
-            && comparison_operand_syntax(right))
-        .then_some(());
-    }
-    comparison_operand_syntax(first).then_some(())?;
-    if_operator(parts.next()?)?;
-    comparison_operand_syntax(parts.next()?).then_some(())
-}
-
-fn comparison_operand_syntax(token: &str) -> bool {
-    if quoted_literal_text(token).is_some() {
-        return true;
-    }
-    match token.parse::<f64>() {
-        Ok(value) => value.is_finite(),
-        Err(_) => field_literal_token(token)
-            .is_some_and(|value| !value.is_empty() && !value.starts_with('\\')),
-    }
 }
 
 fn comparison_operands<'a, I>(
