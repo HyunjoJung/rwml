@@ -2151,6 +2151,20 @@ impl Document {
         self.add_image_media(jpeg, name, ImageMediaKind::Jpeg, "add_image_jpeg")
     }
 
+    /// **Element-tree editing: append an inline GIF image** to the body,
+    /// reconciling the media part, `image/gif` content type, relationship, and
+    /// drawing markup transactionally. This mirrors [`Document::add_image_png`]
+    /// for plain `*.gif` names and bounded structural GIF validation.
+    ///
+    /// The validation checks GIF87a/GIF89a framing, non-zero logical-screen
+    /// dimensions, at least one image descriptor, and a final trailer; it does
+    /// not decode LZW image data. Read views are stale until the saved bytes are
+    /// reopened. Available with the default `docx` feature.
+    #[cfg(feature = "docx")]
+    pub fn add_image_gif(&mut self, gif: &[u8], name: &str) -> Result<()> {
+        self.add_image_media(gif, name, ImageMediaKind::Gif, "add_image_gif")
+    }
+
     /// **Package-preserving edit: replace an existing PNG media part.** `name`
     /// is the plain file name of an existing part under `word/media/` (for example
     /// `image1.png`). The new bytes must be a structurally valid PNG container; the
@@ -2173,6 +2187,16 @@ impl Document {
     #[cfg(feature = "docx")]
     pub fn replace_image_jpeg(&mut self, jpeg: &[u8], name: &str) -> Result<()> {
         self.replace_image_media(jpeg, name, ImageMediaKind::Jpeg, "replace_image_jpeg")
+    }
+
+    /// **Package-preserving edit: replace an existing GIF media part.** `name`
+    /// is the plain file name of an existing part under `word/media/` (for
+    /// example `anim.gif`). The new bytes must be a structurally valid GIF
+    /// container; existing drawing markup and relationships keep pointing at the
+    /// same part. Available with the default `docx` feature.
+    #[cfg(feature = "docx")]
+    pub fn replace_image_gif(&mut self, gif: &[u8], name: &str) -> Result<()> {
+        self.replace_image_media(gif, name, ImageMediaKind::Gif, "replace_image_gif")
     }
 
     #[cfg(feature = "docx")]
@@ -2719,6 +2743,8 @@ const CT_FOOTER: &str = "application/vnd.openxmlformats-officedocument.wordproce
 const CT_IMAGE_PNG: &str = "image/png";
 #[cfg(feature = "docx")]
 const CT_IMAGE_JPEG: &str = "image/jpeg";
+#[cfg(feature = "docx")]
+const CT_IMAGE_GIF: &str = "image/gif";
 
 #[cfg(feature = "docx")]
 const REL_HEADER: &str =
@@ -2906,6 +2932,7 @@ fn wml_xml_part_name(part_name: &str, op: &str) -> Result<()> {
 enum ImageMediaKind {
     Png,
     Jpeg,
+    Gif,
 }
 
 #[cfg(feature = "docx")]
@@ -2914,6 +2941,7 @@ impl ImageMediaKind {
         match self {
             ImageMediaKind::Png => "PNG",
             ImageMediaKind::Jpeg => "JPEG",
+            ImageMediaKind::Gif => "GIF",
         }
     }
 
@@ -2921,6 +2949,7 @@ impl ImageMediaKind {
         match self {
             ImageMediaKind::Png => CT_IMAGE_PNG,
             ImageMediaKind::Jpeg => CT_IMAGE_JPEG,
+            ImageMediaKind::Gif => CT_IMAGE_GIF,
         }
     }
 
@@ -2928,6 +2957,7 @@ impl ImageMediaKind {
         match self {
             ImageMediaKind::Png => &[".png"],
             ImageMediaKind::Jpeg => &[".jpg", ".jpeg"],
+            ImageMediaKind::Gif => &[".gif"],
         }
     }
 
@@ -2935,6 +2965,7 @@ impl ImageMediaKind {
         match self {
             ImageMediaKind::Png => ".png",
             ImageMediaKind::Jpeg => ".jpg or .jpeg",
+            ImageMediaKind::Gif => ".gif",
         }
     }
 
@@ -2942,6 +2973,7 @@ impl ImageMediaKind {
         match self {
             ImageMediaKind::Png => is_png(bytes),
             ImageMediaKind::Jpeg => jpeg_dimensions(bytes).is_some(),
+            ImageMediaKind::Gif => gif_dimensions(bytes).is_some(),
         }
     }
 
@@ -2949,6 +2981,9 @@ impl ImageMediaKind {
         match self {
             ImageMediaKind::Png => png_extent_emu(bytes),
             ImageMediaKind::Jpeg => jpeg_dimensions(bytes)
+                .map(|(w, h)| extent_emu_from_pixels(w, h))
+                .unwrap_or((FALLBACK_IMAGE_EMU, FALLBACK_IMAGE_EMU)),
+            ImageMediaKind::Gif => gif_dimensions(bytes)
                 .map(|(w, h)| extent_emu_from_pixels(w, h))
                 .unwrap_or((FALLBACK_IMAGE_EMU, FALLBACK_IMAGE_EMU)),
         }
@@ -3380,6 +3415,20 @@ fn png_extent_emu(png: &[u8]) -> (u32, u32) {
         }
     }
     (FALLBACK_IMAGE_EMU, FALLBACK_IMAGE_EMU)
+}
+
+#[cfg(feature = "docx")]
+fn gif_dimensions(gif: &[u8]) -> Option<(u32, u32)> {
+    if gif.len() < 14
+        || (&gif[..6] != b"GIF87a" && &gif[..6] != b"GIF89a")
+        || gif.last().copied() != Some(0x3B)
+        || !gif[13..gif.len() - 1].contains(&0x2C)
+    {
+        return None;
+    }
+    let w = u16::from_le_bytes([gif[6], gif[7]]) as u32;
+    let h = u16::from_le_bytes([gif[8], gif[9]]) as u32;
+    (w > 0 && h > 0).then_some((w, h))
 }
 
 /// JPEG validation and intrinsic dimensions from a bounded marker walk. It enforces:

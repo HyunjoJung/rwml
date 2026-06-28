@@ -476,7 +476,8 @@ The first public maturity release should meet these requirements.
   `add_footnote_on_text`, `add_endnote_on_text`, `replace_note_text`,
   `set_core_property`, and
   `add_image_png` / `replace_image_png` plus
-  `add_image_jpeg` / `replace_image_jpeg` remain transactional.
+  `add_image_jpeg` / `replace_image_jpeg` and
+  `add_image_gif` / `replace_image_gif` remain transactional.
 - generated comments, updated comments, and generated or replaced
   footnote/endnote text runs preserve intentional leading/trailing whitespace in
   saved OOXML with `xml:space="preserve"` and emit tabs/newlines as
@@ -567,7 +568,8 @@ The public API should keep four paths distinct:
   `replace_text_in_part`, `add_footnote_on_text`, `add_endnote_on_text`,
   `replace_note_text`, `edit_capability`, `edited_parts`, `set_core_property`,
   `add_image_png`, `replace_image_png`, `add_image_jpeg`,
-  `replace_image_jpeg`, future tree/edit operations, `save`;
+  `replace_image_jpeg`, `add_image_gif`, `replace_image_gif`,
+  future tree/edit operations, `save`;
 - rendering: `render_pdf`, `try_render_pdf`, `render_pdf_with_fonts`,
   `try_render_pdf_with_fonts`, `render_pdf_with_report`,
   `try_render_pdf_with_report`, `render_pdf_with_fonts_and_report`,
