@@ -143,15 +143,7 @@ fn render_hf_body(ctx: &mut Ctx, blocks: &[crate::model::Block], page_numbers: b
         match b {
             Block::Paragraph(p) => {
                 out.push_str("<w:p>");
-                let jc = match p.props.align {
-                    Align::Center => Some("center"),
-                    Align::Right => Some("right"),
-                    Align::Justify => Some("both"),
-                    Align::Left => None,
-                };
-                if let Some(j) = jc {
-                    out.push_str(&format!(r#"<w:pPr><w:jc w:val="{j}"/></w:pPr>"#));
-                }
+                ctx.write_ppr(&mut out, &p.props);
                 for r in &p.runs {
                     write_hf_run(ctx, &mut out, r);
                 }

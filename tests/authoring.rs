@@ -3065,6 +3065,75 @@ fn write_docx_keeps_header_footer_bookmark_runs() {
 }
 
 #[test]
+fn write_docx_keeps_header_footer_paragraph_layout_props() {
+    let shade = Color::rgb(0xEE, 0xF2, 0xF7);
+    let model = DocModel {
+        blocks: vec![Block::Paragraph(plain_paragraph("Body"))],
+        setup: DocSetup {
+            header: vec![Block::Paragraph(
+                ParagraphBuilder::text("Header layout")
+                    .align(Align::Justify)
+                    .spacing_before_pt(12.0)
+                    .spacing_after_pt(6.0)
+                    .line_pct(1.5)
+                    .indent_left_pt(24.0)
+                    .indent_right_pt(12.0)
+                    .first_line_pt(18.0)
+                    .page_break_before()
+                    .shading(shade)
+                    .build(),
+            )],
+            footer: vec![Block::Paragraph(
+                ParagraphBuilder::text("Footer layout")
+                    .align(Align::Right)
+                    .shading(shade)
+                    .build(),
+            )],
+            ..DocSetup::default()
+        },
+        ..DocModel::default()
+    };
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let header_xml = String::from_utf8(parts["word/header1.xml"].clone()).unwrap();
+    let footer_xml = String::from_utf8(parts["word/footer1.xml"].clone()).unwrap();
+
+    assert!(
+        header_xml.contains("<w:pageBreakBefore/>")
+            && header_xml.contains(r#"<w:shd w:val="clear" w:color="auto" w:fill="EEF2F7"/>"#)
+            && header_xml.contains(
+                r#"<w:spacing w:before="240" w:after="120" w:line="360" w:lineRule="auto"/>"#
+            )
+            && header_xml.contains(r#"<w:ind w:left="480" w:right="240" w:firstLine="360"/>"#)
+            && header_xml.contains(r#"<w:jc w:val="both"/>"#),
+        "header paragraph layout XML missing: {header_xml}"
+    );
+    assert!(
+        footer_xml.contains(r#"<w:shd w:val="clear" w:color="auto" w:fill="EEF2F7"/>"#)
+            && footer_xml.contains(r#"<w:jc w:val="right"/>"#),
+        "footer paragraph layout XML missing: {footer_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("header/footer paragraph layout .docx reopens");
+    let reopened_model = reopened.model();
+    let Block::Paragraph(header) = &reopened_model.setup.header[0] else {
+        panic!("expected reopened header paragraph");
+    };
+    assert_eq!(header.props.align, Align::Justify);
+    assert!(header.props.page_break_before);
+    assert_eq!(header.props.shading, Some(shade));
+    assert_eq!(header.props.spacing.before_pt, Some(12.0));
+    assert_eq!(header.props.indent.left_pt, Some(24.0));
+
+    let Block::Paragraph(footer) = &reopened_model.setup.footer[0] else {
+        panic!("expected reopened footer paragraph");
+    };
+    assert_eq!(footer.props.align, Align::Right);
+    assert_eq!(footer.props.shading, Some(shade));
+}
+
+#[test]
 fn table_builder_adds_rich_table_cells() {
     let navy = Color::rgb(0x1F, 0x38, 0x64);
     let model = DocBuilder::new()
