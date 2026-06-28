@@ -546,7 +546,7 @@ pub(crate) fn parse_note_entries(
         match r.read_event() {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == tag => {
                 let boilerplate = matches!(
-                    attr_local(&e, b"type").as_deref(),
+                    attr_local(&e, b"type").as_deref().map(str::trim),
                     Some("separator") | Some("continuationSeparator") | Some("continuationNotice")
                 );
                 if boilerplate {
@@ -3230,7 +3230,7 @@ mod tests {
             counters: Default::default(),
         };
         let xml = r#"<w:footnotes>
-            <w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:t>SEP</w:t></w:r></w:p></w:footnote>
+            <w:footnote w:type=" separator " w:id="-1"><w:p><w:r><w:t>SEP</w:t></w:r></w:p></w:footnote>
             <w:footnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:t>CONT</w:t></w:r></w:p></w:footnote>
             <w:footnote w:id="1"><w:p><w:r><w:t>실제 각주 내용</w:t></w:r></w:p></w:footnote>
         </w:footnotes>"#;
