@@ -1536,7 +1536,7 @@ fn ref_note_switch_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:del><w:r><w:footnoteReference w:id="99"/></w:r></w:del><w:p><w:r><w:t>Target footnote</w:t></w:r><w:bookmarkStart w:id="7" w:name="FootOne"/><w:r><w:footnoteReference w:id="1"/></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:r><w:t>Second footnote</w:t></w:r><w:r><w:footnoteReference w:id="2"/></w:r></w:p><w:p><w:fldSimple w:instr=" REF FootOne \f "><w:r><w:t>stale foot ref mark</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FootOne \f "><w:r><w:t>stale direct foot ref mark</w:t></w:r></w:fldSimple></w:p><w:p><w:bookmarkStart w:id="9" w:name="EndOne"/><w:r><w:endnoteReference w:id="3"/></w:r><w:bookmarkEnd w:id="9"/></w:p><w:p><w:fldSimple w:instr=" REF EndOne \h \f \* MERGEFORMAT "><w:r><w:t>stale end ref mark</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> REF FootOne \f </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale complex foot ref mark</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:del><w:r><w:footnoteReference w:id="99"/></w:r></w:del><w:p><w:r><w:t>Target footnote</w:t></w:r><w:bookmarkStart w:id="7" w:name="FootOne"/><w:r><w:footnoteReference w:id="1"/></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:r><w:t>Second footnote</w:t></w:r><w:r><w:footnoteReference w:id="2"/></w:r></w:p><w:p><w:fldSimple w:instr=" REF FootOne \f "><w:r><w:t>stale foot ref mark</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FootOne \f "><w:r><w:t>stale direct foot ref mark</w:t></w:r></w:fldSimple></w:p><w:p><w:bookmarkStart w:id="9" w:name="EndOne"/><w:r><w:endnoteReference w:id="3"/></w:r><w:bookmarkEnd w:id="9"/></w:p><w:p><w:fldSimple w:instr=" REF EndOne \h \f \* MERGEFORMAT "><w:r><w:t>stale end ref mark</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> REF FootOne \f </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale complex foot ref mark</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:p><w:fldSimple w:instr=" REF FootOne \f \* roman "><w:r><w:t>stale roman foot ref mark</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
         (
             "word/footnotes.xml",
@@ -8538,7 +8538,7 @@ fn docx_ref_f_field_computes_bookmarked_note_reference_marks() {
     let doc = Document::open(&ref_note_switch_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 4);
+    assert_eq!(fields.len(), 5);
     assert!(fields.iter().all(|field| field.kind == FieldKind::Ref));
     assert_eq!(fields[0].instruction, "REF FootOne \\f");
     assert_eq!(fields[0].result, "stale foot ref mark");
@@ -8552,13 +8552,17 @@ fn docx_ref_f_field_computes_bookmarked_note_reference_marks() {
     assert_eq!(fields[3].instruction, "REF FootOne \\f");
     assert_eq!(fields[3].result, "stale complex foot ref mark");
     assert_eq!(fields[3].computed_result.as_deref(), Some("5"));
+    assert_eq!(fields[4].instruction, "REF FootOne \\f \\* roman");
+    assert_eq!(fields[4].result, "stale roman foot ref mark");
+    assert_eq!(fields[4].computed_result.as_deref(), Some("vi"));
 
     let main_text = doc.main_text();
     assert!(
         !main_text.contains("stale foot ref mark")
             && !main_text.contains("stale direct foot ref mark")
             && !main_text.contains("stale end ref mark")
-            && !main_text.contains("stale complex foot ref mark"),
+            && !main_text.contains("stale complex foot ref mark")
+            && !main_text.contains("stale roman foot ref mark"),
         "resolved REF \\f fields should display computed note reference marks: {main_text:?}"
     );
 }

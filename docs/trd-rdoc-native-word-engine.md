@@ -482,7 +482,8 @@ Implementation:
   and `\w \t` numeric-text suppression,
   plus `REF \f` visible body footnote/endnote reference marks when the bookmark
   encloses a body note reference, counting prior generated REF note marks in
-  source order, and `REF \d "separator"` sequence/page separator syntax
+  source order plus common field-result number/text format switches, and
+  `REF \d "separator"` sequence/page separator syntax
   recognized while preserving cached text until sequence/page separator
   semantics are modeled,
   as `Field::computed_result` and use that text in the read/render model
@@ -1105,7 +1106,8 @@ open and edit the chart data.
   including `\w \p` relative suffixes and `\w \t` numeric-text suppression,
   `REF \f` visible body footnote/endnote reference marks for bookmarks around
   body note references, including prior generated REF note marks in source
-  order, `REF \d "separator"` sequence/page separator syntax recognized while
+  order plus common field-result number/text format switches,
+  `REF \d "separator"` sequence/page separator syntax recognized while
   preserving cached text, direct bookmark-name field computation when the
   bookmark exists with supported text-format switches, neutral `\h`,
   explicit-number `\n`/`\n \t`/`\r`/`\r \t`/`\w`/`\w \t`, note-reference `\f`,

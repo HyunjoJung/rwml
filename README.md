@@ -616,7 +616,8 @@ relative suffixes and `\r \t` numeric-text suppression when the REF field paragr
 also has unambiguous numbering context, and `REF \w` full-context labels including `\w \p`
 relative suffixes and `\w \t` numeric-text suppression, and `REF \f`
 note-reference marks for bookmarks around body footnote/endnote references
-with generated REF note marks counted in source order, and `REF \d "separator"`
+with generated REF note marks counted in source order plus common field-result
+number/text format switches, and `REF \d "separator"`
 sequence/page separator syntax recognized while preserving cached text until
 sequence/page separator semantics are modeled, plus direct bookmark-name fields when the bookmark
 exists using the same supported text-format switches, neutral `\h`,
@@ -942,7 +943,8 @@ The long-term native Word engine plan is split into the
       suppression, `REF \w` full-context labels including `\w \p` relative
       suffixes and `\w \t` numeric-text suppression, `REF \f` note-reference
       marks for bookmarks around body footnote/endnote references with
-      generated REF note marks counted in source order, `REF \d "separator"`
+      generated REF note marks counted in source order plus common field-result
+      number/text format switches, `REF \d "separator"`
       sequence/page separator syntax recognized while preserving cached text,
       direct bookmark-name field computation with
       supported text-format switches, neutral `\h`, explicit-number `\n`, `\n \t`, `\r`, `\r \t`, `\w`, `\w \t`, note-reference `\f`, sequence-separator `\d`, and source-order `\p`,

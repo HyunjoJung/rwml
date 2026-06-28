@@ -163,7 +163,8 @@ Initial status:
   `REF \w` full-context numbered labels with `\w \p` relative suffixes and
   `\w \t` numeric-text suppression, `REF \f` visible body footnote/endnote
   reference marks when the bookmark encloses a body note reference, counting
-  prior generated REF note marks in source order, `REF \d "separator"`
+  prior generated REF note marks in source order plus common field-result
+  number/text format switches, `REF \d "separator"`
   sequence/page separator syntax recognized while preserving cached text until
   sequence/page separator semantics are modeled, bookmarked `NOTEREF`/legacy `FTNREF`
   footnote/endnote reference marks with neutral `\h`, note-reference-style
@@ -911,7 +912,8 @@ Initial status:
   including `\w \p` relative suffixes and `\w \t` numeric-text suppression,
   `REF \f` visible body footnote/endnote reference marks for bookmarks around
   body note references with prior generated REF note marks counted in source
-  order, `REF \d "separator"` sequence/page separator syntax recognized while
+  order plus common field-result number/text format switches,
+  `REF \d "separator"` sequence/page separator syntax recognized while
   preserving cached text,
   bookmarked `NOTEREF`/legacy `FTNREF` footnote/endnote reference marks with
   neutral `\h`, note-reference-style `\f`, source-order `\p`

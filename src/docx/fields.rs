@@ -1504,7 +1504,7 @@ impl NoteRefContext {
         &self,
         name: &str,
         field_position: Option<NoteRefFieldPosition>,
-    ) -> Option<String> {
+    ) -> Option<usize> {
         let target = self.target(name)?;
         let field = field_position?;
         let actual_before = self
@@ -1519,7 +1519,7 @@ impl NoteRefContext {
             .filter_map(|generated| self.target(&generated.target))
             .filter(|generated_target| generated_target.kind == target.kind)
             .count();
-        Some((actual_before + generated_before + 1).to_string())
+        Some(actual_before + generated_before + 1)
     }
 }
 
@@ -4806,9 +4806,10 @@ fn computed_ref_instruction_result(
         return None;
     }
     if spec.note_reference {
-        return ctx
+        let number = ctx
             .note_refs
-            .ref_note_number(&spec.target, note_ref_field_position);
+            .ref_note_number(&spec.target, note_ref_field_position)?;
+        return format_page_number(number, spec.number_format);
     }
     if spec.relative_context_number {
         let number =
@@ -9618,6 +9619,7 @@ const TENS_ORDINAL_WORDS: [&str; 10] = [
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct RefInstruction {
     target: String,
+    number_format: Option<PageNumberFormat>,
     text_format: Option<FieldTextFormat>,
     note_reference: bool,
     sequence_separator: bool,
@@ -9642,6 +9644,7 @@ fn parse_ref_instruction_parts<'a>(
     mut parts: impl Iterator<Item = &'a str>,
 ) -> Option<RefInstruction> {
     let target = bookmark_target_identifier(parts.next()?)?.to_string();
+    let mut number_format = None;
     let mut text_format = None;
     let mut note_reference = false;
     let mut sequence_separator = false;
@@ -9652,7 +9655,7 @@ fn parse_ref_instruction_parts<'a>(
     let mut suppress_non_numeric = false;
     while let Some(part) = parts.next() {
         if accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
+            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
         })? {
             continue;
         }
@@ -9742,8 +9745,12 @@ fn parse_ref_instruction_parts<'a>(
     {
         return None;
     }
+    if number_format.is_some() && !note_reference {
+        return None;
+    }
     Some(RefInstruction {
         target,
+        number_format,
         text_format,
         note_reference,
         sequence_separator,
