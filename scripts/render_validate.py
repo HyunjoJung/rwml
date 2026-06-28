@@ -223,6 +223,27 @@ def validation_report(
                 not isinstance(value, int) or isinstance(value, bool) or value < 0
             ):
                 raise ValueError(f"count is invalid: {metric}")
+        if row.render_warning_kinds is not None:
+            if not isinstance(row.render_warning_kinds, list):
+                raise ValueError("render warning kinds must be a list")
+            if (
+                row.render_warnings is not None
+                and row.render_warnings != len(row.render_warning_kinds)
+            ):
+                raise ValueError("render warning count mismatch")
+            row_warnings = set()
+            for warning in row.render_warning_kinds:
+                if (
+                    not isinstance(warning, str)
+                    or not warning
+                    or warning != warning.strip()
+                    or not warning.isascii()
+                    or not warning.isidentifier()
+                ):
+                    raise ValueError(f"render warning kind is invalid: {warning}")
+                if warning in row_warnings:
+                    raise ValueError(f"duplicate render warning kind: {warning}")
+                row_warnings.add(warning)
         if row.status == "skip" and any(
             getattr(row, metric) is not None
             for metric in (

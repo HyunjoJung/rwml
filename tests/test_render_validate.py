@@ -38,6 +38,7 @@ class RenderValidateReportTests(unittest.TestCase):
                 render_warning_kinds=[
                     "FloatingShapePlaceholderOnly",
                     "UnsupportedMetafileImages",
+                    "OleObjectsPreservedButNotModeled",
                 ],
             ),
             render_validate.ValidationRow(
@@ -144,6 +145,35 @@ class RenderValidateReportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "count is invalid: render_warnings"):
             render_validate.validation_report([row], recall_min=0.8)
 
+    def test_validation_report_rejects_invalid_warning_kinds(self):
+        cases = [
+            ("UnsupportedFieldEvaluation", "render warning kinds must be a list"),
+            (["Unsupported Field"], "render warning kind is invalid"),
+            (["UnsupportedFieldEvaluation", "UnsupportedFieldEvaluation"], "duplicate"),
+        ]
+        for kinds, message in cases:
+            with self.subTest(kinds=kinds):
+                row = render_validate.ValidationRow(
+                    document="sample.docx",
+                    status="pass",
+                    recall=1.0,
+                    render_warnings=1 if isinstance(kinds, str) else len(kinds),
+                    render_warning_kinds=kinds,
+                )
+
+                with self.assertRaisesRegex(ValueError, message):
+                    render_validate.validation_report([row], recall_min=0.8)
+
+        row = render_validate.ValidationRow(
+            document="sample.docx",
+            status="pass",
+            recall=1.0,
+            render_warnings=2,
+            render_warning_kinds=["UnsupportedFieldEvaluation"],
+        )
+        with self.assertRaisesRegex(ValueError, "render warning count mismatch"):
+            render_validate.validation_report([row], recall_min=0.8)
+
     def test_validation_report_rejects_measured_skip_rows(self):
         row = render_validate.ValidationRow(
             document="sample.docx",
@@ -186,7 +216,11 @@ class RenderValidateReportTests(unittest.TestCase):
                 page_ratio=0.5,
                 ahash_similarity=0.2,
                 render_warnings=3,
-                render_warning_kinds=["FloatingShapePlaceholderOnly"],
+                render_warning_kinds=[
+                    "FloatingShapePlaceholderOnly",
+                    "UnsupportedMetafileImages",
+                    "OleObjectsPreservedButNotModeled",
+                ],
             ),
             render_validate.ValidationRow(
                 document="skipped.docx",
