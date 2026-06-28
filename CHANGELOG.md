@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Custom properties in diagnostics.** `DocumentReport` and diagnostics JSON
+  now expose parsed string custom document properties alongside core metadata.
 - **Floating-shape overlay ordering.** PDF previews now draw recovered
   `behindDoc` floating-shape overlays before page text, while front overlays
   still draw above content.

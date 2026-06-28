@@ -330,6 +330,7 @@ pub struct DocumentReport {
     pub format: DocumentFormat,
     pub stats: Stats,
     pub core_properties: CoreProperties,
+    pub custom_properties: BTreeMap<String, String>,
     pub edit: EditCapability,
     pub edited_parts: Vec<String>,
     pub features: FeatureInventory,

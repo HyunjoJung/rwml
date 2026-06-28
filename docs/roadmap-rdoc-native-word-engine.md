@@ -267,6 +267,8 @@ Initial status:
   `category`, `contentStatus`, `lastModifiedBy`, `created`, `modified`,
   `lastPrinted`, `revision`, and `version`) and mirrors `.docx` title/creator
   into `DocSetup`.
+- `DocumentReport.custom_properties` exposes parsed string custom document
+  properties from `docProps/custom.xml` for diagnostics JSON.
 - Generated documents author model-backed `DocSetup` core metadata for
   `title`, `subject`, `creator`, `description`, `keywords`, `category`,
   `contentStatus`, `lastModifiedBy`, `created`, `modified`, `lastPrinted`,

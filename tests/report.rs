@@ -265,6 +265,28 @@ fn core_properties_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn custom_properties_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/docProps/custom.xml" ContentType="application/vnd.openxmlformats-officedocument.custom-properties+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rIdCustom" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties" Target="docProps/custom.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>BODY</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "docProps/custom.xml",
+            r#"<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="2" name="Client Name"><vt:lpwstr>ACME &lt;Launch&gt;</vt:lpwstr></property><property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="3" name="Phase"><vt:lpwstr>Review &amp; Ship</vt:lpwstr></property></Properties>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn field_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -4607,6 +4629,33 @@ fn report_includes_core_properties_for_diagnostics_json() {
     );
     assert!(json.contains(r#""revision":"12""#), "{json}");
     assert!(json.contains(r#""version":"1.2""#), "{json}");
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_includes_custom_properties_in_json() {
+    let doc = Document::open(&custom_properties_docx()).expect("fixture opens");
+    let report = doc.report();
+
+    assert_eq!(
+        report
+            .custom_properties
+            .get("Client Name")
+            .map(String::as_str),
+        Some("ACME <Launch>")
+    );
+    assert_eq!(
+        report.custom_properties.get("Phase").map(String::as_str),
+        Some("Review & Ship")
+    );
+
+    let json = report.to_json();
+    assert!(
+        json.contains(
+            r#""custom_properties":{"Client Name":"ACME <Launch>","Phase":"Review & Ship"}"#
+        ),
+        "{json}"
+    );
 }
 
 #[cfg(feature = "docx")]

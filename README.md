@@ -229,7 +229,8 @@ machine-readable read-only reasons such as legacy `.doc`, incomplete retained
 packages, or lossy OPC metadata. Call `edited_parts()` after edits to inspect
 the sorted package part names that will be reserialized or regenerated; the same
 list is included in `report().edited_parts` and diagnostics JSON. Core metadata
-from `core_properties()` is also included in `report().core_properties`.
+from `core_properties()` is included in `report().core_properties`; parsed
+string custom properties are included in `report().custom_properties`.
 
 ## Render — typeset to PDF
 
@@ -862,7 +863,9 @@ code points.
   anchor text;
   `text()` includes headers/footers, `main_text()` is
   body-only; `core_properties()` exposes supported `docProps/core.xml` metadata
-  fields including descriptive, package, timestamp, revision, and version values.
+  fields including descriptive, package, timestamp, revision, and version values,
+  while `report().custom_properties` exposes parsed string custom document
+  properties.
 - *Write/edit:* rdoc now **does** preserve arbitrary OOXML parts when editing an
   opened `.docx` (`save()` keeps comments, revisions, charts, content controls, custom
   XML, themes, fonts verbatim). The writer can generate run-anchored comments

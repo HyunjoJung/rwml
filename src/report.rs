@@ -12,7 +12,7 @@ use crate::model::{Block, FieldRole, Stats, Table};
 use crate::CoreProperties;
 #[cfg(feature = "docx")]
 use crate::RevisionKind;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 #[cfg(feature = "docx")]
 use std::io::Read;
 
@@ -301,6 +301,8 @@ pub struct DocumentReport {
     pub stats: Stats,
     /// Core document metadata.
     pub core_properties: CoreProperties,
+    /// String custom document metadata.
+    pub custom_properties: BTreeMap<String, String>,
     /// Package-preserving edit availability and read-only reasons.
     pub edit: EditCapability,
     /// Package part names touched by preservation edits in the current session.
@@ -383,8 +385,8 @@ impl DocumentReport {
     ///
     /// The schema is intentionally small and stable enough for examples, shell
     /// scripts, and future CLI output:
-    /// `format`, `stats`, `core_properties`, `edit`, `edited_parts`, `features`,
-    /// and `warnings`.
+    /// `format`, `stats`, `core_properties`, `custom_properties`, `edit`,
+    /// `edited_parts`, `features`, and `warnings`.
     pub fn to_json(&self) -> String {
         let mut out = String::new();
         out.push('{');
@@ -402,6 +404,9 @@ impl DocumentReport {
         out.push(',');
         out.push_str("\"core_properties\":");
         core_properties_json(&mut out, &self.core_properties);
+        out.push(',');
+        out.push_str("\"custom_properties\":");
+        string_map_json(&mut out, &self.custom_properties);
         out.push(',');
         out.push_str("\"edit\":");
         edit_capability_json(&mut out, &self.edit);
@@ -934,6 +939,19 @@ fn core_properties_json(out: &mut String, props: &CoreProperties) {
     json_field_opt_str(out, "revision", props.revision.as_deref());
     out.push(',');
     json_field_opt_str(out, "version", props.version.as_deref());
+    out.push('}');
+}
+
+fn string_map_json(out: &mut String, values: &BTreeMap<String, String>) {
+    out.push('{');
+    for (i, (key, value)) in values.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        push_json_string(out, key);
+        out.push(':');
+        push_json_string(out, value);
+    }
     out.push('}');
 }
 
