@@ -8,8 +8,9 @@ use quick_xml::Reader;
 use crate::annotation::{
     accept_field_number_format_switch,
     accept_field_text_format_switch as accept_field_format_switch, accept_general_format_switch,
-    is_neutral_field_format_switch, is_toc_value_neutral_switch, strip_ascii_switch_prefix, Field,
-    FieldKind, FieldNumberFormat, FieldTextFormat,
+    is_neutral_field_format_switch, is_note_ref_kind, is_ref_value_neutral_switch,
+    is_toc_value_neutral_switch, strip_ascii_switch_prefix, Field, FieldKind, FieldNumberFormat,
+    FieldTextFormat,
 };
 use crate::{numfmt, CoreProperties};
 
@@ -9369,10 +9370,6 @@ fn note_ref_instruction(instruction: &str) -> Option<NoteRefInstruction> {
     })
 }
 
-fn is_note_ref_kind(kind: &str) -> bool {
-    kind.eq_ignore_ascii_case("NOTEREF") || kind.eq_ignore_ascii_case("FTNREF")
-}
-
 fn accept_page_number_format_switch(
     part: &str,
     number_format: &mut Option<PageNumberFormat>,
@@ -9846,10 +9843,6 @@ fn ref_note_field_target(instruction: &str) -> Option<String> {
     let spec =
         ref_instruction(instruction).or_else(|| direct_bookmark_ref_instruction(instruction))?;
     (spec.note_reference && !spec.sequence_separator).then_some(spec.target)
-}
-
-fn is_ref_value_neutral_switch(part: &str) -> bool {
-    part.eq_ignore_ascii_case("\\h")
 }
 
 fn capitalize_first_word(text: &str) -> String {

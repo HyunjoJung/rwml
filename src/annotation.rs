@@ -481,6 +481,14 @@ pub(crate) fn is_toc_value_neutral_switch(part: &str) -> bool {
         || part.eq_ignore_ascii_case("\\x")
 }
 
+pub(crate) fn is_ref_value_neutral_switch(part: &str) -> bool {
+    part.eq_ignore_ascii_case("\\h")
+}
+
+pub(crate) fn is_note_ref_kind(kind: &str) -> bool {
+    kind.eq_ignore_ascii_case("NOTEREF") || kind.eq_ignore_ascii_case("FTNREF")
+}
+
 pub(crate) fn strip_ascii_switch_prefix<'a>(part: &'a str, switch: &str) -> Option<&'a str> {
     let prefix = part.get(..switch.len())?;
     prefix

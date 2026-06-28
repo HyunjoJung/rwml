@@ -6,8 +6,9 @@
 
 use crate::annotation::{
     accept_field_number_format_switch, accept_field_text_format_switch,
-    accept_general_format_switch, is_toc_value_neutral_switch, strip_ascii_switch_prefix, Field,
-    FieldKind, FieldNumberFormat, FieldTextFormat,
+    accept_general_format_switch, is_note_ref_kind, is_ref_value_neutral_switch,
+    is_toc_value_neutral_switch, strip_ascii_switch_prefix, Field, FieldKind, FieldNumberFormat,
+    FieldTextFormat,
 };
 use crate::model::{Block, FieldRole, Stats, Table};
 use crate::CoreProperties;
@@ -4486,7 +4487,7 @@ fn supported_ref_syntax_parts<'a>(
                 relative = true;
                 continue;
             }
-            if part.eq_ignore_ascii_case("\\h") {
+            if is_ref_value_neutral_switch(part) {
                 continue;
             }
             return None;
@@ -4664,7 +4665,7 @@ fn supported_note_ref_target(instruction: &str) -> Option<String> {
     let tokens = instruction_parts(instruction);
     let mut parts = tokens.iter().map(String::as_str);
     let kind = parts.next()?;
-    if !kind.eq_ignore_ascii_case("NOTEREF") && !kind.eq_ignore_ascii_case("FTNREF") {
+    if !is_note_ref_kind(kind) {
         return None;
     }
     let target = diagnostic_identifier_token(parts.next()?)?.to_string();
