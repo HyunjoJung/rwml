@@ -2733,6 +2733,7 @@ fn docx_complex_field_char_type_trims_ooxml_value() {
     assert_eq!(fields[0].instruction, "PAGE");
     assert_eq!(fields[0].result, "cached page");
     assert_eq!(fields[0].computed_result.as_deref(), Some("1"));
+    assert_eq!(doc.main_text(), "1");
     assert_eq!(doc.report().features.fields, 1);
 }
 

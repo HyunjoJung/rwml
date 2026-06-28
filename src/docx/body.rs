@@ -17,7 +17,7 @@ use quick_xml::Reader;
 use super::fields::TocEntry;
 use super::numbering::Numbering;
 use super::styles::Styles;
-use super::{attr_local, attr_u8, is_page_break_type, local, toggle_on};
+use super::{attr_local, attr_u8, field_char_type, is_page_break_type, local, toggle_on};
 use crate::annotation::FieldKind;
 use crate::model::{
     Align, AuthoredContentControl, Block, Cell, CellMargins, CharProps, Color, DocGrid,
@@ -1639,7 +1639,7 @@ fn apply_complex_field_char(
     let Some(tracker) = tracker else {
         return;
     };
-    match attr_local(e, b"fldCharType").as_deref() {
+    match field_char_type(e).as_deref() {
         Some("begin") => tracker.begin(),
         Some("separate") => tracker.separate(index),
         Some("end") => tracker.end(ctx, index),
