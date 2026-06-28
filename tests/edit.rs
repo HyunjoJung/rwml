@@ -1974,6 +1974,7 @@ fn replace_text_in_part_edits_one_existing_wml_part() {
             .unwrap(),
         1
     );
+    assert_eq!(doc.edited_parts(), ["word/header2.xml"]);
 
     let saved = doc.save().expect("save edited docx");
     let parts = unzip_parts(&saved);
@@ -3443,6 +3444,7 @@ fn set_core_property_updates_existing_core_properties_part_only() {
     doc.set_core_property(CoreProperty::LastPrinted, "2026-06-03T04:05:06Z")
         .expect("last-printed timestamp updates");
 
+    assert_eq!(doc.edited_parts(), ["docProps/core.xml"]);
     let saved = doc.save().expect("save edited docx");
     let before_parts = unzip_parts(&before);
     let parts = unzip_parts(&saved);
