@@ -1695,6 +1695,47 @@ fn set_hyperlink_target_updates_body_relationship_only() {
 }
 
 #[test]
+fn set_hyperlink_target_skips_deleted_body_hyperlinks() {
+    let fixture = docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDeleted" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://old.example/deleted" TargetMode="External"/><Relationship Id="rIdMovedFrom" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://old.example/moved-from" TargetMode="External"/><Relationship Id="rIdCurrent" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://old.example/current" TargetMode="External"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:del w:id="1"><w:hyperlink r:id="rIdDeleted"><w:r><w:delText>Deleted</w:delText></w:r></w:hyperlink></w:del><w:moveFrom w:id="2"><w:hyperlink r:id="rIdMovedFrom"><w:r><w:delText>Moved</w:delText></w:r></w:hyperlink></w:moveFrom><w:hyperlink r:id="rIdCurrent"><w:r><w:t>Current</w:t></w:r></w:hyperlink></w:p></w:body></w:document>"#,
+        ),
+    ]);
+    let mut doc = Document::open(&fixture).expect("fixture opens");
+
+    doc.set_hyperlink_target(0, "https://new.example/current")
+        .expect("visible hyperlink target updated");
+
+    let parts = unzip_parts(&doc.save().expect("save edited docx"));
+    let rels = String::from_utf8(parts["word/_rels/document.xml.rels"].clone()).unwrap();
+    assert!(
+        rels.contains(r#"Id="rIdDeleted" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://old.example/deleted" TargetMode="External""#),
+        "deleted hyperlink relationship changed: {rels}"
+    );
+    assert!(
+        rels.contains(r#"Id="rIdMovedFrom" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://old.example/moved-from" TargetMode="External""#),
+        "moved-from hyperlink relationship changed: {rels}"
+    );
+    assert!(
+        rels.contains(r#"Id="rIdCurrent" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://new.example/current" TargetMode="External""#),
+        "current hyperlink relationship not updated: {rels}"
+    );
+}
+
+#[test]
 fn set_hyperlink_target_rejects_invalid_index_without_mutation() {
     let mut doc = Document::open(&hyperlink_docx()).expect("fixture opens");
 

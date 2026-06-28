@@ -1471,9 +1471,10 @@ impl Document {
     }
 
     /// **Package-preserving edit: retarget a body hyperlink.** The zero-based
-    /// `hyperlink_index` is the order of `w:hyperlink r:id="..."` elements in
-    /// `word/document.xml` body order. Only relationship-backed external hyperlinks
-    /// are supported; field-code hyperlinks and internal anchors are left untouched.
+    /// `hyperlink_index` is the accepted-current order of `w:hyperlink r:id="..."`
+    /// elements in `word/document.xml` body order. Only relationship-backed external
+    /// hyperlinks are supported; deleted/moved-from links, field-code hyperlinks,
+    /// and internal anchors are left untouched.
     ///
     /// This rewrites the matching external hyperlink relationship target in
     /// `word/_rels/document.xml.rels` and leaves `word/document.xml` byte-preserved.
