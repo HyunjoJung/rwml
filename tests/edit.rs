@@ -115,6 +115,32 @@ fn tiny_gif_with_comment(marker: &[u8]) -> Vec<u8> {
     out
 }
 
+fn tiny_bmp() -> Vec<u8> {
+    let pixel_bytes = vec![0u8; 24];
+    let file_size = 54 + pixel_bytes.len();
+    let mut out = Vec::new();
+    out.extend_from_slice(b"BM");
+    out.extend_from_slice(&(file_size as u32).to_le_bytes());
+    out.extend_from_slice(&[0, 0, 0, 0]);
+    out.extend_from_slice(&54u32.to_le_bytes());
+    out.extend_from_slice(&40u32.to_le_bytes());
+    out.extend_from_slice(&2i32.to_le_bytes());
+    out.extend_from_slice(&3i32.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&24u16.to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes());
+    out.extend_from_slice(&(pixel_bytes.len() as u32).to_le_bytes());
+    out.extend_from_slice(&[0; 16]);
+    out.extend_from_slice(&pixel_bytes);
+    out
+}
+
+fn tiny_bmp_with_marker(marker: &[u8]) -> Vec<u8> {
+    let mut bmp = tiny_bmp();
+    bmp.extend_from_slice(marker);
+    bmp
+}
+
 fn unzip_parts(bytes: &[u8]) -> std::collections::BTreeMap<String, Vec<u8>> {
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes.to_vec())).unwrap();
     let mut parts = std::collections::BTreeMap::new();
@@ -477,6 +503,20 @@ fn gif_image_docx(gif: &[u8]) -> Vec<u8> {
         ("word/_rels/document.xml.rels", doc_rels),
         ("word/document.xml", body),
         ("word/media/anim.gif", gif),
+    ])
+}
+
+fn bmp_image_docx(bmp: &[u8]) -> Vec<u8> {
+    let ct = br#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="bmp" ContentType="image/bmp"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#;
+    let root_rels = br#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#;
+    let doc_rels = br#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdImg" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/bitmap.bmp"/></Relationships>"#;
+    let body = br#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body><w:p><w:r><w:t>BEFORE</w:t></w:r></w:p><w:p><w:r><w:drawing><wp:inline><wp:extent cx="19050" cy="28575"/><wp:docPr id="1" name="image1"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill><a:blip r:embed="rIdImg"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:body></w:document>"#;
+    docx_fixture_bytes(&[
+        ("[Content_Types].xml", ct),
+        ("_rels/.rels", root_rels),
+        ("word/_rels/document.xml.rels", doc_rels),
+        ("word/document.xml", body),
+        ("word/media/bitmap.bmp", bmp),
     ])
 }
 
@@ -2418,6 +2458,106 @@ fn replace_image_gif_rejects_missing_or_invalid_inputs_without_mutation() {
     let after = doc.save().expect("save after failed edits");
     let after_parts = unzip_parts(&after);
     assert_eq!(after_parts["word/media/anim.gif"], original_gif);
+    assert_eq!(
+        after_parts["word/document.xml"],
+        before_parts["word/document.xml"]
+    );
+    assert_eq!(
+        after_parts["word/_rels/document.xml.rels"],
+        before_parts["word/_rels/document.xml.rels"]
+    );
+}
+
+#[test]
+fn add_image_bmp_inserts_media_relationship_and_content_type() {
+    let bmp = tiny_bmp();
+    let mut doc = Document::open(&no_notes_docx()).expect("fixture opens");
+
+    doc.add_image_bmp(&bmp, "bitmap.bmp")
+        .expect("insert bmp image");
+
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    assert_eq!(parts["word/media/bitmap.bmp"], bmp);
+
+    let ct = String::from_utf8(parts["[Content_Types].xml"].clone()).unwrap();
+    assert!(
+        ct.contains(r#"PartName="/word/media/bitmap.bmp""#)
+            && ct.contains(r#"ContentType="image/bmp""#),
+        "bmp content type missing: {ct}"
+    );
+    let rels = String::from_utf8(parts["word/_rels/document.xml.rels"].clone()).unwrap();
+    assert!(
+        rels.contains(
+            r#"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image""#
+        ) && rels.contains(r#"Target="media/bitmap.bmp""#),
+        "bmp relationship missing: {rels}"
+    );
+    let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    assert!(
+        body.contains("<w:drawing") && body.contains("r:embed"),
+        "drawing missing: {body}"
+    );
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    let images = reopened.images();
+    assert_eq!(images.len(), 1);
+    assert_eq!(images[0].mime.as_deref(), Some("image/bmp"));
+    assert_eq!(images[0].bytes.as_deref(), Some(bmp.as_slice()));
+    assert_eq!(images[0].width_px, Some(2));
+    assert_eq!(images[0].height_px, Some(3));
+}
+
+#[test]
+fn replace_image_bmp_updates_existing_media_part_only() {
+    let original_bmp = tiny_bmp();
+    let replacement_bmp = tiny_bmp_with_marker(b"rdoc replacement");
+    let before = bmp_image_docx(&original_bmp);
+    let before_parts = unzip_parts(&before);
+    let mut doc = Document::open(&before).expect("fixture opens");
+
+    assert_eq!(
+        doc.images()[0].bytes.as_deref(),
+        Some(original_bmp.as_slice())
+    );
+
+    doc.replace_image_bmp(&replacement_bmp, "bitmap.bmp")
+        .expect("replace existing bmp");
+
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    assert_eq!(parts["word/media/bitmap.bmp"], replacement_bmp);
+    assert_eq!(
+        parts["word/document.xml"],
+        before_parts["word/document.xml"]
+    );
+    assert_eq!(
+        parts["word/_rels/document.xml.rels"],
+        before_parts["word/_rels/document.xml.rels"]
+    );
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    assert_eq!(reopened.images()[0].mime.as_deref(), Some("image/bmp"));
+    assert_eq!(
+        reopened.images()[0].bytes.as_deref(),
+        Some(replacement_bmp.as_slice())
+    );
+}
+
+#[test]
+fn replace_image_bmp_rejects_missing_or_invalid_inputs_without_mutation() {
+    let original_bmp = tiny_bmp();
+    let before = bmp_image_docx(&original_bmp);
+    let before_parts = unzip_parts(&before);
+    let mut doc = Document::open(&before).expect("fixture opens");
+
+    assert!(doc.replace_image_bmp(b"not bmp", "bitmap.bmp").is_err());
+    assert!(doc.replace_image_bmp(&tiny_bmp(), "missing.bmp").is_err());
+    assert!(doc.replace_image_bmp(&tiny_bmp(), "../bitmap.bmp").is_err());
+
+    let after = doc.save().expect("save after failed edits");
+    let after_parts = unzip_parts(&after);
+    assert_eq!(after_parts["word/media/bitmap.bmp"], original_bmp);
     assert_eq!(
         after_parts["word/document.xml"],
         before_parts["word/document.xml"]

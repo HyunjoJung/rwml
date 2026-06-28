@@ -121,7 +121,7 @@ pub fn extract_text(bytes: &[u8]) -> Result<String> {
 /// verbatim under a part typed from its `mime` — the writer does not transcode or
 /// validate the raster, so the caller must ensure `bytes` really are that format (a
 /// mismatch produces a part Word can't render). The element-tree editor's
-/// [`Document::add_image_png`] / [`Document::replace_image_png`] and JPEG
+/// [`Document::add_image_png`] / [`Document::replace_image_png`] and JPEG/GIF/BMP
 /// counterparts do validate, since they accept arbitrary caller input.
 #[cfg(feature = "docx")]
 pub fn write_docx(model: &DocModel) -> Vec<u8> {
@@ -2165,6 +2165,20 @@ impl Document {
         self.add_image_media(gif, name, ImageMediaKind::Gif, "add_image_gif")
     }
 
+    /// **Element-tree editing: append an inline BMP image** to the body,
+    /// reconciling the media part, `image/bmp` content type, relationship, and
+    /// drawing markup transactionally. This mirrors [`Document::add_image_png`]
+    /// for plain `*.bmp` names and bounded structural BMP validation.
+    ///
+    /// The validation checks the BMP file header, BITMAPINFOHEADER dimensions,
+    /// plane count, bit depth, and uncompressed pixel-data offset; it does not
+    /// decode pixel rows. Read views are stale until the saved bytes are
+    /// reopened. Available with the default `docx` feature.
+    #[cfg(feature = "docx")]
+    pub fn add_image_bmp(&mut self, bmp: &[u8], name: &str) -> Result<()> {
+        self.add_image_media(bmp, name, ImageMediaKind::Bmp, "add_image_bmp")
+    }
+
     /// **Package-preserving edit: replace an existing PNG media part.** `name`
     /// is the plain file name of an existing part under `word/media/` (for example
     /// `image1.png`). The new bytes must be a structurally valid PNG container; the
@@ -2197,6 +2211,16 @@ impl Document {
     #[cfg(feature = "docx")]
     pub fn replace_image_gif(&mut self, gif: &[u8], name: &str) -> Result<()> {
         self.replace_image_media(gif, name, ImageMediaKind::Gif, "replace_image_gif")
+    }
+
+    /// **Package-preserving edit: replace an existing BMP media part.** `name`
+    /// is the plain file name of an existing part under `word/media/` (for
+    /// example `bitmap.bmp`). The new bytes must be a structurally valid BMP
+    /// container; existing drawing markup and relationships keep pointing at the
+    /// same part. Available with the default `docx` feature.
+    #[cfg(feature = "docx")]
+    pub fn replace_image_bmp(&mut self, bmp: &[u8], name: &str) -> Result<()> {
+        self.replace_image_media(bmp, name, ImageMediaKind::Bmp, "replace_image_bmp")
     }
 
     #[cfg(feature = "docx")]
@@ -2745,6 +2769,8 @@ const CT_IMAGE_PNG: &str = "image/png";
 const CT_IMAGE_JPEG: &str = "image/jpeg";
 #[cfg(feature = "docx")]
 const CT_IMAGE_GIF: &str = "image/gif";
+#[cfg(feature = "docx")]
+const CT_IMAGE_BMP: &str = "image/bmp";
 
 #[cfg(feature = "docx")]
 const REL_HEADER: &str =
@@ -2933,6 +2959,7 @@ enum ImageMediaKind {
     Png,
     Jpeg,
     Gif,
+    Bmp,
 }
 
 #[cfg(feature = "docx")]
@@ -2942,6 +2969,7 @@ impl ImageMediaKind {
             ImageMediaKind::Png => "PNG",
             ImageMediaKind::Jpeg => "JPEG",
             ImageMediaKind::Gif => "GIF",
+            ImageMediaKind::Bmp => "BMP",
         }
     }
 
@@ -2950,6 +2978,7 @@ impl ImageMediaKind {
             ImageMediaKind::Png => CT_IMAGE_PNG,
             ImageMediaKind::Jpeg => CT_IMAGE_JPEG,
             ImageMediaKind::Gif => CT_IMAGE_GIF,
+            ImageMediaKind::Bmp => CT_IMAGE_BMP,
         }
     }
 
@@ -2958,6 +2987,7 @@ impl ImageMediaKind {
             ImageMediaKind::Png => &[".png"],
             ImageMediaKind::Jpeg => &[".jpg", ".jpeg"],
             ImageMediaKind::Gif => &[".gif"],
+            ImageMediaKind::Bmp => &[".bmp"],
         }
     }
 
@@ -2966,6 +2996,7 @@ impl ImageMediaKind {
             ImageMediaKind::Png => ".png",
             ImageMediaKind::Jpeg => ".jpg or .jpeg",
             ImageMediaKind::Gif => ".gif",
+            ImageMediaKind::Bmp => ".bmp",
         }
     }
 
@@ -2974,6 +3005,7 @@ impl ImageMediaKind {
             ImageMediaKind::Png => is_png(bytes),
             ImageMediaKind::Jpeg => jpeg_dimensions(bytes).is_some(),
             ImageMediaKind::Gif => gif_dimensions(bytes).is_some(),
+            ImageMediaKind::Bmp => bmp_dimensions(bytes).is_some(),
         }
     }
 
@@ -2984,6 +3016,9 @@ impl ImageMediaKind {
                 .map(|(w, h)| extent_emu_from_pixels(w, h))
                 .unwrap_or((FALLBACK_IMAGE_EMU, FALLBACK_IMAGE_EMU)),
             ImageMediaKind::Gif => gif_dimensions(bytes)
+                .map(|(w, h)| extent_emu_from_pixels(w, h))
+                .unwrap_or((FALLBACK_IMAGE_EMU, FALLBACK_IMAGE_EMU)),
+            ImageMediaKind::Bmp => bmp_dimensions(bytes)
                 .map(|(w, h)| extent_emu_from_pixels(w, h))
                 .unwrap_or((FALLBACK_IMAGE_EMU, FALLBACK_IMAGE_EMU)),
         }
@@ -3429,6 +3464,39 @@ fn gif_dimensions(gif: &[u8]) -> Option<(u32, u32)> {
     let w = u16::from_le_bytes([gif[6], gif[7]]) as u32;
     let h = u16::from_le_bytes([gif[8], gif[9]]) as u32;
     (w > 0 && h > 0).then_some((w, h))
+}
+
+#[cfg(feature = "docx")]
+fn bmp_dimensions(bmp: &[u8]) -> Option<(u32, u32)> {
+    if bmp.len() < 54 || &bmp[..2] != b"BM" {
+        return None;
+    }
+    let file_size = u32::from_le_bytes([bmp[2], bmp[3], bmp[4], bmp[5]]) as usize;
+    let pixel_offset = u32::from_le_bytes([bmp[10], bmp[11], bmp[12], bmp[13]]) as usize;
+    let dib_size = u32::from_le_bytes([bmp[14], bmp[15], bmp[16], bmp[17]]) as usize;
+    if file_size < pixel_offset
+        || file_size > bmp.len()
+        || dib_size < 40
+        || 14 + dib_size > bmp.len()
+        || pixel_offset < 14 + dib_size
+        || pixel_offset > bmp.len()
+    {
+        return None;
+    }
+    let w = i32::from_le_bytes([bmp[18], bmp[19], bmp[20], bmp[21]]).unsigned_abs();
+    let h = i32::from_le_bytes([bmp[22], bmp[23], bmp[24], bmp[25]]).unsigned_abs();
+    let planes = u16::from_le_bytes([bmp[26], bmp[27]]);
+    let bit_depth = u16::from_le_bytes([bmp[28], bmp[29]]);
+    let compression = u32::from_le_bytes([bmp[30], bmp[31], bmp[32], bmp[33]]);
+    if w == 0
+        || h == 0
+        || planes != 1
+        || !matches!(bit_depth, 1 | 4 | 8 | 16 | 24 | 32)
+        || compression != 0
+    {
+        return None;
+    }
+    Some((w, h))
 }
 
 /// JPEG validation and intrinsic dimensions from a bounded marker walk. It enforces:

@@ -159,6 +159,8 @@ Short-term surfaces:
 - `replace_image_jpeg`;
 - `add_image_gif`;
 - `replace_image_gif`;
+- `add_image_bmp`;
+- `replace_image_bmp`;
 - `edit_capability`;
 - `replace_text_in_part`;
 - `set_core_property`;
@@ -1366,6 +1368,8 @@ Targets:
 - `replace_image_jpeg`;
 - `add_image_gif`;
 - `replace_image_gif`;
+- `add_image_bmp`;
+- `replace_image_bmp`;
 - `set_core_property`;
 - render from arbitrary bounded `DocModel`.
 
