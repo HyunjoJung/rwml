@@ -2707,7 +2707,7 @@ fn apply_tcpr_child(t: &mut TcPr, e: &BytesStart<'_>) {
             }
         }
         b"vMerge" => {
-            t.vm = match attr_local(e, b"val").as_deref() {
+            t.vm = match attr_local(e, b"val").as_deref().map(str::trim) {
                 Some("restart") => VMerge::Restart,
                 _ => VMerge::Continue, // present with "continue"/no val
             };
@@ -3430,6 +3430,29 @@ mod tests {
         assert_eq!(t.rows[0].cells[0].col_span, 2);
         assert_eq!(t.rows[0].cells[0].row_span, 2);
         assert_eq!(t.rows[1].cells.len(), 0); // continuation dropped
+    }
+
+    #[test]
+    fn table_vmerge_restart_trims_ooxml_value() {
+        let xml = r#"<w:document><w:body><w:tbl>
+            <w:tr>
+              <w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr><w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc>
+            </w:tr>
+            <w:tr>
+              <w:tc><w:tcPr><w:vMerge w:val=" restart "/></w:tcPr><w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc>
+            </w:tr>
+            <w:tr>
+              <w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p/></w:tc>
+            </w:tr>
+        </w:tbl></w:body></w:document>"#;
+        let Block::Table(t) = &parse(xml)[0] else {
+            panic!("table")
+        };
+
+        assert_eq!(t.rows[0].cells[0].row_span, 1);
+        assert_eq!(t.rows[1].cells[0].text(), "B");
+        assert_eq!(t.rows[1].cells[0].row_span, 2);
+        assert_eq!(t.rows[2].cells.len(), 0);
     }
 
     #[test]
