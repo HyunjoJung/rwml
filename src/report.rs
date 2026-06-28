@@ -2941,8 +2941,177 @@ fn reference_index_marker_uncomputed_reason(instruction: &str) -> FieldEvaluatio
         }
     }
     #[cfg(not(feature = "docx"))]
-    let _ = instruction;
+    {
+        if supported_reference_index_marker_syntax_for_report(instruction) {
+            return FieldEvaluationReason::NoComputedResult;
+        }
+    }
     FieldEvaluationReason::UnsupportedSwitch
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_reference_index_marker_syntax_for_report(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if kind.eq_ignore_ascii_case("RD") {
+        return supported_reference_index_rd_syntax_for_report(parts);
+    }
+    if kind.eq_ignore_ascii_case("TA") {
+        return supported_reference_index_ta_syntax_for_report(parts);
+    }
+    if kind.eq_ignore_ascii_case("XE") {
+        return supported_reference_index_xe_syntax_for_report(parts);
+    }
+    false
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_reference_index_rd_syntax_for_report<'a>(
+    mut parts: impl Iterator<Item = &'a str>,
+) -> bool {
+    if reference_index_literal_for_report(parts.next()).is_none() {
+        return false;
+    }
+    let mut text_format = false;
+    while let Some(part) = parts.next() {
+        if part.eq_ignore_ascii_case("\\f") {
+            continue;
+        }
+        if accept_reference_index_field_format_for_report(part, &mut parts, &mut text_format) {
+            continue;
+        }
+        return false;
+    }
+    true
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_reference_index_ta_syntax_for_report<'a>(
+    mut parts: impl Iterator<Item = &'a str>,
+) -> bool {
+    let mut has_entry_text = false;
+    let mut text_format = false;
+    while let Some(part) = parts.next() {
+        if part.eq_ignore_ascii_case("\\l") || part.eq_ignore_ascii_case("\\s") {
+            if reference_index_literal_for_report(parts.next()).is_none() {
+                return false;
+            }
+            has_entry_text = true;
+            continue;
+        }
+        if let Some(value) = strip_ascii_switch_prefix(part, "\\l")
+            .or_else(|| strip_ascii_switch_prefix(part, "\\s"))
+        {
+            if value.is_empty() || reference_index_literal_for_report(Some(value)).is_none() {
+                return false;
+            }
+            has_entry_text = true;
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\c") {
+            if parse_reference_index_category_for_report(parts.next()).is_none() {
+                return false;
+            }
+            continue;
+        }
+        if let Some(category) = strip_ascii_switch_prefix(part, "\\c") {
+            if category.is_empty()
+                || parse_reference_index_category_for_report(Some(category)).is_none()
+            {
+                return false;
+            }
+            continue;
+        }
+        if accept_reference_index_field_format_for_report(part, &mut parts, &mut text_format) {
+            continue;
+        }
+        return false;
+    }
+    has_entry_text
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_reference_index_xe_syntax_for_report<'a>(
+    mut parts: impl Iterator<Item = &'a str>,
+) -> bool {
+    if reference_index_literal_for_report(parts.next()).is_none() {
+        return false;
+    }
+    let mut text_format = false;
+    while let Some(part) = parts.next() {
+        if part.eq_ignore_ascii_case("\\b") || part.eq_ignore_ascii_case("\\i") {
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\f") || part.eq_ignore_ascii_case("\\r") {
+            if reference_index_plain_value_for_report(parts.next()).is_none() {
+                return false;
+            }
+            continue;
+        }
+        if let Some(value) = strip_ascii_switch_prefix(part, "\\f")
+            .or_else(|| strip_ascii_switch_prefix(part, "\\r"))
+        {
+            if value.is_empty() || reference_index_plain_value_for_report(Some(value)).is_none() {
+                return false;
+            }
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\t") {
+            if reference_index_literal_for_report(parts.next()).is_none() {
+                return false;
+            }
+            continue;
+        }
+        if let Some(value) = strip_ascii_switch_prefix(part, "\\t") {
+            if value.is_empty() || reference_index_literal_for_report(Some(value)).is_none() {
+                return false;
+            }
+            continue;
+        }
+        if accept_reference_index_field_format_for_report(part, &mut parts, &mut text_format) {
+            continue;
+        }
+        return false;
+    }
+    true
+}
+
+#[cfg(not(feature = "docx"))]
+fn reference_index_literal_for_report(token: Option<&str>) -> Option<()> {
+    let token = token?.trim();
+    let quoted = token.starts_with('"') && token.ends_with('"') && token.len() >= 2;
+    let text = diagnostic_literal_token(token)?;
+    if text.is_empty() || (!quoted && text.starts_with('\\')) {
+        return None;
+    }
+    Some(())
+}
+
+#[cfg(not(feature = "docx"))]
+fn reference_index_plain_value_for_report(token: Option<&str>) -> Option<()> {
+    let token = token?;
+    (!token.is_empty() && !token.starts_with('\\') && !token.contains('"')).then_some(())
+}
+
+#[cfg(not(feature = "docx"))]
+fn parse_reference_index_category_for_report(value: Option<&str>) -> Option<u8> {
+    let value = diagnostic_name_token(value?)?.parse::<u8>().ok()?;
+    (1..=16).contains(&value).then_some(value)
+}
+
+#[cfg(not(feature = "docx"))]
+fn accept_reference_index_field_format_for_report<'a>(
+    part: &'a str,
+    parts: &mut impl Iterator<Item = &'a str>,
+    text_format: &mut bool,
+) -> bool {
+    accept_general_format_switch(part, parts, |format| {
+        accept_field_format_switch(format, text_format)
+    })
+    .is_some_and(|accepted| accepted)
 }
 
 fn toc_entry_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -5078,6 +5247,29 @@ mod tests {
         );
         assert_eq!(
             super::toc_entry_uncomputed_reason(r#"TC "Entry" \l "2"#),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_reference_index_marker_diagnostics_reject_malformed_syntax() {
+        assert_eq!(
+            super::reference_index_marker_uncomputed_reason(r#"RD "chapter2.docx" \* Upper"#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::reference_index_marker_uncomputed_reason(r#"TA \l "Case" \c "1""#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::reference_index_marker_uncomputed_reason(
+                r#"XE "Mercury" \t "See planets" \* FirstCap"#
+            ),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::reference_index_marker_uncomputed_reason(r#"TA \l "Case" \c"1"#),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
     }
