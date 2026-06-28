@@ -2695,7 +2695,7 @@ fn read_tcpr(r: &mut Xml<'_>) -> TcPr {
 fn apply_tcpr_child(t: &mut TcPr, e: &BytesStart<'_>) {
     match local(e.name().as_ref()) {
         b"gridSpan" => {
-            if let Some(v) = attr_local(e, b"val").and_then(|v| v.parse::<u16>().ok()) {
+            if let Some(v) = attr_local(e, b"val").and_then(|v| parse_u16(&v)) {
                 t.gs = v.max(1);
             }
         }
@@ -3309,10 +3309,10 @@ mod tests {
         // merge; row 1 col 0 continues it (dropped, owner row_span=2).
         let xml = r#"<w:document><w:body><w:tbl>
             <w:tr>
-              <w:tc><w:tcPr><w:gridSpan w:val="2"/><w:vMerge w:val="restart"/></w:tcPr><w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc>
+              <w:tc><w:tcPr><w:gridSpan w:val=" 2 "/><w:vMerge w:val="restart"/></w:tcPr><w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc>
             </w:tr>
             <w:tr>
-              <w:tc><w:tcPr><w:gridSpan w:val="2"/><w:vMerge/></w:tcPr><w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc>
+              <w:tc><w:tcPr><w:gridSpan w:val=" 2 "/><w:vMerge/></w:tcPr><w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc>
             </w:tr>
         </w:tbl></w:body></w:document>"#;
         let Block::Table(t) = &parse(xml)[0] else {
