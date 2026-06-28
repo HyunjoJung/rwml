@@ -1520,6 +1520,7 @@ fn core_properties_xml(setup: &DocSetup) -> Option<Vec<u8>> {
     let category = non_empty_trimmed(setup.category.as_deref());
     let content_status = non_empty_trimmed(setup.content_status.as_deref());
     let last_modified_by = non_empty_trimmed(setup.last_modified_by.as_deref());
+    let revision = non_empty_trimmed(setup.revision.as_deref());
     let version = non_empty_trimmed(setup.version.as_deref());
     if title.is_none()
         && subject.is_none()
@@ -1529,6 +1530,7 @@ fn core_properties_xml(setup: &DocSetup) -> Option<Vec<u8>> {
         && category.is_none()
         && content_status.is_none()
         && last_modified_by.is_none()
+        && revision.is_none()
         && version.is_none()
     {
         return None;
@@ -1576,6 +1578,12 @@ fn core_properties_xml(setup: &DocSetup) -> Option<Vec<u8>> {
         s.push_str(&format!(
             "<cp:lastModifiedBy>{}</cp:lastModifiedBy>",
             esc_text(last_modified_by)
+        ));
+    }
+    if let Some(revision) = revision {
+        s.push_str(&format!(
+            "<cp:revision>{}</cp:revision>",
+            esc_text(revision)
         ));
     }
     if let Some(version) = version {

@@ -275,6 +275,7 @@ impl CoreProperties {
             category: setup.category.clone(),
             content_status: setup.content_status.clone(),
             last_modified_by: setup.last_modified_by.clone(),
+            revision: setup.revision.clone(),
             version: setup.version.clone(),
             ..CoreProperties::default()
         }

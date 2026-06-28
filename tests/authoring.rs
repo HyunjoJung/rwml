@@ -2358,6 +2358,7 @@ fn doc_builder_creates_basic_report_model() {
         .category(" Operations ")
         .content_status(" Draft ")
         .last_modified_by(" Reviewer ")
+        .revision(" 12 ")
         .version(" 1.2 ")
         .page_setup(PageSetup {
             margin_pt: 54.0,
@@ -2382,6 +2383,7 @@ fn doc_builder_creates_basic_report_model() {
     assert_eq!(model.setup.category.as_deref(), Some("Operations"));
     assert_eq!(model.setup.content_status.as_deref(), Some("Draft"));
     assert_eq!(model.setup.last_modified_by.as_deref(), Some("Reviewer"));
+    assert_eq!(model.setup.revision.as_deref(), Some("12"));
     assert_eq!(model.setup.version.as_deref(), Some("1.2"));
     assert_eq!(model.setup.page.margin_pt, 54.0);
     assert_eq!(model.setup.header.len(), 1);
@@ -2434,6 +2436,7 @@ fn doc_builder_creates_basic_report_model() {
         core_xml.contains("<cp:category>Operations</cp:category>")
             && core_xml.contains("<cp:contentStatus>Draft</cp:contentStatus>")
             && core_xml.contains("<cp:lastModifiedBy>Reviewer</cp:lastModifiedBy>")
+            && core_xml.contains("<cp:revision>12</cp:revision>")
             && core_xml.contains("<cp:version>1.2</cp:version>"),
         "core properties XML missing package metadata: {core_xml}"
     );
@@ -2450,6 +2453,7 @@ fn doc_builder_creates_basic_report_model() {
     assert_eq!(core.category.as_deref(), Some("Operations"));
     assert_eq!(core.content_status.as_deref(), Some("Draft"));
     assert_eq!(core.last_modified_by.as_deref(), Some("Reviewer"));
+    assert_eq!(core.revision.as_deref(), Some("12"));
     assert_eq!(core.version.as_deref(), Some("1.2"));
     let text = reopened.text();
     assert!(text.contains("Builder Report"), "title lost: {text:?}");
@@ -2470,6 +2474,7 @@ fn doc_builder_ignores_blank_core_metadata() {
         .category(" ")
         .content_status("\n")
         .last_modified_by("\t")
+        .revision(" ")
         .version(" ")
         .paragraph("Body")
         .build();
@@ -2482,6 +2487,7 @@ fn doc_builder_ignores_blank_core_metadata() {
     assert_eq!(model.setup.category, None);
     assert_eq!(model.setup.content_status, None);
     assert_eq!(model.setup.last_modified_by, None);
+    assert_eq!(model.setup.revision, None);
     assert_eq!(model.setup.version, None);
 
     model.setup.title = Some(" \n ".to_string());
@@ -2492,6 +2498,7 @@ fn doc_builder_ignores_blank_core_metadata() {
     model.setup.category = Some(" ".to_string());
     model.setup.content_status = Some("\n".to_string());
     model.setup.last_modified_by = Some("\t".to_string());
+    model.setup.revision = Some(" ".to_string());
     model.setup.version = Some(" ".to_string());
 
     let bytes = rdoc::write_docx(&model);

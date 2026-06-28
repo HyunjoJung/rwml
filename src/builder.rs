@@ -1609,6 +1609,13 @@ impl DocBuilder {
         self
     }
 
+    /// Set document revision-count metadata.
+    pub fn revision(mut self, revision: impl Into<String>) -> Self {
+        let revision = revision.into().trim().to_string();
+        self.model.setup.revision = (!revision.is_empty()).then_some(revision);
+        self
+    }
+
     /// Set document version metadata.
     pub fn version(mut self, version: impl Into<String>) -> Self {
         let version = version.into().trim().to_string();

@@ -66,7 +66,7 @@ commentsExtended metadata, tracked
 insertion/deletion runs, run-level content controls, bookmarked runs, authored
 footnotes/endnotes, string custom document properties, raw custom XML data-store
 items, generated core metadata (title, subject, creator, description, keywords,
-category, content status, last modified by, and version), explicit Word document ids, web-extension task pane package shells, page setup with section columns, document grids, text direction, title pages, and page-number restarts/formats, explicit page breaks and next/even/odd section breaks,
+category, content status, last modified by, revision, and version), explicit Word document ids, web-extension task pane package shells, page setup with section columns, document grids, text direction, title pages, and page-number restarts/formats, explicit page breaks and next/even/odd section breaks,
 and default/first/even running headers/footers with page numbers all round-trip. Content controls can include tag/alias and
 data-binding metadata. See
 [`examples/report.rs`](examples/report.rs).

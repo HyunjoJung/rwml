@@ -176,7 +176,7 @@ The first public maturity release should meet these requirements.
 - Core metadata is queryable through `Document::core_properties()` for supported
   `docProps/core.xml` fields including category, content status, and version,
   plus generated model-backed title, subject, creator, description, keywords,
-  category, content status, last-modified-by, and version metadata.
+  category, content status, last-modified-by, revision, and version metadata.
 - `DocModel` includes body paragraphs, runs, tables, lists, images, headers,
   footers, footnotes, endnotes, and text boxes where currently supported.
 - Footnotes and endnotes are exposed through `Document::notes()` as typed
