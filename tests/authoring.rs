@@ -2925,6 +2925,14 @@ fn write_docx_keeps_header_footer_simple_field_runs() {
     );
 
     let reopened = Document::open(&bytes).expect("header/footer field .docx reopens");
+    let fields = reopened.fields();
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::Filename);
+    assert_eq!(fields[0].instruction, "FILENAME \\p");
+    assert_eq!(fields[0].result, "report.docx");
+    assert_eq!(fields[1].kind, FieldKind::Page);
+    assert_eq!(fields[1].instruction, "PAGE");
+    assert_eq!(fields[1].result, "1");
     let header_text = reopened.header_text();
     assert!(
         header_text.contains("report.docx") && header_text.contains('1'),

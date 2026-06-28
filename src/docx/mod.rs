@@ -26,7 +26,7 @@ use crate::annotation::{
 };
 use crate::assemble;
 use crate::error::{Error, Result};
-use crate::model::{Block, Color, CustomXmlItem, DocMeta, DocModel, Image};
+use crate::model::{Block, Color, CustomXmlItem, DocMeta, DocModel, DocSetup, Image, SectionSetup};
 use crate::text;
 use crate::CoreProperties;
 
@@ -347,7 +347,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     for comment in &mut comments {
         comment.anchor = comment_anchors.get(&comment.id).cloned();
     }
-    let fields = fields::parse(
+    let mut fields = fields::parse(
         &doc_xml,
         &styles,
         &toc_entries,
@@ -400,6 +400,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
             ..crate::model::DocSetup::default()
         },
     };
+    append_model_header_footer_fields(&mut fields, &model);
     let main_text = body_text(&model); // body only
                                        // Full text: body, then notes, then section/final headers/footers.
     let text = {
@@ -442,6 +443,49 @@ pub(crate) fn blank() -> DocxState {
 /// Fallible blank-template open — backs [`crate::Document::try_new`].
 pub(crate) fn try_blank() -> Result<DocxState> {
     open(BLANK_DOCX)
+}
+
+fn append_model_header_footer_fields(fields: &mut Vec<Field>, model: &DocModel) {
+    for block in &model.blocks {
+        if let Block::SectionBreak(setup) = block {
+            append_section_header_footer_fields(fields, setup);
+        }
+    }
+    append_doc_header_footer_fields(fields, &model.setup);
+}
+
+fn append_doc_header_footer_fields(fields: &mut Vec<Field>, setup: &DocSetup) {
+    append_header_footer_field_blocks(
+        fields,
+        [
+            setup.header.as_slice(),
+            setup.first_header.as_slice(),
+            setup.even_header.as_slice(),
+            setup.footer.as_slice(),
+            setup.first_footer.as_slice(),
+            setup.even_footer.as_slice(),
+        ],
+    );
+}
+
+fn append_section_header_footer_fields(fields: &mut Vec<Field>, setup: &SectionSetup) {
+    append_header_footer_field_blocks(
+        fields,
+        [
+            setup.header.as_slice(),
+            setup.first_header.as_slice(),
+            setup.even_header.as_slice(),
+            setup.footer.as_slice(),
+            setup.first_footer.as_slice(),
+            setup.even_footer.as_slice(),
+        ],
+    );
+}
+
+fn append_header_footer_field_blocks(fields: &mut Vec<Field>, blocks: [&[Block]; 6]) {
+    for blocks in blocks {
+        fields.extend(crate::report::fields_for_model(blocks));
+    }
 }
 
 /// Resolve and parse the header/footer parts referenced by the body's sectPr(s).
