@@ -2193,9 +2193,9 @@ fn doc_builder_adds_custom_paragraph_style() {
     let accent = Color::rgb(0x7A, 0x1F, 0x1F);
     let model = DocBuilder::new()
         .paragraph_style(
-            ParagraphStyleBuilder::new("RiskCallout", "Risk callout")
-                .based_on("Normal")
-                .next("Normal")
+            ParagraphStyleBuilder::new(" RiskCallout ", " Risk callout ")
+                .based_on(" Normal ")
+                .next(" Normal ")
                 .q_format()
                 .align(Align::Justify)
                 .spacing_before_pt(6.0)
@@ -2208,13 +2208,16 @@ fn doc_builder_adds_custom_paragraph_style() {
         )
         .rich_paragraph(
             ParagraphBuilder::text("Risk status")
-                .style("RiskCallout")
+                .style(" RiskCallout ")
                 .push_run(RunBuilder::new(": review required").italic().build()),
         )
         .build();
 
     assert_eq!(model.setup.styles.len(), 1);
     assert_eq!(model.setup.styles[0].id, "RiskCallout");
+    assert_eq!(model.setup.styles[0].name, "Risk callout");
+    assert_eq!(model.setup.styles[0].based_on.as_deref(), Some("Normal"));
+    assert_eq!(model.setup.styles[0].next.as_deref(), Some("Normal"));
     let Block::Paragraph(paragraph) = &model.blocks[0] else {
         panic!("expected styled paragraph");
     };

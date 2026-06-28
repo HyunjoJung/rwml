@@ -224,18 +224,21 @@ fn styles_xml(styles: &[ParagraphStyle], include_headings: bool) -> String {
 }
 
 fn write_paragraph_style(out: &mut String, style: &ParagraphStyle) {
-    if style.id.is_empty() || style.name.is_empty() {
+    let Some(id) = non_empty_trimmed(Some(&style.id)) else {
         return;
-    }
-    let id = esc_attr(&style.id);
-    let name = esc_attr(&style.name);
+    };
+    let Some(name) = non_empty_trimmed(Some(&style.name)) else {
+        return;
+    };
+    let id = esc_attr(id);
+    let name = esc_attr(name);
     out.push_str(&format!(
         r#"<w:style w:type="paragraph" w:styleId="{id}"><w:name w:val="{name}"/>"#
     ));
-    if let Some(based_on) = style.based_on.as_deref().filter(|s| !s.is_empty()) {
+    if let Some(based_on) = non_empty_trimmed(style.based_on.as_deref()) {
         out.push_str(&format!(r#"<w:basedOn w:val="{}"/>"#, esc_attr(based_on)));
     }
-    if let Some(next) = style.next.as_deref().filter(|s| !s.is_empty()) {
+    if let Some(next) = non_empty_trimmed(style.next.as_deref()) {
         out.push_str(&format!(r#"<w:next w:val="{}"/>"#, esc_attr(next)));
     }
     if style.q_format {
@@ -655,6 +658,7 @@ impl Ctx {
         let style_id = pr
             .style_id
             .as_deref()
+            .and_then(|style_id| non_empty_trimmed(Some(style_id)))
             .map(str::to_string)
             .or_else(|| heading.map(|h| format!("Heading{}", h.clamp(1, 6))));
         let sp = pr.spacing;

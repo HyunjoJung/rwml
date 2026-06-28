@@ -206,7 +206,8 @@ impl ParagraphBuilder {
 
     /// Apply a paragraph style id.
     pub fn style(mut self, style_id: impl Into<String>) -> Self {
-        self.paragraph.props.style_id = Some(style_id.into());
+        let style_id = style_id.into().trim().to_string();
+        self.paragraph.props.style_id = (!style_id.is_empty()).then_some(style_id);
         self
     }
 
@@ -293,8 +294,8 @@ impl ParagraphStyleBuilder {
     pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
         Self {
             style: ParagraphStyle {
-                id: id.into(),
-                name: name.into(),
+                id: id.into().trim().to_string(),
+                name: name.into().trim().to_string(),
                 ..ParagraphStyle::default()
             },
         }
@@ -307,13 +308,15 @@ impl ParagraphStyleBuilder {
 
     /// Set the base style id.
     pub fn based_on(mut self, style_id: impl Into<String>) -> Self {
-        self.style.based_on = Some(style_id.into());
+        let style_id = style_id.into().trim().to_string();
+        self.style.based_on = (!style_id.is_empty()).then_some(style_id);
         self
     }
 
     /// Set the next paragraph style id.
     pub fn next(mut self, style_id: impl Into<String>) -> Self {
-        self.style.next = Some(style_id.into());
+        let style_id = style_id.into().trim().to_string();
+        self.style.next = (!style_id.is_empty()).then_some(style_id);
         self
     }
 
