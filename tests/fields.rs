@@ -220,6 +220,23 @@ fn sequence_field_docx() -> Vec<u8> {
     ])
 }
 
+fn sequence_heading_reset_field_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SEQ Figure "><w:r><w:t>stale figure one</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SEQ Figure \s 1 "><w:r><w:t>cached heading reset</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SEQ Figure "><w:r><w:t>stale figure two</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn document_info_field_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -3153,6 +3170,48 @@ fn docx_sequence_fields_compute_source_order_numbers() {
             && !main_text.contains("stale hidden figure")
             && !main_text.contains("stale appendix roman"),
         "computed SEQ field text should replace stale cached text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_sequence_heading_reset_is_known_uncomputed_syntax() {
+    let doc = Document::open(&sequence_heading_reset_field_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 3);
+    assert_eq!(fields[0].kind, FieldKind::Sequence);
+    assert_eq!(fields[0].instruction, "SEQ Figure");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("1"));
+    assert_eq!(fields[1].kind, FieldKind::Sequence);
+    assert_eq!(fields[1].instruction, "SEQ Figure \\s 1");
+    assert_eq!(fields[1].result, "cached heading reset");
+    assert_eq!(fields[1].computed_result, None);
+    assert_eq!(fields[2].kind, FieldKind::Sequence);
+    assert_eq!(fields[2].instruction, "SEQ Figure");
+    assert_eq!(fields[2].computed_result.as_deref(), Some("2"));
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Sequence,
+            count: 1,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::NoComputedResult,
+            count: 1,
+        }]
+    );
+
+    assert_eq!(
+        doc.main_text()
+            .lines()
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>(),
+        vec!["1", "cached heading reset", "2"]
     );
 }
 

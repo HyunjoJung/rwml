@@ -3908,6 +3908,7 @@ fn supported_sequence_syntax(instruction: &str) -> bool {
         return false;
     }
     let mut action_seen = false;
+    let mut heading_reset_seen = false;
     let mut hidden = false;
     let mut number_format = false;
     while let Some(part) = parts.next() {
@@ -3933,6 +3934,23 @@ fn supported_sequence_syntax(instruction: &str) -> bool {
             hidden = true;
             continue;
         }
+        if part.eq_ignore_ascii_case("\\s") {
+            let Some(level) = parts.next() else {
+                return false;
+            };
+            if !accept_sequence_heading_reset_for_report(level, &mut heading_reset_seen) {
+                return false;
+            }
+            continue;
+        }
+        if let Some(level) = strip_ascii_switch_prefix(part, "\\s") {
+            if level.is_empty()
+                || !accept_sequence_heading_reset_for_report(level, &mut heading_reset_seen)
+            {
+                return false;
+            }
+            continue;
+        }
         if part.eq_ignore_ascii_case("\\r") {
             let Some(reset) = parts.next() else {
                 return false;
@@ -3950,6 +3968,21 @@ fn supported_sequence_syntax(instruction: &str) -> bool {
         }
         return false;
     }
+    true
+}
+
+#[cfg(not(feature = "docx"))]
+fn accept_sequence_heading_reset_for_report(part: &str, heading_reset_seen: &mut bool) -> bool {
+    if *heading_reset_seen {
+        return false;
+    }
+    let Some(level) = diagnostic_name_token(part).and_then(|part| part.parse::<u8>().ok()) else {
+        return false;
+    };
+    if !(1..=9).contains(&level) {
+        return false;
+    }
+    *heading_reset_seen = true;
     true
 }
 
@@ -6040,6 +6073,10 @@ mod tests {
     fn no_default_sequence_diagnostics_reject_malformed_tails() {
         assert_eq!(
             super::sequence_uncomputed_reason(r"SEQ Figure \r -1"),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::sequence_uncomputed_reason(r"SEQ Figure \s 1"),
             super::FieldEvaluationReason::NoComputedResult
         );
         assert_eq!(

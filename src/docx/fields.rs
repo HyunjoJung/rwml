@@ -8841,12 +8841,13 @@ struct SequenceInstruction {
 }
 
 fn sequence_instruction(instruction: &str) -> Option<SequenceInstruction> {
-    sequence_instruction_with_reset_policy(instruction, false)
+    sequence_instruction_with_reset_policy(instruction, false, false)
 }
 
 fn sequence_instruction_with_reset_policy(
     instruction: &str,
     allow_negative_reset: bool,
+    allow_heading_reset: bool,
 ) -> Option<SequenceInstruction> {
     let tokens = instruction_parts(instruction);
     let mut parts = tokens.iter().map(String::as_str);
@@ -8857,6 +8858,7 @@ fn sequence_instruction_with_reset_policy(
     let identifier = field_identifier_token(parts.next()?)?.to_string();
     let mut action = SequenceAction::Next;
     let mut action_seen = false;
+    let mut heading_reset_seen = false;
     let mut hidden = false;
     let mut number_format = None;
     while let Some(part) = parts.next() {
@@ -8888,6 +8890,18 @@ fn sequence_instruction_with_reset_policy(
             hidden = true;
             continue;
         }
+        if part.eq_ignore_ascii_case("\\s") {
+            let level = parts.next()?;
+            accept_sequence_heading_reset(level, &mut heading_reset_seen, allow_heading_reset)?;
+            continue;
+        }
+        if let Some(level) = strip_ascii_switch_prefix(part, "\\s") {
+            if level.is_empty() {
+                return None;
+            }
+            accept_sequence_heading_reset(level, &mut heading_reset_seen, allow_heading_reset)?;
+            continue;
+        }
         if part.eq_ignore_ascii_case("\\r") {
             if action_seen {
                 return None;
@@ -8916,12 +8930,28 @@ fn sequence_instruction_with_reset_policy(
     })
 }
 
+fn accept_sequence_heading_reset(
+    value: &str,
+    heading_reset_seen: &mut bool,
+    allow_heading_reset: bool,
+) -> Option<()> {
+    if !allow_heading_reset || *heading_reset_seen {
+        return None;
+    }
+    let level = field_name_token(value)?.parse::<u8>().ok()?;
+    if !(1..=9).contains(&level) {
+        return None;
+    }
+    *heading_reset_seen = true;
+    Some(())
+}
+
 fn sequence_reset_value(value: i64, allow_negative: bool) -> Option<i64> {
     (allow_negative || value >= 0).then_some(value)
 }
 
 pub(crate) fn supports_sequence_field_syntax(instruction: &str) -> bool {
-    sequence_instruction_with_reset_policy(instruction, true).is_some()
+    sequence_instruction_with_reset_policy(instruction, true, true).is_some()
 }
 
 pub(crate) fn computed_sequence_result(
