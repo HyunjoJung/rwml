@@ -18,8 +18,8 @@ use super::{esc_attr, esc_text};
 use crate::model::{
     normalize_field_instruction, referenceable_bookmark_name, Align, AuthoredComment,
     AuthoredContentControl, AuthoredNote, AuthoredRevision, Block, CellMargins, CharProps, Chart,
-    ChartKind, ChartSeries, ChartShape, Color, FieldRole, Image, Indent, ParaProps, Paragraph,
-    ParagraphStyle, SectionBreakKind, SectionSetup, Spacing, Table, TableBorderSide,
+    ChartKind, ChartSeries, ChartShape, Color, DocSetup, FieldRole, Image, Indent, ParaProps,
+    Paragraph, ParagraphStyle, SectionBreakKind, SectionSetup, Spacing, Table, TableBorderSide,
     TableBorderStyle, VertAlign, WebExtensionTaskPane,
 };
 use crate::{NoteKind, RevisionKind};
@@ -341,6 +341,7 @@ const PIC_NS: &str = "http://schemas.openxmlformats.org/drawingml/2006/picture";
 const PIC_URI: &str = "http://schemas.openxmlformats.org/drawingml/2006/picture";
 
 const XML_DECL: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#;
+const CT_CORE_PROPERTIES: &str = "application/vnd.openxmlformats-package.core-properties+xml";
 const CT_DOCUMENT: &str =
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml";
 const CT_NUMBERING: &str =
@@ -357,6 +358,8 @@ const CT_XLSX_SHARED_STRINGS: &str =
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml";
 const REL_OFFICE_DOCUMENT: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument";
+const REL_CORE_PROPERTIES: &str =
+    "http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties";
 const REL_NUMBERING: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering";
 const REL_HYPERLINK: &str =
@@ -371,6 +374,9 @@ const REL_XLSX_STYLES: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles";
 const REL_XLSX_SHARED_STRINGS: &str =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings";
+const CORE_PROPERTIES_NS: &str =
+    "http://schemas.openxmlformats.org/package/2006/metadata/core-properties";
+const DC_NS: &str = "http://purl.org/dc/elements/1.1/";
 const S_NS: &str = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 /// Hard cap on table columns / a cell's column or row span, so a hostile model
 /// (`col_span = u16::MAX`) cannot amplify into millions of `<w:gridCol>`/cells.
@@ -1503,6 +1509,28 @@ fn write_comment_text(out: &mut String, text: &str) {
         }
     }
     flush(out, &mut buf);
+}
+
+fn core_properties_xml(setup: &DocSetup) -> Option<Vec<u8>> {
+    let title = non_empty_trimmed(setup.title.as_deref());
+    let creator = non_empty_trimmed(setup.creator.as_deref());
+    if title.is_none() && creator.is_none() {
+        return None;
+    }
+
+    let mut s = String::new();
+    s.push_str(XML_DECL);
+    s.push_str(&format!(
+        r#"<cp:coreProperties xmlns:cp="{CORE_PROPERTIES_NS}" xmlns:dc="{DC_NS}">"#
+    ));
+    if let Some(title) = title {
+        s.push_str(&format!("<dc:title>{}</dc:title>", esc_text(title)));
+    }
+    if let Some(creator) = creator {
+        s.push_str(&format!("<dc:creator>{}</dc:creator>", esc_text(creator)));
+    }
+    s.push_str("</cp:coreProperties>");
+    Some(s.into_bytes())
 }
 
 fn custom_properties_xml(properties: &std::collections::BTreeMap<String, String>) -> Vec<u8> {
@@ -2710,6 +2738,15 @@ pub(crate) fn try_to_docx(model: &crate::DocModel) -> crate::Result<Vec<u8>> {
     if let Some(endnotes) = br.endnotes_xml {
         pkg.add_part("word/endnotes.xml", Some(CT_ENDNOTES), endnotes);
     }
+    let core_properties_xml = core_properties_xml(&model.setup);
+    let has_core_properties = core_properties_xml.is_some();
+    if let Some(core_properties_xml) = core_properties_xml {
+        pkg.add_part(
+            "docProps/core.xml",
+            Some(CT_CORE_PROPERTIES),
+            core_properties_xml,
+        );
+    }
     if !model.custom_properties.is_empty() {
         pkg.add_part(
             "docProps/custom.xml",
@@ -2813,6 +2850,14 @@ pub(crate) fn try_to_docx(model: &crate::DocModel) -> crate::Result<Vec<u8>> {
             id: format!("rId{}", root_rels.len() + 1),
             rel_type: REL_CUSTOM_PROPERTIES.to_string(),
             target: "docProps/custom.xml".to_string(),
+            external: false,
+        });
+    }
+    if has_core_properties {
+        root_rels.push(Rel {
+            id: format!("rId{}", root_rels.len() + 1),
+            rel_type: REL_CORE_PROPERTIES.to_string(),
+            target: "docProps/core.xml".to_string(),
             external: false,
         });
     }

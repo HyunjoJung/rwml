@@ -1554,13 +1554,15 @@ impl DocBuilder {
 
     /// Set document title metadata.
     pub fn title(mut self, title: impl Into<String>) -> Self {
-        self.model.setup.title = Some(title.into());
+        let title = title.into().trim().to_string();
+        self.model.setup.title = (!title.is_empty()).then_some(title);
         self
     }
 
     /// Set document creator metadata.
     pub fn creator(mut self, creator: impl Into<String>) -> Self {
-        self.model.setup.creator = Some(creator.into());
+        let creator = creator.into().trim().to_string();
+        self.model.setup.creator = (!creator.is_empty()).then_some(creator);
         self
     }
 

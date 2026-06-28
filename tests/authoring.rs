@@ -2350,8 +2350,8 @@ fn doc_builder_adds_custom_paragraph_style() {
 #[test]
 fn doc_builder_creates_basic_report_model() {
     let model = DocBuilder::new()
-        .title("Builder Report")
-        .creator("rdoc")
+        .title(" Builder Report ")
+        .creator(" rdoc ")
         .page_setup(PageSetup {
             margin_pt: 54.0,
             ..PageSetup::default()
@@ -2386,12 +2386,60 @@ fn doc_builder_creates_basic_report_model() {
     assert_eq!(table.rows[1].cells[1].text(), "Yes");
 
     let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let content_types = String::from_utf8(parts["[Content_Types].xml"].clone()).unwrap();
+    let root_rels = String::from_utf8(parts["_rels/.rels"].clone()).unwrap();
+    let core_xml = String::from_utf8(parts["docProps/core.xml"].clone()).unwrap();
+    assert!(
+        content_types.contains(
+            r#"<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>"#
+        ),
+        "core properties content type missing: {content_types}"
+    );
+    assert!(
+        root_rels.contains(
+            r#"Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml""#
+        ),
+        "core properties relationship missing: {root_rels}"
+    );
+    assert!(
+        core_xml.contains("<dc:title>Builder Report</dc:title>")
+            && core_xml.contains("<dc:creator>rdoc</dc:creator>"),
+        "core properties XML missing title/creator: {core_xml}"
+    );
     let reopened = Document::open(&bytes).expect("builder-authored .docx reopens");
+    let core = reopened.core_properties();
+    assert_eq!(core.title.as_deref(), Some("Builder Report"));
+    assert_eq!(core.creator.as_deref(), Some("rdoc"));
     let text = reopened.text();
     assert!(text.contains("Builder Report"), "title lost: {text:?}");
     assert!(
         text.contains("Openable") && text.contains("Yes"),
         "table lost"
+    );
+}
+
+#[test]
+fn doc_builder_ignores_blank_core_metadata() {
+    let mut model = DocBuilder::new()
+        .title(" ")
+        .creator("\t")
+        .paragraph("Body")
+        .build();
+
+    assert_eq!(model.setup.title, None);
+    assert_eq!(model.setup.creator, None);
+
+    model.setup.title = Some(" \n ".to_string());
+    model.setup.creator = Some("\t".to_string());
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    assert!(!parts.contains_key("docProps/core.xml"));
+    let root_rels = String::from_utf8(parts["_rels/.rels"].clone()).unwrap();
+    assert!(
+        !root_rels.contains("relationships/metadata/core-properties"),
+        "blank core metadata should not emit root relationship: {root_rels}"
     );
 }
 
