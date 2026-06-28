@@ -240,6 +240,27 @@ fn notes_docx() -> Vec<u8> {
     ])
 }
 
+fn notes_with_blank_ids_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Valid</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r></w:p><w:p><w:r><w:t>Blank</w:t></w:r><w:r><w:footnoteReference w:id=" "/></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="1"><w:p><w:r><w:t>Valid note</w:t></w:r></w:p></w:footnote><w:footnote w:id=" "><w:p><w:r><w:t>Blank note</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+    ])
+}
+
 fn notes_with_anchor_text_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -1683,6 +1704,21 @@ fn docx_notes_are_exposed_as_note_side_table() {
     assert_eq!(
         notes[1].anchor.as_ref().map(|a| a.text.as_str()),
         Some("BODY")
+    );
+}
+
+#[test]
+fn docx_notes_ignore_blank_ids() {
+    let doc = Document::open(&notes_with_blank_ids_docx()).expect("fixture opens");
+
+    assert_eq!(doc.footnote_text(), "Valid note");
+    let notes = doc.notes();
+    assert_eq!(notes.len(), 1);
+    assert_eq!(notes[0].id, "1");
+    assert_eq!(notes[0].text, "Valid note");
+    assert_eq!(
+        notes[0].anchor.as_ref().map(|anchor| anchor.text.as_str()),
+        Some("Valid")
     );
 }
 

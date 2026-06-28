@@ -550,16 +550,15 @@ pub(crate) fn parse_note_entries(
         match r.read_event() {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == tag => {
                 let boilerplate = matches!(
-                    attr_local(&e, b"type").as_deref().map(str::trim),
+                    attr_local_trimmed(&e, b"type").as_deref(),
                     Some("separator") | Some("continuationSeparator") | Some("continuationNotice")
                 );
                 if boilerplate {
                     skip_subtree(&mut r);
-                } else {
-                    let id = attr_local(&e, b"id")
-                        .map(|id| id.trim().to_owned())
-                        .unwrap_or_default();
+                } else if let Some(id) = attr_local_trimmed(&e, b"id") {
                     entries.push((id, read_blocks(&mut r, ctx, 0)));
+                } else {
+                    skip_subtree(&mut r);
                 }
             }
             Ok(Event::Eof) | Err(_) => break,
@@ -614,8 +613,8 @@ pub(crate) fn scan_note_ref_anchors(xml: &str, tag: &[u8]) -> HashMap<String, St
                 }
                 if current_block_depth.is_some() {
                     if name == tag {
-                        if let Some(id) = attr_local(&e, b"id") {
-                            current_block_refs.push(id.trim().to_owned());
+                        if let Some(id) = attr_local_trimmed(&e, b"id") {
+                            current_block_refs.push(id);
                         }
                         skip_subtree(&mut r);
                         body_depth = body_depth.saturating_sub(1);
@@ -633,8 +632,8 @@ pub(crate) fn scan_note_ref_anchors(xml: &str, tag: &[u8]) -> HashMap<String, St
                 let name = local(qname.as_ref());
                 if current_block_depth.is_some() {
                     if name == tag {
-                        if let Some(id) = attr_local(&e, b"id") {
-                            current_block_refs.push(id.trim().to_owned());
+                        if let Some(id) = attr_local_trimmed(&e, b"id") {
+                            current_block_refs.push(id);
                         }
                     } else {
                         append_note_anchor_empty_marker(&mut current_block_text, name);
