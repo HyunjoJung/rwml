@@ -349,6 +349,51 @@ fn set_comment_text_updates_existing_comment_body() {
 }
 
 #[test]
+fn set_comment_text_skips_deleted_comment_body_text() {
+    let fixture = docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="comments.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:commentRangeStart w:id="7"/><w:r><w:t>Hello</w:t></w:r><w:commentRangeEnd w:id="7"/><w:r><w:commentReference w:id="7"/></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/comments.xml",
+            r#"<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:comment w:id="7" w:author="Reviewer"><w:p><w:del w:id="1"><w:r><w:delText>OLD</w:delText></w:r></w:del><w:moveFrom w:id="2"><w:r><w:t>OLD</w:t></w:r></w:moveFrom><w:r><w:t>OLD</w:t></w:r></w:p></w:comment></w:comments>"#,
+        ),
+    ]);
+    let mut doc = Document::open(&fixture).expect("fixture opens");
+    assert_eq!(doc.comments()[0].text, "OLD");
+
+    doc.set_comment_text("7", "Updated")
+        .expect("comment text updates");
+
+    let saved = doc.save().expect("save edited docx");
+    let comments_xml = String::from_utf8(unzip_parts(&saved)["word/comments.xml"].clone()).unwrap();
+    assert!(
+        comments_xml.contains(r#"<w:del w:id="1"><w:r><w:delText>OLD</w:delText></w:r></w:del>"#),
+        "deleted comment text changed: {comments_xml}"
+    );
+    assert!(
+        comments_xml.contains(r#"<w:moveFrom w:id="2"><w:r><w:t>OLD</w:t></w:r></w:moveFrom>"#),
+        "moved-from comment text changed: {comments_xml}"
+    );
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    assert_eq!(reopened.comments()[0].text, "Updated");
+}
+
+#[test]
 fn set_comment_text_writes_tabs_and_breaks_as_markers() {
     let mut doc = Document::open(&commented_docx()).expect("fixture opens");
 

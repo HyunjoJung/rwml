@@ -189,26 +189,29 @@ pub(crate) fn parse_anchors(xml: &str) -> HashMap<String, TextAnchor> {
 
 fn read_comment(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Option<Comment> {
     let mut c = comment_shell(start);
+    let mut old_content_depth = 0usize;
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"t" => {
-                if let Some(c) = c.as_mut() {
-                    c.text.push_str(&read_text(r));
-                } else {
-                    read_text(r);
-                }
+            Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
+                old_content_depth += 1;
             }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"delText" => {
-                if let Some(c) = c.as_mut() {
-                    c.text.push_str(&read_text(r));
-                } else {
-                    read_text(r);
+            Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"t" | b"delText") => {
+                let text = read_text(r);
+                if old_content_depth == 0 {
+                    if let Some(c) = c.as_mut() {
+                        c.text.push_str(&text);
+                    }
                 }
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
-                if let (Some(c), Some(text)) = (c.as_mut(), inline_marker_text(&e)) {
-                    c.text.push_str(text);
+                if old_content_depth == 0 {
+                    if let (Some(c), Some(text)) = (c.as_mut(), inline_marker_text(&e)) {
+                        c.text.push_str(text);
+                    }
                 }
+            }
+            Ok(Event::End(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
+                old_content_depth = old_content_depth.saturating_sub(1);
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"comment" => break,
             Ok(Event::Eof) | Err(_) => break,
@@ -217,7 +220,6 @@ fn read_comment(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Option<Comment> {
     }
     c
 }
-
 fn read_text(r: &mut Xml<'_>) -> String {
     let mut s = String::new();
     loop {

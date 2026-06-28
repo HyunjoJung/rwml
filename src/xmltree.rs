@@ -2174,6 +2174,12 @@ impl XmlTree {
     ) {
         let base = scope.len();
         self.push_xmlns(id, scope);
+        if self.wml_revision_edit_action(id, scope, WmlRevisionEditPolicy::Accept)
+            == WmlRevisionEditAction::Remove
+        {
+            scope.truncate(base);
+            return;
+        }
         let run = if self.resolves_to(id, WML_NS, b"r", scope) {
             Some(id)
         } else {

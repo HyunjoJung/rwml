@@ -376,9 +376,9 @@ Implementation:
 - attach anchors by comment id and range start/end;
 - treat `w:tab`, `w:br`, and `w:cr` as visible tab/newline text in comment bodies
   and anchor ranges;
-- keep anchor text on the accepted/current body view: direct, inserted, and
-  moved-to anchors collect text, while deleted and moved-from old-only anchors
-  remain unanchored;
+- keep comment bodies and anchor text on the accepted/current view: direct,
+  inserted, and moved-to text is visible, while deleted and moved-from old-only
+  text is omitted;
 - preserve raw comments part on save;
 - expose counts and orphan markers through diagnostics;
 - later add `add_comment`.
