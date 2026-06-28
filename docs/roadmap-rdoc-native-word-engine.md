@@ -416,8 +416,8 @@ Initial status:
   checked/default states, dropdown result/default selections, explicit
   non-empty text-input current values, and empty-current text-input defaults
   compute when available with field-result format switches; malformed quoted or
-  field-result format syntax reports `UnsupportedSwitch`, while valid broader
-  protected-form behavior reports `NoComputedResult`. The
+  field-result format syntax reports `UnsupportedSwitch`, while explicitly
+  enforced protected-form behavior reports `NoComputedResult`. The
   `.docx` field side table follows the accepted/current revision and
   `mc:AlternateContent` first-branch policies, including direct, inserted, and
   moved-to current fields while omitting deleted and moved-from old fields and
@@ -871,7 +871,7 @@ Initial status:
   selections, explicit non-empty text-input current values, and empty-current
   text-input defaults compute when available with field-result format switches;
   malformed quoted or field-result format syntax reports `UnsupportedSwitch`,
-  while valid broader protected-form behavior preserves cached text with
+  while explicitly enforced protected-form behavior preserves cached text with
   `NoComputedResult` diagnostics.
   Unambiguous
   `.docx` `REF` bookmark fields, including multi-paragraph bookmark ranges and

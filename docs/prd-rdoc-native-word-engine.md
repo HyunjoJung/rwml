@@ -415,7 +415,7 @@ The first public maturity release should meet these requirements.
   with deterministic `w:ffData` checkbox checked/default states, dropdown
   result/default selections, explicit non-empty text-input current values, and
   empty-current text-input default computed results where available, while
-  broader protected-form behavior keeps cached display text with
+  explicitly enforced protected-form behavior keeps cached display text with
   `NoComputedResult`;
   body `PAGE` fields compute current page numbers only from
   trusted leading structural or source-rendered current-page context, including

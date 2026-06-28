@@ -3272,13 +3272,15 @@ fn read_legacy_form_data_element(
             data.checkbox = Some(toggle_on(attr_local(e, b"val")));
         }
         b"default" if in_dropdown => {
-            data.dropdown_default = attr_local(e, b"val").and_then(|value| value.parse().ok());
+            data.dropdown_default =
+                attr_local(e, b"val").and_then(|value| value.trim().parse().ok());
         }
         b"default" if in_text_input => {
             data.text_default = attr_local(e, b"val");
         }
         b"result" if in_dropdown => {
-            data.dropdown_result = attr_local(e, b"val").and_then(|value| value.parse().ok());
+            data.dropdown_result =
+                attr_local(e, b"val").and_then(|value| value.trim().parse().ok());
         }
         b"listEntry" if in_dropdown => {
             if let Some(value) = attr_local(e, b"val") {
