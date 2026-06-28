@@ -594,9 +594,46 @@ fn supports_hyperlink_field_evaluation(field: &Field) -> bool {
     }
     #[cfg(not(feature = "docx"))]
     {
-        let _ = field;
-        true
+        supported_hyperlink_syntax_for_report(&field.instruction)
     }
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_hyperlink_syntax_for_report(instruction: &str) -> bool {
+    let text = instruction.trim_start();
+    let field_name_len = "HYPERLINK".len();
+    let Some(field_name) = text.get(..field_name_len) else {
+        return false;
+    };
+    if !field_name.eq_ignore_ascii_case("HYPERLINK") {
+        return false;
+    }
+    let Some(after_name) = text.get(field_name_len..) else {
+        return false;
+    };
+    if matches!(after_name.chars().next(), Some(ch) if !ch.is_whitespace()) {
+        return false;
+    }
+    let after_name = after_name.trim_start();
+    if after_name.starts_with('\\')
+        && !after_name
+            .get(..2)
+            .is_some_and(|switch| switch.eq_ignore_ascii_case("\\l"))
+    {
+        return false;
+    }
+    let Some(url_start) = after_name.find('"') else {
+        return false;
+    };
+    let rest = &after_name[url_start + 1..];
+    let Some(url_end) = rest.find('"') else {
+        return false;
+    };
+    let tail = &rest[url_end + 1..];
+    if !crate::hyperlink_tail_is_well_formed(tail) {
+        return false;
+    }
+    !rest[..url_end].trim().is_empty()
 }
 
 fn supports_merge_field_evaluation(field: &Field) -> bool {
@@ -5471,6 +5508,25 @@ mod tests {
         );
         let malformed = Field {
             instruction: r#"DOCPROPERTY "Client Name"#.to_string(),
+            ..valid
+        };
+        assert_eq!(
+            super::unsupported_field_reason(&malformed),
+            Some(super::FieldEvaluationReason::UnsupportedSwitch)
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_hyperlink_diagnostics_reject_malformed_syntax() {
+        let valid = Field {
+            kind: FieldKind::Hyperlink,
+            instruction: r#"HYPERLINK "https://example.com" \o "tip""#.to_string(),
+            ..Field::default()
+        };
+        assert_eq!(super::unsupported_field_reason(&valid), None);
+        let malformed = Field {
+            instruction: r#"HYPERLINK "https://example.com" extra"#.to_string(),
             ..valid
         };
         assert_eq!(
