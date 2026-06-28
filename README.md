@@ -908,8 +908,9 @@ The long-term native Word engine plan is split into the
       running headers/footers; nested-table-cell text; common Symbol/Wingdings
       display mapping
 - [x] Reader: `.docx` comments with body/header/footer anchors,
-      tracked-change views, core document metadata, body/note/header/footer field
-      detection, body/header/footer floating-shape geometry and
+      body/note/header/footer tracked-change views and side-table extraction,
+      core document metadata, body/note/header/footer field detection,
+      body/header/footer floating-shape geometry and
       containing-block anchor text capture, trusted body `PAGE` computation
       plus `FILENAME`/`MERGEFIELD`
       render support, document-info/date/stat

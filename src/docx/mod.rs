@@ -299,7 +299,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
                                                            // Footnotes/endnotes live in their own parts. Keep them SEPARATE from the body
                                                            // (not appended into `model.blocks`); their parts are preserved verbatim on save.
                                                            // They are re-joined for the read/text views below and in `Document::model()`.
-    let (mut notes, mut note_records) = read_notes(
+    let (mut notes, mut note_records, mut note_revisions) = read_notes(
         &mut zip,
         "word/footnotes.xml",
         b"footnote",
@@ -308,7 +308,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         &numbering,
         document_properties,
     );
-    let (endnote_blocks, mut endnote_records) = read_notes(
+    let (endnote_blocks, mut endnote_records, endnote_revisions) = read_notes(
         &mut zip,
         "word/endnotes.xml",
         b"endnote",
@@ -319,6 +319,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     );
     notes.extend(endnote_blocks);
     note_records.append(&mut endnote_records);
+    note_revisions.extend(endnote_revisions);
     attach_note_reference_anchors(&mut note_records, &doc_xml);
     let mut floating_shapes = read_floating_shapes(&doc_xml);
     let mut text_boxes = read_text_boxes(&doc_xml, &ctx, &floating_shapes);
@@ -374,6 +375,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         preserve_legacy_form_cache,
     );
     let mut revisions = revisions::parse(&doc_xml);
+    revisions.extend(note_revisions);
     revisions.extend(header_footer_revisions);
     // Stats reflect the full visible content (body + notes).
     let stats = {
@@ -900,9 +902,9 @@ fn read_notes(
     styles: &styles::Styles,
     numbering: &numbering::Numbering,
     properties: DocumentPropertyRefs<'_>,
-) -> (Vec<Block>, Vec<Note>) {
+) -> (Vec<Block>, Vec<Note>, Vec<Revision>) {
     let Some(xml) = part(zip, name) else {
-        return (Vec::new(), Vec::new());
+        return (Vec::new(), Vec::new(), Vec::new());
     };
     let part_rels = part(zip, &part_rels_path(name))
         .map(|s| parse_rels(&s))
@@ -954,6 +956,7 @@ fn read_notes(
     };
     let mut blocks = Vec::new();
     let mut records = Vec::new();
+    let revisions = revisions::parse(&xml);
     for (id, note_blocks) in body::parse_note_entries(&xml, &ctx, tag) {
         let text = blocks_text(&note_blocks);
         records.push(Note {
@@ -964,7 +967,7 @@ fn read_notes(
         });
         blocks.extend(note_blocks);
     }
-    (blocks, records)
+    (blocks, records, revisions)
 }
 
 fn read_text_boxes(

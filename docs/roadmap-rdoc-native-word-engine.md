@@ -431,7 +431,7 @@ Initial status:
   feature inventory JSON also includes
   `unsupported_field_reasons` counts for `UnknownField`, `UnresolvedBookmark`,
   `UnsupportedSwitch`, and `NoComputedResult`.
-- `Document::revisions()` extracts `.docx` body/header/footer insertion,
+- `Document::revisions()` extracts `.docx` body/note/header/footer insertion,
   deletion, move-from, and move-to markers with id, author, date, and visible
   subtree text.
 - `Document::main_text_with_revision_view()` exposes accepted, original, and

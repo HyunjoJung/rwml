@@ -727,7 +727,7 @@ impl Document {
         }
     }
 
-    /// Extract tracked revisions from `.docx` body/header/footer content.
+    /// Extract tracked revisions from `.docx` body/note/header/footer content.
     ///
     /// The returned side table includes insertion, deletion, and move markers
     /// with metadata and visible subtree text. Legacy `.doc` revisions are not
