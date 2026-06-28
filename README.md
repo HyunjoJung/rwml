@@ -169,7 +169,7 @@ doc.fill_content_controls_by_tag([
 doc.fill_template_fields([
     ("client-name", "Acme & Co"),
     ("project-name", "Roadmap"),
-])?; // body/header/footer content controls + MERGEFIELD cached results
+])?; // body/note/header/footer content controls + MERGEFIELD cached results
 doc.accept_all_revisions()?;                    // accept tracked body/note/header/footer changes
 // doc.reject_all_revisions()?;                 // or reject tracked body/note/header/footer changes
 doc.set_hyperlink_target(0, "https://example.com/final")?; // body hyperlink rel

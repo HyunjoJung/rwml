@@ -833,6 +833,35 @@ fn header_footer_merge_template_missing_result_docx() -> Vec<u8> {
     ])
 }
 
+fn note_template_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rIdEnd" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Body</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r><w:r><w:endnoteReference w:id="2"/></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:t>Separator</w:t></w:r></w:p></w:footnote><w:footnote w:id="1"><w:sdt><w:sdtPr><w:tag w:val="client-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Old Foot Client</w:t></w:r></w:p></w:sdtContent></w:sdt><w:p><w:fldSimple w:instr=" MERGEFIELD project-name \* MERGEFORMAT "><w:r><w:t>Old Foot Project</w:t></w:r></w:fldSimple></w:p></w:footnote></w:footnotes>"#,
+        ),
+        (
+            "word/endnotes.xml",
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="2"><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> MERGEFIELD &quot;client-name&quot; \* MERGEFORMAT </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Old End Client</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:sdt><w:sdtPr><w:tag w:val="project-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Old End</w:t></w:r><w:r><w:t> Project</w:t></w:r></w:p></w:sdtContent></w:sdt></w:endnote></w:endnotes>"#,
+        ),
+    ])
+}
+
 fn tracked_revisions_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -1168,10 +1197,6 @@ fn fill_template_fields_missing_names_are_noop() {
 #[test]
 fn fill_template_fields_updates_referenced_header_footer_merge_fields() {
     let mut doc = Document::open(&header_footer_merge_template_docx()).expect("fixture opens");
-    assert!(
-        doc.fields().is_empty(),
-        "field reads should stay scoped to the document body"
-    );
 
     let changed = doc
         .fill_template_fields([("client-name", "Acme & Co"), ("project-name", "Roadmap")])
@@ -1243,6 +1268,56 @@ fn fill_template_fields_updates_referenced_header_footer_content_controls() {
         orphan_header.contains("Orphan Header Client") && !orphan_header.contains("Acme"),
         "unreferenced header part should not be edited: {orphan_header}"
     );
+}
+
+#[test]
+fn fill_template_fields_updates_note_content_controls_and_merge_fields() {
+    let mut doc = Document::open(&note_template_docx()).expect("fixture opens");
+
+    let changed = doc
+        .fill_template_fields([("client-name", "Acme & Co"), ("project-name", "Roadmap")])
+        .expect("note template fields filled");
+
+    assert_eq!(changed, 4);
+    assert_eq!(
+        doc.edited_parts(),
+        ["word/endnotes.xml", "word/footnotes.xml"]
+    );
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let footnotes = String::from_utf8(parts["word/footnotes.xml"].clone()).unwrap();
+    let endnotes = String::from_utf8(parts["word/endnotes.xml"].clone()).unwrap();
+
+    assert!(
+        body.contains("<w:t>Body</w:t>") && !body.contains("Acme"),
+        "body text should stay unchanged: {body}"
+    );
+    assert!(
+        footnotes.contains(r#"<w:tag w:val="client-name"/>"#)
+            && footnotes.contains("<w:t>Acme &amp; Co</w:t>")
+            && footnotes.contains(r#"MERGEFIELD project-name \* MERGEFORMAT"#)
+            && footnotes.contains("<w:t>Roadmap</w:t>"),
+        "footnote template fields should be filled while preserving metadata/instructions: {footnotes}"
+    );
+    assert!(
+        endnotes.contains(r#"MERGEFIELD "client-name" \* MERGEFORMAT"#)
+            && endnotes.contains("<w:t>Acme &amp; Co</w:t>")
+            && endnotes.contains(r#"<w:tag w:val="project-name"/>"#)
+            && endnotes.contains("<w:t>Roadmap</w:t>")
+            && endnotes.contains("<w:t></w:t>"),
+        "endnote template fields should be filled and stale content-control runs cleared: {endnotes}"
+    );
+    assert!(
+        !footnotes.contains("Old Foot") && !endnotes.contains("Old End"),
+        "old note template values leaked after fill: {footnotes} {endnotes}"
+    );
+
+    let reopened = Document::open(&saved).expect("reopen edited notes");
+    assert!(reopened.footnote_text().contains("Acme & Co"));
+    assert!(reopened.footnote_text().contains("Roadmap"));
+    assert!(reopened.endnote_text().contains("Acme & Co"));
+    assert!(reopened.endnote_text().contains("Roadmap"));
 }
 
 #[test]

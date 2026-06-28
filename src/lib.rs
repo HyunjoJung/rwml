@@ -1097,11 +1097,11 @@ impl Document {
     }
 
     /// **Template-fill edit: fill logical template fields by name.** Each
-    /// `(name, text)` pair fills every body or referenced header/footer content
-    /// control whose `w:sdtPr/w:tag/@w:val` exactly equals `name` and every body
-    /// or referenced header/footer `MERGEFIELD` field whose instruction names
-    /// the same merge field. Cached merge-field result text is replaced while
-    /// the field instruction markup is preserved.
+    /// `(name, text)` pair fills every body, note, or referenced header/footer
+    /// content control whose `w:sdtPr/w:tag/@w:val` exactly equals `name` and
+    /// every body, note, or referenced header/footer `MERGEFIELD` field whose
+    /// instruction names the same merge field. Cached merge-field result text is
+    /// replaced while the field instruction markup is preserved.
     ///
     /// All fills are validated first and then committed as one
     /// package-preserving edit. Missing names are ignored, and the return value is
@@ -1257,6 +1257,8 @@ impl Document {
             .ok_or_else(|| Error::Docx("missing word/document.xml".into()))?;
         let probe = xmltree::XmlTree::parse(&raw)?;
         let probe_body = probe.wml_body_strict()?;
+        let raw_xml = String::from_utf8_lossy(&raw);
+        let body_fields = docx::parse_fields(&raw_xml);
 
         let mut matched_runs = Vec::new();
         for (entry_index, (name, _)) in entries.iter().enumerate() {
@@ -1271,7 +1273,7 @@ impl Document {
         }
 
         let mut matched_fields = Vec::new();
-        for (field_index, field) in d.fields.iter().enumerate() {
+        for (field_index, field) in body_fields.iter().enumerate() {
             let Some(name) = merge_field_name(&field.instruction) else {
                 continue;
             };
@@ -1297,113 +1299,33 @@ impl Document {
             matched_runs.push((entry_index, runs));
         }
 
-        let mut matched_header_footer_content_targets = Vec::new();
-        let mut matched_header_footer_content_count = 0usize;
-        let mut matched_header_footer_fields = Vec::new();
-        for target in header_footer_targets(&d.package) {
-            let Some(raw) = d.package.part(&target.part) else {
+        let story_targets = note_part_targets()
+            .into_iter()
+            .map(StoryTemplateTarget::from)
+            .chain(
+                header_footer_targets(&d.package)
+                    .into_iter()
+                    .map(StoryTemplateTarget::from),
+            );
+        let mut matched_story_content_targets = Vec::new();
+        let mut matched_story_content_count = 0usize;
+        let mut matched_story_fields = Vec::new();
+        for target in story_targets {
+            let Some(part_match) =
+                collect_story_template_match(&d.package, target, &entries, caller)?
+            else {
                 continue;
             };
-            let probe = xmltree::XmlTree::parse(&raw)?;
-            let root = probe.wml_part_root_strict(&target.part, target.root_local)?;
-            let raw_xml = String::from_utf8_lossy(&raw);
-            let fields = docx::parse_fields(&raw_xml);
-            let mut part_matches = Vec::new();
-            let mut part_content_count = 0usize;
-            let mut part_fields = Vec::new();
-
-            for (entry_index, (name, _)) in entries.iter().enumerate() {
-                for runs in probe.wml_content_control_text_runs_by_tag_under(root, name) {
-                    if runs.is_empty() {
-                        return Err(Error::Docx(format!(
-                            "{caller}: template field {name:?} has no visible text"
-                        )));
-                    }
-                    part_content_count += 1;
-                    part_matches.push((entry_index, runs));
-                }
+            if part_match.content_count > 0 {
+                matched_story_content_count += part_match.content_count;
+                matched_story_content_targets.push(part_match.target.clone());
             }
-
-            for (field_index, field) in fields.iter().enumerate() {
-                let Some(name) = merge_field_name(&field.instruction) else {
-                    continue;
-                };
-                let Some(entry_index) = entries
-                    .iter()
-                    .position(|(entry_name, _)| entry_name == &name)
-                else {
-                    continue;
-                };
-                let runs = probe
-                    .wml_field_result_runs_under(root, field_index)
-                    .ok_or_else(|| {
-                        Error::Docx(format!(
-                            "{caller}: merge field {name:?} has no cached result"
-                        ))
-                    })?;
-                if runs.is_empty() {
-                    return Err(Error::Docx(format!(
-                        "{caller}: merge field {name:?} has no cached result text"
-                    )));
-                }
-                part_fields.push((field_index, entry_index));
-                part_matches.push((entry_index, runs));
-            }
-
-            if part_matches.is_empty() {
-                continue;
-            }
-
-            let mut seen_runs = std::collections::HashSet::new();
-            for (_, runs) in &part_matches {
-                for &id in runs {
-                    if !seen_runs.insert(id) {
-                        return Err(Error::Docx(format!(
-                            "{caller}: requested template fields overlap"
-                        )));
-                    }
-                }
-            }
-
-            let new_nodes = part_matches
-                .iter()
-                .flat_map(|(_, runs)| runs)
-                .filter(|&&id| !probe.has_text_carrier(id))
-                .count();
-            let live_count = d
-                .package
-                .part_tree_ref(&target.part)
-                .map_or(probe.node_count(), |t| t.node_count());
-            if live_count.saturating_add(new_nodes) > xmltree::node_budget() {
-                return Err(Error::Docx(format!(
-                    "{caller}: edit would exceed the node budget"
-                )));
-            }
-
-            if part_matches.iter().any(|(entry_index, runs)| {
-                let text = &entries[*entry_index].1;
-                text != text.trim_matches([' ', '\t', '\n', '\r'])
-                    && runs
-                        .first()
-                        .is_some_and(|&id| !probe.can_set_attr(id, b"xml:space"))
-            }) {
-                return Err(Error::Docx(format!(
-                    "{caller}: edit would exceed an element's attribute budget"
-                )));
-            }
-
-            if part_content_count > 0 {
-                matched_header_footer_content_targets.push(target.clone());
-                matched_header_footer_content_count += part_content_count;
-            }
-            for (field_index, entry_index) in part_fields {
-                matched_header_footer_fields.push((target.clone(), field_index, entry_index));
+            for (field_index, entry_index) in part_match.fields {
+                matched_story_fields.push((part_match.target.clone(), field_index, entry_index));
             }
         }
 
-        let changed = matched_runs.len()
-            + matched_header_footer_content_count
-            + matched_header_footer_fields.len();
+        let changed = matched_runs.len() + matched_story_content_count + matched_story_fields.len();
         if changed == 0 {
             return Ok(0);
         }
@@ -1488,7 +1410,7 @@ impl Document {
             pkg.ensure_content_type("word/document.xml", CT_DOCUMENT_MAIN);
         }
 
-        for target in &matched_header_footer_content_targets {
+        for target in &matched_story_content_targets {
             {
                 let tree = pkg.part_tree_mut(&target.part)?;
                 let root = tree.wml_part_root_strict(&target.part, target.root_local)?;
@@ -1508,7 +1430,7 @@ impl Document {
             pkg.ensure_content_type(&target.part, target.content_type);
         }
 
-        for (target, field_index, entry_index) in &matched_header_footer_fields {
+        for (target, field_index, entry_index) in &matched_story_fields {
             {
                 let tree = pkg.part_tree_mut(&target.part)?;
                 let root = tree.wml_part_root_strict(&target.part, target.root_local)?;
@@ -1827,20 +1749,6 @@ impl Document {
             return Ok(0);
         }
 
-        let targets = [
-            NotePartTarget {
-                part: "word/footnotes.xml",
-                root_local: b"footnotes",
-                note_local: b"footnote",
-                content_type: CT_FOOTNOTES,
-            },
-            NotePartTarget {
-                part: "word/endnotes.xml",
-                root_local: b"endnotes",
-                note_local: b"endnote",
-                content_type: CT_ENDNOTES,
-            },
-        ];
         let needs_space = new != new.trim_matches([' ', '\t', '\n', '\r']);
         let needs_markers = new.contains('\t') || new.contains('\n');
         let marker_node_count = if needs_markers {
@@ -1851,7 +1759,7 @@ impl Document {
         let mut editable_targets = Vec::new();
         let mut total_matches = 0usize;
 
-        for target in targets {
+        for target in note_part_targets() {
             let Some(raw) = d.package.part(target.part) else {
                 continue;
             };
@@ -2848,6 +2756,44 @@ struct NotePartTarget {
 }
 
 #[cfg(feature = "docx")]
+#[derive(Clone, Debug)]
+struct StoryTemplateTarget {
+    part: String,
+    root_local: &'static [u8],
+    content_type: &'static str,
+}
+
+#[cfg(feature = "docx")]
+#[derive(Clone, Debug)]
+struct StoryTemplateMatch {
+    target: StoryTemplateTarget,
+    content_count: usize,
+    fields: Vec<(usize, usize)>,
+}
+
+#[cfg(feature = "docx")]
+impl From<HeaderFooterTarget> for StoryTemplateTarget {
+    fn from(target: HeaderFooterTarget) -> Self {
+        Self {
+            part: target.part,
+            root_local: target.root_local,
+            content_type: target.content_type,
+        }
+    }
+}
+
+#[cfg(feature = "docx")]
+impl From<NotePartTarget> for StoryTemplateTarget {
+    fn from(target: NotePartTarget) -> Self {
+        Self {
+            part: target.part.to_string(),
+            root_local: target.root_local,
+            content_type: target.content_type,
+        }
+    }
+}
+
+#[cfg(feature = "docx")]
 fn wml_text_needs_run_markers(text: &str) -> bool {
     text.contains('\t') || text.contains('\n')
 }
@@ -3038,6 +2984,128 @@ fn header_footer_targets(package: &opc::Package) -> Vec<HeaderFooterTarget> {
         }
     }
     targets
+}
+
+#[cfg(feature = "docx")]
+fn note_part_targets() -> [NotePartTarget; 2] {
+    [
+        NotePartTarget {
+            part: "word/footnotes.xml",
+            root_local: b"footnotes",
+            note_local: b"footnote",
+            content_type: CT_FOOTNOTES,
+        },
+        NotePartTarget {
+            part: "word/endnotes.xml",
+            root_local: b"endnotes",
+            note_local: b"endnote",
+            content_type: CT_ENDNOTES,
+        },
+    ]
+}
+
+#[cfg(feature = "docx")]
+fn collect_story_template_match(
+    package: &opc::Package,
+    target: StoryTemplateTarget,
+    entries: &[(String, String)],
+    caller: &str,
+) -> Result<Option<StoryTemplateMatch>> {
+    let Some(raw) = package.part(&target.part) else {
+        return Ok(None);
+    };
+    let probe = xmltree::XmlTree::parse(&raw)?;
+    let root = probe.wml_part_root_strict(&target.part, target.root_local)?;
+    let raw_xml = String::from_utf8_lossy(&raw);
+    let fields = docx::parse_fields(&raw_xml);
+    let mut part_matches = Vec::new();
+    let mut part_content_count = 0usize;
+    let mut part_fields = Vec::new();
+
+    for (entry_index, (name, _)) in entries.iter().enumerate() {
+        for runs in probe.wml_content_control_text_runs_by_tag_under(root, name) {
+            if runs.is_empty() {
+                return Err(Error::Docx(format!(
+                    "{caller}: template field {name:?} has no visible text"
+                )));
+            }
+            part_content_count += 1;
+            part_matches.push((entry_index, runs));
+        }
+    }
+
+    for (field_index, field) in fields.iter().enumerate() {
+        let Some(name) = merge_field_name(&field.instruction) else {
+            continue;
+        };
+        let Some(entry_index) = entries
+            .iter()
+            .position(|(entry_name, _)| entry_name == &name)
+        else {
+            continue;
+        };
+        let runs = probe
+            .wml_field_result_runs_under(root, field_index)
+            .ok_or_else(|| {
+                Error::Docx(format!(
+                    "{caller}: merge field {name:?} has no cached result"
+                ))
+            })?;
+        if runs.is_empty() {
+            return Err(Error::Docx(format!(
+                "{caller}: merge field {name:?} has no cached result text"
+            )));
+        }
+        part_fields.push((field_index, entry_index));
+        part_matches.push((entry_index, runs));
+    }
+
+    if part_matches.is_empty() {
+        return Ok(None);
+    }
+
+    let mut seen_runs = std::collections::HashSet::new();
+    for (_, runs) in &part_matches {
+        for &id in runs {
+            if !seen_runs.insert(id) {
+                return Err(Error::Docx(format!(
+                    "{caller}: requested template fields overlap"
+                )));
+            }
+        }
+    }
+
+    let new_nodes = part_matches
+        .iter()
+        .flat_map(|(_, runs)| runs)
+        .filter(|&&id| !probe.has_text_carrier(id))
+        .count();
+    let live_count = package
+        .part_tree_ref(&target.part)
+        .map_or(probe.node_count(), |t| t.node_count());
+    if live_count.saturating_add(new_nodes) > xmltree::node_budget() {
+        return Err(Error::Docx(format!(
+            "{caller}: edit would exceed the node budget"
+        )));
+    }
+
+    if part_matches.iter().any(|(entry_index, runs)| {
+        let text = &entries[*entry_index].1;
+        text != text.trim_matches([' ', '\t', '\n', '\r'])
+            && runs
+                .first()
+                .is_some_and(|&id| !probe.can_set_attr(id, b"xml:space"))
+    }) {
+        return Err(Error::Docx(format!(
+            "{caller}: edit would exceed an element's attribute budget"
+        )));
+    }
+
+    Ok(Some(StoryTemplateMatch {
+        target,
+        content_count: part_content_count,
+        fields: part_fields,
+    }))
 }
 
 #[cfg(feature = "docx")]

@@ -559,9 +559,9 @@ Initial status:
   the control metadata, aliases, tags, and surrounding package; the plural helper
   validates and commits a multi-field template record as one transaction.
 - `Document::fill_template_fields()` is the higher-level template/mail-merge
-  helper: it fills matching body plus referenced header/footer content-control
-  tags and cached `MERGEFIELD` results by logical field name in one
-  package-preserving edit while preserving control metadata and field
+  helper: it fills matching body, note, and referenced header/footer
+  content-control tags and cached `MERGEFIELD` results by logical field name in
+  one package-preserving edit while preserving control metadata and field
   instructions.
 - `Document::accept_all_revisions()` accepts tracked body/note/header/footer
   revisions in `word/document.xml`, `word/footnotes.xml`, `word/endnotes.xml`,
