@@ -1874,6 +1874,7 @@ fn display_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
             || supported_eq_radical_syntax(instruction)
             || supported_eq_list_syntax(instruction)
             || supported_eq_array_syntax(instruction)
+            || supported_eq_integral_syntax(instruction)
             || supported_eq_overstrike_syntax(instruction)
             || supported_eq_box_syntax(instruction)
             || supported_eq_bracket_syntax(instruction)
@@ -2392,6 +2393,46 @@ fn supported_eq_array_syntax(instruction: &str) -> bool {
             .iter()
             .all(|operand| eq_operand_for_report(operand))
     })
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_eq_integral_syntax(instruction: &str) -> bool {
+    let Some(expression) = eq_expression_for_report(instruction) else {
+        return false;
+    };
+    let Some(mut body) = strip_ascii_switch_prefix(expression.trim_start(), "\\i") else {
+        return false;
+    };
+    body = body.trim_start();
+    loop {
+        if let Some(rest) = consume_eq_prefix_switch_for_report(body, "\\su")
+            .or_else(|| consume_eq_prefix_switch_for_report(body, "\\pr"))
+            .or_else(|| consume_eq_prefix_switch_for_report(body, "\\in"))
+        {
+            body = rest.trim_start();
+            continue;
+        }
+        if let Some((_, rest)) = consume_eq_bracket_option_for_report(body, "\\fc")
+            .or_else(|| consume_eq_bracket_option_for_report(body, "\\vc"))
+        {
+            body = rest.trim_start();
+            continue;
+        }
+        break;
+    }
+    let Some(inner) = body
+        .strip_prefix('(')
+        .and_then(|body| body.strip_suffix(')'))
+    else {
+        return false;
+    };
+    let Some(operands) = split_eq_list_operands_for_report(inner) else {
+        return false;
+    };
+    operands.len() == 3
+        && operands
+            .iter()
+            .all(|operand| eq_operand_for_report(operand))
 }
 
 #[cfg(not(feature = "docx"))]
@@ -5189,6 +5230,19 @@ mod tests {
         );
         assert_eq!(
             super::display_uncomputed_reason(r"EQ \a \co0(A,B)"),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_display_diagnostics_accept_valid_eq_integral() {
+        assert_eq!(
+            super::display_uncomputed_reason(r"EQ \i \su \fcS(0,1,x)"),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::display_uncomputed_reason(r"EQ \i(0,1)"),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
     }
