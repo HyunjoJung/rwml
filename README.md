@@ -909,8 +909,9 @@ The long-term native Word engine plan is split into the
       display mapping
 - [x] Reader: `.docx` comments with body/header/footer anchors,
       tracked-change views, core document metadata, body/header/footer field
-      detection, floating-shape geometry and containing-block anchor text
-      capture, trusted body `PAGE` computation plus `FILENAME`/`MERGEFIELD`
+      detection, body/header/footer floating-shape geometry and
+      containing-block anchor text capture, trusted body `PAGE` computation
+      plus `FILENAME`/`MERGEFIELD`
       render support, document-info/date/stat
       cached-display support, deterministic literal arithmetic formula fields,
       literal `QUOTE`, literal `IF`, literal `COMPARE`, explicit-default

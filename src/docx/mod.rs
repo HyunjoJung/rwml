@@ -320,7 +320,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     notes.extend(endnote_blocks);
     note_records.append(&mut endnote_records);
     attach_note_reference_anchors(&mut note_records, &doc_xml);
-    let floating_shapes = read_floating_shapes(&doc_xml);
+    let mut floating_shapes = read_floating_shapes(&doc_xml);
     let mut text_boxes = read_text_boxes(&doc_xml, &ctx, &floating_shapes);
     // Running headers/footers referenced by the body's sectPr(s). `ctx` only holds
     // shared (&) borrows of rels/styles/numbering, so the &mut zip pass is fine.
@@ -331,6 +331,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         comment_anchors: header_footer_comment_anchors,
         text_boxes: header_footer_text_boxes,
         revisions: header_footer_revisions,
+        floating_shapes: header_footer_floating_shapes,
     } = read_headers_footers(
         &mut zip,
         &doc_xml,
@@ -339,6 +340,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         &numbering,
         document_properties,
     );
+    floating_shapes.extend(header_footer_floating_shapes);
     text_boxes.extend(header_footer_text_boxes);
     apply_section_header_footers(&mut blocks, &section_header_footers);
     let comments_xml = part(&mut zip, "word/comments.xml");
@@ -524,6 +526,7 @@ struct HeaderFooterRead {
     comment_anchors: HashMap<String, TextAnchor>,
     text_boxes: Vec<TextBox>,
     revisions: Vec<Revision>,
+    floating_shapes: Vec<FloatingShape>,
 }
 
 struct HeaderFooterPartRead {
@@ -532,6 +535,7 @@ struct HeaderFooterPartRead {
     comment_anchors: HashMap<String, TextAnchor>,
     text_boxes: Vec<TextBox>,
     revisions: Vec<Revision>,
+    floating_shapes: Vec<FloatingShape>,
 }
 
 #[derive(Clone, Copy)]
@@ -557,6 +561,7 @@ fn read_headers_footers(
     let mut comment_anchors = HashMap::new();
     let mut text_boxes = Vec::new();
     let mut revisions = Vec::new();
+    let mut floating_shapes = Vec::new();
     let mut seen_records = std::collections::HashSet::new();
     let mut seen_text_boxes = std::collections::HashSet::new();
     let mut inherited_header = Vec::new();
@@ -571,6 +576,7 @@ fn read_headers_footers(
             comment_anchors: header_comment_anchors,
             text_boxes: header_text_boxes,
             revisions: header_revisions,
+            floating_shapes: header_floating_shapes,
         } = read_hf_parts(
             zip,
             &refs.headers,
@@ -584,6 +590,7 @@ fn read_headers_footers(
         extend_missing_comment_anchors(&mut comment_anchors, header_comment_anchors);
         extend_unique_text_box_records(&mut text_boxes, &mut seen_text_boxes, header_text_boxes);
         extend_unique_revision_records(&mut revisions, header_revisions);
+        extend_unique_floating_shape_records(&mut floating_shapes, header_floating_shapes);
         let mut header = header_blocks.default;
         // Omitted odd/default refs inherit the previous section; an explicit
         // default ref, even when blank/unresolved, resets the inherited surface.
@@ -600,6 +607,7 @@ fn read_headers_footers(
             comment_anchors: footer_comment_anchors,
             text_boxes: footer_text_boxes,
             revisions: footer_revisions,
+            floating_shapes: footer_floating_shapes,
         } = read_hf_parts(
             zip,
             &refs.footers,
@@ -613,6 +621,7 @@ fn read_headers_footers(
         extend_missing_comment_anchors(&mut comment_anchors, footer_comment_anchors);
         extend_unique_text_box_records(&mut text_boxes, &mut seen_text_boxes, footer_text_boxes);
         extend_unique_revision_records(&mut revisions, footer_revisions);
+        extend_unique_floating_shape_records(&mut floating_shapes, footer_floating_shapes);
         let mut footer = footer_blocks.default;
         // Same inheritance rule as headers.
         if !footer_has_default && !inherited_footer.is_empty() {
@@ -639,6 +648,7 @@ fn read_headers_footers(
         comment_anchors,
         text_boxes,
         revisions,
+        floating_shapes,
     }
 }
 
@@ -667,6 +677,17 @@ fn extend_unique_text_box_records(
 }
 
 fn extend_unique_revision_records(records: &mut Vec<Revision>, next: Vec<Revision>) {
+    for record in next {
+        if !records.contains(&record) {
+            records.push(record);
+        }
+    }
+}
+
+fn extend_unique_floating_shape_records(
+    records: &mut Vec<FloatingShape>,
+    next: Vec<FloatingShape>,
+) {
     for record in next {
         if !records.contains(&record) {
             records.push(record);
@@ -729,11 +750,13 @@ fn read_hf_parts(
     let mut seen_records = std::collections::HashSet::new();
     let mut seen_text_boxes = std::collections::HashSet::new();
     let mut seen_revisions = std::collections::HashSet::new();
+    let mut seen_floating_shapes = std::collections::HashSet::new();
     let mut blocks = HeaderFooterBlocks::default();
     let mut records = Vec::new();
     let mut comment_anchors = HashMap::new();
     let mut text_boxes = Vec::new();
     let mut revisions = Vec::new();
+    let mut floating_shapes = Vec::new();
     for reference in refs {
         let Some((target, external)) = rels.get(&reference.rel_id) else {
             continue;
@@ -804,6 +827,9 @@ fn read_hf_parts(
             if seen_revisions.insert((path.clone(), type_name.to_string())) {
                 revisions.extend(revisions::parse(&xml));
             }
+            if seen_floating_shapes.insert((path.clone(), type_name.to_string())) {
+                floating_shapes.extend(read_floating_shapes(&xml));
+            }
             let part_blocks = body::parse_hdrftr(&xml, &hf_ctx);
             if seen_blocks.insert((path.clone(), type_name.to_string())) {
                 match type_name {
@@ -830,6 +856,7 @@ fn read_hf_parts(
         comment_anchors,
         text_boxes,
         revisions,
+        floating_shapes,
     }
 }
 

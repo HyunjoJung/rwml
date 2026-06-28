@@ -735,8 +735,9 @@ Initial status:
   the diagnostics inventory metadata, including bounded gzip header inflation
   for EMZ/WMZ dimensions, but payload rendering is not implemented. These are
   honest preview markers, not exact Office layout.
-- `Document::floating_shapes()` exposes `.docx` `wp:anchor` geometry and anchor
-  layout records with `wp:docPr` metadata, `wp:extent`, simple
+- `Document::floating_shapes()` exposes `.docx` body/header/footer `wp:anchor`
+  geometry and anchor layout records with `wp:docPr` metadata, `wp:extent`,
+  simple
   horizontal/vertical positioning metadata, enabled `wp:simplePos` absolute
   points, `wp:effectExtent` visual-effect bounds, `relativeHeight`,
   behind/in-front flags, anchor `dist*` margins, wrap-element `dist*` margins,

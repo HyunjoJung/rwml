@@ -684,10 +684,10 @@ impl Document {
 
     /// Extract recovered floating-shape geometry records.
     ///
-    /// `.docx` records are recovered from `wp:anchor` drawing markup with
-    /// `wp:extent`, `wp:docPr`, and simple `wp:positionH`/`wp:positionV`
-    /// metadata when present. Legacy `.doc` floating shape geometry is not
-    /// decoded yet and returns an empty side table.
+    /// `.docx` records are recovered from body/header/footer `wp:anchor` drawing
+    /// markup with `wp:extent`, `wp:docPr`, and simple `wp:positionH`/
+    /// `wp:positionV` metadata when present. Legacy `.doc` floating shape
+    /// geometry is not decoded yet and returns an empty side table.
     pub fn floating_shapes(&self) -> Vec<FloatingShape> {
         match &self.backend {
             Backend::Doc(_) => Vec::new(),
