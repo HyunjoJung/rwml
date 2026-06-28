@@ -1360,7 +1360,7 @@ fn apply_shape_doc_pr(shape: &mut FloatingShape, e: &BytesStart<'_>) {
         shape.id = id;
     }
     shape.name = attr_local_trimmed(e, b"name");
-    shape.description = attr_local(e, b"descr");
+    shape.description = attr_local_trimmed(e, b"descr");
 }
 
 fn apply_shape_preset_geometry(shape: &mut FloatingShape, e: &BytesStart<'_>) {
