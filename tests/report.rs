@@ -461,7 +461,7 @@ fn action_field_diagnostics_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" PRINT \p ReportBox &quot;0 0 moveto&quot; "><w:r><w:t>PostScript instruction</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" GOTOBUTTON TargetBookmark &quot;Jump&quot; "><w:r><w:t>stale jump</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" MACROBUTTON RunReport \* MERGEFORMAT "><w:r><w:t>cached target-only action</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" MACROBUTTON RunReport Run \* Upper Again "><w:r><w:t>cached malformed action</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" GOTOBUTTON TargetBookmark &quot;Jump&quot; "><w:r><w:t>stale jump</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" GOTOBUTTON TargetBookmark Jump Now \* Upper "><w:r><w:t>stale jump upper</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" MACROBUTTON RunReport &quot;Run report&quot; "><w:r><w:t>stale run</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" MACROBUTTON RunReport Run \* Upper Again "><w:r><w:t>cached malformed action</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" MACROBUTTON RunReport \* MERGEFORMAT "><w:r><w:t>cached target-only action</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PRINT &quot;page \p&quot; "><w:r><w:t>Print instruction</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PRINT status "><w:r><w:t>Unquoted print instruction</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PRINT status ready \* MERGEFORMAT "><w:r><w:t>Multi-token print instruction</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PRINT \p ReportBox &quot;0 0 moveto&quot; \* MERGEFORMAT "><w:r><w:t>PostScript instruction</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PRINT \pReportBox &quot;compact moveto&quot; "><w:r><w:t>Compact PostScript instruction</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PRINT \z &quot;bad&quot; "><w:r><w:t>cached unsupported print</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -2255,40 +2255,46 @@ fn report_action_fields_split_cached_and_malformed_diagnostics() {
     let doc = Document::open(&action_field_diagnostics_docx()).expect("fixture opens");
     let report = doc.report();
 
-    assert_eq!(report.features.fields, 4);
+    assert_eq!(report.features.fields, 11);
     assert_eq!(
         report.features.field_kinds,
         vec![
             FieldKindCount {
-                kind: FieldKind::Action("PRINT".to_string()),
-                count: 1,
-            },
-            FieldKindCount {
                 kind: FieldKind::Action("GOTOBUTTON".to_string()),
-                count: 1,
+                count: 2,
             },
             FieldKindCount {
                 kind: FieldKind::Action("MACROBUTTON".to_string()),
-                count: 2,
+                count: 3,
+            },
+            FieldKindCount {
+                kind: FieldKind::Action("PRINT".to_string()),
+                count: 6,
             },
         ]
     );
     assert_eq!(
         report.features.unsupported_field_kinds,
-        vec![FieldKindCount {
-            kind: FieldKind::Action("MACROBUTTON".to_string()),
-            count: 2,
-        },]
+        vec![
+            FieldKindCount {
+                kind: FieldKind::Action("MACROBUTTON".to_string()),
+                count: 2,
+            },
+            FieldKindCount {
+                kind: FieldKind::Action("PRINT".to_string()),
+                count: 1,
+            },
+        ]
     );
     assert_eq!(
         report.features.unsupported_field_reasons,
         vec![
             FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::NoComputedResult,
-                count: 1,
+                reason: FieldEvaluationReason::UnsupportedSwitch,
+                count: 2,
             },
             FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::UnsupportedSwitch,
+                reason: FieldEvaluationReason::NoComputedResult,
                 count: 1,
             },
         ]
