@@ -1936,7 +1936,7 @@ fn blip_image(e: &BytesStart<'_>, ctx: &Ctx<'_>) -> Option<Image> {
         b"imagedata" => attr_local(e, b"id")?,
         _ => return None,
     };
-    ctx.media.get(&id).cloned()
+    ctx.media.get(id.trim()).cloned()
 }
 
 /// Read `<w:hyperlink>`: resolve its target (external `r:id` rel, or `#anchor`)
