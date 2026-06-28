@@ -127,10 +127,10 @@ Initial status:
   with id, optional reply parent id, author, initials, date, visible text, and
   body/note/header/footer anchor text when a
   `commentRangeStart`/`commentRangeEnd` pair is present, including visible
-  `w:tab`, `w:br`, and `w:cr` markers in comment bodies and anchors. Comment
-  bodies and anchor text follow the accepted/current revision policy, including
-  direct, inserted, and moved-to text while leaving deleted and moved-from
-  old-only text out of the visible view.
+  `w:tab`, `w:br`, `w:cr`, and `w:noBreakHyphen` markers in comment bodies
+  and anchors. Comment bodies and anchor text follow the accepted/current
+  revision policy, including direct, inserted, and moved-to text while leaving
+  deleted and moved-from old-only text out of the visible view.
 - `Document::fields()` extracts simple and common complex `.docx` body, note,
   and modeled header/footer fields
   with typed `FieldKind` (`HYPERLINK`, `PAGE`, `TOC`, `FILENAME`, `MERGEFIELD`,
