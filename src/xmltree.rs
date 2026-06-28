@@ -1060,6 +1060,25 @@ impl XmlTree {
             == Some(ns)
     }
 
+    fn scope_binds_prefix(scope: &[(Vec<u8>, Vec<u8>)], prefix: &[u8], ns: &[u8]) -> bool {
+        scope
+            .iter()
+            .rev()
+            .find(|(p, _)| p.as_slice() == prefix)
+            .map(|(_, u)| u.as_slice())
+            == Some(ns)
+    }
+
+    fn fallback_attr_needed(scope: &[(Vec<u8>, Vec<u8>)], name: &str, value: &str) -> bool {
+        if name == "xmlns" {
+            !Self::scope_binds_prefix(scope, b"", value.as_bytes())
+        } else if let Some(prefix) = name.strip_prefix("xmlns:") {
+            !Self::scope_binds_prefix(scope, prefix.as_bytes(), value.as_bytes())
+        } else {
+            true
+        }
+    }
+
     /// The namespace bindings (`prefix → uri`, `""` = default) in effect for `target`'s
     /// children — every `xmlns`/`xmlns:*` from the document root down to and including
     /// `target` itself. Used to resolve the namespace of `target`'s direct children.
@@ -1480,7 +1499,9 @@ impl XmlTree {
             if self.resolves_to(c, ns, local, &scope) {
                 scope.truncate(base);
                 for (name, value) in fallback_attrs {
-                    self.set_attr(c, name.as_bytes(), value.as_bytes())?;
+                    if Self::fallback_attr_needed(&scope, name, value) {
+                        self.set_attr(c, name.as_bytes(), value.as_bytes())?;
+                    }
                 }
                 return self.set_element_text(c, text);
             }
@@ -1491,25 +1512,42 @@ impl XmlTree {
             .split_once(':')
             .map(|(prefix, _)| prefix)
             .unwrap_or("");
-        let xmlns = if prefix.is_empty() {
-            format!(r#"xmlns="{}""#, escaped_attr(&String::from_utf8_lossy(ns)))
+        let prefix_bytes = prefix.as_bytes();
+        let xmlns = if Self::scope_binds_prefix(&scope, prefix_bytes, ns) {
+            None
+        } else if prefix.is_empty() {
+            Some(format!(
+                r#"xmlns="{}""#,
+                escaped_attr(&String::from_utf8_lossy(ns))
+            ))
         } else {
-            format!(
+            Some(format!(
                 r#"xmlns:{prefix}="{}""#,
                 escaped_attr(&String::from_utf8_lossy(ns))
-            )
+            ))
         };
         let mut attrs = String::new();
-        attrs.push_str(&xmlns);
+        if let Some(xmlns) = xmlns {
+            attrs.push_str(&xmlns);
+        }
         for (name, value) in fallback_attrs {
-            attrs.push(' ');
+            if !Self::fallback_attr_needed(&scope, name, value) {
+                continue;
+            }
+            if !attrs.is_empty() {
+                attrs.push(' ');
+            }
             attrs.push_str(name);
             attrs.push_str("=\"");
             attrs.push_str(&escaped_attr(value));
             attrs.push('"');
         }
         let text = escaped_text(text);
-        let xml = format!("<{fallback_qname} {attrs}>{text}</{fallback_qname}>");
+        let xml = if attrs.is_empty() {
+            format!("<{fallback_qname}>{text}</{fallback_qname}>")
+        } else {
+            format!("<{fallback_qname} {attrs}>{text}</{fallback_qname}>")
+        };
         let pos = self.nodes[root.0 as usize].children.len();
         self.insert_fragment_at(root, pos, xml.as_bytes())
     }

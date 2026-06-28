@@ -2363,6 +2363,10 @@ fn set_core_property_creates_missing_part_relationship_and_content_type() {
 
     doc.set_core_property(CoreProperty::Creator, "Hyunjo Jung")
         .expect("creator property added");
+    doc.set_core_property(CoreProperty::Created, "2026-06-01T02:03:04Z")
+        .expect("created timestamp added");
+    doc.set_core_property(CoreProperty::Modified, "2026-06-02T03:04:05Z")
+        .expect("modified timestamp added");
 
     let saved = doc.save().expect("save edited docx");
     let before_parts = unzip_parts(&before);
@@ -2374,6 +2378,14 @@ fn set_core_property_creates_missing_part_relationship_and_content_type() {
     assert!(
         core.contains("<dc:creator") && core.contains(">Hyunjo Jung</dc:creator>"),
         "creator property missing: {core}"
+    );
+    assert!(
+        core.contains(
+            r#"<dcterms:created xsi:type="dcterms:W3CDTF">2026-06-01T02:03:04Z</dcterms:created>"#
+        ) && core.contains(
+            r#"<dcterms:modified xsi:type="dcterms:W3CDTF">2026-06-02T03:04:05Z</dcterms:modified>"#
+        ),
+        "timestamp properties missing: {core}"
     );
     assert!(
         root_rels.contains(
@@ -2390,5 +2402,9 @@ fn set_core_property_creates_missing_part_relationship_and_content_type() {
         parts["word/document.xml"],
         before_parts["word/document.xml"]
     );
-    assert!(Document::open(&saved).is_ok());
+    let reopened = Document::open(&saved).expect("saved created core metadata reopens");
+    let props = reopened.core_properties();
+    assert_eq!(props.creator.as_deref(), Some("Hyunjo Jung"));
+    assert_eq!(props.created.as_deref(), Some("2026-06-01T02:03:04Z"));
+    assert_eq!(props.modified.as_deref(), Some("2026-06-02T03:04:05Z"));
 }
