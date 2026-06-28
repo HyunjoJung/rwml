@@ -170,8 +170,8 @@ doc.fill_template_fields([
     ("client-name", "Acme & Co"),
     ("project-name", "Roadmap"),
 ])?; // body/header/footer content controls + MERGEFIELD cached results
-doc.accept_all_revisions()?;                    // accept tracked body changes
-// doc.reject_all_revisions()?;                 // or reject tracked body changes
+doc.accept_all_revisions()?;                    // accept tracked body/note changes
+// doc.reject_all_revisions()?;                 // or reject tracked body/note changes
 doc.set_hyperlink_target(0, "https://example.com/final")?; // body hyperlink rel
 doc.set_comment_text("7", "Updated note")?;     // existing comment body text
 doc.add_comment_on_text("Clause", "Check this", "Reviewer")?; // exact body run anchor
@@ -869,7 +869,7 @@ code points.
   workbook-backed source data. Remaining gaps are broader structural editing
   surfaces and newer extension chart families beyond the current authored set; the element-tree
   edit exposes focused body/header/footer/note text, tagged body/header/footer
-  content-control and MERGEFIELD template filling, tracked body revision
+  content-control and MERGEFIELD template filling, tracked body/note revision
   acceptance, field/comment/image operations, adjacent-run comment/note anchors,
   and `gridSpan`/`vMerge`-aware body-table cell replacement.
 - *Render:* preview-grade vs LibreOffice (see above); right-to-left scripts; no

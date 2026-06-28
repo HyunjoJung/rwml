@@ -949,49 +949,32 @@ impl Document {
         Ok(changed)
     }
 
-    /// **Package-preserving edit: accept tracked body revisions.** In
-    /// `word/document.xml`'s body, this unwraps accepted current-content revision
-    /// containers (`w:ins`, `w:moveTo`), removes rejected old-content containers
-    /// (`w:del`, `w:moveFrom`), and drops tracked property-change history such as
+    /// **Package-preserving edit: accept tracked body/note revisions.** In
+    /// `word/document.xml`'s body and existing footnote/endnote parts, this
+    /// unwraps accepted current-content revision containers (`w:ins`,
+    /// `w:moveTo`), removes rejected old-content containers (`w:del`,
+    /// `w:moveFrom`), and drops tracked property-change history such as
     /// `w:pPrChange`/`w:rPrChange` while preserving the current properties.
     ///
-    /// This is a focused body edit, not a full Word review engine for every
+    /// This is a focused body/note edit, not a full Word review engine for every
     /// package part. It is transactional and returns the number of revision
     /// elements removed or unwrapped. Read views are stale until the saved bytes
     /// are reopened. Available with the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn accept_all_revisions(&mut self) -> Result<usize> {
         let d = self.docx_tree_editable()?;
-        let raw = d
-            .package
-            .part("word/document.xml")
-            .ok_or_else(|| Error::Docx("missing word/document.xml".into()))?;
-        let mut probe = xmltree::XmlTree::parse(&raw)?;
-        let probe_body = probe.wml_body_strict()?;
-        let changed = probe.accept_wml_revisions_under(probe_body);
-        if changed == 0 {
-            return Ok(0);
-        }
-
-        let mut pkg = d.package.clone();
-        {
-            let tree = pkg.part_tree_mut("word/document.xml")?;
-            let body = tree.wml_body_strict()?;
-            tree.accept_wml_revisions_under(body);
-        }
-        pkg.ensure_content_type("word/document.xml", CT_DOCUMENT_MAIN);
-        d.package = pkg;
-        Ok(changed)
+        edit_docx_revisions(d, RevisionEditMode::Accept)
     }
 
-    /// **Package-preserving edit: reject tracked body revisions.** In
-    /// `word/document.xml`'s body, this removes inserted current-content revision
-    /// containers (`w:ins`, `w:moveTo`), unwraps rejected old-content containers
-    /// (`w:del`, `w:moveFrom`), normalizes kept `w:delText` nodes back to `w:t`,
-    /// and drops tracked property-change history such as `w:pPrChange`/
-    /// `w:rPrChange` while preserving the current properties.
+    /// **Package-preserving edit: reject tracked body/note revisions.** In
+    /// `word/document.xml`'s body and existing footnote/endnote parts, this
+    /// removes inserted current-content revision containers (`w:ins`,
+    /// `w:moveTo`), unwraps rejected old-content containers (`w:del`,
+    /// `w:moveFrom`), normalizes kept `w:delText` nodes back to `w:t`, and drops
+    /// tracked property-change history such as `w:pPrChange`/`w:rPrChange` while
+    /// preserving the current properties.
     ///
-    /// This is a focused body edit, not a full Word review engine for every
+    /// This is a focused body/note edit, not a full Word review engine for every
     /// package part. It is transactional and returns the number of revision or
     /// revision-text elements removed, unwrapped, or normalized. Read views are
     /// stale until the saved bytes are reopened. Available with the default
@@ -999,26 +982,7 @@ impl Document {
     #[cfg(feature = "docx")]
     pub fn reject_all_revisions(&mut self) -> Result<usize> {
         let d = self.docx_tree_editable()?;
-        let raw = d
-            .package
-            .part("word/document.xml")
-            .ok_or_else(|| Error::Docx("missing word/document.xml".into()))?;
-        let mut probe = xmltree::XmlTree::parse(&raw)?;
-        let probe_body = probe.wml_body_strict()?;
-        let changed = probe.reject_wml_revisions_under(probe_body);
-        if changed == 0 {
-            return Ok(0);
-        }
-
-        let mut pkg = d.package.clone();
-        {
-            let tree = pkg.part_tree_mut("word/document.xml")?;
-            let body = tree.wml_body_strict()?;
-            tree.reject_wml_revisions_under(body);
-        }
-        pkg.ensure_content_type("word/document.xml", CT_DOCUMENT_MAIN);
-        d.package = pkg;
-        Ok(changed)
+        edit_docx_revisions(d, RevisionEditMode::Reject)
     }
 
     /// **Element-tree editing: rewrite a field's cached visible result.** The
@@ -2927,6 +2891,101 @@ fn wml_grouped_text_run_replacement_new_nodes(
             .iter()
             .filter(|&&id| !tree.has_text_carrier(id))
             .count())
+    }
+}
+
+#[cfg(feature = "docx")]
+#[derive(Clone, Copy)]
+enum RevisionEditMode {
+    Accept,
+    Reject,
+}
+
+#[cfg(feature = "docx")]
+#[derive(Clone, Copy)]
+struct RevisionEditTarget {
+    part: &'static str,
+    root_local: Option<&'static [u8]>,
+}
+
+#[cfg(feature = "docx")]
+fn edit_docx_revisions(d: &mut docx::DocxState, mode: RevisionEditMode) -> Result<usize> {
+    let targets = revision_edit_targets(&d.package)?;
+    let mut changed = Vec::new();
+    let mut total = 0usize;
+    for target in targets {
+        let raw = d
+            .package
+            .part(target.part)
+            .ok_or_else(|| Error::Docx(format!("missing {}", target.part)))?;
+        let mut probe = xmltree::XmlTree::parse(&raw)?;
+        let root = revision_edit_root(&probe, target)?;
+        let count = apply_revision_edit(&mut probe, root, mode);
+        total += count;
+        if count > 0 {
+            changed.push(target);
+        }
+    }
+    if total == 0 {
+        return Ok(0);
+    }
+
+    let mut pkg = d.package.clone();
+    for target in changed {
+        let tree = pkg.part_tree_mut(target.part)?;
+        let root = revision_edit_root(tree, target)?;
+        apply_revision_edit(tree, root, mode);
+        if target.part == "word/document.xml" {
+            pkg.ensure_content_type("word/document.xml", CT_DOCUMENT_MAIN);
+        }
+    }
+    d.package = pkg;
+    Ok(total)
+}
+
+#[cfg(feature = "docx")]
+fn revision_edit_targets(package: &opc::Package) -> Result<Vec<RevisionEditTarget>> {
+    if !package.has_part("word/document.xml") {
+        return Err(Error::Docx("missing word/document.xml".into()));
+    }
+    let mut targets = vec![RevisionEditTarget {
+        part: "word/document.xml",
+        root_local: None,
+    }];
+    for (part, root_local) in [
+        ("word/footnotes.xml", &b"footnotes"[..]),
+        ("word/endnotes.xml", &b"endnotes"[..]),
+    ] {
+        if package.has_part(part) {
+            targets.push(RevisionEditTarget {
+                part,
+                root_local: Some(root_local),
+            });
+        }
+    }
+    Ok(targets)
+}
+
+#[cfg(feature = "docx")]
+fn revision_edit_root(
+    tree: &xmltree::XmlTree,
+    target: RevisionEditTarget,
+) -> Result<xmltree::NodeId> {
+    match target.root_local {
+        Some(root) => tree.wml_part_root_strict(target.part, root),
+        None => tree.wml_body_strict(),
+    }
+}
+
+#[cfg(feature = "docx")]
+fn apply_revision_edit(
+    tree: &mut xmltree::XmlTree,
+    root: xmltree::NodeId,
+    mode: RevisionEditMode,
+) -> usize {
+    match mode {
+        RevisionEditMode::Accept => tree.accept_wml_revisions_under(root),
+        RevisionEditMode::Reject => tree.reject_wml_revisions_under(root),
     }
 }
 
