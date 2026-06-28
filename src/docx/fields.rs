@@ -1007,7 +1007,7 @@ pub(crate) fn ref_position_context(xml: &str, numbering: &Numbering) -> RefPosit
                         }
                     }
                     b"numId" if paragraph.properties_depth > 0 => {
-                        paragraph.num_id = attr_local(&e, b"val");
+                        paragraph.num_id = attr_local_trimmed(&e, b"val");
                     }
                     b"fldSimple" => record_ref_field_position(
                         attr_local(&e, b"instr").as_deref(),
@@ -1085,7 +1085,7 @@ pub(crate) fn ref_position_context(xml: &str, numbering: &Numbering) -> RefPosit
                         }
                     }
                     b"numId" if paragraph.properties_depth > 0 => {
-                        paragraph.num_id = attr_local(&e, b"val");
+                        paragraph.num_id = attr_local_trimmed(&e, b"val");
                     }
                     b"fldSimple" => record_ref_field_position(
                         attr_local(&e, b"instr").as_deref(),
@@ -1352,7 +1352,7 @@ pub(crate) fn ref_number_context(xml: &str, numbering: &Numbering) -> RefNumberC
                         }
                     }
                     b"numId" if paragraph.properties_depth > 0 => {
-                        paragraph.num_id = attr_local(&e, b"val");
+                        paragraph.num_id = attr_local_trimmed(&e, b"val");
                     }
                     b"bookmarkStart" if paragraph.active() => {
                         if let Some(name) = bookmark_name(&e) {
@@ -1386,7 +1386,7 @@ pub(crate) fn ref_number_context(xml: &str, numbering: &Numbering) -> RefNumberC
                         }
                     }
                     b"numId" if paragraph.properties_depth > 0 => {
-                        paragraph.num_id = attr_local(&e, b"val");
+                        paragraph.num_id = attr_local_trimmed(&e, b"val");
                     }
                     b"bookmarkStart" if paragraph.active() => {
                         if let Some(name) = bookmark_name(&e) {
@@ -2671,7 +2671,7 @@ fn read_style_ref_ppr(
                         *ilvl = value;
                     }
                 }
-                b"numId" => *num_id = attr_local(&e, b"val"),
+                b"numId" => *num_id = attr_local_trimmed(&e, b"val"),
                 _ => {}
             },
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"pPr" => break,

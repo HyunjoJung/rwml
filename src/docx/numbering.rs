@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 
-use super::{attr_local, attr_u32, attr_u8, local};
+use super::{attr_local, attr_local_trimmed, attr_u32, attr_u8, local};
 
 /// One numbering level's resolved formatting.
 #[derive(Debug, Clone)]
@@ -204,7 +204,7 @@ pub(crate) fn parse(xml: &str) -> Numbering {
         match r.read_event() {
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
                 b"abstractNum" => {
-                    cur_abstract = attr_local(&e, b"abstractNumId");
+                    cur_abstract = attr_local_trimmed(&e, b"abstractNumId");
                     cur_ilvl = None;
                 }
                 b"lvl" => {
@@ -228,9 +228,11 @@ pub(crate) fn parse(xml: &str) -> Numbering {
                         l.start = v;
                     }
                 }),
-                b"num" => cur_num = attr_local(&e, b"numId"),
+                b"num" => cur_num = attr_local_trimmed(&e, b"numId"),
                 b"abstractNumId" => {
-                    if let (Some(num), Some(val)) = (cur_num.as_ref(), attr_local(&e, b"val")) {
+                    if let (Some(num), Some(val)) =
+                        (cur_num.as_ref(), attr_local_trimmed(&e, b"val"))
+                    {
                         nb.num_to_abstract.insert(num.clone(), val);
                     }
                 }

@@ -1399,7 +1399,7 @@ fn read_ppr_item(pp: &mut PPr, e: &BytesStart<'_>, num_id: &mut Option<String>, 
                 *ilvl = v;
             }
         }
-        b"numId" => *num_id = attr_local(e, b"val"),
+        b"numId" => *num_id = attr_local_trimmed(e, b"val"),
         b"jc" => pp.jc = attr_local(e, b"val"),
         b"outlineLvl" => pp.outline = attr_u8(e, b"val"),
         b"pageBreakBefore" => pp.page_break_before = toggle_on(attr_local(e, b"val")),
