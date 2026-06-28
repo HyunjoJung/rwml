@@ -2749,7 +2749,7 @@ fn apply_tc_mar_side(margins: &mut CellMargins, seen: &mut bool, e: &BytesStart<
     if !matches!(side, b"top" | b"right" | b"bottom" | b"left") {
         return;
     }
-    if !matches!(attr_local(e, b"type").as_deref(), None | Some("dxa")) {
+    if !attr_local(e, b"type").map_or(true, |value| value.trim() == "dxa") {
         return;
     }
     let Some(value) = attr_local(e, b"w").and_then(|v| v.trim().parse::<u32>().ok()) else {
@@ -3306,14 +3306,14 @@ mod tests {
 
     #[test]
     fn reads_rich_char_para_and_cell_formatting() {
-        use crate::model::{Color, VCell, VertAlign};
+        use crate::model::{CellMargins, Color, VCell, VertAlign};
         let xml = r#"<w:document><w:body>
             <w:p>
                 <w:pPr><w:spacing w:before="240" w:after="120" w:line="360"/><w:ind w:left="720" w:firstLine="240"/><w:shd w:fill=" EEEEEE "/></w:pPr>
                 <w:r><w:rPr><w:rFonts w:ascii="Arial" w:eastAsia="맑은 고딕"/><w:sz w:val="24"/><w:color w:val=" FF0000 "/><w:vertAlign w:val=" superscript "/><w:caps/></w:rPr><w:t>빨강</w:t></w:r>
             </w:p>
             <w:tbl><w:tblPr><w:tblW w:w="4000" w:type=" pct "/><w:tblLayout w:type=" fixed "/><w:tblInd w:w="720" w:type=" dxa "/><w:jc w:val=" center "/></w:tblPr><w:tr><w:tc>
-                <w:tcPr><w:shd w:fill=" DDDDDD "/><w:vAlign w:val=" center "/><w:tcW w:w="2500" w:type=" pct "/></w:tcPr>
+                <w:tcPr><w:shd w:fill=" DDDDDD "/><w:vAlign w:val=" center "/><w:tcW w:w="2500" w:type=" pct "/><w:tcMar><w:top w:w="120" w:type=" dxa "/><w:right w:w="240" w:type=" dxa "/></w:tcMar></w:tcPr>
                 <w:p><w:r><w:t>셀</w:t></w:r></w:p>
             </w:tc></w:tr></w:tbl>
         </w:body></w:document>"#;
@@ -3358,6 +3358,14 @@ mod tests {
         );
         assert_eq!(c.valign, VCell::Center);
         assert_eq!(c.width_pct, Some(0.5));
+        assert_eq!(
+            c.margins,
+            Some(CellMargins {
+                top: 120,
+                right: 240,
+                ..CellMargins::default()
+            })
+        );
     }
 
     #[test]
