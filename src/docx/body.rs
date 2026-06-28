@@ -17,7 +17,7 @@ use quick_xml::Reader;
 use super::fields::TocEntry;
 use super::numbering::Numbering;
 use super::styles::Styles;
-use super::{attr_local, attr_u8, local, toggle_on};
+use super::{attr_local, attr_u8, is_page_break_type, local, toggle_on};
 use crate::annotation::FieldKind;
 use crate::model::{
     Align, AuthoredContentControl, Block, Cell, CellMargins, CharProps, Color, DocGrid,
@@ -1590,7 +1590,7 @@ fn read_run(
                 }
                 b"tab" => text.push('\t'),
                 b"br" => {
-                    if matches!(attr_local(&e, b"type").as_deref(), Some("page")) {
+                    if is_page_break_type(&e) {
                         text.push(PAGE_BREAK_MARKER);
                     } else {
                         text.push('\n');
@@ -3377,6 +3377,19 @@ mod tests {
             panic!("para")
         };
         assert_eq!(p.text(), "a b");
+    }
+
+    #[test]
+    fn page_break_type_trims_ooxml_value() {
+        let xml = r#"<w:document><w:body><w:p>
+            <w:r><w:t>before</w:t><w:br w:type=" page "/><w:t>after</w:t></w:r>
+        </w:p></w:body></w:document>"#;
+        let blocks = parse(xml);
+        assert!(matches!(blocks.get(1), Some(Block::PageBreak)));
+        let Block::Paragraph(after) = &blocks[2] else {
+            panic!("paragraph after break");
+        };
+        assert_eq!(after.text(), "after");
     }
 
     #[test]

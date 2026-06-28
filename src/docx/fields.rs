@@ -14,7 +14,7 @@ use crate::{numfmt, CoreProperties};
 
 use super::numbering::Numbering;
 use super::styles::Styles;
-use super::{attr_local, attr_u8, attr_usize, local, toggle_on};
+use super::{attr_local, attr_u8, attr_usize, is_page_break_type, local, toggle_on};
 
 type Xml<'a> = Reader<&'a [u8]>;
 
@@ -845,7 +845,7 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
                     }
                     b"tab" => append_ref_text(&active, &mut out, "\t"),
                     b"br" => {
-                        if matches!(attr_local(&e, b"type").as_deref(), Some("page")) {
+                        if is_page_break_type(&e) {
                             append_ref_text(&active, &mut out, "\u{000C}");
                         } else {
                             append_ref_text(&active, &mut out, "\n");
@@ -878,7 +878,7 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
                     }
                     b"tab" => append_ref_text(&active, &mut out, "\t"),
                     b"br" => {
-                        if matches!(attr_local(&e, b"type").as_deref(), Some("page")) {
+                        if is_page_break_type(&e) {
                             append_ref_text(&active, &mut out, "\u{000C}");
                         } else {
                             append_ref_text(&active, &mut out, "\n");
@@ -2023,7 +2023,7 @@ pub(crate) fn section_context(xml: &str) -> SectionContext {
                             section_has_visible_content = true;
                         }
                     }
-                    b"br" if matches!(attr_local(&e, b"type").as_deref(), Some("page")) => {
+                    b"br" if is_page_break_type(&e) => {
                         current_page += 1;
                     }
                     b"lastRenderedPageBreak" => {
@@ -2075,7 +2075,7 @@ pub(crate) fn section_context(xml: &str) -> SectionContext {
                             &mut field_sections,
                         );
                     }
-                    b"br" if matches!(attr_local(&e, b"type").as_deref(), Some("page")) => {
+                    b"br" if is_page_break_type(&e) => {
                         current_page += 1;
                     }
                     b"lastRenderedPageBreak" => {
@@ -3495,7 +3495,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                             source_order += 1;
                         }
                     }
-                    b"br" if matches!(attr_local(&e, b"type").as_deref(), Some("page")) => {
+                    b"br" if is_page_break_type(&e) => {
                         pages.advance_explicit_break(
                             saw_visible_content,
                             saw_rendered_page_break,
@@ -3604,7 +3604,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                             source_order += 1;
                         }
                     }
-                    b"br" if matches!(attr_local(&e, b"type").as_deref(), Some("page")) => {
+                    b"br" if is_page_break_type(&e) => {
                         pages.advance_explicit_break(
                             saw_visible_content,
                             saw_rendered_page_break,
@@ -4554,7 +4554,7 @@ fn inline_marker_text(e: &BytesStart<'_>) -> Option<&'static str> {
     match local(e.name().as_ref()) {
         b"tab" => Some("\t"),
         b"br" => {
-            if matches!(attr_local(e, b"type").as_deref(), Some("page")) {
+            if is_page_break_type(e) {
                 Some("\u{000C}")
             } else {
                 Some("\n")
