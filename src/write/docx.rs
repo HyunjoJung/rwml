@@ -906,10 +906,7 @@ impl Ctx {
         // EMU), clamped to the ~6in content width; falls back to 2in² if the
         // header had no dimensions.
         let (cx, cy) = image_extent_emu(img.width_px, img.height_px);
-        let descr = img
-            .alt
-            .as_deref()
-            .filter(|alt| !alt.is_empty())
+        let descr = non_empty_trimmed(img.alt.as_deref())
             .map(|alt| format!(r#" descr="{}""#, esc_attr(alt)))
             .unwrap_or_default();
         let rotation = img
@@ -998,10 +995,7 @@ impl Ctx {
         ));
 
         let (cx, cy) = image_extent_emu(chart.width_px, chart.height_px);
-        let descr = chart
-            .alt
-            .as_deref()
-            .filter(|alt| !alt.is_empty())
+        let descr = non_empty_trimmed(chart.alt.as_deref())
             .map(|alt| format!(r#" descr="{}""#, esc_attr(alt)))
             .unwrap_or_default();
         out.push_str(&format!(

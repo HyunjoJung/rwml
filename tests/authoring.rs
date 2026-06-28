@@ -2944,7 +2944,7 @@ fn image_builder_adds_alt_text_and_size() {
     let model = DocBuilder::new()
         .rich_image(
             ImageBuilder::new(png.clone(), "image/png")
-                .alt("Chart <trend>")
+                .alt(" Chart <trend> ")
                 .size_px(200, 100),
         )
         .build();
@@ -2980,6 +2980,7 @@ fn image_builder_adds_rotation() {
     let model = DocBuilder::new()
         .rich_image(
             ImageBuilder::new(png.clone(), "image/png")
+                .alt(" ")
                 .size_px(200, 100)
                 .rotate_degrees(90),
         )
@@ -2994,7 +2995,8 @@ fn image_builder_adds_rotation() {
     let parts = unzip_parts(&bytes);
     let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
     assert!(
-        document_xml.contains(r#"<a:xfrm rot="5400000"><a:off x="0" y="0"/>"#),
+        document_xml.contains(r#"<a:xfrm rot="5400000"><a:off x="0" y="0"/>"#)
+            && !document_xml.contains(r#" descr=""#),
         "image rotation missing: {document_xml}"
     );
 
@@ -3072,7 +3074,7 @@ fn doc_builder_adds_bar_chart() {
                 .categories(["Q1", "Q2"])
                 .series("Revenue", [42.0, 51.5])
                 .size_px(480, 320)
-                .alt("Revenue chart"),
+                .alt(" Revenue chart "),
         )
         .build();
 
@@ -3084,6 +3086,7 @@ fn doc_builder_adds_bar_chart() {
     assert_eq!(chart.series.len(), 1);
     assert_eq!(chart.series[0].name, "Revenue");
     assert_eq!(chart.series[0].values, [42.0, 51.5]);
+    assert_eq!(chart.alt.as_deref(), Some("Revenue chart"));
 
     let bytes = rdoc::write_docx(&model);
     let parts = unzip_parts(&bytes);

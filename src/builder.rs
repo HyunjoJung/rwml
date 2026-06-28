@@ -764,7 +764,8 @@ impl ImageBuilder {
 
     /// Set the image alt text.
     pub fn alt(mut self, alt: impl Into<String>) -> Self {
-        self.image.alt = Some(alt.into());
+        let alt = alt.into().trim().to_string();
+        self.image.alt = (!alt.is_empty()).then_some(alt);
         self
     }
 
@@ -1355,7 +1356,8 @@ impl ChartBuilder {
 
     /// Set alternate text for the chart drawing.
     pub fn alt(mut self, alt: impl Into<String>) -> Self {
-        self.chart.alt = Some(alt.into());
+        let alt = alt.into().trim().to_string();
+        self.chart.alt = (!alt.is_empty()).then_some(alt);
         self
     }
 
