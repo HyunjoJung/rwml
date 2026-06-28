@@ -1821,8 +1821,8 @@ fn content_control_builder_adds_data_binding_metadata() {
                     .alias("Client")
                     .tag("client-name")
                     .data_binding(
-                        r#"/root/client[@code="A&B"]"#,
-                        "{11111111-2222-3333-4444-555555555555}",
+                        r#" /root/client[@code="A&B"] "#,
+                        " {11111111-2222-3333-4444-555555555555} ",
                     ),
             )
             .build()])

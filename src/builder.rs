@@ -592,8 +592,8 @@ impl ContentControlBuilder {
         xpath: impl Into<String>,
         store_item_id: impl Into<String>,
     ) -> Self {
-        self.control.data_binding_xpath = Some(xpath.into());
-        self.control.data_binding_store_item_id = Some(store_item_id.into());
+        self.control.data_binding_xpath = Some(xpath.into().trim().to_string());
+        self.control.data_binding_store_item_id = Some(store_item_id.into().trim().to_string());
         self
     }
 
