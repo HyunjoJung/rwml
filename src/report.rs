@@ -1312,6 +1312,7 @@ fn scan_docx_story_structure_markers(xml: &str, features: &mut FeatureInventory)
     scan_docx_xml(xml, &mut story);
     features.content_controls += story.content_controls;
     features.nested_tables += story.nested_tables;
+    features.ole_objects += story.ole_objects;
 }
 
 #[cfg(feature = "docx")]
