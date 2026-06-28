@@ -255,6 +255,28 @@ class RenderValidateReportTests(unittest.TestCase):
         self.assertEqual(checks["skipped"]["actual"], 1)
         self.assertFalse(checks["skipped"]["passed"])
 
+    def test_warning_kinds_rejects_malformed_report_entries(self):
+        self.assertEqual(
+            render_validate.warning_kinds(
+                {
+                    "warnings": [
+                        {"kind": "UnsupportedFieldEvaluation"},
+                        {"kind": "UnsupportedMetafileImages"},
+                    ]
+                }
+            ),
+            ["UnsupportedFieldEvaluation", "UnsupportedMetafileImages"],
+        )
+        cases = [
+            {"warnings": "UnsupportedFieldEvaluation"},
+            {"warnings": [42]},
+            {"warnings": [{"count": 1}]},
+            {"warnings": [{"kind": "Unsupported Field"}]},
+        ]
+        for report in cases:
+            with self.subTest(report=report):
+                self.assertIsNone(render_validate.warning_kinds(report))
+
     def test_validation_gate_rejects_non_finite_thresholds(self):
         with self.assertRaisesRegex(ValueError, "non-finite threshold"):
             render_validate.validation_gate(

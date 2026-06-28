@@ -312,8 +312,18 @@ def warning_kinds(report: dict | None) -> list[str] | None:
         return None
     kinds = []
     for warning in warnings:
-        if isinstance(warning, dict) and isinstance(warning.get("kind"), str):
-            kinds.append(warning["kind"])
+        if not isinstance(warning, dict):
+            return None
+        kind = warning.get("kind")
+        if (
+            not isinstance(kind, str)
+            or not kind
+            or kind != kind.strip()
+            or not kind.isascii()
+            or not kind.isidentifier()
+        ):
+            return None
+        kinds.append(kind)
     return kinds
 
 
@@ -467,6 +477,20 @@ def main() -> int:
             passed = rec >= args.recall_min
             status = "pass" if passed else "fail"
             kinds = warning_kinds(render_report)
+            if kinds is None:
+                rows.append(
+                    ValidationRow(
+                        document=src.name,
+                        status="skip",
+                        reason="render report invalid warnings",
+                    )
+                )
+                if not args.json:
+                    print(
+                        f"{src.name[:40]:40} {'--':>8} {'--':>10} "
+                        f"{'--':>8} {'--':>5}  SKIP (render report invalid warnings)"
+                    )
+                continue
             rows.append(
                 ValidationRow(
                     document=src.name,
