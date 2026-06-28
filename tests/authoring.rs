@@ -43,6 +43,13 @@ fn tiny_png() -> Vec<u8> {
     ]
 }
 
+fn tiny_webp() -> Vec<u8> {
+    vec![
+        b'R', b'I', b'F', b'F', 22, 0, 0, 0, b'W', b'E', b'B', b'P', b'V', b'P', b'8', b'X', 10, 0,
+        0, 0, 0, 0, 0, 0, 1, 0, 0, 2, 0, 0,
+    ]
+}
+
 fn single_paragraph_text(blocks: &[Block]) -> String {
     let [Block::Paragraph(paragraph)] = blocks else {
         panic!("expected exactly one paragraph block, got {blocks:?}");
@@ -3200,6 +3207,37 @@ fn image_builder_adds_alt_text_and_size() {
     let images = reopened.images();
     assert_eq!(images.len(), 1);
     assert_eq!(images[0].bytes.as_deref(), Some(png.as_slice()));
+}
+
+#[test]
+fn image_builder_preserves_webp_media_type() {
+    let webp = tiny_webp();
+    let model = DocBuilder::new()
+        .rich_image(ImageBuilder::new(webp.clone(), "image/webp"))
+        .build();
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let rels = String::from_utf8(parts["word/_rels/document.xml.rels"].clone()).unwrap();
+    let content_types = String::from_utf8(parts["[Content_Types].xml"].clone()).unwrap();
+
+    assert!(
+        rels.contains(r#"Target="media/image1.webp""#),
+        "expected webp media target: {rels}"
+    );
+    assert!(
+        content_types.contains(r#"ContentType="image/webp""#),
+        "expected webp content type: {content_types}"
+    );
+    assert_eq!(parts["word/media/image1.webp"], webp);
+
+    let reopened = Document::open(&bytes).expect("webp image .docx reopens");
+    let images = reopened.images();
+    assert_eq!(images.len(), 1);
+    assert_eq!(images[0].mime.as_deref(), Some("image/webp"));
+    assert_eq!(images[0].bytes.as_deref(), Some(webp.as_slice()));
+    assert_eq!(images[0].width_px, Some(2));
+    assert_eq!(images[0].height_px, Some(3));
 }
 
 #[test]

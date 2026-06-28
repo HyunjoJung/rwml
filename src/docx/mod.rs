@@ -1857,7 +1857,7 @@ fn parse_rels(xml: &str) -> Rels {
     map
 }
 
-/// Pre-read every embedded raster (PNG/JPEG/GIF/BMP/TIFF) referenced by an
+/// Pre-read every embedded raster (PNG/JPEG/GIF/BMP/TIFF/WebP) referenced by an
 /// internal relationship into `rel-id → Image`. Metafiles (EMF/WMF) and external
 /// links are skipped, mirroring the `.doc` path which leaves them as placeholders.
 fn read_media(
@@ -1938,6 +1938,7 @@ fn mime_for(target: &str) -> Option<&'static str> {
         "gif" => Some("image/gif"),
         "bmp" => Some("image/bmp"),
         "tif" | "tiff" => Some("image/tiff"),
+        "webp" => Some("image/webp"),
         _ => None,
     }
 }

@@ -43,7 +43,7 @@ fn extract_bytes(data: &[u8], fc: usize) -> Option<Image> {
     })
 }
 
-/// Intrinsic pixel dimensions parsed from an image header (PNG/JPEG/GIF/BMP).
+/// Intrinsic pixel dimensions parsed from an image header (PNG/JPEG/GIF/BMP/WebP).
 /// Best-effort: returns `None` for unknown or truncated headers. Bounds-checked,
 /// no allocation — used by the renderer/writer to size embedded pictures.
 pub(crate) fn dims(bytes: &[u8], mime: &str) -> Option<(u32, u32)> {
@@ -52,6 +52,7 @@ pub(crate) fn dims(bytes: &[u8], mime: &str) -> Option<(u32, u32)> {
         "image/jpeg" => jpeg_dims(bytes),
         "image/gif" => gif_dims(bytes),
         "image/bmp" => bmp_dims(bytes),
+        "image/webp" => webp_dims(bytes),
         _ => None,
     }
 }
@@ -118,6 +119,46 @@ fn jpeg_dims(b: &[u8]) -> Option<(u32, u32)> {
     None
 }
 
+fn webp_dims(b: &[u8]) -> Option<(u32, u32)> {
+    if b.len() < 20 || &b[0..4] != b"RIFF" || &b[8..12] != b"WEBP" {
+        return None;
+    }
+    let mut i = 12usize;
+    while i + 8 <= b.len() {
+        let tag = &b[i..i + 4];
+        let len = u32::from_le_bytes([b[i + 4], b[i + 5], b[i + 6], b[i + 7]]) as usize;
+        let start = i + 8;
+        let end = start.checked_add(len)?;
+        if end > b.len() {
+            return None;
+        }
+        let data = &b[start..end];
+        match tag {
+            b"VP8X" if data.len() >= 10 => {
+                let w = 1 + u32::from_le_bytes([data[4], data[5], data[6], 0]);
+                let h = 1 + u32::from_le_bytes([data[7], data[8], data[9], 0]);
+                return Some((w, h));
+            }
+            b"VP8L" if data.len() >= 5 && data[0] == 0x2f => {
+                let w = 1 + ((((data[2] & 0x3f) as u32) << 8) | data[1] as u32);
+                let h = 1
+                    + ((((data[4] & 0x0f) as u32) << 10)
+                        | ((data[3] as u32) << 2)
+                        | (((data[2] & 0xc0) as u32) >> 6));
+                return Some((w, h));
+            }
+            b"VP8 " if data.len() >= 10 && data[3..6] == [0x9d, 0x01, 0x2a] => {
+                let w = u16::from_le_bytes([data[6], data[7]]) as u32 & 0x3fff;
+                let h = u16::from_le_bytes([data[8], data[9]]) as u32 & 0x3fff;
+                return (w > 0 && h > 0).then_some((w, h));
+            }
+            _ => {}
+        }
+        i = end + (len & 1);
+    }
+    None
+}
+
 /// Scan the picture payload for a raster magic. In Word 97+ the payload is an
 /// Office Art / Escher container, so the file magic can sit well past the start
 /// (after the SpContainer / FOPT / blip headers); scan the whole bounded region.
@@ -128,6 +169,7 @@ fn jpeg_dims(b: &[u8]) -> Option<(u32, u32)> {
 ///
 ///   * PNG — an 8-byte signature, effectively unambiguous.
 ///   * GIF — `GIF8` (covers both `GIF87a` and `GIF89a`).
+///   * WebP — RIFF container with `WEBP` form type.
 ///   * JPEG — validated: the `FF D8` SOI must be immediately followed by another
 ///     marker (`FF` + a marker byte `>= 0xC0`). A bare `FF D8 FF` is only three
 ///     bytes and turns up by chance inside Escher/OLE binary, so without the
@@ -141,6 +183,9 @@ fn find_raster(region: &[u8]) -> Option<(usize, &'static str)> {
     }
     if let Some(i) = find(region, GIF) {
         return Some((i, "image/gif"));
+    }
+    if let Some(i) = find_webp(region) {
+        return Some((i, "image/webp"));
     }
     find_jpeg(region).map(|i| (i, "image/jpeg"))
 }
@@ -164,6 +209,14 @@ fn find_jpeg(region: &[u8]) -> Option<usize> {
     (0..=region.len() - 4).find(|&i| {
         region[i] == 0xFF && region[i + 1] == 0xD8 && region[i + 2] == 0xFF && region[i + 3] >= 0xC0
     })
+}
+
+fn find_webp(region: &[u8]) -> Option<usize> {
+    if region.len() < 12 {
+        return None;
+    }
+    (0..=region.len() - 12)
+        .find(|&i| &region[i..i + 4] == b"RIFF" && &region[i + 8..i + 12] == b"WEBP")
 }
 
 /// A `data:` URI for an extracted image, for self-contained HTML previews.
@@ -233,6 +286,20 @@ mod tests {
         let png_at = region.len();
         region.extend_from_slice(&[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 9, 9]);
         assert_eq!(find_raster(&region), Some((png_at, "image/png")));
+    }
+
+    #[test]
+    fn finds_webp_and_reads_vp8x_dimensions() {
+        let webp = [
+            b'R', b'I', b'F', b'F', 22, 0, 0, 0, b'W', b'E', b'B', b'P', b'V', b'P', b'8', b'X',
+            10, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 2, 0, 0,
+        ];
+        let mut region = vec![0, 1, 2];
+        let webp_at = region.len();
+        region.extend_from_slice(&webp);
+
+        assert_eq!(find_raster(&region), Some((webp_at, "image/webp")));
+        assert_eq!(dims(&webp, "image/webp"), Some((2, 3)));
     }
 
     #[test]

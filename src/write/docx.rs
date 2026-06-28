@@ -1355,6 +1355,7 @@ fn img_ext_ct(mime: Option<&str>) -> (&'static str, &'static str) {
         Some("image/gif") => ("gif", "image/gif"),
         Some("image/bmp") => ("bmp", "image/bmp"),
         Some("image/tiff") => ("tif", "image/tiff"),
+        Some("image/webp") => ("webp", "image/webp"),
         _ => ("png", "image/png"),
     }
 }
