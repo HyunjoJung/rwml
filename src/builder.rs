@@ -1554,7 +1554,7 @@ impl DocBuilder {
         xml: impl Into<String>,
     ) -> Self {
         self.model.custom_xml_items.push(CustomXmlItem {
-            store_item_id: store_item_id.into(),
+            store_item_id: store_item_id.into().trim().to_string(),
             xml: xml.into(),
         });
         self

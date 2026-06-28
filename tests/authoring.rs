@@ -1884,9 +1884,10 @@ fn content_control_builder_adds_data_binding_metadata() {
 #[test]
 fn doc_builder_adds_custom_xml_item() {
     let store_item_id = "{11111111-2222-3333-4444-555555555555}";
+    let padded_store_item_id = " {11111111-2222-3333-4444-555555555555} ";
     let xml = r#"<root><client code="A&amp;B">ACME</client></root>"#;
     let model = DocBuilder::new()
-        .custom_xml_item(store_item_id, xml)
+        .custom_xml_item(padded_store_item_id, xml)
         .paragraph_runs([RunBuilder::new("Bound value")
             .content_control(
                 ContentControlBuilder::new()
