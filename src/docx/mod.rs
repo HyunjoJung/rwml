@@ -324,6 +324,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         .floating_shapes
         .extend(endnote_part.floating_shapes);
     note_part.text_boxes.extend(endnote_part.text_boxes);
+    extend_missing_comment_anchors(&mut note_part.comment_anchors, endnote_part.comment_anchors);
     attach_note_reference_anchors(&mut note_part.records, &doc_xml);
     let mut floating_shapes = read_floating_shapes(&doc_xml);
     floating_shapes.extend(note_part.floating_shapes);
@@ -362,6 +363,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         comments::apply_extended_parent_ids(&mut comments, comments_xml, comments_ext_xml);
     }
     let mut comment_anchors = comments::parse_anchors(&doc_xml);
+    extend_missing_comment_anchors(&mut comment_anchors, note_part.comment_anchors);
     extend_missing_comment_anchors(&mut comment_anchors, header_footer_comment_anchors);
     for comment in &mut comments {
         comment.anchor = comment_anchors.get(&comment.id).cloned();
@@ -902,6 +904,7 @@ fn header_footer_kind(part_kind: HeaderFooterPartKind, type_name: &str) -> Heade
 struct NotePartRead {
     blocks: Vec<Block>,
     records: Vec<Note>,
+    comment_anchors: HashMap<String, TextAnchor>,
     revisions: Vec<Revision>,
     floating_shapes: Vec<FloatingShape>,
     text_boxes: Vec<TextBox>,
@@ -971,6 +974,7 @@ fn read_notes(
     };
     let mut blocks = Vec::new();
     let mut records = Vec::new();
+    let comment_anchors = comments::parse_anchors(&xml);
     let revisions = revisions::parse(&xml);
     let floating_shapes = read_floating_shapes(&xml);
     let text_box_id_prefix = format!("{name}-text-box");
@@ -988,6 +992,7 @@ fn read_notes(
     NotePartRead {
         blocks,
         records,
+        comment_anchors,
         revisions,
         floating_shapes,
         text_boxes,

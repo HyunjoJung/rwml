@@ -636,7 +636,7 @@ impl Document {
     /// `.doc` annotation subdocument.
     ///
     /// The returned comments are a side table. `.docx` comments include
-    /// metadata and body/header/footer anchors when present; legacy `.doc`
+    /// metadata and body/note/header/footer anchors when present; legacy `.doc`
     /// annotation regions expose stable synthetic ids, visible comment text, and
     /// best-effort source-region anchors. Legacy `.doc` author metadata is not
     /// recovered yet.

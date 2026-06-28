@@ -166,6 +166,35 @@ fn revision_wrapped_commented_docx() -> Vec<u8> {
     ])
 }
 
+fn note_commented_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Body</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r><w:r><w:endnoteReference w:id="2"/></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="1"><w:p><w:commentRangeStart w:id="7"/><w:r><w:t>Foot anchor</w:t></w:r><w:commentRangeEnd w:id="7"/><w:r><w:commentReference w:id="7"/></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+        (
+            "word/endnotes.xml",
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="2"><w:p><w:commentRangeStart w:id="8"/><w:r><w:t>End anchor</w:t></w:r><w:commentRangeEnd w:id="8"/><w:r><w:commentReference w:id="8"/></w:r></w:p></w:endnote></w:endnotes>"#,
+        ),
+        (
+            "word/comments.xml",
+            r#"<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:comment w:id="7" w:author="Reviewer"><w:p><w:r><w:t>Foot note</w:t></w:r></w:p></w:comment><w:comment w:id="8" w:author="Reviewer"><w:p><w:r><w:t>End note</w:t></w:r></w:p></w:comment></w:comments>"#,
+        ),
+    ])
+}
+
 #[test]
 fn docx_comment_replies_use_comments_extended_parent_ids() {
     let doc = Document::open(&threaded_comments_docx()).expect("fixture opens");
@@ -237,6 +266,24 @@ fn docx_comment_anchors_follow_accepted_revision_view() {
     );
     assert!(comments[3].anchor.is_none());
     assert!(comments[4].anchor.is_none());
+}
+
+#[test]
+fn docx_note_comment_anchors_are_exposed() {
+    let doc = Document::open(&note_commented_docx()).expect("fixture opens");
+    let comments = doc.comments();
+
+    assert_eq!(comments.len(), 2);
+    assert_eq!(comments[0].text, "Foot note");
+    assert_eq!(
+        comments[0].anchor.as_ref().map(|a| a.text.as_str()),
+        Some("Foot anchor")
+    );
+    assert_eq!(comments[1].text, "End note");
+    assert_eq!(
+        comments[1].anchor.as_ref().map(|a| a.text.as_str()),
+        Some("End anchor")
+    );
 }
 
 #[test]
