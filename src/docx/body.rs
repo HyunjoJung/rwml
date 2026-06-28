@@ -2709,7 +2709,7 @@ fn apply_tcpr_child(t: &mut TcPr, e: &BytesStart<'_>) {
         }
         b"shd" => t.shading = attr_local(e, b"fill").and_then(|v| parse_hex_color(&v)),
         b"vAlign" => {
-            t.valign = match attr_local(e, b"val").as_deref() {
+            t.valign = match attr_local(e, b"val").as_deref().map(str::trim) {
                 Some("center") => VCell::Center,
                 Some("bottom") => VCell::Bottom,
                 _ => VCell::Top,
@@ -3291,7 +3291,7 @@ mod tests {
                 <w:r><w:rPr><w:rFonts w:ascii="Arial" w:eastAsia="맑은 고딕"/><w:sz w:val="24"/><w:color w:val=" FF0000 "/><w:vertAlign w:val="superscript"/><w:caps/></w:rPr><w:t>빨강</w:t></w:r>
             </w:p>
             <w:tbl><w:tblPr><w:tblW w:w="4000" w:type=" pct "/><w:tblLayout w:type=" fixed "/><w:tblInd w:w="720" w:type=" dxa "/></w:tblPr><w:tr><w:tc>
-                <w:tcPr><w:shd w:fill=" DDDDDD "/><w:vAlign w:val="center"/><w:tcW w:w="2500" w:type=" pct "/></w:tcPr>
+                <w:tcPr><w:shd w:fill=" DDDDDD "/><w:vAlign w:val=" center "/><w:tcW w:w="2500" w:type=" pct "/></w:tcPr>
                 <w:p><w:r><w:t>셀</w:t></w:r></w:p>
             </w:tc></w:tr></w:tbl>
         </w:body></w:document>"#;
