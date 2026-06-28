@@ -1385,13 +1385,13 @@ fn comments_xml(comments: &[WrittenComment]) -> Vec<u8> {
     }
     for (index, comment) in comments.iter().enumerate() {
         let mut attrs = format!(r#" w:id="{}""#, esc_attr(&comment.id));
-        if let Some(author) = comment.comment.author.as_deref() {
+        if let Some(author) = non_empty_trimmed(comment.comment.author.as_deref()) {
             attrs.push_str(&format!(r#" w:author="{}""#, esc_attr(author)));
         }
-        if let Some(initials) = comment.comment.initials.as_deref() {
+        if let Some(initials) = non_empty_trimmed(comment.comment.initials.as_deref()) {
             attrs.push_str(&format!(r#" w:initials="{}""#, esc_attr(initials)));
         }
-        if let Some(date) = comment.comment.date.as_deref() {
+        if let Some(date) = non_empty_trimmed(comment.comment.date.as_deref()) {
             attrs.push_str(&format!(r#" w:date="{}""#, esc_attr(date)));
         }
         if let Some(parent_id) = non_empty_trimmed(comment.comment.parent_comment_id.as_deref()) {

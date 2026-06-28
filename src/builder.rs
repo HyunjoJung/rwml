@@ -461,19 +461,22 @@ impl CommentBuilder {
 
     /// Set the comment author.
     pub fn author(mut self, author: impl Into<String>) -> Self {
-        self.comment.author = Some(author.into());
+        let author = author.into().trim().to_string();
+        self.comment.author = (!author.is_empty()).then_some(author);
         self
     }
 
     /// Set the comment author initials.
     pub fn initials(mut self, initials: impl Into<String>) -> Self {
-        self.comment.initials = Some(initials.into());
+        let initials = initials.into().trim().to_string();
+        self.comment.initials = (!initials.is_empty()).then_some(initials);
         self
     }
 
     /// Set the comment timestamp.
     pub fn date(mut self, date: impl Into<String>) -> Self {
-        self.comment.date = Some(date.into());
+        let date = date.into().trim().to_string();
+        self.comment.date = (!date.is_empty()).then_some(date);
         self
     }
 

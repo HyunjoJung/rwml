@@ -1459,9 +1459,9 @@ fn run_builder_adds_authored_comment() {
         .paragraph_runs([RunBuilder::new("Reviewed clause")
             .comment(
                 CommentBuilder::new("Check <risk> & owner")
-                    .author("Reviewer")
-                    .initials("RV")
-                    .date("2026-06-24T00:00:00Z"),
+                    .author(" Reviewer ")
+                    .initials(" ")
+                    .date(" 2026-06-24T00:00:00Z "),
             )
             .build()])
         .build();
@@ -1475,7 +1475,7 @@ fn run_builder_adds_authored_comment() {
         .expect("run carries authored comment");
     assert_eq!(comment.text, "Check <risk> & owner");
     assert_eq!(comment.author.as_deref(), Some("Reviewer"));
-    assert_eq!(comment.initials.as_deref(), Some("RV"));
+    assert_eq!(comment.initials, None);
     assert_eq!(comment.date.as_deref(), Some("2026-06-24T00:00:00Z"));
 
     let bytes = rdoc::write_docx(&model);
@@ -1502,7 +1502,8 @@ fn run_builder_adds_authored_comment() {
         "comment markers missing or out of order: {document_xml}"
     );
     assert!(
-        comments_xml.contains(r#"<w:comment w:id="0" w:author="Reviewer" w:initials="RV" w:date="2026-06-24T00:00:00Z">"#)
+        comments_xml
+            .contains(r#"<w:comment w:id="0" w:author="Reviewer" w:date="2026-06-24T00:00:00Z">"#)
             && comments_xml.contains(r#"<w:t>Check &lt;risk&gt; &amp; owner</w:t>"#),
         "comments.xml missing authored metadata/text: {comments_xml}"
     );
@@ -1521,7 +1522,7 @@ fn run_builder_adds_authored_comment() {
     assert_eq!(comments.len(), 1);
     assert_eq!(comments[0].id, "0");
     assert_eq!(comments[0].author.as_deref(), Some("Reviewer"));
-    assert_eq!(comments[0].initials.as_deref(), Some("RV"));
+    assert_eq!(comments[0].initials, None);
     assert_eq!(comments[0].date.as_deref(), Some("2026-06-24T00:00:00Z"));
     assert_eq!(comments[0].text, "Check <risk> & owner");
     assert_eq!(
