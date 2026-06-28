@@ -1394,7 +1394,7 @@ fn comments_xml(comments: &[WrittenComment]) -> Vec<u8> {
         if let Some(date) = comment.comment.date.as_deref() {
             attrs.push_str(&format!(r#" w:date="{}""#, esc_attr(date)));
         }
-        if let Some(parent_id) = comment.comment.parent_comment_id.as_deref() {
+        if let Some(parent_id) = non_empty_trimmed(comment.comment.parent_comment_id.as_deref()) {
             attrs.push_str(&format!(r#" w:parentId="{}""#, esc_attr(parent_id)));
         }
         let para_id = if threaded {
@@ -1420,10 +1420,8 @@ fn comments_extended_xml(comments: &[WrittenComment]) -> Option<Vec<u8>> {
     for (index, comment) in comments.iter().enumerate() {
         let para_id = comment_para_id(index);
         let mut attrs = format!(r#" w15:paraId="{para_id}""#);
-        if let Some(parent_id) = comment.comment.parent_comment_id.as_deref() {
-            if let Some(parent_para_id) = comment_para_id_for_id(comments, parent_id) {
-                attrs.push_str(&format!(r#" w15:paraIdParent="{parent_para_id}""#));
-            }
+        if let Some(parent_para_id) = comment_parent_para_id(comments, comment) {
+            attrs.push_str(&format!(r#" w15:paraIdParent="{parent_para_id}""#));
         }
         s.push_str(&format!(r#"<w15:commentEx{attrs} w15:done="0"/>"#));
     }
@@ -1434,11 +1432,16 @@ fn comments_extended_xml(comments: &[WrittenComment]) -> Option<Vec<u8>> {
 fn has_comment_replies(comments: &[WrittenComment]) -> bool {
     comments
         .iter()
-        .any(|comment| comment.comment.parent_comment_id.is_some())
+        .any(|comment| comment_parent_para_id(comments, comment).is_some())
 }
 
 fn comment_para_id(index: usize) -> String {
     format!("{:08X}", (index + 1).min(0x7FFF_FFFF))
+}
+
+fn comment_parent_para_id(comments: &[WrittenComment], comment: &WrittenComment) -> Option<String> {
+    let parent_id = non_empty_trimmed(comment.comment.parent_comment_id.as_deref())?;
+    comment_para_id_for_id(comments, parent_id)
 }
 
 fn comment_para_id_for_id(comments: &[WrittenComment], id: &str) -> Option<String> {

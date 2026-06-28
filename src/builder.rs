@@ -479,7 +479,8 @@ impl CommentBuilder {
 
     /// Set the parent comment id for a generated reply.
     pub fn parent_comment_id(mut self, id: impl Into<String>) -> Self {
-        self.comment.parent_comment_id = Some(id.into());
+        let id = id.into().trim().to_string();
+        self.comment.parent_comment_id = (!id.is_empty()).then_some(id);
         self
     }
 
