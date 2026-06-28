@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import subprocess
 import sys
 import tempfile
@@ -44,6 +45,15 @@ except ImportError:
     Image = None
 
 
+COUNT_THRESHOLD_METRICS = {"below_recall_min", "skipped"}
+SCORE_THRESHOLD_METRICS = {
+    "mean_recall",
+    "mean_page_ratio",
+    "mean_ahash_similarity",
+}
+BOUNDED_SCORE_THRESHOLD_METRICS = {"mean_recall", "mean_ahash_similarity"}
+
+
 @dataclass
 class ValidationRow:
     document: str
@@ -56,6 +66,14 @@ class ValidationRow:
     render_warnings: int | None = None
     render_warning_kinds: list[str] | None = None
     reason: str | None = None
+
+
+def is_finite_number(value: object) -> bool:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+    )
 
 
 def require_pdf_deps() -> None:
@@ -87,6 +105,14 @@ def add_threshold_check(
 ) -> None:
     if threshold is None:
         return
+    if not is_finite_number(threshold):
+        raise ValueError(f"non-finite threshold for {metric}: {threshold}")
+    if metric in COUNT_THRESHOLD_METRICS and threshold < 0:
+        raise ValueError(f"negative count threshold for {metric}: {threshold}")
+    if op == ">=" and metric in SCORE_THRESHOLD_METRICS and threshold < 0:
+        raise ValueError(f"negative score threshold for {metric}: {threshold}")
+    if metric in BOUNDED_SCORE_THRESHOLD_METRICS and threshold > 1:
+        raise ValueError(f"score threshold above one for {metric}: {threshold}")
     if actual is None:
         passed = False
     elif op == ">=":
@@ -166,6 +192,58 @@ def validation_report(
     recall_min: float,
     thresholds: dict | None = None,
 ) -> dict:
+    for row in rows:
+        if not isinstance(row.document, str):
+            raise ValueError("document must be a string")
+        if not row.document.strip():
+            raise ValueError("document must not be empty")
+        if row.document != row.document.strip():
+            raise ValueError(
+                f"document must not have surrounding whitespace: {row.document}"
+            )
+        if "/" in row.document or "\\" in row.document:
+            raise ValueError(f"document path is invalid: {row.document}")
+        if row.status not in {"pass", "fail", "skip"}:
+            raise ValueError(f"status is invalid: {row.status}")
+        for metric in (
+            "recall",
+            "page_ratio",
+            "ahash_similarity",
+            "render_warnings",
+        ):
+            value = getattr(row, metric)
+            if value is not None and not is_finite_number(value):
+                raise ValueError(f"metric is invalid: {metric}")
+            if value is not None and metric in {"recall", "ahash_similarity"}:
+                if not 0 <= value <= 1:
+                    raise ValueError(f"metric is out of range: {metric}")
+        for metric in ("rdoc_pages", "reference_pages", "render_warnings"):
+            value = getattr(row, metric)
+            if value is not None and (
+                not isinstance(value, int) or isinstance(value, bool) or value < 0
+            ):
+                raise ValueError(f"count is invalid: {metric}")
+        if row.status == "skip" and any(
+            getattr(row, metric) is not None
+            for metric in (
+                "recall",
+                "rdoc_pages",
+                "reference_pages",
+                "page_ratio",
+                "ahash_similarity",
+                "render_warnings",
+                "render_warning_kinds",
+            )
+        ):
+            raise ValueError("skipped row has metrics")
+        if row.status != "skip" and row.recall is None:
+            raise ValueError("non-skip row is missing recall")
+    if not is_finite_number(recall_min):
+        raise ValueError(f"non-finite recall threshold: {recall_min}")
+    if recall_min < 0:
+        raise ValueError(f"negative recall threshold: {recall_min}")
+    if recall_min > 1:
+        raise ValueError(f"recall threshold above one: {recall_min}")
     measured = [r for r in rows if r.recall is not None]
     summary = {
         "documents": len(rows),
@@ -199,6 +277,10 @@ def validation_report(
         "gate": validation_gate(summary, thresholds),
         "rows": [row_dict(r) for r in rows],
     }
+
+
+def json_report_payload(report: dict) -> str:
+    return json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False)
 
 
 def warning_kinds(report: dict | None) -> list[str] | None:
@@ -394,7 +476,7 @@ def main() -> int:
     }
     report = validation_report(rows, args.recall_min, thresholds=thresholds)
     if args.json:
-        print(json.dumps(report, ensure_ascii=False, indent=2))
+        print(json_report_payload(report))
     elif report["summary"]["measured"]:
         mean_warnings = report["summary"]["mean_render_warnings"]
         print("-" * 80)

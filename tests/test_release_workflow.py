@@ -21,6 +21,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("scripts/release_manifest.py", text)
         self.assertIn("--git-rev \"$GITHUB_SHA\"", text)
         self.assertIn("--release-policy public-release", text)
+        self.assertNotIn("--enforce-policy-inputs", text)
         self.assertIn("--hygiene-report dist/public-hygiene.json", text)
         self.assertIn("--corpus-manifest corpus/public/MANIFEST.tsv", text)
         self.assertIn("--corpus-manifest corpus/public/RENDER_MANIFEST.tsv", text)

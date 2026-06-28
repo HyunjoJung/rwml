@@ -194,6 +194,931 @@ class ReleaseManifestTests(unittest.TestCase):
             ],
         )
 
+    def test_manifest_sorts_same_named_inputs_by_full_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            alpha = root / "alpha"
+            zeta = root / "zeta"
+            alpha.mkdir()
+            zeta.mkdir()
+            artifact_alpha = alpha / "rdoc.tar.gz"
+            artifact_zeta = zeta / "rdoc.tar.gz"
+            benchmark_alpha = alpha / "benchmark.json"
+            benchmark_zeta = zeta / "benchmark.json"
+            artifact_alpha.write_bytes(b"alpha artifact")
+            artifact_zeta.write_bytes(b"zeta artifact")
+            for path, files in [(benchmark_alpha, 1), (benchmark_zeta, 2)]:
+                path.write_text(
+                    json.dumps(
+                        {
+                            "summary": {"files": files},
+                            "gate": {"passed": True, "checks": []},
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+
+            manifest = release_manifest.release_manifest(
+                [artifact_zeta, artifact_alpha],
+                benchmark_reports=[benchmark_zeta, benchmark_alpha],
+                release_policy="public-release",
+            )
+
+        self.assertEqual(
+            [artifact["path"] for artifact in manifest["artifacts"]],
+            [artifact_alpha.as_posix(), artifact_zeta.as_posix()],
+        )
+        self.assertEqual(
+            [benchmark["path"] for benchmark in manifest["benchmarks"]],
+            [benchmark_alpha.as_posix(), benchmark_zeta.as_posix()],
+        )
+        self.assertEqual(
+            manifest["release_evidence"]["provided"]["benchmark_reports"],
+            [benchmark_alpha.as_posix(), benchmark_zeta.as_posix()],
+        )
+
+    def test_manifest_rejects_duplicate_artifact_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact = pathlib.Path(tmp) / "rdoc.tar.gz"
+            artifact.write_bytes(b"release artifact")
+
+            with self.assertRaisesRegex(ValueError, "duplicate artifact path"):
+                release_manifest.release_manifest([artifact, artifact])
+
+    def test_manifest_rejects_duplicate_evidence_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            artifact = root / "rdoc.tar.gz"
+            benchmark = root / "benchmark.json"
+            corpus = root / "MANIFEST.tsv"
+            artifact.write_bytes(b"release artifact")
+            benchmark.write_text(
+                json.dumps({"summary": {"files": 1}, "gate": {"passed": True, "checks": []}}),
+                encoding="utf-8",
+            )
+            corpus.write_text(
+                "# path\tfields\twarnings\nsynthetic/a.docx\t0\t-\n",
+                encoding="utf-8",
+            )
+
+            cases = [
+                ("benchmark report", {"benchmark_reports": [benchmark, benchmark]}),
+                ("corpus manifest", {"corpus_manifests": [corpus, corpus]}),
+            ]
+            for label, kwargs in cases:
+                with self.subTest(label=label):
+                    with self.assertRaisesRegex(ValueError, f"duplicate {label} path"):
+                        release_manifest.release_manifest([artifact], **kwargs)
+
+    def test_manifest_rejects_blank_release_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact = pathlib.Path(tmp) / "rdoc.tar.gz"
+            artifact.write_bytes(b"release artifact")
+
+            cases = [
+                ("version", {"version": " "}),
+                ("git_rev", {"git_rev": ""}),
+            ]
+            for label, kwargs in cases:
+                with self.subTest(label=label):
+                    with self.assertRaisesRegex(ValueError, f"{label} must not be empty"):
+                        release_manifest.release_manifest([artifact], **kwargs)
+
+    def test_manifest_rejects_non_string_release_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact = pathlib.Path(tmp) / "rdoc.tar.gz"
+            artifact.write_bytes(b"release artifact")
+
+            cases = [
+                ("version", {"version": 1}),
+                ("git_rev", {"git_rev": 1}),
+            ]
+            for label, kwargs in cases:
+                with self.subTest(label=label):
+                    with self.assertRaisesRegex(ValueError, f"{label} must be a string"):
+                        release_manifest.release_manifest([artifact], **kwargs)
+
+    def test_manifest_rejects_padded_release_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact = pathlib.Path(tmp) / "rdoc.tar.gz"
+            artifact.write_bytes(b"release artifact")
+
+            cases = [
+                ("version", {"version": " 0.1.0"}),
+                ("git_rev", {"git_rev": "abc123 "}),
+            ]
+            for label, kwargs in cases:
+                with self.subTest(label=label):
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        f"{label} must not have surrounding whitespace",
+                    ):
+                        release_manifest.release_manifest([artifact], **kwargs)
+
+    def test_manifest_rejects_whitespace_release_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact = pathlib.Path(tmp) / "rdoc.tar.gz"
+            artifact.write_bytes(b"release artifact")
+
+            cases = [
+                ("version", {"version": "0.1.0 beta"}),
+                ("git_rev", {"git_rev": "abc123\nnext"}),
+            ]
+            for label, kwargs in cases:
+                with self.subTest(label=label):
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        f"{label} must not contain whitespace",
+                    ):
+                        release_manifest.release_manifest([artifact], **kwargs)
+
+    def test_hygiene_summary_rejects_passed_report_with_findings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            hygiene = pathlib.Path(tmp) / "public-hygiene.json"
+            hygiene.write_text(
+                json.dumps({"passed": True, "findings": [{"path": "private.docx"}]}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "cannot pass with hygiene findings"):
+                release_manifest.hygiene_summary(hygiene)
+
+    def test_hygiene_summary_rejects_failed_report_without_findings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            hygiene = pathlib.Path(tmp) / "public-hygiene.json"
+            hygiene.write_text(
+                json.dumps({"passed": False, "findings": []}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "cannot fail without hygiene findings"):
+                release_manifest.hygiene_summary(hygiene)
+
+    def test_hygiene_summary_rejects_non_object_findings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            hygiene = pathlib.Path(tmp) / "public-hygiene.json"
+            hygiene.write_text(
+                json.dumps({"passed": False, "findings": ["private.docx"]}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "hygiene finding is not an object"):
+                release_manifest.hygiene_summary(hygiene)
+
+    def test_hygiene_summary_rejects_findings_missing_required_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            hygiene = pathlib.Path(tmp) / "public-hygiene.json"
+            hygiene.write_text(
+                json.dumps({"passed": False, "findings": [{"path": "private.docx"}]}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "hygiene finding missing required field: line",
+            ):
+                release_manifest.hygiene_summary(hygiene)
+
+    def test_hygiene_summary_rejects_unexpected_finding_keys(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            hygiene = pathlib.Path(tmp) / "public-hygiene.json"
+            hygiene.write_text(
+                json.dumps(
+                    {
+                        "passed": False,
+                        "findings": [
+                            {
+                                "path": "private.docx",
+                                "line": 1,
+                                "kind": "private",
+                                "detail": "blocked",
+                                "note": "extra",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "hygiene finding key is invalid: note",
+            ):
+                release_manifest.hygiene_summary(hygiene)
+
+    def test_hygiene_summary_rejects_findings_with_invalid_field_types(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            hygiene = pathlib.Path(tmp) / "public-hygiene.json"
+            hygiene.write_text(
+                json.dumps(
+                    {
+                        "passed": False,
+                        "findings": [
+                            {
+                                "path": "private.docx",
+                                "line": "1",
+                                "kind": "private",
+                                "detail": "blocked",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "hygiene finding line is invalid"):
+                release_manifest.hygiene_summary(hygiene)
+
+    def test_hygiene_summary_rejects_empty_or_padded_finding_text(self):
+        cases = [
+            ("path", ""),
+            ("kind", " private"),
+            ("detail", " "),
+        ]
+        for field, value in cases:
+            with self.subTest(field=field):
+                with tempfile.TemporaryDirectory() as tmp:
+                    hygiene = pathlib.Path(tmp) / "public-hygiene.json"
+                    finding = {
+                        "path": "private.docx",
+                        "line": 1,
+                        "kind": "private",
+                        "detail": "blocked",
+                    }
+                    finding[field] = value
+                    hygiene.write_text(
+                        json.dumps({"passed": False, "findings": [finding]}),
+                        encoding="utf-8",
+                    )
+
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        f"hygiene finding {field} is invalid",
+                    ):
+                        release_manifest.hygiene_summary(hygiene)
+
+    def test_hygiene_summary_rejects_local_finding_paths(self):
+        unix_path = "/".join(("", "Users", "alice", "private.docx"))
+        windows_path = "C:" + unix_path
+        for finding_path in (unix_path, windows_path):
+            with self.subTest(finding_path=finding_path):
+                with tempfile.TemporaryDirectory() as tmp:
+                    hygiene = pathlib.Path(tmp) / "public-hygiene.json"
+                    hygiene.write_text(
+                        json.dumps(
+                            {
+                                "passed": False,
+                                "findings": [
+                                    {
+                                        "path": finding_path,
+                                        "line": 1,
+                                        "kind": "private",
+                                        "detail": "blocked",
+                                    }
+                                ],
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
+
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        "hygiene finding path is invalid",
+                    ):
+                        release_manifest.hygiene_summary(hygiene)
+
+    def test_hygiene_summary_rejects_non_canonical_finding_kind(self):
+        for kind in ("local path", "\u8b66\u544a"):
+            with self.subTest(kind=kind):
+                with tempfile.TemporaryDirectory() as tmp:
+                    hygiene = pathlib.Path(tmp) / "public-hygiene.json"
+                    hygiene.write_text(
+                        json.dumps(
+                            {
+                                "passed": False,
+                                "findings": [
+                                    {
+                                        "path": "private.docx",
+                                        "line": 1,
+                                        "kind": kind,
+                                        "detail": "blocked",
+                                    }
+                                ],
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
+
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        "hygiene finding kind is invalid",
+                    ):
+                        release_manifest.hygiene_summary(hygiene)
+
+    def test_hygiene_summary_rejects_boolean_finding_line(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            hygiene = pathlib.Path(tmp) / "public-hygiene.json"
+            hygiene.write_text(
+                json.dumps(
+                    {
+                        "passed": False,
+                        "findings": [
+                            {
+                                "path": "private.docx",
+                                "line": True,
+                                "kind": "private",
+                                "detail": "blocked",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "hygiene finding line is invalid"):
+                release_manifest.hygiene_summary(hygiene)
+
+    def test_hygiene_summary_rejects_non_positive_finding_line(self):
+        for line in (0, -1):
+            with self.subTest(line=line):
+                with tempfile.TemporaryDirectory() as tmp:
+                    hygiene = pathlib.Path(tmp) / "public-hygiene.json"
+                    hygiene.write_text(
+                        json.dumps(
+                            {
+                                "passed": False,
+                                "findings": [
+                                    {
+                                        "path": "private.docx",
+                                        "line": line,
+                                        "kind": "private",
+                                        "detail": "blocked",
+                                    }
+                                ],
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
+
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        "hygiene finding line is invalid",
+                    ):
+                        release_manifest.hygiene_summary(hygiene)
+
+    def test_hygiene_summary_rejects_duplicate_findings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            hygiene = pathlib.Path(tmp) / "public-hygiene.json"
+            finding = {
+                "path": "private.docx",
+                "line": 1,
+                "kind": "private",
+                "detail": "blocked",
+            }
+            hygiene.write_text(
+                json.dumps({"passed": False, "findings": [finding, finding]}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "duplicate hygiene finding"):
+                release_manifest.hygiene_summary(hygiene)
+
+    def test_hygiene_summary_rejects_non_object_report(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            hygiene = pathlib.Path(tmp) / "public-hygiene.json"
+            hygiene.write_text(json.dumps([]), encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "does not contain a JSON object"):
+                release_manifest.hygiene_summary(hygiene)
+
+    def test_report_summary_rejects_non_object_report(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            validation = pathlib.Path(tmp) / "render-validation.json"
+            validation.write_text(json.dumps([]), encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "does not contain a JSON object"):
+                release_manifest.report_summary(validation)
+
+    def test_report_summary_rejects_empty_summary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            validation = pathlib.Path(tmp) / "render-validation.json"
+            validation.write_text(json.dumps({"summary": {}}), encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "summary must not be empty"):
+                release_manifest.report_summary(validation)
+
+    def test_report_summary_rejects_non_finite_summary_values(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            validation = pathlib.Path(tmp) / "render-validation.json"
+            validation.write_text(
+                json.dumps({"summary": {"mean_recall": float("nan")}}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "summary contains non-finite value"):
+                release_manifest.report_summary(validation)
+
+    def test_report_summary_rejects_non_numeric_summary_values(self):
+        for key, value in (("documents", True), ("mean_recall", "0.9")):
+            with self.subTest(key=key):
+                with tempfile.TemporaryDirectory() as tmp:
+                    validation = pathlib.Path(tmp) / "render-validation.json"
+                    validation.write_text(
+                        json.dumps({"summary": {key: value}}),
+                        encoding="utf-8",
+                    )
+
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        f"summary value is invalid: {key}",
+                    ):
+                        release_manifest.report_summary(validation)
+
+    def test_report_summary_rejects_non_canonical_summary_keys(self):
+        for key in ("mean recall", "\u8a08"):
+            with self.subTest(key=key):
+                with tempfile.TemporaryDirectory() as tmp:
+                    validation = pathlib.Path(tmp) / "render-validation.json"
+                    validation.write_text(
+                        json.dumps({"summary": {key: 1}}),
+                        encoding="utf-8",
+                    )
+
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        f"summary key is invalid: {key}",
+                    ):
+                        release_manifest.report_summary(validation)
+
+    def test_report_summary_rejects_non_finite_gate_values(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            validation = pathlib.Path(tmp) / "render-validation.json"
+            validation.write_text(
+                json.dumps(
+                    {
+                        "summary": {"documents": 1},
+                        "gate": {
+                            "passed": True,
+                            "checks": [
+                                {
+                                    "metric": "mean_recall",
+                                    "op": ">=",
+                                    "threshold": float("nan"),
+                                    "actual": 1.0,
+                                    "passed": True,
+                                }
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "gate check threshold is not a finite number",
+            ):
+                release_manifest.report_summary(validation)
+
+    def test_report_summary_rejects_non_canonical_gate_keys(self):
+        for key in ("mean recall", "\u8a08"):
+            with self.subTest(key=key):
+                with tempfile.TemporaryDirectory() as tmp:
+                    validation = pathlib.Path(tmp) / "render-validation.json"
+                    validation.write_text(
+                        json.dumps(
+                            {
+                                "summary": {"documents": 1},
+                                "gate": {"passed": True, "checks": [], key: 1},
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
+
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        f"gate key is invalid: {key}",
+                    ):
+                        release_manifest.report_summary(validation)
+
+    def test_report_summary_rejects_unexpected_gate_keys(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            validation = pathlib.Path(tmp) / "render-validation.json"
+            validation.write_text(
+                json.dumps(
+                    {
+                        "summary": {"documents": 1},
+                        "gate": {"passed": True, "checks": [], "note": "extra"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "gate key is invalid: note"):
+                release_manifest.report_summary(validation)
+
+    def test_report_summary_rejects_non_object_gate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            validation = pathlib.Path(tmp) / "render-validation.json"
+            validation.write_text(
+                json.dumps({"summary": {"documents": 1}, "gate": []}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "gate is not a JSON object"):
+                release_manifest.report_summary(validation)
+
+    def test_report_summary_rejects_non_boolean_gate_passed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            validation = pathlib.Path(tmp) / "render-validation.json"
+            validation.write_text(
+                json.dumps({"summary": {"documents": 1}, "gate": {"passed": "yes"}}),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "gate passed is not a boolean"):
+                release_manifest.report_summary(validation)
+
+    def test_report_summary_rejects_non_list_gate_checks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            validation = pathlib.Path(tmp) / "render-validation.json"
+            validation.write_text(
+                json.dumps(
+                    {
+                        "summary": {"documents": 1},
+                        "gate": {"passed": True, "checks": {}},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "gate checks is not a list"):
+                release_manifest.report_summary(validation)
+
+    def test_report_summary_rejects_non_object_gate_checks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            validation = pathlib.Path(tmp) / "render-validation.json"
+            validation.write_text(
+                json.dumps(
+                    {
+                        "summary": {"documents": 1},
+                        "gate": {"passed": True, "checks": ["mean_recall"]},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "gate check is not a JSON object"):
+                release_manifest.report_summary(validation)
+
+    def test_report_summary_rejects_non_boolean_gate_check_passed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            validation = pathlib.Path(tmp) / "render-validation.json"
+            validation.write_text(
+                json.dumps(
+                    {
+                        "summary": {"documents": 1},
+                        "gate": {
+                            "passed": True,
+                            "checks": [
+                                {
+                                    "metric": "mean_recall",
+                                    "op": ">=",
+                                    "threshold": 0.9,
+                                    "actual": 1.0,
+                                    "passed": "yes",
+                                }
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "gate check passed is not a boolean"):
+                release_manifest.report_summary(validation)
+
+    def test_report_summary_rejects_gate_checks_missing_required_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            validation = pathlib.Path(tmp) / "render-validation.json"
+            validation.write_text(
+                json.dumps(
+                    {
+                        "summary": {"documents": 1},
+                        "gate": {
+                            "passed": True,
+                            "checks": [
+                                {
+                                    "op": ">=",
+                                    "threshold": 0.9,
+                                    "actual": 1.0,
+                                    "passed": True,
+                                }
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "gate check missing required field: metric",
+            ):
+                release_manifest.report_summary(validation)
+
+    def test_report_summary_rejects_non_canonical_gate_check_keys(self):
+        for key in ("actual value", "\u8a08"):
+            with self.subTest(key=key):
+                with tempfile.TemporaryDirectory() as tmp:
+                    validation = pathlib.Path(tmp) / "render-validation.json"
+                    validation.write_text(
+                        json.dumps(
+                            {
+                                "summary": {"documents": 1},
+                                "gate": {
+                                    "passed": True,
+                                    "checks": [
+                                        {
+                                            "metric": "mean_recall",
+                                            "op": ">=",
+                                            "threshold": 0.9,
+                                            "actual": 1.0,
+                                            "passed": True,
+                                            key: 1,
+                                        }
+                                    ],
+                                },
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
+
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        f"gate check key is invalid: {key}",
+                    ):
+                        release_manifest.report_summary(validation)
+
+    def test_report_summary_rejects_unexpected_gate_check_keys(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            validation = pathlib.Path(tmp) / "render-validation.json"
+            validation.write_text(
+                json.dumps(
+                    {
+                        "summary": {"documents": 1},
+                        "gate": {
+                            "passed": True,
+                            "checks": [
+                                {
+                                    "metric": "mean_recall",
+                                    "op": ">=",
+                                    "threshold": 0.9,
+                                    "actual": 1.0,
+                                    "passed": True,
+                                    "note": "extra",
+                                }
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "gate check key is invalid: note",
+            ):
+                release_manifest.report_summary(validation)
+
+    def test_report_summary_rejects_non_string_gate_check_fields(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            validation = pathlib.Path(tmp) / "render-validation.json"
+            validation.write_text(
+                json.dumps(
+                    {
+                        "summary": {"documents": 1},
+                        "gate": {
+                            "passed": True,
+                            "checks": [
+                                {
+                                    "metric": 1,
+                                    "op": ">=",
+                                    "threshold": 0.9,
+                                    "actual": 1.0,
+                                    "passed": True,
+                                }
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "gate check metric is not a string"):
+                release_manifest.report_summary(validation)
+
+    def test_report_summary_rejects_empty_or_padded_gate_check_metrics(self):
+        for metric in ("", " mean_recall", "mean recall", "\u8a08"):
+            with self.subTest(metric=metric):
+                with tempfile.TemporaryDirectory() as tmp:
+                    validation = pathlib.Path(tmp) / "render-validation.json"
+                    validation.write_text(
+                        json.dumps(
+                            {
+                                "summary": {"documents": 1},
+                                "gate": {
+                                    "passed": True,
+                                    "checks": [
+                                        {
+                                            "metric": metric,
+                                            "op": ">=",
+                                            "threshold": 0.9,
+                                            "actual": 1.0,
+                                            "passed": True,
+                                        }
+                                    ],
+                                },
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
+
+                    with self.assertRaisesRegex(ValueError, "gate check metric is invalid"):
+                        release_manifest.report_summary(validation)
+
+    def test_report_summary_rejects_duplicate_gate_check_metric_operator(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            validation = pathlib.Path(tmp) / "render-validation.json"
+            validation.write_text(
+                json.dumps(
+                    {
+                        "summary": {"documents": 1},
+                        "gate": {
+                            "passed": True,
+                            "checks": [
+                                {
+                                    "metric": "mean_recall",
+                                    "op": ">=",
+                                    "threshold": 0.9,
+                                    "actual": 1.0,
+                                    "passed": True,
+                                },
+                                {
+                                    "metric": "mean_recall",
+                                    "op": ">=",
+                                    "threshold": 0.95,
+                                    "actual": 1.0,
+                                    "passed": True,
+                                },
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "duplicate gate check: mean_recall >="):
+                release_manifest.report_summary(validation)
+
+    def test_report_summary_rejects_unsupported_gate_check_operator(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            validation = pathlib.Path(tmp) / "render-validation.json"
+            validation.write_text(
+                json.dumps(
+                    {
+                        "summary": {"documents": 1},
+                        "gate": {
+                            "passed": True,
+                            "checks": [
+                                {
+                                    "metric": "mean_recall",
+                                    "op": "==",
+                                    "threshold": 0.9,
+                                    "actual": 1.0,
+                                    "passed": True,
+                                }
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "unsupported gate check operator: =="):
+                release_manifest.report_summary(validation)
+
+    def test_report_summary_rejects_non_numeric_gate_check_values(self):
+        for field in ("threshold", "actual"):
+            with self.subTest(field=field):
+                with tempfile.TemporaryDirectory() as tmp:
+                    validation = pathlib.Path(tmp) / "render-validation.json"
+                    check = {
+                        "metric": "mean_recall",
+                        "op": ">=",
+                        "threshold": 0.9,
+                        "actual": 1.0,
+                        "passed": True,
+                    }
+                    check[field] = "0.9"
+                    validation.write_text(
+                        json.dumps(
+                            {
+                                "summary": {"documents": 1},
+                                "gate": {"passed": True, "checks": [check]},
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
+
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        f"gate check {field} is not a finite number",
+                    ):
+                        release_manifest.report_summary(validation)
+
+    def test_report_summary_accepts_null_gate_check_actual(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            validation = pathlib.Path(tmp) / "render-validation.json"
+            validation.write_text(
+                json.dumps(
+                    {
+                        "summary": {"documents": 0},
+                        "gate": {
+                            "passed": False,
+                            "checks": [
+                                {
+                                    "metric": "mean_recall",
+                                    "op": ">=",
+                                    "threshold": 0.9,
+                                    "actual": None,
+                                    "passed": False,
+                                }
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = release_manifest.report_summary(validation)
+
+        self.assertIsNone(report["gate"]["checks"][0]["actual"])
+
+    def test_report_summary_rejects_passed_gate_with_failed_check(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            validation = pathlib.Path(tmp) / "render-validation.json"
+            validation.write_text(
+                json.dumps(
+                    {
+                        "summary": {"documents": 1},
+                        "gate": {
+                            "passed": True,
+                            "checks": [
+                                {
+                                    "metric": "mean_recall",
+                                    "op": ">=",
+                                    "threshold": 0.9,
+                                    "actual": 0.5,
+                                    "passed": False,
+                                }
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "gate passed with failed checks"):
+                release_manifest.report_summary(validation)
+
+    def test_report_summary_rejects_failed_gate_without_failed_checks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            validation = pathlib.Path(tmp) / "render-validation.json"
+            validation.write_text(
+                json.dumps(
+                    {
+                        "summary": {"documents": 1},
+                        "gate": {
+                            "passed": False,
+                            "checks": [
+                                {
+                                    "metric": "mean_recall",
+                                    "op": ">=",
+                                    "threshold": 0.9,
+                                    "actual": 1.0,
+                                    "passed": True,
+                                }
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "gate failed without failed checks"):
+                release_manifest.report_summary(validation)
+
     def test_cli_writes_manifest_json(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
@@ -241,6 +1166,43 @@ class ReleaseManifestTests(unittest.TestCase):
                 "warning_counts": {"UnsupportedFieldEvaluation": 1},
             },
         )
+
+    def test_cli_rejects_non_finite_manifest_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            artifact = root / "rdoc.tar.gz"
+            validation = root / "render-validation.json"
+            output = root / "manifest.json"
+            artifact.write_bytes(b"release artifact")
+            validation.write_text(
+                json.dumps(
+                    {
+                        "summary": {"documents": 1, "mean_recall": float("nan")},
+                        "gate": {"passed": True, "checks": []},
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--validation-report",
+                    str(validation),
+                    "--output",
+                    str(output),
+                    str(artifact),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertFalse(output.exists())
+
+        self.assertEqual(completed.returncode, 2)
+        self.assertIn("summary contains non-finite value", completed.stderr)
 
     def test_manifest_embeds_public_corpus_manifest_summaries_without_rows(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -309,6 +1271,395 @@ class ReleaseManifestTests(unittest.TestCase):
         )
         self.assertNotIn("rows", manifest["corpus_manifests"][0])
 
+    def test_manifest_rejects_negative_public_corpus_counts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            corpus.write_text(
+                "# path\tfields\twarnings\nsynthetic/fields.docx\t-1\t-\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "negative numeric value for fields",
+            ):
+                release_manifest.corpus_manifest_summary(corpus)
+
+    def test_manifest_rejects_non_numeric_public_corpus_counts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            corpus.write_text(
+                "# path\tfields\twarnings\nsynthetic/fields.docx\tmany\t-\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "non-numeric value for fields: many",
+            ):
+                release_manifest.corpus_manifest_summary(corpus)
+
+    def test_manifest_rejects_signed_positive_public_corpus_counts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            corpus.write_text(
+                "# path\tfields\twarnings\nsynthetic/fields.docx\t+1\t-\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "non-canonical numeric value for fields: \\+1",
+            ):
+                release_manifest.corpus_manifest_summary(corpus)
+
+    def test_manifest_rejects_whitespace_public_corpus_counts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            corpus.write_text(
+                "# path\tfields\twarnings\nsynthetic/fields.docx\t 1\t-\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "whitespace-padded numeric value for fields:  1",
+            ):
+                release_manifest.corpus_manifest_summary(corpus)
+
+    def test_manifest_rejects_duplicate_public_corpus_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            corpus.write_text(
+                "\n".join(
+                    [
+                        "# path\tfields\twarnings",
+                        "synthetic/fields.docx\t1\t-",
+                        "synthetic/fields.docx\t2\t-",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "duplicate document path: synthetic/fields.docx",
+            ):
+                release_manifest.corpus_manifest_summary(corpus)
+
+    def test_manifest_rejects_unsafe_public_corpus_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            corpus.write_text(
+                "# path\tfields\twarnings\n../private/source.docx\t1\t-\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "unsafe document path: ../private/source.docx",
+            ):
+                release_manifest.corpus_manifest_summary(corpus)
+
+    def test_manifest_rejects_whitespace_public_corpus_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            corpus.write_text(
+                "# path\tfields\twarnings\nsynthetic/fields.docx \t1\t-\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "whitespace-padded document path: synthetic/fields.docx ",
+            ):
+                release_manifest.corpus_manifest_summary(corpus)
+
+    def test_manifest_rejects_non_canonical_public_corpus_paths(self):
+        for document_path in ("synthetic/private source.docx", "synthetic/\u6587\u66f8.docx"):
+            with self.subTest(document_path=document_path):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = pathlib.Path(tmp)
+                    corpus = root / "MANIFEST.tsv"
+                    corpus.write_text(
+                        f"# path\tfields\twarnings\n{document_path}\t1\t-\n",
+                        encoding="utf-8",
+                    )
+
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        f"unsafe document path: {document_path}",
+                    ):
+                        release_manifest.corpus_manifest_summary(corpus)
+
+    def test_manifest_rejects_duplicate_public_corpus_columns(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            corpus.write_text(
+                "# path\tfields\tfields\twarnings\nsynthetic/fields.docx\t1\t2\t-\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "duplicate TSV column: fields",
+            ):
+                release_manifest.corpus_manifest_summary(corpus)
+
+    def test_manifest_rejects_empty_public_corpus_columns(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            corpus.write_text(
+                "# path\t\twarnings\nsynthetic/fields.docx\t1\t-\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "empty TSV column",
+            ):
+                release_manifest.corpus_manifest_summary(corpus)
+
+    def test_manifest_rejects_missing_public_corpus_warnings_column(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            corpus.write_text(
+                "# path\tfields\nsynthetic/fields.docx\t1\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "missing required TSV column: warnings",
+            ):
+                release_manifest.corpus_manifest_summary(corpus)
+
+    def test_manifest_rejects_missing_public_corpus_count_columns(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            corpus.write_text(
+                "# path\twarnings\nsynthetic/fields.docx\t-\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "missing TSV count columns",
+            ):
+                release_manifest.corpus_manifest_summary(corpus)
+
+    def test_manifest_rejects_whitespace_public_corpus_columns(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            corpus.write_text(
+                "# path\t fields\twarnings\nsynthetic/fields.docx\t1\t-\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "whitespace-padded TSV column:  fields",
+            ):
+                release_manifest.corpus_manifest_summary(corpus)
+
+    def test_manifest_rejects_non_canonical_public_corpus_columns(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            corpus.write_text(
+                "# path\tfield count\twarnings\nsynthetic/fields.docx\t1\t-\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "non-canonical TSV column: field count",
+            ):
+                release_manifest.corpus_manifest_summary(corpus)
+
+    def test_manifest_rejects_trailing_whitespace_public_corpus_columns(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            corpus.write_text(
+                "# path\tfields\twarnings \nsynthetic/fields.docx\t1\t-\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "whitespace-padded TSV column: warnings ",
+            ):
+                release_manifest.corpus_manifest_summary(corpus)
+
+    def test_manifest_rejects_repeated_public_corpus_header_rows(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            corpus.write_text(
+                "# path\tfields\twarnings\npath\tfields\twarnings\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "repeated TSV header row",
+            ):
+                release_manifest.corpus_manifest_summary(corpus)
+
+    def test_manifest_rejects_repeated_commented_public_corpus_header_rows(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            corpus.write_text(
+                "# path\tfields\twarnings\n# path\tfields\twarnings\nsynthetic/a.docx\t0\t-\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "repeated TSV header row",
+            ):
+                release_manifest.corpus_manifest_summary(corpus)
+
+    def test_manifest_rejects_indented_commented_repeated_public_corpus_header_rows(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            corpus.write_text(
+                "# path\tfields\twarnings\n  # path\tfields\twarnings\nsynthetic/a.docx\t0\t-\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "repeated TSV header row",
+            ):
+                release_manifest.corpus_manifest_summary(corpus)
+
+    def test_manifest_rejects_empty_public_corpus_rows(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            corpus.write_text("# path\tfields\twarnings\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "does not contain document rows",
+            ):
+                release_manifest.corpus_manifest_summary(corpus)
+
+    def test_manifest_rejects_duplicate_public_corpus_warning_tokens(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            corpus.write_text(
+                "# path\tfields\twarnings\n"
+                "synthetic/fields.docx\t1\tUnsupportedFieldEvaluation|UnsupportedFieldEvaluation\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "duplicate warning token: UnsupportedFieldEvaluation",
+            ):
+                release_manifest.corpus_manifest_summary(corpus)
+
+    def test_manifest_rejects_empty_public_corpus_warning_tokens(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            corpus.write_text(
+                "# path\tfields\twarnings\n"
+                "synthetic/fields.docx\t1\tUnsupportedFieldEvaluation|\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "empty warning token",
+            ):
+                release_manifest.corpus_manifest_summary(corpus)
+
+    def test_manifest_rejects_whitespace_public_corpus_warning_tokens(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            corpus.write_text(
+                "# path\tfields\twarnings\n"
+                "synthetic/fields.docx\t1\t UnsupportedFieldEvaluation\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "whitespace-padded warning token:  UnsupportedFieldEvaluation",
+            ):
+                release_manifest.corpus_manifest_summary(corpus)
+
+    def test_manifest_rejects_non_canonical_public_corpus_warning_tokens(self):
+        for warning in ("Unsupported Field", "\u8b66\u544a"):
+            with self.subTest(warning=warning):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = pathlib.Path(tmp)
+                    corpus = root / "MANIFEST.tsv"
+                    corpus.write_text(
+                        "# path\tfields\twarnings\n"
+                        f"synthetic/fields.docx\t1\t{warning}\n",
+                        encoding="utf-8",
+                    )
+
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        f"non-canonical warning token: {warning}",
+                    ):
+                        release_manifest.corpus_manifest_summary(corpus)
+
+    def test_manifest_rejects_trailing_public_corpus_warning_token_whitespace(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            corpus.write_text(
+                "# path\tfields\twarnings\n"
+                "synthetic/fields.docx\t1\tUnsupportedFieldEvaluation \n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "whitespace-padded warning token",
+            ):
+                release_manifest.corpus_manifest_summary(corpus)
+
+    def test_manifest_rejects_mixed_public_corpus_warning_sentinel(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            corpus.write_text(
+                "# path\tfields\twarnings\n"
+                "synthetic/fields.docx\t1\t-|UnsupportedFieldEvaluation\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "invalid warning token: -",
+            ):
+                release_manifest.corpus_manifest_summary(corpus)
+
     def test_manifest_embeds_named_release_policy(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
@@ -359,6 +1710,7 @@ class ReleaseManifestTests(unittest.TestCase):
             manifest["release_evidence"],
             {
                 "policy": "public-release",
+                "strict_policy_status": "missing_inputs",
                 "strict_policy_enforced": False,
                 "strict_policy_inputs_complete": False,
                 "strict_missing": [
@@ -402,8 +1754,63 @@ class ReleaseManifestTests(unittest.TestCase):
             manifest = json.loads(output.read_text(encoding="utf-8"))
 
         self.assertEqual(manifest["release_policy"]["name"], "public-release")
+        self.assertEqual(
+            manifest["release_evidence"]["strict_policy_status"],
+            "missing_inputs",
+        )
         self.assertFalse(manifest["release_evidence"]["strict_policy_enforced"])
         self.assertFalse(manifest["release_evidence"]["strict_policy_inputs_complete"])
+
+    def test_release_evidence_status_names_complete_unenforced_inputs(self):
+        evidence = release_manifest.release_evidence_summary(
+            "public-release",
+            enforce_policy_inputs=False,
+            hygiene_report=pathlib.Path("public-hygiene.json"),
+            validation_report=pathlib.Path("render-validation.json"),
+            benchmark_reports=[pathlib.Path("extract-benchmark.json")],
+            corpus_manifests=[
+                pathlib.Path("MANIFEST.tsv"),
+                pathlib.Path("RENDER_MANIFEST.tsv"),
+            ],
+        )
+
+        self.assertEqual(
+            evidence["strict_policy_status"],
+            "inputs_complete_not_enforced",
+        )
+        self.assertFalse(evidence["strict_policy_enforced"])
+        self.assertTrue(evidence["strict_policy_inputs_complete"])
+        self.assertEqual(evidence["strict_missing"], [])
+
+    def test_release_evidence_marks_mismatched_corpus_manifest_paths_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            render_corpus = root / "RENDER_MANIFEST.tsv"
+            corpus.write_text(
+                "# path\tfields\twarnings\nsynthetic/a.docx\t0\t-\n",
+                encoding="utf-8",
+            )
+            render_corpus.write_text(
+                "# path\tpages\twarnings\nsynthetic/b.docx\t1\t-\n",
+                encoding="utf-8",
+            )
+
+            evidence = release_manifest.release_evidence_summary(
+                "public-release",
+                enforce_policy_inputs=False,
+                hygiene_report=pathlib.Path("public-hygiene.json"),
+                validation_report=pathlib.Path("render-validation.json"),
+                benchmark_reports=[pathlib.Path("extract-benchmark.json")],
+                corpus_manifests=[corpus, render_corpus],
+            )
+
+        self.assertEqual(evidence["strict_policy_status"], "missing_inputs")
+        self.assertFalse(evidence["strict_policy_inputs_complete"])
+        self.assertEqual(
+            evidence["strict_missing"],
+            ["matching public corpus manifest documents"],
+        )
 
     def test_enforced_public_release_policy_requires_local_reports(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -418,6 +1825,21 @@ class ReleaseManifestTests(unittest.TestCase):
                 release_manifest.release_manifest(
                     [artifact],
                     release_policy="public-release",
+                    enforce_policy_inputs=True,
+                )
+
+    def test_enforced_policy_inputs_requires_release_policy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            artifact = root / "rdoc.tar.gz"
+            artifact.write_bytes(b"release artifact")
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "enforce_policy_inputs requires release policy",
+            ):
+                release_manifest.release_manifest(
+                    [artifact],
                     enforce_policy_inputs=True,
                 )
 
@@ -529,6 +1951,32 @@ class ReleaseManifestTests(unittest.TestCase):
                     validation_report=validation,
                     benchmark_reports=[benchmark],
                     corpus_manifests=[corpus, render_corpus, extra_corpus],
+                )
+
+    def test_enforced_public_release_policy_requires_matching_corpus_manifest_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            corpus = root / "MANIFEST.tsv"
+            render_corpus = root / "RENDER_MANIFEST.tsv"
+            corpus.write_text(
+                "# path\tfields\twarnings\nsynthetic/a.docx\t0\t-\n",
+                encoding="utf-8",
+            )
+            render_corpus.write_text(
+                "# path\tpages\twarnings\nsynthetic/b.docx\t1\t-\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "requires matching corpus manifest document paths",
+            ):
+                release_manifest.check_required_policy_inputs(
+                    "public-release",
+                    hygiene_report=pathlib.Path("public-hygiene.json"),
+                    validation_report=pathlib.Path("render-validation.json"),
+                    benchmark_reports=[pathlib.Path("extract-benchmark.json")],
+                    corpus_manifests=[corpus, render_corpus],
                 )
 
     def test_cli_enforced_policy_rejects_failing_gate_report(self):
@@ -713,6 +2161,7 @@ class ReleaseManifestTests(unittest.TestCase):
                         "summary": {
                             "documents": 1,
                             "recall_min": 0.97,
+                            "below_recall_min": 0,
                             "mean_recall": 0.97,
                             "skipped": 0,
                         },
@@ -794,6 +2243,345 @@ class ReleaseManifestTests(unittest.TestCase):
                     benchmark_reports=[benchmark],
                     corpus_manifests=[corpus, render_corpus],
                 )
+
+    def test_enforced_public_release_policy_rejects_weak_benchmark_summary(self):
+        report = {
+            "summary": {"poi_recall_mean": 0.5, "poi_f1_mean": 1.0, "errors": 0},
+            "gate": {
+                "passed": True,
+                "checks": [
+                    {
+                        "metric": "poi_recall_mean",
+                        "op": ">=",
+                        "threshold": 0.95,
+                        "actual": 0.99,
+                        "passed": True,
+                    },
+                    {
+                        "metric": "poi_f1_mean",
+                        "op": ">=",
+                        "threshold": 0.95,
+                        "actual": 1.0,
+                        "passed": True,
+                    },
+                    {
+                        "metric": "errors",
+                        "op": "<=",
+                        "threshold": 0,
+                        "actual": 0,
+                        "passed": True,
+                    },
+                ],
+            },
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "public-release benchmark report summary poi_recall_mean must be at least 0.95",
+        ):
+            release_manifest.require_public_release_report_thresholds(
+                "public-release",
+                report,
+                "benchmark",
+            )
+
+    def test_enforced_public_release_policy_rejects_weak_validation_summary(self):
+        report = {
+            "summary": {
+                "recall_min": 0.97,
+                "below_recall_min": 0,
+                "mean_recall": 0.5,
+                "skipped": 0,
+            },
+            "gate": {
+                "passed": True,
+                "checks": [
+                    {
+                        "metric": "below_recall_min",
+                        "op": "<=",
+                        "threshold": 0,
+                        "actual": 0,
+                        "passed": True,
+                    },
+                    {
+                        "metric": "mean_recall",
+                        "op": ">=",
+                        "threshold": 0.9,
+                        "actual": 0.99,
+                        "passed": True,
+                    },
+                    {
+                        "metric": "skipped",
+                        "op": "<=",
+                        "threshold": 0,
+                        "actual": 0,
+                        "passed": True,
+                    },
+                ],
+            },
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "public-release validation report summary mean_recall must be at least 0.9",
+        ):
+            release_manifest.require_public_release_report_thresholds(
+                "public-release",
+                report,
+                "validation",
+            )
+
+    def test_enforced_public_release_policy_rejects_boolean_summary_metric(self):
+        report = {
+            "summary": {"poi_recall_mean": True},
+            "gate": {"passed": True, "checks": []},
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "public-release benchmark report summary poi_recall_mean must be at least 0.95",
+        ):
+            release_manifest.require_summary_threshold_at_least(
+                "public-release",
+                report,
+                "benchmark",
+                "poi_recall_mean",
+                0.95,
+            )
+
+    def test_enforced_public_release_policy_rejects_negative_summary_count_metric(self):
+        report = {
+            "summary": {"skipped": -1},
+            "gate": {"passed": True, "checks": []},
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "public-release validation report summary skipped must not be negative",
+        ):
+            release_manifest.require_summary_threshold_at_most(
+                "public-release",
+                report,
+                "validation",
+                "skipped",
+                0,
+            )
+
+    def test_enforced_public_release_policy_rejects_summary_score_above_one(self):
+        report = {
+            "summary": {"mean_recall": 1.1},
+            "gate": {"passed": True, "checks": []},
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "public-release validation report summary mean_recall must not be above one",
+        ):
+            release_manifest.require_summary_threshold_at_least(
+                "public-release",
+                report,
+                "validation",
+                "mean_recall",
+                0.9,
+            )
+
+    def test_enforced_public_release_policy_rejects_boolean_gate_threshold(self):
+        report = {
+            "summary": {"documents": 1, "recall_min": 0.97, "mean_recall": 1.0},
+            "gate": {
+                "passed": True,
+                "checks": [
+                    {
+                        "metric": "mean_recall",
+                        "op": ">=",
+                        "threshold": True,
+                        "actual": True,
+                        "passed": True,
+                    }
+                ],
+            },
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "public-release validation report gate must include mean_recall >= 0.9",
+        ):
+            release_manifest.require_gate_check_threshold(
+                "public-release",
+                report,
+                "validation",
+                "mean_recall",
+                ">=",
+                0.9,
+            )
+
+    def test_enforced_public_release_policy_rejects_negative_gate_count_threshold(self):
+        report = {
+            "summary": {"documents": 1, "recall_min": 0.97, "skipped": 0},
+            "gate": {
+                "passed": True,
+                "checks": [
+                    {
+                        "metric": "skipped",
+                        "op": "<=",
+                        "threshold": -1,
+                        "actual": 0,
+                        "passed": True,
+                    }
+                ],
+            },
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "public-release validation report gate check threshold must not be negative: skipped",
+        ):
+            release_manifest.require_gate_check_threshold(
+                "public-release",
+                report,
+                "validation",
+                "skipped",
+                "<=",
+                0,
+            )
+
+    def test_enforced_public_release_policy_rejects_negative_gate_count_actual(self):
+        report = {
+            "summary": {"documents": 1, "recall_min": 0.97, "skipped": -1},
+            "gate": {
+                "passed": True,
+                "checks": [
+                    {
+                        "metric": "skipped",
+                        "op": "<=",
+                        "threshold": 0,
+                        "actual": -1,
+                        "passed": True,
+                    }
+                ],
+            },
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "public-release validation report gate check actual must not be negative: skipped",
+        ):
+            release_manifest.require_gate_check_threshold(
+                "public-release",
+                report,
+                "validation",
+                "skipped",
+                "<=",
+                0,
+            )
+
+    def test_enforced_public_release_policy_rejects_gate_score_threshold_above_one(self):
+        report = {
+            "summary": {"documents": 1, "recall_min": 0.97, "mean_recall": 1.0},
+            "gate": {
+                "passed": True,
+                "checks": [
+                    {
+                        "metric": "mean_recall",
+                        "op": ">=",
+                        "threshold": 1.1,
+                        "actual": 1.0,
+                        "passed": True,
+                    }
+                ],
+            },
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "public-release validation report gate check threshold must not be above one: mean_recall",
+        ):
+            release_manifest.require_gate_check_threshold(
+                "public-release",
+                report,
+                "validation",
+                "mean_recall",
+                ">=",
+                0.9,
+            )
+
+    def test_enforced_public_release_policy_rejects_gate_score_actual_above_one(self):
+        report = {
+            "summary": {"documents": 1, "recall_min": 0.97, "mean_recall": 1.1},
+            "gate": {
+                "passed": True,
+                "checks": [
+                    {
+                        "metric": "mean_recall",
+                        "op": ">=",
+                        "threshold": 0.9,
+                        "actual": 1.1,
+                        "passed": True,
+                    }
+                ],
+            },
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "public-release validation report gate check actual must not be above one: mean_recall",
+        ):
+            release_manifest.require_gate_check_threshold(
+                "public-release",
+                report,
+                "validation",
+                "mean_recall",
+                ">=",
+                0.9,
+            )
+
+    def test_enforced_public_release_policy_rejects_nan_summary_metric(self):
+        report = {
+            "summary": {"poi_recall_mean": float("nan")},
+            "gate": {"passed": True, "checks": []},
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "public-release benchmark report summary poi_recall_mean must be at least 0.95",
+        ):
+            release_manifest.require_summary_threshold_at_least(
+                "public-release",
+                report,
+                "benchmark",
+                "poi_recall_mean",
+                0.95,
+            )
+
+    def test_enforced_public_release_policy_rejects_infinite_gate_actual(self):
+        report = {
+            "summary": {"documents": 1, "recall_min": 0.97, "mean_recall": 1.0},
+            "gate": {
+                "passed": True,
+                "checks": [
+                    {
+                        "metric": "mean_recall",
+                        "op": ">=",
+                        "threshold": 0.9,
+                        "actual": float("inf"),
+                        "passed": True,
+                    }
+                ],
+            },
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "public-release validation report gate check actual failed policy threshold: mean_recall >= 0.9",
+        ):
+            release_manifest.require_gate_check_threshold(
+                "public-release",
+                report,
+                "validation",
+                "mean_recall",
+                ">=",
+                0.9,
+            )
 
     def test_enforced_public_release_policy_rejects_failed_policy_threshold_check(self):
         report = {
@@ -881,6 +2669,7 @@ class ReleaseManifestTests(unittest.TestCase):
                         "summary": {
                             "documents": 1,
                             "recall_min": 0.97,
+                            "below_recall_min": 0,
                             "mean_recall": 0.97,
                             "skipped": 0,
                         },
@@ -971,6 +2760,7 @@ class ReleaseManifestTests(unittest.TestCase):
             manifest["release_evidence"],
             {
                 "policy": "public-release",
+                "strict_policy_status": "enforced",
                 "strict_policy_enforced": True,
                 "strict_policy_inputs_complete": True,
                 "strict_missing": [],

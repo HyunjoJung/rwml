@@ -76,6 +76,178 @@ class PublicHygieneAuditTests(unittest.TestCase):
             ],
         )
 
+    def test_text_audit_flags_forward_slash_windows_home_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            doc = root / "README.md"
+            doc.write_text(
+                "path=C:" + "/Users/" + "alice/Documents/private.doc\n",
+                encoding="utf-8",
+            )
+
+            with audit_root(root):
+                findings = public_hygiene_audit.audit_text_file(doc)
+
+        self.assertEqual(
+            [(finding.line, finding.kind) for finding in findings],
+            [(1, "windows_home_path")],
+        )
+
+    def test_text_audit_flags_generic_windows_drive_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            doc = root / "README.md"
+            doc.write_text(
+                "path=D:" + "\\build\\private.doc\n",
+                encoding="utf-8",
+            )
+
+            with audit_root(root):
+                findings = public_hygiene_audit.audit_text_file(doc)
+
+        self.assertEqual(
+            [(finding.line, finding.kind) for finding in findings],
+            [(1, "windows_drive_path")],
+        )
+
+    def test_text_audit_flags_windows_unc_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            doc = root / "README.md"
+            unc_path = "\\\\" + "buildhost\\share\\private.doc"
+            doc.write_text("path=" + unc_path + "\n", encoding="utf-8")
+
+            with audit_root(root):
+                findings = public_hygiene_audit.audit_text_file(doc)
+
+        self.assertEqual(
+            [(finding.line, finding.kind) for finding in findings],
+            [(1, "windows_unc_path")],
+        )
+
+    def test_text_audit_does_not_flag_escaped_markdown_literals_as_unc_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            doc = root / "README.md"
+            text = "literal=\"Cover" + "\\n\\n" + "\\\\pagebreak" + "\\n\\nDetail\""
+            doc.write_text(text + "\n", encoding="utf-8")
+
+            with audit_root(root):
+                findings = public_hygiene_audit.audit_text_file(doc)
+
+        self.assertEqual(findings, [])
+
+    def test_text_audit_flags_windows_profile_env_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            doc = root / "README.md"
+            doc.write_text(
+                "path=%" + "USERPROFILE" + "%\\Documents\\private.doc\n",
+                encoding="utf-8",
+            )
+
+            with audit_root(root):
+                findings = public_hygiene_audit.audit_text_file(doc)
+
+        self.assertEqual(
+            [(finding.line, finding.kind) for finding in findings],
+            [(1, "windows_profile_env_path")],
+        )
+
+    def test_text_audit_flags_windows_appdata_env_paths(self):
+        for env in ("APPDATA", "LOCALAPPDATA"):
+            with self.subTest(env=env):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = pathlib.Path(tmp)
+                    doc = root / "README.md"
+                    doc.write_text(
+                        "path=%" + env + "%\\Vendor\\private.doc\n",
+                        encoding="utf-8",
+                    )
+
+                    with audit_root(root):
+                        findings = public_hygiene_audit.audit_text_file(doc)
+
+                self.assertEqual(
+                    [(finding.line, finding.kind) for finding in findings],
+                    [(1, "windows_profile_env_path")],
+                )
+
+    def test_text_audit_flags_powershell_profile_env_paths(self):
+        for env in ("USERPROFILE", "APPDATA", "LOCALAPPDATA"):
+            with self.subTest(env=env):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = pathlib.Path(tmp)
+                    doc = root / "README.md"
+                    doc.write_text(
+                        "path=$" + "env:" + env + "\\Vendor\\private.doc\n",
+                        encoding="utf-8",
+                    )
+
+                    with audit_root(root):
+                        findings = public_hygiene_audit.audit_text_file(doc)
+
+                self.assertEqual(
+                    [(finding.line, finding.kind) for finding in findings],
+                    [(1, "powershell_profile_env_path")],
+                )
+
+    def test_text_audit_flags_shell_home_paths(self):
+        for home_path in (
+            "$" + "HOME" + "/private.doc",
+            "${" + "HOME" + "}/private.doc",
+        ):
+            with self.subTest(home_path=home_path):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = pathlib.Path(tmp)
+                    doc = root / "README.md"
+                    doc.write_text("path=" + home_path + "\n", encoding="utf-8")
+
+                    with audit_root(root):
+                        findings = public_hygiene_audit.audit_text_file(doc)
+
+                self.assertEqual(
+                    [(finding.line, finding.kind) for finding in findings],
+                    [(1, "shell_home_path")],
+                )
+
+    def test_text_audit_flags_common_private_key_headers(self):
+        for key_prefix in ("DSA ", "ENCRYPTED "):
+            with self.subTest(key_prefix=key_prefix):
+                with tempfile.TemporaryDirectory() as tmp:
+                    root = pathlib.Path(tmp)
+                    doc = root / "README.md"
+                    doc.write_text(
+                        "key=-----BEGIN " + key_prefix + "PRIVATE KEY-----\n",
+                        encoding="utf-8",
+                    )
+
+                    with audit_root(root):
+                        findings = public_hygiene_audit.audit_text_file(doc)
+
+                self.assertEqual(
+                    [(finding.line, finding.kind) for finding in findings],
+                    [(1, "private_key")],
+                )
+
+    def test_text_audit_flags_yaml_private_corpus_defaults(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            doc = root / ".github" / "workflows" / "release.yml"
+            doc.parent.mkdir(parents=True)
+            doc.write_text(
+                "RDOC_" + "RENDER_CORPUS" + ": corpus/private/render\n",
+                encoding="utf-8",
+            )
+
+            with audit_root(root):
+                findings = public_hygiene_audit.audit_text_file(doc)
+
+        self.assertEqual(
+            [(finding.line, finding.kind) for finding in findings],
+            [(1, "private_corpus_default")],
+        )
+
     def test_skip_policy_ignores_binary_suffixes_and_generated_dirs(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
@@ -283,6 +455,10 @@ class PublicHygieneAuditTests(unittest.TestCase):
         self.assertEqual(payload["schema"], "rdoc.public-hygiene-audit.v1")
         self.assertFalse(payload["passed"])
         self.assertEqual(payload["findings"], [finding.as_dict()])
+
+    def test_json_payload_rejects_non_finite_values(self):
+        with self.assertRaisesRegex(ValueError, "Out of range float values"):
+            public_hygiene_audit.json_payload({"score": float("nan")})
 
 
 if __name__ == "__main__":

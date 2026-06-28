@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import subprocess
 import sys
@@ -39,6 +40,16 @@ from pathlib import Path
 
 SCHEMA = "rdoc.benchmark-report.v1"
 BENCHMARK = "extract-vs-mature"
+COUNT_THRESHOLD_METRICS = {"errors", "scored"}
+SCORE_THRESHOLD_METRICS = {"poi_recall_mean", "poi_f1_mean", "lo_recall_mean"}
+
+
+def is_finite_number(value: object) -> bool:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+    )
 
 
 def clean_golden(s: str) -> str:
@@ -113,6 +124,14 @@ def add_threshold_check(
 ) -> None:
     if threshold is None:
         return
+    if not is_finite_number(threshold):
+        raise ValueError(f"non-finite threshold for {metric}: {threshold}")
+    if metric in COUNT_THRESHOLD_METRICS and threshold < 0:
+        raise ValueError(f"negative count threshold for {metric}: {threshold}")
+    if metric in SCORE_THRESHOLD_METRICS and threshold < 0:
+        raise ValueError(f"negative score threshold for {metric}: {threshold}")
+    if metric in SCORE_THRESHOLD_METRICS and threshold > 1:
+        raise ValueError(f"score threshold above one for {metric}: {threshold}")
     if actual is None:
         passed = False
     elif op == ">=":
@@ -182,6 +201,45 @@ def benchmark_report(
     git_rev: str | None = None,
     thresholds: dict | None = None,
 ) -> dict:
+    for label, value in (("version", version), ("git_rev", git_rev)):
+        if value is not None and not isinstance(value, str):
+            raise ValueError(f"{label} must be a string")
+        if value is not None and not value.strip():
+            raise ValueError(f"{label} must not be empty")
+        if value is not None and value != value.strip():
+            raise ValueError(f"{label} must not have surrounding whitespace")
+        if value is not None and any(char.isspace() for char in value):
+            raise ValueError(f"{label} must not contain whitespace")
+    for row in rows:
+        if "file" not in row:
+            raise ValueError("file is required")
+        file_name = row["file"]
+        if not isinstance(file_name, str):
+            raise ValueError("file must be a string")
+        if not file_name.strip():
+            raise ValueError("file must not be empty")
+        if file_name != file_name.strip():
+            raise ValueError(f"file must not have surrounding whitespace: {file_name}")
+        if "/" in file_name or "\\" in file_name:
+            raise ValueError(f"file path is invalid: {file_name}")
+        if "rdoc" in row and row["rdoc"] != "ERROR":
+            raise ValueError("rdoc marker is invalid")
+        for metric in (
+            "poi_recall",
+            "poi_prec",
+            "poi_f1",
+            "lo_recall",
+            "lo_prec",
+            "lo_f1",
+        ):
+            if row.get("rdoc") == "ERROR" and metric in row:
+                raise ValueError("error row has scores")
+            if metric in row and not is_finite_number(row[metric]):
+                raise ValueError(f"score is invalid: {metric}")
+            if metric in row and not 0 <= row[metric] <= 1:
+                raise ValueError(f"score is out of range: {metric}")
+        if row.get("rdoc") != "ERROR" and "poi_recall" not in row:
+            raise ValueError("row has no score or error marker")
     summary = benchmark_summary(rows)
     report = {
         "schema": SCHEMA,
@@ -200,7 +258,7 @@ def benchmark_report(
 
 
 def write_json_report(report: dict, output: Path | None) -> None:
-    payload = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
+    payload = json.dumps(report, ensure_ascii=False, indent=2, allow_nan=False) + "\n"
     if output is None:
         sys.stdout.write(payload)
     else:

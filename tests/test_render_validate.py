@@ -63,6 +63,107 @@ class RenderValidateReportTests(unittest.TestCase):
         )
         self.assertEqual(report["rows"][2]["reason"], "render failed")
 
+    def test_validation_report_rejects_document_paths(self):
+        row = render_validate.ValidationRow(
+            document="private" + "/sample.docx",
+            status="skip",
+            reason="render failed",
+        )
+
+        with self.assertRaisesRegex(ValueError, "document path is invalid"):
+            render_validate.validation_report([row], recall_min=0.8)
+
+    def test_validation_report_rejects_malformed_documents(self):
+        cases = [
+            (1, "document must be a string"),
+            ("", "document must not be empty"),
+            (" sample.docx", "document must not have surrounding whitespace"),
+        ]
+        for document, message in cases:
+            with self.subTest(document=document):
+                row = render_validate.ValidationRow(
+                    document=document,
+                    status="skip",
+                    reason="render failed",
+                )
+
+                try:
+                    render_validate.validation_report([row], recall_min=0.8)
+                except ValueError as exc:
+                    self.assertRegex(str(exc), message)
+                except Exception as exc:
+                    self.fail(
+                        f"expected ValueError, got {type(exc).__name__}: {exc}"
+                    )
+                else:
+                    self.fail("ValueError not raised")
+
+    def test_validation_report_rejects_invalid_status(self):
+        row = render_validate.ValidationRow(
+            document="sample.docx",
+            status="pending",
+            reason="render pending",
+        )
+
+        with self.assertRaisesRegex(ValueError, "status is invalid"):
+            render_validate.validation_report([row], recall_min=0.8)
+
+    def test_validation_report_rejects_non_numeric_metrics(self):
+        row = render_validate.ValidationRow(
+            document="sample.docx",
+            status="pass",
+            recall="1.0",
+        )
+
+        try:
+            render_validate.validation_report([row], recall_min=0.8)
+        except ValueError as exc:
+            self.assertRegex(str(exc), "metric is invalid: recall")
+        except Exception as exc:
+            self.fail(f"expected ValueError, got {type(exc).__name__}: {exc}")
+        else:
+            self.fail("ValueError not raised")
+
+    def test_validation_report_rejects_out_of_range_bounded_metrics(self):
+        row = render_validate.ValidationRow(
+            document="sample.docx",
+            status="pass",
+            recall=1.1,
+        )
+
+        with self.assertRaisesRegex(ValueError, "metric is out of range: recall"):
+            render_validate.validation_report([row], recall_min=0.8)
+
+    def test_validation_report_rejects_invalid_count_metrics(self):
+        row = render_validate.ValidationRow(
+            document="sample.docx",
+            status="pass",
+            render_warnings=-1,
+        )
+
+        with self.assertRaisesRegex(ValueError, "count is invalid: render_warnings"):
+            render_validate.validation_report([row], recall_min=0.8)
+
+    def test_validation_report_rejects_measured_skip_rows(self):
+        row = render_validate.ValidationRow(
+            document="sample.docx",
+            status="skip",
+            recall=1.0,
+            reason="render failed",
+        )
+
+        with self.assertRaisesRegex(ValueError, "skipped row has metrics"):
+            render_validate.validation_report([row], recall_min=0.8)
+
+    def test_validation_report_rejects_unmeasured_non_skip_rows(self):
+        row = render_validate.ValidationRow(
+            document="sample.docx",
+            status="pass",
+        )
+
+        with self.assertRaisesRegex(ValueError, "non-skip row is missing recall"):
+            render_validate.validation_report([row], recall_min=0.8)
+
     def test_validation_report_evaluates_release_thresholds(self):
         rows = [
             render_validate.ValidationRow(
@@ -119,6 +220,49 @@ class RenderValidateReportTests(unittest.TestCase):
         self.assertFalse(checks["mean_render_warnings"]["passed"])
         self.assertEqual(checks["skipped"]["actual"], 1)
         self.assertFalse(checks["skipped"]["passed"])
+
+    def test_validation_gate_rejects_non_finite_thresholds(self):
+        with self.assertRaisesRegex(ValueError, "non-finite threshold"):
+            render_validate.validation_gate(
+                {"below_recall_min": 0, "mean_recall": 1.0},
+                {"min_mean_recall": float("nan")},
+            )
+
+    def test_validation_gate_rejects_negative_count_thresholds(self):
+        with self.assertRaisesRegex(ValueError, "negative count threshold"):
+            render_validate.validation_gate({"skipped": 0}, {"max_skipped": -1})
+
+    def test_validation_gate_rejects_negative_score_thresholds(self):
+        with self.assertRaisesRegex(ValueError, "negative score threshold"):
+            render_validate.validation_gate(
+                {"below_recall_min": 0, "mean_recall": 1.0},
+                {"min_mean_recall": -0.1},
+            )
+
+    def test_validation_gate_rejects_bounded_score_thresholds_above_one(self):
+        with self.assertRaisesRegex(ValueError, "score threshold above one"):
+            render_validate.validation_gate(
+                {"below_recall_min": 0, "mean_recall": 1.0},
+                {"min_mean_recall": 1.1},
+            )
+
+    def test_validation_report_rejects_non_finite_recall_min(self):
+        with self.assertRaisesRegex(ValueError, "non-finite recall threshold"):
+            render_validate.validation_report([], recall_min=float("nan"))
+
+    def test_validation_report_rejects_negative_recall_min(self):
+        with self.assertRaisesRegex(ValueError, "negative recall threshold"):
+            render_validate.validation_report([], recall_min=-0.1)
+
+    def test_validation_report_rejects_recall_min_above_one(self):
+        with self.assertRaisesRegex(ValueError, "recall threshold above one"):
+            render_validate.validation_report([], recall_min=1.1)
+
+    def test_json_report_payload_rejects_non_finite_values(self):
+        with self.assertRaisesRegex(ValueError, "Out of range float values"):
+            render_validate.json_report_payload(
+                {"summary": {"mean_recall": float("nan")}}
+            )
 
 
 if __name__ == "__main__":

@@ -33,6 +33,7 @@ import argparse
 import copy
 import hashlib
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any
@@ -40,6 +41,8 @@ from typing import Any
 
 SCHEMA = "rdoc.release-manifest.v1"
 PUBLIC_RELEASE_CORPUS_MANIFESTS = ("MANIFEST.tsv", "RENDER_MANIFEST.tsv")
+COUNT_POLICY_METRICS = {"below_recall_min", "skipped", "errors"}
+BOUNDED_SCORE_POLICY_METRICS = {"recall_min", "mean_recall", "poi_recall_mean", "poi_f1_mean"}
 RELEASE_POLICIES: dict[str, dict[str, Any]] = {
     "public-release": {
         "name": "public-release",
@@ -94,14 +97,119 @@ def artifact_record(path: Path) -> dict[str, Any]:
     }
 
 
+def path_sort_key(path: Path) -> str:
+    return path.as_posix()
+
+
+def require_unique_paths(label: str, paths: list[Path] | None) -> None:
+    seen: set[Path] = set()
+    for path in paths or []:
+        key = path.resolve()
+        if key in seen:
+            raise ValueError(f"duplicate {label} path: {path.as_posix()}")
+        seen.add(key)
+
+
+def is_number(value: Any) -> bool:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(value)
+    )
+
+
 def report_summary(path: Path) -> dict[str, Any]:
     data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} does not contain a JSON object")
     summary = data.get("summary")
     if not isinstance(summary, dict):
         raise ValueError(f"{path} does not contain a JSON object field named 'summary'")
+    if not summary:
+        raise ValueError(f"{path} summary must not be empty")
+    for key in summary:
+        if not key or not key.isascii() or not key.isidentifier():
+            raise ValueError(f"{path} summary key is invalid: {key}")
+    try:
+        json.dumps(summary, allow_nan=False)
+    except ValueError as error:
+        raise ValueError(f"{path} summary contains non-finite value") from error
+    for key, value in summary.items():
+        if value is not None and not is_number(value):
+            raise ValueError(f"{path} summary value is invalid: {key}")
     report = {"path": path.as_posix(), "summary": summary}
     gate = data.get("gate")
-    if isinstance(gate, dict):
+    if gate is not None and not isinstance(gate, dict):
+        raise ValueError(f"{path} gate is not a JSON object")
+    if gate is not None:
+        gate_fields = ("passed", "checks")
+        for key in gate:
+            if (
+                not key
+                or not key.isascii()
+                or not key.isidentifier()
+                or key not in gate_fields
+            ):
+                raise ValueError(f"{path} gate key is invalid: {key}")
+        if not isinstance(gate.get("passed"), bool):
+            raise ValueError(f"{path} gate passed is not a boolean")
+        if not isinstance(gate.get("checks"), list):
+            raise ValueError(f"{path} gate checks is not a list")
+        if any(not isinstance(check, dict) for check in gate["checks"]):
+            raise ValueError(f"{path} gate check is not a JSON object")
+        gate_check_fields = ("metric", "op", "threshold", "actual", "passed")
+        seen_gate_checks: set[tuple[str, str]] = set()
+        for check in gate["checks"]:
+            for key in check:
+                if (
+                    not key
+                    or not key.isascii()
+                    or not key.isidentifier()
+                    or key not in gate_check_fields
+                ):
+                    raise ValueError(f"{path} gate check key is invalid: {key}")
+            for field in gate_check_fields:
+                if field not in check:
+                    raise ValueError(
+                        f"{path} gate check missing required field: {field}"
+                    )
+            if not isinstance(check["metric"], str):
+                raise ValueError(f"{path} gate check metric is not a string")
+            if (
+                not check["metric"]
+                or check["metric"] != check["metric"].strip()
+                or not check["metric"].isascii()
+                or not check["metric"].isidentifier()
+            ):
+                raise ValueError(f"{path} gate check metric is invalid")
+            if not isinstance(check["op"], str):
+                raise ValueError(f"{path} gate check op is not a string")
+            if check["op"] not in {">=", "<="}:
+                raise ValueError(f"{path} unsupported gate check operator: {check['op']}")
+            gate_check_key = (check["metric"], check["op"])
+            if gate_check_key in seen_gate_checks:
+                raise ValueError(
+                    f"{path} duplicate gate check: {check['metric']} {check['op']}"
+                )
+            seen_gate_checks.add(gate_check_key)
+            if not is_number(check["threshold"]):
+                raise ValueError(f"{path} gate check threshold is not a finite number")
+            if check["actual"] is not None and not is_number(check["actual"]):
+                raise ValueError(f"{path} gate check actual is not a finite number")
+        if any(not isinstance(check.get("passed"), bool) for check in gate["checks"]):
+            raise ValueError(f"{path} gate check passed is not a boolean")
+        if gate["passed"] and any(not check["passed"] for check in gate["checks"]):
+            raise ValueError(f"{path} gate passed with failed checks")
+        if (
+            not gate["passed"]
+            and gate["checks"]
+            and all(check["passed"] for check in gate["checks"])
+        ):
+            raise ValueError(f"{path} gate failed without failed checks")
+        try:
+            json.dumps(gate, allow_nan=False)
+        except ValueError as error:
+            raise ValueError(f"{path} gate contains non-finite value") from error
         report["gate"] = gate
     return report
 
@@ -116,12 +224,76 @@ def hygiene_summary(path: Path | None) -> dict[str, Any] | None:
     if path is None:
         return None
     data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} does not contain a JSON object")
     passed = data.get("passed")
     findings = data.get("findings")
     if not isinstance(passed, bool):
         raise ValueError(f"{path} does not contain a boolean field named 'passed'")
     if not isinstance(findings, list):
         raise ValueError(f"{path} does not contain a list field named 'findings'")
+    if any(not isinstance(finding, dict) for finding in findings):
+        raise ValueError(f"{path} hygiene finding is not an object")
+    if passed and findings:
+        raise ValueError(f"{path} cannot pass with hygiene findings")
+    if not passed and not findings:
+        raise ValueError(f"{path} cannot fail without hygiene findings")
+    finding_fields = ("path", "line", "kind", "detail")
+    seen_findings: set[tuple[str, int | None, str, str]] = set()
+    for finding in findings:
+        for field in finding_fields:
+            if field not in finding:
+                raise ValueError(
+                    f"{path} hygiene finding missing required field: {field}"
+                )
+        for field in finding:
+            if field not in finding_fields:
+                raise ValueError(f"{path} hygiene finding key is invalid: {field}")
+        if not isinstance(finding["path"], str):
+            raise ValueError(f"{path} hygiene finding path is invalid")
+        if not finding["path"] or finding["path"] != finding["path"].strip():
+            raise ValueError(f"{path} hygiene finding path is invalid")
+        if (
+            finding["path"].startswith(("/", "\\"))
+            or "\\" in finding["path"]
+            or (
+                len(finding["path"]) >= 3
+                and finding["path"][1] == ":"
+                and finding["path"][2] == "/"
+            )
+        ):
+            raise ValueError(f"{path} hygiene finding path is invalid")
+        if not (
+            finding["line"] is None
+            or (
+                isinstance(finding["line"], int)
+                and not isinstance(finding["line"], bool)
+                and finding["line"] > 0
+            )
+        ):
+            raise ValueError(f"{path} hygiene finding line is invalid")
+        if not isinstance(finding["kind"], str):
+            raise ValueError(f"{path} hygiene finding kind is invalid")
+        if (
+            not finding["kind"]
+            or finding["kind"] != finding["kind"].strip()
+            or not finding["kind"].isascii()
+            or not finding["kind"].isidentifier()
+        ):
+            raise ValueError(f"{path} hygiene finding kind is invalid")
+        if not isinstance(finding["detail"], str):
+            raise ValueError(f"{path} hygiene finding detail is invalid")
+        if not finding["detail"] or finding["detail"] != finding["detail"].strip():
+            raise ValueError(f"{path} hygiene finding detail is invalid")
+        finding_key = (
+            finding["path"],
+            finding["line"],
+            finding["kind"],
+            finding["detail"],
+        )
+        if finding_key in seen_findings:
+            raise ValueError(f"{path} duplicate hygiene finding")
+        seen_findings.add(finding_key)
     return {
         "path": path.as_posix(),
         "gate": {
@@ -132,7 +304,7 @@ def hygiene_summary(path: Path | None) -> dict[str, Any] | None:
 
 
 def benchmark_summaries(paths: list[Path] | None) -> list[dict[str, Any]]:
-    return [report_summary(path) for path in sorted(paths or [], key=lambda p: p.name)]
+    return [report_summary(path) for path in sorted(paths or [], key=path_sort_key)]
 
 
 def release_policy_summary(name: str | None) -> dict[str, Any] | None:
@@ -191,6 +363,10 @@ def public_release_policy_input_gaps(
         missing.append("corpus manifest")
     elif not public_release_corpus_manifest_pair_matches(corpus_manifests):
         missing.append("exact public corpus manifest pair")
+    elif all(path.is_file() for path in corpus_manifests) and not (
+        public_release_corpus_manifest_documents_match(corpus_manifests)
+    ):
+        missing.append("matching public corpus manifest documents")
     return missing
 
 
@@ -201,10 +377,19 @@ def public_release_corpus_manifest_pair_matches(corpus_manifests: list[Path]) ->
     )
 
 
+def public_release_corpus_manifest_documents_match(corpus_manifests: list[Path]) -> bool:
+    by_name = {path.name: path for path in corpus_manifests}
+    manifest_paths = corpus_manifest_document_paths(by_name["MANIFEST.tsv"])
+    render_manifest_paths = corpus_manifest_document_paths(by_name["RENDER_MANIFEST.tsv"])
+    return manifest_paths == render_manifest_paths
+
+
 def require_public_release_corpus_manifest_pair(name: str, corpus_manifests: list[Path]) -> None:
     required = " and ".join(PUBLIC_RELEASE_CORPUS_MANIFESTS)
     if not public_release_corpus_manifest_pair_matches(corpus_manifests):
         raise ValueError(f"{name} requires corpus manifests exactly {required}")
+    if not public_release_corpus_manifest_documents_match(corpus_manifests):
+        raise ValueError(f"{name} requires matching corpus manifest document paths")
 
 
 def require_report_gate_passed(policy: str, report: dict[str, Any], label: str) -> None:
@@ -231,6 +416,13 @@ def require_public_release_report_thresholds(
             "recall_min",
             thresholds["recall_min"],
         )
+        require_summary_threshold_at_most(
+            policy,
+            report,
+            label,
+            "below_recall_min",
+            0,
+        )
         require_gate_check_threshold(
             policy,
             report,
@@ -247,12 +439,26 @@ def require_public_release_report_thresholds(
             ">=",
             thresholds["min_mean_recall"],
         )
+        require_summary_threshold_at_least(
+            policy,
+            report,
+            label,
+            "mean_recall",
+            thresholds["min_mean_recall"],
+        )
         require_gate_check_threshold(
             policy,
             report,
             label,
             "skipped",
             "<=",
+            thresholds["max_skipped"],
+        )
+        require_summary_threshold_at_most(
+            policy,
+            report,
+            label,
+            "skipped",
             thresholds["max_skipped"],
         )
     elif label == "benchmark":
@@ -265,6 +471,13 @@ def require_public_release_report_thresholds(
             ">=",
             thresholds["min_poi_recall_mean"],
         )
+        require_summary_threshold_at_least(
+            policy,
+            report,
+            label,
+            "poi_recall_mean",
+            thresholds["min_poi_recall_mean"],
+        )
         require_gate_check_threshold(
             policy,
             report,
@@ -273,12 +486,26 @@ def require_public_release_report_thresholds(
             ">=",
             thresholds["min_poi_f1_mean"],
         )
+        require_summary_threshold_at_least(
+            policy,
+            report,
+            label,
+            "poi_f1_mean",
+            thresholds["min_poi_f1_mean"],
+        )
         require_gate_check_threshold(
             policy,
             report,
             label,
             "errors",
             "<=",
+            thresholds["max_errors"],
+        )
+        require_summary_threshold_at_most(
+            policy,
+            report,
+            label,
+            "errors",
             thresholds["max_errors"],
         )
 
@@ -294,9 +521,34 @@ def require_summary_threshold_at_least(
     if not isinstance(summary, dict):
         raise ValueError(f"{policy} {label} report does not contain a summary")
     actual = summary.get(metric)
-    if not isinstance(actual, (int, float)) or actual < minimum:
+    if metric in BOUNDED_SCORE_POLICY_METRICS and is_number(actual) and actual > 1:
+        raise ValueError(
+            f"{policy} {label} report summary {metric} must not be above one"
+        )
+    if not is_number(actual) or actual < minimum:
         raise ValueError(
             f"{policy} {label} report summary {metric} must be at least {minimum}"
+        )
+
+
+def require_summary_threshold_at_most(
+    policy: str,
+    report: dict[str, Any],
+    label: str,
+    metric: str,
+    maximum: float | int,
+) -> None:
+    summary = report.get("summary")
+    if not isinstance(summary, dict):
+        raise ValueError(f"{policy} {label} report does not contain a summary")
+    actual = summary.get(metric)
+    if metric in COUNT_POLICY_METRICS and is_number(actual) and actual < 0:
+        raise ValueError(
+            f"{policy} {label} report summary {metric} must not be negative"
+        )
+    if not is_number(actual) or actual > maximum:
+        raise ValueError(
+            f"{policy} {label} report summary {metric} must be at most {maximum}"
         )
 
 
@@ -318,8 +570,18 @@ def require_gate_check_threshold(
         if check.get("metric") != metric or check.get("op") != op:
             continue
         threshold = check.get("threshold")
-        if not isinstance(threshold, (int, float)):
+        if not is_number(threshold):
             continue
+        if metric in COUNT_POLICY_METRICS and threshold < 0:
+            raise ValueError(
+                f"{policy} {label} report gate check threshold must not be negative: "
+                f"{metric}"
+            )
+        if metric in BOUNDED_SCORE_POLICY_METRICS and threshold > 1:
+            raise ValueError(
+                f"{policy} {label} report gate check threshold must not be above one: "
+                f"{metric}"
+            )
         if (op == ">=" and threshold >= policy_threshold) or (
             op == "<=" and threshold <= policy_threshold
         ):
@@ -329,7 +591,17 @@ def require_gate_check_threshold(
                     f"{metric} {op} {policy_threshold}"
                 )
             actual = check.get("actual")
-            if not isinstance(actual, (int, float)) or not (
+            if metric in COUNT_POLICY_METRICS and is_number(actual) and actual < 0:
+                raise ValueError(
+                    f"{policy} {label} report gate check actual must not be negative: "
+                    f"{metric}"
+                )
+            if metric in BOUNDED_SCORE_POLICY_METRICS and is_number(actual) and actual > 1:
+                raise ValueError(
+                    f"{policy} {label} report gate check actual must not be above one: "
+                    f"{metric}"
+                )
+            if not is_number(actual) or not (
                 (op == ">=" and actual >= policy_threshold)
                 or (op == "<=" and actual <= policy_threshold)
             ):
@@ -344,37 +616,84 @@ def require_gate_check_threshold(
 
 
 def parse_manifest_header(line: str) -> list[str]:
-    trimmed = line.strip()
-    if trimmed.startswith("#"):
-        trimmed = trimmed[1:].strip()
-    return trimmed.split("\t")
+    if line.startswith("#"):
+        line = line[1:]
+        if line.startswith(" "):
+            line = line[1:]
+    return line.split("\t")
 
 
-def corpus_manifest_summary(path: Path) -> dict[str, Any]:
+def read_corpus_manifest(path: Path) -> tuple[list[str], list[list[str]]]:
     header: list[str] | None = None
     rows: list[list[str]] = []
+    seen_paths: set[str] = set()
     for line in path.read_text(encoding="utf-8").splitlines():
         trimmed = line.strip()
         if not trimmed:
             continue
         if header is None:
-            header = parse_manifest_header(trimmed)
+            header = parse_manifest_header(line)
             if not header or header[0] != "path":
                 raise ValueError(f"{path} does not start with a TSV path header")
+            seen_columns: set[str] = set()
+            for column in header:
+                if not column:
+                    raise ValueError(f"{path} has empty TSV column")
+                if column != column.strip():
+                    raise ValueError(f"{path} has whitespace-padded TSV column: {column}")
+                if not column.isascii() or not column.isidentifier():
+                    raise ValueError(f"{path} has non-canonical TSV column: {column}")
+                if column in seen_columns:
+                    raise ValueError(f"{path} has duplicate TSV column: {column}")
+                seen_columns.add(column)
+            if "warnings" not in seen_columns:
+                raise ValueError(f"{path} missing required TSV column: warnings")
+            if not any(column not in {"path", "warnings"} for column in seen_columns):
+                raise ValueError(f"{path} missing TSV count columns")
             continue
+        if parse_manifest_header(trimmed) == header:
+            raise ValueError(f"{path} has repeated TSV header row")
         if trimmed.startswith("#"):
             continue
         if trimmed.startswith("path\t"):
-            continue
-        cols = trimmed.split("\t")
+            raise ValueError(f"{path} has repeated TSV header row")
+        cols = line.split("\t")
         if len(cols) != len(header):
             raise ValueError(
                 f"{path} row has {len(cols)} columns, expected {len(header)}: {line}"
             )
+        document_path = cols[0]
+        if (
+            not document_path
+            or document_path.startswith(("/", "\\"))
+            or "\\" in document_path
+            or ":" in document_path
+            or any(part in {"", ".", ".."} for part in document_path.split("/"))
+        ):
+            raise ValueError(f"{path} has unsafe document path: {document_path}")
+        if document_path != document_path.strip():
+            raise ValueError(f"{path} has whitespace-padded document path: {document_path}")
+        if not document_path.isascii() or any(char.isspace() for char in document_path):
+            raise ValueError(f"{path} has unsafe document path: {document_path}")
+        if document_path in seen_paths:
+            raise ValueError(f"{path} has duplicate document path: {document_path}")
+        seen_paths.add(document_path)
         rows.append(cols)
 
     if header is None:
         raise ValueError(f"{path} is empty")
+    if not rows:
+        raise ValueError(f"{path} does not contain document rows")
+    return header, rows
+
+
+def corpus_manifest_document_paths(path: Path) -> list[str]:
+    _, rows = read_corpus_manifest(path)
+    return [row[0] for row in rows]
+
+
+def corpus_manifest_summary(path: Path) -> dict[str, Any]:
+    header, rows = read_corpus_manifest(path)
 
     numeric_totals: dict[str, int] = {}
     warning_counts: dict[str, int] = {}
@@ -382,15 +701,27 @@ def corpus_manifest_summary(path: Path) -> dict[str, Any]:
         if name in {"path", "warnings"}:
             continue
         total = 0
-        numeric = True
         for row in rows:
+            if row[index] != row[index].strip():
+                raise ValueError(
+                    f"{path} row has whitespace-padded numeric value for {name}: {row[index]}"
+                )
             try:
-                total += int(row[index])
+                value = int(row[index])
             except ValueError:
-                numeric = False
-                break
-        if numeric:
-            numeric_totals[name] = total
+                raise ValueError(
+                    f"{path} row has non-numeric value for {name}: {row[index]}"
+                )
+            if value >= 0 and str(value) != row[index]:
+                raise ValueError(
+                    f"{path} row has non-canonical numeric value for {name}: {row[index]}"
+                )
+            if value < 0:
+                raise ValueError(
+                    f"{path} row has negative numeric value for {name}: {row[index]}"
+                )
+            total += value
+        numeric_totals[name] = total
 
     if "warnings" in header:
         warning_index = header.index("warnings")
@@ -398,10 +729,26 @@ def corpus_manifest_summary(path: Path) -> dict[str, Any]:
             warnings = row[warning_index]
             if warnings == "-":
                 continue
+            row_warnings: set[str] = set()
             for warning in warnings.split("|"):
-                warning = warning.strip()
-                if warning:
-                    warning_counts[warning] = warning_counts.get(warning, 0) + 1
+                if not warning.strip():
+                    raise ValueError(f"{path} row has empty warning token")
+                if warning != warning.strip():
+                    raise ValueError(
+                        f"{path} row has whitespace-padded warning token: {warning}"
+                    )
+                if warning == "-":
+                    raise ValueError(f"{path} row has invalid warning token: -")
+                if not warning.isascii() or not warning.isidentifier():
+                    raise ValueError(
+                        f"{path} row has non-canonical warning token: {warning}"
+                    )
+                if warning in row_warnings:
+                    raise ValueError(
+                        f"{path} row has duplicate warning token: {warning}"
+                    )
+                row_warnings.add(warning)
+                warning_counts[warning] = warning_counts.get(warning, 0) + 1
 
     return {
         "documents": len(rows),
@@ -413,7 +760,7 @@ def corpus_manifest_summary(path: Path) -> dict[str, Any]:
 def corpus_manifest_summaries(paths: list[Path] | None) -> list[dict[str, Any]]:
     return [
         {"path": path.as_posix(), "summary": corpus_manifest_summary(path)}
-        for path in sorted(paths or [], key=lambda p: p.name)
+        for path in sorted(paths or [], key=path_sort_key)
     ]
 
 
@@ -439,20 +786,28 @@ def release_evidence_summary(
             benchmark_reports=benchmark_reports,
             corpus_manifests=corpus_manifests,
         )
+    strict_inputs_complete = not strict_missing
+    if enforce_policy_inputs and strict_inputs_complete:
+        strict_status = "enforced"
+    elif strict_inputs_complete:
+        strict_status = "inputs_complete_not_enforced"
+    else:
+        strict_status = "missing_inputs"
 
     return {
         "policy": name,
+        "strict_policy_status": strict_status,
         "strict_policy_enforced": enforce_policy_inputs,
-        "strict_policy_inputs_complete": not strict_missing,
+        "strict_policy_inputs_complete": strict_inputs_complete,
         "strict_missing": strict_missing,
         "provided": {
             "hygiene_report": hygiene_report.as_posix() if hygiene_report else None,
             "validation_report": validation_report.as_posix() if validation_report else None,
             "benchmark_reports": [
-                path.as_posix() for path in sorted(benchmark_reports or [], key=lambda p: p.name)
+                path.as_posix() for path in sorted(benchmark_reports or [], key=path_sort_key)
             ],
             "corpus_manifests": [
-                path.as_posix() for path in sorted(corpus_manifests or [], key=lambda p: p.name)
+                path.as_posix() for path in sorted(corpus_manifests or [], key=path_sort_key)
             ],
         },
     }
@@ -472,6 +827,8 @@ def release_manifest(
 ) -> dict[str, Any]:
     if not artifacts:
         raise ValueError("at least one artifact path is required")
+    if enforce_policy_inputs and release_policy is None:
+        raise ValueError("enforce_policy_inputs requires release policy")
     if enforce_policy_inputs:
         check_required_policy_inputs(
             release_policy,
@@ -484,10 +841,22 @@ def release_manifest(
     missing = [path.as_posix() for path in resolved if not path.is_file()]
     if missing:
         raise FileNotFoundError("missing artifact(s): " + ", ".join(missing))
+    require_unique_paths("artifact", resolved)
+    require_unique_paths("benchmark report", benchmark_reports)
+    require_unique_paths("corpus manifest", corpus_manifests)
+    for label, value in (("version", version), ("git_rev", git_rev)):
+        if value is not None and not isinstance(value, str):
+            raise ValueError(f"{label} must be a string")
+        if value is not None and not value.strip():
+            raise ValueError(f"{label} must not be empty")
+        if value is not None and value != value.strip():
+            raise ValueError(f"{label} must not have surrounding whitespace")
+        if value is not None and any(char.isspace() for char in value):
+            raise ValueError(f"{label} must not contain whitespace")
 
     manifest: dict[str, Any] = {
         "schema": SCHEMA,
-        "artifacts": [artifact_record(path) for path in sorted(resolved, key=lambda p: p.name)],
+        "artifacts": [artifact_record(path) for path in sorted(resolved, key=path_sort_key)],
     }
     if version is not None:
         manifest["version"] = version
@@ -602,7 +971,20 @@ def main(argv: list[str] | None = None) -> int:
         print(f"release_manifest: {error}", file=sys.stderr)
         return 2
 
-    payload = json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    try:
+        payload = (
+            json.dumps(
+                manifest,
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+                allow_nan=False,
+            )
+            + "\n"
+        )
+    except ValueError as error:
+        print(f"release_manifest: {error}", file=sys.stderr)
+        return 2
     if args.output is None:
         sys.stdout.write(payload)
     else:

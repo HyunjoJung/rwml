@@ -1038,15 +1038,19 @@ Initial status:
   `public-release` policy metadata, summary sections from validation reports such
   as `scripts/render_validate.py --json`, compact public hygiene,
   validation/benchmark gate metadata, compact public corpus TSV manifest
-  summaries with document counts, numeric totals, and warning counts. Its
-  `release_evidence` metadata distinguishes embedded policy from enforced
-  strict local evidence, including missing strict public-release inputs. It also
-  provides
+  summaries with document counts, numeric totals, and warning counts. Corpus TSV
+  summaries reject empty manifests, duplicate columns or paths, negative numeric
+  counts, and duplicate warning tokens before embedding totals. Its
+  `release_evidence` metadata distinguishes embedded policy,
+  complete-but-not-enforced inputs, enforced strict local evidence, and missing
+  strict public-release inputs, including public corpus manifest pairs whose
+  document path lists do not match. It also provides
   `--enforce-policy-inputs` validation that requires a passing public hygiene
   report, render validation, extraction benchmark, and exactly the public
-  `MANIFEST.tsv` plus `RENDER_MANIFEST.tsv` corpus manifest pair and rejects
-  failed hygiene/validation/benchmark gates or validation/benchmark reports
-  generated with weaker thresholds than the named `public-release` policy.
+  `MANIFEST.tsv` plus `RENDER_MANIFEST.tsv` corpus manifest pair with matching
+  document paths and rejects failed hygiene/validation/benchmark gates or
+  validation/benchmark reports generated with weaker thresholds than the named
+  `public-release` policy.
 - `scripts/public_hygiene_audit.py` statically scans committed plus untracked,
   non-ignored files for public-release blockers: non-public corpus files,
   known domain-specific project traces, absolute local home paths, private
@@ -1137,15 +1141,16 @@ The next useful implementation batch is:
    threshold values (`0.95` POI recall/F1, `0.90` render mean recall, `0` errors
    or skips), and `scripts/release_manifest.py --enforce-policy-inputs` can make
    render validation, extraction benchmark, and the exact public
-   `MANIFEST.tsv`/`RENDER_MANIFEST.tsv` corpus pair mandatory with passing
-   compact gates and policy-strength thresholds for strict public manifests.
-   Manifests now record
-   `release_evidence.strict_policy_enforced`,
-   `strict_policy_inputs_complete`, and missing strict inputs so tagged
-   automation that only embeds the policy remains distinguishable from strict
-   local release evidence. The remaining policy work is deciding when tagged
-   automation should provide those local reports rather than relying on an
-   explicit strict manifest generation step.
+   `MANIFEST.tsv`/`RENDER_MANIFEST.tsv` corpus pair with matching document paths
+   mandatory with passing compact gates and policy-strength thresholds for
+   strict public manifests.
+   Manifests now record `release_evidence.strict_policy_status`,
+   `strict_policy_enforced`, `strict_policy_inputs_complete`, and missing
+   strict inputs so tagged automation that only embeds the policy remains
+   distinguishable from strict local release evidence. Tagged automation
+   intentionally emits the non-strict policy manifest until local render and
+   extraction reports are generated in the workflow; strict public manifests
+   remain an explicit local generation step.
 
 These are deliberately deeper roadmap items: the diagnostics, corpus, `.docx`
 comment/field/revision side tables, metadata query surface, preservation edits,

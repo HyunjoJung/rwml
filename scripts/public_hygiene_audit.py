@@ -57,7 +57,12 @@ SECRET_PATTERNS = [
     ("github_pat", re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b")),
     ("slack_token", re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{20,}\b")),
     ("aws_access_key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
-    ("private_key", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----")),
+    (
+        "private_key",
+        re.compile(
+            r"-----BEGIN (?:RSA |DSA |EC |OPENSSH |ENCRYPTED )?PRIVATE KEY-----"
+        ),
+    ),
 ]
 
 DOMAIN_TRACE_PATTERNS = [
@@ -69,9 +74,26 @@ DOMAIN_TRACE_PATTERNS = [
 ]
 
 LOCAL_PATH_PATTERNS = [
-    ("mac_home_path", re.compile(r"/Users/[A-Za-z0-9._-]+/")),
+    ("mac_home_path", re.compile(r"(?<![A-Za-z]:)/Users/[A-Za-z0-9._-]+/")),
     ("linux_home_path", re.compile(r"/home/[A-Za-z0-9._-]+/")),
-    ("windows_home_path", re.compile(r"[A-Za-z]:\\Users\\[^\\\s]+\\")),
+    ("shell_home_path", re.compile(r"\$(?:HOME|\{HOME\})[/\\]")),
+    ("windows_home_path", re.compile(r"[A-Za-z]:[/\\]Users[/\\][^/\\\s]+[/\\]")),
+    (
+        "windows_drive_path",
+        re.compile(r"(?<![A-Za-z])[A-Za-z]:[/\\](?!Users[/\\])", re.IGNORECASE),
+    ),
+    (
+        "windows_unc_path",
+        re.compile(r"(?<!\\)\\\\[A-Za-z0-9._-]{2,}\\[^\\\s]{2,}\\"),
+    ),
+    (
+        "windows_profile_env_path",
+        re.compile(r"%(?:USERPROFILE|APPDATA|LOCALAPPDATA)%[/\\]", re.IGNORECASE),
+    ),
+    (
+        "powershell_profile_env_path",
+        re.compile(r"\$env:(?:USERPROFILE|APPDATA|LOCALAPPDATA)[/\\]", re.IGNORECASE),
+    ),
 ]
 
 OFFICE_TEXT_PART_SUFFIXES = (".xml", ".rels")
@@ -195,7 +217,7 @@ def audit_text_lines(path: str, lines: list[str]) -> list[Finding]:
                 findings.append(
                     Finding(path, line_no, kind, "absolute local filesystem path")
                 )
-        if re.search(r"RDOC_(?:BENCH_CORPUS|RENDER_CORPUS|PRIVATE_FIXTURES)\s*=", line):
+        if re.search(r"RDOC_(?:BENCH_CORPUS|RENDER_CORPUS|PRIVATE_FIXTURES)\s*[:=]", line):
             findings.append(
                 Finding(
                     path,
@@ -239,7 +261,7 @@ def audit_text_blob(path: str, text: str, detail_context: str) -> list[Finding]:
                     f"absolute local filesystem path in {detail_context}",
                 )
             )
-    if re.search(r"RDOC_(?:BENCH_CORPUS|RENDER_CORPUS|PRIVATE_FIXTURES)\s*=", text):
+    if re.search(r"RDOC_(?:BENCH_CORPUS|RENDER_CORPUS|PRIVATE_FIXTURES)\s*[:=]", text):
         findings.append(
             Finding(
                 path,
@@ -407,20 +429,27 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def json_payload(payload: dict) -> str:
+    return json.dumps(
+        payload,
+        ensure_ascii=False,
+        indent=2,
+        sort_keys=True,
+        allow_nan=False,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
     findings = audit()
     if args.json:
         print(
-            json.dumps(
+            json_payload(
                 {
                     "schema": "rdoc.public-hygiene-audit.v1",
                     "passed": not findings,
                     "findings": [finding.as_dict() for finding in findings],
-                },
-                ensure_ascii=False,
-                indent=2,
-                sort_keys=True,
+                }
             )
         )
     elif findings:
