@@ -167,8 +167,9 @@ Initial status:
   sequence/page separator syntax recognized while preserving cached text until
   sequence/page separator semantics are modeled, bookmarked `NOTEREF`/legacy `FTNREF`
   footnote/endnote reference marks with neutral `\h`, note-reference-style
-  `\f`, source-order `\p` above/below results, and common field-result format
-  switches when the bookmark encloses a body note reference mark, bare default `TOC`,
+  `\f`, source-order `\p` above/below results, and common field-result
+  number/text format switches when the bookmark encloses a body note reference
+  mark, bare default `TOC`,
   standalone bookmark-scoped default `TOC \b`,
   explicit `TOC \o` heading-outline ranges including omitted all-level ranges and common `\o`/`\u`
   combinations with value-neutral `\h`/`\z` switches, text-preserving
@@ -914,7 +915,8 @@ Initial status:
   preserving cached text,
   bookmarked `NOTEREF`/legacy `FTNREF` footnote/endnote reference marks with
   neutral `\h`, note-reference-style `\f`, source-order `\p`
-  above/below results, and common field-result format switches, direct bookmark-name field
+  above/below results, and common field-result number/text format switches,
+  direct bookmark-name field
   computation when the bookmark exists with supported text-format switches and
   neutral `\h`, explicit-number `\n`/`\n \t`/`\r`/`\r \t`/`\w`/`\w \t`, note-reference `\f`, sequence-separator `\d`, and source-order `\p`,
   bare default `TOC`,

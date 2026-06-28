@@ -4984,7 +4984,7 @@ pub(crate) fn computed_note_ref_result(
     let text = if spec.relative {
         computed_relative_note_ref_result(target, field_position)?
     } else {
-        target.number.to_string()
+        format_page_number(target.number, spec.number_format)?
     };
     Some(apply_field_text_format(text, spec.text_format))
 }
@@ -9239,6 +9239,7 @@ fn accept_page_field_format_switch(
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct NoteRefInstruction {
     target: String,
+    number_format: Option<PageNumberFormat>,
     text_format: Option<FieldTextFormat>,
     relative: bool,
 }
@@ -9251,12 +9252,13 @@ fn note_ref_instruction(instruction: &str) -> Option<NoteRefInstruction> {
         return None;
     }
     let target = bookmark_target_identifier(parts.next()?)?.to_string();
+    let mut number_format = None;
     let mut text_format = None;
     let mut relative = false;
     let mut formatted = false;
     while let Some(part) = parts.next() {
         if accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
+            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
         })? {
             continue;
         }
@@ -9282,8 +9284,12 @@ fn note_ref_instruction(instruction: &str) -> Option<NoteRefInstruction> {
         }
         return None;
     }
+    if relative && number_format.is_some() {
+        return None;
+    }
     Some(NoteRefInstruction {
         target,
+        number_format,
         text_format,
         relative,
     })

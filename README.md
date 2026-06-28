@@ -623,7 +623,7 @@ exists using the same supported text-format switches, neutral `\h`,
 explicit-number `\n`, `\n \t`, `\r`, `\r \t`, `\w`, `\w \t`, note-reference `\f`, sequence-separator `\d`, and source-order `\p`,
 bookmarked `NOTEREF`/legacy `FTNREF` footnote/endnote reference marks with
 neutral `\h`, note-reference-style `\f`, and source-order `\p` above/below
-results plus common field-result format switches, bare default `TOC`,
+results plus common field-result number/text format switches, bare default `TOC`,
 standalone bookmark-scoped default `TOC \b`, explicit `TOC \o`
 heading-outline fields including omitted all-level ranges and common `\o`/`\u` combinations, with
 value-neutral TOC `\h`/`\z` switches, text-preserving `\w`/`\x` switches
@@ -948,7 +948,7 @@ The long-term native Word engine plan is split into the
       supported text-format switches, neutral `\h`, explicit-number `\n`, `\n \t`, `\r`, `\r \t`, `\w`, `\w \t`, note-reference `\f`, sequence-separator `\d`, and source-order `\p`,
       bookmarked `NOTEREF`/legacy `FTNREF` footnote/endnote reference marks with
       neutral `\h`, note-reference-style `\f`, source-order `\p` above/below
-      results, and common field-result format switches, bare default `TOC`,
+      results, and common field-result number/text format switches, bare default `TOC`,
       standalone bookmark-scoped default `TOC \b`,
       plus explicit `TOC \o` heading-outline computation, including omitted all-level ranges and common
       `\o`/`\u` combinations, with neutral `\h`/`\z` switches,

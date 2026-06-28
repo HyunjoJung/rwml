@@ -491,7 +491,7 @@ Implementation:
   bookmark encloses a body `footnoteReference` or `endnoteReference`, with
   separate source-order footnote/endnote numbering, neutral `\h`,
   note-reference-style `\f`, source-order `\p` above/below results, and common
-  field-result format switches, while
+  field-result number/text format switches, while
   preserving cached text for missing note bookmarks, existing bookmarks without
   body note-reference marks, or unsupported switches;
 - compute bare default `.docx` `TOC` heading ranges, standalone bookmark-scoped
@@ -1112,7 +1112,7 @@ open and edit the chart data.
   sequence-separator `\d`, and source-order `\p`,
   bookmarked `NOTEREF`/legacy `FTNREF` footnote/endnote reference marks with
   neutral `\h`, note-reference-style `\f`, source-order `\p`
-  above/below results, and common field-result format switches,
+  above/below results, and common field-result number/text format switches,
   plus bare default `TOC`, standalone bookmark-scoped default `TOC \b`, explicit
   `TOC \o` heading-outline ranges including omitted all-level ranges and common `\o`/`\u` combinations with
   value-neutral `\h`/`\z` switches, text-preserving `\w`/`\x` switches
