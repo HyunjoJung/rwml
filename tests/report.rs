@@ -34,6 +34,39 @@ fn docx_fixture(parts: &[(&str, &str)]) -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn field_kind_count(kind: FieldKind, count: usize) -> FieldKindCount {
+    FieldKindCount { kind, count }
+}
+
+#[cfg(feature = "docx")]
+fn field_reason_count(reason: FieldEvaluationReason, count: usize) -> FieldEvaluationReasonCount {
+    FieldEvaluationReasonCount { reason, count }
+}
+
+#[cfg(feature = "docx")]
+fn assert_report_field_diagnostics(
+    fixture: Vec<u8>,
+    field_count: usize,
+    field_kinds: Vec<FieldKindCount>,
+    unsupported_field_kinds: Vec<FieldKindCount>,
+    unsupported_field_reasons: Vec<FieldEvaluationReasonCount>,
+) {
+    let doc = Document::open(&fixture).expect("fixture opens");
+    let report = doc.report();
+
+    assert_eq!(report.features.fields, field_count);
+    assert_eq!(report.features.field_kinds, field_kinds);
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        unsupported_field_kinds
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        unsupported_field_reasons
+    );
+}
+
+#[cfg(feature = "docx")]
 fn docx_fixture_bytes(parts: Vec<(&str, Vec<u8>)>) -> Vec<u8> {
     let mut out = Vec::new();
     {
@@ -425,6 +458,51 @@ fn compatibility_field_diagnostics_docx() -> Vec<u8> {
         (
             "word/document.xml",
             r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" PRIVATE legacy-data "><w:r><w:t>cached private payload</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" ADDIN &quot;bad "><w:r><w:t>cached malformed addin</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
+fn field_pair_diagnostics_docx(
+    valid_instruction: &str,
+    valid_text: &str,
+    malformed_instruction: &str,
+    malformed_text: &str,
+) -> Vec<u8> {
+    let document = format!(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" {valid_instruction} "><w:r><w:t>{valid_text}</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" {malformed_instruction} "><w:r><w:t>{malformed_text}</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#
+    );
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        ("word/document.xml", &document),
+    ])
+}
+
+#[cfg(feature = "docx")]
+fn protected_form_field_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/settings.xml",
+            r#"<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:documentProtection w:edit="forms" w:enforcement="1"/></w:settings>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" FORMCHECKBOX "><w:ffData><w:checkBox><w:checked w:val="true"/></w:checkBox></w:ffData><w:r><w:t>cached protected checked</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FORMTEXT &quot;bad "><w:r><w:t>cached malformed form text</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -2191,6 +2269,115 @@ fn report_compatibility_fields_split_cached_and_malformed_diagnostics() {
                 count: 1,
             },
         ]
+    );
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_field_category_matrix_splits_cached_and_malformed_diagnostics() {
+    assert_report_field_diagnostics(
+        field_pair_diagnostics_docx(
+            r#"INCLUDETEXT &quot;appendix.docx&quot;"#,
+            "Appendix text",
+            r#"INCLUDEPICTURE &quot;chart.png"#,
+            "cached malformed include picture",
+        ),
+        2,
+        vec![
+            field_kind_count(FieldKind::InsertedContent("INCLUDETEXT".to_string()), 1),
+            field_kind_count(FieldKind::InsertedContent("INCLUDEPICTURE".to_string()), 1),
+        ],
+        vec![
+            field_kind_count(FieldKind::InsertedContent("INCLUDETEXT".to_string()), 1),
+            field_kind_count(FieldKind::InsertedContent("INCLUDEPICTURE".to_string()), 1),
+        ],
+        vec![
+            field_reason_count(FieldEvaluationReason::NoComputedResult, 1),
+            field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 1),
+        ],
+    );
+
+    assert_report_field_diagnostics(
+        field_pair_diagnostics_docx(
+            "ADDRESSBLOCK",
+            "Acme Corp",
+            r#"GREETINGLINE &quot;Dear"#,
+            "cached malformed greeting",
+        ),
+        2,
+        vec![
+            field_kind_count(FieldKind::MailMerge("ADDRESSBLOCK".to_string()), 1),
+            field_kind_count(FieldKind::MailMerge("GREETINGLINE".to_string()), 1),
+        ],
+        vec![
+            field_kind_count(FieldKind::MailMerge("ADDRESSBLOCK".to_string()), 1),
+            field_kind_count(FieldKind::MailMerge("GREETINGLINE".to_string()), 1),
+        ],
+        vec![
+            field_reason_count(FieldEvaluationReason::NoComputedResult, 1),
+            field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 1),
+        ],
+    );
+
+    assert_report_field_diagnostics(
+        field_pair_diagnostics_docx(
+            r#"BIBLIOGRAPHY \l 1033"#,
+            "Works cited",
+            r#"INDEX &quot;bad"#,
+            "cached malformed index",
+        ),
+        2,
+        vec![
+            field_kind_count(FieldKind::ReferenceIndex("BIBLIOGRAPHY".to_string()), 1),
+            field_kind_count(FieldKind::ReferenceIndex("INDEX".to_string()), 1),
+        ],
+        vec![
+            field_kind_count(FieldKind::ReferenceIndex("BIBLIOGRAPHY".to_string()), 1),
+            field_kind_count(FieldKind::ReferenceIndex("INDEX".to_string()), 1),
+        ],
+        vec![
+            field_reason_count(FieldEvaluationReason::NoComputedResult, 1),
+            field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 1),
+        ],
+    );
+
+    assert_report_field_diagnostics(
+        field_pair_diagnostics_docx(
+            r#"DISPLAYBARCODE &quot;https://example.com&quot; QR \q H"#,
+            "QR preview",
+            r#"DISPLAYBARCODE &quot;https://example.com&quot; QR \q"#,
+            "cached missing quality operand",
+        ),
+        2,
+        vec![field_kind_count(
+            FieldKind::Barcode("DISPLAYBARCODE".to_string()),
+            2,
+        )],
+        vec![field_kind_count(
+            FieldKind::Barcode("DISPLAYBARCODE".to_string()),
+            2,
+        )],
+        vec![
+            field_reason_count(FieldEvaluationReason::NoComputedResult, 1),
+            field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 1),
+        ],
+    );
+
+    assert_report_field_diagnostics(
+        protected_form_field_diagnostics_docx(),
+        2,
+        vec![
+            field_kind_count(FieldKind::FormField("FORMCHECKBOX".to_string()), 1),
+            field_kind_count(FieldKind::FormField("FORMTEXT".to_string()), 1),
+        ],
+        vec![
+            field_kind_count(FieldKind::FormField("FORMCHECKBOX".to_string()), 1),
+            field_kind_count(FieldKind::FormField("FORMTEXT".to_string()), 1),
+        ],
+        vec![
+            field_reason_count(FieldEvaluationReason::NoComputedResult, 1),
+            field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 1),
+        ],
     );
 }
 
