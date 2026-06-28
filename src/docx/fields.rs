@@ -5119,9 +5119,7 @@ fn filename_instruction(instruction: &str) -> Option<()> {
             path = true;
             continue;
         }
-        if accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        })? {
+        if accept_field_format_switch_for_tail(part, &mut parts, &mut text_format)? {
             continue;
         }
         return None;
@@ -5206,9 +5204,7 @@ where
 {
     let mut text_format = None;
     while let Some(part) = parts.next() {
-        if accept_general_format_switch(part, parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        })? {
+        if accept_field_format_switch_for_tail(part, parts, &mut text_format)? {
             continue;
         }
         return None;
@@ -5221,6 +5217,16 @@ where
     I: Iterator<Item = &'a str>,
 {
     field_format_tail(parts).map(|_| ())
+}
+
+fn accept_field_format_switch_for_tail<'a>(
+    part: &'a str,
+    parts: &mut impl Iterator<Item = &'a str>,
+    text_format: &mut Option<FieldTextFormat>,
+) -> Option<bool> {
+    accept_general_format_switch(part, parts, |format| {
+        accept_field_format_switch(format, text_format)
+    })
 }
 
 fn accept_neutral_field_format_tail<'a, I>(parts: &mut I) -> Option<()>
@@ -5279,9 +5285,7 @@ where
 {
     let mut text_format = None;
     while let Some(part) = parts.next() {
-        if accept_general_format_switch(part, parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        })? {
+        if accept_field_format_switch_for_tail(part, parts, &mut text_format)? {
             continue;
         }
         if part.starts_with('\\') || part.contains('"') {
@@ -5424,9 +5428,7 @@ fn document_info_instruction(instruction: &str) -> Option<DocumentInfoInstructio
         document_info_property(kind)?
     };
     while let Some(part) = parts.next() {
-        if accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        })? {
+        if accept_field_format_switch_for_tail(part, &mut parts, &mut text_format)? {
             continue;
         }
         if part.eq_ignore_ascii_case("\\@") {
@@ -5626,9 +5628,7 @@ fn revision_number_instruction(instruction: &str) -> Option<Option<FieldTextForm
     }
     let mut text_format = None;
     while let Some(part) = parts.next() {
-        if accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        })? {
+        if accept_field_format_switch_for_tail(part, &mut parts, &mut text_format)? {
             continue;
         }
         return None;
@@ -6944,9 +6944,7 @@ fn quote_instruction(instruction: &str) -> Option<QuoteInstruction> {
     let mut text_format = None;
     let mut saw_format = false;
     while let Some(part) = parts.next() {
-        if accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        })? {
+        if accept_field_format_switch_for_tail(part, &mut parts, &mut text_format)? {
             saw_format = true;
             continue;
         }
@@ -6991,9 +6989,7 @@ fn fill_in_instruction(instruction: &str) -> Option<FillInInstruction> {
             ask_once = true;
             continue;
         }
-        if accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        })? {
+        if accept_field_format_switch_for_tail(part, &mut parts, &mut text_format)? {
             continue;
         }
         let prompt = prompt_text_literal_token(part)?;
@@ -7048,9 +7044,7 @@ fn ask_instruction(instruction: &str) -> Option<AskInstruction> {
             ask_once = true;
             continue;
         }
-        if accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        })? {
+        if accept_field_format_switch_for_tail(part, &mut parts, &mut text_format)? {
             continue;
         }
         return None;
@@ -7523,10 +7517,8 @@ fn accept_reference_index_field_format<'a>(
     parts: &mut impl Iterator<Item = &'a str>,
     text_format: &mut Option<FieldTextFormat>,
 ) -> Option<()> {
-    accept_general_format_switch(part, parts, |format| {
-        accept_field_format_switch(format, text_format)
-    })
-    .and_then(|accepted| accepted.then_some(()))
+    accept_field_format_switch_for_tail(part, parts, text_format)
+        .and_then(|accepted| accepted.then_some(()))
 }
 
 fn wildcard_match(text: &str, pattern: &str) -> bool {
@@ -7565,9 +7557,7 @@ fn accept_if_format_switch<'a, I>(
 where
     I: Iterator<Item = &'a str>,
 {
-    accept_general_format_switch(part, parts, |format| {
-        accept_field_format_switch(format, text_format)
-    })
+    accept_field_format_switch_for_tail(part, parts, text_format)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -7614,9 +7604,7 @@ fn print_instruction(instruction: &str) -> Option<()> {
         let mut text_format = None;
         let mut saw_format = false;
         while let Some(part) = parts.next() {
-            if accept_general_format_switch(part, &mut parts, |format| {
-                accept_field_format_switch(format, &mut text_format)
-            })? {
+            if accept_field_format_switch_for_tail(part, &mut parts, &mut text_format)? {
                 saw_format = true;
                 continue;
             }
@@ -7629,9 +7617,7 @@ fn print_instruction(instruction: &str) -> Option<()> {
     }
     let mut text_format = None;
     while let Some(part) = parts.next() {
-        if accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        })? {
+        if accept_field_format_switch_for_tail(part, &mut parts, &mut text_format)? {
             continue;
         }
         return None;
@@ -7656,9 +7642,7 @@ fn action_instruction(instruction: &str) -> Option<ActionInstruction> {
     let mut text_format = None;
     let mut saw_format = false;
     while let Some(part) = parts.next() {
-        if accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        })? {
+        if accept_field_format_switch_for_tail(part, &mut parts, &mut text_format)? {
             saw_format = true;
             continue;
         }
@@ -7736,9 +7720,7 @@ fn advance_instruction(instruction: &str) -> Option<()> {
     }
     let mut text_format = None;
     while let Some(part) = parts.next() {
-        if accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        })? {
+        if accept_field_format_switch_for_tail(part, &mut parts, &mut text_format)? {
             continue;
         }
         if accept_advance_switch(part, &mut parts).is_some() {
@@ -7797,9 +7779,7 @@ fn eq_instruction(instruction: &str) -> Option<EqInstruction> {
     let mut expression_parts = Vec::new();
     let mut text_format = None;
     while let Some(part) = parts.next() {
-        if accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        })? {
+        if accept_field_format_switch_for_tail(part, &mut parts, &mut text_format)? {
             continue;
         }
         expression_parts.push(part);
@@ -8495,9 +8475,7 @@ fn symbol_instruction(instruction: &str) -> Option<SymbolInstruction> {
             parse_symbol_size(size)?;
             continue;
         }
-        if accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        })? {
+        if accept_field_format_switch_for_tail(part, &mut parts, &mut text_format)? {
             continue;
         }
         return None;
@@ -8715,9 +8693,7 @@ fn style_ref_instruction(instruction: &str) -> Option<StyleRefInstruction> {
     let mut result = StyleRefResult::Text;
     let mut suppress_non_numeric = false;
     while let Some(part) = parts.next() {
-        if accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        })? {
+        if accept_field_format_switch_for_tail(part, &mut parts, &mut text_format)? {
             continue;
         }
         if part.starts_with('\\') {
@@ -10013,9 +9989,7 @@ fn toc_spec(instruction: &str) -> Option<TocSpec> {
     let mut saw_default_toc_neutral_switch = false;
     while let Some(part) = parts.next() {
         saw_switch = true;
-        if accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        })? {
+        if accept_field_format_switch_for_tail(part, &mut parts, &mut text_format)? {
             saw_default_toc_neutral_switch = true;
             continue;
         }
