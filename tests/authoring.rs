@@ -2811,6 +2811,59 @@ fn write_docx_keeps_header_footer_table_text_visible() {
 }
 
 #[test]
+fn write_docx_keeps_header_footer_chart_placeholders_visible() {
+    let model = DocModel {
+        blocks: vec![Block::Paragraph(plain_paragraph("Body"))],
+        setup: DocSetup {
+            header: vec![Block::Chart(
+                ChartBuilder::bar()
+                    .title("Header chart")
+                    .categories(["Q1"])
+                    .series("Revenue", [42.0])
+                    .alt("Header <chart>")
+                    .into(),
+            )],
+            footer: vec![Block::Chart(
+                ChartBuilder::bar()
+                    .title("Footer chart")
+                    .categories(["Q1"])
+                    .series("Revenue", [7.0])
+                    .into(),
+            )],
+            ..DocSetup::default()
+        },
+        ..DocModel::default()
+    };
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let header_xml = String::from_utf8(parts["word/header1.xml"].clone()).unwrap();
+    let footer_xml = String::from_utf8(parts["word/footer1.xml"].clone()).unwrap();
+
+    assert!(
+        header_xml.contains("[rdoc chart placeholder: Header &lt;chart&gt;]"),
+        "header chart placeholder missing: {header_xml}"
+    );
+    assert!(
+        footer_xml.contains("[rdoc chart placeholder: Footer chart]"),
+        "footer chart placeholder missing: {footer_xml}"
+    );
+    assert!(
+        !parts.keys().any(|part| part.starts_with("word/charts/")),
+        "header/footer chart placeholders should not emit chart parts: {:?}",
+        parts.keys().collect::<Vec<_>>()
+    );
+
+    let reopened = Document::open(&bytes).expect("header/footer chart placeholder .docx reopens");
+    let text = reopened.text();
+    assert!(
+        text.contains("[rdoc chart placeholder: Header <chart>]")
+            && text.contains("[rdoc chart placeholder: Footer chart]"),
+        "header/footer chart placeholders not readable after reopen: {text:?}"
+    );
+}
+
+#[test]
 fn table_builder_adds_rich_table_cells() {
     let navy = Color::rgb(0x1F, 0x38, 0x64);
     let model = DocBuilder::new()

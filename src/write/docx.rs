@@ -184,6 +184,11 @@ fn render_hf_body(blocks: &[crate::model::Block], page_numbers: bool) -> String 
                     out.push_str("</w:r></w:p>");
                 }
             }
+            Block::Chart(chart) => {
+                out.push_str("<w:p><w:r>");
+                write_run_text(&mut out, &chart_placeholder_text(chart));
+                out.push_str("</w:r></w:p>");
+            }
             _ => {}
         }
     }
@@ -1398,6 +1403,13 @@ fn write_image_placeholder(out: &mut String, img: &Image, fallback: &str) {
 fn image_placeholder_text(img: &Image, fallback: &str) -> String {
     let label = non_empty_trimmed(img.alt.as_deref()).unwrap_or(fallback);
     format!("[rdoc image placeholder: {label}]")
+}
+
+fn chart_placeholder_text(chart: &Chart) -> String {
+    let label = non_empty_trimmed(chart.alt.as_deref())
+        .or_else(|| non_empty_trimmed(chart.title.as_deref()))
+        .unwrap_or("chart unavailable");
+    format!("[rdoc chart placeholder: {label}]")
 }
 
 /// Extension + content type for an image MIME (reverse of the reader's
