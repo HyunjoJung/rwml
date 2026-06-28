@@ -2934,7 +2934,7 @@ mod tests {
         let note_ref_context = super::super::fields::NoteRefContext::empty();
         let section_context = super::super::fields::SectionContext::empty();
         let style_ref_context = super::super::fields::StyleRefContext::empty();
-        let legacy_form_context = super::super::fields::LegacyFormContext::empty();
+        let legacy_form_context = super::super::fields::LegacyFormContext::default();
         let table_formula_context = super::super::fields::TableFormulaContext::empty();
         let toc_entries = Vec::new();
         let core_properties = crate::CoreProperties::default();
@@ -3247,7 +3247,7 @@ mod tests {
         let note_ref_context = super::super::fields::NoteRefContext::empty();
         let section_context = super::super::fields::SectionContext::empty();
         let style_ref_context = super::super::fields::StyleRefContext::empty();
-        let legacy_form_context = super::super::fields::LegacyFormContext::empty();
+        let legacy_form_context = super::super::fields::LegacyFormContext::default();
         let table_formula_context = super::super::fields::TableFormulaContext::empty();
         let toc_entries = Vec::new();
         let core_properties = crate::CoreProperties::default();
@@ -3318,7 +3318,7 @@ mod tests {
         let note_ref_context = super::super::fields::NoteRefContext::empty();
         let section_context = super::super::fields::SectionContext::empty();
         let style_ref_context = super::super::fields::StyleRefContext::empty();
-        let legacy_form_context = super::super::fields::LegacyFormContext::empty();
+        let legacy_form_context = super::super::fields::LegacyFormContext::default();
         let table_formula_context = super::super::fields::TableFormulaContext::empty();
         let toc_entries = Vec::new();
         let core_properties = crate::CoreProperties::default();

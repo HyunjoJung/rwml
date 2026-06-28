@@ -1759,9 +1759,8 @@ fn supported_document_info_syntax_for_report(instruction: &str) -> bool {
     let mut file_size_unit = false;
     let mut user_override = false;
     while let Some(part) = parts.next() {
-        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        }) else {
+        let Some(accepted) = accept_field_format_for_report(part, &mut parts, &mut text_format)
+        else {
             return false;
         };
         if accepted {
@@ -1953,9 +1952,8 @@ fn supported_filename_syntax(instruction: &str) -> bool {
             path = true;
             continue;
         }
-        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        }) else {
+        let Some(accepted) = accept_field_format_for_report(part, &mut parts, &mut text_format)
+        else {
             return false;
         };
         if accepted {
@@ -2100,9 +2098,8 @@ fn supported_revision_number_syntax(instruction: &str) -> bool {
     }
     let mut text_format = false;
     while let Some(part) = parts.next() {
-        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        }) else {
+        let Some(accepted) = accept_field_format_for_report(part, &mut parts, &mut text_format)
+        else {
             return false;
         };
         if !accepted {
@@ -2151,9 +2148,8 @@ fn supported_style_ref_syntax(instruction: &str) -> bool {
     let mut result = 0u8;
     let mut suppress_non_numeric = false;
     while let Some(part) = parts.next() {
-        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        }) else {
+        let Some(accepted) = accept_field_format_for_report(part, &mut parts, &mut text_format)
+        else {
             return false;
         };
         if accepted {
@@ -2225,9 +2221,8 @@ fn supported_advance_syntax(instruction: &str) -> bool {
     }
     let mut text_format = false;
     while let Some(part) = parts.next() {
-        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        }) else {
+        let Some(accepted) = accept_field_format_for_report(part, &mut parts, &mut text_format)
+        else {
             return false;
         };
         if accepted {
@@ -2323,9 +2318,8 @@ fn supported_symbol_syntax(instruction: &str) -> bool {
             }
             continue;
         }
-        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        }) else {
+        let Some(accepted) = accept_field_format_for_report(part, &mut parts, &mut text_format)
+        else {
             return false;
         };
         if !accepted {
@@ -2476,9 +2470,7 @@ fn eq_expression_for_report(instruction: &str) -> Option<String> {
     let mut expression_parts = Vec::new();
     let mut text_format = false;
     while let Some(part) = parts.next() {
-        if accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        })? {
+        if accept_field_format_for_report(part, &mut parts, &mut text_format)? {
             continue;
         }
         expression_parts.push(part);
@@ -3004,9 +2996,8 @@ fn supported_print_syntax(instruction: &str) -> bool {
     let mut text_format = false;
     let mut saw_format = false;
     while let Some(part) = parts.next() {
-        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        }) else {
+        let Some(accepted) = accept_field_format_for_report(part, &mut parts, &mut text_format)
+        else {
             return false;
         };
         if accepted {
@@ -3040,9 +3031,8 @@ fn supported_action_button_syntax(instruction: &str) -> bool {
     let mut text_format = false;
     let mut saw_format = false;
     while let Some(part) = parts.next() {
-        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        }) else {
+        let Some(accepted) = accept_field_format_for_report(part, &mut parts, &mut text_format)
+        else {
             return false;
         };
         if accepted {
@@ -3238,9 +3228,8 @@ fn supported_form_field_syntax(instruction: &str) -> bool {
     }
     let mut text_format = false;
     while let Some(part) = parts.next() {
-        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        }) else {
+        let Some(accepted) = accept_field_format_for_report(part, &mut parts, &mut text_format)
+        else {
             return false;
         };
         if !accepted {
@@ -3353,7 +3342,9 @@ fn supported_reference_index_rd_syntax_for_report<'a>(
         if part.eq_ignore_ascii_case("\\f") {
             continue;
         }
-        if accept_reference_index_field_format_for_report(part, &mut parts, &mut text_format) {
+        if accept_field_format_for_report(part, &mut parts, &mut text_format)
+            .is_some_and(|accepted| accepted)
+        {
             continue;
         }
         return false;
@@ -3398,7 +3389,9 @@ fn supported_reference_index_ta_syntax_for_report<'a>(
             }
             continue;
         }
-        if accept_reference_index_field_format_for_report(part, &mut parts, &mut text_format) {
+        if accept_field_format_for_report(part, &mut parts, &mut text_format)
+            .is_some_and(|accepted| accepted)
+        {
             continue;
         }
         return false;
@@ -3444,7 +3437,9 @@ fn supported_reference_index_xe_syntax_for_report<'a>(
             }
             continue;
         }
-        if accept_reference_index_field_format_for_report(part, &mut parts, &mut text_format) {
+        if accept_field_format_for_report(part, &mut parts, &mut text_format)
+            .is_some_and(|accepted| accepted)
+        {
             continue;
         }
         return false;
@@ -3473,18 +3468,6 @@ fn reference_index_plain_value_for_report(token: Option<&str>) -> Option<()> {
 fn parse_reference_index_category_for_report(value: Option<&str>) -> Option<u8> {
     let value = diagnostic_name_token(value?)?.parse::<u8>().ok()?;
     (1..=16).contains(&value).then_some(value)
-}
-
-#[cfg(not(feature = "docx"))]
-fn accept_reference_index_field_format_for_report<'a>(
-    part: &'a str,
-    parts: &mut impl Iterator<Item = &'a str>,
-    text_format: &mut bool,
-) -> bool {
-    accept_general_format_switch(part, parts, |format| {
-        accept_field_format_switch(format, text_format)
-    })
-    .is_some_and(|accepted| accepted)
 }
 
 fn toc_entry_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -3799,9 +3782,7 @@ fn supported_field_format_tail_for_report<'a>(
     text_format: &mut bool,
 ) -> bool {
     while let Some(part) = parts.next() {
-        let Some(accepted) = accept_general_format_switch(part, parts, |format| {
-            accept_field_format_switch(format, text_format)
-        }) else {
+        let Some(accepted) = accept_field_format_for_report(part, parts, text_format) else {
             return false;
         };
         if !accepted {
@@ -3809,6 +3790,16 @@ fn supported_field_format_tail_for_report<'a>(
         }
     }
     true
+}
+
+fn accept_field_format_for_report<'a>(
+    part: &'a str,
+    parts: &mut impl Iterator<Item = &'a str>,
+    text_format: &mut bool,
+) -> Option<bool> {
+    accept_general_format_switch(part, parts, |format| {
+        accept_field_format_switch(format, text_format)
+    })
 }
 
 #[cfg(not(feature = "docx"))]
@@ -4112,9 +4103,8 @@ fn supported_if_syntax(instruction: &str) -> bool {
     }
     let mut text_format = false;
     if let Some(part) = parts.next() {
-        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        }) else {
+        let Some(accepted) = accept_field_format_for_report(part, &mut parts, &mut text_format)
+        else {
             return false;
         };
         if !accepted && if_result_text_for_report(part).is_none() {
@@ -4163,9 +4153,8 @@ fn supported_quote_syntax(instruction: &str) -> bool {
     let mut text_format = false;
     let mut saw_format = false;
     while let Some(part) = parts.next() {
-        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        }) else {
+        let Some(accepted) = accept_field_format_for_report(part, &mut parts, &mut text_format)
+        else {
             return false;
         };
         if accepted {
@@ -4231,9 +4220,8 @@ fn supported_fillin_syntax<'a>(mut parts: impl Iterator<Item = &'a str>) -> bool
             ask_once = true;
             continue;
         }
-        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        }) else {
+        let Some(accepted) = accept_field_format_for_report(part, &mut parts, &mut text_format)
+        else {
             return false;
         };
         if accepted {
@@ -4272,9 +4260,8 @@ fn supported_ask_syntax<'a>(mut parts: impl Iterator<Item = &'a str>) -> bool {
             ask_once = true;
             continue;
         }
-        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        }) else {
+        let Some(accepted) = accept_field_format_for_report(part, &mut parts, &mut text_format)
+        else {
             return false;
         };
         if !accepted {
@@ -4354,9 +4341,8 @@ fn supported_set_syntax(instruction: &str) -> bool {
     }
     let mut text_format = false;
     while let Some(part) = parts.next() {
-        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        }) else {
+        let Some(accepted) = accept_field_format_for_report(part, &mut parts, &mut text_format)
+        else {
             return false;
         };
         if accepted {
@@ -4763,9 +4749,7 @@ fn supported_toc_bookmark_scope(instruction: &str) -> Option<Option<String>> {
     let mut text_format = false;
     while let Some(part) = parts.next() {
         saw_switch = true;
-        if accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
-        })? {
+        if accept_field_format_for_report(part, &mut parts, &mut text_format)? {
             saw_default_toc_neutral_switch = true;
             continue;
         }
