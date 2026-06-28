@@ -2893,6 +2893,46 @@ fn write_docx_keeps_header_footer_page_break_blocks() {
 }
 
 #[test]
+fn write_docx_keeps_header_footer_simple_field_runs() {
+    let model = DocModel {
+        blocks: vec![Block::Paragraph(plain_paragraph("Body"))],
+        setup: DocSetup {
+            header: vec![Block::Paragraph(Paragraph {
+                runs: vec![RunBuilder::new("report.docx").field("FILENAME \\p").build()],
+                ..Paragraph::default()
+            })],
+            footer: vec![Block::Paragraph(Paragraph {
+                runs: vec![RunBuilder::new("1").field("PAGE").build()],
+                ..Paragraph::default()
+            })],
+            ..DocSetup::default()
+        },
+        ..DocModel::default()
+    };
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let header_xml = String::from_utf8(parts["word/header1.xml"].clone()).unwrap();
+    let footer_xml = String::from_utf8(parts["word/footer1.xml"].clone()).unwrap();
+
+    assert!(
+        header_xml.contains(r#"<w:fldSimple w:instr=" FILENAME \p ">"#),
+        "header field XML missing: {header_xml}"
+    );
+    assert!(
+        footer_xml.contains(r#"<w:fldSimple w:instr=" PAGE ">"#),
+        "footer field XML missing: {footer_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("header/footer field .docx reopens");
+    let header_text = reopened.header_text();
+    assert!(
+        header_text.contains("report.docx") && header_text.contains('1'),
+        "header/footer field result text not readable after reopen: {header_text:?}"
+    );
+}
+
+#[test]
 fn table_builder_adds_rich_table_cells() {
     let navy = Color::rgb(0x1F, 0x38, 0x64);
     let model = DocBuilder::new()

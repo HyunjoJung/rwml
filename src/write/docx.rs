@@ -153,13 +153,7 @@ fn render_hf_body(blocks: &[crate::model::Block], page_numbers: bool) -> String 
                     out.push_str(&format!(r#"<w:pPr><w:jc w:val="{j}"/></w:pPr>"#));
                 }
                 for r in &p.runs {
-                    out.push_str("<w:r>");
-                    write_rpr(&mut out, &r.props);
-                    if let Some(img) = &r.image {
-                        write_run_text(&mut out, &image_placeholder_text(img, "image unavailable"));
-                    }
-                    write_run_text(&mut out, &r.text);
-                    out.push_str("</w:r>");
+                    write_hf_run(&mut out, r);
                 }
                 out.push_str("</w:p>");
             }
@@ -204,6 +198,38 @@ fn render_hf_body(blocks: &[crate::model::Block], page_numbers: bool) -> String 
         out.push_str("<w:p/>");
     }
     out
+}
+
+fn write_hf_run(out: &mut String, r: &crate::model::Run) {
+    let mut run_xml = String::new();
+    run_xml.push_str("<w:r>");
+    write_rpr(&mut run_xml, &r.props);
+    if let Some(img) = &r.image {
+        write_run_text(
+            &mut run_xml,
+            &image_placeholder_text(img, "image unavailable"),
+        );
+    }
+    write_run_text(&mut run_xml, &r.text);
+    run_xml.push_str("</w:r>");
+
+    if let FieldRole::Simple { instruction } = &r.field {
+        let instruction = normalize_field_instruction(instruction);
+        if !instruction.is_empty() {
+            let dirty = if r.field_dirty {
+                r#" w:dirty="true""#
+            } else {
+                ""
+            };
+            out.push_str(&format!(
+                r#"<w:fldSimple w:instr=" {} "{dirty}>{run_xml}</w:fldSimple>"#,
+                esc_attr(&instruction)
+            ));
+            return;
+        }
+    }
+
+    out.push_str(&run_xml);
 }
 
 /// Wrap a header/footer body in its root element + namespaces.
