@@ -1310,6 +1310,7 @@ fn docx_non_body_story_feature_parts(package: &crate::opc::Package) -> Vec<Strin
 fn scan_docx_story_structure_markers(xml: &str, features: &mut FeatureInventory) {
     let mut story = FeatureInventory::default();
     scan_docx_xml(xml, &mut story);
+    features.comments += story.comments;
     features.content_controls += story.content_controls;
     features.nested_tables += story.nested_tables;
     features.ole_objects += story.ole_objects;
