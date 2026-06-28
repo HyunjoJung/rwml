@@ -1086,20 +1086,173 @@ fn note_ref_field_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+struct FieldDiagnosticInventoryCase {
+    instruction: &'static str,
+    cached: &'static str,
+    kind: FieldKind,
+    reason: FieldEvaluationReason,
+}
+
+#[cfg(feature = "docx")]
+fn field_diagnostic_inventory_case(
+    instruction: &'static str,
+    cached: &'static str,
+    kind: FieldKind,
+    reason: FieldEvaluationReason,
+) -> FieldDiagnosticInventoryCase {
+    FieldDiagnosticInventoryCase {
+        instruction,
+        cached,
+        kind,
+        reason,
+    }
+}
+
+#[cfg(feature = "docx")]
+fn field_diagnostic_inventory_cases() -> Vec<FieldDiagnosticInventoryCase> {
+    vec![
+        field_diagnostic_inventory_case(
+            r"REF PlainText \f",
+            "cached ref note mark",
+            FieldKind::Ref,
+            FieldEvaluationReason::UnsupportedSwitch,
+        ),
+        field_diagnostic_inventory_case(
+            r"REF PlainText \d-",
+            "cached ref separator",
+            FieldKind::Ref,
+            FieldEvaluationReason::NoComputedResult,
+        ),
+        field_diagnostic_inventory_case(
+            "REF MissingRef",
+            "cached missing ref",
+            FieldKind::Ref,
+            FieldEvaluationReason::UnresolvedBookmark,
+        ),
+        field_diagnostic_inventory_case(
+            r"PAGEREF PlainText \h",
+            "cached page ref",
+            FieldKind::PageRef,
+            FieldEvaluationReason::NoComputedResult,
+        ),
+        field_diagnostic_inventory_case(
+            r"PAGEREF MissingPage \h",
+            "cached missing page ref",
+            FieldKind::PageRef,
+            FieldEvaluationReason::UnresolvedBookmark,
+        ),
+        field_diagnostic_inventory_case(
+            "NOTEREF PlainText",
+            "cached plain note ref",
+            FieldKind::NoteRef,
+            FieldEvaluationReason::UnsupportedSwitch,
+        ),
+        field_diagnostic_inventory_case(
+            "NOTEREF MissingNote",
+            "cached missing note ref",
+            FieldKind::NoteRef,
+            FieldEvaluationReason::UnresolvedBookmark,
+        ),
+        field_diagnostic_inventory_case(
+            r"NOTEREF PlainText \x",
+            "cached bad note ref switch",
+            FieldKind::NoteRef,
+            FieldEvaluationReason::UnsupportedSwitch,
+        ),
+        field_diagnostic_inventory_case(
+            r"TOC \b PlainText",
+            "cached empty toc",
+            FieldKind::Toc,
+            FieldEvaluationReason::NoComputedResult,
+        ),
+        field_diagnostic_inventory_case(
+            r"TOC \b MissingScope",
+            "cached missing toc scope",
+            FieldKind::Toc,
+            FieldEvaluationReason::UnresolvedBookmark,
+        ),
+        field_diagnostic_inventory_case(
+            r"TOC \q",
+            "cached bad toc switch",
+            FieldKind::Toc,
+            FieldEvaluationReason::UnsupportedSwitch,
+        ),
+        field_diagnostic_inventory_case(
+            "CUSTOM Field",
+            "cached unknown field",
+            FieldKind::Unknown("CUSTOM".to_string()),
+            FieldEvaluationReason::UnknownField,
+        ),
+    ]
+}
+
+#[cfg(feature = "docx")]
+fn xml_escape(value: &str) -> String {
+    let mut escaped = String::new();
+    for ch in value.chars() {
+        match ch {
+            '&' => escaped.push_str("&amp;"),
+            '"' => escaped.push_str("&quot;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
+}
+
+#[cfg(feature = "docx")]
+fn field_kind_counts_from_inventory(cases: &[FieldDiagnosticInventoryCase]) -> Vec<FieldKindCount> {
+    let mut counts: Vec<FieldKindCount> = Vec::new();
+    for case in cases {
+        if let Some(count) = counts.iter_mut().find(|count| count.kind == case.kind) {
+            count.count += 1;
+        } else {
+            counts.push(field_kind_count(case.kind.clone(), 1));
+        }
+    }
+    counts
+}
+
+#[cfg(feature = "docx")]
+fn field_reason_counts_from_inventory(
+    cases: &[FieldDiagnosticInventoryCase],
+) -> Vec<FieldEvaluationReasonCount> {
+    let mut counts: Vec<FieldEvaluationReasonCount> = Vec::new();
+    for case in cases {
+        if let Some(count) = counts.iter_mut().find(|count| count.reason == case.reason) {
+            count.count += 1;
+        } else {
+            counts.push(field_reason_count(case.reason, 1));
+        }
+    }
+    counts
+}
+
+#[cfg(feature = "docx")]
 fn field_diagnostic_inventory_docx() -> Vec<u8> {
-    docx_fixture(&[
+    let mut document = String::from(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="1" w:name="PlainText"/><w:r><w:t>Plain target</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p>"#,
+    );
+    for case in field_diagnostic_inventory_cases() {
+        document.push_str(&format!(
+            r#"<w:p><w:fldSimple w:instr=" {} "><w:r><w:t>{}</w:t></w:r></w:fldSimple></w:p>"#,
+            xml_escape(case.instruction),
+            xml_escape(case.cached)
+        ));
+    }
+    document.push_str("</w:body></w:document>");
+
+    docx_fixture_bytes(vec![
         (
             "[Content_Types].xml",
-            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+            br#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#.to_vec(),
         ),
         (
             "_rels/.rels",
-            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            br#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#.to_vec(),
         ),
-        (
-            "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="1" w:name="PlainText"/><w:r><w:t>Plain target</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p><w:p><w:fldSimple w:instr=" REF PlainText \f "><w:r><w:t>cached ref note mark</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF PlainText \d- "><w:r><w:t>cached ref separator</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF MissingRef "><w:r><w:t>cached missing ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF PlainText \h "><w:r><w:t>cached page ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF MissingPage \h "><w:r><w:t>cached missing page ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NOTEREF PlainText "><w:r><w:t>cached plain note ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NOTEREF MissingNote "><w:r><w:t>cached missing note ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NOTEREF PlainText \x "><w:r><w:t>cached bad note ref switch</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TOC \b PlainText "><w:r><w:t>cached empty toc</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TOC \b MissingScope "><w:r><w:t>cached missing toc scope</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TOC \q "><w:r><w:t>cached bad toc switch</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" CUSTOM Field "><w:r><w:t>cached unknown field</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
-        ),
+        ("word/document.xml", document.into_bytes()),
     ])
 }
 
@@ -4077,57 +4230,37 @@ fn report_note_ref_field_warning_tracks_unresolved_and_unsupported_cases() {
 #[cfg(feature = "docx")]
 #[test]
 fn report_field_diagnostic_inventory_tracks_active_gap_buckets() {
+    let cases = field_diagnostic_inventory_cases();
+    let expected_field_kinds = field_kind_counts_from_inventory(&cases);
+    let expected_reasons = field_reason_counts_from_inventory(&cases);
+
     let doc = Document::open(&field_diagnostic_inventory_docx()).expect("fixture opens");
     let fields = doc.fields();
-    assert_eq!(fields.len(), 12);
-    assert!(fields.iter().all(|field| field.computed_result.is_none()));
+    assert_eq!(fields.len(), cases.len());
+    for (field, case) in fields.iter().zip(&cases) {
+        assert_eq!(field.instruction, case.instruction);
+        assert_eq!(field.kind, case.kind);
+        assert_eq!(field.result, case.cached);
+        assert_eq!(field.computed_result, None);
+    }
 
     let report = doc.report();
 
-    assert_eq!(report.features.fields, 12);
-    assert_eq!(
-        report.features.field_kinds,
-        vec![
-            field_kind_count(FieldKind::Ref, 3),
-            field_kind_count(FieldKind::PageRef, 2),
-            field_kind_count(FieldKind::NoteRef, 3),
-            field_kind_count(FieldKind::Toc, 3),
-            field_kind_count(FieldKind::Unknown("CUSTOM".to_string()), 1),
-        ]
-    );
+    assert_eq!(report.features.fields, cases.len());
+    assert_eq!(report.features.field_kinds, expected_field_kinds);
     assert_eq!(
         report.features.unsupported_field_kinds,
-        vec![
-            field_kind_count(FieldKind::Ref, 3),
-            field_kind_count(FieldKind::PageRef, 2),
-            field_kind_count(FieldKind::NoteRef, 3),
-            field_kind_count(FieldKind::Toc, 3),
-            field_kind_count(FieldKind::Unknown("CUSTOM".to_string()), 1),
-        ]
+        expected_field_kinds
     );
-    assert_eq!(
-        report.features.unsupported_field_reasons,
-        vec![
-            field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 4),
-            field_reason_count(FieldEvaluationReason::NoComputedResult, 3),
-            field_reason_count(FieldEvaluationReason::UnresolvedBookmark, 4),
-            field_reason_count(FieldEvaluationReason::UnknownField, 1),
-        ]
-    );
+    assert_eq!(report.features.unsupported_field_reasons, expected_reasons);
     assert_eq!(
         report
             .warnings
             .iter()
             .find(|warning| matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })),
         Some(&DocumentWarning::UnsupportedFieldEvaluation {
-            count: 12,
-            field_kinds: vec![
-                field_kind_count(FieldKind::Ref, 3),
-                field_kind_count(FieldKind::PageRef, 2),
-                field_kind_count(FieldKind::NoteRef, 3),
-                field_kind_count(FieldKind::Toc, 3),
-                field_kind_count(FieldKind::Unknown("CUSTOM".to_string()), 1),
-            ],
+            count: cases.len(),
+            field_kinds: expected_field_kinds.clone(),
         })
     );
 
