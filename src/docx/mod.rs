@@ -1719,7 +1719,9 @@ fn parse_document_id(xml: &str) -> Option<String> {
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) if e.name().as_ref() == b"w14:docId" => {
-                return attr_local(&e, b"val").filter(|id| !id.trim().is_empty());
+                return attr_local(&e, b"val")
+                    .map(|id| id.trim().to_owned())
+                    .filter(|id| !id.is_empty());
             }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
@@ -2096,7 +2098,7 @@ pub(crate) fn toggle_on(val: Option<String>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_part, parse_rels, toggle_on, MAX_REL_RECORDS};
+    use super::{normalize_part, parse_document_id, parse_rels, toggle_on, MAX_REL_RECORDS};
 
     #[test]
     fn toggle_on_accepts_case_insensitive_off_values() {
@@ -2132,6 +2134,14 @@ mod tests {
             </Relationships>"#,
         );
         assert_eq!(rels.get("rLink").map(|(_, external)| *external), Some(true));
+    }
+
+    #[test]
+    fn parse_document_id_trims_ooxml_value() {
+        let xml = r#"<w:settings xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml">
+            <w14:docId w14:val=" 6ECD4467 "/>
+        </w:settings>"#;
+        assert_eq!(parse_document_id(xml).as_deref(), Some("6ECD4467"));
     }
 
     /// Relationship targets resolve relative to `word/` with `.`/`..`/
