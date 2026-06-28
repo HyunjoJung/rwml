@@ -2423,7 +2423,7 @@ fn read_tblpr(r: &mut Xml<'_>) -> TableProps {
         match r.read_event() {
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"tblW"
-                    && attr_local(&e, b"type").as_deref() == Some("pct") =>
+                    && attr_local(&e, b"type").is_some_and(|value| value.trim() == "pct") =>
             {
                 props.width_pct = attr_local(&e, b"w")
                     .and_then(|v| v.trim().parse::<f32>().ok())
@@ -2716,7 +2716,7 @@ fn apply_tcpr_child(t: &mut TcPr, e: &BytesStart<'_>) {
         }
         // `type="pct"` w:w is in fiftieths of a percent (5000 = 100%);
         // `dxa` (twips) is absolute and left as auto here.
-        b"tcW" if attr_local(e, b"type").as_deref() == Some("pct") => {
+        b"tcW" if attr_local(e, b"type").is_some_and(|value| value.trim() == "pct") => {
             t.width_pct = attr_local(e, b"w")
                 .and_then(|v| v.trim().parse::<f32>().ok())
                 .map(|p| p / 5000.0);
@@ -3289,8 +3289,8 @@ mod tests {
                 <w:pPr><w:spacing w:before="240" w:after="120" w:line="360"/><w:ind w:left="720" w:firstLine="240"/><w:shd w:fill=" EEEEEE "/></w:pPr>
                 <w:r><w:rPr><w:rFonts w:ascii="Arial" w:eastAsia="맑은 고딕"/><w:sz w:val="24"/><w:color w:val=" FF0000 "/><w:vertAlign w:val="superscript"/><w:caps/></w:rPr><w:t>빨강</w:t></w:r>
             </w:p>
-            <w:tbl><w:tr><w:tc>
-                <w:tcPr><w:shd w:fill=" DDDDDD "/><w:vAlign w:val="center"/><w:tcW w:w="2500" w:type="pct"/></w:tcPr>
+            <w:tbl><w:tblPr><w:tblW w:w="4000" w:type=" pct "/></w:tblPr><w:tr><w:tc>
+                <w:tcPr><w:shd w:fill=" DDDDDD "/><w:vAlign w:val="center"/><w:tcW w:w="2500" w:type=" pct "/></w:tcPr>
                 <w:p><w:r><w:t>셀</w:t></w:r></w:p>
             </w:tc></w:tr></w:tbl>
         </w:body></w:document>"#;
@@ -3320,6 +3320,7 @@ mod tests {
         let Block::Table(t) = &blocks[1] else {
             panic!("table")
         };
+        assert_eq!(t.width_pct, Some(0.8));
         let c = &t.rows[0].cells[0];
         assert_eq!(
             c.shading,
