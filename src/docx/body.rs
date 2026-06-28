@@ -213,8 +213,10 @@ fn read_hf_ref_section(r: &mut Xml<'_>) -> HeaderFooterRefs {
 
 fn header_footer_ref(e: &BytesStart<'_>) -> Option<HeaderFooterRef> {
     attr_local(e, b"id").map(|rel_id| HeaderFooterRef {
-        rel_id,
-        type_name: attr_local(e, b"type").unwrap_or_else(|| "default".to_string()),
+        rel_id: rel_id.trim().to_owned(),
+        type_name: attr_local(e, b"type")
+            .map(|value| value.trim().to_owned())
+            .unwrap_or_else(|| "default".to_string()),
     })
 }
 

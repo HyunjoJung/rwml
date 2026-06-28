@@ -126,7 +126,7 @@ fn header_footer_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:r><w:t>OLD</w:t></w:r></w:p><w:sectPr><w:headerReference w:type="default" r:id="rIdHeader"/><w:footerReference w:type="default" r:id="rIdFooter"/></w:sectPr></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:r><w:t>OLD</w:t></w:r></w:p><w:sectPr><w:headerReference w:type=" default " r:id=" rIdHeader "/><w:footerReference w:type=" default " r:id=" rIdFooter "/></w:sectPr></w:body></w:document>"#,
         ),
         (
             "word/header1.xml",
