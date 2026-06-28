@@ -211,9 +211,13 @@ pub struct FeatureInventory {
 
 impl FeatureInventory {
     /// `true` when this inventory contains features the current renderer cannot
-    /// faithfully draw beyond placeholders or preserved package payloads.
+    /// faithfully draw beyond cached field results, placeholders, or preserved
+    /// package payloads.
     pub fn has_unsupported_render_features(&self) -> bool {
-        self.floating_shapes > 0
+        self.unsupported_field_kinds
+            .iter()
+            .any(|item| item.count > 0)
+            || self.floating_shapes > 0
             || self.charts > 0
             || self.ole_objects > 0
             || self.unsupported_metafiles > 0
@@ -6140,6 +6144,19 @@ mod tests {
                 count: 1,
             }]
         );
+    }
+
+    #[test]
+    fn unsupported_render_features_include_unsupported_field_evaluation() {
+        assert!(!super::FeatureInventory::default().has_unsupported_render_features());
+        assert!(super::FeatureInventory {
+            unsupported_field_kinds: vec![super::FieldKindCount {
+                kind: FieldKind::Toc,
+                count: 1,
+            }],
+            ..super::FeatureInventory::default()
+        }
+        .has_unsupported_render_features());
     }
 
     #[test]
