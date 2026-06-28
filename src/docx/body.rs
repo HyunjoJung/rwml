@@ -1329,12 +1329,10 @@ fn read_content_control_pr(r: &mut Xml<'_>) -> Option<AuthoredContentControl> {
 fn read_content_control_pr_item(control: &mut AuthoredContentControl, e: &BytesStart<'_>) {
     match local(e.name().as_ref()) {
         b"alias" => control.alias = attr_local_trimmed(e, b"val"),
-        b"tag" => control.tag = attr_local(e, b"val").map(|tag| tag.trim().to_owned()),
+        b"tag" => control.tag = attr_local_trimmed(e, b"val"),
         b"dataBinding" => {
-            control.data_binding_xpath =
-                attr_local(e, b"xpath").map(|xpath| xpath.trim().to_owned());
-            control.data_binding_store_item_id =
-                attr_local(e, b"storeItemID").map(|id| id.trim().to_owned());
+            control.data_binding_xpath = attr_local_trimmed(e, b"xpath");
+            control.data_binding_store_item_id = attr_local_trimmed(e, b"storeItemID");
         }
         _ => {}
     }
@@ -3564,6 +3562,25 @@ mod tests {
             control.data_binding_store_item_id.as_deref(),
             Some("{11111111-2222-3333-4444-555555555555}")
         );
+    }
+
+    #[test]
+    fn content_control_blank_metadata_is_ignored() {
+        let xml = r#"<w:document><w:body>
+            <w:sdt><w:sdtPr>
+                <w:alias w:val=" "/>
+                <w:tag w:val=" "/>
+                <w:dataBinding w:xpath=" " w:storeItemID=" "/>
+            </w:sdtPr><w:sdtContent>
+                <w:p><w:r><w:t>Plain value</w:t></w:r></w:p>
+            </w:sdtContent></w:sdt>
+        </w:body></w:document>"#;
+        let blocks = parse(xml);
+        let Block::Paragraph(paragraph) = &blocks[0] else {
+            panic!("paragraph")
+        };
+
+        assert!(paragraph.runs[0].content_control.is_none());
     }
 
     #[test]
