@@ -1044,7 +1044,9 @@ Concrete entry points:
 `RenderedPdf` carries `pdf: Vec<u8>` and the report from the same pagination
 pass. Reports built from an opened `Document` reuse `Document::report().features`
 so unsupported preserved constructs can become render warnings even when the
-lossy model cannot draw them directly. Opened-document render paths also use that
+lossy model cannot draw them directly; reports also warn when model raster image
+bytes are present but the PDF backend cannot decode that format. Opened-document
+render paths also use that
 inventory to draw bounded overlay boxes for recovered `.docx` floating-shape
 geometry and anchor layout metadata, including enabled `wp:simplePos` absolute
 placement, relative z-order, wrap policy, and best-effort visible top-level body

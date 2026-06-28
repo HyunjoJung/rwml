@@ -339,6 +339,12 @@ pub enum RenderWarning {
         /// Number of WMF/EMF parts observed.
         count: usize,
     },
+    /// Raster image bytes were present, but the current PDF backend could not
+    /// decode that image format.
+    UndecodableRasterImages {
+        /// Number of model images skipped by the renderer.
+        count: usize,
+    },
 }
 
 /// Renderer metrics and warnings for a generated PDF.
@@ -1148,6 +1154,11 @@ fn render_warning_json(out: &mut String, warning: &RenderWarning) {
         }
         RenderWarning::UnsupportedMetafileImages { count } => {
             json_field_str(out, "kind", "UnsupportedMetafileImages");
+            out.push(',');
+            json_field_num(out, "count", count);
+        }
+        RenderWarning::UndecodableRasterImages { count } => {
+            json_field_str(out, "kind", "UndecodableRasterImages");
             out.push(',');
             json_field_num(out, "count", count);
         }

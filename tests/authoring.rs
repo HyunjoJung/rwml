@@ -7827,6 +7827,27 @@ fn render_pdf_report_counts_authored_hyperlink_runs() {
 
 #[cfg(feature = "render")]
 #[test]
+fn render_pdf_report_warns_about_undecodable_raster_images() {
+    let model = DocBuilder::new()
+        .rich_image(ImageBuilder::new(tiny_bmp(), "image/bmp"))
+        .build();
+
+    let rendered = rdoc::render_pdf_with_report(&model);
+
+    assert!(rendered.pdf.starts_with(b"%PDF"));
+    assert!(rendered.report.warnings.iter().any(|warning| matches!(
+        warning,
+        rdoc::RenderWarning::UndecodableRasterImages { count: 1 }
+    )));
+    let json = rendered.report.to_json();
+    assert!(
+        json.contains(r#""kind":"UndecodableRasterImages","count":1"#),
+        "{json}"
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
 fn render_pdf_report_treats_page_ref_as_named_unsupported_field() {
     let model = DocBuilder::new().field("PAGEREF Figure1 \\h", "3").build();
 

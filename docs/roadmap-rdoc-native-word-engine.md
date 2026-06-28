@@ -712,8 +712,8 @@ Initial status:
 
 - `render_pdf_with_report()`, `render_pdf_with_fonts_and_report()`, and
   `Document::to_pdf_with_report()` return generated PDF bytes plus
-  `RenderReport` page counts and renderer warnings derived from
-  `FeatureInventory`.
+  `RenderReport` page counts, renderer warnings derived from `FeatureInventory`,
+  and model raster decode warnings when image bytes are skipped.
 - Opened documents can now use the same explicit font registration path as raw
   `DocModel`s through `Document::to_pdf_with_fonts*` and
   `Document::try_to_pdf_with_fonts*`, including report-returning variants.

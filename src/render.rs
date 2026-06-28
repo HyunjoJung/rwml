@@ -42,7 +42,7 @@ use crate::model::{
     Align, Block, Cell, CharProps, Chart, ChartKind, ChartShape, Color, DocModel, FieldRole, Image,
     ListInfo, PageSetup, ParaProps, Paragraph, Run, SectionSetup, Spacing, Table, VCell,
 };
-use crate::report::{self, FeatureInventory, RenderReport, RenderedPdf};
+use crate::report::{self, FeatureInventory, RenderReport, RenderWarning, RenderedPdf};
 use crate::{Error, Result};
 use crate::{FieldKind, FloatingShape, ShapePosition};
 
@@ -280,6 +280,52 @@ fn image_flow_item(img: &Image, geom: Geom) -> Option<FlowItem> {
         w *= s;
     }
     (w > 0.0 && h > 0.0).then_some(FlowItem::Picture { image, w, h })
+}
+
+fn image_is_undecodable(img: &Image) -> bool {
+    img.bytes
+        .as_ref()
+        .is_some_and(|bytes| decode_image(bytes, img.mime.as_deref()).is_none())
+}
+
+fn count_undecodable_images(blocks: &[Block]) -> usize {
+    let mut count = 0;
+    for block in blocks {
+        match block {
+            Block::Paragraph(paragraph) => {
+                count += paragraph
+                    .runs
+                    .iter()
+                    .filter_map(|run| run.image.as_ref())
+                    .filter(|image| image_is_undecodable(image))
+                    .count();
+            }
+            Block::Table(table) => {
+                for row in &table.rows {
+                    for cell in &row.cells {
+                        count += count_undecodable_images(&cell.blocks);
+                    }
+                }
+            }
+            Block::Image(image) if image_is_undecodable(image) => count += 1,
+            Block::Image(_) | Block::Chart(_) | Block::PageBreak | Block::SectionBreak(_) => {}
+        }
+    }
+    count
+}
+
+fn render_warnings_for_model(
+    unsupported: &FeatureInventory,
+    model: &DocModel,
+) -> Vec<RenderWarning> {
+    let mut warnings = report::render_warnings_for(unsupported);
+    let undecodable_images = count_undecodable_images(&model.blocks);
+    if undecodable_images > 0 {
+        warnings.push(RenderWarning::UndecodableRasterImages {
+            count: undecodable_images,
+        });
+    }
+    warnings
 }
 
 /// Size an authored chart block for PDF flow (96-dpi px -> PDF points, fit to
@@ -3591,7 +3637,7 @@ pub(crate) fn to_pdf_with_fonts_and_report_and_shapes(
             pdf: Vec::new(),
             report: RenderReport {
                 pages: 0,
-                warnings: report::render_warnings_for(&fallback_unsupported),
+                warnings: render_warnings_for_model(&fallback_unsupported, model),
                 unsupported: fallback_unsupported,
             },
         })
@@ -3613,7 +3659,7 @@ pub(crate) fn try_to_pdf_with_fonts_and_report_and_shapes(
 ) -> Result<RenderedPdf> {
     let unsupported = report::render_unsupported_features(&features);
     let rendered = render_pdf(model, extra_fonts, Some(&unsupported), floating_shapes)?;
-    let warnings = report::render_warnings_for(&unsupported);
+    let warnings = render_warnings_for_model(&unsupported, model);
     Ok(RenderedPdf {
         pdf: rendered.pdf,
         report: RenderReport {

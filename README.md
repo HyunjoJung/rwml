@@ -726,7 +726,8 @@ via LibreOffice. rdoc aims to match specialist extractors on text/model recovery
 while staying dependency-light; render fidelity remains below LibreOffice.
 `render_pdf_with_report` / `to_pdf_with_report` expose the emitted page count and
 renderer warnings for unsupported fields, floating shapes, charts, OLE objects,
-and WMF/EMF/EMZ/WMZ images. `Document::report().features.metafiles` exposes
+WMF/EMF/EMZ/WMZ images, and raster images skipped because the PDF backend cannot
+decode their bytes. `Document::report().features.metafiles` exposes
 metafile part path, format, stored byte size, compression flag, and header-derived
 dimensions when a raw or gzip-wrapped EMF header or placeable WMF header makes
 that cheap to recover. Floating-shape feature counts use the same accepted/current
