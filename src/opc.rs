@@ -1023,7 +1023,7 @@ fn is_xml_whitespace(bytes: &[u8]) -> bool {
         .all(|b| matches!(b, b' ' | b'\t' | b'\r' | b'\n'))
 }
 
-/// Local name of a possibly-prefixed qualified name (`ct:Default` ??`Default`). OPC
+/// Local name of a possibly-prefixed qualified name (`ct:Default` or `Default`). OPC
 /// vocabularies may be namespace-prefixed, so element matching must be local-name
 /// based (the OPC attributes themselves are always unprefixed / in no namespace).
 fn local(name: &[u8]) -> &[u8] {
