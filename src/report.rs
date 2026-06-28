@@ -6,12 +6,15 @@
 
 #[cfg(not(feature = "docx"))]
 use crate::annotation::field_level_token as diagnostic_level_token;
+#[cfg(not(feature = "docx"))]
+use crate::annotation::field_name_token as diagnostic_name_token;
 use crate::annotation::{
     accept_field_number_format_switch, accept_field_text_format_switch,
-    accept_general_format_switch, field_level_range_token as diagnostic_level_range_token,
-    field_literal_token as diagnostic_literal_token, field_name_token as diagnostic_name_token,
-    instruction_parts, is_note_ref_kind, is_ref_value_neutral_switch, is_toc_value_neutral_switch,
-    strip_ascii_switch_prefix, Field, FieldKind, FieldNumberFormat, FieldTextFormat,
+    accept_general_format_switch, field_identifier_token as diagnostic_identifier_token,
+    field_level_range_token as diagnostic_level_range_token,
+    field_literal_token as diagnostic_literal_token, instruction_parts, is_note_ref_kind,
+    is_ref_value_neutral_switch, is_toc_value_neutral_switch, strip_ascii_switch_prefix, Field,
+    FieldKind, FieldNumberFormat, FieldTextFormat,
 };
 use crate::model::{Block, FieldRole, Stats, Table};
 use crate::CoreProperties;
@@ -4990,11 +4993,6 @@ fn parse_toc_style_specs_for_report(value: &str) -> Option<()> {
         }
     }
     Some(())
-}
-
-fn diagnostic_identifier_token(value: &str) -> Option<&str> {
-    let value = diagnostic_name_token(value)?;
-    (!value.chars().any(char::is_whitespace)).then_some(value)
 }
 
 #[cfg(feature = "docx")]

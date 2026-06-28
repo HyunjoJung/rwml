@@ -8,8 +8,8 @@ use quick_xml::Reader;
 use crate::annotation::{
     accept_field_number_format_switch,
     accept_field_text_format_switch as accept_field_format_switch, accept_general_format_switch,
-    field_level_range_token, field_level_token, field_literal_token, field_name_token,
-    instruction_parts, is_neutral_field_format_switch, is_note_ref_kind,
+    field_identifier_token, field_level_range_token, field_level_token, field_literal_token,
+    field_name_token, instruction_parts, is_neutral_field_format_switch, is_note_ref_kind,
     is_ref_value_neutral_switch, is_toc_value_neutral_switch, strip_ascii_switch_prefix, Field,
     FieldKind, FieldNumberFormat, FieldTextFormat,
 };
@@ -4458,24 +4458,6 @@ fn set_tc_entry_type(slot: &mut Option<String>, value: &str) -> Option<()> {
 
 fn tc_type_identifier(value: &str) -> Option<String> {
     Some(field_identifier_token(value)?.to_string())
-}
-
-fn field_identifier_token(value: &str) -> Option<&str> {
-    let value = value.trim();
-    let value = match (value.starts_with('"'), value.ends_with('"')) {
-        (true, true) if value.len() >= 2 => &value[1..value.len() - 1],
-        (true, _) | (_, true) => return None,
-        (false, false) => value,
-    }
-    .trim();
-    if value.is_empty()
-        || value.starts_with('\\')
-        || value.contains('"')
-        || value.chars().any(char::is_whitespace)
-    {
-        return None;
-    }
-    Some(value)
 }
 
 fn is_tc_instruction(instruction: &str) -> bool {

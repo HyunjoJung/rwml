@@ -510,6 +510,11 @@ pub(crate) fn field_name_token(value: &str) -> Option<&str> {
     Some(value)
 }
 
+pub(crate) fn field_identifier_token(value: &str) -> Option<&str> {
+    let value = field_name_token(value)?;
+    (!value.chars().any(char::is_whitespace)).then_some(value)
+}
+
 pub(crate) fn field_literal_token(value: &str) -> Option<&str> {
     let value = value.trim();
     let value = match (value.starts_with('"'), value.ends_with('"')) {
