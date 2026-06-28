@@ -6225,16 +6225,22 @@ mod tests {
 
     #[test]
     fn barcode_and_form_field_diagnostics_reject_malformed_syntax() {
-        for (kind, valid, malformed) in [
+        for (kind, valid, valid_format, malformed, malformed_format, bad_format) in [
             (
                 FieldKind::Barcode("DISPLAYBARCODE".to_string()),
                 r#"DISPLAYBARCODE "12345" QR \q 3"#,
+                r#"DISPLAYBARCODE "12345" QR \* Upper"#,
                 r#"DISPLAYBARCODE "12345 QR"#,
+                r#"DISPLAYBARCODE "12345" QR \*"#,
+                r#"DISPLAYBARCODE "12345" QR \* BadFormat"#,
             ),
             (
                 FieldKind::FormField("FORMTEXT".to_string()),
+                "FORMTEXT",
                 r#"FORMTEXT \* MERGEFORMAT"#,
                 r#"FORMTEXT \x"#,
+                r#"FORMTEXT \*"#,
+                r#"FORMTEXT \* BadFormat"#,
             ),
         ] {
             let valid_field = Field {
@@ -6246,13 +6252,40 @@ mod tests {
                 super::unsupported_field_reason(&valid_field),
                 Some(super::FieldEvaluationReason::NoComputedResult)
             );
+            let valid_format_field = Field {
+                kind: kind.clone(),
+                instruction: valid_format.to_string(),
+                ..Field::default()
+            };
+            assert_eq!(
+                super::unsupported_field_reason(&valid_format_field),
+                Some(super::FieldEvaluationReason::NoComputedResult)
+            );
             let malformed_field = Field {
-                kind,
+                kind: kind.clone(),
                 instruction: malformed.to_string(),
                 ..Field::default()
             };
             assert_eq!(
                 super::unsupported_field_reason(&malformed_field),
+                Some(super::FieldEvaluationReason::UnsupportedSwitch)
+            );
+            let malformed_format_field = Field {
+                kind: kind.clone(),
+                instruction: malformed_format.to_string(),
+                ..Field::default()
+            };
+            assert_eq!(
+                super::unsupported_field_reason(&malformed_format_field),
+                Some(super::FieldEvaluationReason::UnsupportedSwitch)
+            );
+            let bad_format_field = Field {
+                kind,
+                instruction: bad_format.to_string(),
+                ..Field::default()
+            };
+            assert_eq!(
+                super::unsupported_field_reason(&bad_format_field),
                 Some(super::FieldEvaluationReason::UnsupportedSwitch)
             );
         }

@@ -7133,13 +7133,13 @@ fn docx_barcode_diagnostics_split_valid_broader_fields_from_malformed_syntax() {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" DISPLAYBARCODE &quot;https://example.com&quot; QR \q H "><w:r><w:t>QR preview</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DISPLAYBARCODE &quot;https://example.com&quot; \q H "><w:r><w:t>cached missing barcode type</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DISPLAYBARCODE &quot;https://example.com&quot; QR \q "><w:r><w:t>cached missing quality operand</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DISPLAYBARCODE &quot;https://example.com QR "><w:r><w:t>cached malformed barcode</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DISPLAYBARCODE &quot;https://example.com&quot; QR \* "><w:r><w:t>cached dangling barcode format</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" DISPLAYBARCODE &quot;https://example.com&quot; QR \q H "><w:r><w:t>QR preview</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DISPLAYBARCODE &quot;https://example.com&quot; QR \* Upper "><w:r><w:t>formatted QR preview</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DISPLAYBARCODE &quot;https://example.com&quot; \q H "><w:r><w:t>cached missing barcode type</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DISPLAYBARCODE &quot;https://example.com&quot; QR \q "><w:r><w:t>cached missing quality operand</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DISPLAYBARCODE &quot;https://example.com QR "><w:r><w:t>cached malformed barcode</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DISPLAYBARCODE &quot;https://example.com&quot; QR \* "><w:r><w:t>cached dangling barcode format</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DISPLAYBARCODE &quot;https://example.com&quot; QR \* BadFormat "><w:r><w:t>cached bad barcode format</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ]))
     .expect("fixture opens");
 
     let fields = doc.fields();
-    assert_eq!(fields.len(), 5);
+    assert_eq!(fields.len(), 7);
     assert_eq!(
         fields[0].kind,
         FieldKind::Barcode("DISPLAYBARCODE".to_string())
@@ -7155,7 +7155,7 @@ fn docx_barcode_diagnostics_split_valid_broader_fields_from_malformed_syntax() {
     );
     assert_eq!(
         fields[1].instruction,
-        r#"DISPLAYBARCODE "https://example.com" \q H"#
+        r#"DISPLAYBARCODE "https://example.com" QR \* Upper"#
     );
     assert_eq!(fields[1].computed_result, None);
     assert_eq!(
@@ -7164,7 +7164,7 @@ fn docx_barcode_diagnostics_split_valid_broader_fields_from_malformed_syntax() {
     );
     assert_eq!(
         fields[2].instruction,
-        r#"DISPLAYBARCODE "https://example.com" QR \q"#
+        r#"DISPLAYBARCODE "https://example.com" \q H"#
     );
     assert_eq!(fields[2].computed_result, None);
     assert_eq!(
@@ -7173,7 +7173,7 @@ fn docx_barcode_diagnostics_split_valid_broader_fields_from_malformed_syntax() {
     );
     assert_eq!(
         fields[3].instruction,
-        r#"DISPLAYBARCODE "https://example.com QR "#
+        r#"DISPLAYBARCODE "https://example.com" QR \q"#
     );
     assert_eq!(fields[3].computed_result, None);
     assert_eq!(
@@ -7182,16 +7182,34 @@ fn docx_barcode_diagnostics_split_valid_broader_fields_from_malformed_syntax() {
     );
     assert_eq!(
         fields[4].instruction,
-        r#"DISPLAYBARCODE "https://example.com" QR \*"#
+        r#"DISPLAYBARCODE "https://example.com QR "#
     );
     assert_eq!(fields[4].computed_result, None);
+    assert_eq!(
+        fields[5].kind,
+        FieldKind::Barcode("DISPLAYBARCODE".to_string())
+    );
+    assert_eq!(
+        fields[5].instruction,
+        r#"DISPLAYBARCODE "https://example.com" QR \*"#
+    );
+    assert_eq!(fields[5].computed_result, None);
+    assert_eq!(
+        fields[6].kind,
+        FieldKind::Barcode("DISPLAYBARCODE".to_string())
+    );
+    assert_eq!(
+        fields[6].instruction,
+        r#"DISPLAYBARCODE "https://example.com" QR \* BadFormat"#
+    );
+    assert_eq!(fields[6].computed_result, None);
 
     let report = doc.report();
     assert_eq!(
         report.features.unsupported_field_kinds,
         vec![FieldKindCount {
             kind: FieldKind::Barcode("DISPLAYBARCODE".to_string()),
-            count: 5,
+            count: 7,
         }]
     );
     assert_eq!(
@@ -7199,11 +7217,11 @@ fn docx_barcode_diagnostics_split_valid_broader_fields_from_malformed_syntax() {
         vec![
             FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::NoComputedResult,
-                count: 1,
+                count: 2,
             },
             FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::UnsupportedSwitch,
-                count: 4,
+                count: 5,
             },
         ]
     );
@@ -7211,6 +7229,7 @@ fn docx_barcode_diagnostics_split_valid_broader_fields_from_malformed_syntax() {
     assert!(doc.main_text().contains("cached missing quality operand"));
     assert!(doc.main_text().contains("cached malformed barcode"));
     assert!(doc.main_text().contains("cached dangling barcode format"));
+    assert!(doc.main_text().contains("cached bad barcode format"));
 }
 
 #[test]
