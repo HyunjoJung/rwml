@@ -589,13 +589,15 @@ impl ContentControlBuilder {
 
     /// Set the content-control alias/title.
     pub fn alias(mut self, alias: impl Into<String>) -> Self {
-        self.control.alias = Some(alias.into().trim().to_string());
+        let alias = alias.into().trim().to_string();
+        self.control.alias = (!alias.is_empty()).then_some(alias);
         self
     }
 
     /// Set the content-control tag.
     pub fn tag(mut self, tag: impl Into<String>) -> Self {
-        self.control.tag = Some(tag.into().trim().to_string());
+        let tag = tag.into().trim().to_string();
+        self.control.tag = (!tag.is_empty()).then_some(tag);
         self
     }
 
@@ -605,8 +607,15 @@ impl ContentControlBuilder {
         xpath: impl Into<String>,
         store_item_id: impl Into<String>,
     ) -> Self {
-        self.control.data_binding_xpath = Some(xpath.into().trim().to_string());
-        self.control.data_binding_store_item_id = Some(store_item_id.into().trim().to_string());
+        let xpath = xpath.into().trim().to_string();
+        let store_item_id = store_item_id.into().trim().to_string();
+        if !xpath.is_empty() && !store_item_id.is_empty() {
+            self.control.data_binding_xpath = Some(xpath);
+            self.control.data_binding_store_item_id = Some(store_item_id);
+        } else {
+            self.control.data_binding_xpath = None;
+            self.control.data_binding_store_item_id = None;
+        }
         self
     }
 

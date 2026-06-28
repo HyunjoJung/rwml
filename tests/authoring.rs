@@ -1912,10 +1912,22 @@ fn run_builder_does_not_emit_blank_content_control_metadata() {
                 ContentControlBuilder::new()
                     .alias(" ")
                     .tag("\t")
-                    .data_binding(" ", "\n"),
+                    .data_binding(" /root/client ", "\n"),
             )
             .build()])
         .build();
+
+    let Block::Paragraph(paragraph) = &model.blocks[0] else {
+        panic!("expected paragraph");
+    };
+    let control = paragraph.runs[0]
+        .content_control
+        .as_ref()
+        .expect("run carries content-control metadata");
+    assert_eq!(control.alias, None);
+    assert_eq!(control.tag, None);
+    assert_eq!(control.data_binding_xpath, None);
+    assert_eq!(control.data_binding_store_item_id, None);
 
     let bytes = rdoc::write_docx(&model);
     let parts = unzip_parts(&bytes);
