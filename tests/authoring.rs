@@ -2864,6 +2864,35 @@ fn write_docx_keeps_header_footer_chart_placeholders_visible() {
 }
 
 #[test]
+fn write_docx_keeps_header_footer_page_break_blocks() {
+    let model = DocModel {
+        blocks: vec![Block::Paragraph(plain_paragraph("Body"))],
+        setup: DocSetup {
+            header: vec![Block::PageBreak],
+            footer: vec![Block::PageBreak],
+            ..DocSetup::default()
+        },
+        ..DocModel::default()
+    };
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let header_xml = String::from_utf8(parts["word/header1.xml"].clone()).unwrap();
+    let footer_xml = String::from_utf8(parts["word/footer1.xml"].clone()).unwrap();
+
+    assert!(
+        header_xml.contains(r#"<w:br w:type="page"/>"#),
+        "header page break missing: {header_xml}"
+    );
+    assert!(
+        footer_xml.contains(r#"<w:br w:type="page"/>"#),
+        "footer page break missing: {footer_xml}"
+    );
+
+    Document::open(&bytes).expect("header/footer page-break .docx reopens");
+}
+
+#[test]
 fn table_builder_adds_rich_table_cells() {
     let navy = Color::rgb(0x1F, 0x38, 0x64);
     let model = DocBuilder::new()

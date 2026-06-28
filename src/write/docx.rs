@@ -189,6 +189,9 @@ fn render_hf_body(blocks: &[crate::model::Block], page_numbers: bool) -> String 
                 write_run_text(&mut out, &chart_placeholder_text(chart));
                 out.push_str("</w:r></w:p>");
             }
+            Block::PageBreak => {
+                out.push_str(r#"<w:p><w:r><w:br w:type="page"/></w:r></w:p>"#);
+            }
             _ => {}
         }
     }
