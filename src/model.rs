@@ -235,6 +235,7 @@ impl SectionBreakKind {
     }
 
     pub(crate) fn from_wml_value(value: &str) -> Option<Self> {
+        let value = value.trim();
         match value {
             "nextPage" => Some(SectionBreakKind::NextPage),
             "evenPage" => Some(SectionBreakKind::EvenPage),
@@ -510,6 +511,7 @@ impl TableBorderStyle {
     }
 
     pub(crate) fn from_wml_value(value: &str) -> Option<Self> {
+        let value = value.trim();
         match value {
             "single" => Some(TableBorderStyle::Single),
             "dotted" => Some(TableBorderStyle::Dotted),
@@ -1167,6 +1169,7 @@ impl PageNumberFormat {
     }
 
     pub(crate) fn from_wml_value(value: &str) -> Option<Self> {
+        let value = value.trim();
         match value {
             "decimal" => Some(PageNumberFormat::Decimal),
             "decimalZero" => Some(PageNumberFormat::DecimalZero),
@@ -1226,6 +1229,7 @@ impl TextDirection {
     }
 
     pub(crate) fn from_wml_value(value: &str) -> Option<Self> {
+        let value = value.trim();
         match value {
             "lrTb" => Some(TextDirection::LeftToRightTopToBottom),
             "tbRl" => Some(TextDirection::TopToBottomRightToLeft),
@@ -1263,6 +1267,7 @@ impl DocGridType {
     }
 
     pub(crate) fn from_wml_value(value: &str) -> Option<Self> {
+        let value = value.trim();
         match value {
             "default" => Some(DocGridType::Default),
             "lines" => Some(DocGridType::Lines),
@@ -1388,5 +1393,34 @@ impl From<&DocSetup> for SectionSetup {
             text_direction: setup.text_direction,
             doc_grid: setup.doc_grid,
         }
+    }
+}
+
+#[cfg(all(test, feature = "docx"))]
+mod tests {
+    use super::{DocGridType, PageNumberFormat, SectionBreakKind, TableBorderStyle, TextDirection};
+
+    #[test]
+    fn wml_enum_parsers_trim_ooxml_values() {
+        assert_eq!(
+            SectionBreakKind::from_wml_value(" evenPage "),
+            Some(SectionBreakKind::EvenPage)
+        );
+        assert_eq!(
+            TableBorderStyle::from_wml_value(" dotted "),
+            Some(TableBorderStyle::Dotted)
+        );
+        assert_eq!(
+            PageNumberFormat::from_wml_value(" lowerRoman "),
+            Some(PageNumberFormat::LowerRoman)
+        );
+        assert_eq!(
+            TextDirection::from_wml_value(" tbRl "),
+            Some(TextDirection::TopToBottomRightToLeft)
+        );
+        assert_eq!(
+            DocGridType::from_wml_value(" linesAndChars "),
+            Some(DocGridType::LinesAndChars)
+        );
     }
 }
