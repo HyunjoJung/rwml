@@ -1385,7 +1385,7 @@ fn toc_sequence_caption_text_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
-fn malformed_sequence_diagnostics_docx() -> Vec<u8> {
+fn sequence_field_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
             "[Content_Types].xml",
@@ -1397,7 +1397,7 @@ fn malformed_sequence_diagnostics_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SEQ Figure \x "><w:r><w:t>bad sequence</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SEQ Figure "><w:r><w:t>stale figure</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SEQ Figure \r -1 "><w:r><w:t>cached invalid reset</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SEQ Figure \s 1 "><w:r><w:t>cached heading reset</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SEQ Figure \x "><w:r><w:t>bad sequence</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -4540,29 +4540,41 @@ fn report_toc_field_warning_ignores_supported_sequence_caption_text_tocs() {
 
 #[cfg(feature = "docx")]
 #[test]
-fn report_malformed_sequence_reports_unsupported_switch() {
-    let doc = Document::open(&malformed_sequence_diagnostics_docx()).expect("fixture opens");
+fn report_sequence_fields_split_computed_cached_and_malformed_diagnostics() {
+    let doc = Document::open(&sequence_field_diagnostics_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 1);
-    assert_eq!(fields[0].kind, FieldKind::Sequence);
-    assert_eq!(fields[0].instruction, "SEQ Figure \\x");
-    assert_eq!(fields[0].result, "bad sequence");
+    assert_eq!(fields.len(), 4);
+    assert!(fields.iter().all(|field| field.kind == FieldKind::Sequence));
 
     let report = doc.report();
+    assert_eq!(report.features.fields, 4);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Sequence,
+            count: 4,
+        }]
+    );
     assert_eq!(
         report.features.unsupported_field_kinds,
         vec![FieldKindCount {
             kind: FieldKind::Sequence,
-            count: 1,
+            count: 3,
         }]
     );
     assert_eq!(
         report.features.unsupported_field_reasons,
-        vec![FieldEvaluationReasonCount {
-            reason: FieldEvaluationReason::UnsupportedSwitch,
-            count: 1,
-        }]
+        vec![
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::NoComputedResult,
+                count: 2,
+            },
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::UnsupportedSwitch,
+                count: 1,
+            },
+        ]
     );
 }
 
