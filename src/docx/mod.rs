@@ -1444,12 +1444,7 @@ fn attr_i64(e: &BytesStart<'_>, key: &[u8]) -> Option<i64> {
 }
 
 fn attr_bool(e: &BytesStart<'_>, key: &[u8]) -> Option<bool> {
-    attr_local(e, key).map(|value| {
-        !matches!(
-            value.trim().to_ascii_lowercase().as_str(),
-            "0" | "false" | "off"
-        )
-    })
+    attr_local(e, key).map(|value| toggle_on(Some(value)))
 }
 
 fn read_leaf_text(r: &mut Reader<&[u8]>) -> String {
