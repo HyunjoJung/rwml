@@ -136,7 +136,7 @@ const WEB_EXTENSION_TASKPANES_NS: &str =
 /// header/footer relationships and table layout are not modeled here. Appends a
 /// centered `PAGE` field when `page_numbers`. A header/footer must contain at
 /// least one paragraph.
-fn render_hf_body(blocks: &[crate::model::Block], page_numbers: bool) -> String {
+fn render_hf_body(ctx: &mut Ctx, blocks: &[crate::model::Block], page_numbers: bool) -> String {
     use crate::model::Block;
     let mut out = String::new();
     for b in blocks {
@@ -153,7 +153,7 @@ fn render_hf_body(blocks: &[crate::model::Block], page_numbers: bool) -> String 
                     out.push_str(&format!(r#"<w:pPr><w:jc w:val="{j}"/></w:pPr>"#));
                 }
                 for r in &p.runs {
-                    write_hf_run(&mut out, r);
+                    write_hf_run(ctx, &mut out, r);
                 }
                 out.push_str("</w:p>");
             }
@@ -200,7 +200,7 @@ fn render_hf_body(blocks: &[crate::model::Block], page_numbers: bool) -> String 
     out
 }
 
-fn write_hf_run(out: &mut String, r: &crate::model::Run) {
+fn write_hf_run(ctx: &mut Ctx, out: &mut String, r: &crate::model::Run) {
     let mut run_xml = String::new();
     run_xml.push_str("<w:r>");
     write_rpr(&mut run_xml, &r.props);
@@ -229,6 +229,7 @@ fn write_hf_run(out: &mut String, r: &crate::model::Run) {
     }
 
     let run_xml = content_control_wrapper(r.content_control.as_ref(), &run_xml);
+    let run_xml = ctx.bookmark_wrapper(r.bookmark.as_deref(), &run_xml);
     out.push_str(&run_xml);
 }
 
@@ -643,11 +644,8 @@ impl Ctx {
         let path = format!("word/header{}.xml", self.header_id);
         let target = format!("header{}.xml", self.header_id);
         let rid = self.add_rel(REL_HEADER, &target, false);
-        self.hf_parts.push((
-            path,
-            CT_HEADER,
-            hf_part("hdr", &render_hf_body(blocks, false)),
-        ));
+        let body = render_hf_body(self, blocks, false);
+        self.hf_parts.push((path, CT_HEADER, hf_part("hdr", &body)));
         refs.push_str(&format!(
             r#"<w:headerReference w:type="{type_name}" r:id="{rid}"/>"#
         ));
@@ -667,11 +665,8 @@ impl Ctx {
         let path = format!("word/footer{}.xml", self.footer_id);
         let target = format!("footer{}.xml", self.footer_id);
         let rid = self.add_rel(REL_FOOTER, &target, false);
-        self.hf_parts.push((
-            path,
-            CT_FOOTER,
-            hf_part("ftr", &render_hf_body(blocks, page_numbers)),
-        ));
+        let body = render_hf_body(self, blocks, page_numbers);
+        self.hf_parts.push((path, CT_FOOTER, hf_part("ftr", &body)));
         refs.push_str(&format!(
             r#"<w:footerReference w:type="{type_name}" r:id="{rid}"/>"#
         ));

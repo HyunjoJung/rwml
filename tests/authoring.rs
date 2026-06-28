@@ -3002,6 +3002,69 @@ fn write_docx_keeps_header_footer_content_control_runs() {
 }
 
 #[test]
+fn write_docx_keeps_header_footer_bookmark_runs() {
+    let model = DocModel {
+        blocks: vec![Block::Paragraph(plain_paragraph("Body"))],
+        setup: DocSetup {
+            header: vec![Block::Paragraph(Paragraph {
+                runs: vec![RunBuilder::new("Header anchor")
+                    .bookmark("HeaderMark")
+                    .build()],
+                ..Paragraph::default()
+            })],
+            footer: vec![Block::Paragraph(Paragraph {
+                runs: vec![RunBuilder::new("Footer anchor")
+                    .bookmark("FooterMark")
+                    .build()],
+                ..Paragraph::default()
+            })],
+            ..DocSetup::default()
+        },
+        ..DocModel::default()
+    };
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let header_xml = String::from_utf8(parts["word/header1.xml"].clone()).unwrap();
+    let footer_xml = String::from_utf8(parts["word/footer1.xml"].clone()).unwrap();
+
+    let header_start = header_xml
+        .find(r#"<w:bookmarkStart w:id="0" w:name="HeaderMark"/>"#)
+        .unwrap_or(usize::MAX);
+    let header_text = header_xml
+        .find(r#"<w:t xml:space="preserve">Header anchor</w:t>"#)
+        .unwrap_or(usize::MAX);
+    let header_end = header_xml
+        .find(r#"<w:bookmarkEnd w:id="0"/>"#)
+        .unwrap_or(usize::MAX);
+    assert!(
+        header_start < header_text && header_text < header_end,
+        "header bookmark XML missing or out of order: {header_xml}"
+    );
+
+    let footer_start = footer_xml
+        .find(r#"<w:bookmarkStart w:id="1" w:name="FooterMark"/>"#)
+        .unwrap_or(usize::MAX);
+    let footer_text = footer_xml
+        .find(r#"<w:t xml:space="preserve">Footer anchor</w:t>"#)
+        .unwrap_or(usize::MAX);
+    let footer_end = footer_xml
+        .find(r#"<w:bookmarkEnd w:id="1"/>"#)
+        .unwrap_or(usize::MAX);
+    assert!(
+        footer_start < footer_text && footer_text < footer_end,
+        "footer bookmark XML missing or out of order: {footer_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("header/footer bookmark .docx reopens");
+    let header_text = reopened.header_text();
+    assert!(
+        header_text.contains("Header anchor") && header_text.contains("Footer anchor"),
+        "header/footer bookmark text not readable after reopen: {header_text:?}"
+    );
+}
+
+#[test]
 fn table_builder_adds_rich_table_cells() {
     let navy = Color::rgb(0x1F, 0x38, 0x64);
     let model = DocBuilder::new()
