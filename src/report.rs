@@ -4310,6 +4310,7 @@ fn supported_ref_syntax_parts<'a>(
     mut parts: impl Iterator<Item = &'a str>,
 ) -> Option<RefDiagnosticSyntax> {
     let target = diagnostic_identifier_token(parts.next()?)?.to_string();
+    let mut number_format = false;
     let mut text_format = false;
     let mut note_reference = false;
     let mut sequence_separator = false;
@@ -4320,7 +4321,8 @@ fn supported_ref_syntax_parts<'a>(
     let mut suppress_non_numeric = false;
     while let Some(part) = parts.next() {
         if accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_format_switch(format, &mut text_format)
+            accept_page_number_format_switch(format, &mut number_format)
+                || accept_field_format_switch(format, &mut text_format)
         })? {
             continue;
         }
@@ -4398,6 +4400,9 @@ fn supported_ref_syntax_parts<'a>(
     }
     if suppress_non_numeric && !(paragraph_number || full_context_number || relative_context_number)
     {
+        return None;
+    }
+    if number_format && !note_reference {
         return None;
     }
     if note_reference

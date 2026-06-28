@@ -802,7 +802,7 @@ fn ref_field_diagnostics_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="Figure1"/><w:r><w:t>Figure 1</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:bookmarkStart w:id="9" w:name="_Ref123456789"/><w:r><w:t>Table 2</w:t></w:r><w:bookmarkEnd w:id="9"/></w:p><w:p><w:fldSimple w:instr=" REF Figure1 "><w:r><w:t>stale cached text</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF _Ref123456789 "><w:r><w:t>stale hidden ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF Figure1 \p "><w:r><w:t>above</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF Figure1 \f "><w:r><w:t>note mark</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF Figure1 \d- "><w:r><w:t>sequence separator</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF MissingNote \f "><w:r><w:t>missing note mark</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF MissingBookmark "><w:r><w:t>Missing</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="Figure1"/><w:r><w:t>Figure 1</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:bookmarkStart w:id="9" w:name="_Ref123456789"/><w:r><w:t>Table 2</w:t></w:r><w:bookmarkEnd w:id="9"/></w:p><w:p><w:fldSimple w:instr=" REF Figure1 "><w:r><w:t>stale cached text</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF _Ref123456789 "><w:r><w:t>stale hidden ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF Figure1 \p "><w:r><w:t>above</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF Figure1 \f "><w:r><w:t>note mark</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF Figure1 \d- "><w:r><w:t>sequence separator</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF MissingNote \f "><w:r><w:t>missing note mark</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF MissingRomanNote \f \* roman "><w:r><w:t>missing roman note mark</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF MissingBookmark "><w:r><w:t>Missing</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -3155,19 +3155,19 @@ fn report_ref_field_warning_ignores_computed_bookmark_refs() {
     let doc = Document::open(&ref_field_diagnostics_docx()).expect("fixture opens");
     let report = doc.report();
 
-    assert_eq!(report.features.fields, 7);
+    assert_eq!(report.features.fields, 8);
     assert_eq!(
         report.features.field_kinds,
         vec![FieldKindCount {
             kind: FieldKind::Ref,
-            count: 7,
+            count: 8,
         }]
     );
     assert_eq!(
         report.features.unsupported_field_kinds,
         vec![FieldKindCount {
             kind: FieldKind::Ref,
-            count: 4,
+            count: 5,
         }]
     );
     assert_eq!(
@@ -3183,7 +3183,7 @@ fn report_ref_field_warning_ignores_computed_bookmark_refs() {
             },
             FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::UnresolvedBookmark,
-                count: 2,
+                count: 3,
             },
         ]
     );
@@ -3193,28 +3193,28 @@ fn report_ref_field_warning_ignores_computed_bookmark_refs() {
             .iter()
             .find(|warning| matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })),
         Some(&DocumentWarning::UnsupportedFieldEvaluation {
-            count: 4,
+            count: 5,
             field_kinds: vec![FieldKindCount {
                 kind: FieldKind::Ref,
-                count: 4,
+                count: 5,
             }],
         })
     );
 
     let json = report.to_json();
     assert!(
-        json.contains(r#""field_kinds":[{"kind":"REF","count":7}]"#),
+        json.contains(r#""field_kinds":[{"kind":"REF","count":8}]"#),
         "{json}"
     );
     assert!(
-        json.contains(r#""unsupported_field_kinds":[{"kind":"REF","count":4}]"#),
+        json.contains(r#""unsupported_field_kinds":[{"kind":"REF","count":5}]"#),
         "{json}"
     );
     assert!(
-        json.contains(r#""unsupported_field_reasons":[{"reason":"UnsupportedSwitch","count":1},{"reason":"NoComputedResult","count":1},{"reason":"UnresolvedBookmark","count":2}]"#),
+        json.contains(r#""unsupported_field_reasons":[{"reason":"UnsupportedSwitch","count":1},{"reason":"NoComputedResult","count":1},{"reason":"UnresolvedBookmark","count":3}]"#),
         "{json}"
     );
-    assert!(json.contains(r#""kind":"UnsupportedFieldEvaluation","count":4,"field_kinds":[{"kind":"REF","count":4}]"#), "{json}");
+    assert!(json.contains(r#""kind":"UnsupportedFieldEvaluation","count":5,"field_kinds":[{"kind":"REF","count":5}]"#), "{json}");
 }
 
 #[cfg(feature = "docx")]
