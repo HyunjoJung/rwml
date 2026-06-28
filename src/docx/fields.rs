@@ -8,9 +8,9 @@ use quick_xml::Reader;
 use crate::annotation::{
     accept_field_number_format_switch,
     accept_field_text_format_switch as accept_field_format_switch, accept_general_format_switch,
-    is_neutral_field_format_switch, is_note_ref_kind, is_ref_value_neutral_switch,
-    is_toc_value_neutral_switch, strip_ascii_switch_prefix, Field, FieldKind, FieldNumberFormat,
-    FieldTextFormat,
+    field_literal_token, field_name_token, instruction_parts, is_neutral_field_format_switch,
+    is_note_ref_kind, is_ref_value_neutral_switch, is_toc_value_neutral_switch,
+    strip_ascii_switch_prefix, Field, FieldKind, FieldNumberFormat, FieldTextFormat,
 };
 use crate::{numfmt, CoreProperties};
 
@@ -5481,30 +5481,6 @@ fn document_info_instruction(instruction: &str) -> Option<DocumentInfoInstructio
     })
 }
 
-fn field_name_token(value: &str) -> Option<&str> {
-    let value = value.trim();
-    let value = match (value.starts_with('"'), value.ends_with('"')) {
-        (true, true) if value.len() >= 2 => &value[1..value.len() - 1],
-        (true, _) | (_, true) => return None,
-        (false, false) => value,
-    }
-    .trim();
-    if value.is_empty() || value.starts_with('\\') || value.contains('"') {
-        return None;
-    }
-    Some(value)
-}
-
-fn field_literal_token(value: &str) -> Option<&str> {
-    let value = value.trim();
-    let value = match (value.starts_with('"'), value.ends_with('"')) {
-        (true, true) if value.len() >= 2 => &value[1..value.len() - 1],
-        (true, _) | (_, true) => return None,
-        (false, false) => value,
-    };
-    (!value.contains('"')).then_some(value)
-}
-
 fn file_size_unit_switch(part: &str) -> Option<FileSizeUnit> {
     if part.eq_ignore_ascii_case("\\k") {
         return Some(FileSizeUnit::Kilobytes);
@@ -10311,28 +10287,6 @@ fn parse_toc_outline_range(range: &str) -> Option<(u8, u8)> {
 
 fn normalize_instruction(s: &str) -> String {
     instruction_parts(s).join(" ")
-}
-
-fn instruction_parts(s: &str) -> Vec<String> {
-    let mut parts = Vec::new();
-    let mut current = String::new();
-    let mut in_quotes = false;
-    for ch in s.chars() {
-        if ch == '"' {
-            in_quotes = !in_quotes;
-            current.push(ch);
-        } else if ch.is_whitespace() && !in_quotes {
-            if !current.is_empty() {
-                parts.push(std::mem::take(&mut current));
-            }
-        } else {
-            current.push(ch);
-        }
-    }
-    if !current.is_empty() {
-        parts.push(current);
-    }
-    parts
 }
 
 fn field_kind(instruction: &str) -> FieldKind {

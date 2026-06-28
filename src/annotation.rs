@@ -496,6 +496,52 @@ pub(crate) fn strip_ascii_switch_prefix<'a>(part: &'a str, switch: &str) -> Opti
         .then_some(&part[switch.len()..])
 }
 
+pub(crate) fn field_name_token(value: &str) -> Option<&str> {
+    let value = value.trim();
+    let value = match (value.starts_with('"'), value.ends_with('"')) {
+        (true, true) if value.len() >= 2 => &value[1..value.len() - 1],
+        (true, _) | (_, true) => return None,
+        (false, false) => value,
+    }
+    .trim();
+    if value.is_empty() || value.starts_with('\\') || value.contains('"') {
+        return None;
+    }
+    Some(value)
+}
+
+pub(crate) fn field_literal_token(value: &str) -> Option<&str> {
+    let value = value.trim();
+    let value = match (value.starts_with('"'), value.ends_with('"')) {
+        (true, true) if value.len() >= 2 => &value[1..value.len() - 1],
+        (true, _) | (_, true) => return None,
+        (false, false) => value,
+    };
+    (!value.contains('"')).then_some(value)
+}
+
+pub(crate) fn instruction_parts(s: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+    for ch in s.chars() {
+        if ch == '"' {
+            in_quotes = !in_quotes;
+            current.push(ch);
+        } else if ch.is_whitespace() && !in_quotes {
+            if !current.is_empty() {
+                parts.push(std::mem::take(&mut current));
+            }
+        } else {
+            current.push(ch);
+        }
+    }
+    if !current.is_empty() {
+        parts.push(current);
+    }
+    parts
+}
+
 fn is_document_info_field(token: &str) -> bool {
     matches!(
         token,
