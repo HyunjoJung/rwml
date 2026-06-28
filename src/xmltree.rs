@@ -1880,14 +1880,14 @@ impl XmlTree {
         out: &mut Vec<NodeId>,
     ) {
         let base = scope.len();
-        if let Node::Element { name, attrs, .. } = &self.nodes[id.0 as usize].node {
-            for (k, v) in attrs {
-                if k.as_slice() == b"xmlns" {
-                    scope.push((Vec::new(), v.clone()));
-                } else if let Some(p) = k.strip_prefix(b"xmlns:".as_slice()) {
-                    scope.push((p.to_vec(), v.clone()));
-                }
-            }
+        self.push_xmlns(id, scope);
+        if self.wml_revision_edit_action(id, scope, WmlRevisionEditPolicy::Accept)
+            == WmlRevisionEditAction::Remove
+        {
+            scope.truncate(base);
+            return;
+        }
+        if let Node::Element { name, .. } = &self.nodes[id.0 as usize].node {
             let (prefix, lname): (&[u8], &[u8]) = match name.iter().position(|&b| b == b':') {
                 Some(i) => (&name[..i], &name[i + 1..]),
                 None => (b"", name),

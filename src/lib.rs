@@ -858,7 +858,7 @@ impl Document {
     }
 
     /// **Element-tree editing: replace body text in place.** Finds
-    /// every text run (`w:t`) whose text equals `old` and rewrites it to `new`,
+    /// every accepted-current text run (`w:t`) whose text equals `old` and rewrites it to `new`,
     /// editing the live `word/document.xml` element tree — so **everything else is
     /// preserved**, including content the model can't represent (fields, content
     /// controls, shapes, comments, tracked changes). Returns how many runs changed.
@@ -5002,6 +5002,33 @@ mod tests {
         assert!(
             body.contains("OUTSIDE") && body.contains("EDITED"),
             "out-of-body text must be untouched, in-body text edited: {body}"
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn replace_body_text_skips_deleted_revision_text() {
+        let doc_xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:del w:id="1"><w:p><w:r><w:t>OLD</w:t></w:r></w:p></w:del><w:moveFrom w:id="2"><w:p><w:r><w:t>OLD</w:t></w:r></w:p></w:moveFrom><w:p><w:r><w:t>OLD</w:t></w:r></w:p></w:body></w:document>"#;
+        let mut doc = Document::open(&minimal_docx(doc_xml)).unwrap();
+
+        assert_eq!(doc.replace_body_text("OLD", "NEW").unwrap(), 1);
+
+        let body =
+            String::from_utf8(unzip_parts(&doc.save().unwrap())["word/document.xml"].clone())
+                .unwrap();
+        assert!(
+            body.contains(r#"<w:del w:id="1"><w:p><w:r><w:t>OLD</w:t></w:r></w:p></w:del>"#),
+            "deleted text changed: {body}"
+        );
+        assert!(
+            body.contains(
+                r#"<w:moveFrom w:id="2"><w:p><w:r><w:t>OLD</w:t></w:r></w:p></w:moveFrom>"#
+            ),
+            "moved-from text changed: {body}"
+        );
+        assert!(
+            body.contains("<w:p><w:r><w:t>NEW</w:t></w:r></w:p>"),
+            "current text not changed: {body}"
         );
     }
 
