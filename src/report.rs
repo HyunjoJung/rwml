@@ -643,9 +643,19 @@ fn supports_merge_field_evaluation(field: &Field) -> bool {
     }
     #[cfg(not(feature = "docx"))]
     {
-        let _ = field;
-        true
+        supported_merge_field_syntax_for_report(&field.instruction)
     }
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_merge_field_syntax_for_report(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    kind.eq_ignore_ascii_case("MERGEFIELD")
+        && parts.next().and_then(diagnostic_name_token).is_some()
 }
 
 fn supports_document_info_field_evaluation(field: &Field) -> bool {
@@ -5527,6 +5537,25 @@ mod tests {
         assert_eq!(super::unsupported_field_reason(&valid), None);
         let malformed = Field {
             instruction: r#"HYPERLINK "https://example.com" extra"#.to_string(),
+            ..valid
+        };
+        assert_eq!(
+            super::unsupported_field_reason(&malformed),
+            Some(super::FieldEvaluationReason::UnsupportedSwitch)
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_merge_field_diagnostics_reject_malformed_names() {
+        let valid = Field {
+            kind: FieldKind::MergeField,
+            instruction: r#"MERGEFIELD "Client Name" \* MERGEFORMAT"#.to_string(),
+            ..Field::default()
+        };
+        assert_eq!(super::unsupported_field_reason(&valid), None);
+        let malformed = Field {
+            instruction: r#"MERGEFIELD \* MERGEFORMAT"#.to_string(),
             ..valid
         };
         assert_eq!(
