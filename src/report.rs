@@ -20,6 +20,11 @@ use crate::annotation::{
 use crate::annotation::{field_non_empty_non_switch_literal_token, field_non_switch_literal_token};
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{field_points_token, field_positive_points_token, field_symbol_code_token};
+#[cfg(not(feature = "docx"))]
+use crate::annotation::{
+    reference_index_category_token, reference_index_literal_token,
+    reference_index_plain_value_token,
+};
 use crate::model::{Block, FieldRole, Stats, Table};
 use crate::CoreProperties;
 #[cfg(feature = "docx")]
@@ -3308,7 +3313,11 @@ fn supported_reference_index_marker_syntax_for_report(instruction: &str) -> bool
 fn supported_reference_index_rd_syntax_for_report<'a>(
     mut parts: impl Iterator<Item = &'a str>,
 ) -> bool {
-    if reference_index_literal_for_report(parts.next()).is_none() {
+    if parts
+        .next()
+        .and_then(reference_index_literal_token)
+        .is_none()
+    {
         return false;
     }
     let mut text_format = false;
@@ -3334,7 +3343,11 @@ fn supported_reference_index_ta_syntax_for_report<'a>(
     let mut text_format = false;
     while let Some(part) = parts.next() {
         if part.eq_ignore_ascii_case("\\l") || part.eq_ignore_ascii_case("\\s") {
-            if reference_index_literal_for_report(parts.next()).is_none() {
+            if parts
+                .next()
+                .and_then(reference_index_literal_token)
+                .is_none()
+            {
                 return false;
             }
             has_entry_text = true;
@@ -3343,22 +3356,24 @@ fn supported_reference_index_ta_syntax_for_report<'a>(
         if let Some(value) = strip_ascii_switch_prefix(part, "\\l")
             .or_else(|| strip_ascii_switch_prefix(part, "\\s"))
         {
-            if value.is_empty() || reference_index_literal_for_report(Some(value)).is_none() {
+            if value.is_empty() || reference_index_literal_token(value).is_none() {
                 return false;
             }
             has_entry_text = true;
             continue;
         }
         if part.eq_ignore_ascii_case("\\c") {
-            if parse_reference_index_category_for_report(parts.next()).is_none() {
+            if parts
+                .next()
+                .and_then(reference_index_category_token)
+                .is_none()
+            {
                 return false;
             }
             continue;
         }
         if let Some(category) = strip_ascii_switch_prefix(part, "\\c") {
-            if category.is_empty()
-                || parse_reference_index_category_for_report(Some(category)).is_none()
-            {
+            if category.is_empty() || reference_index_category_token(category).is_none() {
                 return false;
             }
             continue;
@@ -3377,7 +3392,11 @@ fn supported_reference_index_ta_syntax_for_report<'a>(
 fn supported_reference_index_xe_syntax_for_report<'a>(
     mut parts: impl Iterator<Item = &'a str>,
 ) -> bool {
-    if reference_index_literal_for_report(parts.next()).is_none() {
+    if parts
+        .next()
+        .and_then(reference_index_literal_token)
+        .is_none()
+    {
         return false;
     }
     let mut text_format = false;
@@ -3386,7 +3405,11 @@ fn supported_reference_index_xe_syntax_for_report<'a>(
             continue;
         }
         if part.eq_ignore_ascii_case("\\f") || part.eq_ignore_ascii_case("\\r") {
-            if reference_index_plain_value_for_report(parts.next()).is_none() {
+            if parts
+                .next()
+                .and_then(reference_index_plain_value_token)
+                .is_none()
+            {
                 return false;
             }
             continue;
@@ -3394,19 +3417,23 @@ fn supported_reference_index_xe_syntax_for_report<'a>(
         if let Some(value) = strip_ascii_switch_prefix(part, "\\f")
             .or_else(|| strip_ascii_switch_prefix(part, "\\r"))
         {
-            if value.is_empty() || reference_index_plain_value_for_report(Some(value)).is_none() {
+            if value.is_empty() || reference_index_plain_value_token(value).is_none() {
                 return false;
             }
             continue;
         }
         if part.eq_ignore_ascii_case("\\t") {
-            if reference_index_literal_for_report(parts.next()).is_none() {
+            if parts
+                .next()
+                .and_then(reference_index_literal_token)
+                .is_none()
+            {
                 return false;
             }
             continue;
         }
         if let Some(value) = strip_ascii_switch_prefix(part, "\\t") {
-            if value.is_empty() || reference_index_literal_for_report(Some(value)).is_none() {
+            if value.is_empty() || reference_index_literal_token(value).is_none() {
                 return false;
             }
             continue;
@@ -3419,29 +3446,6 @@ fn supported_reference_index_xe_syntax_for_report<'a>(
         return false;
     }
     true
-}
-
-#[cfg(not(feature = "docx"))]
-fn reference_index_literal_for_report(token: Option<&str>) -> Option<()> {
-    let token = token?.trim();
-    let quoted = token.starts_with('"') && token.ends_with('"') && token.len() >= 2;
-    let text = diagnostic_literal_token(token)?;
-    if text.is_empty() || (!quoted && text.starts_with('\\')) {
-        return None;
-    }
-    Some(())
-}
-
-#[cfg(not(feature = "docx"))]
-fn reference_index_plain_value_for_report(token: Option<&str>) -> Option<()> {
-    let token = token?;
-    (!token.is_empty() && !token.starts_with('\\') && !token.contains('"')).then_some(())
-}
-
-#[cfg(not(feature = "docx"))]
-fn parse_reference_index_category_for_report(value: Option<&str>) -> Option<u8> {
-    let value = diagnostic_name_token(value?)?.parse::<u8>().ok()?;
-    (1..=16).contains(&value).then_some(value)
 }
 
 fn toc_entry_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {

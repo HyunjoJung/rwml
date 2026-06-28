@@ -535,6 +535,25 @@ pub(crate) fn field_non_empty_non_switch_literal_token(value: &str) -> Option<&s
     (!value.is_empty()).then_some(value)
 }
 
+pub(crate) fn reference_index_literal_token(value: &str) -> Option<&str> {
+    let token = value.trim();
+    let quoted = token.starts_with('"') && token.ends_with('"') && token.len() >= 2;
+    let text = field_literal_token(token)?;
+    if text.is_empty() || (!quoted && text.starts_with('\\')) {
+        return None;
+    }
+    Some(text)
+}
+
+pub(crate) fn reference_index_plain_value_token(value: &str) -> Option<&str> {
+    (!value.is_empty() && !value.starts_with('\\') && !value.contains('"')).then_some(value)
+}
+
+pub(crate) fn reference_index_category_token(value: &str) -> Option<u8> {
+    let value = field_name_token(value)?.parse::<u8>().ok()?;
+    (1..=16).contains(&value).then_some(value)
+}
+
 pub(crate) fn field_level_token(value: &str) -> Option<u8> {
     let level = field_name_token(value)?.parse::<u8>().ok()?;
     (1..=9).contains(&level).then_some(level)

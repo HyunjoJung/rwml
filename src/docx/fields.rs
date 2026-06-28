@@ -12,8 +12,9 @@ use crate::annotation::{
     field_name_token, field_non_empty_non_switch_literal_token, field_non_switch_literal_token,
     field_points_token, field_positive_points_token, field_symbol_code_token, instruction_parts,
     is_neutral_field_format_switch, is_note_ref_kind, is_ref_value_neutral_switch,
-    is_toc_value_neutral_switch, strip_ascii_switch_prefix, toc_style_specs, Field, FieldKind,
-    FieldNumberFormat, FieldTextFormat,
+    is_toc_value_neutral_switch, reference_index_category_token, reference_index_literal_token,
+    reference_index_plain_value_token, strip_ascii_switch_prefix, toc_style_specs, Field,
+    FieldKind, FieldNumberFormat, FieldTextFormat,
 };
 use crate::{numfmt, CoreProperties};
 
@@ -7363,7 +7364,7 @@ pub(crate) fn supports_reference_index_marker_syntax(instruction: &str) -> bool 
 }
 
 fn reference_index_rd_instruction<'a>(mut parts: impl Iterator<Item = &'a str>) -> Option<()> {
-    reference_index_literal(parts.next()?)?;
+    reference_index_literal_token(parts.next()?)?;
     let mut text_format = None;
     while let Some(part) = parts.next() {
         if part.eq_ignore_ascii_case("\\f") {
@@ -7382,7 +7383,7 @@ fn reference_index_ta_instruction<'a>(mut parts: impl Iterator<Item = &'a str>) 
     let mut text_format = None;
     while let Some(part) = parts.next() {
         if part.eq_ignore_ascii_case("\\l") || part.eq_ignore_ascii_case("\\s") {
-            reference_index_literal(parts.next()?)?;
+            reference_index_literal_token(parts.next()?)?;
             has_entry_text = true;
             continue;
         }
@@ -7392,19 +7393,19 @@ fn reference_index_ta_instruction<'a>(mut parts: impl Iterator<Item = &'a str>) 
             if value.is_empty() {
                 return None;
             }
-            reference_index_literal(value)?;
+            reference_index_literal_token(value)?;
             has_entry_text = true;
             continue;
         }
         if part.eq_ignore_ascii_case("\\c") {
-            parse_reference_index_category(parts.next()?)?;
+            reference_index_category_token(parts.next()?)?;
             continue;
         }
         if let Some(category) = strip_ascii_switch_prefix(part, "\\c") {
             if category.is_empty() {
                 return None;
             }
-            parse_reference_index_category(category)?;
+            reference_index_category_token(category)?;
             continue;
         }
         if accept_reference_index_field_format(part, &mut parts, &mut text_format).is_some() {
@@ -7416,14 +7417,14 @@ fn reference_index_ta_instruction<'a>(mut parts: impl Iterator<Item = &'a str>) 
 }
 
 fn reference_index_xe_instruction<'a>(mut parts: impl Iterator<Item = &'a str>) -> Option<()> {
-    reference_index_literal(parts.next()?)?;
+    reference_index_literal_token(parts.next()?)?;
     let mut text_format = None;
     while let Some(part) = parts.next() {
         if part.eq_ignore_ascii_case("\\b") || part.eq_ignore_ascii_case("\\i") {
             continue;
         }
         if part.eq_ignore_ascii_case("\\f") || part.eq_ignore_ascii_case("\\r") {
-            reference_index_plain_value(parts.next()?)?;
+            reference_index_plain_value_token(parts.next()?)?;
             continue;
         }
         if let Some(value) = strip_ascii_switch_prefix(part, "\\f")
@@ -7432,18 +7433,18 @@ fn reference_index_xe_instruction<'a>(mut parts: impl Iterator<Item = &'a str>) 
             if value.is_empty() {
                 return None;
             }
-            reference_index_plain_value(value)?;
+            reference_index_plain_value_token(value)?;
             continue;
         }
         if part.eq_ignore_ascii_case("\\t") {
-            reference_index_literal(parts.next()?)?;
+            reference_index_literal_token(parts.next()?)?;
             continue;
         }
         if let Some(value) = strip_ascii_switch_prefix(part, "\\t") {
             if value.is_empty() {
                 return None;
             }
-            reference_index_literal(value)?;
+            reference_index_literal_token(value)?;
             continue;
         }
         if accept_reference_index_field_format(part, &mut parts, &mut text_format).is_some() {
@@ -7452,23 +7453,6 @@ fn reference_index_xe_instruction<'a>(mut parts: impl Iterator<Item = &'a str>) 
         return None;
     }
     Some(())
-}
-
-fn reference_index_literal(token: &str) -> Option<String> {
-    if let Some(text) = quoted_literal_text(token) {
-        return (!text.is_empty()).then_some(text);
-    }
-    reference_index_plain_value(token)
-}
-
-fn reference_index_plain_value(token: &str) -> Option<String> {
-    (!token.is_empty() && !token.starts_with('\\') && !token.contains('"'))
-        .then(|| token.to_string())
-}
-
-fn parse_reference_index_category(value: &str) -> Option<u8> {
-    let value = field_name_token(value)?.parse::<u8>().ok()?;
-    (1..=16).contains(&value).then_some(value)
 }
 
 fn accept_reference_index_field_format<'a>(
