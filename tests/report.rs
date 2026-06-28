@@ -560,7 +560,7 @@ fn dynamic_control_field_diagnostics_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" IF CustomerTier = &quot;Gold&quot; &quot;ship&quot; &quot;hold&quot; "><w:r><w:t>cached data if</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" IF 1 = "><w:r><w:t>cached broken if</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" COMPARE CustomerTier = &quot;Gold&quot; "><w:r><w:t>cached data compare</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" COMPARE \o = &quot;Gold&quot; "><w:r><w:t>cached switch compare</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = CustomerTotal \# &quot;0.00&quot; "><w:r><w:t>cached data formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = 1 \# &quot;0.00 "><w:r><w:t>cached broken formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FILLIN &quot;Client?&quot; "><w:r><w:t>cached fillin</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FILLIN &quot;broken prompt "><w:r><w:t>cached broken fillin</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SET ClientName Client 42 "><w:r><w:t>cached ambiguous set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SET ClientName &quot;Acme "><w:r><w:t>cached broken set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" QUOTE &quot;literal&quot; "><w:r><w:t>cached quote</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" QUOTE &quot;bad "><w:r><w:t>cached broken quote</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NEXTIF City = &quot;Tokyo&quot; "><w:r><w:t>cached data nextif</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NEXTIF 1 = "><w:r><w:t>cached broken nextif</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" IF CustomerTier = &quot;Gold&quot; &quot;ship&quot; &quot;hold&quot; "><w:r><w:t>cached data if</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" IF 1 = "><w:r><w:t>cached broken if</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" COMPARE CustomerTier = &quot;Gold&quot; "><w:r><w:t>cached data compare</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" COMPARE \o = &quot;Gold&quot; "><w:r><w:t>cached switch compare</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = CustomerTotal \# &quot;0.00&quot; "><w:r><w:t>cached data formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = 1 \# &quot;0.00 "><w:r><w:t>cached broken formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FILLIN &quot;Client?&quot; "><w:r><w:t>cached fillin</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" ASK ClientCode &quot;Client code?&quot; "><w:r><w:t>cached ask</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FILLIN &quot;broken prompt "><w:r><w:t>cached broken fillin</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SET ClientName Client 42 "><w:r><w:t>cached ambiguous set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SET ClientName &quot;Acme "><w:r><w:t>cached broken set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" QUOTE &quot;literal&quot; "><w:r><w:t>cached quote</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" QUOTE &quot;bad "><w:r><w:t>cached broken quote</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NEXT "><w:r><w:t>cached next</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SKIPIF 1 = 0 "><w:r><w:t>cached skipif</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NEXTIF City = &quot;Tokyo&quot; "><w:r><w:t>cached data nextif</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NEXTIF 1 = "><w:r><w:t>cached broken nextif</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -2574,14 +2574,17 @@ fn report_numbering_fields_split_cached_and_malformed_diagnostics() {
 fn report_dynamic_control_fields_split_cached_and_malformed_diagnostics() {
     assert_report_field_diagnostics(
         dynamic_control_field_diagnostics_docx(),
-        14,
+        17,
         vec![
             field_kind_count(FieldKind::Dynamic("IF".to_string()), 2),
             field_kind_count(FieldKind::Dynamic("COMPARE".to_string()), 2),
             field_kind_count(FieldKind::Dynamic("=".to_string()), 2),
             field_kind_count(FieldKind::Dynamic("FILLIN".to_string()), 2),
+            field_kind_count(FieldKind::Dynamic("ASK".to_string()), 1),
             field_kind_count(FieldKind::Dynamic("SET".to_string()), 2),
             field_kind_count(FieldKind::Dynamic("QUOTE".to_string()), 2),
+            field_kind_count(FieldKind::Dynamic("NEXT".to_string()), 1),
+            field_kind_count(FieldKind::Dynamic("SKIPIF".to_string()), 1),
             field_kind_count(FieldKind::Dynamic("NEXTIF".to_string()), 2),
         ],
         vec![
@@ -2589,12 +2592,13 @@ fn report_dynamic_control_fields_split_cached_and_malformed_diagnostics() {
             field_kind_count(FieldKind::Dynamic("COMPARE".to_string()), 2),
             field_kind_count(FieldKind::Dynamic("=".to_string()), 2),
             field_kind_count(FieldKind::Dynamic("FILLIN".to_string()), 2),
+            field_kind_count(FieldKind::Dynamic("ASK".to_string()), 1),
             field_kind_count(FieldKind::Dynamic("SET".to_string()), 2),
             field_kind_count(FieldKind::Dynamic("QUOTE".to_string()), 1),
             field_kind_count(FieldKind::Dynamic("NEXTIF".to_string()), 2),
         ],
         vec![
-            field_reason_count(FieldEvaluationReason::NoComputedResult, 6),
+            field_reason_count(FieldEvaluationReason::NoComputedResult, 7),
             field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 7),
         ],
     );
