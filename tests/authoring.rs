@@ -1975,6 +1975,21 @@ fn doc_builder_adds_custom_xml_item() {
 }
 
 #[test]
+fn doc_builder_ignores_blank_custom_xml_item_ids() {
+    let model = DocBuilder::new()
+        .custom_xml_item(" ", "<root/>")
+        .paragraph("Body")
+        .build();
+
+    assert!(model.custom_xml_items.is_empty());
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    assert!(!parts.contains_key("customXml/item1.xml"));
+    assert!(!parts.contains_key("customXml/itemProps1.xml"));
+}
+
+#[test]
 fn run_builder_adds_styled_paragraph_and_heading_runs() {
     let model = DocBuilder::new()
         .paragraph_runs([
