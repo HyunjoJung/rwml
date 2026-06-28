@@ -261,6 +261,9 @@ Initial status:
   `category`, `contentStatus`, `lastModifiedBy`, `created`, `modified`,
   `lastPrinted`, `revision`, and `version`) and mirrors `.docx` title/creator
   into `DocSetup`.
+- Generated documents author model-backed `DocSetup` core metadata for
+  `title`, `subject`, `creator`, `description`, `keywords`, `category`,
+  `contentStatus`, `lastModifiedBy`, and `version`.
 - `Document::report()` includes field-kind counts, and unsupported-field
   warnings now report only missing `PAGEREF` targets, remaining layout-dependent `PAGEREF`, unknown, unresolved bookmark scope, unresolved or
   unsupported remaining value-changing REF cases such as
@@ -648,7 +651,7 @@ Deliverables:
 
 Initial status:
 
-- `DocBuilder` provides thin model-first authoring helpers for metadata, page
+- `DocBuilder` provides thin model-first authoring helpers for core metadata, page
   setup, headings, plain paragraphs, simple text tables with optional header rows,
   layout-aware paragraphs through `ParagraphBuilder`, styled runs through
   `RunBuilder`, named paragraph style definitions through
