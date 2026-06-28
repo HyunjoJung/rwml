@@ -47,6 +47,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   materialized as the computed value instead of being reported as unsupported;
   empty-current text-input defaults, checkbox states, and dropdown selections
   keep their existing deterministic legacy-form behavior.
+- **Legacy form fields in notes and headers/footers.** `.docx` footnote,
+  endnote, header, and footer legacy form fields now use the same deterministic
+  value computation and protected-form cached-text policy as body fields, and
+  appear in `Document::fields()` with matching diagnostics.
 - **3-D bar/column shape styling.** `ChartBuilder::shape(ChartShape::...)`
   now emits Word-compatible `c:shape` values such as `cylinder` and `pyramid`
   for authored 3-D bar and 3-D column charts and renders approximate shaped

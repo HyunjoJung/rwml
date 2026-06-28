@@ -2839,10 +2839,6 @@ pub(crate) struct LegacyFormContext {
 }
 
 impl LegacyFormContext {
-    pub(crate) fn empty() -> Self {
-        Self::default()
-    }
-
     fn field_result(&self, index: usize) -> Option<String> {
         self.results.get(index).cloned().flatten()
     }

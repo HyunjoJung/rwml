@@ -26,7 +26,7 @@ use crate::annotation::{
 };
 use crate::assemble;
 use crate::error::{Error, Result};
-use crate::model::{Block, Color, CustomXmlItem, DocMeta, DocModel, DocSetup, Image, SectionSetup};
+use crate::model::{Block, Color, CustomXmlItem, DocMeta, DocModel, Image};
 use crate::text;
 use crate::CoreProperties;
 
@@ -316,6 +316,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         &styles,
         &numbering,
         document_properties,
+        preserve_legacy_form_cache,
     );
     let mut endnote_part = read_notes(
         &mut zip,
@@ -325,6 +326,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         &styles,
         &numbering,
         document_properties,
+        preserve_legacy_form_cache,
     );
     note_part.blocks.extend(endnote_part.blocks);
     note_part.records.append(&mut endnote_part.records);
@@ -333,6 +335,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         .floating_shapes
         .extend(endnote_part.floating_shapes);
     note_part.text_boxes.extend(endnote_part.text_boxes);
+    note_part.fields.extend(endnote_part.fields);
     extend_missing_comment_anchors(&mut note_part.comment_anchors, endnote_part.comment_anchors);
     attach_note_reference_anchors(&mut note_part.records, &doc_xml);
     let mut floating_shapes = read_floating_shapes(&doc_xml);
@@ -349,6 +352,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         text_boxes: header_footer_text_boxes,
         revisions: header_footer_revisions,
         floating_shapes: header_footer_floating_shapes,
+        fields: header_footer_fields,
     } = read_headers_footers(
         &mut zip,
         &doc_xml,
@@ -356,6 +360,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         &styles,
         &numbering,
         document_properties,
+        preserve_legacy_form_cache,
     );
     floating_shapes.extend(header_footer_floating_shapes);
     text_boxes.extend(header_footer_text_boxes);
@@ -432,8 +437,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
             ..crate::model::DocSetup::default()
         },
     };
-    fields.extend(crate::report::fields_for_model(&note_part.blocks));
-    append_model_header_footer_fields(&mut fields, &model);
+    fields.extend(note_part.fields);
+    fields.extend(header_footer_fields);
     let main_text = body_text(&model); // body only
                                        // Full text: body, then notes, then section/final headers/footers.
     let text = {
@@ -478,49 +483,6 @@ pub(crate) fn try_blank() -> Result<DocxState> {
     open(BLANK_DOCX)
 }
 
-fn append_model_header_footer_fields(fields: &mut Vec<Field>, model: &DocModel) {
-    for block in &model.blocks {
-        if let Block::SectionBreak(setup) = block {
-            append_section_header_footer_fields(fields, setup);
-        }
-    }
-    append_doc_header_footer_fields(fields, &model.setup);
-}
-
-fn append_doc_header_footer_fields(fields: &mut Vec<Field>, setup: &DocSetup) {
-    append_header_footer_field_blocks(
-        fields,
-        [
-            setup.header.as_slice(),
-            setup.first_header.as_slice(),
-            setup.even_header.as_slice(),
-            setup.footer.as_slice(),
-            setup.first_footer.as_slice(),
-            setup.even_footer.as_slice(),
-        ],
-    );
-}
-
-fn append_section_header_footer_fields(fields: &mut Vec<Field>, setup: &SectionSetup) {
-    append_header_footer_field_blocks(
-        fields,
-        [
-            setup.header.as_slice(),
-            setup.first_header.as_slice(),
-            setup.even_header.as_slice(),
-            setup.footer.as_slice(),
-            setup.first_footer.as_slice(),
-            setup.even_footer.as_slice(),
-        ],
-    );
-}
-
-fn append_header_footer_field_blocks(fields: &mut Vec<Field>, blocks: [&[Block]; 6]) {
-    for blocks in blocks {
-        fields.extend(crate::report::fields_for_model(blocks));
-    }
-}
-
 /// Resolve and parse the header/footer parts referenced by the body's sectPr(s).
 #[derive(Clone, Default)]
 struct SectionHeaderFooter {
@@ -547,6 +509,7 @@ struct HeaderFooterRead {
     text_boxes: Vec<TextBox>,
     revisions: Vec<Revision>,
     floating_shapes: Vec<FloatingShape>,
+    fields: Vec<Field>,
 }
 
 struct HeaderFooterPartRead {
@@ -556,6 +519,7 @@ struct HeaderFooterPartRead {
     text_boxes: Vec<TextBox>,
     revisions: Vec<Revision>,
     floating_shapes: Vec<FloatingShape>,
+    fields: Vec<Field>,
 }
 
 #[derive(Clone, Copy)]
@@ -574,6 +538,7 @@ fn read_headers_footers(
     styles: &styles::Styles,
     numbering: &numbering::Numbering,
     properties: DocumentPropertyRefs<'_>,
+    preserve_legacy_form_cache: bool,
 ) -> HeaderFooterRead {
     let section_refs = body::scan_hf_ref_sections(doc_xml);
     let mut sections = Vec::with_capacity(section_refs.len());
@@ -582,6 +547,7 @@ fn read_headers_footers(
     let mut text_boxes = Vec::new();
     let mut revisions = Vec::new();
     let mut floating_shapes = Vec::new();
+    let mut field_entries = Vec::new();
     let mut seen_records = std::collections::HashSet::new();
     let mut seen_text_boxes = std::collections::HashSet::new();
     let mut inherited_header = Vec::new();
@@ -597,6 +563,7 @@ fn read_headers_footers(
             text_boxes: header_text_boxes,
             revisions: header_revisions,
             floating_shapes: header_floating_shapes,
+            fields: header_fields,
         } = read_hf_parts(
             zip,
             &refs.headers,
@@ -605,12 +572,14 @@ fn read_headers_footers(
             styles,
             numbering,
             properties,
+            preserve_legacy_form_cache,
         );
         extend_unique_header_footer_records(&mut records, &mut seen_records, header_records);
         extend_missing_comment_anchors(&mut comment_anchors, header_comment_anchors);
         extend_unique_text_box_records(&mut text_boxes, &mut seen_text_boxes, header_text_boxes);
         extend_unique_revision_records(&mut revisions, header_revisions);
         extend_unique_floating_shape_records(&mut floating_shapes, header_floating_shapes);
+        field_entries.extend(header_fields);
         let mut header = header_blocks.default;
         // Omitted odd/default refs inherit the previous section; an explicit
         // default ref, even when blank/unresolved, resets the inherited surface.
@@ -628,6 +597,7 @@ fn read_headers_footers(
             text_boxes: footer_text_boxes,
             revisions: footer_revisions,
             floating_shapes: footer_floating_shapes,
+            fields: footer_fields,
         } = read_hf_parts(
             zip,
             &refs.footers,
@@ -636,12 +606,14 @@ fn read_headers_footers(
             styles,
             numbering,
             properties,
+            preserve_legacy_form_cache,
         );
         extend_unique_header_footer_records(&mut records, &mut seen_records, footer_records);
         extend_missing_comment_anchors(&mut comment_anchors, footer_comment_anchors);
         extend_unique_text_box_records(&mut text_boxes, &mut seen_text_boxes, footer_text_boxes);
         extend_unique_revision_records(&mut revisions, footer_revisions);
         extend_unique_floating_shape_records(&mut floating_shapes, footer_floating_shapes);
+        field_entries.extend(footer_fields);
         let mut footer = footer_blocks.default;
         // Same inheritance rule as headers.
         if !footer_has_default && !inherited_footer.is_empty() {
@@ -669,6 +641,7 @@ fn read_headers_footers(
         text_boxes,
         revisions,
         floating_shapes,
+        fields: field_entries,
     }
 }
 
@@ -765,6 +738,7 @@ fn read_hf_parts(
     styles: &styles::Styles,
     numbering: &numbering::Numbering,
     properties: DocumentPropertyRefs<'_>,
+    preserve_legacy_form_cache: bool,
 ) -> HeaderFooterPartRead {
     let mut seen_blocks = std::collections::HashSet::new();
     let mut seen_records = std::collections::HashSet::new();
@@ -777,6 +751,8 @@ fn read_hf_parts(
     let mut text_boxes = Vec::new();
     let mut revisions = Vec::new();
     let mut floating_shapes = Vec::new();
+    let mut field_entries = Vec::new();
+    let mut seen_fields = std::collections::HashSet::new();
     for reference in refs {
         let Some((target, external)) = rels.get(&reference.rel_id) else {
             continue;
@@ -785,6 +761,9 @@ fn read_hf_parts(
             continue;
         }
         let path = normalize_part(target);
+        let Some(xml) = part(zip, &path) else {
+            continue;
+        };
         let part_rels = part(zip, &part_rels_path(&path))
             .map(|s| parse_rels(&s))
             .unwrap_or_default();
@@ -796,9 +775,9 @@ fn read_hf_parts(
         let note_ref_context = fields::NoteRefContext::empty();
         let section_context = fields::SectionContext::empty();
         let style_ref_context = fields::StyleRefContext::empty();
-        let legacy_form_context = fields::LegacyFormContext::empty();
+        let legacy_form_context = fields::legacy_form_context(&xml, preserve_legacy_form_cache);
         let table_formula_context = fields::TableFormulaContext::empty();
-        let toc_entries = Vec::new();
+        let toc_entries = fields::toc_entries(&xml, styles);
         let hf_ctx = body::Ctx {
             styles,
             numbering,
@@ -833,40 +812,54 @@ fn read_hf_parts(
             field_bookmarks: Default::default(),
             counters: Default::default(),
         };
-        if let Some(xml) = part(zip, &path) {
-            let type_name = normalized_header_footer_type(&reference.type_name);
-            extend_missing_comment_anchors(&mut comment_anchors, comments::parse_anchors(&xml));
-            if seen_text_boxes.insert((path.clone(), type_name.to_string())) {
-                text_boxes.extend(read_text_boxes_with_prefix(
-                    &xml,
-                    &hf_ctx,
-                    &[],
-                    &format!("{path}#{type_name}-text-box"),
-                ));
+        let type_name = normalized_header_footer_type(&reference.type_name);
+        extend_missing_comment_anchors(&mut comment_anchors, comments::parse_anchors(&xml));
+        if seen_text_boxes.insert((path.clone(), type_name.to_string())) {
+            text_boxes.extend(read_text_boxes_with_prefix(
+                &xml,
+                &hf_ctx,
+                &[],
+                &format!("{path}#{type_name}-text-box"),
+            ));
+        }
+        if seen_revisions.insert((path.clone(), type_name.to_string())) {
+            revisions.extend(revisions::parse(&xml));
+        }
+        if seen_floating_shapes.insert((path.clone(), type_name.to_string())) {
+            floating_shapes.extend(read_floating_shapes(&xml));
+        }
+        if seen_fields.insert((path.clone(), type_name.to_string())) {
+            field_entries.extend(fields::parse(
+                &xml,
+                styles,
+                &toc_entries,
+                numbering,
+                fields::FieldDocumentProperties {
+                    core: properties.core,
+                    custom: properties.custom,
+                    variables: properties.variables,
+                    extended: properties.extended,
+                    file_size_bytes: properties.file_size_bytes,
+                },
+                preserve_legacy_form_cache,
+            ));
+        }
+        let part_blocks = body::parse_hdrftr(&xml, &hf_ctx);
+        if seen_blocks.insert((path.clone(), type_name.to_string())) {
+            match type_name {
+                "first" => blocks.first.extend(part_blocks.clone()),
+                "even" => blocks.even.extend(part_blocks.clone()),
+                _ => blocks.default.extend(part_blocks.clone()),
             }
-            if seen_revisions.insert((path.clone(), type_name.to_string())) {
-                revisions.extend(revisions::parse(&xml));
-            }
-            if seen_floating_shapes.insert((path.clone(), type_name.to_string())) {
-                floating_shapes.extend(read_floating_shapes(&xml));
-            }
-            let part_blocks = body::parse_hdrftr(&xml, &hf_ctx);
-            if seen_blocks.insert((path.clone(), type_name.to_string())) {
-                match type_name {
-                    "first" => blocks.first.extend(part_blocks.clone()),
-                    "even" => blocks.even.extend(part_blocks.clone()),
-                    _ => blocks.default.extend(part_blocks.clone()),
-                }
-            }
-            if seen_records.insert((path.clone(), type_name.to_string())) {
-                let text = blocks_text(&part_blocks);
-                if !text.is_empty() {
-                    records.push(HeaderFooter {
-                        id: format!("{path}#{type_name}"),
-                        kind: header_footer_kind(part_kind, type_name),
-                        text,
-                    });
-                }
+        }
+        if seen_records.insert((path.clone(), type_name.to_string())) {
+            let text = blocks_text(&part_blocks);
+            if !text.is_empty() {
+                records.push(HeaderFooter {
+                    id: format!("{path}#{type_name}"),
+                    kind: header_footer_kind(part_kind, type_name),
+                    text,
+                });
             }
         }
     }
@@ -877,6 +870,7 @@ fn read_hf_parts(
         text_boxes,
         revisions,
         floating_shapes,
+        fields: field_entries,
     }
 }
 
@@ -917,6 +911,7 @@ struct NotePartRead {
     revisions: Vec<Revision>,
     floating_shapes: Vec<FloatingShape>,
     text_boxes: Vec<TextBox>,
+    fields: Vec<Field>,
 }
 
 /// Read a footnotes/endnotes part (if present) into its real notes' blocks, with
@@ -929,6 +924,7 @@ fn read_notes(
     styles: &styles::Styles,
     numbering: &numbering::Numbering,
     properties: DocumentPropertyRefs<'_>,
+    preserve_legacy_form_cache: bool,
 ) -> NotePartRead {
     let Some(xml) = part(zip, name) else {
         return NotePartRead::default();
@@ -944,9 +940,9 @@ fn read_notes(
     let note_ref_context = fields::NoteRefContext::empty();
     let section_context = fields::SectionContext::empty();
     let style_ref_context = fields::StyleRefContext::empty();
-    let legacy_form_context = fields::LegacyFormContext::empty();
+    let legacy_form_context = fields::legacy_form_context(&xml, preserve_legacy_form_cache);
     let table_formula_context = fields::TableFormulaContext::empty();
-    let toc_entries = Vec::new();
+    let toc_entries = fields::toc_entries(&xml, styles);
     let ctx = body::Ctx {
         styles,
         numbering,
@@ -988,6 +984,20 @@ fn read_notes(
     let floating_shapes = read_floating_shapes(&xml);
     let text_box_id_prefix = format!("{name}-text-box");
     let text_boxes = read_text_boxes_with_prefix(&xml, &ctx, &floating_shapes, &text_box_id_prefix);
+    let fields = fields::parse(
+        &xml,
+        styles,
+        &toc_entries,
+        numbering,
+        fields::FieldDocumentProperties {
+            core: properties.core,
+            custom: properties.custom,
+            variables: properties.variables,
+            extended: properties.extended,
+            file_size_bytes: properties.file_size_bytes,
+        },
+        preserve_legacy_form_cache,
+    );
     for (id, note_blocks) in body::parse_note_entries(&xml, &ctx, tag) {
         let text = blocks_text(&note_blocks);
         records.push(Note {
@@ -1005,6 +1015,7 @@ fn read_notes(
         revisions,
         floating_shapes,
         text_boxes,
+        fields,
     }
 }
 
