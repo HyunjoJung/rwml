@@ -1841,10 +1841,12 @@ fn parse_rels(xml: &str) -> Rels {
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"Relationship" =>
             {
-                if let (Some(id), Some(target)) = (attr_local(&e, b"Id"), attr_local(&e, b"Target"))
-                {
-                    let external = attr_local(&e, b"TargetMode")
-                        .is_some_and(|value| value.trim() == "External");
+                if let (Some(id), Some(target)) = (
+                    attr_local_trimmed(&e, b"Id"),
+                    attr_local_trimmed(&e, b"Target"),
+                ) {
+                    let external = attr_local_trimmed(&e, b"TargetMode")
+                        .is_some_and(|value| value == "External");
                     map.insert(id, (target, external));
                 }
             }
@@ -2136,13 +2138,17 @@ mod tests {
     }
 
     #[test]
-    fn reader_rels_target_mode_trims_ooxml_value() {
+    fn reader_rels_trims_ooxml_values() {
         let rels = parse_rels(
             r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-                <Relationship Id="rLink" Target="https://example.com/" TargetMode=" External "/>
+                <Relationship Id=" rLink " Target=" https://example.com/ " TargetMode=" External "/>
             </Relationships>"#,
         );
-        assert_eq!(rels.get("rLink").map(|(_, external)| *external), Some(true));
+        assert_eq!(
+            rels.get("rLink")
+                .map(|(target, external)| (target.as_str(), *external)),
+            Some(("https://example.com/", true))
+        );
     }
 
     #[test]
