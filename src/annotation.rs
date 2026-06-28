@@ -545,6 +545,37 @@ pub(crate) fn field_non_empty_non_switch_literal_token(value: &str) -> Option<&s
     (!value.is_empty()).then_some(value)
 }
 
+pub(crate) fn filename_field_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if !kind.eq_ignore_ascii_case("FILENAME") {
+        return false;
+    }
+    let mut path = false;
+    let mut text_format = None;
+    while let Some(part) = parts.next() {
+        if part.eq_ignore_ascii_case("\\p") {
+            if path {
+                return false;
+            }
+            path = true;
+            continue;
+        }
+        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_text_format_switch(format, &mut text_format)
+        }) else {
+            return false;
+        };
+        if !accepted {
+            return false;
+        }
+    }
+    true
+}
+
 pub(crate) fn reference_index_literal_token(value: &str) -> Option<&str> {
     let token = value.trim();
     let quoted = token.starts_with('"') && token.ends_with('"') && token.len() >= 2;

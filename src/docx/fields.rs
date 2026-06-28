@@ -11,7 +11,7 @@ use crate::annotation::{
     field_identifier_token, field_level_range_token, field_level_token, field_literal_token,
     field_name_token, field_non_empty_non_switch_literal_token,
     field_non_empty_quoted_literal_token, field_non_switch_literal_token, field_points_token,
-    field_positive_points_token, field_symbol_code_token, instruction_parts,
+    field_positive_points_token, field_symbol_code_token, filename_field_syntax, instruction_parts,
     is_neutral_field_format_switch, is_note_ref_kind, is_ref_value_neutral_switch,
     is_toc_value_neutral_switch, reference_index_category_token, reference_index_literal_token,
     reference_index_plain_value_token, strip_ascii_switch_prefix, toc_style_specs, Field,
@@ -5086,32 +5086,7 @@ fn computed_merge_control_result(instruction: &str) -> Option<String> {
 }
 
 pub(crate) fn supports_filename_field_syntax(instruction: &str) -> bool {
-    filename_instruction(instruction).is_some()
-}
-
-fn filename_instruction(instruction: &str) -> Option<()> {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let kind = parts.next()?;
-    if !kind.eq_ignore_ascii_case("FILENAME") {
-        return None;
-    }
-    let mut path = false;
-    let mut text_format = None;
-    while let Some(part) = parts.next() {
-        if part.eq_ignore_ascii_case("\\p") {
-            if path {
-                return None;
-            }
-            path = true;
-            continue;
-        }
-        if accept_field_format_switch_for_tail(part, &mut parts, &mut text_format)? {
-            continue;
-        }
-        return None;
-    }
-    Some(())
+    filename_field_syntax(instruction)
 }
 
 fn merge_control_instruction(instruction: &str) -> Option<()> {

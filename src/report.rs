@@ -8,6 +8,8 @@
 use crate::annotation::field_level_token as diagnostic_level_token;
 #[cfg(not(feature = "docx"))]
 use crate::annotation::field_name_token as diagnostic_name_token;
+#[cfg(not(feature = "docx"))]
+use crate::annotation::filename_field_syntax;
 use crate::annotation::{
     accept_field_number_format_switch, accept_field_text_format_switch,
     accept_general_format_switch, field_identifier_token as diagnostic_identifier_token,
@@ -1954,34 +1956,7 @@ fn supported_filename_syntax(instruction: &str) -> bool {
 
 #[cfg(not(feature = "docx"))]
 fn supported_filename_syntax(instruction: &str) -> bool {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let Some(kind) = parts.next() else {
-        return false;
-    };
-    if !kind.eq_ignore_ascii_case("FILENAME") {
-        return false;
-    }
-    let mut path = false;
-    let mut text_format = false;
-    while let Some(part) = parts.next() {
-        if part.eq_ignore_ascii_case("\\p") {
-            if path {
-                return false;
-            }
-            path = true;
-            continue;
-        }
-        let Some(accepted) = accept_field_format_for_report(part, &mut parts, &mut text_format)
-        else {
-            return false;
-        };
-        if accepted {
-            continue;
-        }
-        return false;
-    }
-    true
+    filename_field_syntax(instruction)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
