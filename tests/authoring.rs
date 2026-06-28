@@ -2707,11 +2707,24 @@ fn write_docx_emits_visible_placeholders_for_header_footer_image_blocks() {
     let model = DocModel {
         blocks: vec![Block::Paragraph(plain_paragraph("Body"))],
         setup: DocSetup {
-            header: vec![Block::Image(
-                ImageBuilder::new(tiny_png(), "image/png")
-                    .alt("Header <logo>")
-                    .into(),
-            )],
+            header: vec![
+                Block::Image(
+                    ImageBuilder::new(tiny_png(), "image/png")
+                        .alt("Header <logo>")
+                        .into(),
+                ),
+                Block::Paragraph(Paragraph {
+                    runs: vec![rdoc::Run {
+                        image: Some(
+                            ImageBuilder::new(tiny_png(), "image/png")
+                                .alt("Inline <badge>")
+                                .into(),
+                        ),
+                        ..rdoc::Run::default()
+                    }],
+                    ..Paragraph::default()
+                }),
+            ],
             footer: vec![Block::Image(
                 ImageBuilder::new(tiny_png(), "image/png")
                     .alt("Footer <mark>")
@@ -2732,6 +2745,10 @@ fn write_docx_emits_visible_placeholders_for_header_footer_image_blocks() {
         "header image placeholder missing: {header_xml}"
     );
     assert!(
+        header_xml.contains("[rdoc image placeholder: Inline &lt;badge&gt;]"),
+        "header inline image placeholder missing: {header_xml}"
+    );
+    assert!(
         footer_xml.contains("[rdoc image placeholder: Footer &lt;mark&gt;]"),
         "footer image placeholder missing: {footer_xml}"
     );
@@ -2745,6 +2762,7 @@ fn write_docx_emits_visible_placeholders_for_header_footer_image_blocks() {
     let text = reopened.text();
     assert!(
         text.contains("[rdoc image placeholder: Header <logo>]")
+            && text.contains("[rdoc image placeholder: Inline <badge>]")
             && text.contains("[rdoc image placeholder: Footer <mark>]"),
         "header/footer image placeholders not readable after reopen: {text:?}"
     );

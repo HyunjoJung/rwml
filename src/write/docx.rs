@@ -154,6 +154,9 @@ fn render_hf_body(blocks: &[crate::model::Block], page_numbers: bool) -> String 
                 for r in &p.runs {
                     out.push_str("<w:r>");
                     write_rpr(&mut out, &r.props);
+                    if let Some(img) = &r.image {
+                        write_run_text(&mut out, &image_placeholder_text(img, "image unavailable"));
+                    }
                     write_run_text(&mut out, &r.text);
                     out.push_str("</w:r>");
                 }
@@ -1370,10 +1373,14 @@ fn write_missing_image_placeholder(out: &mut String, img: &Image) {
 }
 
 fn write_image_placeholder(out: &mut String, img: &Image, fallback: &str) {
-    let label = non_empty_trimmed(img.alt.as_deref()).unwrap_or(fallback);
     out.push_str("<w:r>");
-    write_run_text(out, &format!("[rdoc image placeholder: {label}]"));
+    write_run_text(out, &image_placeholder_text(img, fallback));
     out.push_str("</w:r>");
+}
+
+fn image_placeholder_text(img: &Image, fallback: &str) -> String {
+    let label = non_empty_trimmed(img.alt.as_deref()).unwrap_or(fallback);
+    format!("[rdoc image placeholder: {label}]")
 }
 
 /// Extension + content type for an image MIME (reverse of the reader's
