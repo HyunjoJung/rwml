@@ -380,6 +380,48 @@ def public_release_policy_input_gaps(
         public_release_corpus_manifest_documents_match(corpus_manifests)
     ):
         missing.append("matching public corpus manifest documents")
+    missing.extend(
+        public_release_report_strength_gaps(
+            validation_report=validation_report,
+            benchmark_reports=benchmark_reports,
+        )
+    )
+    return missing
+
+
+def public_release_report_strength_gaps(
+    *,
+    validation_report: Path | None,
+    benchmark_reports: list[Path] | None,
+) -> list[str]:
+    missing = []
+    if validation_report is not None and validation_report.is_file():
+        try:
+            validation = validation_summary(validation_report)
+            require_report_gate_passed("public-release", validation, "validation")
+            require_public_release_report_thresholds(
+                "public-release",
+                validation,
+                "validation",
+            )
+        except (OSError, json.JSONDecodeError, ValueError):
+            missing.append("policy-strength validation report")
+    benchmark_strength_missing = False
+    for benchmark_report in benchmark_reports or []:
+        if not benchmark_report.is_file():
+            continue
+        try:
+            benchmark = report_summary(benchmark_report)
+            require_report_gate_passed("public-release", benchmark, "benchmark")
+            require_public_release_report_thresholds(
+                "public-release",
+                benchmark,
+                "benchmark",
+            )
+        except (OSError, json.JSONDecodeError, ValueError):
+            benchmark_strength_missing = True
+    if benchmark_strength_missing:
+        missing.append("policy-strength benchmark report")
     return missing
 
 
