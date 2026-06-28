@@ -17,7 +17,9 @@ use quick_xml::Reader;
 use super::fields::TocEntry;
 use super::numbering::Numbering;
 use super::styles::Styles;
-use super::{attr_local, attr_u8, field_char_type, is_page_break_type, local, toggle_on};
+use super::{
+    attr_local, attr_local_trimmed, attr_u8, field_char_type, is_page_break_type, local, toggle_on,
+};
 use crate::annotation::FieldKind;
 use crate::model::{
     Align, AuthoredContentControl, Block, Cell, CellMargins, CharProps, Color, DocGrid,
@@ -1391,7 +1393,7 @@ fn read_ppr(r: &mut Xml<'_>) -> PPr {
 
 fn read_ppr_item(pp: &mut PPr, e: &BytesStart<'_>, num_id: &mut Option<String>, ilvl: &mut u8) {
     match local(e.name().as_ref()) {
-        b"pStyle" => pp.style_id = attr_local(e, b"val"),
+        b"pStyle" => pp.style_id = attr_local_trimmed(e, b"val"),
         b"ilvl" => {
             if let Some(v) = attr_u8(e, b"val") {
                 *ilvl = v;

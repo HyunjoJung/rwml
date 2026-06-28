@@ -915,11 +915,11 @@ fn style_ref_field_docx() -> Vec<u8> {
         ),
         (
             "word/styles.xml",
-            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style><w:style w:type="paragraph" w:styleId="CustomCallout"><w:name w:val="Custom Heading"/></w:style></w:styles>"#,
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId=" Heading1 "><w:name w:val=" heading 1 "/></w:style><w:style w:type="paragraph" w:styleId=" CustomCallout "><w:name w:val=" Custom Heading "/></w:style></w:styles>"#,
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Executive Summary</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;heading 1&quot; "><w:r><w:t>stale heading style</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;heading 1&quot; \p "><w:r><w:t>stale heading relative</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" STYLEREF CustomCallout "><w:r><w:t>stale forward style</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" STYLEREF CustomCallout \p \* Upper "><w:r><w:t>stale forward relative</w:t></w:r></w:fldSimple></w:p><w:p><w:pPr><w:pStyle w:val="CustomCallout"/></w:pPr><w:r><w:t>Forward Finding</w:t></w:r></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> STYLEREF &quot;Custom Heading&quot; \* MERGEFORMAT </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale custom style</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val=" Heading1 "/></w:pPr><w:r><w:t>Executive Summary</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;heading 1&quot; "><w:r><w:t>stale heading style</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;heading 1&quot; \p "><w:r><w:t>stale heading relative</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" STYLEREF CustomCallout "><w:r><w:t>stale forward style</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" STYLEREF CustomCallout \p \* Upper "><w:r><w:t>stale forward relative</w:t></w:r></w:fldSimple></w:p><w:p><w:pPr><w:pStyle w:val=" CustomCallout "/></w:pPr><w:r><w:t>Forward Finding</w:t></w:r></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> STYLEREF &quot;Custom Heading&quot; \* MERGEFORMAT </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale custom style</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -6011,6 +6011,16 @@ fn docx_style_ref_field_computes_nearest_paragraph_style_text() {
     );
 
     let model = doc.model();
+    let paragraph_style_ids = model
+        .blocks
+        .iter()
+        .filter_map(|block| match block {
+            Block::Paragraph(paragraph) => paragraph.props.style_id.as_deref(),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(paragraph_style_ids, vec!["Heading1", "CustomCallout"]);
+
     let paragraph_text = model
         .blocks
         .iter()

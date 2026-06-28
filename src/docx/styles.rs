@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use quick_xml::events::Event;
 use quick_xml::Reader;
 
-use super::{attr_local, attr_u8, local};
+use super::{attr_local_trimmed, attr_u8, local};
 use crate::stsh::heading_from_name;
 
 /// Resolved per-`styleId` heading level and display name.
@@ -48,13 +48,13 @@ pub(crate) fn parse(xml: &str) -> Styles {
         match r.read_event() {
             // A new <w:style> opens; capture its id and reset per-style state.
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"style" => {
-                cur_id = attr_local(&e, b"styleId");
+                cur_id = attr_local_trimmed(&e, b"styleId");
                 cur_name = String::new();
                 cur_outline = None;
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
                 b"name" => {
-                    if let Some(v) = attr_local(&e, b"val") {
+                    if let Some(v) = attr_local_trimmed(&e, b"val") {
                         cur_name = v;
                     }
                 }

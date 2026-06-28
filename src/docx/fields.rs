@@ -15,7 +15,8 @@ use crate::{numfmt, CoreProperties};
 use super::numbering::Numbering;
 use super::styles::Styles;
 use super::{
-    attr_local, attr_u8, attr_usize, field_char_type, is_page_break_type, local, toggle_on,
+    attr_local, attr_local_trimmed, attr_u8, attr_usize, field_char_type, is_page_break_type,
+    local, toggle_on,
 };
 
 type Xml<'a> = Reader<&'a [u8]>;
@@ -2532,7 +2533,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
                         });
                     }
                     b"rStyle" => {
-                        run_style_id = attr_local(&e, b"val");
+                        run_style_id = attr_local_trimmed(&e, b"val");
                     }
                     b"fldChar" => {
                         apply_style_ref_scan_fld_char(
@@ -2581,7 +2582,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
                 }
                 match name {
                     b"rStyle" => {
-                        run_style_id = attr_local(&e, b"val");
+                        run_style_id = attr_local_trimmed(&e, b"val");
                     }
                     b"fldChar" => {
                         apply_style_ref_scan_fld_char(
@@ -2664,7 +2665,7 @@ fn read_style_ref_ppr(
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
-                b"pStyle" => *style_id = attr_local(&e, b"val"),
+                b"pStyle" => *style_id = attr_local_trimmed(&e, b"val"),
                 b"ilvl" => {
                     if let Some(value) = attr_u8(&e, b"val") {
                         *ilvl = value;
@@ -4546,7 +4547,7 @@ fn read_toc_ppr(r: &mut Xml<'_>, style_id: &mut Option<String>, outline: &mut Op
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
-                b"pStyle" => *style_id = attr_local(&e, b"val"),
+                b"pStyle" => *style_id = attr_local_trimmed(&e, b"val"),
                 b"outlineLvl" => *outline = attr_u8(&e, b"val"),
                 _ => {}
             },

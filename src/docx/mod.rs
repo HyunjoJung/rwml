@@ -2079,6 +2079,12 @@ pub(crate) fn attr_local(e: &BytesStart<'_>, key: &[u8]) -> Option<String> {
     })
 }
 
+pub(crate) fn attr_local_trimmed(e: &BytesStart<'_>, key: &[u8]) -> Option<String> {
+    attr_local(e, key)
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+}
+
 pub(crate) fn is_page_break_type(e: &BytesStart<'_>) -> bool {
     attr_local(e, b"type").is_some_and(|value| value.trim() == "page")
 }
