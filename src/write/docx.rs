@@ -1513,8 +1513,16 @@ fn write_comment_text(out: &mut String, text: &str) {
 
 fn core_properties_xml(setup: &DocSetup) -> Option<Vec<u8>> {
     let title = non_empty_trimmed(setup.title.as_deref());
+    let subject = non_empty_trimmed(setup.subject.as_deref());
     let creator = non_empty_trimmed(setup.creator.as_deref());
-    if title.is_none() && creator.is_none() {
+    let description = non_empty_trimmed(setup.description.as_deref());
+    let keywords = non_empty_trimmed(setup.keywords.as_deref());
+    if title.is_none()
+        && subject.is_none()
+        && creator.is_none()
+        && description.is_none()
+        && keywords.is_none()
+    {
         return None;
     }
 
@@ -1526,8 +1534,23 @@ fn core_properties_xml(setup: &DocSetup) -> Option<Vec<u8>> {
     if let Some(title) = title {
         s.push_str(&format!("<dc:title>{}</dc:title>", esc_text(title)));
     }
+    if let Some(subject) = subject {
+        s.push_str(&format!("<dc:subject>{}</dc:subject>", esc_text(subject)));
+    }
     if let Some(creator) = creator {
         s.push_str(&format!("<dc:creator>{}</dc:creator>", esc_text(creator)));
+    }
+    if let Some(description) = description {
+        s.push_str(&format!(
+            "<dc:description>{}</dc:description>",
+            esc_text(description)
+        ));
+    }
+    if let Some(keywords) = keywords {
+        s.push_str(&format!(
+            "<cp:keywords>{}</cp:keywords>",
+            esc_text(keywords)
+        ));
     }
     s.push_str("</cp:coreProperties>");
     Some(s.into_bytes())

@@ -268,7 +268,10 @@ impl CoreProperties {
     fn from_doc_setup(setup: &DocSetup) -> Self {
         CoreProperties {
             title: setup.title.clone(),
+            subject: setup.subject.clone(),
             creator: setup.creator.clone(),
+            description: setup.description.clone(),
+            keywords: setup.keywords.clone(),
             ..CoreProperties::default()
         }
     }

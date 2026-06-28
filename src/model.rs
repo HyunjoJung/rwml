@@ -1370,8 +1370,14 @@ pub struct DocSetup {
     pub web_extension_task_panes: Vec<WebExtensionTaskPane>,
     /// Document title metadata.
     pub title: Option<String>,
+    /// Document subject metadata.
+    pub subject: Option<String>,
     /// Document author metadata.
     pub creator: Option<String>,
+    /// Document description metadata.
+    pub description: Option<String>,
+    /// Document keywords metadata.
+    pub keywords: Option<String>,
 }
 
 impl From<&DocSetup> for SectionSetup {

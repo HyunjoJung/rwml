@@ -2351,7 +2351,10 @@ fn doc_builder_adds_custom_paragraph_style() {
 fn doc_builder_creates_basic_report_model() {
     let model = DocBuilder::new()
         .title(" Builder Report ")
+        .subject(" Operations ")
         .creator(" rdoc ")
+        .description(" Quarterly <plan> & review ")
+        .keywords(" rdoc,metadata ")
         .page_setup(PageSetup {
             margin_pt: 54.0,
             ..PageSetup::default()
@@ -2365,7 +2368,13 @@ fn doc_builder_creates_basic_report_model() {
         .build();
 
     assert_eq!(model.setup.title.as_deref(), Some("Builder Report"));
+    assert_eq!(model.setup.subject.as_deref(), Some("Operations"));
     assert_eq!(model.setup.creator.as_deref(), Some("rdoc"));
+    assert_eq!(
+        model.setup.description.as_deref(),
+        Some("Quarterly <plan> & review")
+    );
+    assert_eq!(model.setup.keywords.as_deref(), Some("rdoc,metadata"));
     assert_eq!(model.setup.page.margin_pt, 54.0);
     assert_eq!(model.setup.header.len(), 1);
     assert_eq!(model.setup.footer.len(), 1);
@@ -2404,13 +2413,25 @@ fn doc_builder_creates_basic_report_model() {
     );
     assert!(
         core_xml.contains("<dc:title>Builder Report</dc:title>")
+            && core_xml.contains("<dc:subject>Operations</dc:subject>")
             && core_xml.contains("<dc:creator>rdoc</dc:creator>"),
         "core properties XML missing title/creator: {core_xml}"
+    );
+    assert!(
+        core_xml.contains("<dc:description>Quarterly &lt;plan&gt; &amp; review</dc:description>")
+            && core_xml.contains("<cp:keywords>rdoc,metadata</cp:keywords>"),
+        "core properties XML missing descriptive metadata: {core_xml}"
     );
     let reopened = Document::open(&bytes).expect("builder-authored .docx reopens");
     let core = reopened.core_properties();
     assert_eq!(core.title.as_deref(), Some("Builder Report"));
+    assert_eq!(core.subject.as_deref(), Some("Operations"));
     assert_eq!(core.creator.as_deref(), Some("rdoc"));
+    assert_eq!(
+        core.description.as_deref(),
+        Some("Quarterly <plan> & review")
+    );
+    assert_eq!(core.keywords.as_deref(), Some("rdoc,metadata"));
     let text = reopened.text();
     assert!(text.contains("Builder Report"), "title lost: {text:?}");
     assert!(
@@ -2423,15 +2444,24 @@ fn doc_builder_creates_basic_report_model() {
 fn doc_builder_ignores_blank_core_metadata() {
     let mut model = DocBuilder::new()
         .title(" ")
+        .subject("\r\n")
         .creator("\t")
+        .description(" ")
+        .keywords("\n")
         .paragraph("Body")
         .build();
 
     assert_eq!(model.setup.title, None);
+    assert_eq!(model.setup.subject, None);
     assert_eq!(model.setup.creator, None);
+    assert_eq!(model.setup.description, None);
+    assert_eq!(model.setup.keywords, None);
 
     model.setup.title = Some(" \n ".to_string());
+    model.setup.subject = Some(" ".to_string());
     model.setup.creator = Some("\t".to_string());
+    model.setup.description = Some("\r".to_string());
+    model.setup.keywords = Some("\n".to_string());
 
     let bytes = rdoc::write_docx(&model);
     let parts = unzip_parts(&bytes);

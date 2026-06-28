@@ -1559,10 +1559,31 @@ impl DocBuilder {
         self
     }
 
+    /// Set document subject metadata.
+    pub fn subject(mut self, subject: impl Into<String>) -> Self {
+        let subject = subject.into().trim().to_string();
+        self.model.setup.subject = (!subject.is_empty()).then_some(subject);
+        self
+    }
+
     /// Set document creator metadata.
     pub fn creator(mut self, creator: impl Into<String>) -> Self {
         let creator = creator.into().trim().to_string();
         self.model.setup.creator = (!creator.is_empty()).then_some(creator);
+        self
+    }
+
+    /// Set document description metadata.
+    pub fn description(mut self, description: impl Into<String>) -> Self {
+        let description = description.into().trim().to_string();
+        self.model.setup.description = (!description.is_empty()).then_some(description);
+        self
+    }
+
+    /// Set document keywords metadata.
+    pub fn keywords(mut self, keywords: impl Into<String>) -> Self {
+        let keywords = keywords.into().trim().to_string();
+        self.model.setup.keywords = (!keywords.is_empty()).then_some(keywords);
         self
     }
 
