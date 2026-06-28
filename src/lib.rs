@@ -636,10 +636,10 @@ impl Document {
     /// `.doc` annotation subdocument.
     ///
     /// The returned comments are a side table. `.docx` comments include
-    /// metadata and body anchors when present; legacy `.doc` annotation regions
-    /// expose stable synthetic ids, visible comment text, and best-effort
-    /// source-region anchors. Legacy `.doc` author metadata is not recovered
-    /// yet.
+    /// metadata and body/header/footer anchors when present; legacy `.doc`
+    /// annotation regions expose stable synthetic ids, visible comment text, and
+    /// best-effort source-region anchors. Legacy `.doc` author metadata is not
+    /// recovered yet.
     pub fn comments(&self) -> Vec<Comment> {
         match &self.backend {
             Backend::Doc(_) => legacy_doc_comments_from_model(&self.model()),
@@ -712,12 +712,13 @@ impl Document {
         }
     }
 
-    /// Extract fields from the document body.
+    /// Extract recovered field records.
     ///
-    /// For `.docx`, the returned side table includes simple fields and common
-    /// complex fields with their normalized instruction text and cached visible
-    /// result. For legacy `.doc`, fields are reconstructed from the rich model's
-    /// field-marked result runs where the binary field instruction was recoverable.
+    /// For `.docx`, the returned side table includes body and modeled
+    /// header/footer simple fields and common complex fields with their
+    /// normalized instruction text and cached visible result. For legacy `.doc`,
+    /// fields are reconstructed from the rich model's field-marked result runs
+    /// where the binary field instruction was recoverable.
     pub fn fields(&self) -> Vec<Field> {
         match &self.backend {
             Backend::Doc(_) => report::fields_for_model(&self.model().blocks),

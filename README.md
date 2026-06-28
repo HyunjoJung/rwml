@@ -906,8 +906,9 @@ The long-term native Word engine plan is split into the
 - [x] Renderer: model-driven page geometry (size/orientation/per-side margins);
       running headers/footers; nested-table-cell text; common Symbol/Wingdings
       display mapping
-- [x] Reader: `.docx` comments, tracked-change views, core document metadata,
-      field detection, floating-shape geometry and containing-block anchor text
+- [x] Reader: `.docx` comments with body/header/footer anchors,
+      tracked-change views, core document metadata, body/header/footer field
+      detection, floating-shape geometry and containing-block anchor text
       capture, trusted body `PAGE` computation plus `FILENAME`/`MERGEFIELD`
       render support, document-info/date/stat
       cached-display support, deterministic literal arithmetic formula fields,

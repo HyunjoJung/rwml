@@ -3354,7 +3354,15 @@ fn write_docx_keeps_header_footer_comment_runs() {
     let comments = reopened.comments();
     assert_eq!(comments.len(), 2);
     assert_eq!(comments[0].text, "Header note");
+    assert_eq!(
+        comments[0].anchor.as_ref().map(|a| a.text.as_str()),
+        Some("Header clause")
+    );
     assert_eq!(comments[1].text, "Footer note");
+    assert_eq!(
+        comments[1].anchor.as_ref().map(|a| a.text.as_str()),
+        Some("Footer clause")
+    );
     let header_text = reopened.header_text();
     assert!(
         header_text.contains("Header clause") && header_text.contains("Footer clause"),

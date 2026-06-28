@@ -125,13 +125,14 @@ Initial status:
 - `Document::comments()` extracts the `.docx` comments side table from
   `word/comments.xml` plus optional `word/commentsExtended.xml` reply links
   with id, optional reply parent id, author, initials, date, visible text, and
-  main-document anchor text when a
+  body/header/footer anchor text when a
   `commentRangeStart`/`commentRangeEnd` pair is present, including visible
   `w:tab`, `w:br`, and `w:cr` markers in comment bodies and anchors. Comment
   anchor text follows the accepted/current revision policy, including direct,
   inserted, and moved-to anchors while leaving deleted and moved-from old-only
   anchors unanchored.
-- `Document::fields()` extracts simple and common complex `.docx` body fields
+- `Document::fields()` extracts simple and common complex `.docx` body and
+  modeled header/footer fields
   with typed `FieldKind` (`HYPERLINK`, `PAGE`, `TOC`, `FILENAME`, `MERGEFIELD`,
   `REF`, `PAGEREF`, `NOTEREF`, `TC`, `SEQ`, document-info/date/stat fields,
   dynamic/control fields including deterministic literal arithmetic formula
