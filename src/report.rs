@@ -5409,10 +5409,13 @@ fn docx_page_ref_unsupported_section_format_targets(xml: &str) -> HashSet<String
     let mut unsupported_targets = HashSet::new();
     let mut current_section_bookmarks = Vec::new();
     let mut current_section_unsupported = false;
+    let mut paragraph_depth = 0usize;
     let mut paragraph_properties_depth = 0usize;
     let mut section_properties_depth = 0usize;
     let mut section_is_paragraph_break = false;
     let mut section_page_format_unsupported = None;
+    let mut paragraph_section_format_pending = false;
+    let mut paragraph_section_page_format_unsupported = None;
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
     loop {
@@ -5441,6 +5444,7 @@ fn docx_page_ref_unsupported_section_format_targets(xml: &str) -> HashSet<String
                             took_branch: false,
                         });
                     }
+                    b"p" => paragraph_depth += 1,
                     b"pPr" => paragraph_properties_depth += 1,
                     b"sectPr" => {
                         section_properties_depth += 1;
@@ -5478,13 +5482,18 @@ fn docx_page_ref_unsupported_section_format_targets(xml: &str) -> HashSet<String
                 }
                 match name {
                     b"sectPr" => {
-                        apply_section_format(
-                            paragraph_properties_depth > 0,
-                            None,
-                            &mut current_section_unsupported,
-                            &mut current_section_bookmarks,
-                            &mut unsupported_targets,
-                        );
+                        if paragraph_properties_depth > 0 {
+                            paragraph_section_format_pending = true;
+                            paragraph_section_page_format_unsupported = None;
+                        } else {
+                            apply_section_format(
+                                false,
+                                None,
+                                &mut current_section_unsupported,
+                                &mut current_section_bookmarks,
+                                &mut unsupported_targets,
+                            );
+                        }
                     }
                     b"pgNumType"
                         if section_properties_depth > 0
@@ -5507,17 +5516,36 @@ fn docx_page_ref_unsupported_section_format_targets(xml: &str) -> HashSet<String
                 match local(qname.as_ref()) {
                     b"sectPr" => {
                         if section_properties_depth == 1 {
-                            apply_section_format(
-                                section_is_paragraph_break,
-                                section_page_format_unsupported,
-                                &mut current_section_unsupported,
-                                &mut current_section_bookmarks,
-                                &mut unsupported_targets,
-                            );
+                            if section_is_paragraph_break {
+                                paragraph_section_format_pending = true;
+                                paragraph_section_page_format_unsupported =
+                                    section_page_format_unsupported;
+                            } else {
+                                apply_section_format(
+                                    false,
+                                    section_page_format_unsupported,
+                                    &mut current_section_unsupported,
+                                    &mut current_section_bookmarks,
+                                    &mut unsupported_targets,
+                                );
+                            }
                             section_is_paragraph_break = false;
                             section_page_format_unsupported = None;
                         }
                         section_properties_depth = section_properties_depth.saturating_sub(1);
+                    }
+                    b"p" => {
+                        if paragraph_depth == 1 && paragraph_section_format_pending {
+                            apply_section_format(
+                                true,
+                                paragraph_section_page_format_unsupported.take(),
+                                &mut current_section_unsupported,
+                                &mut current_section_bookmarks,
+                                &mut unsupported_targets,
+                            );
+                            paragraph_section_format_pending = false;
+                        }
+                        paragraph_depth = paragraph_depth.saturating_sub(1);
                     }
                     b"pPr" => {
                         paragraph_properties_depth = paragraph_properties_depth.saturating_sub(1);

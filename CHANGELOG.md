@@ -403,11 +403,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ~1 GiB / ~16 s.
 
 ### Fixed
-- **Paragraph-owned `.docx` section page accounting** (`docx/fields.rs`):
-  `PAGE`/`PAGEREF` field scanning now defers paragraph-level `w:sectPr` page
-  breaks until the paragraph closes, so fields and bookmarks in the same
-  paragraph remain on the pre-break page instead of seeing the next section too
-  early.
+- **Paragraph-owned `.docx` section page accounting** (`docx/fields.rs`,
+  `report.rs`): `PAGE`/`PAGEREF` field and diagnostic scanning now defers
+  paragraph-level `w:sectPr` page breaks until the paragraph closes, so fields
+  and bookmarks in the same paragraph remain on the pre-break page instead of
+  seeing the next section too early.
 - **Field instruction state machine** (`assemble.rs`): a field with no `0x14`
   separator (`0x13 … 0x15`) left the model assembler stuck in "instruction" mode,
   silently dropping *all* document content after it. Instruction tracking is now

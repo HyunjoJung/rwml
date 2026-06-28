@@ -466,6 +466,24 @@ fn page_ref_non_current_section_format_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn page_ref_content_paragraph_section_format_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:sectPr><w:pgNumType w:fmt="bullet"/></w:sectPr></w:pPr><w:bookmarkStart w:id="7" w:name="BeforeFormatBreak"/><w:r><w:t>Before format break</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:bookmarkStart w:id="8" w:name="AfterFormatBreak"/><w:r><w:t>After format break</w:t></w:r><w:bookmarkEnd w:id="8"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF BeforeFormatBreak \p "><w:r><w:t>stale before</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF AfterFormatBreak \p "><w:r><w:t>stale after</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn page_ref_manual_break_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -2142,6 +2160,37 @@ fn report_page_ref_section_format_scan_uses_current_single_branch_view() {
             reason: FieldEvaluationReason::NoComputedResult,
             count: 1,
         }]
+    );
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_page_ref_defers_content_paragraph_section_format_until_paragraph_end() {
+    let doc = Document::open(&page_ref_content_paragraph_section_format_diagnostics_docx())
+        .expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::PageRef);
+    assert_eq!(fields[0].instruction, "PAGEREF BeforeFormatBreak \\p");
+    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(fields[1].kind, FieldKind::PageRef);
+    assert_eq!(fields[1].instruction, "PAGEREF AfterFormatBreak \\p");
+    assert_eq!(fields[1].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::NoComputedResult,
+                count: 1,
+            },
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::UnsupportedSwitch,
+                count: 1,
+            },
+        ]
     );
 }
 
