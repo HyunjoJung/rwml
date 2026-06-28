@@ -1670,7 +1670,7 @@ fn read_rpr(r: &mut Xml<'_>) -> CharProps {
                 b"color" => p.color = attr_local(&e, b"val").and_then(|v| parse_hex_color(&v)),
                 b"highlight" => p.highlight = attr_local(&e, b"val"),
                 b"vertAlign" => {
-                    p.vert_align = match attr_local(&e, b"val").as_deref() {
+                    p.vert_align = match attr_local(&e, b"val").as_deref().map(str::trim) {
                         Some("superscript") => VertAlign::Super,
                         Some("subscript") => VertAlign::Sub,
                         _ => VertAlign::Baseline,
@@ -3288,7 +3288,7 @@ mod tests {
         let xml = r#"<w:document><w:body>
             <w:p>
                 <w:pPr><w:spacing w:before="240" w:after="120" w:line="360"/><w:ind w:left="720" w:firstLine="240"/><w:shd w:fill=" EEEEEE "/></w:pPr>
-                <w:r><w:rPr><w:rFonts w:ascii="Arial" w:eastAsia="맑은 고딕"/><w:sz w:val="24"/><w:color w:val=" FF0000 "/><w:vertAlign w:val="superscript"/><w:caps/></w:rPr><w:t>빨강</w:t></w:r>
+                <w:r><w:rPr><w:rFonts w:ascii="Arial" w:eastAsia="맑은 고딕"/><w:sz w:val="24"/><w:color w:val=" FF0000 "/><w:vertAlign w:val=" superscript "/><w:caps/></w:rPr><w:t>빨강</w:t></w:r>
             </w:p>
             <w:tbl><w:tblPr><w:tblW w:w="4000" w:type=" pct "/><w:tblLayout w:type=" fixed "/><w:tblInd w:w="720" w:type=" dxa "/></w:tblPr><w:tr><w:tc>
                 <w:tcPr><w:shd w:fill=" DDDDDD "/><w:vAlign w:val=" center "/><w:tcW w:w="2500" w:type=" pct "/></w:tcPr>
