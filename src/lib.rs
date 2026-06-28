@@ -1066,10 +1066,11 @@ impl Document {
     }
 
     /// **Template-fill edit: replace body content-control text by tag.** Finds
-    /// body `w:sdt` content controls whose `w:sdtPr/w:tag/@w:val` exactly equals
-    /// `tag`, replaces each matching control's visible WordprocessingML `w:t`
-    /// content with `text`, and preserves the content-control metadata and
-    /// surrounding package. Returns the number of content controls filled.
+    /// accepted-current body `w:sdt` content controls whose `w:sdtPr/w:tag/@w:val`
+    /// exactly equals `tag`, replaces each matching control's visible
+    /// WordprocessingML `w:t` content with `text`, and preserves the
+    /// content-control metadata and surrounding package. Returns the number of
+    /// content controls filled.
     ///
     /// This is intentionally focused on plain-text template fields represented by
     /// content controls. It does not remove the controls, alter aliases/tags, or
@@ -1085,10 +1086,11 @@ impl Document {
     }
 
     /// **Template-fill edit: replace multiple body content controls by tag.**
-    /// Each `(tag, text)` pair fills every body `w:sdt` content control whose
-    /// `w:sdtPr/w:tag/@w:val` exactly equals `tag`. All fills are validated first
-    /// and then committed as one package-preserving edit. Missing tags are
-    /// ignored, and the return value is the number of content controls filled.
+    /// Each `(tag, text)` pair fills every accepted-current body `w:sdt` content
+    /// control whose `w:sdtPr/w:tag/@w:val` exactly equals `tag`. All fills are
+    /// validated first and then committed as one package-preserving edit. Missing
+    /// tags are ignored, and the return value is the number of content controls
+    /// filled.
     ///
     /// Duplicate input tags are rejected so callers do not accidentally depend on
     /// ordering. Use repeated content controls with the same tag when one value

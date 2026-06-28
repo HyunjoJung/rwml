@@ -982,6 +982,39 @@ fn fill_content_control_by_tag_updates_matching_controls() {
 }
 
 #[test]
+fn fill_content_control_by_tag_skips_deleted_controls() {
+    let fixture = docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:del w:id="1"><w:sdt><w:sdtPr><w:tag w:val="client-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Deleted client</w:t></w:r></w:p></w:sdtContent></w:sdt></w:del><w:moveFrom w:id="2"><w:sdt><w:sdtPr><w:tag w:val="client-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Moved client</w:t></w:r></w:p></w:sdtContent></w:sdt></w:moveFrom><w:sdt><w:sdtPr><w:tag w:val="client-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Current client</w:t></w:r></w:p></w:sdtContent></w:sdt></w:body></w:document>"#,
+        ),
+    ]);
+    let mut doc = Document::open(&fixture).expect("fixture opens");
+
+    assert_eq!(
+        doc.fill_content_control_by_tag("client-name", "Acme")
+            .unwrap(),
+        1
+    );
+
+    let body = String::from_utf8(
+        unzip_parts(&doc.save().expect("save edited docx"))["word/document.xml"].clone(),
+    )
+    .unwrap();
+    assert!(body.contains("<w:t>Deleted client</w:t>"), "{body}");
+    assert!(body.contains("<w:t>Moved client</w:t>"), "{body}");
+    assert!(body.contains("<w:t>Acme</w:t>"), "{body}");
+}
+
+#[test]
 fn fill_content_control_by_tag_trims_ooxml_tag_value() {
     let mut doc = Document::open(&docx_fixture(&[
         (

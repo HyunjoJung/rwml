@@ -1915,6 +1915,12 @@ impl XmlTree {
     ) {
         let base = scope.len();
         self.push_xmlns(id, scope);
+        if self.wml_revision_edit_action(id, scope, WmlRevisionEditPolicy::Accept)
+            == WmlRevisionEditAction::Remove
+        {
+            scope.truncate(base);
+            return;
+        }
         if self.resolves_to(id, WML_NS, b"sdt", scope) && self.wml_sdt_tag_matches(id, scope, tag) {
             let mut runs = Vec::new();
             self.collect_wml_t(id, scope, &mut runs);
