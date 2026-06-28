@@ -413,7 +413,7 @@ fn malformed_filename_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
-fn malformed_document_info_diagnostics_docx() -> Vec<u8> {
+fn document_info_field_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
             "[Content_Types].xml",
@@ -425,7 +425,7 @@ fn malformed_document_info_diagnostics_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" AUTHOR \* MERGEFORMAT "><w:r><w:t>Cached author</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DOCPROPERTY &quot;Client Name "><w:r><w:t>Cached broken property</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" DATE \@ &quot;yyyy-MM-dd&quot; "><w:r><w:t>2026-06-24</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TIME \@ &quot;HH:mm&quot; "><w:r><w:t>14:35</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTHOR \* MERGEFORMAT "><w:r><w:t>Hyunjo Jung</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DOCPROPERTY Company "><w:r><w:t>Example Co.</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NUMPAGES "><w:r><w:t>12</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" EDITTIME "><w:r><w:t>42</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DOCPROPERTY &quot;Broken Name "><w:r><w:t>cached broken property</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -2177,23 +2177,26 @@ fn report_malformed_filename_reports_unsupported_switch() {
 
 #[cfg(feature = "docx")]
 #[test]
-fn report_malformed_document_info_reports_unsupported_switch() {
-    let doc = Document::open(&malformed_document_info_diagnostics_docx()).expect("fixture opens");
-    let report = doc.report();
-
-    assert_eq!(
-        report.features.unsupported_field_kinds,
+fn report_document_info_fields_split_cached_display_and_malformed_diagnostics() {
+    assert_report_field_diagnostics(
+        document_info_field_diagnostics_docx(),
+        7,
+        vec![
+            field_kind_count(FieldKind::DocumentInfo("DATE".to_string()), 1),
+            field_kind_count(FieldKind::DocumentInfo("TIME".to_string()), 1),
+            field_kind_count(FieldKind::DocumentInfo("AUTHOR".to_string()), 1),
+            field_kind_count(FieldKind::DocumentInfo("DOCPROPERTY".to_string()), 2),
+            field_kind_count(FieldKind::DocumentInfo("NUMPAGES".to_string()), 1),
+            field_kind_count(FieldKind::DocumentInfo("EDITTIME".to_string()), 1),
+        ],
         vec![FieldKindCount {
             kind: FieldKind::DocumentInfo("DOCPROPERTY".to_string()),
             count: 1,
-        }]
-    );
-    assert_eq!(
-        report.features.unsupported_field_reasons,
+        }],
         vec![FieldEvaluationReasonCount {
             reason: FieldEvaluationReason::UnsupportedSwitch,
             count: 1,
-        }]
+        }],
     );
 }
 
