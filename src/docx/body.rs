@@ -237,7 +237,8 @@ pub(crate) fn scan_page_setup(xml: &str) -> crate::model::PageSetup {
                     ) {
                         page.width_pt = w;
                         page.height_pt = h;
-                        page.landscape = attr_local(&e, b"orient").as_deref() == Some("landscape");
+                        page.landscape = attr_local(&e, b"orient")
+                            .is_some_and(|value| value.trim() == "landscape");
                         found = true;
                     }
                 }
@@ -1435,8 +1436,8 @@ fn read_sect_pr(r: &mut Xml<'_>) -> SectionSetup {
                     ) {
                         section.page.width_pt = w;
                         section.page.height_pt = h;
-                        section.page.landscape =
-                            attr_local(&e, b"orient").as_deref() == Some("landscape");
+                        section.page.landscape = attr_local(&e, b"orient")
+                            .is_some_and(|value| value.trim() == "landscape");
                     }
                 }
                 b"type" => {
@@ -3128,6 +3129,23 @@ mod tests {
             scan_page_number_format(final_restart),
             Some(PageNumberFormat::DecimalZero)
         );
+    }
+
+    #[test]
+    fn page_orientation_trims_ooxml_value() {
+        let xml = r#"<w:document><w:body>
+            <w:p><w:pPr><w:sectPr><w:pgSz w:w="15840" w:h="12240" w:orient=" landscape "/></w:sectPr></w:pPr><w:r><w:t>x</w:t></w:r></w:p>
+        </w:body></w:document>"#;
+        assert!(scan_page_setup(xml).landscape);
+        let blocks = parse(xml);
+        let section = blocks
+            .iter()
+            .find_map(|block| match block {
+                Block::SectionBreak(section) => Some(section),
+                _ => None,
+            })
+            .expect("section break");
+        assert!(section.page.landscape);
     }
 
     #[test]
