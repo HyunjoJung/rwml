@@ -2933,6 +2933,75 @@ fn write_docx_keeps_header_footer_simple_field_runs() {
 }
 
 #[test]
+fn write_docx_keeps_header_footer_content_control_runs() {
+    let model = DocModel {
+        blocks: vec![Block::Paragraph(plain_paragraph("Body"))],
+        setup: DocSetup {
+            header: vec![Block::Paragraph(Paragraph {
+                runs: vec![RunBuilder::new("Client")
+                    .content_control(
+                        ContentControlBuilder::new()
+                            .alias(" Client name ")
+                            .tag(" client-name "),
+                    )
+                    .build()],
+                ..Paragraph::default()
+            })],
+            footer: vec![Block::Paragraph(Paragraph {
+                runs: vec![RunBuilder::new("Footer")
+                    .content_control(ContentControlBuilder::new().tag(" footer-note "))
+                    .build()],
+                ..Paragraph::default()
+            })],
+            ..DocSetup::default()
+        },
+        ..DocModel::default()
+    };
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let header_xml = String::from_utf8(parts["word/header1.xml"].clone()).unwrap();
+    let footer_xml = String::from_utf8(parts["word/footer1.xml"].clone()).unwrap();
+
+    assert!(
+        header_xml.contains("<w:sdt>")
+            && header_xml.contains(r#"<w:alias w:val="Client name"/>"#)
+            && header_xml.contains(r#"<w:tag w:val="client-name"/>"#)
+            && header_xml.contains("Client"),
+        "header content-control XML missing: {header_xml}"
+    );
+    assert!(
+        footer_xml.contains("<w:sdt>")
+            && footer_xml.contains(r#"<w:tag w:val="footer-note"/>"#)
+            && footer_xml.contains("Footer"),
+        "footer content-control XML missing: {footer_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("header/footer content-control .docx reopens");
+    let reopened_model = reopened.model();
+    let Block::Paragraph(header) = &reopened_model.setup.header[0] else {
+        panic!("expected reopened header paragraph");
+    };
+    let header_control = header.runs[0]
+        .content_control
+        .as_ref()
+        .expect("reopened header run carries content-control metadata");
+    assert_eq!(header_control.alias.as_deref(), Some("Client name"));
+    assert_eq!(header_control.tag.as_deref(), Some("client-name"));
+
+    let Block::Paragraph(footer) = &reopened_model.setup.footer[0] else {
+        panic!("expected reopened footer paragraph");
+    };
+    assert_eq!(
+        footer.runs[0]
+            .content_control
+            .as_ref()
+            .and_then(|control| control.tag.as_deref()),
+        Some("footer-note")
+    );
+}
+
+#[test]
 fn table_builder_adds_rich_table_cells() {
     let navy = Color::rgb(0x1F, 0x38, 0x64);
     let model = DocBuilder::new()

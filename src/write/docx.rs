@@ -221,15 +221,47 @@ fn write_hf_run(out: &mut String, r: &crate::model::Run) {
             } else {
                 ""
             };
-            out.push_str(&format!(
+            run_xml = format!(
                 r#"<w:fldSimple w:instr=" {} "{dirty}>{run_xml}</w:fldSimple>"#,
                 esc_attr(&instruction)
-            ));
-            return;
+            );
         }
     }
 
+    let run_xml = content_control_wrapper(r.content_control.as_ref(), &run_xml);
     out.push_str(&run_xml);
+}
+
+fn content_control_wrapper(control: Option<&AuthoredContentControl>, run_xml: &str) -> String {
+    let Some(control) = control else {
+        return run_xml.to_string();
+    };
+    let alias = non_empty_trimmed(control.alias.as_deref());
+    let tag = non_empty_trimmed(control.tag.as_deref());
+    let xpath = non_empty_trimmed(control.data_binding_xpath.as_deref());
+    let store_item_id = non_empty_trimmed(control.data_binding_store_item_id.as_deref());
+    if alias.is_none() && tag.is_none() && (xpath.is_none() || store_item_id.is_none()) {
+        return run_xml.to_string();
+    }
+    let mut xml = String::new();
+    xml.push_str("<w:sdt><w:sdtPr>");
+    if let Some(alias) = alias {
+        xml.push_str(&format!(r#"<w:alias w:val="{}"/>"#, esc_attr(alias)));
+    }
+    if let Some(tag) = tag {
+        xml.push_str(&format!(r#"<w:tag w:val="{}"/>"#, esc_attr(tag)));
+    }
+    if let (Some(xpath), Some(store_item_id)) = (xpath, store_item_id) {
+        xml.push_str(&format!(
+            r#"<w:dataBinding w:xpath="{}" w:storeItemID="{}"/>"#,
+            esc_attr(xpath),
+            esc_attr(store_item_id)
+        ));
+    }
+    xml.push_str("</w:sdtPr><w:sdtContent>");
+    xml.push_str(run_xml);
+    xml.push_str("</w:sdtContent></w:sdt>");
+    xml
 }
 
 /// Wrap a header/footer body in its root element + namespaces.
@@ -819,7 +851,7 @@ impl Ctx {
             }
             _ => self.write_run_inner(&mut run_xml, r, deleted),
         }
-        let run_xml = self.content_control_wrapper(r.content_control.as_ref(), &run_xml);
+        let run_xml = content_control_wrapper(r.content_control.as_ref(), &run_xml);
         let run_xml = self.bookmark_wrapper(r.bookmark.as_deref(), &run_xml);
         self.write_revision_wrapper(out, r.revision.as_ref(), &run_xml);
         self.end_comment(out, comment_id);
@@ -908,42 +940,6 @@ impl Ctx {
         out.push_str(&format!("<w:{tag}{attrs}>"));
         out.push_str(run_xml);
         out.push_str(&format!("</w:{tag}>"));
-    }
-
-    fn content_control_wrapper(
-        &mut self,
-        control: Option<&AuthoredContentControl>,
-        run_xml: &str,
-    ) -> String {
-        let Some(control) = control else {
-            return run_xml.to_string();
-        };
-        let alias = non_empty_trimmed(control.alias.as_deref());
-        let tag = non_empty_trimmed(control.tag.as_deref());
-        let xpath = non_empty_trimmed(control.data_binding_xpath.as_deref());
-        let store_item_id = non_empty_trimmed(control.data_binding_store_item_id.as_deref());
-        if alias.is_none() && tag.is_none() && (xpath.is_none() || store_item_id.is_none()) {
-            return run_xml.to_string();
-        }
-        let mut xml = String::new();
-        xml.push_str("<w:sdt><w:sdtPr>");
-        if let Some(alias) = alias {
-            xml.push_str(&format!(r#"<w:alias w:val="{}"/>"#, esc_attr(alias)));
-        }
-        if let Some(tag) = tag {
-            xml.push_str(&format!(r#"<w:tag w:val="{}"/>"#, esc_attr(tag)));
-        }
-        if let (Some(xpath), Some(store_item_id)) = (xpath, store_item_id) {
-            xml.push_str(&format!(
-                r#"<w:dataBinding w:xpath="{}" w:storeItemID="{}"/>"#,
-                esc_attr(xpath),
-                esc_attr(store_item_id)
-            ));
-        }
-        xml.push_str("</w:sdtPr><w:sdtContent>");
-        xml.push_str(run_xml);
-        xml.push_str("</w:sdtContent></w:sdt>");
-        xml
     }
 
     fn write_run_inner(&mut self, out: &mut String, r: &crate::model::Run, deleted: bool) {
