@@ -2144,6 +2144,31 @@ impl DocBuilder {
         self
     }
 
+    /// Add a first-page running header paragraph from already-built runs.
+    pub fn first_header_runs<I>(mut self, runs: I) -> Self
+    where
+        I: IntoIterator<Item = Run>,
+    {
+        self.model.setup.title_page = true;
+        self.model
+            .setup
+            .first_header
+            .push(paragraph(runs, ParaProps::default()));
+        self
+    }
+
+    /// Add an even-page running header paragraph from already-built runs.
+    pub fn even_header_runs<I>(mut self, runs: I) -> Self
+    where
+        I: IntoIterator<Item = Run>,
+    {
+        self.model
+            .setup
+            .even_header
+            .push(paragraph(runs, ParaProps::default()));
+        self
+    }
+
     /// Add a running header paragraph from already-built runs.
     pub fn header_runs<I>(mut self, runs: I) -> Self
     where
@@ -2159,6 +2184,19 @@ impl DocBuilder {
     /// Add an already-constructed block to the running header.
     pub fn push_header_block(mut self, block: Block) -> Self {
         self.model.setup.header.push(block);
+        self
+    }
+
+    /// Add an already-constructed block to the first-page running header.
+    pub fn push_first_header_block(mut self, block: Block) -> Self {
+        self.model.setup.title_page = true;
+        self.model.setup.first_header.push(block);
+        self
+    }
+
+    /// Add an already-constructed block to the even-page running header.
+    pub fn push_even_header_block(mut self, block: Block) -> Self {
+        self.model.setup.even_header.push(block);
         self
     }
 
@@ -2195,6 +2233,31 @@ impl DocBuilder {
         self
     }
 
+    /// Add a first-page running footer paragraph from already-built runs.
+    pub fn first_footer_runs<I>(mut self, runs: I) -> Self
+    where
+        I: IntoIterator<Item = Run>,
+    {
+        self.model.setup.title_page = true;
+        self.model
+            .setup
+            .first_footer
+            .push(paragraph(runs, ParaProps::default()));
+        self
+    }
+
+    /// Add an even-page running footer paragraph from already-built runs.
+    pub fn even_footer_runs<I>(mut self, runs: I) -> Self
+    where
+        I: IntoIterator<Item = Run>,
+    {
+        self.model
+            .setup
+            .even_footer
+            .push(paragraph(runs, ParaProps::default()));
+        self
+    }
+
     /// Add a running footer paragraph from already-built runs.
     pub fn footer_runs<I>(mut self, runs: I) -> Self
     where
@@ -2210,6 +2273,19 @@ impl DocBuilder {
     /// Add an already-constructed block to the running footer.
     pub fn push_footer_block(mut self, block: Block) -> Self {
         self.model.setup.footer.push(block);
+        self
+    }
+
+    /// Add an already-constructed block to the first-page running footer.
+    pub fn push_first_footer_block(mut self, block: Block) -> Self {
+        self.model.setup.title_page = true;
+        self.model.setup.first_footer.push(block);
+        self
+    }
+
+    /// Add an already-constructed block to the even-page running footer.
+    pub fn push_even_footer_block(mut self, block: Block) -> Self {
+        self.model.setup.even_footer.push(block);
         self
     }
 

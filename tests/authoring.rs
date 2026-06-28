@@ -2703,6 +2703,92 @@ fn doc_builder_adds_styled_header_and_footer_blocks() {
 }
 
 #[test]
+fn doc_builder_adds_styled_first_even_header_footer_blocks() {
+    let styled_block = |text: &str, align| {
+        Block::Paragraph(Paragraph {
+            props: ParaProps {
+                align,
+                ..ParaProps::default()
+            },
+            runs: vec![RunBuilder::new(text).underline().build()],
+        })
+    };
+
+    let model = DocBuilder::new()
+        .first_header_runs([RunBuilder::new("First confidential").bold().build()])
+        .push_first_header_block(styled_block("Manual first header", Align::Center))
+        .even_header_runs([RunBuilder::new("Even confidential").italic().build()])
+        .push_even_header_block(styled_block("Manual even header", Align::Right))
+        .first_footer_runs([RunBuilder::new("First footer").bold().build()])
+        .push_first_footer_block(styled_block("Manual first footer", Align::Center))
+        .even_footer_runs([RunBuilder::new("Even footer").italic().build()])
+        .push_even_footer_block(styled_block("Manual even footer", Align::Right))
+        .paragraph("body")
+        .build();
+
+    assert!(model.setup.title_page);
+    assert_eq!(model.setup.first_header.len(), 2);
+    assert_eq!(model.setup.even_header.len(), 2);
+    assert_eq!(model.setup.first_footer.len(), 2);
+    assert_eq!(model.setup.even_footer.len(), 2);
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let settings_xml = String::from_utf8(parts["word/settings.xml"].clone()).unwrap();
+    let part_containing = |needle: &str| {
+        parts
+            .values()
+            .find_map(|bytes| {
+                let xml = String::from_utf8(bytes.clone()).ok()?;
+                xml.contains(needle).then_some(xml)
+            })
+            .unwrap_or_else(|| panic!("{needle} part written"))
+    };
+    let first_header_xml = part_containing("First confidential");
+    let even_header_xml = part_containing("Even confidential");
+    let first_footer_xml = part_containing("First footer");
+    let even_footer_xml = part_containing("Even footer");
+
+    assert!(
+        document_xml.contains("<w:titlePg/>")
+            && document_xml.contains(r#"<w:headerReference w:type="first""#)
+            && document_xml.contains(r#"<w:headerReference w:type="even""#)
+            && document_xml.contains(r#"<w:footerReference w:type="first""#)
+            && document_xml.contains(r#"<w:footerReference w:type="even""#),
+        "styled variant references missing: {document_xml}"
+    );
+    assert!(
+        settings_xml.contains("<w:evenAndOddHeaders/>"),
+        "even/odd settings missing: {settings_xml}"
+    );
+    assert!(
+        first_header_xml.contains("<w:b/>")
+            && first_header_xml.contains("Manual first header")
+            && first_header_xml.contains(r#"<w:u w:val="single"/>"#),
+        "styled first header missing: {first_header_xml}"
+    );
+    assert!(
+        even_header_xml.contains("<w:i/>")
+            && even_header_xml.contains("Manual even header")
+            && even_header_xml.contains(r#"<w:u w:val="single"/>"#),
+        "styled even header missing: {even_header_xml}"
+    );
+    assert!(
+        first_footer_xml.contains("<w:b/>")
+            && first_footer_xml.contains("Manual first footer")
+            && first_footer_xml.contains(r#"<w:u w:val="single"/>"#),
+        "styled first footer missing: {first_footer_xml}"
+    );
+    assert!(
+        even_footer_xml.contains("<w:i/>")
+            && even_footer_xml.contains("Manual even footer")
+            && even_footer_xml.contains(r#"<w:u w:val="single"/>"#),
+        "styled even footer missing: {even_footer_xml}"
+    );
+}
+
+#[test]
 fn write_docx_emits_visible_placeholders_for_header_footer_image_blocks() {
     let model = DocModel {
         blocks: vec![Block::Paragraph(plain_paragraph("Body"))],
