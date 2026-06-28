@@ -395,7 +395,7 @@ fn revnum_unsupported_switch_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
-fn malformed_filename_diagnostics_docx() -> Vec<u8> {
+fn filename_field_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
             "[Content_Types].xml",
@@ -407,7 +407,7 @@ fn malformed_filename_diagnostics_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" FILENAME \x "><w:r><w:t>cached filename</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" FILENAME \p "><w:r><w:t>report.docx</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FILENAME \x "><w:r><w:t>cached filename</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -2149,16 +2149,22 @@ fn report_revnum_unsupported_switch_reports_unsupported_switch() {
 
 #[cfg(feature = "docx")]
 #[test]
-fn report_malformed_filename_reports_unsupported_switch() {
-    let doc = Document::open(&malformed_filename_diagnostics_docx()).expect("fixture opens");
+fn report_filename_fields_split_supported_and_malformed_diagnostics() {
+    let doc = Document::open(&filename_field_diagnostics_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 1);
-    assert_eq!(fields[0].kind, FieldKind::Filename);
-    assert_eq!(fields[0].instruction, "FILENAME \\x");
-    assert_eq!(fields[0].result, "cached filename");
+    assert_eq!(fields.len(), 2);
+    assert!(fields.iter().all(|field| field.kind == FieldKind::Filename));
 
     let report = doc.report();
+    assert_eq!(report.features.fields, 2);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Filename,
+            count: 2,
+        }]
+    );
     assert_eq!(
         report.features.unsupported_field_kinds,
         vec![FieldKindCount {
