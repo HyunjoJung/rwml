@@ -1479,6 +1479,9 @@ impl XmlTree {
             self.push_xmlns(c, &mut scope);
             if self.resolves_to(c, ns, local, &scope) {
                 scope.truncate(base);
+                for (name, value) in fallback_attrs {
+                    self.set_attr(c, name.as_bytes(), value.as_bytes())?;
+                }
                 return self.set_element_text(c, text);
             }
             scope.truncate(base);

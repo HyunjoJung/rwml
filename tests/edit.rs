@@ -465,7 +465,7 @@ fn core_properties_docx() -> Vec<u8> {
         ),
         (
             "docProps/core.xml",
-            r#"<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Old title</dc:title><dc:creator>Old Author</dc:creator></cp:coreProperties>"#,
+            r#"<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/"><dc:title>Old title</dc:title><dc:creator>Old Author</dc:creator><dcterms:created>old created</dcterms:created><dcterms:modified>old modified</dcterms:modified></cp:coreProperties>"#,
         ),
     ])
 }
