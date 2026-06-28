@@ -2191,14 +2191,14 @@ impl XmlTree {
         }
         let base = scope.len();
         let mut fld_char_type: Option<Vec<u8>> = None;
+        self.push_xmlns(id, scope);
+        if self.wml_revision_edit_action(id, scope, WmlRevisionEditPolicy::Accept)
+            == WmlRevisionEditAction::Remove
+        {
+            scope.truncate(base);
+            return;
+        }
         if let Node::Element { attrs, .. } = &self.nodes[id.0 as usize].node {
-            for (k, v) in attrs {
-                if k.as_slice() == b"xmlns" {
-                    scope.push((Vec::new(), v.clone()));
-                } else if let Some(p) = k.strip_prefix(b"xmlns:".as_slice()) {
-                    scope.push((p.to_vec(), v.clone()));
-                }
-            }
             if self.resolves_to(id, WML_NS, b"fldSimple", scope) {
                 if scan.seen == scan.wanted {
                     let mut result = Vec::new();

@@ -988,10 +988,10 @@ impl Document {
     }
 
     /// **Element-tree editing: rewrite a body field's cached visible result.** The
-    /// zero-based `field_index` is the same order as the body field entries
-    /// returned by [`Document::fields`]. Simple fields (`w:fldSimple`) and common
-    /// complex fields (`begin` / `separate` / `end`) are supported; only cached
-    /// result `w:t` nodes are changed, never the field instruction.
+    /// zero-based `field_index` is the same accepted-current order as the body
+    /// field entries returned by [`Document::fields`]. Simple fields (`w:fldSimple`)
+    /// and common complex fields (`begin` / `separate` / `end`) are supported; only
+    /// cached result `w:t` nodes are changed, never the field instruction.
     ///
     /// This is a preservation edit: unmodeled field markup and surrounding package
     /// parts are kept, and the edit is transactional. Like other element-tree edits,

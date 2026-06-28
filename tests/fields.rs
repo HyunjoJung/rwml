@@ -9802,6 +9802,42 @@ fn set_field_result_updates_simple_and_complex_cached_results() {
 }
 
 #[test]
+fn set_field_result_skips_deleted_body_fields() {
+    let fixture = docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:del w:id="1"><w:p><w:fldSimple w:instr=" PAGE "><w:r><w:delText>deleted page</w:delText></w:r></w:fldSimple></w:p></w:del><w:moveFrom w:id="2"><w:p><w:fldSimple w:instr=" CUSTOM moved "><w:r><w:delText>moved page</w:delText></w:r></w:fldSimple></w:p></w:moveFrom><w:p><w:fldSimple w:instr=" PAGE "><w:r><w:t>1</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ]);
+    let mut doc = Document::open(&fixture).expect("fixture opens");
+
+    assert_eq!(doc.fields().len(), 1);
+    doc.set_field_result(0, "7")
+        .expect("visible field result updated");
+
+    let saved = doc.save().expect("save edited docx");
+    let body = String::from_utf8(unzip_parts(&saved)["word/document.xml"].clone()).unwrap();
+    assert!(
+        body.contains("<w:delText>deleted page</w:delText>"),
+        "{body}"
+    );
+    assert!(body.contains("<w:delText>moved page</w:delText>"), "{body}");
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    let fields = reopened.fields();
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].result, "7");
+}
+
+#[test]
 fn set_field_result_uses_fields_order_for_nested_complex_fields() {
     let mut doc = Document::open(&nested_complex_field_docx()).expect("fixture opens");
 
