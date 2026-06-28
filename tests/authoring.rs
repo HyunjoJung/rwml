@@ -3265,6 +3265,56 @@ fn image_builder_adds_alt_text_and_size() {
 }
 
 #[test]
+fn write_docx_emits_visible_placeholders_for_missing_image_bytes() {
+    let model = DocModel {
+        blocks: vec![
+            Block::Image(rdoc::Image {
+                alt: Some("Missing <logo>".to_string()),
+                width_px: Some(80),
+                height_px: Some(40),
+                ..rdoc::Image::default()
+            }),
+            Block::Paragraph(Paragraph {
+                runs: vec![rdoc::Run {
+                    image: Some(rdoc::Image {
+                        alt: Some("Inline <icon>".to_string()),
+                        width_px: Some(16),
+                        height_px: Some(16),
+                        ..rdoc::Image::default()
+                    }),
+                    ..rdoc::Run::default()
+                }],
+                ..Paragraph::default()
+            }),
+        ],
+        ..DocModel::default()
+    };
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+
+    assert!(
+        document_xml.contains("[rdoc image placeholder: Missing &lt;logo&gt;]")
+            && document_xml.contains("[rdoc image placeholder: Inline &lt;icon&gt;]"),
+        "missing-image placeholder text not serialized: {document_xml}"
+    );
+    assert!(
+        !parts.keys().any(|part| part.starts_with("word/media/")),
+        "missing image bytes should not emit media parts: {:?}",
+        parts.keys().collect::<Vec<_>>()
+    );
+
+    let reopened = Document::open(&bytes).expect("missing-image placeholder .docx reopens");
+    let text = reopened.text();
+    assert!(
+        text.contains("[rdoc image placeholder: Missing <logo>]")
+            && text.contains("[rdoc image placeholder: Inline <icon>]"),
+        "placeholder text not readable after reopen: {text:?}"
+    );
+}
+
+#[test]
 fn image_builder_preserves_common_raster_media_types() {
     for (mime, ext, bytes) in [
         ("image/jpeg", "jpg", tiny_jpeg()),

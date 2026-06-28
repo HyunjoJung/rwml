@@ -525,9 +525,7 @@ impl Ctx {
             Block::Table(t) => self.write_table(out, t),
             Block::Image(img) => {
                 out.push_str("<w:p>");
-                if img.bytes.is_some() {
-                    self.write_image(out, img);
-                }
+                self.write_image_or_placeholder(out, img);
                 out.push_str("</w:p>");
             }
             Block::Chart(chart) => self.write_chart(out, chart),
@@ -890,6 +888,9 @@ impl Ctx {
             if img.bytes.is_some() {
                 self.write_image(out, img);
                 return;
+            } else if r.text.is_empty() {
+                write_missing_image_placeholder(out, img);
+                return;
             }
         }
         out.push_str("<w:r>");
@@ -900,6 +901,14 @@ impl Ctx {
             write_run_text(out, &r.text);
         }
         out.push_str("</w:r>");
+    }
+
+    fn write_image_or_placeholder(&mut self, out: &mut String, img: &Image) {
+        if img.bytes.is_some() {
+            self.write_image(out, img);
+        } else {
+            write_missing_image_placeholder(out, img);
+        }
     }
 
     fn write_image(&mut self, out: &mut String, img: &Image) {
@@ -1347,8 +1356,15 @@ fn write_run_text_element(out: &mut String, text: &str, tag: &str) {
     flush(out, &mut buf);
 }
 
+fn write_missing_image_placeholder(out: &mut String, img: &Image) {
+    let label = non_empty_trimmed(img.alt.as_deref()).unwrap_or("bytes unavailable");
+    out.push_str("<w:r>");
+    write_run_text(out, &format!("[rdoc image placeholder: {label}]"));
+    out.push_str("</w:r>");
+}
+
 /// Extension + content type for an image MIME (reverse of the reader's
-/// `mime_for`); unknown ⇒ PNG.
+/// `mime_for`); unknown -> PNG.
 fn img_ext_ct(mime: Option<&str>) -> (&'static str, &'static str) {
     match mime {
         Some("image/jpeg") => ("jpg", "image/jpeg"),
