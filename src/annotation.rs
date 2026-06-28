@@ -863,6 +863,46 @@ fn prompt_default_switch<'a>(
     default.replace(value.to_string()).is_none()
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct QuoteFieldSyntax {
+    pub(crate) text: String,
+    pub(crate) text_format: Option<FieldTextFormat>,
+}
+
+pub(crate) fn quote_field_syntax(instruction: &str) -> Option<QuoteFieldSyntax> {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let kind = parts.next()?;
+    if !kind.eq_ignore_ascii_case("QUOTE") {
+        return None;
+    }
+    let mut text_parts = Vec::new();
+    let mut text_format = None;
+    let mut saw_format = false;
+    while let Some(part) = parts.next() {
+        let accepted = accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_text_format_switch(format, &mut text_format)
+        })?;
+        if accepted {
+            saw_format = true;
+            continue;
+        }
+        if saw_format || part.starts_with('\\') {
+            return None;
+        }
+        text_parts.push(part);
+    }
+    let text = text_parts.join(" ");
+    let text = field_literal_token(&text)?;
+    if text.is_empty() {
+        return None;
+    }
+    Some(QuoteFieldSyntax {
+        text: text.to_string(),
+        text_format,
+    })
+}
+
 pub(crate) fn document_property_key(value: &str) -> String {
     value
         .chars()

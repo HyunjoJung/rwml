@@ -15,7 +15,7 @@ use crate::annotation::{
     field_symbol_code_token, filename_field_syntax, instruction_parts,
     is_neutral_field_format_switch, is_note_ref_kind, is_ref_value_neutral_switch,
     is_toc_value_neutral_switch, page_field_format_syntax_tail, prompt_field_syntax,
-    reference_index_category_token, reference_index_literal_token,
+    quote_field_syntax, reference_index_category_token, reference_index_literal_token,
     reference_index_plain_value_token, revision_number_field_text_format, set_field_syntax,
     strip_ascii_switch_prefix, style_ref_field_syntax, toc_style_specs, Field, FieldKind,
     FieldNumberFormat, FieldTextFormat, PromptFieldSyntax, StyleRefFieldSyntax, StyleRefResult,
@@ -5047,12 +5047,6 @@ fn section_instruction(instruction: &str) -> Option<SectionInstruction> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct QuoteInstruction {
-    text: String,
-    text_format: Option<FieldTextFormat>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 struct FillInInstruction {
     default: Option<String>,
     text_format: Option<FieldTextFormat>,
@@ -6794,40 +6788,12 @@ fn grouped_decimal_digits(digits: &str) -> String {
 }
 
 fn computed_quote_result(instruction: &str) -> Option<String> {
-    let spec = quote_instruction(instruction)?;
+    let spec = quote_field_syntax(instruction)?;
     Some(apply_field_text_format(spec.text, spec.text_format))
 }
 
 pub(crate) fn supports_quote_field_syntax(instruction: &str) -> bool {
-    quote_instruction(instruction).is_some()
-}
-
-fn quote_instruction(instruction: &str) -> Option<QuoteInstruction> {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let kind = parts.next()?;
-    if !kind.eq_ignore_ascii_case("QUOTE") {
-        return None;
-    }
-    let mut text_parts = Vec::new();
-    let mut text_format = None;
-    let mut saw_format = false;
-    while let Some(part) = parts.next() {
-        if accept_field_format_switch_for_tail(part, &mut parts, &mut text_format)? {
-            saw_format = true;
-            continue;
-        }
-        if saw_format || part.starts_with('\\') {
-            return None;
-        }
-        text_parts.push(part);
-    }
-    let text = text_parts.join(" ");
-    let text = field_literal_token(&text)?.to_string();
-    if text.is_empty() {
-        return None;
-    }
-    Some(QuoteInstruction { text, text_format })
+    quote_field_syntax(instruction).is_some()
 }
 
 fn computed_fill_in_result(instruction: &str) -> Option<String> {

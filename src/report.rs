@@ -29,9 +29,10 @@ use crate::annotation::{
 use crate::annotation::{field_points_token, field_positive_points_token, field_symbol_code_token};
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{
-    page_field_format_syntax_tail, prompt_field_syntax, reference_index_category_token,
-    reference_index_literal_token, reference_index_plain_value_token,
-    revision_number_field_text_format, set_field_syntax, style_ref_field_syntax,
+    page_field_format_syntax_tail, prompt_field_syntax, quote_field_syntax,
+    reference_index_category_token, reference_index_literal_token,
+    reference_index_plain_value_token, revision_number_field_text_format, set_field_syntax,
+    style_ref_field_syntax,
 };
 use crate::model::{Block, FieldRole, Stats, Table};
 use crate::CoreProperties;
@@ -4019,42 +4020,12 @@ fn quote_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     }
     #[cfg(not(feature = "docx"))]
     {
-        if supported_quote_syntax(instruction) {
+        if quote_field_syntax(instruction).is_some() {
             FieldEvaluationReason::NoComputedResult
         } else {
             FieldEvaluationReason::UnsupportedSwitch
         }
     }
-}
-
-#[cfg(not(feature = "docx"))]
-fn supported_quote_syntax(instruction: &str) -> bool {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let Some(kind) = parts.next() else {
-        return false;
-    };
-    if !kind.eq_ignore_ascii_case("QUOTE") {
-        return false;
-    }
-    let mut text_parts = Vec::new();
-    let mut text_format = false;
-    let mut saw_format = false;
-    while let Some(part) = parts.next() {
-        let Some(accepted) = accept_field_format_for_report(part, &mut parts, &mut text_format)
-        else {
-            return false;
-        };
-        if accepted {
-            saw_format = true;
-            continue;
-        }
-        if saw_format || part.starts_with('\\') {
-            return false;
-        }
-        text_parts.push(part);
-    }
-    diagnostic_literal_token(&text_parts.join(" ")).is_some_and(|text| !text.is_empty())
 }
 
 fn prompt_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
