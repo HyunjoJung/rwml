@@ -685,7 +685,7 @@ Initial status:
   charts with embedded workbook-backed data, 3-D bar/column-family shape styling, and
   surface-family wireframe styling through `ChartBuilder`, page
   size/orientation/margins/columns/document grids/text direction/title pages, page-number restarts/formats, explicit Word document ids, web-extension task pane package shells, explicit page breaks, next/even/odd section breaks that snapshot
-  page/header/footer setup, default/first/even running headers/footers, page numbers, and
+  page/header/footer setup, styled default/first/even running headers/footers, page numbers, and
   direct `Block` escape hatches.
 - Lower-level `DocModel` remains the path for complex nested layouts until the
   builder gains more typed sub-builders.

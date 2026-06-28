@@ -68,7 +68,7 @@ footnotes/endnotes, string custom document properties, raw custom XML data-store
 items, generated core metadata (title, subject, creator, description, keywords,
 category, content status, last modified by, created, modified, last printed,
 revision, and version), explicit Word document ids, web-extension task pane package shells, page setup with section columns, document grids, text direction, title pages, and page-number restarts/formats, explicit page breaks and next/even/odd section breaks,
-and default/first/even running headers/footers with page numbers all round-trip. Content controls can include tag/alias and
+styled default/first/even running headers/footers, and page numbers all round-trip. Content controls can include tag/alias and
 data-binding metadata. See
 [`examples/report.rs`](examples/report.rs).
 
@@ -891,7 +891,7 @@ The long-term native Word engine plan is split into the
       styled runs, leveled lists, paragraph page-break-before, simple fields, `PAGEREF` helper runs, dirty TOC heading-range fields,
       run-anchored comments with reply parent ids and commentsExtended metadata, tracked insertion/deletion runs,
       run-level content controls with data-binding metadata, bookmarked runs, authored footnotes/endnotes, inline/standalone hyperlinks,
-      string custom document properties, raw custom XML data-store items, explicit Word document ids, web-extension task pane package shells, default/first/even headers/footers + page numbers, section columns, document grids, text direction, title pages, page-number restarts/formats, next/even/odd section breaks, images with inline rotation and page-relative floating offsets,
+      string custom document properties, raw custom XML data-store items, explicit Word document ids, web-extension task pane package shells, styled default/first/even headers/footers + page numbers, section columns, document grids, text direction, title pages, page-number restarts/formats, next/even/odd section breaks, images with inline rotation and page-relative floating offsets,
       table width, fixed-layout tables, table alignment, indentation, uniform/per-side border widths, styles, and colors, per-cell table margins,
       bar/stacked bar/100% stacked bar/3-D bar/stacked 3-D bar/100% stacked 3-D bar/column/stacked column/100% stacked column/3-D column/stacked 3-D column/100% stacked 3-D column/line/markerless line/smooth line/stacked line/100% stacked line/3-D line/area/stacked area/100% stacked area/3-D area/stacked 3-D area/100% stacked 3-D area/radar/radar-with-markers/filled radar/scatter/line-only scatter/smooth scatter/smooth markerless scatter/marker-only scatter/bubble/3-D bubble/pie/exploded pie/3-D pie/exploded 3-D pie/doughnut/exploded doughnut/surface/3-D surface/high-low-close stock/stock/pie-of-pie/bar-of-pie
       charts with embedded workbook-backed data) via `DocBuilder`,
