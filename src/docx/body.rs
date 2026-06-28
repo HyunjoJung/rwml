@@ -1326,7 +1326,8 @@ fn read_content_control_pr_item(control: &mut AuthoredContentControl, e: &BytesS
         b"tag" => control.tag = attr_local(e, b"val"),
         b"dataBinding" => {
             control.data_binding_xpath = attr_local(e, b"xpath");
-            control.data_binding_store_item_id = attr_local(e, b"storeItemID");
+            control.data_binding_store_item_id =
+                attr_local(e, b"storeItemID").map(|id| id.trim().to_owned());
         }
         _ => {}
     }
@@ -3513,6 +3514,29 @@ mod tests {
             .collect::<Vec<_>>()
             .join("|");
         assert_eq!(joined, "before|inside_sdt|cell|after");
+    }
+
+    #[test]
+    fn content_control_store_item_id_trims_ooxml_value() {
+        let xml = r#"<w:document><w:body>
+            <w:sdt><w:sdtPr>
+                <w:dataBinding w:xpath="/root/client" w:storeItemID=" {11111111-2222-3333-4444-555555555555} "/>
+            </w:sdtPr><w:sdtContent>
+                <w:p><w:r><w:t>Bound value</w:t></w:r></w:p>
+            </w:sdtContent></w:sdt>
+        </w:body></w:document>"#;
+        let blocks = parse(xml);
+        let Block::Paragraph(paragraph) = &blocks[0] else {
+            panic!("paragraph")
+        };
+        let control = paragraph.runs[0]
+            .content_control
+            .as_ref()
+            .expect("content control metadata");
+        assert_eq!(
+            control.data_binding_store_item_id.as_deref(),
+            Some("{11111111-2222-3333-4444-555555555555}")
+        );
     }
 
     #[test]
