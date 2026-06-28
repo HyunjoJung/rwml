@@ -2394,23 +2394,35 @@ fn report_field_category_matrix_splits_cached_and_malformed_diagnostics() {
     );
 
     assert_report_field_diagnostics(
-        field_pair_diagnostics_docx(
-            "ADDRESSBLOCK",
-            "Acme Corp",
-            r#"GREETINGLINE &quot;Dear"#,
-            "cached malformed greeting",
-        ),
-        2,
+        docx_fixture(&[
+            (
+                "[Content_Types].xml",
+                r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+            ),
+            (
+                "_rels/.rels",
+                r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            (
+                "word/document.xml",
+                r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" ADDRESSBLOCK "><w:r><w:t>Acme Corp</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" GREETINGLINE "><w:r><w:t>Dear Hyunjo,</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" MERGEREC "><w:r><w:t>7</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" MERGESEQ "><w:r><w:t>3</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" GREETINGLINE &quot;Dear "><w:r><w:t>cached malformed greeting</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            ),
+        ]),
+        5,
         vec![
             field_kind_count(FieldKind::MailMerge("ADDRESSBLOCK".to_string()), 1),
-            field_kind_count(FieldKind::MailMerge("GREETINGLINE".to_string()), 1),
+            field_kind_count(FieldKind::MailMerge("GREETINGLINE".to_string()), 2),
+            field_kind_count(FieldKind::MailMerge("MERGEREC".to_string()), 1),
+            field_kind_count(FieldKind::MailMerge("MERGESEQ".to_string()), 1),
         ],
         vec![
             field_kind_count(FieldKind::MailMerge("ADDRESSBLOCK".to_string()), 1),
-            field_kind_count(FieldKind::MailMerge("GREETINGLINE".to_string()), 1),
+            field_kind_count(FieldKind::MailMerge("GREETINGLINE".to_string()), 2),
+            field_kind_count(FieldKind::MailMerge("MERGEREC".to_string()), 1),
+            field_kind_count(FieldKind::MailMerge("MERGESEQ".to_string()), 1),
         ],
         vec![
-            field_reason_count(FieldEvaluationReason::NoComputedResult, 1),
+            field_reason_count(FieldEvaluationReason::NoComputedResult, 4),
             field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 1),
         ],
     );
