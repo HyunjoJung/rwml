@@ -136,7 +136,12 @@ const WEB_EXTENSION_TASKPANES_NS: &str =
 /// header/footer relationships and table layout are not modeled here. Appends a
 /// centered `PAGE` field when `page_numbers`. A header/footer must contain at
 /// least one paragraph.
-fn render_hf_body(ctx: &mut Ctx, blocks: &[crate::model::Block], page_numbers: bool) -> String {
+fn render_hf_body(
+    ctx: &mut Ctx,
+    blocks: &[crate::model::Block],
+    page_numbers: bool,
+    rels: &mut Vec<Rel>,
+) -> String {
     use crate::model::Block;
     let mut out = String::new();
     for b in blocks {
@@ -145,7 +150,7 @@ fn render_hf_body(ctx: &mut Ctx, blocks: &[crate::model::Block], page_numbers: b
                 out.push_str("<w:p>");
                 ctx.write_ppr(&mut out, &p.props);
                 for r in &p.runs {
-                    write_hf_run(ctx, &mut out, r);
+                    write_hf_run(ctx, rels, &mut out, r);
                 }
                 out.push_str("</w:p>");
             }
@@ -192,7 +197,7 @@ fn render_hf_body(ctx: &mut Ctx, blocks: &[crate::model::Block], page_numbers: b
     out
 }
 
-fn write_hf_run(ctx: &mut Ctx, out: &mut String, r: &crate::model::Run) {
+fn write_hf_run(ctx: &mut Ctx, rels: &mut Vec<Rel>, out: &mut String, r: &crate::model::Run) {
     let deleted = matches!(
         r.revision.as_ref().map(|revision| revision.kind),
         Some(RevisionKind::Deletion)
@@ -215,19 +220,32 @@ fn write_hf_run(ctx: &mut Ctx, out: &mut String, r: &crate::model::Run) {
     }
     run_xml.push_str("</w:r>");
 
-    if let FieldRole::Simple { instruction } = &r.field {
-        let instruction = normalize_field_instruction(instruction);
-        if !instruction.is_empty() {
-            let dirty = if r.field_dirty {
-                r#" w:dirty="true""#
-            } else {
-                ""
-            };
-            run_xml = format!(
-                r#"<w:fldSimple w:instr=" {} "{dirty}>{run_xml}</w:fldSimple>"#,
-                esc_attr(&instruction)
-            );
+    match &r.field {
+        FieldRole::Hyperlink { url } => {
+            let rid = format!("rId{}", rels.len() + 1);
+            rels.push(Rel {
+                id: rid.clone(),
+                rel_type: REL_HYPERLINK.to_string(),
+                target: url.clone(),
+                external: true,
+            });
+            run_xml = format!(r#"<w:hyperlink r:id="{rid}">{run_xml}</w:hyperlink>"#);
         }
+        FieldRole::Simple { instruction } => {
+            let instruction = normalize_field_instruction(instruction);
+            if !instruction.is_empty() {
+                let dirty = if r.field_dirty {
+                    r#" w:dirty="true""#
+                } else {
+                    ""
+                };
+                run_xml = format!(
+                    r#"<w:fldSimple w:instr=" {} "{dirty}>{run_xml}</w:fldSimple>"#,
+                    esc_attr(&instruction)
+                );
+            }
+        }
+        _ => {}
     }
 
     let run_xml = content_control_wrapper(r.content_control.as_ref(), &run_xml);
@@ -270,6 +288,13 @@ fn content_control_wrapper(control: Option<&AuthoredContentControl>, run_xml: &s
 /// Wrap a header/footer body in its root element + namespaces.
 fn hf_part(tag: &str, body: &str) -> Vec<u8> {
     format!(r#"{XML_DECL}<w:{tag} xmlns:w="{W_NS}" xmlns:r="{R_NS}">{body}</w:{tag}>"#).into_bytes()
+}
+
+fn rels_path_for_part(path: &str) -> String {
+    match path.rsplit_once('/') {
+        Some((dir, file)) => format!("{dir}/_rels/{file}.rels"),
+        None => format!("_rels/{path}.rels"),
+    }
 }
 
 fn settings_xml(even_and_odd_headers: bool, document_id: Option<&str>) -> String {
@@ -527,6 +552,8 @@ struct Ctx {
     embedded_workbooks: Vec<(String, Vec<u8>)>,
     /// Header/footer parts to emit: `(part path, content-type, bytes)`.
     hf_parts: Vec<(String, &'static str, Vec<u8>)>,
+    /// Header/footer relationship files to emit: `(rels path, relationships)`.
+    hf_rels: Vec<(String, Vec<Rel>)>,
     /// Next relationship id ordinal.
     next_rid: u32,
     /// Whether any list item was emitted (⇒ write `numbering.xml`).
@@ -586,6 +613,7 @@ impl Ctx {
             chart_rels: Vec::new(),
             embedded_workbooks: Vec::new(),
             hf_parts: Vec::new(),
+            hf_rels: Vec::new(),
             next_rid: 1,
             has_list: false,
             has_heading: false,
@@ -646,7 +674,11 @@ impl Ctx {
         let path = format!("word/header{}.xml", self.header_id);
         let target = format!("header{}.xml", self.header_id);
         let rid = self.add_rel(REL_HEADER, &target, false);
-        let body = render_hf_body(self, blocks, false);
+        let mut rels = Vec::new();
+        let body = render_hf_body(self, blocks, false, &mut rels);
+        if !rels.is_empty() {
+            self.hf_rels.push((rels_path_for_part(&path), rels));
+        }
         self.hf_parts.push((path, CT_HEADER, hf_part("hdr", &body)));
         refs.push_str(&format!(
             r#"<w:headerReference w:type="{type_name}" r:id="{rid}"/>"#
@@ -667,7 +699,11 @@ impl Ctx {
         let path = format!("word/footer{}.xml", self.footer_id);
         let target = format!("footer{}.xml", self.footer_id);
         let rid = self.add_rel(REL_FOOTER, &target, false);
-        let body = render_hf_body(self, blocks, page_numbers);
+        let mut rels = Vec::new();
+        let body = render_hf_body(self, blocks, page_numbers, &mut rels);
+        if !rels.is_empty() {
+            self.hf_rels.push((rels_path_for_part(&path), rels));
+        }
         self.hf_parts.push((path, CT_FOOTER, hf_part("ftr", &body)));
         refs.push_str(&format!(
             r#"<w:footerReference w:type="{type_name}" r:id="{rid}"/>"#
@@ -2896,6 +2932,9 @@ pub(crate) fn try_to_docx(model: &crate::DocModel) -> crate::Result<Vec<u8>> {
     for (path, ct, bytes) in br.hf_parts {
         pkg.add_part(&path, Some(ct), bytes);
     }
+    for (path, rels) in br.hf_rels {
+        pkg.add_rels(&path, rels);
+    }
     if let Some(comments) = br.comments_xml {
         pkg.add_part("word/comments.xml", Some(CT_COMMENTS), comments);
     }
@@ -3059,6 +3098,8 @@ pub(crate) struct BodyRender {
     pub doc_rels: Vec<Rel>,
     /// `(part path, content-type, bytes)` for any header/footer parts.
     pub hf_parts: Vec<(String, &'static str, Vec<u8>)>,
+    /// `(rels path, relationships)` for header/footer part-local relationships.
+    pub hf_rels: Vec<(String, Vec<Rel>)>,
     /// Serialized comments part, if authored comments were emitted.
     pub comments_xml: Option<Vec<u8>>,
     /// Serialized commentsExtended part, if authored comment replies were emitted.
@@ -3199,6 +3240,7 @@ fn render_body(model: &crate::DocModel) -> BodyRender {
         document_xml: doc.into_bytes(),
         doc_rels: ctx.doc_rels,
         hf_parts: ctx.hf_parts,
+        hf_rels: ctx.hf_rels,
         comments_xml,
         comments_ext_xml,
         footnotes_xml,

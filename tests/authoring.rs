@@ -3205,6 +3205,77 @@ fn write_docx_keeps_header_footer_revision_runs() {
 }
 
 #[test]
+fn write_docx_keeps_header_footer_hyperlink_runs() {
+    let model = DocModel {
+        blocks: vec![Block::Paragraph(plain_paragraph("Body"))],
+        setup: DocSetup {
+            header: vec![Block::Paragraph(Paragraph {
+                runs: vec![RunBuilder::new("Header link")
+                    .hyperlink("https://example.com/header?x=1&y=2")
+                    .bold()
+                    .build()],
+                ..Paragraph::default()
+            })],
+            footer: vec![Block::Paragraph(Paragraph {
+                runs: vec![RunBuilder::new("Footer link")
+                    .hyperlink("https://example.com/footer")
+                    .build()],
+                ..Paragraph::default()
+            })],
+            ..DocSetup::default()
+        },
+        ..DocModel::default()
+    };
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let header_xml = String::from_utf8(parts["word/header1.xml"].clone()).unwrap();
+    let footer_xml = String::from_utf8(parts["word/footer1.xml"].clone()).unwrap();
+    let header_rels = String::from_utf8(parts["word/_rels/header1.xml.rels"].clone()).unwrap();
+    let footer_rels = String::from_utf8(parts["word/_rels/footer1.xml.rels"].clone()).unwrap();
+
+    assert!(
+        header_xml.contains(r#"<w:hyperlink r:id="rId1">"#)
+            && header_xml.contains("<w:b/>")
+            && header_xml.contains("Header link"),
+        "header hyperlink XML missing: {header_xml}"
+    );
+    assert!(
+        footer_xml.contains(r#"<w:hyperlink r:id="rId1">"#) && footer_xml.contains("Footer link"),
+        "footer hyperlink XML missing: {footer_xml}"
+    );
+    assert!(
+        header_rels.contains("relationships/hyperlink")
+            && header_rels.contains(r#"Target="https://example.com/header?x=1&amp;y=2""#)
+            && header_rels.contains(r#"TargetMode="External""#),
+        "header hyperlink relationship missing: {header_rels}"
+    );
+    assert!(
+        footer_rels.contains("relationships/hyperlink")
+            && footer_rels.contains(r#"Target="https://example.com/footer""#)
+            && footer_rels.contains(r#"TargetMode="External""#),
+        "footer hyperlink relationship missing: {footer_rels}"
+    );
+
+    let reopened = Document::open(&bytes).expect("header/footer hyperlink .docx reopens");
+    let reopened_model = reopened.model();
+    let Block::Paragraph(header) = &reopened_model.setup.header[0] else {
+        panic!("expected reopened header paragraph");
+    };
+    assert!(matches!(
+        &header.runs[0].field,
+        FieldRole::Hyperlink { url } if url == "https://example.com/header?x=1&y=2"
+    ));
+    let Block::Paragraph(footer) = &reopened_model.setup.footer[0] else {
+        panic!("expected reopened footer paragraph");
+    };
+    assert!(matches!(
+        &footer.runs[0].field,
+        FieldRole::Hyperlink { url } if url == "https://example.com/footer"
+    ));
+}
+
+#[test]
 fn table_builder_adds_rich_table_cells() {
     let navy = Color::rgb(0x1F, 0x38, 0x64);
     let model = DocBuilder::new()
