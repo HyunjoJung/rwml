@@ -2441,7 +2441,7 @@ fn read_tblpr(r: &mut Xml<'_>) -> TableProps {
                 }
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"jc" => {
-                props.align = match attr_local(&e, b"val").as_deref() {
+                props.align = match attr_local(&e, b"val").as_deref().map(str::trim) {
                     Some("center") => Some(Align::Center),
                     Some("right") => Some(Align::Right),
                     Some("both") => Some(Align::Justify),
@@ -3290,7 +3290,7 @@ mod tests {
                 <w:pPr><w:spacing w:before="240" w:after="120" w:line="360"/><w:ind w:left="720" w:firstLine="240"/><w:shd w:fill=" EEEEEE "/></w:pPr>
                 <w:r><w:rPr><w:rFonts w:ascii="Arial" w:eastAsia="맑은 고딕"/><w:sz w:val="24"/><w:color w:val=" FF0000 "/><w:vertAlign w:val=" superscript "/><w:caps/></w:rPr><w:t>빨강</w:t></w:r>
             </w:p>
-            <w:tbl><w:tblPr><w:tblW w:w="4000" w:type=" pct "/><w:tblLayout w:type=" fixed "/><w:tblInd w:w="720" w:type=" dxa "/></w:tblPr><w:tr><w:tc>
+            <w:tbl><w:tblPr><w:tblW w:w="4000" w:type=" pct "/><w:tblLayout w:type=" fixed "/><w:tblInd w:w="720" w:type=" dxa "/><w:jc w:val=" center "/></w:tblPr><w:tr><w:tc>
                 <w:tcPr><w:shd w:fill=" DDDDDD "/><w:vAlign w:val=" center "/><w:tcW w:w="2500" w:type=" pct "/></w:tcPr>
                 <w:p><w:r><w:t>셀</w:t></w:r></w:p>
             </w:tc></w:tr></w:tbl>
@@ -3324,6 +3324,7 @@ mod tests {
         assert_eq!(t.width_pct, Some(0.8));
         assert!(t.fixed_layout);
         assert_eq!(t.indent_twips, Some(720));
+        assert_eq!(t.align, Some(Align::Center));
         let c = &t.rows[0].cells[0];
         assert_eq!(
             c.shading,
