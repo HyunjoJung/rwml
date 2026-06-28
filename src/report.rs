@@ -1272,7 +1272,7 @@ pub(crate) fn docx_features(docx: &crate::docx::DocxState) -> FeatureInventory {
     let chart_parts = docx
         .package
         .part_names()
-        .filter(|name| name.starts_with("word/charts/") && name.ends_with(".xml"))
+        .filter(|name| is_docx_chart_payload_part(name))
         .count();
     features.charts = features.charts.max(chart_parts);
     features.metafiles = metafile_infos(docx);
@@ -1318,6 +1318,24 @@ fn scan_docx_story_structure_markers(xml: &str, features: &mut FeatureInventory)
     features.charts += story.charts;
     features.floating_shapes += story.floating_shapes;
     features.tracked_property_changes += story.tracked_property_changes;
+}
+
+#[cfg(feature = "docx")]
+fn is_docx_chart_payload_part(name: &str) -> bool {
+    let Some(file) = name.strip_prefix("word/charts/") else {
+        return false;
+    };
+    let Some(stem) = file.strip_suffix(".xml") else {
+        return false;
+    };
+    has_numbered_suffix(stem, "chart") || has_numbered_suffix(stem, "chartEx")
+}
+
+#[cfg(feature = "docx")]
+fn has_numbered_suffix(value: &str, prefix: &str) -> bool {
+    value.strip_prefix(prefix).is_some_and(|suffix| {
+        !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
+    })
 }
 
 #[cfg(feature = "docx")]
