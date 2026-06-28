@@ -1385,6 +1385,7 @@ fn read_floating_shape(
                     match name {
                         b"tab" => shape_text.push('\t'),
                         b"br" | b"cr" => shape_text.push('\n'),
+                        b"noBreakHyphen" => shape_text.push('-'),
                         _ => {}
                     }
                     continue;
@@ -1496,8 +1497,9 @@ fn skip_shape_scan_subtree(r: &mut Reader<&[u8]>) {
 
 fn append_shape_text(out: &mut String, text: &str) {
     let previous_is_space = matches!(out.chars().last(), Some(' ' | '\n' | '\t'));
+    let previous_is_joiner = out.ends_with('-');
     let next_is_space = matches!(text.chars().next(), Some(' ' | '\n' | '\t'));
-    if !out.is_empty() && !previous_is_space && !next_is_space {
+    if !out.is_empty() && !previous_is_space && !previous_is_joiner && !next_is_space {
         out.push(' ');
     }
     out.push_str(text);

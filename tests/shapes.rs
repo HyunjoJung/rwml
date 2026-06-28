@@ -34,7 +34,7 @@ fn floating_shape_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:body><w:p><w:r><w:t>Before anchor </w:t></w:r><w:r><w:drawing><wp:anchor simplePos="0" relativeHeight=" 251659264 " behindDoc="0" layoutInCell="1" locked="0" allowOverlap="1" distT=" 120 " distB="240" distL="360" distR="480"><wp:positionH relativeFrom=" column "><wp:posOffset>91440</wp:posOffset></wp:positionH><wp:positionV relativeFrom=" paragraph "><wp:align>top</wp:align></wp:positionV><wp:extent cx=" 914400 " cy="457200"/><wp:wrapSquare wrapText=" bothSides " distT="9144" distB=" 18288 " distL="27432" distR="36576"/><wp:docPr id=" 7 " name=" Float one " descr=" A floating object "/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>Shape body</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:t>After anchor</w:t></w:r></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:body><w:p><w:r><w:t>Before anchor </w:t></w:r><w:r><w:drawing><wp:anchor simplePos="0" relativeHeight=" 251659264 " behindDoc="0" layoutInCell="1" locked="0" allowOverlap="1" distT=" 120 " distB="240" distL="360" distR="480"><wp:positionH relativeFrom=" column "><wp:posOffset>91440</wp:posOffset></wp:positionH><wp:positionV relativeFrom=" paragraph "><wp:align>top</wp:align></wp:positionV><wp:extent cx=" 914400 " cy="457200"/><wp:wrapSquare wrapText=" bothSides " distT="9144" distB=" 18288 " distL="27432" distR="36576"/><wp:docPr id=" 7 " name=" Float one " descr=" A floating object "/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>Shape</w:t><w:noBreakHyphen/><w:t>body</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:t>After anchor</w:t></w:r></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -200,7 +200,7 @@ fn docx_floating_shape_geometry_is_extracted() {
     assert_eq!(shapes[0].id, "7");
     assert_eq!(shapes[0].name.as_deref(), Some("Float one"));
     assert_eq!(shapes[0].description.as_deref(), Some("A floating object"));
-    assert_eq!(shapes[0].text.as_deref(), Some("Shape body"));
+    assert_eq!(shapes[0].text.as_deref(), Some("Shape-body"));
     assert_eq!(shapes[0].anchor_block_index, Some(0));
     assert_eq!(
         shapes[0].anchor_text.as_deref(),
