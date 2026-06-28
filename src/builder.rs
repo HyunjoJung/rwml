@@ -1543,7 +1543,7 @@ impl DocBuilder {
     pub fn custom_property(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         self.model
             .custom_properties
-            .insert(name.into(), value.into());
+            .insert(name.into().trim().to_string(), value.into());
         self
     }
 

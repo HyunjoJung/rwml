@@ -1052,7 +1052,7 @@ fn doc_builder_adds_dirty_toc_heading_range() {
 #[test]
 fn doc_builder_adds_string_custom_properties() {
     let model = DocBuilder::new()
-        .custom_property("Client Name", "ACME <Launch>")
+        .custom_property(" Client Name ", "ACME <Launch>")
         .field(r#"DOCPROPERTY "Client Name""#, "cached")
         .build();
 
