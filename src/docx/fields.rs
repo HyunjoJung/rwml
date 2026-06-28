@@ -3797,16 +3797,7 @@ fn single_section_initial_page_numbering(
 }
 
 fn page_ref_on_off_enabled(e: &BytesStart<'_>) -> bool {
-    !matches!(
-        attr_local(e, b"val").as_deref(),
-        Some("0")
-            | Some("false")
-            | Some("False")
-            | Some("FALSE")
-            | Some("off")
-            | Some("Off")
-            | Some("OFF")
-    )
+    toggle_on(attr_local(e, b"val"))
 }
 
 fn page_ref_section_break(e: &BytesStart<'_>) -> Option<PageRefSectionBreak> {

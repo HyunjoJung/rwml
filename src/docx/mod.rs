@@ -2068,7 +2068,7 @@ pub(crate) fn attr_local(e: &BytesStart<'_>, key: &[u8]) -> Option<String> {
 /// Resolve an OOXML on/off toggle: a present element with no `w:val` means *on*;
 /// `false`/`0`/`off` mean *off*; anything else is *on*.
 pub(crate) fn toggle_on(val: Option<String>) -> bool {
-    match val.as_deref() {
+    match val.as_deref().map(str::trim) {
         None => true,
         Some(v) => v != "0" && !v.eq_ignore_ascii_case("false") && !v.eq_ignore_ascii_case("off"),
     }
@@ -2081,7 +2081,7 @@ mod tests {
     #[test]
     fn toggle_on_accepts_case_insensitive_off_values() {
         assert!(!toggle_on(Some("FALSE".to_string())));
-        assert!(!toggle_on(Some("Off".to_string())));
+        assert!(!toggle_on(Some(" Off ".to_string())));
         assert!(!toggle_on(Some("0".to_string())));
         assert!(toggle_on(None));
         assert!(toggle_on(Some("true".to_string())));
