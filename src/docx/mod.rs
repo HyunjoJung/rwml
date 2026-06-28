@@ -1602,7 +1602,7 @@ fn custom_xml_item_id(xml: &str) -> Option<String> {
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"datastoreItem" =>
             {
-                return attr_local(&e, b"itemID").map(|id| id.trim().to_owned());
+                return attr_local_trimmed(&e, b"itemID");
             }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
@@ -2168,6 +2168,9 @@ mod tests {
             custom_xml_item_id(xml).as_deref(),
             Some("{11111111-2222-3333-4444-555555555555}")
         );
+
+        let blank = r#"<ds:datastoreItem xmlns:ds="http://schemas.openxmlformats.org/officeDocument/2006/customXml" ds:itemID=" "/>"#;
+        assert_eq!(custom_xml_item_id(blank), None);
     }
 
     /// Relationship targets resolve relative to `word/` with `.`/`..`/
