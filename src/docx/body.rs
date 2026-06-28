@@ -554,7 +554,9 @@ pub(crate) fn parse_note_entries(
                 if boilerplate {
                     skip_subtree(&mut r);
                 } else {
-                    let id = attr_local(&e, b"id").unwrap_or_default();
+                    let id = attr_local(&e, b"id")
+                        .map(|id| id.trim().to_owned())
+                        .unwrap_or_default();
                     entries.push((id, read_blocks(&mut r, ctx, 0)));
                 }
             }
@@ -611,7 +613,7 @@ pub(crate) fn scan_note_ref_anchors(xml: &str, tag: &[u8]) -> HashMap<String, St
                 if current_block_depth.is_some() {
                     if name == tag {
                         if let Some(id) = attr_local(&e, b"id") {
-                            current_block_refs.push(id);
+                            current_block_refs.push(id.trim().to_owned());
                         }
                         skip_subtree(&mut r);
                         body_depth = body_depth.saturating_sub(1);
@@ -630,7 +632,7 @@ pub(crate) fn scan_note_ref_anchors(xml: &str, tag: &[u8]) -> HashMap<String, St
                 if current_block_depth.is_some() {
                     if name == tag {
                         if let Some(id) = attr_local(&e, b"id") {
-                            current_block_refs.push(id);
+                            current_block_refs.push(id.trim().to_owned());
                         }
                     } else {
                         append_note_anchor_empty_marker(&mut current_block_text, name);

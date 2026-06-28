@@ -227,15 +227,15 @@ fn notes_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>BODY</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r><w:r><w:endnoteReference w:id="2"/></w:r></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>BODY</w:t></w:r><w:r><w:footnoteReference w:id=" 1 "/></w:r><w:r><w:endnoteReference w:id=" 2 "/></w:r></w:p></w:body></w:document>"#,
         ),
         (
             "word/footnotes.xml",
-            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:type=" separator " w:id="-1"><w:p><w:r><w:t>OLD</w:t></w:r></w:p></w:footnote><w:footnote w:id="1"><w:p><w:r><w:t>OLD</w:t></w:r><w:r><w:t> foot</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:type=" separator " w:id="-1"><w:p><w:r><w:t>OLD</w:t></w:r></w:p></w:footnote><w:footnote w:id=" 1 "><w:p><w:r><w:t>OLD</w:t></w:r><w:r><w:t> foot</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
         ),
         (
             "word/endnotes.xml",
-            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="2"><w:p><w:r><w:t>OLD</w:t></w:r></w:p></w:endnote></w:endnotes>"#,
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id=" 2 "><w:p><w:r><w:t>OLD</w:t></w:r></w:p></w:endnote></w:endnotes>"#,
         ),
     ])
 }
@@ -1750,7 +1750,7 @@ fn replace_note_text_edits_footnotes_and_endnotes_only() {
         "separator footnote should not be edited: {footnotes}"
     );
     assert!(
-        footnotes.contains(r#"<w:footnote w:id="1"><w:p><w:r><w:t>NEW</w:t>"#),
+        footnotes.contains(r#"<w:footnote w:id=" 1 "><w:p><w:r><w:t>NEW</w:t>"#),
         "real footnote not edited: {footnotes}"
     );
     assert!(
@@ -1758,7 +1758,7 @@ fn replace_note_text_edits_footnotes_and_endnotes_only() {
         "other footnote run should remain: {footnotes}"
     );
     assert!(
-        endnotes.contains(r#"<w:endnote w:id="2"><w:p><w:r><w:t>NEW</w:t>"#),
+        endnotes.contains(r#"<w:endnote w:id=" 2 "><w:p><w:r><w:t>NEW</w:t>"#),
         "endnote not edited: {endnotes}"
     );
 
@@ -1921,12 +1921,12 @@ fn add_footnote_on_text_uses_next_id_and_rejects_missing_anchor_without_mutation
     let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
     let footnotes = String::from_utf8(parts["word/footnotes.xml"].clone()).unwrap();
     assert!(
-        body.contains(r#"<w:footnoteReference w:id="1"/>"#)
+        body.contains(r#"<w:footnoteReference w:id=" 1 "/>"#)
             && body.contains(r#"<w:footnoteReference w:id="2"/>"#),
         "existing and new footnote references should be present: {body}"
     );
     assert!(
-        footnotes.contains(r#"w:id="1""#)
+        footnotes.contains(r#"w:id=" 1 ""#)
             && footnotes.contains(r#"w:id="2""#)
             && footnotes.contains(r#"<w:t>Second footnote</w:t>"#),
         "existing and new footnotes should be present: {footnotes}"
@@ -2067,12 +2067,12 @@ fn add_endnote_on_text_uses_next_id_and_rejects_missing_anchor_without_mutation(
     let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
     let endnotes = String::from_utf8(parts["word/endnotes.xml"].clone()).unwrap();
     assert!(
-        body.contains(r#"<w:endnoteReference w:id="2"/>"#)
+        body.contains(r#"<w:endnoteReference w:id=" 2 "/>"#)
             && body.contains(r#"<w:endnoteReference w:id="3"/>"#),
         "existing and new endnote references should be present: {body}"
     );
     assert!(
-        endnotes.contains(r#"w:id="2""#)
+        endnotes.contains(r#"w:id=" 2 ""#)
             && endnotes.contains(r#"w:id="3""#)
             && endnotes.contains(r#"<w:t>Second endnote</w:t>"#),
         "existing and new endnotes should be present: {endnotes}"

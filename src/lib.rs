@@ -3059,7 +3059,13 @@ fn max_footnote_id_in_xml(xml: &[u8]) -> Option<u64> {
     fn attr_id(e: &BytesStart<'_>) -> Option<u64> {
         e.attributes().flatten().find_map(|attr| {
             (local(attr.key.as_ref()) == b"id")
-                .then(|| std::str::from_utf8(attr.value.as_ref()).ok()?.parse().ok())
+                .then(|| {
+                    std::str::from_utf8(attr.value.as_ref())
+                        .ok()?
+                        .trim()
+                        .parse()
+                        .ok()
+                })
                 .flatten()
         })
     }
@@ -3098,7 +3104,13 @@ fn max_endnote_id_in_xml(xml: &[u8]) -> Option<u64> {
     fn attr_id(e: &BytesStart<'_>) -> Option<u64> {
         e.attributes().flatten().find_map(|attr| {
             (local(attr.key.as_ref()) == b"id")
-                .then(|| std::str::from_utf8(attr.value.as_ref()).ok()?.parse().ok())
+                .then(|| {
+                    std::str::from_utf8(attr.value.as_ref())
+                        .ok()?
+                        .trim()
+                        .parse()
+                        .ok()
+                })
                 .flatten()
         })
     }
