@@ -508,6 +508,24 @@ fn protected_form_field_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn numbering_field_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" AUTONUM \* Unknown "><w:r><w:t>cached unsupported autonum</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" LISTNUM LegalDefault \l 2 "><w:r><w:t>cached nested listnum</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" BIDIOUTLINE "><w:r><w:t>cached bidi outline</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" BIDIOUTLINE \x "><w:r><w:t>cached malformed bidi outline</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn merge_field_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -2377,6 +2395,29 @@ fn report_field_category_matrix_splits_cached_and_malformed_diagnostics() {
         vec![
             field_reason_count(FieldEvaluationReason::NoComputedResult, 1),
             field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 1),
+        ],
+    );
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_numbering_fields_split_cached_and_malformed_diagnostics() {
+    assert_report_field_diagnostics(
+        numbering_field_diagnostics_docx(),
+        4,
+        vec![
+            field_kind_count(FieldKind::Numbering("AUTONUM".to_string()), 1),
+            field_kind_count(FieldKind::Numbering("LISTNUM".to_string()), 1),
+            field_kind_count(FieldKind::Numbering("BIDIOUTLINE".to_string()), 2),
+        ],
+        vec![
+            field_kind_count(FieldKind::Numbering("AUTONUM".to_string()), 1),
+            field_kind_count(FieldKind::Numbering("LISTNUM".to_string()), 1),
+            field_kind_count(FieldKind::Numbering("BIDIOUTLINE".to_string()), 2),
+        ],
+        vec![
+            field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 2),
+            field_reason_count(FieldEvaluationReason::NoComputedResult, 2),
         ],
     );
 }
