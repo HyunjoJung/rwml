@@ -1925,7 +1925,7 @@ fn page_ref_section_break_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/></w:sectPr></w:pPr></w:p><w:p><w:bookmarkStart w:id="7" w:name="NextSection"/><w:r><w:t>Next section target</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:r><w:lastRenderedPageBreak/><w:t>Page three lead.</w:t></w:r></w:p><w:p><w:pPr><w:sectPr><w:type w:val=" evenPage "/></w:sectPr></w:pPr></w:p><w:p><w:bookmarkStart w:id="8" w:name="EvenSection"/><w:r><w:t>Even section target</w:t></w:r><w:bookmarkEnd w:id="8"/></w:p><w:p><w:pPr><w:sectPr><w:type w:val="oddPage"/></w:sectPr></w:pPr></w:p><w:p><w:bookmarkStart w:id="9" w:name="OddSection"/><w:r><w:t>Odd section target</w:t></w:r><w:bookmarkEnd w:id="9"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF NextSection \h "><w:r><w:t>stale next</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF EvenSection \* roman "><w:r><w:t>stale even</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF OddSection \p "><w:r><w:t>stale odd relative</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/></w:sectPr></w:pPr></w:p><w:p><w:bookmarkStart w:id="7" w:name="NextSection"/><w:r><w:t>Next section target</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" PAGE \* Arabic "><w:r><w:t>stale next current</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:lastRenderedPageBreak/><w:t>Page three lead.</w:t></w:r></w:p><w:p><w:pPr><w:sectPr><w:type w:val=" evenPage "/></w:sectPr></w:pPr></w:p><w:p><w:bookmarkStart w:id="8" w:name="EvenSection"/><w:r><w:t>Even section target</w:t></w:r><w:bookmarkEnd w:id="8"/></w:p><w:p><w:fldSimple w:instr=" PAGE \* Arabic "><w:r><w:t>stale even current</w:t></w:r></w:fldSimple></w:p><w:p><w:pPr><w:sectPr><w:type w:val="oddPage"/></w:sectPr></w:pPr></w:p><w:p><w:bookmarkStart w:id="9" w:name="OddSection"/><w:r><w:t>Odd section target</w:t></w:r><w:bookmarkEnd w:id="9"/></w:p><w:p><w:fldSimple w:instr=" PAGE \* Arabic "><w:r><w:t>stale odd current</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF NextSection \h "><w:r><w:t>stale next</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF EvenSection \* roman "><w:r><w:t>stale even</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF OddSection \p "><w:r><w:t>stale odd relative</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -9202,29 +9202,38 @@ fn docx_page_ref_advances_rendered_context_across_manual_page_breaks() {
 }
 
 #[test]
-fn docx_page_ref_computes_structural_section_break_targets() {
+fn docx_page_and_page_ref_compute_structural_section_break_targets() {
     let doc = Document::open(&page_ref_section_break_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 3);
-    assert_eq!(fields[0].kind, FieldKind::PageRef);
-    assert_eq!(fields[0].instruction, "PAGEREF NextSection \\h");
+    assert_eq!(fields.len(), 6);
+    assert_eq!(fields[0].kind, FieldKind::Page);
+    assert_eq!(fields[0].instruction, "PAGE \\* Arabic");
     assert_eq!(fields[0].computed_result.as_deref(), Some("2"));
-    assert_eq!(fields[1].kind, FieldKind::PageRef);
-    assert_eq!(fields[1].instruction, "PAGEREF EvenSection \\* roman");
-    assert_eq!(fields[1].computed_result.as_deref(), Some("iv"));
-    assert_eq!(fields[2].kind, FieldKind::PageRef);
-    assert_eq!(fields[2].instruction, "PAGEREF OddSection \\p");
-    assert_eq!(fields[2].computed_result.as_deref(), Some("above"));
+    assert_eq!(fields[1].kind, FieldKind::Page);
+    assert_eq!(fields[1].instruction, "PAGE \\* Arabic");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("4"));
+    assert_eq!(fields[2].kind, FieldKind::Page);
+    assert_eq!(fields[2].instruction, "PAGE \\* Arabic");
+    assert_eq!(fields[2].computed_result.as_deref(), Some("5"));
+    assert_eq!(fields[3].kind, FieldKind::PageRef);
+    assert_eq!(fields[3].instruction, "PAGEREF NextSection \\h");
+    assert_eq!(fields[3].computed_result.as_deref(), Some("2"));
+    assert_eq!(fields[4].kind, FieldKind::PageRef);
+    assert_eq!(fields[4].instruction, "PAGEREF EvenSection \\* roman");
+    assert_eq!(fields[4].computed_result.as_deref(), Some("iv"));
+    assert_eq!(fields[5].kind, FieldKind::PageRef);
+    assert_eq!(fields[5].instruction, "PAGEREF OddSection \\p");
+    assert_eq!(fields[5].computed_result.as_deref(), Some("above"));
 
     let main_text = doc.main_text();
     assert!(
-        main_text.contains("2\niv\nabove"),
-        "structural section-break PAGEREF fields should render computed text: {main_text:?}"
+        main_text.contains("2\nPage three lead.\nEven section target\n4\nOdd section target\n5\n2\niv\nabove"),
+        "structural section-break PAGE and PAGEREF fields should render computed text: {main_text:?}"
     );
     assert!(
         !main_text.contains("stale"),
-        "computed section-break PAGEREF fields should not keep stale cached text: {main_text:?}"
+        "computed section-break PAGE and PAGEREF fields should not keep stale cached text: {main_text:?}"
     );
 
     let report = doc.report();
