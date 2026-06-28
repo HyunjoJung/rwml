@@ -1809,7 +1809,8 @@ struct DrawingAnchorOffset {
 }
 
 fn read_page_position_offset(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Option<i64> {
-    let page_relative = attr_local(start, b"relativeFrom").as_deref() == Some("page");
+    let page_relative =
+        attr_local(start, b"relativeFrom").is_some_and(|value| value.trim() == "page");
     let mut offset = None;
     loop {
         match r.read_event() {
@@ -3077,6 +3078,27 @@ mod tests {
             .find_map(|run| run.image.as_ref())
             .expect("image run");
         assert_eq!(image.rotation_degrees, Some(90));
+    }
+
+    #[test]
+    fn floating_image_offsets_trim_relative_from() {
+        let mut media = HashMap::new();
+        media.insert("rIdImg".to_string(), Image::default());
+        let xml = r#"<w:document><w:body><w:p><w:r><w:drawing><wp:anchor>
+            <wp:positionH relativeFrom=" page "><wp:posOffset>91440</wp:posOffset></wp:positionH>
+            <wp:positionV relativeFrom=" page "><wp:posOffset>182880</wp:posOffset></wp:positionV>
+            <a:blip r:embed="rIdImg"/>
+        </wp:anchor></w:drawing></w:r></w:p></w:body></w:document>"#;
+        let blocks = parse_with_media(xml, media);
+        let Block::Paragraph(p) = &blocks[0] else {
+            panic!("para");
+        };
+        let image = p
+            .runs
+            .iter()
+            .find_map(|run| run.image.as_ref())
+            .expect("image run");
+        assert_eq!(image.floating_offset_emu, Some((91440, 182880)));
     }
 
     #[test]
