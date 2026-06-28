@@ -3808,7 +3808,7 @@ fn page_ref_on_off_enabled(e: &BytesStart<'_>) -> bool {
 }
 
 fn page_ref_section_break(e: &BytesStart<'_>) -> Option<PageRefSectionBreak> {
-    match attr_local(e, b"val").as_deref() {
+    match attr_local(e, b"val").as_deref().map(str::trim) {
         Some("nextPage") => Some(PageRefSectionBreak::Next),
         Some("evenPage") => Some(PageRefSectionBreak::Even),
         Some("oddPage") => Some(PageRefSectionBreak::Odd),
@@ -3821,7 +3821,7 @@ fn page_ref_section_page_number_start(e: &BytesStart<'_>) -> Option<usize> {
 }
 
 fn page_ref_section_page_number_format(e: &BytesStart<'_>) -> Option<PageRefDisplayFormat> {
-    let format = match attr_local(e, b"fmt").as_deref()? {
+    let format = match attr_local(e, b"fmt").as_deref().map(str::trim)? {
         "decimal" => PageNumberFormat::Arabic,
         "decimalZero" => PageNumberFormat::DecimalZero,
         "numberInDash" => PageNumberFormat::ArabicDash,

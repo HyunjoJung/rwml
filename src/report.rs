@@ -5236,8 +5236,9 @@ fn docx_page_ref_unsupported_section_format_targets(xml: &str) -> HashSet<String
 
     fn section_page_number_format_unsupported(e: &BytesStart<'_>) -> Option<bool> {
         let format = crate::docx::attr_local(e, b"fmt")?;
+        let format = format.trim();
         Some(!matches!(
-            format.as_str(),
+            format,
             "decimal"
                 | "decimalZero"
                 | "numberInDash"
