@@ -751,7 +751,7 @@ Acceptance:
   switches and the documented `\s` separator switch, including unquoted or
   quoted one-character separators; standalone plain, neutral, or
   common-number-format `AUTONUMLGL` and `AUTONUMOUT` values compute on the same source-order counter; level-1
-  `LISTNUM NumberDefault` fields compute source-order values with common
+  `LISTNUM NumberDefault`/`LegalDefault` fields compute source-order values with common
   number-format switches, neutral field-format switches, and `\s`
   starts/resets; invalid numbering/list syntax reports `UnsupportedSwitch`,
   while richer `AUTONUMOUT`

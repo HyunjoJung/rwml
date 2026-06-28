@@ -283,9 +283,10 @@ pub enum FieldKind {
     /// documented separator switch, including unquoted or quoted one-character
     /// separators; standalone plain/neutral `AUTONUMLGL` and `AUTONUMOUT`
     /// compute on the same source-order counter; level-1 `LISTNUM
-    /// NumberDefault` computes source-order values with common number-format
-    /// switches, neutral field-format switches, and starts/resets; richer outline/list fields preserve cached
-    /// display text until native automatic-numbering evaluation is broader.
+    /// NumberDefault`/`LegalDefault` computes source-order values with common
+    /// number-format switches, neutral field-format switches, and starts/resets;
+    /// richer outline/list fields preserve cached display text until native
+    /// automatic-numbering evaluation is broader.
     Numbering(String),
     /// Document-structure fields such as `REVNUM`, `SECTION`, `SECTIONPAGES`,
     /// or `STYLEREF`. Deterministic structural/style-reference subsets compute;

@@ -9096,7 +9096,9 @@ pub(crate) fn computed_listnum_result(
             return None;
         }
         let list_name = unquote_field_text(part);
-        if !list_name.eq_ignore_ascii_case("NumberDefault") {
+        if !list_name.eq_ignore_ascii_case("NumberDefault")
+            && !list_name.eq_ignore_ascii_case("LegalDefault")
+        {
             return None;
         }
         list_name_seen = true;

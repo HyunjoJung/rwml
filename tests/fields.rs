@@ -5886,21 +5886,21 @@ fn docx_listnum_number_default_computes_level_one_subset() {
     assert_eq!(fields[6].computed_result, None);
     assert_eq!(fields[7].instruction, "LISTNUM LegalDefault");
     assert_eq!(fields[7].result, "cached legal listnum");
-    assert_eq!(fields[7].computed_result, None);
+    assert_eq!(fields[7].computed_result.as_deref(), Some("7"));
 
     let report = doc.report();
     assert_eq!(
         report.features.unsupported_field_kinds,
         vec![FieldKindCount {
             kind: FieldKind::Numbering("LISTNUM".to_string()),
-            count: 2,
+            count: 1,
         }]
     );
     assert_eq!(
         report.features.unsupported_field_reasons,
         vec![FieldEvaluationReasonCount {
             reason: FieldEvaluationReason::NoComputedResult,
-            count: 2,
+            count: 1,
         }]
     );
 
@@ -5913,7 +5913,7 @@ fn docx_listnum_number_default_computes_level_one_subset() {
             && main_text.contains("5")
             && main_text.contains("vi")
             && main_text.contains("cached nested listnum")
-            && main_text.contains("cached legal listnum"),
+            && main_text.contains("7"),
         "computed listnum values and unsupported cached results should be visible: {main_text:?}"
     );
     assert!(
@@ -5922,7 +5922,8 @@ fn docx_listnum_number_default_computes_level_one_subset() {
             && !main_text.contains("stale listnum charformat")
             && !main_text.contains("stale listnum reset")
             && !main_text.contains("stale listnum after reset")
-            && !main_text.contains("stale listnum roman"),
+            && !main_text.contains("stale listnum roman")
+            && !main_text.contains("cached legal listnum"),
         "computed listnum results should replace stale cached field text: {main_text:?}"
     );
 }
