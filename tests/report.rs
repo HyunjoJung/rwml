@@ -2372,23 +2372,49 @@ fn report_compatibility_fields_split_cached_and_malformed_diagnostics() {
 #[test]
 fn report_field_category_matrix_splits_cached_and_malformed_diagnostics() {
     assert_report_field_diagnostics(
-        field_pair_diagnostics_docx(
-            r#"INCLUDETEXT &quot;appendix.docx&quot;"#,
-            "Appendix text",
-            r#"INCLUDEPICTURE &quot;chart.png"#,
-            "cached malformed include picture",
-        ),
-        2,
+        docx_fixture(&[
+            (
+                "[Content_Types].xml",
+                r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+            ),
+            (
+                "_rels/.rels",
+                r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            (
+                "word/document.xml",
+                r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" INCLUDETEXT &quot;appendix.docx&quot; "><w:r><w:t>Appendix text</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" LINK Excel.Sheet.12 &quot;book.xlsx&quot; &quot;Sheet1!R1C1&quot; "><w:r><w:t>42</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" EMBED Excel.Sheet.12 "><w:r><w:t>Embedded object</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DATABASE \d &quot;source.accdb&quot; "><w:r><w:t>Rows</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DDE Excel &quot;book.xlsx&quot; &quot;R1C1&quot; "><w:r><w:t>DDE value</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DDEAUTO Excel &quot;book.xlsx&quot; &quot;R2C1&quot; "><w:r><w:t>Auto DDE value</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" IMPORT &quot;legacy.wmf&quot; "><w:r><w:t>Imported object</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" INCLUDE &quot;legacy.doc&quot; "><w:r><w:t>Included text</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTOTEXT Signature "><w:r><w:t>AutoText signature</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTOTEXTLIST &quot;Choose clause&quot; \s Legal "><w:r><w:t>AutoText list</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" INCLUDEPICTURE &quot;chart.png "><w:r><w:t>cached malformed include picture</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            ),
+        ]),
+        11,
         vec![
             field_kind_count(FieldKind::InsertedContent("INCLUDETEXT".to_string()), 1),
+            field_kind_count(FieldKind::InsertedContent("LINK".to_string()), 1),
+            field_kind_count(FieldKind::InsertedContent("EMBED".to_string()), 1),
+            field_kind_count(FieldKind::InsertedContent("DATABASE".to_string()), 1),
+            field_kind_count(FieldKind::InsertedContent("DDE".to_string()), 1),
+            field_kind_count(FieldKind::InsertedContent("DDEAUTO".to_string()), 1),
+            field_kind_count(FieldKind::InsertedContent("IMPORT".to_string()), 1),
+            field_kind_count(FieldKind::InsertedContent("INCLUDE".to_string()), 1),
+            field_kind_count(FieldKind::InsertedContent("AUTOTEXT".to_string()), 1),
+            field_kind_count(FieldKind::InsertedContent("AUTOTEXTLIST".to_string()), 1),
             field_kind_count(FieldKind::InsertedContent("INCLUDEPICTURE".to_string()), 1),
         ],
         vec![
             field_kind_count(FieldKind::InsertedContent("INCLUDETEXT".to_string()), 1),
+            field_kind_count(FieldKind::InsertedContent("LINK".to_string()), 1),
+            field_kind_count(FieldKind::InsertedContent("EMBED".to_string()), 1),
+            field_kind_count(FieldKind::InsertedContent("DATABASE".to_string()), 1),
+            field_kind_count(FieldKind::InsertedContent("DDE".to_string()), 1),
+            field_kind_count(FieldKind::InsertedContent("DDEAUTO".to_string()), 1),
+            field_kind_count(FieldKind::InsertedContent("IMPORT".to_string()), 1),
+            field_kind_count(FieldKind::InsertedContent("INCLUDE".to_string()), 1),
+            field_kind_count(FieldKind::InsertedContent("AUTOTEXT".to_string()), 1),
+            field_kind_count(FieldKind::InsertedContent("AUTOTEXTLIST".to_string()), 1),
             field_kind_count(FieldKind::InsertedContent("INCLUDEPICTURE".to_string()), 1),
         ],
         vec![
-            field_reason_count(FieldEvaluationReason::NoComputedResult, 1),
+            field_reason_count(FieldEvaluationReason::NoComputedResult, 10),
             field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 1),
         ],
     );
