@@ -43,6 +43,19 @@ SCHEMA = "rdoc.release-manifest.v1"
 PUBLIC_RELEASE_CORPUS_MANIFESTS = ("MANIFEST.tsv", "RENDER_MANIFEST.tsv")
 COUNT_POLICY_METRICS = {"below_recall_min", "skipped", "errors"}
 BOUNDED_SCORE_POLICY_METRICS = {"recall_min", "mean_recall", "poi_recall_mean", "poi_f1_mean"}
+KNOWN_WARNING_TOKENS = {
+    "UnsupportedFieldEvaluation",
+    "TrackedChangesPresent",
+    "IncompleteRevisionView",
+    "FloatingShapePlaceholderOnly",
+    "ChartsPreservedButNotModeled",
+    "OleObjectsPreservedButNotModeled",
+    "UnsupportedMetafileImages",
+    "LegacyDocFlattenedSubdocuments",
+    "PackageReadOnly",
+    "MissingImageBytes",
+    "UndecodableRasterImages",
+}
 RELEASE_POLICIES: dict[str, dict[str, Any]] = {
     "public-release": {
         "name": "public-release",
@@ -743,6 +756,8 @@ def corpus_manifest_summary(path: Path) -> dict[str, Any]:
                     raise ValueError(
                         f"{path} row has non-canonical warning token: {warning}"
                     )
+                if warning not in KNOWN_WARNING_TOKENS:
+                    raise ValueError(f"{path} row has unknown warning token: {warning}")
                 if warning in row_warnings:
                     raise ValueError(
                         f"{path} row has duplicate warning token: {warning}"
