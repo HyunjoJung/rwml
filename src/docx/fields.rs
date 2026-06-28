@@ -631,7 +631,7 @@ fn read_table_formula_cell_props(r: &mut Xml<'_>) -> bool {
                         xml_depth = xml_depth.saturating_add(1);
                     }
                     b"gridSpan" => {
-                        has_span |= attr_local(&e, b"val").as_deref().unwrap_or("1") != "1";
+                        has_span |= grid_span_exceeds_one(&e);
                         skip_subtree(r);
                     }
                     b"vMerge" => {
@@ -649,7 +649,7 @@ fn read_table_formula_cell_props(r: &mut Xml<'_>) -> bool {
                 }
                 match name {
                     b"gridSpan" => {
-                        has_span |= attr_local(&e, b"val").as_deref().unwrap_or("1") != "1";
+                        has_span |= grid_span_exceeds_one(&e);
                     }
                     b"vMerge" => has_span = true,
                     _ => {}
@@ -671,6 +671,10 @@ fn read_table_formula_cell_props(r: &mut Xml<'_>) -> bool {
         }
     }
     has_span
+}
+
+fn grid_span_exceeds_one(e: &BytesStart<'_>) -> bool {
+    attr_local(e, b"val").is_some_and(|value| value.trim() != "1")
 }
 
 fn read_field_result_text(r: &mut Xml<'_>) -> String {
@@ -10678,6 +10682,30 @@ mod tests {
                             <w:r><w:fldChar w:fldCharType="end"/></w:r>
                             <w:r><w:fldChar w:fldCharType="end"/></w:r>
                         </w:p></w:tc>
+                    </w:tr>
+                </w:tbl>
+            </w:body>
+        </w:document>"#;
+
+        assert_eq!(
+            table_formula_context(xml).field_result(0).as_deref(),
+            Some("5")
+        );
+    }
+
+    #[test]
+    fn table_formula_scan_trims_unit_gridspan() {
+        let xml = r#"<w:document>
+            <w:body>
+                <w:tbl>
+                    <w:tr>
+                        <w:tc>
+                            <w:tcPr><w:gridSpan w:val=" 1 "/></w:tcPr>
+                            <w:p><w:r><w:t>5</w:t></w:r></w:p>
+                        </w:tc>
+                        <w:tc><w:p><w:fldSimple w:instr=" = SUM(LEFT) ">
+                            <w:r><w:t>stale sum</w:t></w:r>
+                        </w:fldSimple></w:p></w:tc>
                     </w:tr>
                 </w:tbl>
             </w:body>
