@@ -62,9 +62,9 @@ pub(crate) fn apply_extended_parent_ids(
 fn comment_shell(e: &BytesStart<'_>) -> Comment {
     Comment {
         id: attr_local_trimmed(e, b"id").unwrap_or_default(),
-        author: attr_local(e, b"author"),
-        initials: attr_local(e, b"initials"),
-        date: attr_local(e, b"date"),
+        author: attr_local_trimmed(e, b"author"),
+        initials: attr_local_trimmed(e, b"initials"),
+        date: attr_local_trimmed(e, b"date"),
         parent_comment_id: attr_local_trimmed(e, b"parentId"),
         text: String::new(),
         anchor: None,

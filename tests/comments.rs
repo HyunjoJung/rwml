@@ -86,7 +86,7 @@ fn commented_docx() -> Vec<u8> {
         ),
         (
             "word/comments.xml",
-            r#"<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:comment w:id=" 7 " w:author="Reviewer" w:initials="RV" w:date="2026-06-24T00:00:00Z"><w:p><w:r><w:t>First </w:t></w:r><w:r><w:t>note</w:t></w:r></w:p></w:comment></w:comments>"#,
+            r#"<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:comment w:id=" 7 " w:author=" Reviewer " w:initials=" RV " w:date=" 2026-06-24T00:00:00Z "><w:p><w:r><w:t>First </w:t></w:r><w:r><w:t>note</w:t></w:r></w:p></w:comment></w:comments>"#,
         ),
     ])
 }
