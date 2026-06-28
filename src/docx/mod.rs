@@ -162,10 +162,10 @@ pub(crate) struct DocxState {
     /// Footnote/endnote side-table records parsed from `word/footnotes.xml` and
     /// `word/endnotes.xml`.
     pub note_records: Vec<Note>,
-    /// Text-box side-table records parsed from body/header/footer
+    /// Text-box side-table records parsed from body/note/header/footer
     /// `w:txbxContent` shapes.
     pub text_boxes: Vec<TextBox>,
-    /// Floating shape geometry parsed from body `wp:anchor` drawing markup.
+    /// Floating shape geometry parsed from body/note/header/footer `wp:anchor` drawing markup.
     pub floating_shapes: Vec<FloatingShape>,
     /// Exact running header/footer records parsed from referenced `.docx` parts.
     pub header_footers: Vec<HeaderFooter>,
@@ -181,9 +181,9 @@ pub(crate) struct DocxState {
     pub package: crate::opc::Package,
     /// Comments parsed from `word/comments.xml` and optional commentsExtended links.
     pub comments: Vec<Comment>,
-    /// Fields parsed from `word/document.xml`.
+    /// Fields parsed from body/note/header/footer content.
     pub fields: Vec<Field>,
-    /// Tracked revisions parsed from `word/document.xml`.
+    /// Tracked revisions parsed from body/note/header/footer content.
     pub revisions: Vec<Revision>,
 }
 

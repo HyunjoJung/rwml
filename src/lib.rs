@@ -949,14 +949,15 @@ impl Document {
         Ok(changed)
     }
 
-    /// **Package-preserving edit: accept tracked body/note revisions.** In
-    /// `word/document.xml`'s body and existing footnote/endnote parts, this
+    /// **Package-preserving edit: accept tracked body/note/header/footer revisions.** In
+    /// `word/document.xml`'s body, existing footnote/endnote parts, and referenced
+    /// header/footer parts, this
     /// unwraps accepted current-content revision containers (`w:ins`,
     /// `w:moveTo`), removes rejected old-content containers (`w:del`,
     /// `w:moveFrom`), and drops tracked property-change history such as
     /// `w:pPrChange`/`w:rPrChange` while preserving the current properties.
     ///
-    /// This is a focused body/note edit, not a full Word review engine for every
+    /// This is a focused body/note/header/footer edit, not a full Word review engine for every
     /// package part. It is transactional and returns the number of revision
     /// elements removed or unwrapped. Read views are stale until the saved bytes
     /// are reopened. Available with the default `docx` feature.
@@ -966,15 +967,16 @@ impl Document {
         edit_docx_revisions(d, RevisionEditMode::Accept)
     }
 
-    /// **Package-preserving edit: reject tracked body/note revisions.** In
-    /// `word/document.xml`'s body and existing footnote/endnote parts, this
+    /// **Package-preserving edit: reject tracked body/note/header/footer revisions.** In
+    /// `word/document.xml`'s body, existing footnote/endnote parts, and referenced
+    /// header/footer parts, this
     /// removes inserted current-content revision containers (`w:ins`,
     /// `w:moveTo`), unwraps rejected old-content containers (`w:del`,
     /// `w:moveFrom`), normalizes kept `w:delText` nodes back to `w:t`, and drops
     /// tracked property-change history such as `w:pPrChange`/`w:rPrChange` while
     /// preserving the current properties.
     ///
-    /// This is a focused body/note edit, not a full Word review engine for every
+    /// This is a focused body/note/header/footer edit, not a full Word review engine for every
     /// package part. It is transactional and returns the number of revision or
     /// revision-text elements removed, unwrapped, or normalized. Read views are
     /// stale until the saved bytes are reopened. Available with the default
@@ -2902,10 +2904,11 @@ enum RevisionEditMode {
 }
 
 #[cfg(feature = "docx")]
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct RevisionEditTarget {
-    part: &'static str,
+    part: String,
     root_local: Option<&'static [u8]>,
+    content_type: &'static str,
 }
 
 #[cfg(feature = "docx")]
@@ -2916,10 +2919,10 @@ fn edit_docx_revisions(d: &mut docx::DocxState, mode: RevisionEditMode) -> Resul
     for target in targets {
         let raw = d
             .package
-            .part(target.part)
+            .part(&target.part)
             .ok_or_else(|| Error::Docx(format!("missing {}", target.part)))?;
         let mut probe = xmltree::XmlTree::parse(&raw)?;
-        let root = revision_edit_root(&probe, target)?;
+        let root = revision_edit_root(&probe, &target)?;
         let count = apply_revision_edit(&mut probe, root, mode);
         total += count;
         if count > 0 {
@@ -2932,12 +2935,10 @@ fn edit_docx_revisions(d: &mut docx::DocxState, mode: RevisionEditMode) -> Resul
 
     let mut pkg = d.package.clone();
     for target in changed {
-        let tree = pkg.part_tree_mut(target.part)?;
-        let root = revision_edit_root(tree, target)?;
+        let tree = pkg.part_tree_mut(&target.part)?;
+        let root = revision_edit_root(tree, &target)?;
         apply_revision_edit(tree, root, mode);
-        if target.part == "word/document.xml" {
-            pkg.ensure_content_type("word/document.xml", CT_DOCUMENT_MAIN);
-        }
+        pkg.ensure_content_type(target.part.as_str(), target.content_type);
     }
     d.package = pkg;
     Ok(total)
@@ -2949,19 +2950,28 @@ fn revision_edit_targets(package: &opc::Package) -> Result<Vec<RevisionEditTarge
         return Err(Error::Docx("missing word/document.xml".into()));
     }
     let mut targets = vec![RevisionEditTarget {
-        part: "word/document.xml",
+        part: "word/document.xml".to_string(),
         root_local: None,
+        content_type: CT_DOCUMENT_MAIN,
     }];
-    for (part, root_local) in [
-        ("word/footnotes.xml", &b"footnotes"[..]),
-        ("word/endnotes.xml", &b"endnotes"[..]),
+    for (part, root_local, content_type) in [
+        ("word/footnotes.xml", &b"footnotes"[..], CT_FOOTNOTES),
+        ("word/endnotes.xml", &b"endnotes"[..], CT_ENDNOTES),
     ] {
         if package.has_part(part) {
             targets.push(RevisionEditTarget {
-                part,
+                part: part.to_string(),
                 root_local: Some(root_local),
+                content_type,
             });
         }
+    }
+    for target in header_footer_targets(package) {
+        targets.push(RevisionEditTarget {
+            part: target.part,
+            root_local: Some(target.root_local),
+            content_type: target.content_type,
+        });
     }
     Ok(targets)
 }
@@ -2969,10 +2979,10 @@ fn revision_edit_targets(package: &opc::Package) -> Result<Vec<RevisionEditTarge
 #[cfg(feature = "docx")]
 fn revision_edit_root(
     tree: &xmltree::XmlTree,
-    target: RevisionEditTarget,
+    target: &RevisionEditTarget,
 ) -> Result<xmltree::NodeId> {
     match target.root_local {
-        Some(root) => tree.wml_part_root_strict(target.part, root),
+        Some(root) => tree.wml_part_root_strict(&target.part, root),
         None => tree.wml_body_strict(),
     }
 }

@@ -879,6 +879,35 @@ fn tracked_note_revisions_docx() -> Vec<u8> {
     ])
 }
 
+fn tracked_header_footer_revisions_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rIdFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:r><w:t>Body</w:t></w:r></w:p><w:sectPr><w:headerReference w:type="default" r:id="rIdHeader"/><w:footerReference w:type="default" r:id="rIdFooter"/></w:sectPr></w:body></w:document>"#,
+        ),
+        (
+            "word/header1.xml",
+            r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:ins w:id="7"><w:r><w:t>Header added</w:t></w:r></w:ins><w:del w:id="8"><w:r><w:delText>Header removed</w:delText></w:r></w:del></w:p></w:hdr>"#,
+        ),
+        (
+            "word/footer1.xml",
+            r#"<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:moveFrom w:id="9"><w:r><w:delText>Footer from</w:delText></w:r></w:moveFrom><w:moveTo w:id="10"><w:r><w:t>Footer to</w:t></w:r></w:moveTo></w:p></w:ftr>"#,
+        ),
+    ])
+}
+
 #[test]
 fn fill_content_control_by_tag_updates_matching_controls() {
     let mut doc = Document::open(&content_control_docx()).expect("fixture opens");
@@ -1379,6 +1408,36 @@ fn accept_all_revisions_accepts_note_tracked_changes() {
 }
 
 #[test]
+fn accept_all_revisions_accepts_header_footer_tracked_changes() {
+    let mut doc = Document::open(&tracked_header_footer_revisions_docx()).expect("fixture opens");
+
+    assert_eq!(doc.revisions().len(), 4);
+    let changed = doc
+        .accept_all_revisions()
+        .expect("header/footer revisions accepted");
+
+    assert_eq!(changed, 4);
+    assert_eq!(doc.edited_parts(), ["word/footer1.xml", "word/header1.xml"]);
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let header = String::from_utf8(parts["word/header1.xml"].clone()).unwrap();
+    let footer = String::from_utf8(parts["word/footer1.xml"].clone()).unwrap();
+    for marker in ["<w:ins", "<w:del", "<w:moveFrom", "<w:moveTo", "<w:delText"] {
+        assert!(
+            !header.contains(marker) && !footer.contains(marker),
+            "accepted header/footer revisions still contain {marker}: {header} {footer}"
+        );
+    }
+    assert!(header.contains("Header added") && !header.contains("Header removed"));
+    assert!(footer.contains("Footer to") && !footer.contains("Footer from"));
+
+    let reopened = Document::open(&saved).expect("reopen accepted header/footer");
+    assert!(reopened.revisions().is_empty());
+    assert!(reopened.header_text().contains("Header added"));
+    assert!(reopened.header_text().contains("Footer to"));
+}
+
+#[test]
 fn accept_all_revisions_without_revisions_is_noop() {
     let fixture = content_control_docx();
     let before = unzip_parts(&fixture);
@@ -1472,6 +1531,36 @@ fn reject_all_revisions_rejects_note_tracked_changes() {
     assert!(reopened.revisions().is_empty());
     assert_eq!(reopened.footnote_text(), "Foot removed");
     assert_eq!(reopened.endnote_text(), "End from");
+}
+
+#[test]
+fn reject_all_revisions_rejects_header_footer_tracked_changes() {
+    let mut doc = Document::open(&tracked_header_footer_revisions_docx()).expect("fixture opens");
+
+    assert_eq!(doc.revisions().len(), 4);
+    let changed = doc
+        .reject_all_revisions()
+        .expect("header/footer revisions rejected");
+
+    assert_eq!(changed, 6);
+    assert_eq!(doc.edited_parts(), ["word/footer1.xml", "word/header1.xml"]);
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let header = String::from_utf8(parts["word/header1.xml"].clone()).unwrap();
+    let footer = String::from_utf8(parts["word/footer1.xml"].clone()).unwrap();
+    for marker in ["<w:ins", "<w:del", "<w:moveFrom", "<w:moveTo", "<w:delText"] {
+        assert!(
+            !header.contains(marker) && !footer.contains(marker),
+            "rejected header/footer revisions still contain {marker}: {header} {footer}"
+        );
+    }
+    assert!(header.contains("Header removed") && !header.contains("Header added"));
+    assert!(footer.contains("Footer from") && !footer.contains("Footer to"));
+
+    let reopened = Document::open(&saved).expect("reopen rejected header/footer");
+    assert!(reopened.revisions().is_empty());
+    assert!(reopened.header_text().contains("Header removed"));
+    assert!(reopened.header_text().contains("Footer from"));
 }
 
 #[test]
