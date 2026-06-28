@@ -2855,6 +2855,7 @@ fn replace_image_png_updates_existing_media_part_only() {
     doc.replace_image_png(&replacement_png, "image1.png")
         .expect("replace existing image");
 
+    assert_eq!(doc.edited_parts(), ["word/media/image1.png"]);
     let saved = doc.save().expect("save edited docx");
     let parts = unzip_parts(&saved);
     assert_eq!(parts["word/media/image1.png"], replacement_png);
@@ -2907,6 +2908,15 @@ fn add_image_jpeg_inserts_media_relationship_and_content_type() {
     doc.add_image_jpeg(&jpeg, "photo.jpg")
         .expect("insert jpeg image");
 
+    assert_eq!(
+        doc.edited_parts(),
+        [
+            "[Content_Types].xml",
+            "word/_rels/document.xml.rels",
+            "word/document.xml",
+            "word/media/photo.jpg"
+        ]
+    );
     let saved = doc.save().expect("save edited docx");
     let parts = unzip_parts(&saved);
     assert_eq!(parts["word/media/photo.jpg"], jpeg);

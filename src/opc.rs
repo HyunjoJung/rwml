@@ -213,6 +213,24 @@ impl ContentTypes {
             None => false,
         }
     }
+
+    fn resolves_as(&self, part: &str, content_type: &str) -> bool {
+        let pn = format!("/{part}");
+        if let Some(o) = self
+            .overrides
+            .iter()
+            .find(|o| o.part_name.eq_ignore_ascii_case(&pn))
+        {
+            return o.content_type == content_type;
+        }
+        match part.rsplit_once('.') {
+            Some((_, ext)) => self
+                .defaults
+                .iter()
+                .any(|d| d.extension.eq_ignore_ascii_case(ext) && d.content_type == content_type),
+            None => false,
+        }
+    }
 }
 
 /// A part's content: raw bytes by default, or a parsed [`XmlTree`] once it has been
@@ -654,7 +672,7 @@ impl Package {
                 if changed {
                     self.regen_content_types();
                 }
-            } else {
+            } else if !self.ctypes.resolves_as(&store_name, ct) {
                 self.ctypes.overrides.push(CtOverride::new(pn, ct));
                 self.regen_content_types();
             }
@@ -1941,7 +1959,7 @@ mod tests {
     }
 
     #[test]
-    fn set_part_adds_override_and_survives_roundtrip() {
+    fn set_part_reuses_matching_default_and_survives_roundtrip() {
         let mut pkg = Package::from_zip(&sample_docx()).unwrap();
         pkg.set_part("word/custom.xml", b"<x/>".to_vec(), Some("application/xml"));
         let out = pkg.to_zip().unwrap();
@@ -1950,10 +1968,14 @@ mod tests {
             reopened.part("word/custom.xml").as_deref(),
             Some(&b"<x/>"[..])
         );
-        assert!(reopened
-            .part("[Content_Types].xml")
-            .map(|b| String::from_utf8_lossy(&b).contains("/word/custom.xml"))
-            .unwrap_or(false));
+        assert!(reopened.part_has_content_type("word/custom.xml"));
+        assert!(
+            !reopened
+                .part("[Content_Types].xml")
+                .map(|b| String::from_utf8_lossy(&b).contains("/word/custom.xml"))
+                .unwrap_or(false),
+            "matching Default should avoid a redundant Override"
+        );
     }
 
     #[test]
