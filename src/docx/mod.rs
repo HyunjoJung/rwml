@@ -1545,7 +1545,7 @@ fn parse_custom_properties(xml: &str) -> BTreeMap<String, String> {
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"property" => {
-                if let Some(name) = attr_local(&e, b"name").filter(|name| !name.trim().is_empty()) {
+                if let Some(name) = attr_local_trimmed(&e, b"name") {
                     if let Some(value) = read_custom_property_value(&mut r) {
                         props.insert(name, value);
                     }
@@ -1554,7 +1554,7 @@ fn parse_custom_properties(xml: &str) -> BTreeMap<String, String> {
                 }
             }
             Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"property" => {
-                if let Some(name) = attr_local(&e, b"name").filter(|name| !name.trim().is_empty()) {
+                if let Some(name) = attr_local_trimmed(&e, b"name") {
                     props.insert(name, String::new());
                 }
             }
@@ -1677,7 +1677,7 @@ fn parse_document_variables(xml: &str) -> HashMap<String, String> {
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"docVar" => {
-                if let Some(name) = attr_local(&e, b"name").filter(|name| !name.trim().is_empty()) {
+                if let Some(name) = attr_local_trimmed(&e, b"name") {
                     vars.insert(
                         fields::document_property_key(&name),
                         attr_local(&e, b"val").unwrap_or_default(),

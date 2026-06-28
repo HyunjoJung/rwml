@@ -270,7 +270,7 @@ fn document_info_package_properties_field_docx() -> Vec<u8> {
         ),
         (
             "docProps/custom.xml",
-            r#"<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="2" name="Client Name"><vt:lpwstr>acme launch</vt:lpwstr></property><property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="3" name="RiskScore"><vt:i4>7</vt:i4></property><property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="4" name="Review Date"><vt:filetime>2026-06-15T09:10:11Z</vt:filetime></property></Properties>"#,
+            r#"<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="2" name=" Client Name "><vt:lpwstr>acme launch</vt:lpwstr></property><property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="3" name="RiskScore"><vt:i4>7</vt:i4></property><property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="4" name="Review Date"><vt:filetime>2026-06-15T09:10:11Z</vt:filetime></property></Properties>"#,
         ),
         (
             "docProps/app.xml",
@@ -278,7 +278,7 @@ fn document_info_package_properties_field_docx() -> Vec<u8> {
         ),
         (
             "word/settings.xml",
-            r#"<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docVars><w:docVar w:name="ClientCode" w:val="alpha-42"/></w:docVars></w:settings>"#,
+            r#"<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docVars><w:docVar w:name=" ClientCode " w:val="alpha-42"/></w:docVars></w:settings>"#,
         ),
         (
             "word/document.xml",
@@ -3237,6 +3237,13 @@ fn docx_document_info_fields_compute_package_properties_when_available() {
     let fields = doc.fields();
 
     assert_eq!(fields.len(), 46);
+    assert_eq!(
+        doc.model()
+            .custom_properties
+            .get("Client Name")
+            .map(String::as_str),
+        Some("acme launch")
+    );
     assert_eq!(fields[0].kind, FieldKind::DocumentInfo("TITLE".to_string()));
     assert_eq!(fields[0].result, "stale title");
     assert_eq!(fields[0].computed_result.as_deref(), Some("Quarter Plan"));
