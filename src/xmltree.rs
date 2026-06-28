@@ -2019,6 +2019,12 @@ impl XmlTree {
     ) -> bool {
         let base = scope.len();
         self.push_xmlns(id, scope);
+        if self.wml_revision_edit_action(id, scope, WmlRevisionEditPolicy::Accept)
+            == WmlRevisionEditAction::Remove
+        {
+            scope.truncate(base);
+            return false;
+        }
         if self.find_wml_child_run_range(id, scope, anchor_text, out) {
             scope.truncate(base);
             return true;

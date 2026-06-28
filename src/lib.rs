@@ -1527,10 +1527,11 @@ impl Document {
     }
 
     /// **Package-preserving edit: add a `.docx` comment anchored to body text.**
-    /// Finds the first body `w:r` or adjacent body `w:r` sequence whose visible
-    /// `w:t` text equals `anchor_text`, inserts comment range/reference markup
-    /// around those runs, appends a new `w:comment` to `word/comments.xml`, and
-    /// creates the comments part and document relationship if they are missing.
+    /// Finds the first accepted-current body `w:r` or adjacent body `w:r`
+    /// sequence whose visible `w:t` text equals `anchor_text`, inserts comment
+    /// range/reference markup around those runs, appends a new `w:comment` to
+    /// `word/comments.xml`, and creates the comments part and document
+    /// relationship if they are missing.
     ///
     /// This is intentionally conservative: it anchors whole adjacent runs, not an
     /// arbitrary character range inside a run. The returned string is the allocated
@@ -1650,11 +1651,11 @@ impl Document {
     }
 
     /// **Package-preserving edit: add a `.docx` footnote anchored to body text.**
-    /// Finds the first body `w:r` or adjacent body `w:r` sequence whose visible
-    /// `w:t` text equals `anchor_text`, inserts a `w:footnoteReference` run after
-    /// the matched runs, appends a new real `w:footnote` to `word/footnotes.xml`,
-    /// and creates the footnotes part, relationship, and content type if they are
-    /// missing.
+    /// Finds the first accepted-current body `w:r` or adjacent body `w:r`
+    /// sequence whose visible `w:t` text equals `anchor_text`, inserts a
+    /// `w:footnoteReference` run after the matched runs, appends a new real
+    /// `w:footnote` to `word/footnotes.xml`, and creates the footnotes part,
+    /// relationship, and content type if they are missing.
     ///
     /// This is intentionally conservative: it anchors whole adjacent runs, not an
     /// arbitrary character range inside a run. The returned string is the allocated
@@ -1700,11 +1701,11 @@ impl Document {
     }
 
     /// **Package-preserving edit: add a `.docx` endnote anchored to body text.**
-    /// Finds the first body `w:r` or adjacent body `w:r` sequence whose visible
-    /// `w:t` text equals `anchor_text`, inserts a `w:endnoteReference` run after
-    /// the matched runs, appends a new real `w:endnote` to `word/endnotes.xml`,
-    /// and creates the endnotes part, relationship, and content type if they are
-    /// missing.
+    /// Finds the first accepted-current body `w:r` or adjacent body `w:r`
+    /// sequence whose visible `w:t` text equals `anchor_text`, inserts a
+    /// `w:endnoteReference` run after the matched runs, appends a new real
+    /// `w:endnote` to `word/endnotes.xml`, and creates the endnotes part,
+    /// relationship, and content type if they are missing.
     ///
     /// This is intentionally conservative: it anchors whole adjacent runs, not an
     /// arbitrary character range inside a run. The returned string is the allocated

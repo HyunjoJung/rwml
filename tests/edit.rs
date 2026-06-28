@@ -2429,6 +2429,47 @@ fn add_footnote_on_text_creates_part_relationship_anchor_and_note() {
 }
 
 #[test]
+fn add_footnote_on_text_skips_deleted_anchor_text() {
+    let fixture = docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:del w:id="1"><w:p><w:r><w:t>BODY</w:t></w:r></w:p></w:del><w:moveFrom w:id="2"><w:p><w:r><w:t>BODY</w:t></w:r></w:p></w:moveFrom><w:p><w:r><w:t>BODY</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ]);
+    let mut doc = Document::open(&fixture).expect("fixture opens");
+
+    doc.add_footnote_on_text("BODY", "Source note")
+        .expect("footnote anchored to visible body text");
+
+    let body = String::from_utf8(
+        unzip_parts(&doc.save().expect("save edited docx"))["word/document.xml"].clone(),
+    )
+    .unwrap();
+    assert!(
+        body.contains(r#"<w:del w:id="1"><w:p><w:r><w:t>BODY</w:t></w:r></w:p></w:del>"#),
+        "deleted anchor text changed: {body}"
+    );
+    assert!(
+        body.contains(r#"<w:moveFrom w:id="2"><w:p><w:r><w:t>BODY</w:t></w:r></w:p></w:moveFrom>"#),
+        "moved-from anchor text changed: {body}"
+    );
+    let anchor = body.rfind(r#"<w:t>BODY</w:t>"#).unwrap_or(usize::MAX);
+    let reference = body.find(r#"<w:footnoteReference"#).unwrap_or(usize::MAX);
+    assert!(
+        anchor < reference && body.contains(r#"<w:footnoteReference w:id="1"/>"#),
+        "footnote reference missing from current body text: {body}"
+    );
+}
+
+#[test]
 fn add_notes_on_text_preserve_edge_whitespace() {
     let mut doc = Document::open(&no_notes_docx()).expect("fixture opens");
 
