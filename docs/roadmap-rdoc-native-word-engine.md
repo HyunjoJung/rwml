@@ -336,19 +336,19 @@ Initial status:
   evaluation is implemented. The
   inserted/external-content fields (`INCLUDETEXT`, `INCLUDEPICTURE`, `LINK`,
   `EMBED`, `DATABASE`, `DDE`, `DDEAUTO`, `IMPORT`, `INCLUDE`, `AUTOTEXT`,
-  `AUTOTEXTLIST`) are named separately from unknown fields, malformed quoted
-  instruction syntax reports `UnsupportedSwitch`, and valid broader forms report
+  `AUTOTEXTLIST`) are named separately from unknown fields, malformed quoted or
+  field-result format syntax reports `UnsupportedSwitch`, and valid broader forms report
   `NoComputedResult` until native evaluation is implemented. Mail-merge helper
   fields (`ADDRESSBLOCK`, `GREETINGLINE`,
   `MERGEREC`, `MERGESEQ`) are named separately from unknown fields, malformed
-  quoted instruction syntax reports `UnsupportedSwitch`, and valid broader forms
+  quoted or field-result format syntax reports `UnsupportedSwitch`, and valid broader forms
   report `NoComputedResult` until native merge-record evaluation is implemented.
   The
   reference/index fields (`BIBLIOGRAPHY`, `CITATION`, `INDEX`, `RD`, `TA`,
   `TOA`, `XE`) are named separately from unknown fields, deterministic simple
   literal `RD`/`TA`/`XE` marker fields with field-result format switches render
   as hidden output, invalid marker syntax reports `UnsupportedSwitch`, malformed
-  generated-field quoted syntax reports `UnsupportedSwitch`, and valid broader
+  generated-field quoted or field-result format syntax reports `UnsupportedSwitch`, and valid broader
   generated bibliography/citation/index/table-of-authorities fields report
   `NoComputedResult` until native generation is implemented. The
   numbering/list fields compute deterministic source-order plain `AUTONUM`
@@ -414,8 +414,8 @@ Initial status:
   while valid broader action/automation forms report `NoComputedResult` without
   executing side effects. The
   compatibility/private fields (`PRIVATE`, `ADDIN`, `DATA`, `GLOSSARY`,
-  `HTMLACTIVEX`) are named separately from unknown fields, malformed quoted
-  instruction syntax reports `UnsupportedSwitch`, and valid broader forms report
+  `HTMLACTIVEX`) are named separately from unknown fields, malformed quoted or
+  field-result format syntax reports `UnsupportedSwitch`, and valid broader forms report
   `NoComputedResult` while leaving opaque payloads uninterpreted. The
   barcode fields (`BARCODE`, `DISPLAYBARCODE`, `MERGEBARCODE`) are named
   separately from unknown fields, malformed syntax reports `UnsupportedSwitch`,
@@ -832,16 +832,17 @@ Initial status:
   dynamic/control fields preserve cached text with `NoComputedResult`
   diagnostics.
   Inserted/external-content fields are likewise named separately
-  from unknown fields, preserve cached text, report malformed quoted syntax as
-  `UnsupportedSwitch`, and keep valid broader forms as `NoComputedResult`
+  from unknown fields, preserve cached text, report malformed quoted or
+  field-result format syntax as `UnsupportedSwitch`, and keep valid broader forms as `NoComputedResult`
   diagnostics. Mail-merge helper fields are named separately from unknown
-  fields, preserve cached text, report malformed quoted syntax as
+  fields, preserve cached text, report malformed quoted or field-result format syntax as
   `UnsupportedSwitch`, and keep valid broader forms as `NoComputedResult`
   diagnostics.
   Reference/index fields are named separately from unknown fields; simple
   literal `RD`/`TA`/`XE` marker fields with field-result format switches render
   as hidden output, invalid marker syntax reports `UnsupportedSwitch`, while
-  malformed generated-field quoted syntax reports `UnsupportedSwitch`, and valid
+  malformed generated-field quoted or field-result format syntax reports
+  `UnsupportedSwitch`, and valid
   broader generated bibliography/citation/index/table-of-authorities fields
   preserve cached text with `NoComputedResult` diagnostics.
   Numbering/list fields compute deterministic source-order plain `AUTONUM`
@@ -888,8 +889,9 @@ Initial status:
   reports `UnsupportedSwitch`, while valid broader action/automation fields
   preserve cached text with `NoComputedResult` diagnostics.
   Compatibility/private fields are named separately from unknown fields,
-  preserve cached text, report malformed quoted syntax as `UnsupportedSwitch`,
-  and keep valid broader forms as `NoComputedResult` diagnostics.
+  preserve cached text, report malformed quoted or field-result format syntax
+  as `UnsupportedSwitch`, and keep valid broader forms as `NoComputedResult`
+  diagnostics.
   Barcode fields are named separately from unknown fields, preserve cached text,
   report malformed syntax as `UnsupportedSwitch`, and keep valid broader forms
   as `NoComputedResult` diagnostics.

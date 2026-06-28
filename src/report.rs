@@ -3238,7 +3238,27 @@ fn supported_opaque_field_syntax(instruction: &str, is_kind: fn(&str) -> bool) -
     if !is_kind(kind) {
         return false;
     }
-    parts.all(diagnostic_field_token_well_formed)
+    while let Some(part) = parts.next() {
+        let Some(accepted) = accept_general_format_switch(
+            part,
+            &mut parts,
+            diagnostic_format_switch_token_well_formed,
+        ) else {
+            return false;
+        };
+        if accepted {
+            continue;
+        }
+        if !diagnostic_field_token_well_formed(part) {
+            return false;
+        }
+    }
+    true
+}
+
+fn diagnostic_format_switch_token_well_formed(part: &str) -> bool {
+    let part = part.trim();
+    !part.starts_with('"') && diagnostic_name_token(part).is_some()
 }
 
 fn diagnostic_field_token_well_formed(part: &str) -> bool {
@@ -6108,26 +6128,34 @@ mod tests {
 
     #[test]
     fn opaque_field_diagnostics_reject_malformed_quoted_syntax() {
-        for (kind, valid, malformed) in [
+        for (kind, valid, valid_format, malformed, malformed_format) in [
             (
                 FieldKind::InsertedContent("INCLUDETEXT".to_string()),
                 r#"INCLUDETEXT "chapter.docx""#,
+                r#"INCLUDETEXT "chapter.docx" \* Upper"#,
                 r#"INCLUDETEXT "chapter.docx"#,
+                r#"INCLUDETEXT "chapter.docx" \*"#,
             ),
             (
                 FieldKind::MailMerge("ADDRESSBLOCK".to_string()),
                 r#"ADDRESSBLOCK \f "Dear""#,
+                r#"ADDRESSBLOCK \* MERGEFORMAT"#,
                 r#"ADDRESSBLOCK \f "Dear"#,
+                r#"ADDRESSBLOCK \* \x"#,
             ),
             (
                 FieldKind::ReferenceIndex("INDEX".to_string()),
                 r#"INDEX \c "2""#,
+                r#"INDEX \c "2" \* Lower"#,
                 r#"INDEX \c "2"#,
+                r#"INDEX \c "2" \*"#,
             ),
             (
                 FieldKind::Compatibility("PRIVATE".to_string()),
                 r#"PRIVATE "payload""#,
+                r#"PRIVATE payload \* CHARFORMAT"#,
                 r#"PRIVATE "payload"#,
+                r#"PRIVATE payload \* "Upper""#,
             ),
         ] {
             let valid_field = Field {
@@ -6139,13 +6167,31 @@ mod tests {
                 super::unsupported_field_reason(&valid_field),
                 Some(super::FieldEvaluationReason::NoComputedResult)
             );
+            let valid_format_field = Field {
+                kind: kind.clone(),
+                instruction: valid_format.to_string(),
+                ..Field::default()
+            };
+            assert_eq!(
+                super::unsupported_field_reason(&valid_format_field),
+                Some(super::FieldEvaluationReason::NoComputedResult)
+            );
             let malformed_field = Field {
-                kind,
+                kind: kind.clone(),
                 instruction: malformed.to_string(),
                 ..Field::default()
             };
             assert_eq!(
                 super::unsupported_field_reason(&malformed_field),
+                Some(super::FieldEvaluationReason::UnsupportedSwitch)
+            );
+            let malformed_format_field = Field {
+                kind,
+                instruction: malformed_format.to_string(),
+                ..Field::default()
+            };
+            assert_eq!(
+                super::unsupported_field_reason(&malformed_format_field),
                 Some(super::FieldEvaluationReason::UnsupportedSwitch)
             );
         }

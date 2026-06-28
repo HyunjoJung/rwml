@@ -5331,13 +5331,13 @@ fn docx_inserted_content_diagnostics_split_valid_broader_fields_from_malformed_s
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" INCLUDETEXT &quot;appendix.docx&quot; "><w:r><w:t>Appendix text</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" INCLUDEPICTURE &quot;chart.png "><w:r><w:t>cached malformed include picture</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" INCLUDETEXT &quot;appendix.docx&quot; "><w:r><w:t>Appendix text</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" INCLUDEPICTURE &quot;chart.png "><w:r><w:t>cached malformed include picture</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" LINK \* "><w:r><w:t>cached dangling format switch</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ]))
     .expect("fixture opens");
 
     let fields = doc.fields();
-    assert_eq!(fields.len(), 2);
+    assert_eq!(fields.len(), 3);
     assert_eq!(
         fields[0].kind,
         FieldKind::InsertedContent("INCLUDETEXT".to_string())
@@ -5350,6 +5350,12 @@ fn docx_inserted_content_diagnostics_split_valid_broader_fields_from_malformed_s
     );
     assert_eq!(fields[1].instruction, r#"INCLUDEPICTURE "chart.png "#);
     assert_eq!(fields[1].computed_result, None);
+    assert_eq!(
+        fields[2].kind,
+        FieldKind::InsertedContent("LINK".to_string())
+    );
+    assert_eq!(fields[2].instruction, r#"LINK \*"#);
+    assert_eq!(fields[2].computed_result, None);
 
     let report = doc.report();
     assert_eq!(
@@ -5363,6 +5369,10 @@ fn docx_inserted_content_diagnostics_split_valid_broader_fields_from_malformed_s
                 kind: FieldKind::InsertedContent("INCLUDEPICTURE".to_string()),
                 count: 1,
             },
+            FieldKindCount {
+                kind: FieldKind::InsertedContent("LINK".to_string()),
+                count: 1,
+            },
         ]
     );
     assert_eq!(
@@ -5374,11 +5384,12 @@ fn docx_inserted_content_diagnostics_split_valid_broader_fields_from_malformed_s
             },
             FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::UnsupportedSwitch,
-                count: 1,
+                count: 2,
             },
         ]
     );
     assert!(doc.main_text().contains("cached malformed include picture"));
+    assert!(doc.main_text().contains("cached dangling format switch"));
 }
 
 #[test]
