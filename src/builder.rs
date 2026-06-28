@@ -92,7 +92,7 @@ impl RunBuilder {
 
     /// Mark the run as the cached result of a hyperlink-style `PAGEREF` field.
     pub fn page_ref(self, bookmark: impl Into<String>) -> Self {
-        let bookmark = bookmark.into();
+        let bookmark = bookmark.into().trim().to_string();
         if referenceable_bookmark_name(&bookmark) {
             self.field(format!("PAGEREF {bookmark} \\h"))
         } else {

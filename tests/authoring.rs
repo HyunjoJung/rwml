@@ -1294,7 +1294,7 @@ fn run_builder_skips_unreferenceable_bookmark_names() {
 fn run_builder_adds_page_ref_field() {
     let model = DocBuilder::new()
         .paragraph_runs([RunBuilder::new("Figure 1").bookmark("Figure1").build()])
-        .paragraph_runs([RunBuilder::new("3").page_ref("Figure1").build()])
+        .paragraph_runs([RunBuilder::new("3").page_ref(" Figure1 ").build()])
         .build();
 
     let Block::Paragraph(paragraph) = &model.blocks[1] else {
