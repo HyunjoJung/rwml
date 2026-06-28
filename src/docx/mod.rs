@@ -1718,7 +1718,7 @@ fn parse_document_id(xml: &str) -> Option<String> {
     let mut r = Reader::from_str(xml);
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if e.name().as_ref() == b"w14:docId" => {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"docId" => {
                 return attr_local(&e, b"val")
                     .map(|id| id.trim().to_owned())
                     .filter(|id| !id.is_empty());
@@ -2157,6 +2157,13 @@ mod tests {
             <w14:docId w14:val=" 6ECD4467 "/>
         </w:settings>"#;
         assert_eq!(parse_document_id(xml).as_deref(), Some("6ECD4467"));
+
+        let alternate_prefix =
+            r#"<settings><m:docId xmlns:m="urn:any" m:val=" 6ECD4467 "/></settings>"#;
+        assert_eq!(
+            parse_document_id(alternate_prefix).as_deref(),
+            Some("6ECD4467")
+        );
     }
 
     #[test]
