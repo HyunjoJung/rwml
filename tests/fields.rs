@@ -809,7 +809,7 @@ fn reference_index_field_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" BIBLIOGRAPHY \l 1033 "><w:r><w:t>Works cited</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" CITATION Smith2026 \l 1033 "><w:r><w:t>(Smith, 2026)</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" INDEX \e &quot; - &quot; "><w:r><w:t>Index preview</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TOA \c &quot;1&quot; "><w:r><w:t>Authorities</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TA \l &quot;Case v. Example&quot; \c 1 "><w:r><w:t>Case v. Example</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" XE &quot;Term&quot; "><w:r><w:t>Term</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" RD &quot;appendix.docx&quot; "><w:r><w:t>Referenced doc</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TA \l&quot;Compact Case&quot; \c2 "><w:r><w:t>Compact Case</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TA \sShortEntry \c3 "><w:r><w:t>Short Entry</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" XE &quot;See Term&quot; \t&quot;See Also&quot; "><w:r><w:t>See Term</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" XE &quot;Duplicate Format&quot; \* Upper \* Lower "><w:r><w:t>Duplicate Format</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TA \l &quot;Broken Case&quot; \c 99 "><w:r><w:t>Broken Case</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" BIBLIOGRAPHY \l 1033 "><w:r><w:t>Works cited</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" CITATION Smith2026 \l 1033 "><w:r><w:t>(Smith, 2026)</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" INDEX \e &quot; - &quot; "><w:r><w:t>Index preview</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TOA \c &quot;1&quot; "><w:r><w:t>Authorities</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TA \l &quot;Case v. Example&quot; \c 1 "><w:r><w:t>Case v. Example</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" XE &quot;Term&quot; "><w:r><w:t>Term</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" RD &quot;appendix.docx&quot; "><w:r><w:t>Referenced doc</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TA \l&quot;Compact Case&quot; \c2 "><w:r><w:t>Compact Case</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TA \sShortEntry \c3 "><w:r><w:t>Short Entry</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" XE &quot;See Term&quot; \t&quot;See Also&quot; "><w:r><w:t>See Term</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" RD &quot;formatted-appendix.docx&quot; \*MERGEFORMAT "><w:r><w:t>Formatted referenced doc</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TA \l &quot;Formatted Case&quot; \c 1 \*CHARFORMAT "><w:r><w:t>Formatted Case</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" XE &quot;Formatted Term&quot; \*MERGEFORMAT "><w:r><w:t>Formatted Term</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" XE &quot;Duplicate Format&quot; \* Upper \* Lower "><w:r><w:t>Duplicate Format</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TA \l &quot;Broken Case&quot; \c 99 "><w:r><w:t>Broken Case</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -5569,7 +5569,7 @@ fn docx_reference_index_fields_are_named_noncomputed_fields() {
     let doc = Document::open(&reference_index_field_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 12);
+    assert_eq!(fields.len(), 15);
     assert_eq!(
         fields[0].kind,
         FieldKind::ReferenceIndex("BIBLIOGRAPHY".to_string())
@@ -5613,17 +5613,38 @@ fn docx_reference_index_fields_are_named_noncomputed_fields() {
     assert_eq!(fields[9].instruction, "XE \"See Term\" \\t\"See Also\"");
     assert_eq!(fields[9].result, "See Term");
     assert_eq!(fields[9].computed_result.as_deref(), Some(""));
-    assert_eq!(fields[10].kind, FieldKind::ReferenceIndex("XE".to_string()));
+    assert_eq!(fields[10].kind, FieldKind::ReferenceIndex("RD".to_string()));
     assert_eq!(
         fields[10].instruction,
+        "RD \"formatted-appendix.docx\" \\*MERGEFORMAT"
+    );
+    assert_eq!(fields[10].result, "Formatted referenced doc");
+    assert_eq!(fields[10].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[11].kind, FieldKind::ReferenceIndex("TA".to_string()));
+    assert_eq!(
+        fields[11].instruction,
+        "TA \\l \"Formatted Case\" \\c 1 \\*CHARFORMAT"
+    );
+    assert_eq!(fields[11].result, "Formatted Case");
+    assert_eq!(fields[11].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[12].kind, FieldKind::ReferenceIndex("XE".to_string()));
+    assert_eq!(
+        fields[12].instruction,
+        "XE \"Formatted Term\" \\*MERGEFORMAT"
+    );
+    assert_eq!(fields[12].result, "Formatted Term");
+    assert_eq!(fields[12].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[13].kind, FieldKind::ReferenceIndex("XE".to_string()));
+    assert_eq!(
+        fields[13].instruction,
         "XE \"Duplicate Format\" \\* Upper \\* Lower"
     );
-    assert_eq!(fields[10].result, "Duplicate Format");
-    assert_eq!(fields[10].computed_result, None);
-    assert_eq!(fields[11].kind, FieldKind::ReferenceIndex("TA".to_string()));
-    assert_eq!(fields[11].instruction, "TA \\l \"Broken Case\" \\c 99");
-    assert_eq!(fields[11].result, "Broken Case");
-    assert_eq!(fields[11].computed_result, None);
+    assert_eq!(fields[13].result, "Duplicate Format");
+    assert_eq!(fields[13].computed_result, None);
+    assert_eq!(fields[14].kind, FieldKind::ReferenceIndex("TA".to_string()));
+    assert_eq!(fields[14].instruction, "TA \\l \"Broken Case\" \\c 99");
+    assert_eq!(fields[14].result, "Broken Case");
+    assert_eq!(fields[14].computed_result, None);
 
     let report = doc.report();
     assert_eq!(
@@ -5684,7 +5705,10 @@ fn docx_reference_index_fields_are_named_noncomputed_fields() {
             && !main_text.contains("Referenced doc")
             && !main_text.contains("Compact Case")
             && !main_text.contains("Short Entry")
-            && !main_text.contains("See Term"),
+            && !main_text.contains("See Term")
+            && !main_text.contains("Formatted referenced doc")
+            && !main_text.contains("Formatted Case")
+            && !main_text.contains("Formatted Term"),
         "computed RD/TA/XE marker fields should be hidden in main text: {main_text:?}"
     );
 }
