@@ -3802,7 +3802,7 @@ fn page_ref_on_off_enabled(e: &BytesStart<'_>) -> bool {
 
 fn page_ref_section_break(e: &BytesStart<'_>) -> Option<PageRefSectionBreak> {
     match attr_local(e, b"val").as_deref().map(str::trim) {
-        Some("nextPage") => Some(PageRefSectionBreak::Next),
+        None | Some("") | Some("nextPage") => Some(PageRefSectionBreak::Next),
         Some("evenPage") => Some(PageRefSectionBreak::Even),
         Some("oddPage") => Some(PageRefSectionBreak::Odd),
         _ => None,
