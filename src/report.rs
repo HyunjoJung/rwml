@@ -4553,10 +4553,12 @@ fn supported_note_ref_target(instruction: &str) -> Option<String> {
     let target = diagnostic_identifier_token(parts.next()?)?.to_string();
     let mut relative = false;
     let mut formatted = false;
+    let mut number_format = false;
     let mut text_format = false;
     while let Some(part) = parts.next() {
         if accept_general_format_switch(part, &mut parts, |format| {
-            accept_note_ref_format_switch(format, &mut text_format)
+            accept_page_number_format_switch(format, &mut number_format)
+                || accept_note_ref_format_switch(format, &mut text_format)
         })? {
             continue;
         }
@@ -4580,6 +4582,9 @@ fn supported_note_ref_target(instruction: &str) -> Option<String> {
             }
             return None;
         }
+        return None;
+    }
+    if relative && number_format {
         return None;
     }
     Some(target)

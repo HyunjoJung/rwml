@@ -856,7 +856,7 @@ fn note_ref_field_diagnostics_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="FootOne"/><w:r><w:footnoteReference w:id="1"/></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:bookmarkStart w:id="8" w:name="PlainText"/><w:r><w:t>Not a note mark</w:t></w:r><w:bookmarkEnd w:id="8"/></w:p><w:p><w:fldSimple w:instr=" NOTEREF FootOne "><w:r><w:t>stale note</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NOTEREF FootOne \p "><w:r><w:t>stale relative note</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NOTEREF PlainText "><w:r><w:t>plain bookmark note</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NOTEREF MissingNote "><w:r><w:t>missing note</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NOTEREF MissingFormattedNote \* Upper "><w:r><w:t>missing formatted note</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NOTEREF FootOne \x "><w:r><w:t>unsupported note switch</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="FootOne"/><w:r><w:footnoteReference w:id="1"/></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:bookmarkStart w:id="8" w:name="PlainText"/><w:r><w:t>Not a note mark</w:t></w:r><w:bookmarkEnd w:id="8"/></w:p><w:p><w:fldSimple w:instr=" NOTEREF FootOne "><w:r><w:t>stale note</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NOTEREF FootOne \p "><w:r><w:t>stale relative note</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NOTEREF PlainText "><w:r><w:t>plain bookmark note</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NOTEREF MissingNote "><w:r><w:t>missing note</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NOTEREF MissingFormattedNote \* Upper "><w:r><w:t>missing formatted note</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NOTEREF MissingRomanNote \* roman "><w:r><w:t>missing roman note</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NOTEREF FootOne \x "><w:r><w:t>unsupported note switch</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -3267,7 +3267,7 @@ fn report_note_ref_field_warning_tracks_unresolved_and_unsupported_cases() {
     let doc = Document::open(&note_ref_field_diagnostics_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 6);
+    assert_eq!(fields.len(), 7);
     assert!(fields.iter().all(|field| field.kind == FieldKind::NoteRef));
     assert_eq!(fields[0].computed_result.as_deref(), Some("1"));
     assert_eq!(fields[1].computed_result.as_deref(), Some("above"));
@@ -3275,22 +3275,23 @@ fn report_note_ref_field_warning_tracks_unresolved_and_unsupported_cases() {
     assert_eq!(fields[3].computed_result, None);
     assert_eq!(fields[4].computed_result, None);
     assert_eq!(fields[5].computed_result, None);
+    assert_eq!(fields[6].computed_result, None);
 
     let report = doc.report();
 
-    assert_eq!(report.features.fields, 6);
+    assert_eq!(report.features.fields, 7);
     assert_eq!(
         report.features.field_kinds,
         vec![FieldKindCount {
             kind: FieldKind::NoteRef,
-            count: 6,
+            count: 7,
         }]
     );
     assert_eq!(
         report.features.unsupported_field_kinds,
         vec![FieldKindCount {
             kind: FieldKind::NoteRef,
-            count: 4,
+            count: 5,
         }]
     );
     assert_eq!(
@@ -3302,7 +3303,7 @@ fn report_note_ref_field_warning_tracks_unresolved_and_unsupported_cases() {
             },
             FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::UnresolvedBookmark,
-                count: 2,
+                count: 3,
             },
         ]
     );
@@ -3312,24 +3313,24 @@ fn report_note_ref_field_warning_tracks_unresolved_and_unsupported_cases() {
             .iter()
             .find(|warning| matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })),
         Some(&DocumentWarning::UnsupportedFieldEvaluation {
-            count: 4,
+            count: 5,
             field_kinds: vec![FieldKindCount {
                 kind: FieldKind::NoteRef,
-                count: 4,
+                count: 5,
             }],
         })
     );
 
     let json = report.to_json();
     assert!(
-        json.contains(r#""field_kinds":[{"kind":"NOTEREF","count":6}]"#),
+        json.contains(r#""field_kinds":[{"kind":"NOTEREF","count":7}]"#),
         "{json}"
     );
     assert!(
-        json.contains(r#""unsupported_field_kinds":[{"kind":"NOTEREF","count":4}]"#),
+        json.contains(r#""unsupported_field_kinds":[{"kind":"NOTEREF","count":5}]"#),
         "{json}"
     );
-    assert!(json.contains(r#""unsupported_field_reasons":[{"reason":"UnsupportedSwitch","count":2},{"reason":"UnresolvedBookmark","count":2}]"#), "{json}");
+    assert!(json.contains(r#""unsupported_field_reasons":[{"reason":"UnsupportedSwitch","count":2},{"reason":"UnresolvedBookmark","count":3}]"#), "{json}");
 }
 
 #[cfg(feature = "docx")]
