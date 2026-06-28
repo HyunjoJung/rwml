@@ -5983,6 +5983,41 @@ mod tests {
     }
 
     #[test]
+    fn barcode_and_form_field_diagnostics_reject_malformed_syntax() {
+        for (kind, valid, malformed) in [
+            (
+                FieldKind::Barcode("DISPLAYBARCODE".to_string()),
+                r#"DISPLAYBARCODE "12345" QR \q 3"#,
+                r#"DISPLAYBARCODE "12345 QR"#,
+            ),
+            (
+                FieldKind::FormField("FORMTEXT".to_string()),
+                r#"FORMTEXT \* MERGEFORMAT"#,
+                r#"FORMTEXT \x"#,
+            ),
+        ] {
+            let valid_field = Field {
+                kind: kind.clone(),
+                instruction: valid.to_string(),
+                ..Field::default()
+            };
+            assert_eq!(
+                super::unsupported_field_reason(&valid_field),
+                Some(super::FieldEvaluationReason::NoComputedResult)
+            );
+            let malformed_field = Field {
+                kind,
+                instruction: malformed.to_string(),
+                ..Field::default()
+            };
+            assert_eq!(
+                super::unsupported_field_reason(&malformed_field),
+                Some(super::FieldEvaluationReason::UnsupportedSwitch)
+            );
+        }
+    }
+
+    #[test]
     fn supported_toc_bookmark_scope_rejects_duplicate_tc_filter() {
         assert!(super::supported_toc_bookmark_scope(r"TOC \f m \f x").is_none());
     }
