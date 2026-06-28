@@ -11,14 +11,14 @@ use crate::annotation::{
     document_property_key, field_identifier_token, field_level_range_token, field_level_token,
     field_literal_token, field_name_token, field_non_empty_literal_token,
     field_non_empty_non_switch_literal_token, field_non_empty_quoted_literal_token,
-    field_non_switch_literal_token, field_points_token, field_positive_points_token,
-    field_quoted_literal_token, field_symbol_code_token, filename_field_syntax, instruction_parts,
+    field_points_token, field_positive_points_token, field_quoted_literal_token,
+    field_symbol_code_token, filename_field_syntax, instruction_parts,
     is_neutral_field_format_switch, is_note_ref_kind, is_ref_value_neutral_switch,
-    is_toc_value_neutral_switch, page_field_format_syntax_tail, reference_index_category_token,
-    reference_index_literal_token, reference_index_plain_value_token,
-    revision_number_field_text_format, set_field_syntax, strip_ascii_switch_prefix,
-    style_ref_field_syntax, toc_style_specs, Field, FieldKind, FieldNumberFormat, FieldTextFormat,
-    StyleRefFieldSyntax, StyleRefResult,
+    is_toc_value_neutral_switch, page_field_format_syntax_tail, prompt_field_syntax,
+    reference_index_category_token, reference_index_literal_token,
+    reference_index_plain_value_token, revision_number_field_text_format, set_field_syntax,
+    strip_ascii_switch_prefix, style_ref_field_syntax, toc_style_specs, Field, FieldKind,
+    FieldNumberFormat, FieldTextFormat, PromptFieldSyntax, StyleRefFieldSyntax, StyleRefResult,
 };
 use crate::{numfmt, CoreProperties};
 
@@ -6837,40 +6837,16 @@ fn computed_fill_in_result(instruction: &str) -> Option<String> {
 }
 
 fn fill_in_instruction(instruction: &str) -> Option<FillInInstruction> {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let kind = parts.next()?;
-    if !kind.eq_ignore_ascii_case("FILLIN") {
-        return None;
+    match prompt_field_syntax(instruction)? {
+        PromptFieldSyntax::FillIn {
+            default,
+            text_format,
+        } => Some(FillInInstruction {
+            default,
+            text_format,
+        }),
+        PromptFieldSyntax::Ask { .. } => None,
     }
-    let mut default = None;
-    let mut text_format = None;
-    let mut ask_once = false;
-    let mut prompt_seen = false;
-    while let Some(part) = parts.next() {
-        if field_prompt_default_switch(part, &mut parts, &mut default) {
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\o") {
-            if ask_once {
-                return None;
-            }
-            ask_once = true;
-            continue;
-        }
-        if accept_field_format_switch_for_tail(part, &mut parts, &mut text_format)? {
-            continue;
-        }
-        let prompt = prompt_text_literal_token(part)?;
-        if prompt.is_empty() || prompt_seen {
-            return None;
-        }
-        prompt_seen = true;
-    }
-    Some(FillInInstruction {
-        default,
-        text_format,
-    })
 }
 
 pub(crate) fn supports_prompt_field_syntax(instruction: &str) -> bool {
@@ -6888,67 +6864,10 @@ pub(crate) fn computed_ask_result(
 }
 
 fn ask_instruction(instruction: &str) -> Option<AskInstruction> {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let kind = parts.next()?;
-    if !kind.eq_ignore_ascii_case("ASK") {
-        return None;
+    match prompt_field_syntax(instruction)? {
+        PromptFieldSyntax::Ask { bookmark, default } => Some(AskInstruction { bookmark, default }),
+        PromptFieldSyntax::FillIn { .. } => None,
     }
-    let bookmark = field_identifier_token(parts.next()?)?;
-    let prompt = prompt_text_literal_token(parts.next()?)?;
-    if prompt.is_empty() {
-        return None;
-    }
-    let mut default = None;
-    let mut ask_once = false;
-    let mut text_format = None;
-    while let Some(part) = parts.next() {
-        if field_prompt_default_switch(part, &mut parts, &mut default) {
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\o") {
-            if ask_once {
-                return None;
-            }
-            ask_once = true;
-            continue;
-        }
-        if accept_field_format_switch_for_tail(part, &mut parts, &mut text_format)? {
-            continue;
-        }
-        return None;
-    }
-    Some(AskInstruction {
-        bookmark: bookmark.to_string(),
-        default,
-    })
-}
-
-fn field_prompt_default_switch<'a, I>(
-    part: &str,
-    parts: &mut I,
-    default: &mut Option<String>,
-) -> bool
-where
-    I: Iterator<Item = &'a str>,
-{
-    let value = if part.eq_ignore_ascii_case("\\d") {
-        parts.next().and_then(prompt_default_literal_token)
-    } else {
-        strip_ascii_switch_prefix(part, "\\d").and_then(prompt_default_literal_token)
-    };
-    let Some(value) = value else {
-        return false;
-    };
-    default.replace(value).is_none()
-}
-
-fn prompt_default_literal_token(token: &str) -> Option<String> {
-    field_non_switch_literal_token(token).map(str::to_string)
-}
-
-fn prompt_text_literal_token(token: &str) -> Option<&str> {
-    field_non_empty_non_switch_literal_token(token)
 }
 
 fn quoted_literal_text(token: &str) -> Option<String> {

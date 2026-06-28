@@ -761,6 +761,108 @@ pub(crate) fn set_field_syntax(instruction: &str) -> bool {
     true
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum PromptFieldSyntax {
+    FillIn {
+        default: Option<String>,
+        text_format: Option<FieldTextFormat>,
+    },
+    Ask {
+        bookmark: String,
+        default: Option<String>,
+    },
+}
+
+pub(crate) fn prompt_field_syntax(instruction: &str) -> Option<PromptFieldSyntax> {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let kind = parts.next()?;
+    if kind.eq_ignore_ascii_case("FILLIN") {
+        return fill_in_field_syntax(parts);
+    }
+    if kind.eq_ignore_ascii_case("ASK") {
+        return ask_field_syntax(parts);
+    }
+    None
+}
+
+fn fill_in_field_syntax<'a>(mut parts: impl Iterator<Item = &'a str>) -> Option<PromptFieldSyntax> {
+    let mut default = None;
+    let mut text_format = None;
+    let mut ask_once = false;
+    let mut prompt_seen = false;
+    while let Some(part) = parts.next() {
+        if prompt_default_switch(part, &mut parts, &mut default) {
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\o") {
+            if ask_once {
+                return None;
+            }
+            ask_once = true;
+            continue;
+        }
+        let accepted = accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_text_format_switch(format, &mut text_format)
+        })?;
+        if accepted {
+            continue;
+        }
+        field_non_empty_non_switch_literal_token(part)?;
+        if prompt_seen {
+            return None;
+        }
+        prompt_seen = true;
+    }
+    Some(PromptFieldSyntax::FillIn {
+        default,
+        text_format,
+    })
+}
+
+fn ask_field_syntax<'a>(mut parts: impl Iterator<Item = &'a str>) -> Option<PromptFieldSyntax> {
+    let bookmark = field_identifier_token(parts.next()?)?.to_string();
+    field_non_empty_non_switch_literal_token(parts.next()?)?;
+    let mut default = None;
+    let mut text_format = None;
+    let mut ask_once = false;
+    while let Some(part) = parts.next() {
+        if prompt_default_switch(part, &mut parts, &mut default) {
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\o") {
+            if ask_once {
+                return None;
+            }
+            ask_once = true;
+            continue;
+        }
+        let accepted = accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_text_format_switch(format, &mut text_format)
+        })?;
+        if !accepted {
+            return None;
+        }
+    }
+    Some(PromptFieldSyntax::Ask { bookmark, default })
+}
+
+fn prompt_default_switch<'a>(
+    part: &str,
+    parts: &mut impl Iterator<Item = &'a str>,
+    default: &mut Option<String>,
+) -> bool {
+    let value = if part.eq_ignore_ascii_case("\\d") {
+        parts.next().and_then(field_non_switch_literal_token)
+    } else {
+        strip_ascii_switch_prefix(part, "\\d").and_then(field_non_switch_literal_token)
+    };
+    let Some(value) = value else {
+        return false;
+    };
+    default.replace(value.to_string()).is_none()
+}
+
 pub(crate) fn document_property_key(value: &str) -> String {
     value
         .chars()

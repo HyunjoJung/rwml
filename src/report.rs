@@ -24,15 +24,14 @@ use crate::annotation::{
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{
     field_non_empty_non_switch_literal_token, field_non_empty_quoted_literal_token,
-    field_non_switch_literal_token,
 };
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{field_points_token, field_positive_points_token, field_symbol_code_token};
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{
-    page_field_format_syntax_tail, reference_index_category_token, reference_index_literal_token,
-    reference_index_plain_value_token, revision_number_field_text_format, set_field_syntax,
-    style_ref_field_syntax,
+    page_field_format_syntax_tail, prompt_field_syntax, reference_index_category_token,
+    reference_index_literal_token, reference_index_plain_value_token,
+    revision_number_field_text_format, set_field_syntax, style_ref_field_syntax,
 };
 use crate::model::{Block, FieldRole, Stats, Table};
 use crate::CoreProperties;
@@ -4068,110 +4067,12 @@ fn prompt_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     }
     #[cfg(not(feature = "docx"))]
     {
-        if supported_prompt_syntax(instruction) {
+        if prompt_field_syntax(instruction).is_some() {
             FieldEvaluationReason::NoComputedResult
         } else {
             FieldEvaluationReason::UnsupportedSwitch
         }
     }
-}
-
-#[cfg(not(feature = "docx"))]
-fn supported_prompt_syntax(instruction: &str) -> bool {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let Some(kind) = parts.next() else {
-        return false;
-    };
-    if kind.eq_ignore_ascii_case("FILLIN") {
-        return supported_fillin_syntax(parts);
-    }
-    if kind.eq_ignore_ascii_case("ASK") {
-        return supported_ask_syntax(parts);
-    }
-    false
-}
-
-#[cfg(not(feature = "docx"))]
-fn supported_fillin_syntax<'a>(mut parts: impl Iterator<Item = &'a str>) -> bool {
-    let mut default = false;
-    let mut text_format = false;
-    let mut ask_once = false;
-    let mut prompt_seen = false;
-    while let Some(part) = parts.next() {
-        if accept_prompt_default_switch(part, &mut parts, &mut default) {
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\o") {
-            if ask_once {
-                return false;
-            }
-            ask_once = true;
-            continue;
-        }
-        let Some(accepted) = accept_field_format_for_report(part, &mut parts, &mut text_format)
-        else {
-            return false;
-        };
-        if accepted {
-            continue;
-        }
-        if prompt_seen || field_non_empty_non_switch_literal_token(part).is_none() {
-            return false;
-        }
-        prompt_seen = true;
-    }
-    true
-}
-
-#[cfg(not(feature = "docx"))]
-fn supported_ask_syntax<'a>(mut parts: impl Iterator<Item = &'a str>) -> bool {
-    if diagnostic_identifier_token(parts.next().unwrap_or("")).is_none() {
-        return false;
-    }
-    let Some(prompt) = parts.next() else {
-        return false;
-    };
-    if field_non_empty_non_switch_literal_token(prompt).is_none() {
-        return false;
-    }
-    let mut default = false;
-    let mut text_format = false;
-    let mut ask_once = false;
-    while let Some(part) = parts.next() {
-        if accept_prompt_default_switch(part, &mut parts, &mut default) {
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\o") {
-            if ask_once {
-                return false;
-            }
-            ask_once = true;
-            continue;
-        }
-        let Some(accepted) = accept_field_format_for_report(part, &mut parts, &mut text_format)
-        else {
-            return false;
-        };
-        if !accepted {
-            return false;
-        }
-    }
-    true
-}
-
-#[cfg(not(feature = "docx"))]
-fn accept_prompt_default_switch<'a>(
-    part: &str,
-    parts: &mut impl Iterator<Item = &'a str>,
-    default: &mut bool,
-) -> bool {
-    let value = if part.eq_ignore_ascii_case("\\d") {
-        parts.next().and_then(field_non_switch_literal_token)
-    } else {
-        strip_ascii_switch_prefix(part, "\\d").and_then(field_non_switch_literal_token)
-    };
-    value.is_some() && !std::mem::replace(default, true)
 }
 
 fn set_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
