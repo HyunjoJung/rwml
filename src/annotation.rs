@@ -474,6 +474,20 @@ where
     Some(false)
 }
 
+pub(crate) fn is_toc_value_neutral_switch(part: &str) -> bool {
+    part.eq_ignore_ascii_case("\\h")
+        || part.eq_ignore_ascii_case("\\z")
+        || part.eq_ignore_ascii_case("\\w")
+        || part.eq_ignore_ascii_case("\\x")
+}
+
+pub(crate) fn strip_ascii_switch_prefix<'a>(part: &'a str, switch: &str) -> Option<&'a str> {
+    let prefix = part.get(..switch.len())?;
+    prefix
+        .eq_ignore_ascii_case(switch)
+        .then_some(&part[switch.len()..])
+}
+
 fn is_document_info_field(token: &str) -> bool {
     matches!(
         token,

@@ -6,7 +6,8 @@
 
 use crate::annotation::{
     accept_field_number_format_switch, accept_field_text_format_switch,
-    accept_general_format_switch, Field, FieldKind, FieldNumberFormat, FieldTextFormat,
+    accept_general_format_switch, is_toc_value_neutral_switch, strip_ascii_switch_prefix, Field,
+    FieldKind, FieldNumberFormat, FieldTextFormat,
 };
 use crate::model::{Block, FieldRole, Stats, Table};
 use crate::CoreProperties;
@@ -4776,7 +4777,7 @@ fn supported_toc_bookmark_scope(instruction: &str) -> Option<Option<String>> {
             saw_default_toc_neutral_switch = true;
             continue;
         }
-        if is_toc_value_neutral_switch_for_report(part) {
+        if is_toc_value_neutral_switch(part) {
             saw_default_toc_neutral_switch = true;
             continue;
         }
@@ -5014,20 +5015,6 @@ fn parse_toc_style_specs_for_report(value: &str) -> Option<()> {
 fn diagnostic_identifier_token(value: &str) -> Option<&str> {
     let value = diagnostic_name_token(value)?;
     (!value.chars().any(char::is_whitespace)).then_some(value)
-}
-
-fn is_toc_value_neutral_switch_for_report(part: &str) -> bool {
-    part.eq_ignore_ascii_case("\\h")
-        || part.eq_ignore_ascii_case("\\z")
-        || part.eq_ignore_ascii_case("\\w")
-        || part.eq_ignore_ascii_case("\\x")
-}
-
-fn strip_ascii_switch_prefix<'a>(part: &'a str, switch: &str) -> Option<&'a str> {
-    let prefix = part.get(..switch.len())?;
-    prefix
-        .eq_ignore_ascii_case(switch)
-        .then_some(&part[switch.len()..])
 }
 
 fn parse_toc_outline_range_for_report(range: &str) -> Option<(u8, u8)> {

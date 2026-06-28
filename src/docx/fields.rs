@@ -8,7 +8,8 @@ use quick_xml::Reader;
 use crate::annotation::{
     accept_field_number_format_switch,
     accept_field_text_format_switch as accept_field_format_switch, accept_general_format_switch,
-    is_neutral_field_format_switch, Field, FieldKind, FieldNumberFormat, FieldTextFormat,
+    is_neutral_field_format_switch, is_toc_value_neutral_switch, strip_ascii_switch_prefix, Field,
+    FieldKind, FieldNumberFormat, FieldTextFormat,
 };
 use crate::{numfmt, CoreProperties};
 
@@ -10305,20 +10306,6 @@ fn parse_toc_style_specs(value: &str) -> Option<Vec<TocStyleSpec>> {
         });
     }
     Some(specs)
-}
-
-fn is_toc_value_neutral_switch(part: &str) -> bool {
-    part.eq_ignore_ascii_case("\\h")
-        || part.eq_ignore_ascii_case("\\z")
-        || part.eq_ignore_ascii_case("\\w")
-        || part.eq_ignore_ascii_case("\\x")
-}
-
-fn strip_ascii_switch_prefix<'a>(part: &'a str, switch: &str) -> Option<&'a str> {
-    let prefix = part.get(..switch.len())?;
-    prefix
-        .eq_ignore_ascii_case(switch)
-        .then_some(&part[switch.len()..])
 }
 
 fn parse_toc_outline_range(range: &str) -> Option<(u8, u8)> {
