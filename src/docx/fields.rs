@@ -8835,6 +8835,7 @@ struct SequenceInstruction {
     action: SequenceAction,
     hidden: bool,
     number_format: Option<PageNumberFormat>,
+    text_format: Option<FieldTextFormat>,
 }
 
 fn sequence_instruction(instruction: &str) -> Option<SequenceInstruction> {
@@ -8858,9 +8859,10 @@ fn sequence_instruction_with_reset_policy(
     let mut heading_reset_seen = false;
     let mut hidden = false;
     let mut number_format = None;
+    let mut text_format = None;
     while let Some(part) = parts.next() {
         if accept_general_format_switch(part, &mut parts, |format| {
-            accept_page_number_format_switch(format, &mut number_format)
+            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
         })? {
             continue;
         }
@@ -8924,6 +8926,7 @@ fn sequence_instruction_with_reset_policy(
         action,
         hidden,
         number_format,
+        text_format,
     })
 }
 
@@ -8972,7 +8975,7 @@ pub(crate) fn computed_sequence_result(
     if !matches!(instruction.action, SequenceAction::Current) {
         counters.insert(instruction.identifier, value);
     }
-    Some(text)
+    Some(apply_field_text_format(text, instruction.text_format))
 }
 
 fn format_sequence_number(value: i64, format: Option<PageNumberFormat>) -> Option<String> {
@@ -8995,11 +8998,11 @@ pub(crate) fn computed_numbering_result(
     }
     let accepts_separator_switch = kind.eq_ignore_ascii_case("AUTONUM");
     let mut number_format = None;
+    let mut text_format = None;
     let mut separator = None;
     while let Some(part) = parts.next() {
         if accept_general_format_switch(part, &mut parts, |format| {
-            is_neutral_field_format_switch(format)
-                || accept_page_number_format_switch(format, &mut number_format)
+            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
         })? {
             continue;
         }
@@ -9024,7 +9027,7 @@ pub(crate) fn computed_numbering_result(
         text.push(separator);
     }
     *autonum_counter = value;
-    Some(text)
+    Some(apply_field_text_format(text, text_format))
 }
 
 pub(crate) fn supports_numbering_field_syntax(instruction: &str) -> bool {
@@ -9064,9 +9067,10 @@ pub(crate) fn computed_listnum_result(
     let mut level_seen = false;
     let mut reset_start = None;
     let mut number_format = None;
+    let mut text_format = None;
     while let Some(part) = parts.next() {
         if accept_general_format_switch(part, &mut parts, |format| {
-            accept_page_number_format_switch(format, &mut number_format)
+            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
         })? {
             continue;
         }
@@ -9106,7 +9110,7 @@ pub(crate) fn computed_listnum_result(
     let value = reset_start.unwrap_or(*listnum_counter + 1);
     let text = format_sequence_number(value, number_format)?;
     *listnum_counter = value;
-    Some(text)
+    Some(apply_field_text_format(text, text_format))
 }
 
 fn supports_listnum_field_syntax<'a>(mut parts: impl Iterator<Item = &'a str>) -> bool {
@@ -9114,9 +9118,10 @@ fn supports_listnum_field_syntax<'a>(mut parts: impl Iterator<Item = &'a str>) -
     let mut level_seen = false;
     let mut reset_start = None;
     let mut number_format = None;
+    let mut text_format = None;
     while let Some(part) = parts.next() {
         let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
-            accept_page_number_format_switch(format, &mut number_format)
+            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
         }) else {
             return false;
         };

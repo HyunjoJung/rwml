@@ -848,6 +848,23 @@ fn listnum_number_default_docx() -> Vec<u8> {
     ])
 }
 
+fn sequence_numbering_text_format_field_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SEQ Figure \* CardText \* Upper "><w:r><w:t>stale sequence card</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SEQ Figure \* roman \* Upper "><w:r><w:t>stale sequence roman</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTONUM \* CardText \* Upper "><w:r><w:t>stale autonum card</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTONUM \* roman \* Upper "><w:r><w:t>stale autonum roman</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" LISTNUM NumberDefault \* CardText \* Upper "><w:r><w:t>stale listnum card</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" LISTNUM NumberDefault \* roman \* Upper "><w:r><w:t>stale listnum roman</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn document_structure_field_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -5935,6 +5952,53 @@ fn docx_listnum_number_default_computes_level_one_subset() {
             && !main_text.contains("stale listnum roman")
             && !main_text.contains("cached legal listnum"),
         "computed listnum results should replace stale cached field text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_sequence_and_numbering_fields_apply_text_format_switches() {
+    let doc = Document::open(&sequence_numbering_text_format_field_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 6);
+    assert_eq!(fields[0].kind, FieldKind::Sequence);
+    assert_eq!(fields[0].instruction, "SEQ Figure \\* CardText \\* Upper");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("ONE"));
+    assert_eq!(fields[1].kind, FieldKind::Sequence);
+    assert_eq!(fields[1].instruction, "SEQ Figure \\* roman \\* Upper");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("II"));
+    assert_eq!(fields[2].kind, FieldKind::Numbering("AUTONUM".to_string()));
+    assert_eq!(fields[2].instruction, "AUTONUM \\* CardText \\* Upper");
+    assert_eq!(fields[2].computed_result.as_deref(), Some("ONE"));
+    assert_eq!(fields[3].kind, FieldKind::Numbering("AUTONUM".to_string()));
+    assert_eq!(fields[3].instruction, "AUTONUM \\* roman \\* Upper");
+    assert_eq!(fields[3].computed_result.as_deref(), Some("II"));
+    assert_eq!(fields[4].kind, FieldKind::Numbering("LISTNUM".to_string()));
+    assert_eq!(
+        fields[4].instruction,
+        "LISTNUM NumberDefault \\* CardText \\* Upper"
+    );
+    assert_eq!(fields[4].computed_result.as_deref(), Some("ONE"));
+    assert_eq!(fields[5].kind, FieldKind::Numbering("LISTNUM".to_string()));
+    assert_eq!(
+        fields[5].instruction,
+        "LISTNUM NumberDefault \\* roman \\* Upper"
+    );
+    assert_eq!(fields[5].computed_result.as_deref(), Some("II"));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        !main_text.contains("stale sequence card")
+            && !main_text.contains("stale sequence roman")
+            && !main_text.contains("stale autonum card")
+            && !main_text.contains("stale autonum roman")
+            && !main_text.contains("stale listnum card")
+            && !main_text.contains("stale listnum roman"),
+        "formatted sequence and numbering fields should replace stale cached text: {main_text:?}"
     );
 }
 
