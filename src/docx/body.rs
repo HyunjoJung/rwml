@@ -1659,7 +1659,11 @@ fn read_rpr(r: &mut Xml<'_>) -> CharProps {
                 b"dstrike" => p.strike |= toggle_on(attr_local(&e, b"val")),
                 b"vanish" => p.hidden = toggle_on(attr_local(&e, b"val")),
                 // `w:u` carries a line style; anything but "none" underlines.
-                b"u" => p.underline = attr_local(&e, b"val").map(|v| v != "none").unwrap_or(true),
+                b"u" => {
+                    p.underline = attr_local(&e, b"val")
+                        .map(|v| v.trim() != "none")
+                        .unwrap_or(true)
+                }
                 b"smallCaps" => p.small_caps = toggle_on(attr_local(&e, b"val")),
                 b"caps" => p.caps = toggle_on(attr_local(&e, b"val")),
                 // Font family: prefer the East-Asian face (Korean) over the Latin one.
@@ -3366,6 +3370,20 @@ mod tests {
                 ..CellMargins::default()
             })
         );
+    }
+
+    #[test]
+    fn underline_none_trims_ooxml_value() {
+        let xml = r#"<w:document><w:body><w:p>
+            <w:r><w:rPr><w:u w:val=" none "/></w:rPr><w:t>off</w:t></w:r>
+            <w:r><w:rPr><w:u/></w:rPr><w:t>on</w:t></w:r>
+        </w:p></w:body></w:document>"#;
+        let blocks = parse(xml);
+        let Block::Paragraph(p) = &blocks[0] else {
+            panic!("para");
+        };
+        assert!(!p.runs[0].props.underline);
+        assert!(p.runs[1].props.underline);
     }
 
     #[test]
