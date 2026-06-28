@@ -141,6 +141,19 @@ fn tiny_bmp_with_marker(marker: &[u8]) -> Vec<u8> {
     bmp
 }
 
+fn tiny_webp() -> Vec<u8> {
+    vec![
+        b'R', b'I', b'F', b'F', 22, 0, 0, 0, b'W', b'E', b'B', b'P', b'V', b'P', b'8', b'X', 10, 0,
+        0, 0, 0, 0, 0, 0, 1, 0, 0, 2, 0, 0,
+    ]
+}
+
+fn tiny_webp_with_marker(marker: &[u8]) -> Vec<u8> {
+    let mut webp = tiny_webp();
+    webp.extend_from_slice(marker);
+    webp
+}
+
 fn unzip_parts(bytes: &[u8]) -> std::collections::BTreeMap<String, Vec<u8>> {
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes.to_vec())).unwrap();
     let mut parts = std::collections::BTreeMap::new();
@@ -517,6 +530,20 @@ fn bmp_image_docx(bmp: &[u8]) -> Vec<u8> {
         ("word/_rels/document.xml.rels", doc_rels),
         ("word/document.xml", body),
         ("word/media/bitmap.bmp", bmp),
+    ])
+}
+
+fn webp_image_docx(webp: &[u8]) -> Vec<u8> {
+    let ct = br#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="webp" ContentType="image/webp"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#;
+    let root_rels = br#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#;
+    let doc_rels = br#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdImg" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/picture.webp"/></Relationships>"#;
+    let body = br#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body><w:p><w:r><w:t>BEFORE</w:t></w:r></w:p><w:p><w:r><w:drawing><wp:inline><wp:extent cx="19050" cy="28575"/><wp:docPr id="1" name="image1"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:blipFill><a:blip r:embed="rIdImg"/></pic:blipFill></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p></w:body></w:document>"#;
+    docx_fixture_bytes(&[
+        ("[Content_Types].xml", ct),
+        ("_rels/.rels", root_rels),
+        ("word/_rels/document.xml.rels", doc_rels),
+        ("word/document.xml", body),
+        ("word/media/picture.webp", webp),
     ])
 }
 
@@ -2558,6 +2585,110 @@ fn replace_image_bmp_rejects_missing_or_invalid_inputs_without_mutation() {
     let after = doc.save().expect("save after failed edits");
     let after_parts = unzip_parts(&after);
     assert_eq!(after_parts["word/media/bitmap.bmp"], original_bmp);
+    assert_eq!(
+        after_parts["word/document.xml"],
+        before_parts["word/document.xml"]
+    );
+    assert_eq!(
+        after_parts["word/_rels/document.xml.rels"],
+        before_parts["word/_rels/document.xml.rels"]
+    );
+}
+
+#[test]
+fn add_image_webp_inserts_media_relationship_and_content_type() {
+    let webp = tiny_webp();
+    let mut doc = Document::open(&no_notes_docx()).expect("fixture opens");
+
+    doc.add_image_webp(&webp, "picture.webp")
+        .expect("insert webp image");
+
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    assert_eq!(parts["word/media/picture.webp"], webp);
+
+    let ct = String::from_utf8(parts["[Content_Types].xml"].clone()).unwrap();
+    assert!(
+        ct.contains(r#"PartName="/word/media/picture.webp""#)
+            && ct.contains(r#"ContentType="image/webp""#),
+        "webp content type missing: {ct}"
+    );
+    let rels = String::from_utf8(parts["word/_rels/document.xml.rels"].clone()).unwrap();
+    assert!(
+        rels.contains(
+            r#"Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image""#
+        ) && rels.contains(r#"Target="media/picture.webp""#),
+        "webp relationship missing: {rels}"
+    );
+    let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    assert!(
+        body.contains("<w:drawing") && body.contains("r:embed"),
+        "drawing missing: {body}"
+    );
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    let images = reopened.images();
+    assert_eq!(images.len(), 1);
+    assert_eq!(images[0].mime.as_deref(), Some("image/webp"));
+    assert_eq!(images[0].bytes.as_deref(), Some(webp.as_slice()));
+    assert_eq!(images[0].width_px, Some(2));
+    assert_eq!(images[0].height_px, Some(3));
+}
+
+#[test]
+fn replace_image_webp_updates_existing_media_part_only() {
+    let original_webp = tiny_webp();
+    let replacement_webp = tiny_webp_with_marker(b"rdoc replacement");
+    let before = webp_image_docx(&original_webp);
+    let before_parts = unzip_parts(&before);
+    let mut doc = Document::open(&before).expect("fixture opens");
+
+    assert_eq!(
+        doc.images()[0].bytes.as_deref(),
+        Some(original_webp.as_slice())
+    );
+
+    doc.replace_image_webp(&replacement_webp, "picture.webp")
+        .expect("replace existing webp");
+
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    assert_eq!(parts["word/media/picture.webp"], replacement_webp);
+    assert_eq!(
+        parts["word/document.xml"],
+        before_parts["word/document.xml"]
+    );
+    assert_eq!(
+        parts["word/_rels/document.xml.rels"],
+        before_parts["word/_rels/document.xml.rels"]
+    );
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    assert_eq!(reopened.images()[0].mime.as_deref(), Some("image/webp"));
+    assert_eq!(
+        reopened.images()[0].bytes.as_deref(),
+        Some(replacement_webp.as_slice())
+    );
+}
+
+#[test]
+fn replace_image_webp_rejects_missing_or_invalid_inputs_without_mutation() {
+    let original_webp = tiny_webp();
+    let before = webp_image_docx(&original_webp);
+    let before_parts = unzip_parts(&before);
+    let mut doc = Document::open(&before).expect("fixture opens");
+
+    assert!(doc.replace_image_webp(b"not webp", "picture.webp").is_err());
+    assert!(doc
+        .replace_image_webp(&tiny_webp(), "missing.webp")
+        .is_err());
+    assert!(doc
+        .replace_image_webp(&tiny_webp(), "../picture.webp")
+        .is_err());
+
+    let after = doc.save().expect("save after failed edits");
+    let after_parts = unzip_parts(&after);
+    assert_eq!(after_parts["word/media/picture.webp"], original_webp);
     assert_eq!(
         after_parts["word/document.xml"],
         before_parts["word/document.xml"]

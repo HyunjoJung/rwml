@@ -189,6 +189,8 @@ doc.add_image_gif(&gif_bytes, "anim.gif")?;     // validated GIF media insert
 doc.replace_image_gif(&new_gif, "anim.gif")?;   // existing word/media/*.gif bytes
 doc.add_image_bmp(&bmp_bytes, "bitmap.bmp")?;   // validated BMP media insert
 doc.replace_image_bmp(&new_bmp, "bitmap.bmp")?; // existing word/media/*.bmp bytes
+doc.add_image_webp(&webp_bytes, "pic.webp")?;   // validated WebP media insert
+doc.replace_image_webp(&new_webp, "pic.webp")?; // existing word/media/*.webp bytes
 doc.set_core_property(rdoc::CoreProperty::Title, "Final report")?;
 
 let touched = doc.edited_parts();               // package parts dirtied by edits
@@ -207,6 +209,7 @@ in place
 `replace_image_png` / `add_image_jpeg` / `replace_image_jpeg` /
 `add_image_gif` / `replace_image_gif` /
 `add_image_bmp` / `replace_image_bmp` /
+`add_image_webp` / `replace_image_webp` /
 `set_core_property`),
 so everything they don't touch — including content the lossy model can't represent
 (fields, content controls, shapes, comments, tracked changes) — is preserved
@@ -399,6 +402,7 @@ Edits go through live WordprocessingML **element trees** or media-part replaceme
 `set_table_cell_text` / `add_image_png` / `replace_image_png` /
 `add_image_jpeg` / `replace_image_jpeg` / `add_image_gif` / `replace_image_gif` /
 `add_image_bmp` / `replace_image_bmp` /
+`add_image_webp` / `replace_image_webp` /
 `set_core_property`), so unmodeled body content (fields, shapes, content controls,
 comments, tracked changes) survives.
 `edited_parts()` reports touched package parts, and `Document::report()` includes
@@ -1000,7 +1004,8 @@ The long-term native Word engine plan is split into the
       `add_footnote_on_text`, `add_endnote_on_text`, `replace_note_text`,
       `add_image_png`, `replace_image_png`, `add_image_jpeg`,
       `replace_image_jpeg`, `add_image_gif`, `replace_image_gif`,
-      `add_image_bmp`, `replace_image_bmp`, `set_core_property`) preserve fields/shapes/
+      `add_image_bmp`, `replace_image_bmp`, `add_image_webp`,
+      `replace_image_webp`, `set_core_property`) preserve fields/shapes/
       content-controls/comments/revisions;
       `edited_parts` exposes touched package parts; `edit_capability` /
       `report().edit` expose read-only reasons; `opc` + `xmltree` internals;

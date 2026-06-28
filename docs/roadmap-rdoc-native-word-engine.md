@@ -611,10 +611,11 @@ Initial status:
   with validated PNG bytes while preserving the drawing markup and relationship
   ids that already reference that part.
 - `Document::add_image_jpeg()` / `Document::replace_image_jpeg()`,
-  `Document::add_image_gif()` / `Document::replace_image_gif()`, and
-  `Document::add_image_bmp()` / `Document::replace_image_bmp()` extend the same
-  package-preserving image edit path to validated JPEG, GIF, and BMP media parts
-  with matching content types.
+  `Document::add_image_gif()` / `Document::replace_image_gif()`,
+  `Document::add_image_bmp()` / `Document::replace_image_bmp()`, and
+  `Document::add_image_webp()` / `Document::replace_image_webp()` extend the
+  same package-preserving image edit path to validated JPEG, GIF, BMP, and WebP
+  media parts with matching content types.
 - `Document::set_core_property()` updates or creates `docProps/core.xml` for
   typed core metadata such as title, creator, category, content status,
   created/modified/last-printed timestamps, revision, and version while
