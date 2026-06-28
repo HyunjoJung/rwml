@@ -684,6 +684,38 @@ fn fill_content_control_by_tag_updates_matching_controls() {
 }
 
 #[test]
+fn fill_content_control_by_tag_trims_ooxml_tag_value() {
+    let mut doc = Document::open(&docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:sdt><w:sdtPr><w:tag w:val=" client-name "/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Old Client</w:t></w:r></w:p></w:sdtContent></w:sdt></w:body></w:document>"#,
+        ),
+    ]))
+    .expect("fixture opens");
+
+    let changed = doc
+        .fill_content_control_by_tag("client-name", "Acme")
+        .expect("tagged content control filled");
+
+    assert_eq!(changed, 1);
+    let saved = doc.save().expect("save edited docx");
+    let body = String::from_utf8(unzip_parts(&saved)["word/document.xml"].clone()).unwrap();
+    assert!(
+        body.contains("<w:t>Acme</w:t>"),
+        "filled text missing: {body}"
+    );
+    assert!(!body.contains("Old Client"), "old text leaked: {body}");
+}
+
+#[test]
 fn fill_content_control_by_tag_missing_tag_is_noop() {
     let fixture = content_control_docx();
     let before = unzip_parts(&fixture);

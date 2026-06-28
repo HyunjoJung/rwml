@@ -648,6 +648,16 @@ fn attr_value_local<'a>(attrs: &'a [(Vec<u8>, Vec<u8>)], local: &[u8]) -> Option
     })
 }
 
+fn trim_ascii_whitespace(mut value: &[u8]) -> &[u8] {
+    while value.first().is_some_and(u8::is_ascii_whitespace) {
+        value = &value[1..];
+    }
+    while value.last().is_some_and(u8::is_ascii_whitespace) {
+        value = &value[..value.len() - 1];
+    }
+    value
+}
+
 fn attr_value_ns_local<'a>(
     attrs: &'a [(Vec<u8>, Vec<u8>)],
     scope: &[(Vec<u8>, Vec<u8>)],
@@ -1895,7 +1905,8 @@ impl XmlTree {
             self.push_xmlns(c, scope);
             let matches = self.resolves_to(c, WML_NS, b"tag", scope)
                 && match &self.nodes[c.0 as usize].node {
-                    Node::Element { attrs, .. } => attr_value_local(attrs, b"val") == Some(tag),
+                    Node::Element { attrs, .. } => attr_value_local(attrs, b"val")
+                        .is_some_and(|value| trim_ascii_whitespace(value) == tag),
                     _ => false,
                 };
             scope.truncate(base);

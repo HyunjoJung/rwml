@@ -1323,7 +1323,7 @@ fn read_content_control_pr(r: &mut Xml<'_>) -> Option<AuthoredContentControl> {
 fn read_content_control_pr_item(control: &mut AuthoredContentControl, e: &BytesStart<'_>) {
     match local(e.name().as_ref()) {
         b"alias" => control.alias = attr_local(e, b"val"),
-        b"tag" => control.tag = attr_local(e, b"val"),
+        b"tag" => control.tag = attr_local(e, b"val").map(|tag| tag.trim().to_owned()),
         b"dataBinding" => {
             control.data_binding_xpath =
                 attr_local(e, b"xpath").map(|xpath| xpath.trim().to_owned());
@@ -3518,9 +3518,10 @@ mod tests {
     }
 
     #[test]
-    fn content_control_store_item_id_trims_ooxml_value() {
+    fn content_control_binding_metadata_trims_ooxml_values() {
         let xml = r#"<w:document><w:body>
             <w:sdt><w:sdtPr>
+                <w:tag w:val=" bound-tag "/>
                 <w:dataBinding w:xpath=" /root/client " w:storeItemID=" {11111111-2222-3333-4444-555555555555} "/>
             </w:sdtPr><w:sdtContent>
                 <w:p><w:r><w:t>Bound value</w:t></w:r></w:p>
@@ -3534,6 +3535,7 @@ mod tests {
             .content_control
             .as_ref()
             .expect("content control metadata");
+        assert_eq!(control.tag.as_deref(), Some("bound-tag"));
         assert_eq!(control.data_binding_xpath.as_deref(), Some("/root/client"));
         assert_eq!(
             control.data_binding_store_item_id.as_deref(),
