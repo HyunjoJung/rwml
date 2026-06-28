@@ -168,8 +168,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   default `nextPage`, and explicit `evenPage`/`oddPage` section starts in
   leading or trusted rendered context, including trusted `w:pgNumType w:start`
   displayed page-number restarts and supported `w:pgNumType w:fmt` styles
-  (`decimal`, `decimalZero`, lower/upper letter, lower/upper roman,
-  ordinal/cardinal text) on those section starts, source-persisted
+  (decimal variants, enclosed decimal variants, Korean variants,
+  lower/upper letter, lower/upper roman, ordinal, cardinal text, and ordinal
+  text) on those section starts, source-persisted
   `w:lastRenderedPageBreak` markers, or
   explicit hard breaks after a trusted leading/rendered page context make the
   target bookmark page structural, applies deterministic `\* Arabic`,
@@ -180,8 +181,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   structural page context or source-persisted rendered page-break/source-order
   hints (`above`, `below`, or `on page N`), and reports missing `PAGEREF`
   bookmark targets as `UnresolvedBookmark` separately from remaining
-  layout-dependent page references, remaining unsupported section page-number
-  formats reported as `UnsupportedSwitch`, and unknown fields.
+  layout-dependent page references, target-section numbering styles that are
+  still unsupported for target-derived formatting, and unknown fields.
   Compatibility note: downstream code
   with exhaustive matches on the public `FieldKind` enum must add a `PageRef`
   arm or wildcard fallback.
