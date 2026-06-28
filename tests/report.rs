@@ -502,7 +502,7 @@ fn protected_form_field_diagnostics_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" FORMCHECKBOX "><w:ffData><w:checkBox><w:checked w:val="true"/></w:checkBox></w:ffData><w:r><w:t>cached protected checked</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FORMTEXT &quot;bad "><w:r><w:t>cached malformed form text</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" FORMCHECKBOX "><w:ffData><w:checkBox><w:checked w:val="true"/></w:checkBox></w:ffData><w:r><w:t>cached protected checked</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FORMDROPDOWN "><w:ffData><w:ddList><w:result w:val="1"/><w:listEntry w:val="First"/><w:listEntry w:val="Second"/></w:ddList></w:ffData><w:r><w:t>cached protected dropdown</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FORMTEXT &quot;bad "><w:r><w:t>cached malformed form text</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -2411,17 +2411,19 @@ fn report_field_category_matrix_splits_cached_and_malformed_diagnostics() {
 
     assert_report_field_diagnostics(
         protected_form_field_diagnostics_docx(),
-        2,
+        3,
         vec![
             field_kind_count(FieldKind::FormField("FORMCHECKBOX".to_string()), 1),
+            field_kind_count(FieldKind::FormField("FORMDROPDOWN".to_string()), 1),
             field_kind_count(FieldKind::FormField("FORMTEXT".to_string()), 1),
         ],
         vec![
             field_kind_count(FieldKind::FormField("FORMCHECKBOX".to_string()), 1),
+            field_kind_count(FieldKind::FormField("FORMDROPDOWN".to_string()), 1),
             field_kind_count(FieldKind::FormField("FORMTEXT".to_string()), 1),
         ],
         vec![
-            field_reason_count(FieldEvaluationReason::NoComputedResult, 1),
+            field_reason_count(FieldEvaluationReason::NoComputedResult, 2),
             field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 1),
         ],
     );
