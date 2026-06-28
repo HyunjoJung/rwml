@@ -3276,6 +3276,85 @@ fn write_docx_keeps_header_footer_hyperlink_runs() {
 }
 
 #[test]
+fn write_docx_keeps_header_footer_comment_runs() {
+    let model = DocModel {
+        blocks: vec![Block::Paragraph(plain_paragraph("Body"))],
+        setup: DocSetup {
+            header: vec![Block::Paragraph(Paragraph {
+                runs: vec![RunBuilder::new("Header clause")
+                    .comment(
+                        CommentBuilder::new("Header note")
+                            .author("Reviewer")
+                            .date("2026-06-24T00:00:00Z"),
+                    )
+                    .build()],
+                ..Paragraph::default()
+            })],
+            footer: vec![Block::Paragraph(Paragraph {
+                runs: vec![RunBuilder::new("Footer clause")
+                    .comment(CommentBuilder::new("Footer note").author("Approver"))
+                    .build()],
+                ..Paragraph::default()
+            })],
+            ..DocSetup::default()
+        },
+        ..DocModel::default()
+    };
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let header_xml = String::from_utf8(parts["word/header1.xml"].clone()).unwrap();
+    let footer_xml = String::from_utf8(parts["word/footer1.xml"].clone()).unwrap();
+    let comments_xml = String::from_utf8(parts["word/comments.xml"].clone()).unwrap();
+    let rels = String::from_utf8(parts["word/_rels/document.xml.rels"].clone()).unwrap();
+
+    let header_start = header_xml
+        .find(r#"<w:commentRangeStart w:id="0"/>"#)
+        .unwrap_or(usize::MAX);
+    let header_text = header_xml
+        .find(r#"<w:t xml:space="preserve">Header clause</w:t>"#)
+        .unwrap_or(usize::MAX);
+    let header_end = header_xml
+        .find(r#"<w:commentRangeEnd w:id="0"/>"#)
+        .unwrap_or(usize::MAX);
+    let header_ref = header_xml
+        .find(r#"<w:commentReference w:id="0"/>"#)
+        .unwrap_or(usize::MAX);
+    assert!(
+        header_start < header_text && header_text < header_end && header_end < header_ref,
+        "header comment markers missing or out of order: {header_xml}"
+    );
+    assert!(
+        footer_xml.contains(r#"<w:commentRangeStart w:id="1"/>"#)
+            && footer_xml.contains(r#"<w:commentReference w:id="1"/>"#),
+        "footer comment markers missing: {footer_xml}"
+    );
+    assert!(
+        comments_xml
+            .contains(r#"<w:comment w:id="0" w:author="Reviewer" w:date="2026-06-24T00:00:00Z">"#)
+            && comments_xml.contains(r#"<w:t>Header note</w:t>"#)
+            && comments_xml.contains(r#"<w:comment w:id="1" w:author="Approver">"#)
+            && comments_xml.contains(r#"<w:t>Footer note</w:t>"#),
+        "comments part missing header/footer comments: {comments_xml}"
+    );
+    assert!(
+        rels.contains("relationships/comments") && rels.contains(r#"Target="comments.xml""#),
+        "comments relationship missing: {rels}"
+    );
+
+    let reopened = Document::open(&bytes).expect("header/footer comment .docx reopens");
+    let comments = reopened.comments();
+    assert_eq!(comments.len(), 2);
+    assert_eq!(comments[0].text, "Header note");
+    assert_eq!(comments[1].text, "Footer note");
+    let header_text = reopened.header_text();
+    assert!(
+        header_text.contains("Header clause") && header_text.contains("Footer clause"),
+        "header/footer commented text not readable after reopen: {header_text:?}"
+    );
+}
+
+#[test]
 fn table_builder_adds_rich_table_cells() {
     let navy = Color::rgb(0x1F, 0x38, 0x64);
     let model = DocBuilder::new()

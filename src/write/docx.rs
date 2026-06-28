@@ -198,6 +198,7 @@ fn render_hf_body(
 }
 
 fn write_hf_run(ctx: &mut Ctx, rels: &mut Vec<Rel>, out: &mut String, r: &crate::model::Run) {
+    let comment_id = ctx.begin_comment(out, r.comment.as_ref());
     let deleted = matches!(
         r.revision.as_ref().map(|revision| revision.kind),
         Some(RevisionKind::Deletion)
@@ -251,6 +252,7 @@ fn write_hf_run(ctx: &mut Ctx, rels: &mut Vec<Rel>, out: &mut String, r: &crate:
     let run_xml = content_control_wrapper(r.content_control.as_ref(), &run_xml);
     let run_xml = ctx.bookmark_wrapper(r.bookmark.as_deref(), &run_xml);
     ctx.write_revision_wrapper(out, r.revision.as_ref(), &run_xml);
+    ctx.end_comment(out, comment_id);
 }
 
 fn content_control_wrapper(control: Option<&AuthoredContentControl>, run_xml: &str) -> String {
