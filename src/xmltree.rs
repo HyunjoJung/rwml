@@ -1292,10 +1292,14 @@ impl XmlTree {
             self.push_xmlns(c, &mut scope);
             if self.resolves_to(c, WML_NS, note_local, &scope) {
                 let skip = match &self.nodes[c.0 as usize].node {
-                    Node::Element { attrs, .. } => matches!(
-                        attr_value_local(attrs, b"type"),
-                        Some(b"separator" | b"continuationSeparator" | b"continuationNotice")
-                    ),
+                    Node::Element { attrs, .. } => {
+                        attr_value_local(attrs, b"type").is_some_and(|value| {
+                            matches!(
+                                trim_ascii_whitespace(value),
+                                b"separator" | b"continuationSeparator" | b"continuationNotice"
+                            )
+                        })
+                    }
                     _ => false,
                 };
                 if !skip {

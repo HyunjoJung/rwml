@@ -231,7 +231,7 @@ fn notes_docx() -> Vec<u8> {
         ),
         (
             "word/footnotes.xml",
-            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:t>OLD</w:t></w:r></w:p></w:footnote><w:footnote w:id="1"><w:p><w:r><w:t>OLD</w:t></w:r><w:r><w:t> foot</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:type=" separator " w:id="-1"><w:p><w:r><w:t>OLD</w:t></w:r></w:p></w:footnote><w:footnote w:id="1"><w:p><w:r><w:t>OLD</w:t></w:r><w:r><w:t> foot</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
         ),
         (
             "word/endnotes.xml",
@@ -1745,7 +1745,8 @@ fn replace_note_text_edits_footnotes_and_endnotes_only() {
 
     assert!(body.contains("<w:t>BODY</w:t>"), "body changed: {body}");
     assert!(
-        footnotes.contains(r#"<w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:t>OLD</w:t>"#),
+        footnotes
+            .contains(r#"<w:footnote w:type=" separator " w:id="-1"><w:p><w:r><w:t>OLD</w:t>"#),
         "separator footnote should not be edited: {footnotes}"
     );
     assert!(
