@@ -223,6 +223,7 @@ struct RenderPageSection {
 #[derive(Debug, Clone, PartialEq)]
 struct FloatingShapeOverlay {
     page_index: usize,
+    behind_doc: bool,
     label: String,
     x: f32,
     y: f32,
@@ -762,6 +763,7 @@ fn floating_shape_overlays_for_pages(
                 .unwrap_or(0);
             FloatingShapeOverlay {
                 page_index,
+                behind_doc: shape.behind_doc == Some(true),
                 label: floating_shape_label(shape, index, w, h),
                 x,
                 y,
@@ -3959,6 +3961,18 @@ fn render_pdf(
             &mut font_cache,
         );
         let mut surface = page.surface();
+        for overlay in floating_shape_overlays
+            .iter()
+            .filter(|overlay| overlay.page_index == page_index && overlay.behind_doc)
+        {
+            draw_floating_shape_overlay(
+                &mut surface,
+                overlay,
+                &mut font_cx,
+                &mut layout_cx,
+                &mut font_cache,
+            );
+        }
         // Running header (top margin) and footer (below the content box), on every
         // page. Lines are cloned because drawing consumes the glyph runs.
         let mut hy = HEADER_Y;
@@ -4117,7 +4131,7 @@ fn render_pdf(
         }
         for overlay in floating_shape_overlays
             .iter()
-            .filter(|overlay| overlay.page_index == page_index)
+            .filter(|overlay| overlay.page_index == page_index && !overlay.behind_doc)
         {
             draw_floating_shape_overlay(
                 &mut surface,
@@ -4432,6 +4446,8 @@ mod tests {
         );
 
         assert_eq!(overlays.len(), 2);
+        assert!(overlays[0].behind_doc);
+        assert!(!overlays[1].behind_doc);
         assert!(overlays[0].label.contains("Back"));
         assert!(overlays[1].label.contains("Front"));
     }

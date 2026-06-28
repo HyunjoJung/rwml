@@ -7,6 +7,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Floating-shape overlay ordering.** PDF previews now draw recovered
+  `behindDoc` floating-shape overlays before page text, while front overlays
+  still draw above content.
 - **PAGE field-result formatting.** Trusted deterministic `.docx` body `PAGE`
   current-page text now combines supported page-number formats with common
   `\* Upper`/`\* Lower`/`\* Caps`/`\* FirstCap` field-result switches.
