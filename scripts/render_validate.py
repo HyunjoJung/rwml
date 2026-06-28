@@ -323,6 +323,8 @@ def warning_kinds(report: dict | None) -> list[str] | None:
             or not kind.isidentifier()
         ):
             return None
+        if kind in kinds:
+            return None
         kinds.append(kind)
     return kinds
 

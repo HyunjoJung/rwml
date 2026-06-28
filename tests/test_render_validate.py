@@ -272,6 +272,12 @@ class RenderValidateReportTests(unittest.TestCase):
             {"warnings": [42]},
             {"warnings": [{"count": 1}]},
             {"warnings": [{"kind": "Unsupported Field"}]},
+            {
+                "warnings": [
+                    {"kind": "UnsupportedFieldEvaluation"},
+                    {"kind": "UnsupportedFieldEvaluation"},
+                ]
+            },
         ]
         for report in cases:
             with self.subTest(report=report):
