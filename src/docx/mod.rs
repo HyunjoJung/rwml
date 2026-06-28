@@ -1447,6 +1447,14 @@ pub(crate) fn attr_u8(e: &BytesStart<'_>, key: &[u8]) -> Option<u8> {
     attr_local(e, key)?.trim().parse().ok()
 }
 
+pub(crate) fn attr_u32(e: &BytesStart<'_>, key: &[u8]) -> Option<u32> {
+    attr_local(e, key)?.trim().parse().ok()
+}
+
+pub(crate) fn attr_usize(e: &BytesStart<'_>, key: &[u8]) -> Option<usize> {
+    attr_local(e, key)?.trim().parse().ok()
+}
+
 fn attr_bool(e: &BytesStart<'_>, key: &[u8]) -> Option<bool> {
     attr_local(e, key).map(|value| toggle_on(Some(value)))
 }

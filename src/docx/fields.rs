@@ -14,7 +14,7 @@ use crate::{numfmt, CoreProperties};
 
 use super::numbering::Numbering;
 use super::styles::Styles;
-use super::{attr_local, attr_u8, local, toggle_on};
+use super::{attr_local, attr_u8, attr_usize, local, toggle_on};
 
 type Xml<'a> = Reader<&'a [u8]>;
 
@@ -3811,9 +3811,7 @@ fn page_ref_section_break(e: &BytesStart<'_>) -> Option<PageRefSectionBreak> {
 }
 
 fn page_ref_section_page_number_start(e: &BytesStart<'_>) -> Option<usize> {
-    attr_local(e, b"start")
-        .and_then(|value| value.parse::<usize>().ok())
-        .filter(|start| *start > 0)
+    attr_usize(e, b"start").filter(|start| *start > 0)
 }
 
 fn page_ref_section_page_number_format(e: &BytesStart<'_>) -> Option<PageRefDisplayFormat> {
