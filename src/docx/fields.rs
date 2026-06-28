@@ -14,7 +14,7 @@ use crate::{numfmt, CoreProperties};
 
 use super::numbering::Numbering;
 use super::styles::Styles;
-use super::{attr_local, local};
+use super::{attr_local, local, toggle_on};
 
 type Xml<'a> = Reader<&'a [u8]>;
 
@@ -3267,9 +3267,9 @@ fn read_legacy_form_data_element(
     data: &mut LegacyFormData,
 ) {
     match local(e.name().as_ref()) {
-        b"checked" if in_checkbox => data.checkbox = Some(on_off_value(e)),
+        b"checked" if in_checkbox => data.checkbox = Some(toggle_on(attr_local(e, b"val"))),
         b"default" if in_checkbox && data.checkbox.is_none() => {
-            data.checkbox = Some(on_off_value(e));
+            data.checkbox = Some(toggle_on(attr_local(e, b"val")));
         }
         b"default" if in_dropdown => {
             data.dropdown_default = attr_local(e, b"val").and_then(|value| value.parse().ok());
@@ -3287,19 +3287,6 @@ fn read_legacy_form_data_element(
         }
         _ => {}
     }
-}
-
-fn on_off_value(e: &BytesStart<'_>) -> bool {
-    !matches!(
-        attr_local(e, b"val").as_deref(),
-        Some("0")
-            | Some("false")
-            | Some("False")
-            | Some("FALSE")
-            | Some("off")
-            | Some("Off")
-            | Some("OFF")
-    )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -2070,13 +2070,22 @@ pub(crate) fn attr_local(e: &BytesStart<'_>, key: &[u8]) -> Option<String> {
 pub(crate) fn toggle_on(val: Option<String>) -> bool {
     match val.as_deref() {
         None => true,
-        Some(v) => !matches!(v, "false" | "0" | "off"),
+        Some(v) => v != "0" && !v.eq_ignore_ascii_case("false") && !v.eq_ignore_ascii_case("off"),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{normalize_part, parse_rels, MAX_REL_RECORDS};
+    use super::{normalize_part, parse_rels, toggle_on, MAX_REL_RECORDS};
+
+    #[test]
+    fn toggle_on_accepts_case_insensitive_off_values() {
+        assert!(!toggle_on(Some("FALSE".to_string())));
+        assert!(!toggle_on(Some("Off".to_string())));
+        assert!(!toggle_on(Some("0".to_string())));
+        assert!(toggle_on(None));
+        assert!(toggle_on(Some("true".to_string())));
+    }
 
     /// The lenient reader path bounds how many relationships it collects
     /// from one part, so a size-capped but record-stuffed `.rels` can't amplify memory.
