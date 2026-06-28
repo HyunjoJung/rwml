@@ -4,12 +4,14 @@
 //! observed format markers for a construct, not that every behavior of that
 //! construct is fully modeled, editable, or renderable.
 
+#[cfg(not(feature = "docx"))]
+use crate::annotation::field_level_token as diagnostic_level_token;
 use crate::annotation::{
     accept_field_number_format_switch, accept_field_text_format_switch,
-    accept_general_format_switch, field_literal_token as diagnostic_literal_token,
-    field_name_token as diagnostic_name_token, instruction_parts, is_note_ref_kind,
-    is_ref_value_neutral_switch, is_toc_value_neutral_switch, strip_ascii_switch_prefix, Field,
-    FieldKind, FieldNumberFormat, FieldTextFormat,
+    accept_general_format_switch, field_level_range_token as diagnostic_level_range_token,
+    field_literal_token as diagnostic_literal_token, field_name_token as diagnostic_name_token,
+    instruction_parts, is_note_ref_kind, is_ref_value_neutral_switch, is_toc_value_neutral_switch,
+    strip_ascii_switch_prefix, Field, FieldKind, FieldNumberFormat, FieldTextFormat,
 };
 use crate::model::{Block, FieldRole, Stats, Table};
 use crate::CoreProperties;
@@ -3527,14 +3529,14 @@ fn supported_toc_entry_syntax(instruction: &str) -> bool {
             let Some(value) = parts.next_if(|next| !next.starts_with('\\')) else {
                 return false;
             };
-            if level || parse_toc_level_for_report(value).is_none() {
+            if level || diagnostic_level_token(value).is_none() {
                 return false;
             }
             level = true;
             continue;
         }
         if let Some(value) = strip_ascii_switch_prefix(part, "\\l") {
-            if value.is_empty() || level || parse_toc_level_for_report(value).is_none() {
+            if value.is_empty() || level || diagnostic_level_token(value).is_none() {
                 return false;
             }
             level = true;
@@ -4815,7 +4817,7 @@ fn supported_toc_bookmark_scope(instruction: &str) -> Option<Option<String>> {
         }
         if part.eq_ignore_ascii_case("\\l") {
             let range = parts.next_if(|next| !next.starts_with('\\'))?;
-            parse_toc_outline_range_for_report(range)?;
+            diagnostic_level_range_token(range)?;
             if saw_tc_level_switch {
                 return None;
             }
@@ -4826,7 +4828,7 @@ fn supported_toc_bookmark_scope(instruction: &str) -> Option<Option<String>> {
             if range.is_empty() || saw_tc_level_switch {
                 return None;
             }
-            parse_toc_outline_range_for_report(range)?;
+            diagnostic_level_range_token(range)?;
             saw_tc_level_switch = true;
             continue;
         }
@@ -4836,7 +4838,7 @@ fn supported_toc_bookmark_scope(instruction: &str) -> Option<Option<String>> {
         }
         if part.eq_ignore_ascii_case("\\n") {
             if let Some(range) = parts.next_if(|next| !next.starts_with('\\')) {
-                parse_toc_outline_range_for_report(range)?;
+                diagnostic_level_range_token(range)?;
             }
             saw_default_toc_neutral_switch = true;
             continue;
@@ -4845,7 +4847,7 @@ fn supported_toc_bookmark_scope(instruction: &str) -> Option<Option<String>> {
             if range.is_empty() {
                 return None;
             }
-            parse_toc_outline_range_for_report(range)?;
+            diagnostic_level_range_token(range)?;
             saw_default_toc_neutral_switch = true;
             continue;
         }
@@ -4929,7 +4931,7 @@ fn supported_toc_bookmark_scope(instruction: &str) -> Option<Option<String>> {
             strip_ascii_switch_prefix(part, "\\o")?
         };
         if outline_range
-            .replace(parse_toc_outline_range_for_report(range)?)
+            .replace(diagnostic_level_range_token(range)?)
             .is_some()
         {
             return None;
@@ -4993,20 +4995,6 @@ fn parse_toc_style_specs_for_report(value: &str) -> Option<()> {
 fn diagnostic_identifier_token(value: &str) -> Option<&str> {
     let value = diagnostic_name_token(value)?;
     (!value.chars().any(char::is_whitespace)).then_some(value)
-}
-
-fn parse_toc_outline_range_for_report(range: &str) -> Option<(u8, u8)> {
-    let range = diagnostic_name_token(range)?;
-    let (start, end) = range.split_once('-')?;
-    let start = start.parse::<u8>().ok()?;
-    let end = end.parse::<u8>().ok()?;
-    ((1..=9).contains(&start) && start <= end && end <= 9).then_some((start, end))
-}
-
-#[cfg(not(feature = "docx"))]
-fn parse_toc_level_for_report(value: &str) -> Option<u8> {
-    let level = diagnostic_name_token(value)?.parse::<u8>().ok()?;
-    (1..=9).contains(&level).then_some(level)
 }
 
 #[cfg(feature = "docx")]

@@ -520,6 +520,19 @@ pub(crate) fn field_literal_token(value: &str) -> Option<&str> {
     (!value.contains('"')).then_some(value)
 }
 
+pub(crate) fn field_level_token(value: &str) -> Option<u8> {
+    let level = field_name_token(value)?.parse::<u8>().ok()?;
+    (1..=9).contains(&level).then_some(level)
+}
+
+pub(crate) fn field_level_range_token(value: &str) -> Option<(u8, u8)> {
+    let value = field_name_token(value)?;
+    let (start, end) = value.split_once('-')?;
+    let start = start.parse::<u8>().ok()?;
+    let end = end.parse::<u8>().ok()?;
+    ((1..=9).contains(&start) && start <= end && end <= 9).then_some((start, end))
+}
+
 pub(crate) fn instruction_parts(s: &str) -> Vec<String> {
     let mut parts = Vec::new();
     let mut current = String::new();

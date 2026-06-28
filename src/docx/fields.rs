@@ -8,9 +8,10 @@ use quick_xml::Reader;
 use crate::annotation::{
     accept_field_number_format_switch,
     accept_field_text_format_switch as accept_field_format_switch, accept_general_format_switch,
-    field_literal_token, field_name_token, instruction_parts, is_neutral_field_format_switch,
-    is_note_ref_kind, is_ref_value_neutral_switch, is_toc_value_neutral_switch,
-    strip_ascii_switch_prefix, Field, FieldKind, FieldNumberFormat, FieldTextFormat,
+    field_level_range_token, field_level_token, field_literal_token, field_name_token,
+    instruction_parts, is_neutral_field_format_switch, is_note_ref_kind,
+    is_ref_value_neutral_switch, is_toc_value_neutral_switch, strip_ascii_switch_prefix, Field,
+    FieldKind, FieldNumberFormat, FieldTextFormat,
 };
 use crate::{numfmt, CoreProperties};
 
@@ -4423,7 +4424,7 @@ fn tc_instruction(instruction: &str) -> Option<TcInstruction> {
             if saw_level {
                 return None;
             }
-            level = parse_toc_level(value)?;
+            level = field_level_token(value)?;
             saw_level = true;
             continue;
         }
@@ -4431,7 +4432,7 @@ fn tc_instruction(instruction: &str) -> Option<TcInstruction> {
             if value.is_empty() || saw_level {
                 return None;
             }
-            level = parse_toc_level(value)?;
+            level = field_level_token(value)?;
             saw_level = true;
             continue;
         }
@@ -4475,11 +4476,6 @@ fn field_identifier_token(value: &str) -> Option<&str> {
         return None;
     }
     Some(value)
-}
-
-fn parse_toc_level(value: &str) -> Option<u8> {
-    let level = field_name_token(value)?.parse::<u8>().ok()?;
-    (1..=9).contains(&level).then_some(level)
 }
 
 fn is_tc_instruction(instruction: &str) -> bool {
@@ -10074,7 +10070,7 @@ fn toc_spec(instruction: &str) -> Option<TocSpec> {
         if part.eq_ignore_ascii_case("\\l") {
             let range = parts.next_if(|next| !next.starts_with('\\'))?;
             if tc_level_range
-                .replace(parse_toc_outline_range(range)?)
+                .replace(field_level_range_token(range)?)
                 .is_some()
             {
                 return None;
@@ -10084,7 +10080,7 @@ fn toc_spec(instruction: &str) -> Option<TocSpec> {
         if let Some(range) = strip_ascii_switch_prefix(part, "\\l") {
             if range.is_empty()
                 || tc_level_range
-                    .replace(parse_toc_outline_range(range)?)
+                    .replace(field_level_range_token(range)?)
                     .is_some()
             {
                 return None;
@@ -10097,7 +10093,7 @@ fn toc_spec(instruction: &str) -> Option<TocSpec> {
         }
         if part.eq_ignore_ascii_case("\\n") {
             if let Some(range) = parts.next_if(|next| !next.starts_with('\\')) {
-                parse_toc_outline_range(range)?;
+                field_level_range_token(range)?;
             }
             saw_default_toc_neutral_switch = true;
             continue;
@@ -10106,7 +10102,7 @@ fn toc_spec(instruction: &str) -> Option<TocSpec> {
             if range.is_empty() {
                 return None;
             }
-            parse_toc_outline_range(range)?;
+            field_level_range_token(range)?;
             saw_default_toc_neutral_switch = true;
             continue;
         }
@@ -10188,7 +10184,7 @@ fn toc_spec(instruction: &str) -> Option<TocSpec> {
             strip_ascii_switch_prefix(part, "\\o")?
         };
         if outline_range
-            .replace(parse_toc_outline_range(range)?)
+            .replace(field_level_range_token(range)?)
             .is_some()
         {
             return None;
@@ -10275,14 +10271,6 @@ fn parse_toc_style_specs(value: &str) -> Option<Vec<TocStyleSpec>> {
         });
     }
     Some(specs)
-}
-
-fn parse_toc_outline_range(range: &str) -> Option<(u8, u8)> {
-    let range = field_name_token(range)?;
-    let (start, end) = range.split_once('-')?;
-    let start = start.parse::<u8>().ok()?;
-    let end = end.parse::<u8>().ok()?;
-    ((1..=9).contains(&start) && start <= end && end <= 9).then_some((start, end))
 }
 
 fn normalize_instruction(s: &str) -> String {
