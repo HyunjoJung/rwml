@@ -17,7 +17,10 @@ use crate::annotation::{
     toc_style_specs, Field, FieldKind, FieldNumberFormat, FieldTextFormat,
 };
 #[cfg(not(feature = "docx"))]
-use crate::annotation::{document_property_key, filename_field_syntax};
+use crate::annotation::{
+    document_property_key, field_non_empty_literal_token, field_quoted_literal_token,
+    filename_field_syntax,
+};
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{
     field_non_empty_non_switch_literal_token, field_non_empty_quoted_literal_token,
@@ -1919,7 +1922,7 @@ fn is_user_info_property_for_report(value: &str) -> bool {
 
 #[cfg(not(feature = "docx"))]
 fn document_info_date_format_for_report(value: Option<&str>) -> Option<()> {
-    (!diagnostic_literal_token(value?)?.is_empty()).then_some(())
+    field_non_empty_literal_token(value?).map(|_| ())
 }
 
 #[cfg(not(feature = "docx"))]
@@ -1929,7 +1932,7 @@ fn document_info_file_size_unit_switch_for_report(part: &str) -> bool {
 
 #[cfg(not(feature = "docx"))]
 fn document_info_quoted_literal_for_report(value: &str) -> bool {
-    value.trim().starts_with('"') && diagnostic_literal_token(value).is_some()
+    field_quoted_literal_token(value).is_some()
 }
 
 fn filename_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {

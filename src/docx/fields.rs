@@ -9,9 +9,10 @@ use crate::annotation::{
     accept_field_number_format_switch,
     accept_field_text_format_switch as accept_field_format_switch, accept_general_format_switch,
     document_property_key, field_identifier_token, field_level_range_token, field_level_token,
-    field_literal_token, field_name_token, field_non_empty_non_switch_literal_token,
-    field_non_empty_quoted_literal_token, field_non_switch_literal_token, field_points_token,
-    field_positive_points_token, field_symbol_code_token, filename_field_syntax, instruction_parts,
+    field_literal_token, field_name_token, field_non_empty_literal_token,
+    field_non_empty_non_switch_literal_token, field_non_empty_quoted_literal_token,
+    field_non_switch_literal_token, field_points_token, field_positive_points_token,
+    field_quoted_literal_token, field_symbol_code_token, filename_field_syntax, instruction_parts,
     is_neutral_field_format_switch, is_note_ref_kind, is_ref_value_neutral_switch,
     is_toc_value_neutral_switch, reference_index_category_token, reference_index_literal_token,
     reference_index_plain_value_token, strip_ascii_switch_prefix, toc_style_specs, Field,
@@ -5397,18 +5398,15 @@ fn document_info_instruction(instruction: &str) -> Option<DocumentInfoInstructio
             if date_format.is_some() {
                 return None;
             }
-            let format = field_literal_token(parts.next()?)?;
-            if format.is_empty() {
-                return None;
-            }
+            let format = field_non_empty_literal_token(parts.next()?)?;
             date_format = Some(format.to_string());
             continue;
         }
         if let Some(format) = strip_ascii_switch_prefix(part, "\\@") {
-            let format = field_literal_token(format)?;
-            if format.is_empty() || date_format.is_some() {
+            if date_format.is_some() {
                 return None;
             }
+            let format = field_non_empty_literal_token(format)?;
             date_format = Some(format.to_string());
             continue;
         }
@@ -5421,7 +5419,7 @@ fn document_info_instruction(instruction: &str) -> Option<DocumentInfoInstructio
             continue;
         }
         if is_user_info_property(&property) && !part.starts_with('\\') {
-            let value = quoted_literal_text(part)?;
+            let value = field_quoted_literal_token(part)?.to_string();
             if user_override.replace(value).is_some() {
                 return None;
             }
