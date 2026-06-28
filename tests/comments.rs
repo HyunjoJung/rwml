@@ -328,6 +328,7 @@ fn set_comment_text_updates_existing_comment_body() {
     doc.set_comment_text("7", "Updated note")
         .expect("comment text updates");
 
+    assert_eq!(doc.edited_parts(), ["word/comments.xml"]);
     let saved = doc.save().expect("save edited docx");
     let mut reopened = Document::open(&saved).expect("reopen edited docx");
     let comments = reopened.comments();
@@ -427,6 +428,15 @@ fn add_comment_on_text_creates_comments_part_relationship_and_anchor() {
         .expect("comment added");
 
     assert_eq!(id, "0");
+    assert_eq!(
+        doc.edited_parts(),
+        [
+            "[Content_Types].xml",
+            "word/_rels/document.xml.rels",
+            "word/comments.xml",
+            "word/document.xml"
+        ]
+    );
     let saved = doc.save().expect("save edited docx");
     let parts = unzip_parts(&saved);
     let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
@@ -560,6 +570,10 @@ fn add_comment_on_text_uses_next_comment_id_and_preserves_existing_comments() {
         .expect("comment added");
 
     assert_eq!(id, "8");
+    assert_eq!(
+        doc.edited_parts(),
+        ["word/comments.xml", "word/document.xml"]
+    );
     let saved = doc.save().expect("save edited docx");
     let reopened = Document::open(&saved).expect("reopen edited docx");
     let comments = reopened.comments();

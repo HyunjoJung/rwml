@@ -2415,6 +2415,10 @@ fn replace_note_text_edits_footnotes_and_endnotes_only() {
     let mut doc = Document::open(&notes_docx()).expect("fixture opens");
 
     assert_eq!(doc.replace_note_text("OLD", "NEW").unwrap(), 2);
+    assert_eq!(
+        doc.edited_parts(),
+        ["word/endnotes.xml", "word/footnotes.xml"]
+    );
 
     let saved = doc.save().expect("save edited docx");
     let parts = unzip_parts(&saved);
@@ -2480,6 +2484,15 @@ fn add_footnote_on_text_creates_part_relationship_anchor_and_note() {
         .expect("footnote added");
 
     assert_eq!(id, "1");
+    assert_eq!(
+        doc.edited_parts(),
+        [
+            "[Content_Types].xml",
+            "word/_rels/document.xml.rels",
+            "word/document.xml",
+            "word/footnotes.xml"
+        ]
+    );
     let saved = doc.save().expect("save edited docx");
     let parts = unzip_parts(&saved);
     let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
@@ -2729,6 +2742,15 @@ fn add_endnote_on_text_creates_part_relationship_anchor_and_note() {
         .expect("endnote added");
 
     assert_eq!(id, "1");
+    assert_eq!(
+        doc.edited_parts(),
+        [
+            "[Content_Types].xml",
+            "word/_rels/document.xml.rels",
+            "word/document.xml",
+            "word/endnotes.xml"
+        ]
+    );
     let saved = doc.save().expect("save edited docx");
     let parts = unzip_parts(&saved);
     let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
