@@ -1930,7 +1930,7 @@ fn page_ref_visible_intro_section_page_number_restart_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Intro text can auto-paginate before the restart.</w:t></w:r></w:p><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgNumType w:start="7" w:fmt=" decimal "/></w:sectPr></w:pPr></w:p><w:p><w:bookmarkStart w:id="7" w:name="RestartedAfterIntro"/><w:r><w:t>Restarted target</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF RestartedAfterIntro \h "><w:r><w:t>stale restarted page</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF RestartedAfterIntro \p "><w:r><w:t>stale restarted relative</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Intro text can auto-paginate before the restart.</w:t></w:r></w:p><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgNumType w:start="7" w:fmt=" "/></w:sectPr></w:pPr></w:p><w:p><w:bookmarkStart w:id="7" w:name="RestartedAfterIntro"/><w:r><w:t>Restarted target</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF RestartedAfterIntro \h "><w:r><w:t>stale restarted page</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF RestartedAfterIntro \p "><w:r><w:t>stale restarted relative</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }

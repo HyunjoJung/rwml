@@ -3811,6 +3811,7 @@ fn page_ref_section_page_number_start(e: &BytesStart<'_>) -> Option<usize> {
 
 fn page_ref_section_page_number_format(e: &BytesStart<'_>) -> Option<PageRefDisplayFormat> {
     let format = match attr_local(e, b"fmt").as_deref().map(str::trim)? {
+        "" => return Some(PageRefDisplayFormat::default()),
         "decimal" => PageNumberFormat::Arabic,
         "decimalZero" => PageNumberFormat::DecimalZero,
         "numberInDash" => PageNumberFormat::ArabicDash,
