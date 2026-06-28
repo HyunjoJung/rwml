@@ -382,6 +382,7 @@ def public_release_policy_input_gaps(
         missing.append("matching public corpus manifest documents")
     missing.extend(
         public_release_report_strength_gaps(
+            hygiene_report=hygiene_report,
             validation_report=validation_report,
             benchmark_reports=benchmark_reports,
         )
@@ -391,10 +392,17 @@ def public_release_policy_input_gaps(
 
 def public_release_report_strength_gaps(
     *,
+    hygiene_report: Path | None,
     validation_report: Path | None,
     benchmark_reports: list[Path] | None,
 ) -> list[str]:
     missing = []
+    if hygiene_report is not None and hygiene_report.is_file():
+        try:
+            hygiene = hygiene_summary(hygiene_report)
+            require_report_gate_passed("public-release", hygiene, "hygiene")
+        except (OSError, json.JSONDecodeError, ValueError):
+            missing.append("passing hygiene report")
     if validation_report is not None and validation_report.is_file():
         try:
             validation = validation_summary(validation_report)

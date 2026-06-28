@@ -1828,6 +1828,43 @@ class ReleaseManifestTests(unittest.TestCase):
             ["matching public corpus manifest documents"],
         )
 
+    def test_release_evidence_marks_failing_hygiene_report_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            hygiene = root / "public-hygiene.json"
+            hygiene.write_text(
+                json.dumps(
+                    {
+                        "passed": False,
+                        "findings": [
+                            {
+                                "path": "docs/private-note.md",
+                                "line": 1,
+                                "kind": "private_trace",
+                                "detail": "private trace",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            evidence = release_manifest.release_evidence_summary(
+                "public-release",
+                enforce_policy_inputs=False,
+                hygiene_report=hygiene,
+                validation_report=pathlib.Path("render-validation.json"),
+                benchmark_reports=[pathlib.Path("extract-benchmark.json")],
+                corpus_manifests=[
+                    pathlib.Path("MANIFEST.tsv"),
+                    pathlib.Path("RENDER_MANIFEST.tsv"),
+                ],
+            )
+
+        self.assertEqual(evidence["strict_policy_status"], "missing_inputs")
+        self.assertFalse(evidence["strict_policy_inputs_complete"])
+        self.assertEqual(evidence["strict_missing"], ["passing hygiene report"])
+
     def test_release_evidence_marks_weak_policy_reports_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
