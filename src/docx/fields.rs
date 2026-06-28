@@ -8424,12 +8424,12 @@ fn unescape_eq_literal_operand(operand: &str) -> Option<String> {
 
 fn computed_symbol_result(instruction: &str) -> Option<String> {
     let spec = symbol_instruction(instruction)?;
-    let text = if symbol_font_matches(spec.font.as_deref(), "symbol") {
+    let text = if spec.unicode {
+        char::from_u32(spec.code)?.to_string()
+    } else if symbol_font_matches(spec.font.as_deref(), "symbol") {
         symbol_font_char(spec.code)?.to_string()
     } else if symbol_font_matches(spec.font.as_deref(), "wingdings") {
         wingdings_font_char(spec.code)?.to_string()
-    } else if spec.unicode {
-        char::from_u32(spec.code)?.to_string()
     } else {
         ansi_char(spec.code)?.to_string()
     };

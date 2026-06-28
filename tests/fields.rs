@@ -1092,7 +1092,7 @@ fn symbol_field_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SYMBOL 163 "><w:r><w:t>stale pound</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SYMBOL 0x03BB \u \h "><w:r><w:t>stale lambda</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> SYMBOL 211 \f &quot;Symbol&quot; \s 12 </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale copyright</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:p><w:fldSimple w:instr=" SYMBOL 183 \fSymbol \s12 "><w:r><w:t>stale compact symbol</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SYMBOL 0x0041 \u \s &quot;10&quot; "><w:r><w:t>stale quoted size</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SYMBOL 0x0042 \u \s&quot;11&quot; "><w:r><w:t>stale compact quoted size</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SYMBOL 163 "><w:r><w:t>stale pound</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SYMBOL 0x03BB \u \h "><w:r><w:t>stale lambda</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> SYMBOL 211 \f &quot;Symbol&quot; \s 12 </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale copyright</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:p><w:fldSimple w:instr=" SYMBOL 183 \fSymbol \s12 "><w:r><w:t>stale compact symbol</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SYMBOL 0x03BB \u \f Symbol "><w:r><w:t>stale unicode font</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SYMBOL 0x0041 \u \s &quot;10&quot; "><w:r><w:t>stale quoted size</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SYMBOL 0x0042 \u \s&quot;11&quot; "><w:r><w:t>stale compact quoted size</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -6801,7 +6801,7 @@ fn docx_symbol_field_computes_deterministic_symbols() {
     let doc = Document::open(&symbol_field_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 6);
+    assert_eq!(fields.len(), 7);
     for field in &fields {
         assert_eq!(field.kind, FieldKind::Display("SYMBOL".to_string()));
     }
@@ -6813,10 +6813,12 @@ fn docx_symbol_field_computes_deterministic_symbols() {
     assert_eq!(fields[2].computed_result.as_deref(), Some("©"));
     assert_eq!(fields[3].instruction, "SYMBOL 183 \\fSymbol \\s12");
     assert_eq!(fields[3].computed_result.as_deref(), Some("•"));
-    assert_eq!(fields[4].instruction, "SYMBOL 0x0041 \\u \\s \"10\"");
-    assert_eq!(fields[4].computed_result.as_deref(), Some("A"));
-    assert_eq!(fields[5].instruction, "SYMBOL 0x0042 \\u \\s\"11\"");
-    assert_eq!(fields[5].computed_result.as_deref(), Some("B"));
+    assert_eq!(fields[4].instruction, "SYMBOL 0x03BB \\u \\f Symbol");
+    assert_eq!(fields[4].computed_result.as_deref(), Some("\u{03bb}"));
+    assert_eq!(fields[5].instruction, "SYMBOL 0x0041 \\u \\s \"10\"");
+    assert_eq!(fields[5].computed_result.as_deref(), Some("A"));
+    assert_eq!(fields[6].instruction, "SYMBOL 0x0042 \\u \\s\"11\"");
+    assert_eq!(fields[6].computed_result.as_deref(), Some("B"));
 
     let report = doc.report();
     assert!(report.features.unsupported_field_kinds.is_empty());
@@ -6828,6 +6830,7 @@ fn docx_symbol_field_computes_deterministic_symbols() {
             && !main_text.contains("stale lambda")
             && !main_text.contains("stale copyright")
             && !main_text.contains("stale compact symbol")
+            && !main_text.contains("stale unicode font")
             && !main_text.contains("stale quoted size")
             && !main_text.contains("stale compact quoted size"),
         "computed SYMBOL fields should replace stale cached text: {main_text:?}"
