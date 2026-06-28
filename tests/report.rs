@@ -834,6 +834,24 @@ fn page_ref_number_in_dash_section_page_number_format_diagnostics_docx() -> Vec<
 }
 
 #[cfg(feature = "docx")]
+fn page_ref_textual_section_page_number_format_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgNumType w:start="2" w:fmt="lowerLetter"/></w:sectPr></w:pPr></w:p><w:p><w:bookmarkStart w:id="7" w:name="LowerLetterSection"/><w:r><w:t>Lower letter target</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF LowerLetterSection \h "><w:r><w:t>stale lower letter</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF LowerLetterSection \* Arabic "><w:r><w:t>stale lower letter arabic</w:t></w:r></w:fldSimple></w:p><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgNumType w:start="3" w:fmt="upperLetter"/></w:sectPr></w:pPr></w:p><w:p><w:r><w:lastRenderedPageBreak/><w:t>Upper letter page lead.</w:t></w:r></w:p><w:p><w:bookmarkStart w:id="8" w:name="UpperLetterSection"/><w:r><w:t>Upper letter target</w:t></w:r><w:bookmarkEnd w:id="8"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF UpperLetterSection \h "><w:r><w:t>stale upper letter</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF UpperLetterSection \* Arabic "><w:r><w:t>stale upper letter arabic</w:t></w:r></w:fldSimple></w:p><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgNumType w:start="6" w:fmt="upperRoman"/></w:sectPr></w:pPr></w:p><w:p><w:bookmarkStart w:id="9" w:name="UpperRomanSection"/><w:r><w:t>Upper roman target</w:t></w:r><w:bookmarkEnd w:id="9"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF UpperRomanSection \h "><w:r><w:t>stale upper roman</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF UpperRomanSection \* Arabic "><w:r><w:t>stale upper roman arabic</w:t></w:r></w:fldSimple></w:p><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgNumType w:start="4" w:fmt="cardinalText"/></w:sectPr></w:pPr></w:p><w:p><w:r><w:lastRenderedPageBreak/><w:t>Cardinal page lead.</w:t></w:r></w:p><w:p><w:bookmarkStart w:id="10" w:name="CardinalTextSection"/><w:r><w:t>Cardinal text target</w:t></w:r><w:bookmarkEnd w:id="10"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF CardinalTextSection \h "><w:r><w:t>stale cardinal text</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF CardinalTextSection \* Arabic "><w:r><w:t>stale cardinal text arabic</w:t></w:r></w:fldSimple></w:p><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgNumType w:start="5" w:fmt="ordinalText"/></w:sectPr></w:pPr></w:p><w:p><w:bookmarkStart w:id="11" w:name="OrdinalTextSection"/><w:r><w:t>Ordinal text target</w:t></w:r><w:bookmarkEnd w:id="11"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF OrdinalTextSection \h "><w:r><w:t>stale ordinal text</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF OrdinalTextSection \* Arabic "><w:r><w:t>stale ordinal text arabic</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn page_ref_decimal_full_width_section_page_number_format_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -3310,6 +3328,44 @@ fn report_page_ref_number_in_dash_section_page_number_format_is_supported() {
         vec![FieldKindCount {
             kind: FieldKind::PageRef,
             count: 2,
+        }]
+    );
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+    assert!(
+        report
+            .warnings
+            .iter()
+            .all(|warning| !matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })),
+        "{:?}",
+        report.warnings
+    );
+
+    let json = report.to_json();
+    assert!(json.contains(r#""unsupported_field_kinds":[]"#), "{json}");
+    assert!(json.contains(r#""unsupported_field_reasons":[]"#), "{json}");
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_page_ref_textual_section_page_number_formats_are_supported() {
+    let doc = Document::open(&page_ref_textual_section_page_number_format_diagnostics_docx())
+        .expect("fixture opens");
+    let fields = doc.fields();
+    let expected = ["b", "2", "C", "3", "VI", "6", "five", "5", "fifth", "5"];
+    assert_eq!(fields.len(), expected.len());
+    for (field, computed) in fields.iter().zip(expected) {
+        assert_eq!(field.kind, FieldKind::PageRef);
+        assert_eq!(field.computed_result.as_deref(), Some(computed));
+    }
+
+    let report = doc.report();
+    assert_eq!(report.features.fields, expected.len());
+    assert_eq!(
+        report.features.field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::PageRef,
+            count: expected.len(),
         }]
     );
     assert!(report.features.unsupported_field_kinds.is_empty());
