@@ -1908,7 +1908,7 @@ fn page_ref_rendered_then_manual_break_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Page one text.</w:t></w:r></w:p><w:p><w:r><w:lastRenderedPageBreak/><w:t>Page two lead.</w:t><w:br w:type="page"/></w:r></w:p><w:p><w:bookmarkStart w:id="7" w:name="PageThree"/><w:r><w:t>Page three target</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF PageThree \h "><w:r><w:t>99</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF PageThree \p "><w:r><w:t>old relative</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGE \* Arabic "><w:r><w:t>stale current page</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Page one text.</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" PAGEREF PageThree \p "><w:r><w:t>stale distant relative</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:lastRenderedPageBreak/><w:t>Page two lead.</w:t><w:br w:type="page"/></w:r></w:p><w:p><w:bookmarkStart w:id="7" w:name="PageThree"/><w:r><w:t>Page three target</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF PageThree \h "><w:r><w:t>99</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF PageThree \p "><w:r><w:t>old relative</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGE \* Arabic "><w:r><w:t>stale current page</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -9170,27 +9170,33 @@ fn docx_page_ref_advances_rendered_context_across_manual_page_breaks() {
     let doc = Document::open(&page_ref_rendered_then_manual_break_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 3);
+    assert_eq!(fields.len(), 4);
     assert_eq!(fields[0].kind, FieldKind::PageRef);
-    assert_eq!(fields[0].instruction, "PAGEREF PageThree \\h");
-    assert_eq!(fields[0].result, "99");
-    assert_eq!(fields[0].computed_result.as_deref(), Some("3"));
+    assert_eq!(fields[0].instruction, "PAGEREF PageThree \\p");
+    assert_eq!(fields[0].result, "stale distant relative");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("on page 3"));
     assert_eq!(fields[1].kind, FieldKind::PageRef);
-    assert_eq!(fields[1].instruction, "PAGEREF PageThree \\p");
-    assert_eq!(fields[1].result, "old relative");
-    assert_eq!(fields[1].computed_result.as_deref(), Some("above"));
-    assert_eq!(fields[2].kind, FieldKind::Page);
-    assert_eq!(fields[2].instruction, "PAGE \\* Arabic");
-    assert_eq!(fields[2].result, "stale current page");
-    assert_eq!(fields[2].computed_result.as_deref(), Some("3"));
+    assert_eq!(fields[1].instruction, "PAGEREF PageThree \\h");
+    assert_eq!(fields[1].result, "99");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("3"));
+    assert_eq!(fields[2].kind, FieldKind::PageRef);
+    assert_eq!(fields[2].instruction, "PAGEREF PageThree \\p");
+    assert_eq!(fields[2].result, "old relative");
+    assert_eq!(fields[2].computed_result.as_deref(), Some("above"));
+    assert_eq!(fields[3].kind, FieldKind::Page);
+    assert_eq!(fields[3].instruction, "PAGE \\* Arabic");
+    assert_eq!(fields[3].result, "stale current page");
+    assert_eq!(fields[3].computed_result.as_deref(), Some("3"));
 
     let main_text = doc.main_text();
     assert!(
-        main_text.contains("3\nabove\n3"),
-        "rendered-context hard breaks should advance computed PAGEREF and PAGE output: {main_text:?}"
+        main_text.contains("on page 3\nPage two lead.")
+            && main_text.contains("3\nabove\n3"),
+        "rendered-context hard breaks should advance computed PAGEREF relative, PAGEREF page, and PAGE output: {main_text:?}"
     );
     assert!(
-        !main_text.contains("99")
+        !main_text.contains("stale distant relative")
+            && !main_text.contains("99")
             && !main_text.contains("old relative")
             && !main_text.contains("stale current page"),
         "computed rendered-context fields should not keep stale cached text: {main_text:?}"
