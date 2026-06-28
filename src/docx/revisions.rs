@@ -6,7 +6,7 @@ use quick_xml::Reader;
 use crate::annotation::{Revision, RevisionKind, RevisionView};
 use crate::text;
 
-use super::{attr_local, local};
+use super::{attr_local_trimmed, local};
 
 type Xml<'a> = Reader<&'a [u8]>;
 
@@ -70,9 +70,9 @@ fn revision_kind(name: &[u8]) -> Option<RevisionKind> {
 fn revision_shell(e: &BytesStart<'_>, kind: RevisionKind, text: String) -> Revision {
     Revision {
         kind,
-        id: attr_local(e, b"id"),
-        author: attr_local(e, b"author"),
-        date: attr_local(e, b"date"),
+        id: attr_local_trimmed(e, b"id"),
+        author: attr_local_trimmed(e, b"author"),
+        date: attr_local_trimmed(e, b"date"),
         text,
     }
 }

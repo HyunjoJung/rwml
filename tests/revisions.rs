@@ -31,7 +31,7 @@ fn revised_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:ins w:id="1" w:author="Alice" w:date="2026-06-24T01:00:00Z"><w:r><w:t>added</w:t></w:r></w:ins><w:del w:id="2" w:author="Bob"><w:r><w:delText>removed</w:delText></w:r></w:del><w:moveFrom w:id="3"><w:r><w:delText>from</w:delText></w:r></w:moveFrom><w:moveTo w:id="4"><w:r><w:t>to</w:t></w:r></w:moveTo></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:ins w:id=" 1 " w:author=" Alice " w:date=" 2026-06-24T01:00:00Z "><w:r><w:t>added</w:t></w:r></w:ins><w:del w:id="2" w:author="Bob"><w:r><w:delText>removed</w:delText></w:r></w:del><w:moveFrom w:id="3"><w:r><w:delText>from</w:delText></w:r></w:moveFrom><w:moveTo w:id="4"><w:r><w:t>to</w:t></w:r></w:moveTo></w:p></w:body></w:document>"#,
         ),
     ])
 }
