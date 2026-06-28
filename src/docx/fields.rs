@@ -9,8 +9,9 @@ use crate::annotation::{
     accept_field_number_format_switch,
     accept_field_text_format_switch as accept_field_format_switch, accept_general_format_switch,
     field_identifier_token, field_level_range_token, field_level_token, field_literal_token,
-    field_name_token, field_non_empty_non_switch_literal_token, field_non_switch_literal_token,
-    field_points_token, field_positive_points_token, field_symbol_code_token, instruction_parts,
+    field_name_token, field_non_empty_non_switch_literal_token,
+    field_non_empty_quoted_literal_token, field_non_switch_literal_token, field_points_token,
+    field_positive_points_token, field_symbol_code_token, instruction_parts,
     is_neutral_field_format_switch, is_note_ref_kind, is_ref_value_neutral_switch,
     is_toc_value_neutral_switch, reference_index_category_token, reference_index_literal_token,
     reference_index_plain_value_token, strip_ascii_switch_prefix, toc_style_specs, Field,
@@ -7532,16 +7533,10 @@ fn print_instruction(instruction: &str) -> Option<()> {
     let first = parts.next()?;
     if first.eq_ignore_ascii_case("\\p") {
         field_identifier_token(parts.next()?)?;
-        let codes = quoted_literal_text(parts.next()?)?;
-        if codes.is_empty() {
-            return None;
-        }
+        field_non_empty_quoted_literal_token(parts.next()?)?;
     } else if let Some(group) = strip_ascii_switch_prefix(first, "\\p") {
         field_identifier_token(group)?;
-        let codes = quoted_literal_text(parts.next()?)?;
-        if codes.is_empty() {
-            return None;
-        }
+        field_non_empty_quoted_literal_token(parts.next()?)?;
     } else {
         accept_print_direct_token(first)?;
         let mut text_format = None;
@@ -10440,6 +10435,10 @@ mod tests {
         );
         assert_eq!(
             computed_action_result(r#"PRINT \p ReportBox "0 0 moveto" \*Lower"#).as_deref(),
+            Some("")
+        );
+        assert_eq!(
+            computed_action_result(r#"PRINT \p ReportBox "\p literal code""#).as_deref(),
             Some("")
         );
     }

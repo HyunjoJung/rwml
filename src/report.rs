@@ -17,7 +17,10 @@ use crate::annotation::{
     toc_style_specs, Field, FieldKind, FieldNumberFormat, FieldTextFormat,
 };
 #[cfg(not(feature = "docx"))]
-use crate::annotation::{field_non_empty_non_switch_literal_token, field_non_switch_literal_token};
+use crate::annotation::{
+    field_non_empty_non_switch_literal_token, field_non_empty_quoted_literal_token,
+    field_non_switch_literal_token,
+};
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{field_points_token, field_positive_points_token, field_symbol_code_token};
 #[cfg(not(feature = "docx"))]
@@ -2965,13 +2968,19 @@ fn supported_print_syntax(instruction: &str) -> bool {
         };
         let mut text_format = false;
         return diagnostic_identifier_token(group).is_some()
-            && quoted_non_empty_non_switch_literal_for_report(parts.next()).is_some()
+            && parts
+                .next()
+                .and_then(field_non_empty_quoted_literal_token)
+                .is_some()
             && supported_field_format_tail_for_report(&mut parts, &mut text_format);
     }
     if let Some(group) = strip_ascii_switch_prefix(first, "\\p") {
         let mut text_format = false;
         return diagnostic_identifier_token(group).is_some()
-            && quoted_non_empty_non_switch_literal_for_report(parts.next()).is_some()
+            && parts
+                .next()
+                .and_then(field_non_empty_quoted_literal_token)
+                .is_some()
             && supported_field_format_tail_for_report(&mut parts, &mut text_format);
     }
     if field_non_empty_non_switch_literal_token(first).is_none() {
@@ -3030,14 +3039,6 @@ fn supported_action_button_syntax(instruction: &str) -> bool {
     }
     display_parts.is_empty()
         || field_non_empty_non_switch_literal_token(&display_parts.join(" ")).is_some()
-}
-
-#[cfg(not(feature = "docx"))]
-fn quoted_non_empty_non_switch_literal_for_report(token: Option<&str>) -> Option<&str> {
-    let token = token?;
-    token
-        .starts_with('"')
-        .then(|| field_non_empty_non_switch_literal_token(token))?
 }
 
 fn inserted_content_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -5752,6 +5753,10 @@ mod tests {
     fn no_default_action_diagnostics_reject_malformed_format_tails() {
         assert_eq!(
             super::action_uncomputed_reason(r#"PRINT \p ReportBox "0 0 moveto""#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::action_uncomputed_reason(r#"PRINT \p ReportBox "\p literal code""#),
             super::FieldEvaluationReason::NoComputedResult
         );
         assert_eq!(
