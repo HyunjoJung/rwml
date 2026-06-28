@@ -174,10 +174,9 @@ The first public maturity release should meet these requirements.
 - `.doc` and `.docx` open through one API.
 - Text extraction is panic-free on the public corpus.
 - Core metadata is queryable through `Document::core_properties()` for supported
-  `docProps/core.xml` fields including category, content status, and version,
-  plus generated model-backed title, subject, creator, description, keywords,
-  category, content status, last-modified-by, created, modified, last-printed,
-  revision, and version metadata.
+  `docProps/core.xml` fields including title, subject, creator, description,
+  keywords, category, content status, last-modified-by, created, modified,
+  last-printed, revision, and version metadata.
 - `DocModel` includes body paragraphs, runs, tables, lists, images, headers,
   footers, footnotes, endnotes, and text boxes where currently supported.
 - Footnotes and endnotes are exposed through `Document::notes()` as typed
@@ -499,7 +498,7 @@ The first public maturity release should meet these requirements.
 - generated `.docx` files reopen in rdoc, Word, and LibreOffice.
 - report example covers styles, tables, images, page setup with section columns,
   document grids, text direction, title pages, page-number restarts/formats, explicit Word document ids, web-extension task pane package shells, explicit page breaks and next/even/odd section breaks,
-  default/first/even headers/footers, and page numbers.
+  default/first/even headers/footers, page numbers, and generated core metadata.
 - lossy authoring vs preservation editing is documented.
 
 ### Renderer
