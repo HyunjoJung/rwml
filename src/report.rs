@@ -3164,11 +3164,23 @@ fn supported_barcode_syntax(instruction: &str) -> bool {
     };
     let mut value_tokens = 0usize;
     let mut positional_values = true;
-    for part in parts {
+    while let Some(part) = parts.next() {
         if !diagnostic_field_token_well_formed(part) {
             return false;
         }
         if part.starts_with('\\') {
+            if part.eq_ignore_ascii_case("\\q") {
+                let Some(value) = parts.next() else {
+                    return false;
+                };
+                if value.starts_with('\\') || diagnostic_literal_token(value).is_none() {
+                    return false;
+                }
+            } else if let Some(value) = strip_ascii_switch_prefix(part, "\\q") {
+                if value.is_empty() || diagnostic_literal_token(value).is_none() {
+                    return false;
+                }
+            }
             positional_values = false;
             continue;
         }
@@ -6097,6 +6109,16 @@ mod tests {
                 Some(super::FieldEvaluationReason::UnsupportedSwitch)
             );
         }
+
+        let missing_quality_operand = Field {
+            kind: FieldKind::Barcode("DISPLAYBARCODE".to_string()),
+            instruction: r#"DISPLAYBARCODE "12345" QR \q"#.to_string(),
+            ..Field::default()
+        };
+        assert_eq!(
+            super::unsupported_field_reason(&missing_quality_operand),
+            Some(super::FieldEvaluationReason::UnsupportedSwitch)
+        );
     }
 
     #[test]
