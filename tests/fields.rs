@@ -9818,6 +9818,36 @@ fn set_field_result_uses_fields_order_for_nested_complex_fields() {
 }
 
 #[test]
+fn set_field_result_rejects_note_field_indexes_without_mutation() {
+    let fixture = note_body_field_docx();
+    let before = unzip_parts(&fixture);
+    let mut doc = Document::open(&fixture).expect("fixture opens");
+
+    assert_eq!(doc.fields().len(), 2);
+    let err = doc
+        .set_field_result(0, "changed.docx")
+        .expect_err("note field index rejected");
+
+    assert!(
+        err.to_string().contains("editable body field range"),
+        "{err}"
+    );
+    assert!(doc.edited_parts().is_empty());
+
+    let after = unzip_parts(&doc.save().expect("save rejected edit"));
+    assert_eq!(
+        before.get("word/footnotes.xml"),
+        after.get("word/footnotes.xml"),
+        "rejected note field edit should not mutate footnotes.xml"
+    );
+    assert_eq!(
+        before.get("word/endnotes.xml"),
+        after.get("word/endnotes.xml"),
+        "rejected note field edit should not mutate endnotes.xml"
+    );
+}
+
+#[test]
 fn set_field_result_writes_tabs_and_breaks_as_markers() {
     let mut doc = Document::open(&field_docx()).expect("fixture opens");
 

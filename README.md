@@ -161,7 +161,7 @@ let mut doc = rdoc::Document::open(&std::fs::read("in.docx")?)?;
 
 // Element-tree edit: preserves fields, content controls, shapes, comments…
 doc.replace_body_text("DRAFT", "FINAL")?;
-doc.set_field_result(0, "7")?;                  // cached result for doc.fields()[0]
+doc.set_field_result(0, "7")?;                  // cached result for body field index 0
 doc.fill_content_controls_by_tag([
     ("client-name", "Acme & Co"),
     ("project-name", "Roadmap"),

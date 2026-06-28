@@ -987,11 +987,11 @@ impl Document {
         edit_docx_revisions(d, RevisionEditMode::Reject)
     }
 
-    /// **Element-tree editing: rewrite a field's cached visible result.** The
-    /// zero-based `field_index` is the same order returned by [`Document::fields`].
-    /// Simple fields (`w:fldSimple`) and common complex fields (`begin` /
-    /// `separate` / `end`) are supported; only cached result `w:t` nodes are
-    /// changed, never the field instruction.
+    /// **Element-tree editing: rewrite a body field's cached visible result.** The
+    /// zero-based `field_index` is the same order as the body field entries
+    /// returned by [`Document::fields`]. Simple fields (`w:fldSimple`) and common
+    /// complex fields (`begin` / `separate` / `end`) are supported; only cached
+    /// result `w:t` nodes are changed, never the field instruction.
     ///
     /// This is a preservation edit: unmodeled field markup and surrounding package
     /// parts are kept, and the edit is transactional. Like other element-tree edits,
@@ -1000,6 +1000,18 @@ impl Document {
     #[cfg(feature = "docx")]
     pub fn set_field_result(&mut self, field_index: usize, result: &str) -> Result<()> {
         let d = self.docx_tree_editable()?;
+        let raw = d
+            .package
+            .part("word/document.xml")
+            .ok_or_else(|| Error::Docx("missing word/document.xml".into()))?;
+        let raw_xml = String::from_utf8_lossy(&raw);
+        let body_field_count = docx::parse_fields(&raw_xml).len();
+        if field_index >= body_field_count && field_index < d.fields.len() {
+            return Err(Error::Docx(format!(
+                "field index {field_index} is outside the editable body field range"
+            )));
+        }
+
         let mut pkg = d.package.clone();
         {
             let tree = pkg.part_tree_mut("word/document.xml")?;
