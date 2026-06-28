@@ -13,8 +13,25 @@ type Xml<'a> = Reader<&'a [u8]>;
 pub(crate) fn parse(xml: &str) -> Vec<Revision> {
     let mut r = Reader::from_str(xml);
     let mut revisions = Vec::new();
+    let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
+            Ok(Event::Start(e))
+                if skip_alternate_content_branch(
+                    &mut alternate_content_stack,
+                    local(e.name().as_ref()),
+                ) =>
+            {
+                skip_subtree(&mut r);
+            }
+            Ok(Event::Empty(e))
+                if skip_alternate_content_branch(
+                    &mut alternate_content_stack,
+                    local(e.name().as_ref()),
+                ) => {}
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                alternate_content_stack.push(AlternateContentBranchState::default());
+            }
             Ok(Event::Start(e)) => {
                 if let Some(kind) = revision_kind(local(e.name().as_ref())) {
                     revisions.push(read_revision(&mut r, &e, kind));
@@ -24,6 +41,9 @@ pub(crate) fn parse(xml: &str) -> Vec<Revision> {
                 if let Some(kind) = revision_kind(local(e.name().as_ref())) {
                     revisions.push(revision_shell(&e, kind, String::new()));
                 }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                alternate_content_stack.pop();
             }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
@@ -35,8 +55,25 @@ pub(crate) fn parse(xml: &str) -> Vec<Revision> {
 pub(crate) fn main_text_with_view(xml: &str, view: RevisionView) -> String {
     let mut r = Reader::from_str(xml);
     let mut out = String::new();
+    let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
+            Ok(Event::Start(e))
+                if skip_alternate_content_branch(
+                    &mut alternate_content_stack,
+                    local(e.name().as_ref()),
+                ) =>
+            {
+                skip_subtree(&mut r);
+            }
+            Ok(Event::Empty(e))
+                if skip_alternate_content_branch(
+                    &mut alternate_content_stack,
+                    local(e.name().as_ref()),
+                ) => {}
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                alternate_content_stack.push(AlternateContentBranchState::default());
+            }
             Ok(Event::Start(e)) => {
                 if let Some(kind) = revision_kind(local(e.name().as_ref())) {
                     let rev_text = read_revision_text(&mut r, local(e.name().as_ref()));
@@ -49,6 +86,9 @@ pub(crate) fn main_text_with_view(xml: &str, view: RevisionView) -> String {
                 if let Some(kind) = revision_kind(local(e.name().as_ref())) {
                     push_revision_text(&mut out, view, kind, "");
                 }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                alternate_content_stack.pop();
             }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
@@ -86,8 +126,25 @@ fn read_revision(r: &mut Xml<'_>, start: &BytesStart<'_>, kind: RevisionKind) ->
 fn read_revision_text(r: &mut Xml<'_>, end_name: &[u8]) -> String {
     let mut depth = 1usize;
     let mut text = String::new();
+    let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
+            Ok(Event::Start(e))
+                if skip_alternate_content_branch(
+                    &mut alternate_content_stack,
+                    local(e.name().as_ref()),
+                ) =>
+            {
+                skip_subtree(r);
+            }
+            Ok(Event::Empty(e))
+                if skip_alternate_content_branch(
+                    &mut alternate_content_stack,
+                    local(e.name().as_ref()),
+                ) => {}
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                alternate_content_stack.push(AlternateContentBranchState::default());
+            }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == end_name => {
                 depth = depth.saturating_add(1);
             }
@@ -102,6 +159,9 @@ fn read_revision_text(r: &mut Xml<'_>, end_name: &[u8]) -> String {
                 if depth == 0 {
                     break;
                 }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                alternate_content_stack.pop();
             }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
@@ -165,4 +225,41 @@ fn read_text(r: &mut Xml<'_>) -> String {
         }
     }
     s
+}
+
+#[derive(Default)]
+struct AlternateContentBranchState {
+    took_branch: bool,
+}
+
+fn skip_alternate_content_branch(stack: &mut [AlternateContentBranchState], name: &[u8]) -> bool {
+    if !matches!(name, b"Choice" | b"Fallback") {
+        return false;
+    }
+    let Some(state) = stack.last_mut() else {
+        return false;
+    };
+    if state.took_branch {
+        true
+    } else {
+        state.took_branch = true;
+        false
+    }
+}
+
+fn skip_subtree(r: &mut Xml<'_>) {
+    let mut depth = 1usize;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(_)) => depth += 1,
+            Ok(Event::End(_)) => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    break;
+                }
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
 }

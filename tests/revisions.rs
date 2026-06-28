@@ -82,6 +82,23 @@ fn note_revised_docx() -> Vec<u8> {
     ])
 }
 
+fn alternate_content_revised_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:p><mc:AlternateContent><mc:Choice Requires="w14"><w:ins w:id="1" w:author="Alice"><w:r><w:t>Choice insert</w:t></w:r></w:ins></mc:Choice><mc:Fallback><w:ins w:id="2" w:author="Bob"><w:r><w:t>Fallback insert</w:t></w:r></w:ins></mc:Fallback></mc:AlternateContent><w:ins w:id="3"><w:r><mc:AlternateContent><mc:Choice Requires="w14"><w:t>Choice inner</w:t></mc:Choice><mc:Fallback><w:t>Fallback inner</w:t></mc:Fallback></mc:AlternateContent></w:r></w:ins></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 #[test]
 fn docx_revisions_are_extracted() {
     let doc = Document::open(&revised_docx()).expect("fixture opens");
@@ -172,4 +189,30 @@ fn docx_note_revisions_are_exposed() {
 
     assert_eq!(doc.footnote_text(), "Foot added");
     assert_eq!(doc.endnote_text(), "End moved to");
+}
+
+#[test]
+fn docx_revisions_use_first_alternate_content_branch() {
+    let doc = Document::open(&alternate_content_revised_docx()).expect("fixture opens");
+    let revisions = doc.revisions();
+
+    assert_eq!(revisions.len(), 2);
+    assert_eq!(revisions[0].kind, RevisionKind::Insertion);
+    assert_eq!(revisions[0].id.as_deref(), Some("1"));
+    assert_eq!(revisions[0].author.as_deref(), Some("Alice"));
+    assert_eq!(revisions[0].text, "Choice insert");
+
+    assert_eq!(revisions[1].kind, RevisionKind::Insertion);
+    assert_eq!(revisions[1].id.as_deref(), Some("3"));
+    assert_eq!(revisions[1].text, "Choice inner");
+
+    assert_eq!(
+        doc.main_text_with_revision_view(RevisionView::Accepted),
+        "Choice insert Choice inner"
+    );
+    assert_eq!(doc.main_text_with_revision_view(RevisionView::Original), "");
+    assert_eq!(
+        doc.main_text_with_revision_view(RevisionView::Annotated),
+        "[+Choice insert] [+Choice inner]"
+    );
 }
