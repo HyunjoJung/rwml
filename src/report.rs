@@ -31,7 +31,8 @@ use crate::annotation::{field_points_token, field_positive_points_token, field_s
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{
     page_field_format_syntax_tail, reference_index_category_token, reference_index_literal_token,
-    reference_index_plain_value_token, revision_number_field_text_format, style_ref_field_syntax,
+    reference_index_plain_value_token, revision_number_field_text_format, set_field_syntax,
+    style_ref_field_syntax,
 };
 use crate::model::{Block, FieldRole, Stats, Table};
 use crate::CoreProperties;
@@ -4183,52 +4184,12 @@ fn set_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     }
     #[cfg(not(feature = "docx"))]
     {
-        if supported_set_syntax(instruction) {
+        if set_field_syntax(instruction) {
             FieldEvaluationReason::NoComputedResult
         } else {
             FieldEvaluationReason::UnsupportedSwitch
         }
     }
-}
-
-#[cfg(not(feature = "docx"))]
-fn supported_set_syntax(instruction: &str) -> bool {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let Some(kind) = parts.next() else {
-        return false;
-    };
-    if !kind.eq_ignore_ascii_case("SET") {
-        return false;
-    }
-    if diagnostic_identifier_token(parts.next().unwrap_or("")).is_none() {
-        return false;
-    }
-    let Some(value) = parts.next() else {
-        return false;
-    };
-    let quoted_value = value.trim().starts_with('"');
-    if quoted_value {
-        if diagnostic_literal_token(value).is_none() {
-            return false;
-        }
-    } else if value.is_empty() || value.starts_with('\\') || value.contains('"') {
-        return false;
-    }
-    let mut text_format = false;
-    while let Some(part) = parts.next() {
-        let Some(accepted) = accept_field_format_for_report(part, &mut parts, &mut text_format)
-        else {
-            return false;
-        };
-        if accepted {
-            continue;
-        }
-        if quoted_value || part.starts_with('\\') || part.contains('"') {
-            return false;
-        }
-    }
-    true
 }
 
 fn merge_control_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -5941,7 +5902,15 @@ mod tests {
             super::FieldEvaluationReason::NoComputedResult
         );
         assert_eq!(
+            super::set_uncomputed_reason(r#"SET ClientName Client 42"#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
             super::set_uncomputed_reason(r#"SET \r "Acme""#),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+        assert_eq!(
+            super::set_uncomputed_reason(r#"SET ClientName "Acme"#),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
     }

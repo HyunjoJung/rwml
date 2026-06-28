@@ -712,6 +712,55 @@ fn accept_page_field_format_switch(
         || accept_field_text_format_switch(part, text_format)
 }
 
+pub(crate) fn set_field_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if !kind.eq_ignore_ascii_case("SET") {
+        return false;
+    }
+    if field_identifier_token(parts.next().unwrap_or("")).is_none() {
+        return false;
+    }
+    let Some(value) = parts.next() else {
+        return false;
+    };
+    if field_quoted_literal_token(value).is_some() {
+        let mut text_format = None;
+        while let Some(part) = parts.next() {
+            let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
+                accept_field_text_format_switch(format, &mut text_format)
+            }) else {
+                return false;
+            };
+            if !accepted {
+                return false;
+            }
+        }
+        return true;
+    }
+    if value.is_empty() || value.starts_with('\\') || value.contains('"') {
+        return false;
+    }
+    let mut text_format = None;
+    while let Some(part) = parts.next() {
+        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_text_format_switch(format, &mut text_format)
+        }) else {
+            return false;
+        };
+        if accepted {
+            continue;
+        }
+        if part.starts_with('\\') || part.contains('"') {
+            return false;
+        }
+    }
+    true
+}
+
 pub(crate) fn document_property_key(value: &str) -> String {
     value
         .chars()

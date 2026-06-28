@@ -16,9 +16,9 @@ use crate::annotation::{
     is_neutral_field_format_switch, is_note_ref_kind, is_ref_value_neutral_switch,
     is_toc_value_neutral_switch, page_field_format_syntax_tail, reference_index_category_token,
     reference_index_literal_token, reference_index_plain_value_token,
-    revision_number_field_text_format, strip_ascii_switch_prefix, style_ref_field_syntax,
-    toc_style_specs, Field, FieldKind, FieldNumberFormat, FieldTextFormat, StyleRefFieldSyntax,
-    StyleRefResult,
+    revision_number_field_text_format, set_field_syntax, strip_ascii_switch_prefix,
+    style_ref_field_syntax, toc_style_specs, Field, FieldKind, FieldNumberFormat, FieldTextFormat,
+    StyleRefFieldSyntax, StyleRefResult,
 };
 use crate::{numfmt, CoreProperties};
 
@@ -5213,41 +5213,7 @@ pub(crate) fn computed_set_result(
 }
 
 pub(crate) fn supports_set_field_syntax(instruction: &str) -> bool {
-    set_field_syntax(instruction).is_some()
-}
-
-fn set_field_syntax(instruction: &str) -> Option<()> {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let kind = parts.next()?;
-    if !kind.eq_ignore_ascii_case("SET") {
-        return None;
-    }
-    field_identifier_token(parts.next()?)?;
-    let value = parts.next()?;
-    if quoted_literal_text(value).is_some() {
-        return accept_field_format_tail(&mut parts);
-    }
-    if value.is_empty() || value.starts_with('\\') || value.contains('"') {
-        return None;
-    }
-    accept_uncomputed_set_tail(&mut parts)
-}
-
-fn accept_uncomputed_set_tail<'a, I>(parts: &mut I) -> Option<()>
-where
-    I: Iterator<Item = &'a str>,
-{
-    let mut text_format = None;
-    while let Some(part) = parts.next() {
-        if accept_field_format_switch_for_tail(part, parts, &mut text_format)? {
-            continue;
-        }
-        if part.starts_with('\\') || part.contains('"') {
-            return None;
-        }
-    }
-    Some(())
+    set_field_syntax(instruction)
 }
 
 fn set_instruction(instruction: &str) -> Option<SetInstruction> {
