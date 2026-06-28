@@ -1096,7 +1096,7 @@ fn doc_builder_adds_string_custom_properties() {
 #[test]
 fn doc_builder_adds_document_id_setting() {
     let model = DocBuilder::new()
-        .document_id("6ECD4467")
+        .document_id(" 6ECD4467 ")
         .paragraph("Body")
         .build();
 
