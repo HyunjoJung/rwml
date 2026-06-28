@@ -802,11 +802,21 @@ fn unsupported_placeholder_texts_with_known_shapes(
     unsupported_placeholder_texts(&features)
 }
 
-fn unsupported_placeholder_blocks(
-    features: &FeatureInventory,
-    known_floating_shapes: usize,
-) -> Vec<Block> {
-    unsupported_placeholder_texts_with_known_shapes(features, known_floating_shapes)
+fn undecodable_image_placeholder_texts(count: usize) -> Vec<String> {
+    if count == 0 {
+        Vec::new()
+    } else {
+        vec![placeholder_label(
+            count,
+            "raster image",
+            "raster images",
+            "skipped because the PDF backend could not decode them",
+        )]
+    }
+}
+
+fn placeholder_blocks(texts: Vec<String>) -> Vec<Block> {
+    texts
         .into_iter()
         .map(|text| {
             Block::Paragraph(Paragraph {
@@ -831,6 +841,20 @@ fn unsupported_placeholder_blocks(
             })
         })
         .collect()
+}
+
+fn unsupported_placeholder_blocks(
+    features: &FeatureInventory,
+    known_floating_shapes: usize,
+) -> Vec<Block> {
+    placeholder_blocks(unsupported_placeholder_texts_with_known_shapes(
+        features,
+        known_floating_shapes,
+    ))
+}
+
+fn undecodable_image_placeholder_blocks(count: usize) -> Vec<Block> {
+    placeholder_blocks(undecodable_image_placeholder_texts(count))
 }
 
 fn page_field_text(
@@ -3716,6 +3740,21 @@ fn render_pdf(
             );
         }
     }
+    let undecodable_placeholders =
+        undecodable_image_placeholder_blocks(count_undecodable_images(&model.blocks));
+    if !undecodable_placeholders.is_empty() {
+        if !items.is_empty() {
+            items.push(FlowItem::Gap(PARA_GAP));
+        }
+        collect_blocks(
+            &undecodable_placeholders,
+            &mut items,
+            geom,
+            &mut font_cx,
+            &mut layout_cx,
+            &mut font_cache,
+        );
+    }
     // Paginate: flow items top-to-bottom onto pages sized by `geom`. Tables repeat
     // their header rows after each break and split rows taller than a page.
     let mut pages: Pages = vec![Vec::new()];
@@ -4183,6 +4222,17 @@ mod tests {
         assert_eq!(
             super::unsupported_placeholder_texts_with_known_shapes(&features, 3),
             vec!["[rdoc preview placeholder: 1 chart preserved but not modeled]"]
+        );
+    }
+
+    #[test]
+    fn undecodable_image_placeholder_texts_describe_skipped_rasters() {
+        assert!(super::undecodable_image_placeholder_texts(0).is_empty());
+        assert_eq!(
+            super::undecodable_image_placeholder_texts(2),
+            vec![
+                "[rdoc preview placeholder: 2 raster images skipped because the PDF backend could not decode them]"
+            ]
         );
     }
 
