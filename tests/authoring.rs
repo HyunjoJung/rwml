@@ -7848,6 +7848,34 @@ fn render_pdf_report_warns_about_undecodable_raster_images() {
 
 #[cfg(feature = "render")]
 #[test]
+fn render_pdf_report_warns_about_missing_image_bytes() {
+    let model = DocModel {
+        blocks: vec![Block::Image(rdoc::Image {
+            alt: Some("missing source".to_string()),
+            width_px: Some(64),
+            height_px: Some(48),
+            ..rdoc::Image::default()
+        })],
+        ..DocModel::default()
+    };
+
+    let rendered = rdoc::render_pdf_with_report(&model);
+
+    assert!(rendered.pdf.starts_with(b"%PDF"));
+    assert!(rendered
+        .report
+        .warnings
+        .iter()
+        .any(|warning| matches!(warning, rdoc::RenderWarning::MissingImageBytes { count: 1 })));
+    let json = rendered.report.to_json();
+    assert!(
+        json.contains(r#""kind":"MissingImageBytes","count":1"#),
+        "{json}"
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
 fn render_pdf_report_treats_page_ref_as_named_unsupported_field() {
     let model = DocBuilder::new().field("PAGEREF Figure1 \\h", "3").build();
 

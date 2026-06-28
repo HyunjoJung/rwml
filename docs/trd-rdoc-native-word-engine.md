@@ -1045,8 +1045,8 @@ Concrete entry points:
 pass. Reports built from an opened `Document` reuse `Document::report().features`
 so unsupported preserved constructs can become render warnings even when the
 lossy model cannot draw them directly; reports also warn when model raster image
-bytes are present but the PDF backend cannot decode that format, and render
-paths append compact placeholder lines for those skipped images. Opened-document
+bytes are unavailable or present but the PDF backend cannot decode that format,
+and render paths append compact placeholder lines for those skipped images. Opened-document
 render paths also use that
 inventory to draw bounded overlay boxes for recovered `.docx` floating-shape
 geometry and anchor layout metadata, including enabled `wp:simplePos` absolute
@@ -1059,10 +1059,11 @@ inserted, and moved-to shapes count, deleted and moved-from old-only anchors or
 markers are omitted, and one marker is retained for unrecovered
 alternate-content shape placeholders. It appends compact placeholder lines for
 charts, OLE objects,
-unsupported metafile images, skipped raster images whose bytes the PDF backend
-cannot decode, and floating-shape markers that do not yet have recovered
-geometry. Metafile package parts are still unsupported for drawing, but the
-diagnostics inventory records their path, WMF/EMF family, stored byte size,
+unsupported metafile images, image nodes whose bytes are unavailable, skipped
+raster images whose bytes the PDF backend cannot decode, and floating-shape
+markers that do not yet have recovered geometry. Metafile package parts are
+still unsupported for drawing, but the diagnostics inventory records their path,
+WMF/EMF family, stored byte size,
 compression flag, and raw-header dimensions when a raw or gzip-wrapped EMF or
 placeable WMF header makes that recoverable without full rendering.
 

@@ -299,6 +299,7 @@ fn render_warning_name(warning: &rdoc::RenderWarning) -> &'static str {
             "OleObjectsPreservedButNotModeled"
         }
         rdoc::RenderWarning::UnsupportedMetafileImages { .. } => "UnsupportedMetafileImages",
+        rdoc::RenderWarning::MissingImageBytes { .. } => "MissingImageBytes",
         rdoc::RenderWarning::UndecodableRasterImages { .. } => "UndecodableRasterImages",
     }
 }

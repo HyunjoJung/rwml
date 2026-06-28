@@ -343,6 +343,12 @@ pub enum RenderWarning {
         /// Number of WMF/EMF parts observed.
         count: usize,
     },
+    /// Model image nodes had no extracted bytes, so the renderer emits a
+    /// placeholder instead of drawing the image.
+    MissingImageBytes {
+        /// Number of model images skipped by the renderer.
+        count: usize,
+    },
     /// Raster image bytes were present, but the current PDF backend could not
     /// decode that image format.
     UndecodableRasterImages {
@@ -1158,6 +1164,11 @@ fn render_warning_json(out: &mut String, warning: &RenderWarning) {
         }
         RenderWarning::UnsupportedMetafileImages { count } => {
             json_field_str(out, "kind", "UnsupportedMetafileImages");
+            out.push(',');
+            json_field_num(out, "count", count);
+        }
+        RenderWarning::MissingImageBytes { count } => {
+            json_field_str(out, "kind", "MissingImageBytes");
             out.push(',');
             json_field_num(out, "count", count);
         }

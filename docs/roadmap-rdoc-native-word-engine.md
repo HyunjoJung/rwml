@@ -713,8 +713,8 @@ Initial status:
 - `render_pdf_with_report()`, `render_pdf_with_fonts_and_report()`, and
   `Document::to_pdf_with_report()` return generated PDF bytes plus
   `RenderReport` page counts, renderer warnings derived from `FeatureInventory`,
-  and model raster decode warnings and placeholder lines when image bytes are
-  skipped.
+  and model image-byte availability/decode warnings plus placeholder lines when
+  images are skipped.
 - Opened documents can now use the same explicit font registration path as raw
   `DocModel`s through `Document::to_pdf_with_fonts*` and
   `Document::try_to_pdf_with_fonts*`, including report-returning variants.
@@ -726,8 +726,9 @@ Initial status:
   recovered `.docx` floating-shape geometry on the recovered top-level body block
   page when available, and append compact
   placeholder lines for preserved charts, OLE objects, unsupported metafile
-  images, skipped raster images whose bytes the PDF backend cannot decode, and
-  shape markers without recovered geometry. Metafile placeholders are backed by
+  images, image nodes whose bytes are unavailable, skipped raster images whose
+  bytes the PDF backend cannot decode, and shape markers without recovered
+  geometry. Metafile placeholders are backed by
   the diagnostics inventory metadata, including bounded gzip header inflation
   for EMZ/WMZ dimensions, but payload rendering is not implemented. These are
   honest preview markers, not exact Office layout.

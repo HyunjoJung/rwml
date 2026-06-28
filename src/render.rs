@@ -288,7 +288,11 @@ fn image_is_undecodable(img: &Image) -> bool {
         .is_some_and(|bytes| decode_image(bytes, img.mime.as_deref()).is_none())
 }
 
-fn count_undecodable_images(blocks: &[Block]) -> usize {
+fn image_missing_bytes(img: &Image) -> bool {
+    img.bytes.is_none()
+}
+
+fn count_images_matching(blocks: &[Block], matches: fn(&Image) -> bool) -> usize {
     let mut count = 0;
     for block in blocks {
         match block {
@@ -297,21 +301,29 @@ fn count_undecodable_images(blocks: &[Block]) -> usize {
                     .runs
                     .iter()
                     .filter_map(|run| run.image.as_ref())
-                    .filter(|image| image_is_undecodable(image))
+                    .filter(|image| matches(image))
                     .count();
             }
             Block::Table(table) => {
                 for row in &table.rows {
                     for cell in &row.cells {
-                        count += count_undecodable_images(&cell.blocks);
+                        count += count_images_matching(&cell.blocks, matches);
                     }
                 }
             }
-            Block::Image(image) if image_is_undecodable(image) => count += 1,
+            Block::Image(image) if matches(image) => count += 1,
             Block::Image(_) | Block::Chart(_) | Block::PageBreak | Block::SectionBreak(_) => {}
         }
     }
     count
+}
+
+fn count_undecodable_images(blocks: &[Block]) -> usize {
+    count_images_matching(blocks, image_is_undecodable)
+}
+
+fn count_missing_image_bytes(blocks: &[Block]) -> usize {
+    count_images_matching(blocks, image_missing_bytes)
 }
 
 fn render_warnings_for_model(
@@ -319,6 +331,12 @@ fn render_warnings_for_model(
     model: &DocModel,
 ) -> Vec<RenderWarning> {
     let mut warnings = report::render_warnings_for(unsupported);
+    let missing_image_bytes = count_missing_image_bytes(&model.blocks);
+    if missing_image_bytes > 0 {
+        warnings.push(RenderWarning::MissingImageBytes {
+            count: missing_image_bytes,
+        });
+    }
     let undecodable_images = count_undecodable_images(&model.blocks);
     if undecodable_images > 0 {
         warnings.push(RenderWarning::UndecodableRasterImages {
@@ -815,6 +833,19 @@ fn undecodable_image_placeholder_texts(count: usize) -> Vec<String> {
     }
 }
 
+fn missing_image_placeholder_texts(count: usize) -> Vec<String> {
+    if count == 0 {
+        Vec::new()
+    } else {
+        vec![placeholder_label(
+            count,
+            "image",
+            "images",
+            "unavailable because their bytes were not extracted",
+        )]
+    }
+}
+
 fn placeholder_blocks(texts: Vec<String>) -> Vec<Block> {
     texts
         .into_iter()
@@ -851,6 +882,10 @@ fn unsupported_placeholder_blocks(
         features,
         known_floating_shapes,
     ))
+}
+
+fn missing_image_placeholder_blocks(count: usize) -> Vec<Block> {
+    placeholder_blocks(missing_image_placeholder_texts(count))
 }
 
 fn undecodable_image_placeholder_blocks(count: usize) -> Vec<Block> {
@@ -3740,6 +3775,21 @@ fn render_pdf(
             );
         }
     }
+    let missing_image_placeholders =
+        missing_image_placeholder_blocks(count_missing_image_bytes(&model.blocks));
+    if !missing_image_placeholders.is_empty() {
+        if !items.is_empty() {
+            items.push(FlowItem::Gap(PARA_GAP));
+        }
+        collect_blocks(
+            &missing_image_placeholders,
+            &mut items,
+            geom,
+            &mut font_cx,
+            &mut layout_cx,
+            &mut font_cache,
+        );
+    }
     let undecodable_placeholders =
         undecodable_image_placeholder_blocks(count_undecodable_images(&model.blocks));
     if !undecodable_placeholders.is_empty() {
@@ -4232,6 +4282,17 @@ mod tests {
             super::undecodable_image_placeholder_texts(2),
             vec![
                 "[rdoc preview placeholder: 2 raster images skipped because the PDF backend could not decode them]"
+            ]
+        );
+    }
+
+    #[test]
+    fn missing_image_placeholder_texts_describe_unavailable_bytes() {
+        assert!(super::missing_image_placeholder_texts(0).is_empty());
+        assert_eq!(
+            super::missing_image_placeholder_texts(2),
+            vec![
+                "[rdoc preview placeholder: 2 images unavailable because their bytes were not extracted]"
             ]
         );
     }

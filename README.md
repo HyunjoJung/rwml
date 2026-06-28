@@ -252,9 +252,9 @@ the `render` feature.
 > renders draw bounded approximate overlay boxes for recovered `.docx`
 > floating-shape geometry on the recovered top-level body block page when
 > available, and compact placeholder lines for preserved charts,
-> OLE objects, WMF/EMF/EMZ/WMZ images, raster images the PDF backend cannot
-> decode, and any floating-shape markers without recovered geometry rather than
-> drawing those objects exactly.
+> OLE objects, WMF/EMF/EMZ/WMZ images, image nodes whose bytes are unavailable,
+> raster images the PDF backend cannot decode, and any floating-shape markers
+> without recovered geometry rather than drawing those objects exactly.
 > Measured against LibreOffice on a real corpus it reaches ~0.93 text recall with
 > close page counts; for archival or Word-exact PDF, render via LibreOffice.
 > (See *Scope & parity*.)
@@ -727,8 +727,9 @@ via LibreOffice. rdoc aims to match specialist extractors on text/model recovery
 while staying dependency-light; render fidelity remains below LibreOffice.
 `render_pdf_with_report` / `to_pdf_with_report` expose the emitted page count and
 renderer warnings for unsupported fields, floating shapes, charts, OLE objects,
-WMF/EMF/EMZ/WMZ images, and raster images skipped because the PDF backend cannot
-decode their bytes. `Document::report().features.metafiles` exposes
+WMF/EMF/EMZ/WMZ images, image nodes whose bytes are unavailable, and raster
+images skipped because the PDF backend cannot decode their bytes.
+`Document::report().features.metafiles` exposes
 metafile part path, format, stored byte size, compression flag, and header-derived
 dimensions when a raw or gzip-wrapped EMF header or placeable WMF header makes
 that cheap to recover. Floating-shape feature counts use the same accepted/current
@@ -751,10 +752,10 @@ names, simple sRGB solid fill/outline colors, wrap-distance labels, and
 text-bearing shape body text in preview labels.
 It appends compact placeholder lines for
 preserved-but-unmodeled chart parts, OLE objects, unsupported metafile images,
-skipped raster images whose bytes the PDF backend cannot decode, and shape
-markers without recovered geometry. Exact body-page anchoring beyond that
-best-effort block page, real text-wrap reflow, and non-text Office-Art drawing
-contents remain out of scope.
+image nodes whose bytes are unavailable, skipped raster images whose bytes the
+PDF backend cannot decode, and shape markers without recovered geometry. Exact
+body-page anchoring beyond that best-effort block page, real text-wrap reflow,
+and non-text Office-Art drawing contents remain out of scope.
 [`scripts/bench_vs_mature.py`](scripts/bench_vs_mature.py) emits a schema-tagged
 JSON extraction benchmark report against local Apache POI and LibreOffice
 goldens and can enforce release thresholds for mean POI recall/F1, mean
