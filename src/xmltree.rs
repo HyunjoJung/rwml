@@ -2070,7 +2070,8 @@ impl XmlTree {
                 }
             }
             if self.resolves_to(id, WML_NS, b"comment", scope)
-                && attr_value_local(attrs, b"id") == Some(comment_id)
+                && attr_value_local(attrs, b"id")
+                    .is_some_and(|value| trim_ascii_whitespace(value) == comment_id)
             {
                 let mut target = WmlCommentTextEditTarget {
                     first_run: None,

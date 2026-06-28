@@ -82,11 +82,11 @@ fn commented_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:commentRangeStart w:id="7"/><w:r><w:t>Hello</w:t></w:r><w:commentRangeEnd w:id="7"/><w:r><w:commentReference w:id="7"/></w:r></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:commentRangeStart w:id=" 7 "/><w:r><w:t>Hello</w:t></w:r><w:commentRangeEnd w:id=" 7 "/><w:r><w:commentReference w:id=" 7 "/></w:r></w:p></w:body></w:document>"#,
         ),
         (
             "word/comments.xml",
-            r#"<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:comment w:id="7" w:author="Reviewer" w:initials="RV" w:date="2026-06-24T00:00:00Z"><w:p><w:r><w:t>First </w:t></w:r><w:r><w:t>note</w:t></w:r></w:p></w:comment></w:comments>"#,
+            r#"<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:comment w:id=" 7 " w:author="Reviewer" w:initials="RV" w:date="2026-06-24T00:00:00Z"><w:p><w:r><w:t>First </w:t></w:r><w:r><w:t>note</w:t></w:r></w:p></w:comment></w:comments>"#,
         ),
     ])
 }

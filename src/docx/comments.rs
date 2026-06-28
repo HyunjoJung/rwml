@@ -61,14 +61,18 @@ pub(crate) fn apply_extended_parent_ids(
 
 fn comment_shell(e: &BytesStart<'_>) -> Comment {
     Comment {
-        id: attr_local(e, b"id").unwrap_or_default(),
+        id: attr_local_trimmed(e, b"id").unwrap_or_default(),
         author: attr_local(e, b"author"),
         initials: attr_local(e, b"initials"),
         date: attr_local(e, b"date"),
-        parent_comment_id: attr_local(e, b"parentId"),
+        parent_comment_id: attr_local_trimmed(e, b"parentId"),
         text: String::new(),
         anchor: None,
     }
+}
+
+fn attr_local_trimmed(e: &BytesStart<'_>, key: &[u8]) -> Option<String> {
+    attr_local(e, key).map(|value| value.trim().to_owned())
 }
 
 fn comment_para_ids(xml: &str) -> HashMap<String, String> {
@@ -78,15 +82,16 @@ fn comment_para_ids(xml: &str) -> HashMap<String, String> {
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"comment" => {
-                current_comment_id = attr_local(&e, b"id");
+                current_comment_id = attr_local_trimmed(&e, b"id");
             }
             Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"comment" => {
                 current_comment_id = None;
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"p" => {
-                if let (Some(comment_id), Some(para_id)) =
-                    (current_comment_id.as_ref(), attr_local(&e, b"paraId"))
-                {
+                if let (Some(comment_id), Some(para_id)) = (
+                    current_comment_id.as_ref(),
+                    attr_local_trimmed(&e, b"paraId"),
+                ) {
                     ids.insert(comment_id.clone(), para_id);
                 }
             }
@@ -108,9 +113,10 @@ fn extended_parent_para_ids(xml: &str) -> HashMap<String, String> {
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"commentEx" =>
             {
-                if let (Some(para_id), Some(parent_para_id)) =
-                    (attr_local(&e, b"paraId"), attr_local(&e, b"paraIdParent"))
-                {
+                if let (Some(para_id), Some(parent_para_id)) = (
+                    attr_local_trimmed(&e, b"paraId"),
+                    attr_local_trimmed(&e, b"paraIdParent"),
+                ) {
                     ids.insert(para_id, parent_para_id);
                 }
             }
@@ -134,7 +140,7 @@ pub(crate) fn parse_anchors(xml: &str) -> HashMap<String, TextAnchor> {
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"commentRangeStart" =>
             {
-                if let Some(id) = attr_local(&e, b"id") {
+                if let Some(id) = attr_local_trimmed(&e, b"id") {
                     let visible = old_content_depth == 0;
                     if visible {
                         anchors.entry(id.clone()).or_insert_with(|| TextAnchor {
@@ -160,7 +166,7 @@ pub(crate) fn parse_anchors(xml: &str) -> HashMap<String, TextAnchor> {
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"commentRangeEnd" =>
             {
-                if let Some(id) = attr_local(&e, b"id") {
+                if let Some(id) = attr_local_trimmed(&e, b"id") {
                     if let Some(pos) = active.iter().rposition(|(active_id, _)| active_id == &id) {
                         active.remove(pos);
                     }
