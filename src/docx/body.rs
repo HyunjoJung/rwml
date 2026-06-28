@@ -1325,7 +1325,8 @@ fn read_content_control_pr_item(control: &mut AuthoredContentControl, e: &BytesS
         b"alias" => control.alias = attr_local(e, b"val"),
         b"tag" => control.tag = attr_local(e, b"val"),
         b"dataBinding" => {
-            control.data_binding_xpath = attr_local(e, b"xpath");
+            control.data_binding_xpath =
+                attr_local(e, b"xpath").map(|xpath| xpath.trim().to_owned());
             control.data_binding_store_item_id =
                 attr_local(e, b"storeItemID").map(|id| id.trim().to_owned());
         }
@@ -3520,7 +3521,7 @@ mod tests {
     fn content_control_store_item_id_trims_ooxml_value() {
         let xml = r#"<w:document><w:body>
             <w:sdt><w:sdtPr>
-                <w:dataBinding w:xpath="/root/client" w:storeItemID=" {11111111-2222-3333-4444-555555555555} "/>
+                <w:dataBinding w:xpath=" /root/client " w:storeItemID=" {11111111-2222-3333-4444-555555555555} "/>
             </w:sdtPr><w:sdtContent>
                 <w:p><w:r><w:t>Bound value</w:t></w:r></w:p>
             </w:sdtContent></w:sdt>
@@ -3533,6 +3534,7 @@ mod tests {
             .content_control
             .as_ref()
             .expect("content control metadata");
+        assert_eq!(control.data_binding_xpath.as_deref(), Some("/root/client"));
         assert_eq!(
             control.data_binding_store_item_id.as_deref(),
             Some("{11111111-2222-3333-4444-555555555555}")
