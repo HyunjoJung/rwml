@@ -666,9 +666,12 @@ Initial status:
   run-anchored comments through `CommentBuilder` with reply parent ids,
   commentsExtended metadata, and authored tab/newline markers, inline hyperlink runs through `RunBuilder::hyperlink`,
   tracked insertion/deletion runs through
-  `RevisionBuilder`, run-level content controls through `ContentControlBuilder`,
-  standalone hyperlink paragraphs, image blocks with alt text and explicit sizing
-  through `ImageBuilder`, bar/stacked bar/100% stacked bar/3-D bar/stacked 3-D bar/100% stacked 3-D bar/column/stacked column/100% stacked column/3-D column/stacked 3-D column/100% stacked 3-D column/line/markerless line/smooth line/stacked line/100% stacked line/3-D line/area/stacked area/100% stacked area/3-D area/stacked 3-D area/100% stacked 3-D area/radar/radar-with-markers/filled radar/scatter/line-only scatter/smooth scatter/smooth markerless scatter/marker-only scatter/bubble/3-D bubble/pie/exploded pie/3-D pie/exploded 3-D pie/doughnut/exploded doughnut/surface/3-D surface/high-low-close stock/stock/pie-of-pie/bar-of-pie
+  `RevisionBuilder`, run-level content controls with data-binding metadata
+  through `ContentControlBuilder`, bookmarked runs, authored footnotes/endnotes,
+  standalone hyperlink paragraphs, string custom document properties, raw custom
+  XML data-store items, image blocks with alt text, explicit sizing, inline
+  rotation, and page-relative floating offsets through `ImageBuilder`,
+  bar/stacked bar/100% stacked bar/3-D bar/stacked 3-D bar/100% stacked 3-D bar/column/stacked column/100% stacked column/3-D column/stacked 3-D column/100% stacked 3-D column/line/markerless line/smooth line/stacked line/100% stacked line/3-D line/area/stacked area/100% stacked area/3-D area/stacked 3-D area/100% stacked area/radar/radar-with-markers/filled radar/scatter/line-only scatter/smooth scatter/smooth markerless scatter/marker-only scatter/bubble/3-D bubble/pie/exploded pie/3-D pie/exploded 3-D pie/doughnut/exploded doughnut/surface/3-D surface/high-low-close stock/stock/pie-of-pie/bar-of-pie
   charts with embedded workbook-backed data, 3-D bar/column-family shape styling, and
   surface-family wireframe styling through `ChartBuilder`, page
   size/orientation/margins/columns/document grids/text direction/title pages, page-number restarts/formats, explicit Word document ids, web-extension task pane package shells, explicit page breaks, next/even/odd section breaks that snapshot
