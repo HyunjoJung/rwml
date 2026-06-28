@@ -14,7 +14,9 @@ use crate::{numfmt, CoreProperties};
 
 use super::numbering::Numbering;
 use super::styles::Styles;
-use super::{attr_local, attr_u8, attr_usize, is_page_break_type, local, toggle_on};
+use super::{
+    attr_local, attr_u8, attr_usize, field_char_type, is_page_break_type, local, toggle_on,
+};
 
 type Xml<'a> = Reader<&'a [u8]>;
 
@@ -760,7 +762,7 @@ fn apply_complex_field_scan_fld_char(
     current: &mut Vec<ComplexField>,
     mut finish: impl FnMut(ComplexField),
 ) {
-    match attr_local(e, b"fldCharType").as_deref() {
+    match field_char_type(e).as_deref() {
         Some("begin") => {
             current.push(ComplexField {
                 instruction: String::new(),
@@ -1210,7 +1212,7 @@ fn apply_ref_scan_fld_char(
     field_positions: &mut Vec<RefFieldPosition>,
     paragraph: &mut RefPositionParagraph,
 ) {
-    match attr_local(e, b"fldCharType").as_deref() {
+    match field_char_type(e).as_deref() {
         Some("begin") => {
             *current = Some(RefScanField {
                 instruction: String::new(),
@@ -1879,7 +1881,7 @@ fn apply_note_ref_scan_fld_char(
     ref_field_positions: &mut Vec<NoteRefFieldPosition>,
     generated_ref_note_fields: &mut Vec<NoteRefGeneratedField>,
 ) {
-    match attr_local(e, b"fldCharType").as_deref() {
+    match field_char_type(e).as_deref() {
         Some("begin") => {
             *current = Some(NoteRefScanField {
                 instruction: String::new(),
@@ -2168,7 +2170,7 @@ fn apply_section_scan_fld_char(
     current: &mut Option<SectionScanField>,
     field_sections: &mut Vec<usize>,
 ) {
-    match attr_local(e, b"fldCharType").as_deref() {
+    match field_char_type(e).as_deref() {
         Some("begin") => {
             *current = Some(SectionScanField {
                 instruction: String::new(),
@@ -2735,7 +2737,7 @@ fn apply_style_ref_scan_fld_char(
     next_order: &mut usize,
     paragraph_number: &Option<StyleRefParagraphNumber>,
 ) {
-    match attr_local(e, b"fldCharType").as_deref() {
+    match field_char_type(e).as_deref() {
         Some("begin") => {
             *current = Some(StyleRefScanField {
                 instruction: String::new(),
@@ -3057,7 +3059,7 @@ pub(crate) fn legacy_form_context(xml: &str, preserve_cached: bool) -> LegacyFor
                         consumed_element = true;
                     }
                     b"fldChar" => {
-                        let kind = attr_local(&e, b"fldCharType");
+                        let kind = field_char_type(&e);
                         let form_data = read_legacy_form_data_until(&mut r);
                         apply_legacy_form_scan_fld_char(
                             kind.as_deref(),
@@ -3097,7 +3099,7 @@ pub(crate) fn legacy_form_context(xml: &str, preserve_cached: bool) -> LegacyFor
                         );
                     }
                     b"fldChar" => apply_legacy_form_scan_fld_char(
-                        attr_local(&e, b"fldCharType").as_deref(),
+                        field_char_type(&e).as_deref(),
                         None,
                         &mut current,
                         &mut results,
@@ -3931,7 +3933,7 @@ fn apply_page_ref_scan_fld_char(
     field_positions: &mut Vec<Option<PageRefPosition>>,
     page_field_positions: &mut Vec<Option<PageRefPosition>>,
 ) {
-    match attr_local(e, b"fldCharType").as_deref() {
+    match field_char_type(e).as_deref() {
         Some("begin") => {
             *current = Some(PageRefScanField {
                 instruction: String::new(),

@@ -2079,6 +2079,10 @@ pub(crate) fn is_page_break_type(e: &BytesStart<'_>) -> bool {
     attr_local(e, b"type").is_some_and(|value| value.trim() == "page")
 }
 
+pub(crate) fn field_char_type(e: &BytesStart<'_>) -> Option<String> {
+    attr_local(e, b"fldCharType").map(|value| value.trim().to_owned())
+}
+
 /// Resolve an OOXML on/off toggle: a present element with no `w:val` means *on*;
 /// `false`/`0`/`off` mean *off*; anything else is *on*.
 pub(crate) fn toggle_on(val: Option<String>) -> bool {

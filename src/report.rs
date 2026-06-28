@@ -5043,7 +5043,7 @@ fn scan_docx_xml(xml: &str, features: &mut FeatureInventory) {
 
 #[cfg(feature = "docx")]
 fn is_complex_field_begin(e: &quick_xml::events::BytesStart<'_>) -> bool {
-    crate::docx::attr_local(e, b"fldCharType").as_deref() == Some("begin")
+    crate::docx::field_char_type(e).as_deref() == Some("begin")
 }
 
 #[cfg(feature = "docx")]
