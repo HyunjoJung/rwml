@@ -102,7 +102,7 @@ impl RunBuilder {
 
     /// Mark the run as a relationship-backed external hyperlink.
     pub fn hyperlink(mut self, url: impl Into<String>) -> Self {
-        self.run.field = FieldRole::Hyperlink { url: url.into() };
+        self.run.field = hyperlink_field(url.into());
         self
     }
 
@@ -2172,10 +2172,19 @@ fn hyperlink_paragraph(text: String, url: String) -> Block {
         props: ParaProps::default(),
         runs: vec![Run {
             text,
-            field: FieldRole::Hyperlink { url },
+            field: hyperlink_field(url),
             ..Run::default()
         }],
     })
+}
+
+fn hyperlink_field(url: String) -> FieldRole {
+    let url = url.trim().to_string();
+    if url.is_empty() {
+        FieldRole::None
+    } else {
+        FieldRole::Hyperlink { url }
+    }
 }
 
 fn plain_cell(text: String, is_header: bool) -> Cell {

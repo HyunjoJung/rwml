@@ -1415,6 +1415,45 @@ fn run_builder_adds_inline_hyperlink_runs() {
 }
 
 #[test]
+fn builders_ignore_blank_hyperlink_targets() {
+    let model = DocBuilder::new()
+        .hyperlink("doc link", " ")
+        .rich_paragraph(
+            ParagraphBuilder::new().runs([RunBuilder::new("inline link").hyperlink("\t").build()]),
+        )
+        .build();
+
+    let Block::Paragraph(doc_link) = &model.blocks[0] else {
+        panic!("expected doc-builder paragraph");
+    };
+    assert!(matches!(doc_link.runs[0].field, FieldRole::None));
+    let Block::Paragraph(inline_link) = &model.blocks[1] else {
+        panic!("expected run-builder paragraph");
+    };
+    assert!(matches!(inline_link.runs[0].field, FieldRole::None));
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    assert!(
+        !document_xml.contains("<w:hyperlink"),
+        "blank hyperlink targets should serialize as plain text: {document_xml}"
+    );
+    assert!(!parts.contains_key("word/_rels/document.xml.rels"));
+
+    let reopened = Document::open(&bytes).expect("blank-hyperlink .docx reopens");
+    assert_eq!(reopened.text(), "doc link\ninline link");
+    let reopened_model = reopened.model();
+    assert!(reopened_model.blocks.iter().all(|block| match block {
+        Block::Paragraph(paragraph) => paragraph
+            .runs
+            .iter()
+            .all(|run| matches!(run.field, FieldRole::None)),
+        _ => true,
+    }));
+}
+
+#[test]
 fn run_builder_adds_authored_comment() {
     let model = DocBuilder::new()
         .paragraph_runs([RunBuilder::new("Reviewed clause")
