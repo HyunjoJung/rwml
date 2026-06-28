@@ -252,7 +252,7 @@ Initial status:
   visible text, and reference-id anchors with normalized containing body block
   text when the body references them, including through accepted-current
   body-level revision wrappers.
-- `Document::text_boxes()` extracts `.docx` body/header/footer text-box
+- `Document::text_boxes()` extracts `.docx` body/note/header/footer text-box
   side-table records from `w:txbxContent` shapes with stable synthetic ids and
   visible text,
   unambiguous anchored-shape containing body anchor text, the same

@@ -441,6 +441,35 @@ fn header_footer_text_box_docx() -> Vec<u8> {
     ])
 }
 
+fn note_text_box_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFootnotes" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rIdEndnotes" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Body</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r><w:r><w:endnoteReference w:id="2"/></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:footnote w:id="1"><w:p><w:r><w:drawing><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>Foot box</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></w:drawing></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+        (
+            "word/endnotes.xml",
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:endnote w:id="2"><w:p><w:r><w:drawing><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>End box</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></w:drawing></w:r></w:p></w:endnote></w:endnotes>"#,
+        ),
+    ])
+}
+
 fn anchored_text_box_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -1812,6 +1841,21 @@ fn docx_header_footer_text_boxes_are_exposed_as_side_table() {
     assert_eq!(text_boxes[0].id, "word/header1.xml#default-text-box-0");
     assert_eq!(text_boxes[0].text, "HEADER BOX");
     assert_eq!(text_boxes[0].anchor, None);
+}
+
+#[test]
+fn docx_note_text_boxes_are_exposed_as_side_table() {
+    let doc = Document::open(&note_text_box_docx()).expect("fixture opens");
+
+    assert_eq!(doc.text_box_text(), "Foot box\nEnd box");
+    let text_boxes = doc.text_boxes();
+    assert_eq!(text_boxes.len(), 2);
+    assert_eq!(text_boxes[0].id, "word/footnotes.xml-text-box-0");
+    assert_eq!(text_boxes[0].text, "Foot box");
+    assert_eq!(text_boxes[0].anchor, None);
+    assert_eq!(text_boxes[1].id, "word/endnotes.xml-text-box-0");
+    assert_eq!(text_boxes[1].text, "End box");
+    assert_eq!(text_boxes[1].anchor, None);
 }
 
 #[test]

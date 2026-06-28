@@ -299,7 +299,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
                                                            // Footnotes/endnotes live in their own parts. Keep them SEPARATE from the body
                                                            // (not appended into `model.blocks`); their parts are preserved verbatim on save.
                                                            // They are re-joined for the read/text views below and in `Document::model()`.
-    let (mut notes, mut note_records, mut note_revisions, mut note_floating_shapes) = read_notes(
+    let mut note_part = read_notes(
         &mut zip,
         "word/footnotes.xml",
         b"footnote",
@@ -308,24 +308,27 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         &numbering,
         document_properties,
     );
-    let (endnote_blocks, mut endnote_records, endnote_revisions, endnote_floating_shapes) =
-        read_notes(
-            &mut zip,
-            "word/endnotes.xml",
-            b"endnote",
-            NoteKind::Endnote,
-            &styles,
-            &numbering,
-            document_properties,
-        );
-    notes.extend(endnote_blocks);
-    note_records.append(&mut endnote_records);
-    note_revisions.extend(endnote_revisions);
-    note_floating_shapes.extend(endnote_floating_shapes);
-    attach_note_reference_anchors(&mut note_records, &doc_xml);
+    let mut endnote_part = read_notes(
+        &mut zip,
+        "word/endnotes.xml",
+        b"endnote",
+        NoteKind::Endnote,
+        &styles,
+        &numbering,
+        document_properties,
+    );
+    note_part.blocks.extend(endnote_part.blocks);
+    note_part.records.append(&mut endnote_part.records);
+    note_part.revisions.extend(endnote_part.revisions);
+    note_part
+        .floating_shapes
+        .extend(endnote_part.floating_shapes);
+    note_part.text_boxes.extend(endnote_part.text_boxes);
+    attach_note_reference_anchors(&mut note_part.records, &doc_xml);
     let mut floating_shapes = read_floating_shapes(&doc_xml);
-    floating_shapes.extend(note_floating_shapes);
+    floating_shapes.extend(note_part.floating_shapes);
     let mut text_boxes = read_text_boxes(&doc_xml, &ctx, &floating_shapes);
+    text_boxes.extend(note_part.text_boxes);
     // Running headers/footers referenced by the body's sectPr(s). `ctx` only holds
     // shared (&) borrows of rels/styles/numbering, so the &mut zip pass is fine.
     let HeaderFooterRead {
@@ -378,12 +381,12 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         preserve_legacy_form_cache,
     );
     let mut revisions = revisions::parse(&doc_xml);
-    revisions.extend(note_revisions);
+    revisions.extend(note_part.revisions);
     revisions.extend(header_footer_revisions);
     // Stats reflect the full visible content (body + notes).
     let stats = {
         let mut all = blocks.clone();
-        all.extend(notes.iter().cloned());
+        all.extend(note_part.blocks.iter().cloned());
         assemble::compute_stats(&all)
     };
     let model = DocModel {
@@ -418,14 +421,14 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
             ..crate::model::DocSetup::default()
         },
     };
-    fields.extend(crate::report::fields_for_model(&notes));
+    fields.extend(crate::report::fields_for_model(&note_part.blocks));
     append_model_header_footer_fields(&mut fields, &model);
     let main_text = body_text(&model); // body only
                                        // Full text: body, then notes, then section/final headers/footers.
     let text = {
         let mut raw = String::new();
         flatten(&model.blocks, &mut raw);
-        flatten(&notes, &mut raw);
+        flatten(&note_part.blocks, &mut raw);
         flatten_header_footer_surfaces(&model, &mut raw);
         text::finalize(&raw)
     };
@@ -434,12 +437,12 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     let package = crate::opc::Package::from_zip(bytes)?;
     Ok(DocxState {
         model,
-        notes,
+        notes: note_part.blocks,
         text,
         main_text,
         package,
         comments,
-        note_records,
+        note_records: note_part.records,
         text_boxes,
         floating_shapes,
         header_footers,
@@ -895,6 +898,15 @@ fn header_footer_kind(part_kind: HeaderFooterPartKind, type_name: &str) -> Heade
     }
 }
 
+#[derive(Default)]
+struct NotePartRead {
+    blocks: Vec<Block>,
+    records: Vec<Note>,
+    revisions: Vec<Revision>,
+    floating_shapes: Vec<FloatingShape>,
+    text_boxes: Vec<TextBox>,
+}
+
 /// Read a footnotes/endnotes part (if present) into its real notes' blocks, with
 /// the part's own rels/media so links and images inside notes resolve.
 fn read_notes(
@@ -905,9 +917,9 @@ fn read_notes(
     styles: &styles::Styles,
     numbering: &numbering::Numbering,
     properties: DocumentPropertyRefs<'_>,
-) -> (Vec<Block>, Vec<Note>, Vec<Revision>, Vec<FloatingShape>) {
+) -> NotePartRead {
     let Some(xml) = part(zip, name) else {
-        return (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+        return NotePartRead::default();
     };
     let part_rels = part(zip, &part_rels_path(name))
         .map(|s| parse_rels(&s))
@@ -961,6 +973,8 @@ fn read_notes(
     let mut records = Vec::new();
     let revisions = revisions::parse(&xml);
     let floating_shapes = read_floating_shapes(&xml);
+    let text_box_id_prefix = format!("{name}-text-box");
+    let text_boxes = read_text_boxes_with_prefix(&xml, &ctx, &floating_shapes, &text_box_id_prefix);
     for (id, note_blocks) in body::parse_note_entries(&xml, &ctx, tag) {
         let text = blocks_text(&note_blocks);
         records.push(Note {
@@ -971,7 +985,13 @@ fn read_notes(
         });
         blocks.extend(note_blocks);
     }
-    (blocks, records, revisions, floating_shapes)
+    NotePartRead {
+        blocks,
+        records,
+        revisions,
+        floating_shapes,
+        text_boxes,
+    }
 }
 
 fn read_text_boxes(

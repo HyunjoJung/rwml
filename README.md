@@ -852,7 +852,7 @@ code points.
   `notes()` exposes `.docx` footnote/endnote side-table records with
   Word ids, reference-id anchors, and normalized containing body block text for
   matched direct or accepted-current wrapped references; `text_boxes()` exposes
-  `.docx` accepted-current body/header/footer text-box side-table records from
+  `.docx` accepted-current body/note/header/footer text-box side-table records from
   `w:txbxContent`, and unambiguous anchored text boxes include containing body
   anchor text;
   `text()` includes headers/footers, `main_text()` is

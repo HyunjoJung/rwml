@@ -672,7 +672,7 @@ impl Document {
     /// Legacy `.doc` text boxes are recovered from exact FIB text-box
     /// subdocument regions with synthetic ids, visible text, and best-effort
     /// source-region anchors. Exact shape anchors are not recovered yet.
-    /// `.docx` text boxes are recovered from body/header/footer `w:txbxContent`
+    /// `.docx` text boxes are recovered from body/note/header/footer `w:txbxContent`
     /// shapes with synthetic ids and visible text.
     pub fn text_boxes(&self) -> Vec<TextBox> {
         match &self.backend {
@@ -2601,7 +2601,7 @@ impl Document {
     }
 
     /// Normalized text-box text. `.doc` uses the model's `TextBox` source region;
-    /// `.docx` uses parsed body/header/footer text-box side-table records.
+    /// `.docx` uses parsed body/note/header/footer text-box side-table records.
     pub fn text_box_text(&self) -> String {
         match &self.backend {
             Backend::Doc(_) => self
