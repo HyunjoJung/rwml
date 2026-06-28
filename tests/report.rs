@@ -485,29 +485,6 @@ fn compatibility_field_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
-fn field_pair_diagnostics_docx(
-    valid_instruction: &str,
-    valid_text: &str,
-    malformed_instruction: &str,
-    malformed_text: &str,
-) -> Vec<u8> {
-    let document = format!(
-        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" {valid_instruction} "><w:r><w:t>{valid_text}</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" {malformed_instruction} "><w:r><w:t>{malformed_text}</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#
-    );
-    docx_fixture(&[
-        (
-            "[Content_Types].xml",
-            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
-        ),
-        (
-            "_rels/.rels",
-            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
-        ),
-        ("word/document.xml", &document),
-    ])
-}
-
-#[cfg(feature = "docx")]
 fn protected_form_field_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -566,13 +543,25 @@ fn dynamic_control_field_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
-fn style_ref_field_diagnostics_docx() -> Vec<u8> {
-    field_pair_diagnostics_docx(
-        r#"STYLEREF Heading1 \p"#,
-        "cached missing style ref",
-        r#"STYLEREF &quot;Heading 1"#,
-        "cached malformed style ref",
-    )
+fn document_structure_field_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rIdCore" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>"#,
+        ),
+        (
+            "docProps/core.xml",
+            r#"<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"><cp:revision>12</cp:revision></cp:coreProperties>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" REVNUM "><w:r><w:t>4</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SECTION "><w:r><w:t>2</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SECTIONPAGES "><w:r><w:t>5</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;Heading 1&quot; \n "><w:r><w:t>Executive Summary</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;Heading 1 "><w:r><w:t>cached broken style ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" STYLEREF \p &quot;Heading 1&quot; "><w:r><w:t>cached switch-first style ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
 }
 
 #[cfg(feature = "docx")]
@@ -2606,21 +2595,23 @@ fn report_dynamic_control_fields_split_cached_and_malformed_diagnostics() {
 
 #[cfg(feature = "docx")]
 #[test]
-fn report_style_ref_fields_split_cached_and_malformed_diagnostics() {
+fn report_document_structure_fields_split_computed_cached_and_malformed_diagnostics() {
     assert_report_field_diagnostics(
-        style_ref_field_diagnostics_docx(),
-        2,
-        vec![field_kind_count(
-            FieldKind::DocumentStructure("STYLEREF".to_string()),
-            2,
-        )],
-        vec![field_kind_count(
-            FieldKind::DocumentStructure("STYLEREF".to_string()),
-            2,
-        )],
+        document_structure_field_diagnostics_docx(),
+        6,
         vec![
-            field_reason_count(FieldEvaluationReason::NoComputedResult, 1),
-            field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 1),
+            field_kind_count(FieldKind::DocumentStructure("REVNUM".to_string()), 1),
+            field_kind_count(FieldKind::DocumentStructure("SECTION".to_string()), 1),
+            field_kind_count(FieldKind::DocumentStructure("SECTIONPAGES".to_string()), 1),
+            field_kind_count(FieldKind::DocumentStructure("STYLEREF".to_string()), 3),
+        ],
+        vec![
+            field_kind_count(FieldKind::DocumentStructure("SECTIONPAGES".to_string()), 1),
+            field_kind_count(FieldKind::DocumentStructure("STYLEREF".to_string()), 3),
+        ],
+        vec![
+            field_reason_count(FieldEvaluationReason::NoComputedResult, 2),
+            field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 2),
         ],
     );
 }
