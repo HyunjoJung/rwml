@@ -1302,7 +1302,8 @@ impl ChartBuilder {
 
     /// Set the chart title.
     pub fn title(mut self, title: impl Into<String>) -> Self {
-        self.chart.title = Some(title.into());
+        let title = title.into().trim().to_string();
+        self.chart.title = (!title.is_empty()).then_some(title);
         self
     }
 

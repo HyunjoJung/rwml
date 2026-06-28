@@ -1805,7 +1805,7 @@ fn chart_xml(chart: &Chart, chart_id: u32, workbook_rid: Option<&str>) -> String
     out.push_str(
         r#"<c:date1904 val="0"/><c:lang val="en-US"/><c:roundedCorners val="0"/><c:chart>"#,
     );
-    if let Some(title) = chart.title.as_deref().filter(|title| !title.is_empty()) {
+    if let Some(title) = non_empty_trimmed(chart.title.as_deref()) {
         write_chart_title(&mut out, title);
     }
     out.push_str("<c:plotArea><c:layout/>");

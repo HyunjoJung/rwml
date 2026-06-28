@@ -3112,7 +3112,7 @@ fn doc_builder_adds_bar_chart() {
     let model = DocBuilder::new()
         .chart(
             ChartBuilder::bar()
-                .title("Quarterly revenue")
+                .title(" Quarterly revenue ")
                 .categories(["Q1", "Q2"])
                 .series("Revenue", [42.0, 51.5])
                 .size_px(480, 320)
@@ -3165,6 +3165,36 @@ fn doc_builder_adds_bar_chart() {
 
     let reopened = Document::open(&bytes).expect("chart builder .docx reopens");
     assert_eq!(reopened.report().features.charts, 1);
+}
+
+#[test]
+fn chart_builder_ignores_blank_chart_title() {
+    let mut model = DocBuilder::new()
+        .chart(
+            ChartBuilder::bar()
+                .title(" \t ")
+                .categories(["Q1"])
+                .series("Revenue", [42.0]),
+        )
+        .build();
+
+    let Block::Chart(chart) = &model.blocks[0] else {
+        panic!("expected chart block");
+    };
+    assert_eq!(chart.title, None);
+
+    let Block::Chart(chart) = &mut model.blocks[0] else {
+        panic!("expected chart block");
+    };
+    chart.title = Some(" \n ".to_string());
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let chart_xml = String::from_utf8(parts["word/charts/chart1.xml"].clone()).unwrap();
+    assert!(
+        !chart_xml.contains("<c:title>"),
+        "blank chart title should not emit title XML: {chart_xml}"
+    );
 }
 
 #[test]
