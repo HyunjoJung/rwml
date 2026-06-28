@@ -3165,6 +3165,16 @@ fn supported_barcode_syntax(instruction: &str) -> bool {
     let mut value_tokens = 0usize;
     let mut positional_values = true;
     while let Some(part) = parts.next() {
+        let Some(accepted) = accept_general_format_switch(
+            part,
+            &mut parts,
+            diagnostic_format_switch_token_well_formed,
+        ) else {
+            return false;
+        };
+        if accepted {
+            continue;
+        }
         if !diagnostic_field_token_well_formed(part) {
             return false;
         }
