@@ -1400,7 +1400,7 @@ fn read_ppr_item(pp: &mut PPr, e: &BytesStart<'_>, num_id: &mut Option<String>, 
             pp.spacing.after_pt = attr_local(e, b"after").and_then(|v| twips_to_pt(&v));
             // `w:line` is 240ths of a line when lineRule is auto/absent.
             let exact = matches!(
-                attr_local(e, b"lineRule").as_deref(),
+                attr_local(e, b"lineRule").as_deref().map(str::trim),
                 Some("exact") | Some("atLeast")
             );
             if !exact {
@@ -3408,6 +3408,19 @@ mod tests {
             panic!("paragraph after break");
         };
         assert_eq!(after.text(), "after");
+    }
+
+    #[test]
+    fn paragraph_spacing_line_rule_trims_ooxml_value() {
+        let xml = r#"<w:document><w:body><w:p>
+            <w:pPr><w:spacing w:line="360" w:lineRule=" exact "/></w:pPr>
+            <w:r><w:t>exact line spacing</w:t></w:r>
+        </w:p></w:body></w:document>"#;
+        let Block::Paragraph(p) = &parse(xml)[0] else {
+            panic!("paragraph");
+        };
+
+        assert_eq!(p.props.spacing.line_pct, None);
     }
 
     #[test]
