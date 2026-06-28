@@ -149,6 +149,7 @@ class RenderValidateReportTests(unittest.TestCase):
         cases = [
             ("UnsupportedFieldEvaluation", "render warning kinds must be a list"),
             (["Unsupported Field"], "render warning kind is invalid"),
+            (["UnsupportedFieldEvalution"], "unknown render warning kind"),
             (["UnsupportedFieldEvaluation", "UnsupportedFieldEvaluation"], "duplicate"),
         ]
         for kinds, message in cases:
@@ -272,6 +273,7 @@ class RenderValidateReportTests(unittest.TestCase):
             {"warnings": [42]},
             {"warnings": [{"count": 1}]},
             {"warnings": [{"kind": "Unsupported Field"}]},
+            {"warnings": [{"kind": "UnsupportedFieldEvalution"}]},
             {
                 "warnings": [
                     {"kind": "UnsupportedFieldEvaluation"},

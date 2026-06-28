@@ -52,6 +52,15 @@ SCORE_THRESHOLD_METRICS = {
     "mean_ahash_similarity",
 }
 BOUNDED_SCORE_THRESHOLD_METRICS = {"mean_recall", "mean_ahash_similarity"}
+VALID_RENDER_WARNING_KINDS = {
+    "UnsupportedFieldEvaluation",
+    "FloatingShapePlaceholderOnly",
+    "ChartsPreservedButNotModeled",
+    "OleObjectsPreservedButNotModeled",
+    "UnsupportedMetafileImages",
+    "MissingImageBytes",
+    "UndecodableRasterImages",
+}
 
 
 @dataclass
@@ -241,6 +250,8 @@ def validation_report(
                     or not warning.isidentifier()
                 ):
                     raise ValueError(f"render warning kind is invalid: {warning}")
+                if warning not in VALID_RENDER_WARNING_KINDS:
+                    raise ValueError(f"unknown render warning kind: {warning}")
                 if warning in row_warnings:
                     raise ValueError(f"duplicate render warning kind: {warning}")
                 row_warnings.add(warning)
@@ -321,6 +332,7 @@ def warning_kinds(report: dict | None) -> list[str] | None:
             or kind != kind.strip()
             or not kind.isascii()
             or not kind.isidentifier()
+            or kind not in VALID_RENDER_WARNING_KINDS
         ):
             return None
         if kind in kinds:
