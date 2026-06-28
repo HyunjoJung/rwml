@@ -2155,7 +2155,9 @@ impl XmlTree {
                 return;
             }
             if self.resolves_to(id, WML_NS, b"fldChar", scope) {
-                fld_char_type = attr_value_local(attrs, b"fldCharType").map(Vec::from);
+                fld_char_type = attr_value_local(attrs, b"fldCharType")
+                    .map(trim_ascii_whitespace)
+                    .map(Vec::from);
             } else if self.resolves_to(id, WML_NS, b"t", scope) {
                 if let Some(complex) = scan.complex.last_mut() {
                     if complex.result_phase {
