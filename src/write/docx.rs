@@ -377,6 +377,8 @@ const REL_XLSX_SHARED_STRINGS: &str =
 const CORE_PROPERTIES_NS: &str =
     "http://schemas.openxmlformats.org/package/2006/metadata/core-properties";
 const DC_NS: &str = "http://purl.org/dc/elements/1.1/";
+const DCTERMS_NS: &str = "http://purl.org/dc/terms/";
+const XSI_NS: &str = "http://www.w3.org/2001/XMLSchema-instance";
 const S_NS: &str = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 /// Hard cap on table columns / a cell's column or row span, so a hostile model
 /// (`col_span = u16::MAX`) cannot amplify into millions of `<w:gridCol>`/cells.
@@ -1520,6 +1522,9 @@ fn core_properties_xml(setup: &DocSetup) -> Option<Vec<u8>> {
     let category = non_empty_trimmed(setup.category.as_deref());
     let content_status = non_empty_trimmed(setup.content_status.as_deref());
     let last_modified_by = non_empty_trimmed(setup.last_modified_by.as_deref());
+    let created = non_empty_trimmed(setup.created.as_deref());
+    let modified = non_empty_trimmed(setup.modified.as_deref());
+    let last_printed = non_empty_trimmed(setup.last_printed.as_deref());
     let revision = non_empty_trimmed(setup.revision.as_deref());
     let version = non_empty_trimmed(setup.version.as_deref());
     if title.is_none()
@@ -1530,6 +1535,9 @@ fn core_properties_xml(setup: &DocSetup) -> Option<Vec<u8>> {
         && category.is_none()
         && content_status.is_none()
         && last_modified_by.is_none()
+        && created.is_none()
+        && modified.is_none()
+        && last_printed.is_none()
         && revision.is_none()
         && version.is_none()
     {
@@ -1539,7 +1547,7 @@ fn core_properties_xml(setup: &DocSetup) -> Option<Vec<u8>> {
     let mut s = String::new();
     s.push_str(XML_DECL);
     s.push_str(&format!(
-        r#"<cp:coreProperties xmlns:cp="{CORE_PROPERTIES_NS}" xmlns:dc="{DC_NS}">"#
+        r#"<cp:coreProperties xmlns:cp="{CORE_PROPERTIES_NS}" xmlns:dc="{DC_NS}" xmlns:dcterms="{DCTERMS_NS}" xmlns:xsi="{XSI_NS}">"#
     ));
     if let Some(title) = title {
         s.push_str(&format!("<dc:title>{}</dc:title>", esc_text(title)));
@@ -1578,6 +1586,24 @@ fn core_properties_xml(setup: &DocSetup) -> Option<Vec<u8>> {
         s.push_str(&format!(
             "<cp:lastModifiedBy>{}</cp:lastModifiedBy>",
             esc_text(last_modified_by)
+        ));
+    }
+    if let Some(created) = created {
+        s.push_str(&format!(
+            r#"<dcterms:created xsi:type="dcterms:W3CDTF">{}</dcterms:created>"#,
+            esc_text(created)
+        ));
+    }
+    if let Some(modified) = modified {
+        s.push_str(&format!(
+            r#"<dcterms:modified xsi:type="dcterms:W3CDTF">{}</dcterms:modified>"#,
+            esc_text(modified)
+        ));
+    }
+    if let Some(last_printed) = last_printed {
+        s.push_str(&format!(
+            "<cp:lastPrinted>{}</cp:lastPrinted>",
+            esc_text(last_printed)
         ));
     }
     if let Some(revision) = revision {

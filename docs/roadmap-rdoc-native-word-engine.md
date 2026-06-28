@@ -263,7 +263,8 @@ Initial status:
   into `DocSetup`.
 - Generated documents author model-backed `DocSetup` core metadata for
   `title`, `subject`, `creator`, `description`, `keywords`, `category`,
-  `contentStatus`, `lastModifiedBy`, `revision`, and `version`.
+  `contentStatus`, `lastModifiedBy`, `created`, `modified`, `lastPrinted`,
+  `revision`, and `version`.
 - `Document::report()` includes field-kind counts, and unsupported-field
   warnings now report only missing `PAGEREF` targets, remaining layout-dependent `PAGEREF`, unknown, unresolved bookmark scope, unresolved or
   unsupported remaining value-changing REF cases such as

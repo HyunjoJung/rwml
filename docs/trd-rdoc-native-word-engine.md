@@ -96,7 +96,8 @@ Current core:
 - `FieldRole` for hyperlinks, simple field instructions, and field result text;
 - `DocSetup` for page/header/footer basics and generated core metadata
   (`title`, `subject`, `creator`, `description`, `keywords`, `category`,
-  `contentStatus`, `lastModifiedBy`, `revision`, and `version`).
+  `contentStatus`, `lastModifiedBy`, `created`, `modified`, `lastPrinted`,
+  `revision`, and `version`).
 
 Target additions:
 
@@ -899,7 +900,8 @@ Acceptance:
   `modified`, `lastPrinted`, `revision`, and `version`;
 - model-backed documents surface generated `DocSetup` core metadata fields
   (`title`, `subject`, `creator`, `description`, `keywords`, `category`,
-  `contentStatus`, `lastModifiedBy`, `revision`, and `version`);
+  `contentStatus`, `lastModifiedBy`, `created`, `modified`, `lastPrinted`,
+  `revision`, and `version`);
 - `Document::set_core_property()` remains the package-preserving edit path for
   updating the existing text-oriented `.docx` core properties.
 

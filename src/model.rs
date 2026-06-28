@@ -1384,6 +1384,12 @@ pub struct DocSetup {
     pub content_status: Option<String>,
     /// Document last-modified-by metadata.
     pub last_modified_by: Option<String>,
+    /// Document creation timestamp metadata.
+    pub created: Option<String>,
+    /// Document last-modified timestamp metadata.
+    pub modified: Option<String>,
+    /// Document last-printed timestamp metadata.
+    pub last_printed: Option<String>,
     /// Document revision-count metadata.
     pub revision: Option<String>,
     /// Document version metadata.

@@ -1609,6 +1609,27 @@ impl DocBuilder {
         self
     }
 
+    /// Set document creation timestamp metadata.
+    pub fn created(mut self, created: impl Into<String>) -> Self {
+        let created = created.into().trim().to_string();
+        self.model.setup.created = (!created.is_empty()).then_some(created);
+        self
+    }
+
+    /// Set document last-modified timestamp metadata.
+    pub fn modified(mut self, modified: impl Into<String>) -> Self {
+        let modified = modified.into().trim().to_string();
+        self.model.setup.modified = (!modified.is_empty()).then_some(modified);
+        self
+    }
+
+    /// Set document last-printed timestamp metadata.
+    pub fn last_printed(mut self, last_printed: impl Into<String>) -> Self {
+        let last_printed = last_printed.into().trim().to_string();
+        self.model.setup.last_printed = (!last_printed.is_empty()).then_some(last_printed);
+        self
+    }
+
     /// Set document revision-count metadata.
     pub fn revision(mut self, revision: impl Into<String>) -> Self {
         let revision = revision.into().trim().to_string();

@@ -275,9 +275,11 @@ impl CoreProperties {
             category: setup.category.clone(),
             content_status: setup.content_status.clone(),
             last_modified_by: setup.last_modified_by.clone(),
+            created: setup.created.clone(),
+            modified: setup.modified.clone(),
+            last_printed: setup.last_printed.clone(),
             revision: setup.revision.clone(),
             version: setup.version.clone(),
-            ..CoreProperties::default()
         }
     }
 }

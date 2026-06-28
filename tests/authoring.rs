@@ -2360,6 +2360,9 @@ fn doc_builder_creates_basic_report_model() {
         .last_modified_by(" Reviewer ")
         .revision(" 12 ")
         .version(" 1.2 ")
+        .created(" 2026-06-01T02:03:04Z ")
+        .modified(" 2026-06-02T03:04:05Z ")
+        .last_printed(" 2026-06-03T04:05:06Z ")
         .page_setup(PageSetup {
             margin_pt: 54.0,
             ..PageSetup::default()
@@ -2385,6 +2388,15 @@ fn doc_builder_creates_basic_report_model() {
     assert_eq!(model.setup.last_modified_by.as_deref(), Some("Reviewer"));
     assert_eq!(model.setup.revision.as_deref(), Some("12"));
     assert_eq!(model.setup.version.as_deref(), Some("1.2"));
+    assert_eq!(model.setup.created.as_deref(), Some("2026-06-01T02:03:04Z"));
+    assert_eq!(
+        model.setup.modified.as_deref(),
+        Some("2026-06-02T03:04:05Z")
+    );
+    assert_eq!(
+        model.setup.last_printed.as_deref(),
+        Some("2026-06-03T04:05:06Z")
+    );
     assert_eq!(model.setup.page.margin_pt, 54.0);
     assert_eq!(model.setup.header.len(), 1);
     assert_eq!(model.setup.footer.len(), 1);
@@ -2440,6 +2452,14 @@ fn doc_builder_creates_basic_report_model() {
             && core_xml.contains("<cp:version>1.2</cp:version>"),
         "core properties XML missing package metadata: {core_xml}"
     );
+    assert!(
+        core_xml.contains(
+            r#"<dcterms:created xsi:type="dcterms:W3CDTF">2026-06-01T02:03:04Z</dcterms:created>"#
+        ) && core_xml.contains(
+            r#"<dcterms:modified xsi:type="dcterms:W3CDTF">2026-06-02T03:04:05Z</dcterms:modified>"#
+        ) && core_xml.contains("<cp:lastPrinted>2026-06-03T04:05:06Z</cp:lastPrinted>"),
+        "core properties XML missing timestamp metadata: {core_xml}"
+    );
     let reopened = Document::open(&bytes).expect("builder-authored .docx reopens");
     let core = reopened.core_properties();
     assert_eq!(core.title.as_deref(), Some("Builder Report"));
@@ -2455,6 +2475,9 @@ fn doc_builder_creates_basic_report_model() {
     assert_eq!(core.last_modified_by.as_deref(), Some("Reviewer"));
     assert_eq!(core.revision.as_deref(), Some("12"));
     assert_eq!(core.version.as_deref(), Some("1.2"));
+    assert_eq!(core.created.as_deref(), Some("2026-06-01T02:03:04Z"));
+    assert_eq!(core.modified.as_deref(), Some("2026-06-02T03:04:05Z"));
+    assert_eq!(core.last_printed.as_deref(), Some("2026-06-03T04:05:06Z"));
     let text = reopened.text();
     assert!(text.contains("Builder Report"), "title lost: {text:?}");
     assert!(
@@ -2476,6 +2499,9 @@ fn doc_builder_ignores_blank_core_metadata() {
         .last_modified_by("\t")
         .revision(" ")
         .version(" ")
+        .created(" ")
+        .modified("\n")
+        .last_printed("\t")
         .paragraph("Body")
         .build();
 
@@ -2489,6 +2515,9 @@ fn doc_builder_ignores_blank_core_metadata() {
     assert_eq!(model.setup.last_modified_by, None);
     assert_eq!(model.setup.revision, None);
     assert_eq!(model.setup.version, None);
+    assert_eq!(model.setup.created, None);
+    assert_eq!(model.setup.modified, None);
+    assert_eq!(model.setup.last_printed, None);
 
     model.setup.title = Some(" \n ".to_string());
     model.setup.subject = Some(" ".to_string());
@@ -2500,6 +2529,9 @@ fn doc_builder_ignores_blank_core_metadata() {
     model.setup.last_modified_by = Some("\t".to_string());
     model.setup.revision = Some(" ".to_string());
     model.setup.version = Some(" ".to_string());
+    model.setup.created = Some(" ".to_string());
+    model.setup.modified = Some("\n".to_string());
+    model.setup.last_printed = Some("\t".to_string());
 
     let bytes = rdoc::write_docx(&model);
     let parts = unzip_parts(&bytes);
