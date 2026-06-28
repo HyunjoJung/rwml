@@ -532,9 +532,9 @@ plus level-1 `LISTNUM NumberDefault`/`LegalDefault` values with common number
 and text format switches, neutral field-format switches, and `\s` starts/resets, invalid
 numbering/list syntax reports `UnsupportedSwitch`, while richer `AUTONUMOUT`
 outline formatting,
-`BIDIOUTLINE`, and richer `LISTNUM` levels/named lists are named separately
-from unknown fields, preserve cached result text, and report
-`NoComputedResult` diagnostics;
+`BIDIOUTLINE` with valid field-result format switches, and richer `LISTNUM`
+levels/named lists are named separately from unknown fields, preserve cached
+result text, and report `NoComputedResult` diagnostics;
 document-structure fields (`REVNUM`, `SECTION`, `SECTIONPAGES`, `STYLEREF`) are
 named separately from unknown fields, `REVNUM` computes from `cp:revision`,
 `SECTION` computes the current structural section number, `SECTIONPAGES`
@@ -1015,32 +1015,10 @@ The long-term native Word engine plan is split into the
       `edited_parts` exposes touched package parts; `edit_capability` /
       `report().edit` expose read-only reasons; `opc` + `xmltree` internals;
       fallible `try_write_docx`
-- [ ] Renderer: exact pagination & floating-shape page anchoring/wrap reflow;
-      full layout-derived `PAGE` current-page and `PAGEREF`
-      page-number/relative-position computation,
-      unknown fields beyond named document-info/date/stat fields,
-      dynamic/control fields beyond deterministic literal arithmetic/comparison/scalar-function formula
-      fields, literal `QUOTE`, literal `IF` comparisons, literal `COMPARE`
-      results, explicit-default `FILLIN`/`ASK` prompt fields, and literal quoted or single-token `SET` bookmark assignments feeding later plain
-      `REF`/direct bookmark references,
-      malformed `SET` syntax reporting `UnsupportedSwitch`,
-      inserted-content malformed-syntax diagnostics, mail-merge helper
-      malformed-syntax diagnostics,
-      reference/index generated malformed-syntax diagnostics and fields beyond
-      hidden simple `RD`/`TA`/`XE` markers,
-      numbering/list fields, document-structure fields beyond computed `REVNUM`/`SECTION`,
-      structurally bounded `SECTIONPAGES`, and
-      deterministic body paragraph- and character-style `STYLEREF`, display/layout fields beyond hidden validated `ADVANCE`, deterministic simple `EQ` fractions/radicals/lists/arrays/scripts/integrals/overstrikes, default and custom brackets, boxed operands including nested simple operands, operand-preserving or hidden empty displacement controls, and `SYMBOL`, action/automation fields beyond deterministic quoted/unquoted formatted display text and hidden validated `PRINT` direct/group forms,
-      compatibility/private malformed-syntax diagnostics, barcode malformed-syntax diagnostics,
-      legacy form malformed-syntax diagnostics and fields beyond
-      deterministic `w:ffData` checkbox checked/default states, dropdown
-      result/default selections, explicit non-empty text-input current results,
-      and empty-current text-input default results, and
-      `NOTEREF`/`FTNREF`, remaining unsupported value-changing REF
-      cases such as comment/annotation insertion and broader REF semantics,
-      unresolved or unsupported NOTEREF switches beyond body
-      note-reference marks, and remaining broader TOC/REF body field evaluation;
-      bundled-font feature; RTL
+- [ ] Renderer: exact pagination, floating-shape page anchoring/wrap reflow,
+      full layout-derived `PAGE`/`PAGEREF` values beyond trusted source markers,
+      remaining render-time TOC/REF/NOTEREF policy where layout context is
+      required, bundled-font feature, and RTL
 - [x] Basic authoring API for bar/stacked bar/100% stacked bar/3-D bar/stacked 3-D bar/100% stacked 3-D bar/column/stacked column/100% stacked column/3-D column/stacked 3-D column/100% stacked 3-D column/line/markerless line/smooth line/stacked line/100% stacked line/3-D line/area/stacked area/100% stacked area/3-D area/stacked 3-D area/100% stacked 3-D area/radar/radar-with-markers/filled radar/scatter/line-only scatter/smooth scatter/smooth markerless scatter/marker-only scatter/bubble/3-D bubble/pie/exploded pie/3-D pie/exploded 3-D pie/doughnut/exploded doughnut/surface/3-D surface/high-low-close stock/stock/pie-of-pie/bar-of-pie charts
 - [x] Native PDF preview rendering for authored bar/stacked bar/100% stacked bar/3-D bar/stacked 3-D bar/100% stacked 3-D bar/column/stacked column/100% stacked column/3-D column/stacked 3-D column/100% stacked 3-D column/line/markerless line/smooth line/stacked line/100% stacked line/3-D line/area/stacked area/100% stacked area/3-D area/stacked 3-D area/100% stacked 3-D area/radar/radar-with-markers/filled radar/scatter/line-only scatter/smooth scatter/smooth markerless scatter/marker-only scatter/bubble/3-D bubble/pie/exploded pie/3-D pie/exploded 3-D pie/doughnut/exploded doughnut/surface/3-D surface/high-low-close stock/stock/pie-of-pie/bar-of-pie charts
 - [x] Workbook-backed chart data for authored bar/stacked bar/100% stacked bar/3-D bar/stacked 3-D bar/100% stacked 3-D bar/column/stacked column/100% stacked column/3-D column/stacked 3-D column/100% stacked 3-D column/line/markerless line/smooth line/stacked line/100% stacked line/3-D line/area/stacked area/100% stacked area/3-D area/stacked 3-D area/100% stacked 3-D area/radar/radar-with-markers/filled radar/scatter/line-only scatter/smooth scatter/smooth markerless scatter/marker-only scatter/bubble/3-D bubble/pie/exploded pie/3-D pie/exploded 3-D pie/doughnut/exploded doughnut/surface/3-D surface/high-low-close stock/stock/pie-of-pie/bar-of-pie charts

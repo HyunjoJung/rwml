@@ -852,9 +852,9 @@ Initial status:
   values on the same source-order counter,
   and level-1 `LISTNUM NumberDefault`/`LegalDefault` values with common number
   and text format switches, neutral field-format switches, and `\s` starts/resets; invalid
-  numbering/list syntax reports `UnsupportedSwitch`; remaining
-  automatic-numbering/list fields
-  are named separately from unknown fields and preserve cached text with
+  numbering/list syntax reports `UnsupportedSwitch`; `BIDIOUTLINE` fields with
+  valid field-result format switches and remaining automatic-numbering/list
+  fields are named separately from unknown fields and preserve cached text with
   `NoComputedResult` diagnostics.
   Document-structure fields are named separately from unknown fields; `REVNUM`
   computes from `cp:revision`, `SECTION` computes the current structural section

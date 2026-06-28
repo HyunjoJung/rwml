@@ -33,6 +33,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Standalone `AUTONUMLGL`/`AUTONUMOUT` fields.** Plain automatic-numbering
   variants now compute source-order values on the same deterministic counter as
   `AUTONUM`, while richer outline formatting remains cached and diagnostic.
+- **Formatted `BIDIOUTLINE` diagnostics.** `BIDIOUTLINE` fields with valid
+  field-result format switches now preserve cached text with `NoComputedResult`
+  diagnostics, while malformed format switches remain `UnsupportedSwitch`.
 - **Unquoted single-token `SET` fields.** Deterministic `SET Bookmark Value`
   fields now accept a single unquoted literal token, feed later plain
   `REF`/direct bookmark references, and still reject ambiguous multi-token

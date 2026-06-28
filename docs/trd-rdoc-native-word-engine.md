@@ -755,8 +755,9 @@ Acceptance:
   number and text format switches, neutral field-format switches, and `\s`
   starts/resets; invalid numbering/list syntax reports `UnsupportedSwitch`,
   while richer `AUTONUMOUT`
-  outline formatting, `BIDIOUTLINE`, and richer `LISTNUM` levels/named lists
-  preserve cached text with `NoComputedResult` diagnostics until richer
+  outline formatting, `BIDIOUTLINE` with valid field-result format switches,
+  and richer `LISTNUM` levels/named lists preserve cached text with
+  `NoComputedResult` diagnostics until richer
   automatic-numbering semantics are modeled.
 
 ### 4.4 `.docx` notes
