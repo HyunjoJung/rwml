@@ -135,7 +135,7 @@ impl RunBuilder {
 
     /// Wrap this run in a generated bookmark.
     pub fn bookmark(mut self, name: impl Into<String>) -> Self {
-        let name = name.into();
+        let name = name.into().trim().to_string();
         if referenceable_bookmark_name(&name) {
             self.run.bookmark = Some(name);
         }

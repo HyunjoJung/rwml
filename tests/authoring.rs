@@ -1204,7 +1204,7 @@ fn doc_builder_adds_web_extension_task_pane() {
 #[test]
 fn run_builder_adds_bookmark_for_ref_fields() {
     let model = DocBuilder::new()
-        .paragraph_runs([RunBuilder::new("Figure 1").bookmark("Figure1").build()])
+        .paragraph_runs([RunBuilder::new("Figure 1").bookmark(" Figure1 ").build()])
         .field("REF Figure1", "stale")
         .build();
 
