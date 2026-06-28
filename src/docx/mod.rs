@@ -1283,7 +1283,7 @@ fn finalized_shape_text(text: String) -> Option<String> {
 
 fn empty_shape_position(start: &BytesStart<'_>) -> ShapePosition {
     ShapePosition {
-        relative_from: attr_local(start, b"relativeFrom"),
+        relative_from: attr_local_trimmed(start, b"relativeFrom"),
         offset_emu: None,
         align: None,
     }
@@ -1345,7 +1345,7 @@ fn shape_wrapping(e: &BytesStart<'_>) -> ShapeWrapping {
     };
     ShapeWrapping {
         kind: kind.to_string(),
-        text: attr_local(e, b"wrapText"),
+        text: attr_local_trimmed(e, b"wrapText"),
         distance: ShapeDistance {
             top_emu: attr_i64(e, b"distT"),
             bottom_emu: attr_i64(e, b"distB"),
