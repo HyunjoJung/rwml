@@ -2195,9 +2195,29 @@ fn consume_eq_script_option_for_report<'a>(
 #[cfg(not(feature = "docx"))]
 fn take_eq_parenthesized_operand_for_report(value: &str) -> Option<(&str, &str)> {
     let value = value.trim_start();
-    let rest = value.strip_prefix('(')?;
-    let end = rest.find(')')?;
-    Some((&rest[..end], &rest[end + 1..]))
+    if !value.starts_with('(') {
+        return None;
+    }
+    let mut depth = 0usize;
+    let mut in_quotes = false;
+    let mut escaped = false;
+    for (index, ch) in value.char_indices().skip(1) {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' => escaped = true,
+            '"' => in_quotes = !in_quotes,
+            '(' if !in_quotes => depth += 1,
+            ')' if !in_quotes && depth == 0 => {
+                return Some((&value[1..index], &value[index + 1..]));
+            }
+            ')' if !in_quotes => depth = depth.checked_sub(1)?,
+            _ => {}
+        }
+    }
+    None
 }
 
 #[cfg(not(feature = "docx"))]
@@ -5154,6 +5174,10 @@ mod tests {
             super::display_uncomputed_reason(r"EQ \s\up8(\q)"),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
+        assert_eq!(
+            super::display_uncomputed_reason(r"EQ \s\up8(\f(1,2))"),
+            super::FieldEvaluationReason::NoComputedResult
+        );
     }
 
     #[cfg(not(feature = "docx"))]
@@ -5222,6 +5246,10 @@ mod tests {
         assert_eq!(
             super::display_uncomputed_reason(r"EQ \x()"),
             super::FieldEvaluationReason::UnsupportedSwitch
+        );
+        assert_eq!(
+            super::display_uncomputed_reason(r"EQ \x \to(\f(5,8))"),
+            super::FieldEvaluationReason::NoComputedResult
         );
     }
 
