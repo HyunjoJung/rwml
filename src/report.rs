@@ -1873,6 +1873,7 @@ fn display_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
             || supported_eq_fraction_syntax(instruction)
             || supported_eq_radical_syntax(instruction)
             || supported_eq_list_syntax(instruction)
+            || supported_eq_array_syntax(instruction)
             || supported_eq_overstrike_syntax(instruction)
             || supported_eq_box_syntax(instruction)
             || supported_eq_bracket_syntax(instruction)
@@ -2071,6 +2072,14 @@ fn consume_eq_numeric_prefix_option_for_report<'a>(
     value: &'a str,
     option: &str,
 ) -> Option<&'a str> {
+    consume_eq_numeric_prefix_value_for_report(value, option).map(|(_, rest)| rest)
+}
+
+#[cfg(not(feature = "docx"))]
+fn consume_eq_numeric_prefix_value_for_report<'a>(
+    value: &'a str,
+    option: &str,
+) -> Option<(f32, &'a str)> {
     let rest = strip_ascii_switch_prefix(value, option)?;
     if matches!(
         rest.chars().next(),
@@ -2093,8 +2102,8 @@ fn consume_eq_numeric_prefix_option_for_report<'a>(
     if end == 0 || matches!(rest.get(..end), Some("+") | Some("-")) {
         return None;
     }
-    parse_advance_points_for_report(&rest[..end])?;
-    Some(&rest[end..])
+    let points = parse_advance_points_for_report(&rest[..end])?;
+    Some((points, &rest[end..]))
 }
 
 #[cfg(not(feature = "docx"))]
@@ -2327,6 +2336,51 @@ fn supported_eq_list_syntax(instruction: &str) -> bool {
     let Some(body) = strip_ascii_switch_prefix(expression.trim_start(), "\\l") else {
         return false;
     };
+    let Some(inner) = body
+        .strip_prefix('(')
+        .and_then(|body| body.strip_suffix(')'))
+    else {
+        return false;
+    };
+    split_eq_list_operands_for_report(inner).is_some_and(|operands| {
+        operands
+            .iter()
+            .all(|operand| eq_operand_for_report(operand))
+    })
+}
+
+#[cfg(not(feature = "docx"))]
+fn supported_eq_array_syntax(instruction: &str) -> bool {
+    let Some(expression) = eq_expression_for_report(instruction) else {
+        return false;
+    };
+    let Some(mut body) = strip_ascii_switch_prefix(expression.trim_start(), "\\a") else {
+        return false;
+    };
+    body = body.trim_start();
+    loop {
+        if let Some(rest) = consume_eq_prefix_switch_for_report(body, "\\al")
+            .or_else(|| consume_eq_prefix_switch_for_report(body, "\\ac"))
+            .or_else(|| consume_eq_prefix_switch_for_report(body, "\\ar"))
+        {
+            body = rest.trim_start();
+            continue;
+        }
+        if let Some((columns, rest)) = consume_eq_numeric_prefix_value_for_report(body, "\\co") {
+            if columns.fract() != 0.0 || columns < 1.0 {
+                return false;
+            }
+            body = rest.trim_start();
+            continue;
+        }
+        if let Some(rest) = consume_eq_numeric_prefix_option_for_report(body, "\\vs")
+            .or_else(|| consume_eq_numeric_prefix_option_for_report(body, "\\hs"))
+        {
+            body = rest.trim_start();
+            continue;
+        }
+        break;
+    }
     let Some(inner) = body
         .strip_prefix('(')
         .and_then(|body| body.strip_suffix(')'))
@@ -5122,6 +5176,19 @@ mod tests {
         );
         assert_eq!(
             super::display_uncomputed_reason(r"EQ \b \bc (Range)"),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_display_diagnostics_accept_valid_eq_array() {
+        assert_eq!(
+            super::display_uncomputed_reason(r"EQ \a \al \co2 \vs3 \hs3(A,B,C,D)"),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::display_uncomputed_reason(r"EQ \a \co0(A,B)"),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
     }
