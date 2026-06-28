@@ -868,7 +868,7 @@ code points.
   images, rich tables, and the current core OOXML chart families with embedded
   workbook-backed source data. Remaining gaps are broader structural editing
   surfaces and newer extension chart families beyond the current authored set; the element-tree
-  edit exposes focused body/header/footer/note text, tagged body/header/footer
+  edit exposes focused body/header/footer/note text, tagged body/note/header/footer
   content-control and MERGEFIELD template filling, tracked body/note/header/footer revision
   acceptance, field/comment/image operations, adjacent-run comment/note anchors,
   and `gridSpan`/`vMerge`-aware body-table cell replacement.

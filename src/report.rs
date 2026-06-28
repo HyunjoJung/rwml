@@ -1223,6 +1223,11 @@ pub(crate) fn docx_features(docx: &crate::docx::DocxState) -> FeatureInventory {
     if let Some(xml) = document_xml.as_ref() {
         scan_docx_xml(&String::from_utf8_lossy(xml), &mut features);
     }
+    for part in docx_non_body_story_feature_parts(&docx.package) {
+        if let Some(xml) = docx.package.part(&part) {
+            scan_docx_story_structure_markers(&String::from_utf8_lossy(&xml), &mut features);
+        }
+    }
     if let Some(xml) = docx.package.part("word/comments.xml") {
         features.comments = features
             .comments
@@ -1273,6 +1278,40 @@ pub(crate) fn docx_features(docx: &crate::docx::DocxState) -> FeatureInventory {
     features.metafiles = metafile_infos(docx);
     features.unsupported_metafiles += features.metafiles.len();
     features
+}
+
+#[cfg(feature = "docx")]
+fn docx_non_body_story_feature_parts(package: &crate::opc::Package) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut parts = Vec::new();
+    for part in ["word/footnotes.xml", "word/endnotes.xml"] {
+        if package.has_part(part) && seen.insert(part.to_ascii_lowercase()) {
+            parts.push(part.to_string());
+        }
+    }
+    for rel in package.rels_for("word/document.xml") {
+        if rel.external {
+            continue;
+        }
+        match rel.rel_type.as_str() {
+            "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header"
+            | "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" => {}
+            _ => continue,
+        }
+        let part = crate::opc::resolve_rel_target("word/document.xml", &rel.target);
+        if package.has_part(&part) && seen.insert(part.to_ascii_lowercase()) {
+            parts.push(part);
+        }
+    }
+    parts
+}
+
+#[cfg(feature = "docx")]
+fn scan_docx_story_structure_markers(xml: &str, features: &mut FeatureInventory) {
+    let mut story = FeatureInventory::default();
+    scan_docx_xml(xml, &mut story);
+    features.content_controls += story.content_controls;
+    features.nested_tables += story.nested_tables;
 }
 
 #[cfg(feature = "docx")]
