@@ -1356,16 +1356,16 @@ fn shape_wrapping(e: &BytesStart<'_>) -> ShapeWrapping {
 }
 
 fn apply_shape_doc_pr(shape: &mut FloatingShape, e: &BytesStart<'_>) {
-    if let Some(id) = attr_local(e, b"id") {
+    if let Some(id) = attr_local_trimmed(e, b"id") {
         shape.id = id;
     }
-    shape.name = attr_local(e, b"name");
+    shape.name = attr_local_trimmed(e, b"name");
     shape.description = attr_local(e, b"descr");
 }
 
 fn apply_shape_preset_geometry(shape: &mut FloatingShape, e: &BytesStart<'_>) {
     if shape.preset_geometry.is_none() {
-        shape.preset_geometry = attr_local(e, b"prst");
+        shape.preset_geometry = attr_local_trimmed(e, b"prst");
     }
 }
 
