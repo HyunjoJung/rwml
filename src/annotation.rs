@@ -678,6 +678,40 @@ pub(crate) fn style_ref_field_syntax(instruction: &str) -> Option<StyleRefFieldS
     })
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PageFieldFormatSyntax {
+    pub(crate) number_format: Option<FieldNumberFormat>,
+    pub(crate) text_format: Option<FieldTextFormat>,
+}
+
+pub(crate) fn page_field_format_syntax_tail<'a>(
+    parts: &mut impl Iterator<Item = &'a str>,
+) -> Option<PageFieldFormatSyntax> {
+    let mut number_format = None;
+    let mut text_format = None;
+    while let Some(part) = parts.next() {
+        let accepted = accept_general_format_switch(part, parts, |format| {
+            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
+        })?;
+        if !accepted {
+            return None;
+        }
+    }
+    Some(PageFieldFormatSyntax {
+        number_format,
+        text_format,
+    })
+}
+
+fn accept_page_field_format_switch(
+    part: &str,
+    number_format: &mut Option<FieldNumberFormat>,
+    text_format: &mut Option<FieldTextFormat>,
+) -> bool {
+    accept_field_number_format_switch(part, number_format)
+        || accept_field_text_format_switch(part, text_format)
+}
+
 pub(crate) fn document_property_key(value: &str) -> String {
     value
         .chars()

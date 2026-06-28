@@ -14,10 +14,11 @@ use crate::annotation::{
     field_non_switch_literal_token, field_points_token, field_positive_points_token,
     field_quoted_literal_token, field_symbol_code_token, filename_field_syntax, instruction_parts,
     is_neutral_field_format_switch, is_note_ref_kind, is_ref_value_neutral_switch,
-    is_toc_value_neutral_switch, reference_index_category_token, reference_index_literal_token,
-    reference_index_plain_value_token, revision_number_field_text_format,
-    strip_ascii_switch_prefix, style_ref_field_syntax, toc_style_specs, Field, FieldKind,
-    FieldNumberFormat, FieldTextFormat, StyleRefFieldSyntax, StyleRefResult,
+    is_toc_value_neutral_switch, page_field_format_syntax_tail, reference_index_category_token,
+    reference_index_literal_token, reference_index_plain_value_token,
+    revision_number_field_text_format, strip_ascii_switch_prefix, style_ref_field_syntax,
+    toc_style_specs, Field, FieldKind, FieldNumberFormat, FieldTextFormat, StyleRefFieldSyntax,
+    StyleRefResult,
 };
 use crate::{numfmt, CoreProperties};
 
@@ -5035,23 +5036,13 @@ fn section_instruction(instruction: &str) -> Option<SectionInstruction> {
     } else {
         return None;
     };
-    let mut number_format = None;
-    let mut text_format = None;
-    while let Some(part) = parts.next() {
-        if accept_page_field_format_switch_for_tail(
-            part,
-            &mut parts,
-            &mut number_format,
-            &mut text_format,
-        )? {
-            continue;
-        }
-        return None;
-    }
+    let format = page_field_format_syntax_tail(&mut parts)?;
     Some(SectionInstruction {
         result,
-        number_format,
-        text_format,
+        number_format: format
+            .number_format
+            .map(page_number_format_from_field_format),
+        text_format: format.text_format,
     })
 }
 
@@ -8993,22 +8984,12 @@ fn page_instruction(instruction: &str) -> Option<PageInstruction> {
     if !kind.eq_ignore_ascii_case("PAGE") {
         return None;
     }
-    let mut number_format = None;
-    let mut text_format = None;
-    while let Some(part) = parts.next() {
-        if accept_page_field_format_switch_for_tail(
-            part,
-            &mut parts,
-            &mut number_format,
-            &mut text_format,
-        )? {
-            continue;
-        }
-        return None;
-    }
+    let format = page_field_format_syntax_tail(&mut parts)?;
     Some(PageInstruction {
-        number_format,
-        text_format,
+        number_format: format
+            .number_format
+            .map(page_number_format_from_field_format),
+        text_format: format.text_format,
     })
 }
 

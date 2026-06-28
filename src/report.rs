@@ -30,7 +30,7 @@ use crate::annotation::{
 use crate::annotation::{field_points_token, field_positive_points_token, field_symbol_code_token};
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{
-    reference_index_category_token, reference_index_literal_token,
+    page_field_format_syntax_tail, reference_index_category_token, reference_index_literal_token,
     reference_index_plain_value_token, revision_number_field_text_format, style_ref_field_syntax,
 };
 use crate::model::{Block, FieldRole, Stats, Table};
@@ -2023,7 +2023,7 @@ fn supported_page_syntax(instruction: &str) -> bool {
     if !kind.eq_ignore_ascii_case("PAGE") {
         return false;
     }
-    supported_page_field_format_tail_for_report(&mut parts)
+    page_field_format_syntax_tail(&mut parts).is_some()
 }
 
 fn is_section_document_structure_kind(kind: &str) -> bool {
@@ -2053,7 +2053,7 @@ fn supported_section_document_structure_syntax(instruction: &str) -> bool {
     if !is_section_document_structure_kind(kind) {
         return false;
     }
-    supported_page_field_format_tail_for_report(&mut parts)
+    page_field_format_syntax_tail(&mut parts).is_some()
 }
 
 fn revision_number_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -4454,28 +4454,6 @@ fn accept_page_field_format_switch_for_report<'a>(
     })
 }
 
-#[cfg(not(feature = "docx"))]
-fn supported_page_field_format_tail_for_report<'a>(
-    parts: &mut impl Iterator<Item = &'a str>,
-) -> bool {
-    let mut number_format = false;
-    let mut text_format = false;
-    while let Some(part) = parts.next() {
-        let Some(accepted) = accept_page_field_format_switch_for_report(
-            part,
-            parts,
-            &mut number_format,
-            &mut text_format,
-        ) else {
-            return false;
-        };
-        if !accepted {
-            return false;
-        }
-    }
-    true
-}
-
 fn page_ref_uncomputed_reason(
     instruction: &str,
     bookmark_names: Option<&HashSet<String>>,
@@ -5488,6 +5466,27 @@ mod tests {
         );
         assert_eq!(
             super::style_ref_uncomputed_reason(r"STYLEREF Heading1 \t"),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_page_section_diagnostics_reject_malformed_tails() {
+        assert_eq!(
+            super::page_uncomputed_reason(r"PAGE \* ROMAN \* Upper"),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::page_uncomputed_reason(r"PAGE \x"),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+        assert_eq!(
+            super::section_document_structure_uncomputed_reason(r"SECTIONPAGES \* CardText"),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::section_document_structure_uncomputed_reason(r"SECTION \* ROMAN \* Arabic"),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
     }
