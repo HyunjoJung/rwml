@@ -1237,6 +1237,8 @@ impl Ctx {
 /// Write `<w:rPr>` toggles in schema order (b, i, strike, vanish, u). Free
 /// function (no `Ctx` state needed).
 fn write_rpr(out: &mut String, p: &CharProps) {
+    let font = non_empty_trimmed(p.font.as_deref());
+    let highlight = non_empty_trimmed(p.highlight.as_deref());
     let has = p.bold
         || p.italic
         || p.underline
@@ -1244,10 +1246,10 @@ fn write_rpr(out: &mut String, p: &CharProps) {
         || p.hidden
         || p.small_caps
         || p.caps
-        || p.font.is_some()
+        || font.is_some()
         || p.size_half_pt.is_some()
         || p.color.is_some()
-        || p.highlight.is_some()
+        || highlight.is_some()
         || p.vert_align != VertAlign::Baseline;
     if !has {
         return;
@@ -1255,7 +1257,7 @@ fn write_rpr(out: &mut String, p: &CharProps) {
     out.push_str("<w:rPr>");
     // Schema order: rFonts, b, i, smallCaps, strike, vanish, color, sz/szCs,
     // highlight, u, vertAlign.
-    if let Some(f) = &p.font {
+    if let Some(f) = font {
         let f = esc_attr(f);
         out.push_str(&format!(
             r#"<w:rFonts w:ascii="{f}" w:hAnsi="{f}" w:eastAsia="{f}" w:cs="{f}"/>"#
@@ -1285,7 +1287,7 @@ fn write_rpr(out: &mut String, p: &CharProps) {
     if let Some(sz) = p.size_half_pt {
         out.push_str(&format!(r#"<w:sz w:val="{sz}"/><w:szCs w:val="{sz}"/>"#));
     }
-    if let Some(h) = &p.highlight {
+    if let Some(h) = highlight {
         out.push_str(&format!(r#"<w:highlight w:val="{}"/>"#, esc_attr(h)));
     }
     if p.underline {

@@ -2069,19 +2069,27 @@ fn doc_builder_ignores_blank_custom_xml_item_ids() {
 
 #[test]
 fn run_builder_adds_styled_paragraph_and_heading_runs() {
-    let model = DocBuilder::new()
+    let mut model = DocBuilder::new()
         .paragraph_runs([
             RunBuilder::new("Status: ").bold().build(),
             RunBuilder::new("green")
                 .italic()
                 .underline()
-                .font("Arial")
+                .font(" Arial ")
                 .size_half_pt(28)
                 .color(Color::rgb(0, 128, 0))
-                .highlight("yellow")
+                .highlight(" yellow ")
                 .build(),
         ])
-        .heading_runs(2, [RunBuilder::new("Section").small_caps().caps().build()])
+        .heading_runs(
+            2,
+            [RunBuilder::new("Section")
+                .small_caps()
+                .caps()
+                .font(" ")
+                .highlight("\t")
+                .build()],
+        )
         .build();
 
     assert_eq!(model.blocks.len(), 2);
@@ -2103,6 +2111,14 @@ fn run_builder_adds_styled_paragraph_and_heading_runs() {
     assert_eq!(heading.props.heading_level, Some(2));
     assert!(heading.runs[0].props.small_caps);
     assert!(heading.runs[0].props.caps);
+    assert_eq!(heading.runs[0].props.font, None);
+    assert_eq!(heading.runs[0].props.highlight, None);
+
+    let Block::Paragraph(heading) = &mut model.blocks[1] else {
+        panic!("second block should be a heading");
+    };
+    heading.runs[0].props.font = Some(" ".to_string());
+    heading.runs[0].props.highlight = Some("\t".to_string());
 
     let bytes = rdoc::write_docx(&model);
     let parts = unzip_parts(&bytes);
@@ -2119,6 +2135,8 @@ fn run_builder_adds_styled_paragraph_and_heading_runs() {
             && document_xml.contains("<w:caps/>"),
         "styled run properties missing: {document_xml}"
     );
+    assert!(!document_xml.contains(r#"<w:rFonts w:ascii="""#));
+    assert!(!document_xml.contains(r#"<w:highlight w:val="""#));
 
     let reopened = Document::open(&bytes).expect("styled builder .docx reopens");
     let text = reopened.text();
@@ -2203,7 +2221,9 @@ fn doc_builder_adds_custom_paragraph_style() {
                 .indent_left_pt(18.0)
                 .shading(Color::rgb(0xFE, 0xF2, 0xF2))
                 .run_bold()
+                .run_font(" Aptos ")
                 .run_color(accent)
+                .run_highlight(" yellow ")
                 .run_size_half_pt(24),
         )
         .rich_paragraph(
@@ -2218,6 +2238,11 @@ fn doc_builder_adds_custom_paragraph_style() {
     assert_eq!(model.setup.styles[0].name, "Risk callout");
     assert_eq!(model.setup.styles[0].based_on.as_deref(), Some("Normal"));
     assert_eq!(model.setup.styles[0].next.as_deref(), Some("Normal"));
+    assert_eq!(model.setup.styles[0].run.font.as_deref(), Some("Aptos"));
+    assert_eq!(
+        model.setup.styles[0].run.highlight.as_deref(),
+        Some("yellow")
+    );
     let Block::Paragraph(paragraph) = &model.blocks[0] else {
         panic!("expected styled paragraph");
     };
@@ -2240,8 +2265,10 @@ fn doc_builder_adds_custom_paragraph_style() {
             && styles_xml.contains(r#"<w:spacing w:before="120" w:after="240"/>"#)
             && styles_xml.contains(r#"<w:ind w:left="360"/>"#)
             && styles_xml.contains(r#"<w:jc w:val="both"/>"#)
+            && styles_xml.contains(r#"<w:rFonts w:ascii="Aptos""#)
             && styles_xml.contains("<w:b/>")
             && styles_xml.contains(r#"<w:color w:val="7A1F1F"/>"#)
+            && styles_xml.contains(r#"<w:highlight w:val="yellow"/>"#)
             && styles_xml.contains(r#"<w:sz w:val="24"/>"#),
         "custom style XML missing: {styles_xml}"
     );

@@ -59,7 +59,8 @@ impl RunBuilder {
 
     /// Set the run font family.
     pub fn font(mut self, font: impl Into<String>) -> Self {
-        self.run.props.font = Some(font.into());
+        let font = font.into().trim().to_string();
+        self.run.props.font = (!font.is_empty()).then_some(font);
         self
     }
 
@@ -77,7 +78,8 @@ impl RunBuilder {
 
     /// Set the run highlight color name, such as `"yellow"`.
     pub fn highlight(mut self, highlight: impl Into<String>) -> Self {
-        self.run.props.highlight = Some(highlight.into());
+        let highlight = highlight.into().trim().to_string();
+        self.run.props.highlight = (!highlight.is_empty()).then_some(highlight);
         self
     }
 
@@ -406,7 +408,8 @@ impl ParagraphStyleBuilder {
 
     /// Set the default run font family.
     pub fn run_font(mut self, font: impl Into<String>) -> Self {
-        self.style.run.font = Some(font.into());
+        let font = font.into().trim().to_string();
+        self.style.run.font = (!font.is_empty()).then_some(font);
         self
     }
 
@@ -424,7 +427,8 @@ impl ParagraphStyleBuilder {
 
     /// Set the default run highlight color name, such as `"yellow"`.
     pub fn run_highlight(mut self, highlight: impl Into<String>) -> Self {
-        self.style.run.highlight = Some(highlight.into());
+        let highlight = highlight.into().trim().to_string();
+        self.style.run.highlight = (!highlight.is_empty()).then_some(highlight);
         self
     }
 
