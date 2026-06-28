@@ -214,11 +214,9 @@ fn read_hf_ref_section(r: &mut Xml<'_>) -> HeaderFooterRefs {
 }
 
 fn header_footer_ref(e: &BytesStart<'_>) -> Option<HeaderFooterRef> {
-    attr_local(e, b"id").map(|rel_id| HeaderFooterRef {
-        rel_id: rel_id.trim().to_owned(),
-        type_name: attr_local(e, b"type")
-            .map(|value| value.trim().to_owned())
-            .unwrap_or_else(|| "default".to_string()),
+    attr_local_trimmed(e, b"id").map(|rel_id| HeaderFooterRef {
+        rel_id,
+        type_name: attr_local_trimmed(e, b"type").unwrap_or_else(|| "default".to_string()),
     })
 }
 
@@ -3148,7 +3146,10 @@ mod tests {
             <w:p><w:r><w:t>x</w:t></w:r></w:p>
             <w:sectPr>
                 <w:headerReference w:type="default" r:id="rIdH"/>
+                <w:headerReference w:type=" " r:id=" rIdDefault "/>
+                <w:headerReference w:type="first" r:id=" "/>
                 <w:footerReference w:type="default" r:id="rIdF"/>
+                <w:footerReference w:type="even" r:id=" "/>
                 <w:headerReference w:type="first" r:id="rIdH1"/>
             </w:sectPr>
         </w:body></w:document>"#;
@@ -3158,6 +3159,10 @@ mod tests {
             vec![
                 HeaderFooterRef {
                     rel_id: "rIdH".to_string(),
+                    type_name: "default".to_string()
+                },
+                HeaderFooterRef {
+                    rel_id: "rIdDefault".to_string(),
                     type_name: "default".to_string()
                 },
                 HeaderFooterRef {
