@@ -1439,7 +1439,7 @@ fn report_counts_docx_feature_markers() {
 
 #[cfg(feature = "docx")]
 #[test]
-fn report_counts_content_controls_in_docx_story_parts() {
+fn report_counts_feature_markers_in_docx_story_parts() {
     let doc = Document::open(&docx_fixture(&[
         (
             "[Content_Types].xml",
@@ -1467,7 +1467,7 @@ fn report_counts_content_controls_in_docx_story_parts() {
         ),
         (
             "word/header1.xml",
-            r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"><w:sdt><w:sdtPr><w:tag w:val="header"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Header</w:t></w:r></w:p></w:sdtContent></w:sdt><w:p><w:r><w:object/><w:drawing><c:chart/></w:drawing></w:r></w:p></w:hdr>"#,
+            r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"><w:sdt><w:sdtPr><w:tag w:val="header"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Header</w:t></w:r></w:p></w:sdtContent></w:sdt><w:p><w:pPr><w:pPrChange w:id="9"><w:pPr><w:jc w:val="right"/></w:pPr></w:pPrChange></w:pPr><w:r><w:object/><w:drawing><c:chart/></w:drawing></w:r></w:p></w:hdr>"#,
         ),
         (
             "word/header2.xml",
@@ -1481,6 +1481,7 @@ fn report_counts_content_controls_in_docx_story_parts() {
     assert_eq!(report.features.nested_tables, 1);
     assert_eq!(report.features.ole_objects, 1);
     assert_eq!(report.features.charts, 1);
+    assert_eq!(report.features.tracked_property_changes, 1);
     assert!(
         report.to_json().contains(r#""content_controls":4"#),
         "{}",
