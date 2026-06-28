@@ -2063,9 +2063,7 @@ fn supported_eq_displacement_syntax(instruction: &str) -> bool {
     else {
         return false;
     };
-    has_option
-        && (inner.trim().is_empty()
-            || diagnostic_literal_token(inner).is_some_and(|text| !text.trim().is_empty()))
+    has_option && (inner.trim().is_empty() || eq_operand_for_report(inner))
 }
 
 #[cfg(not(feature = "docx"))]
@@ -5113,6 +5111,10 @@ mod tests {
         );
         assert_eq!(
             super::display_uncomputed_reason(r"EQ \d \fo10 \li(Title"),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+        assert_eq!(
+            super::display_uncomputed_reason(r"EQ \d \fo10(\q)"),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
     }
