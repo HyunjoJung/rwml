@@ -538,6 +538,33 @@ pub(crate) fn field_level_range_token(value: &str) -> Option<(u8, u8)> {
     ((1..=9).contains(&start) && start <= end && end <= 9).then_some((start, end))
 }
 
+pub(crate) fn toc_style_specs(value: &str) -> Option<Vec<(&str, u8)>> {
+    let value = value.trim();
+    let value = match (value.starts_with('"'), value.ends_with('"')) {
+        (true, true) if value.len() >= 2 => &value[1..value.len() - 1],
+        (true, _) | (_, true) => return None,
+        (false, false) => value,
+    };
+    let parts: Vec<_> = value.split(',').map(str::trim).collect();
+    if parts.is_empty() || parts.len() % 2 != 0 {
+        return None;
+    }
+    let mut specs = Vec::new();
+    for pair in parts.chunks_exact(2) {
+        let name = pair[0];
+        let level = pair[1];
+        if name.is_empty() || name.starts_with('\\') || name.contains('"') || level.contains('"') {
+            return None;
+        }
+        let level = level.parse::<u8>().ok()?;
+        if !(1..=9).contains(&level) {
+            return None;
+        }
+        specs.push((name, level));
+    }
+    Some(specs)
+}
+
 pub(crate) fn instruction_parts(s: &str) -> Vec<String> {
     let mut parts = Vec::new();
     let mut current = String::new();

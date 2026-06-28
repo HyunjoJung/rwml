@@ -10,8 +10,8 @@ use crate::annotation::{
     accept_field_text_format_switch as accept_field_format_switch, accept_general_format_switch,
     field_identifier_token, field_level_range_token, field_level_token, field_literal_token,
     field_name_token, instruction_parts, is_neutral_field_format_switch, is_note_ref_kind,
-    is_ref_value_neutral_switch, is_toc_value_neutral_switch, strip_ascii_switch_prefix, Field,
-    FieldKind, FieldNumberFormat, FieldTextFormat,
+    is_ref_value_neutral_switch, is_toc_value_neutral_switch, strip_ascii_switch_prefix,
+    toc_style_specs, Field, FieldKind, FieldNumberFormat, FieldTextFormat,
 };
 use crate::{numfmt, CoreProperties};
 
@@ -10141,15 +10141,26 @@ fn toc_spec(instruction: &str) -> Option<TocSpec> {
             continue;
         }
         if part.eq_ignore_ascii_case("\\t") {
-            let specs = parse_toc_style_specs(parts.next_if(|next| !next.starts_with('\\'))?)?;
-            custom_styles.extend(specs);
+            custom_styles.extend(
+                toc_style_specs(parts.next_if(|next| !next.starts_with('\\'))?)?
+                    .into_iter()
+                    .map(|(name, level)| TocStyleSpec {
+                        name: name.to_string(),
+                        level,
+                    }),
+            );
             continue;
         }
         if let Some(value) = strip_ascii_switch_prefix(part, "\\t") {
             if value.is_empty() {
                 return None;
             }
-            custom_styles.extend(parse_toc_style_specs(value)?);
+            custom_styles.extend(toc_style_specs(value)?.into_iter().map(|(name, level)| {
+                TocStyleSpec {
+                    name: name.to_string(),
+                    level,
+                }
+            }));
             continue;
         }
         let range = if part.eq_ignore_ascii_case("\\o") {
@@ -10223,36 +10234,6 @@ fn accept_sequence_filter(
 
 fn toc_sequence_identifier(value: &str) -> Option<&str> {
     field_identifier_token(value)
-}
-
-fn parse_toc_style_specs(value: &str) -> Option<Vec<TocStyleSpec>> {
-    let value = value.trim();
-    let value = match (value.starts_with('"'), value.ends_with('"')) {
-        (true, true) if value.len() >= 2 => &value[1..value.len() - 1],
-        (true, _) | (_, true) => return None,
-        (false, false) => value,
-    };
-    let parts: Vec<_> = value.split(',').map(str::trim).collect();
-    if parts.is_empty() || parts.len() % 2 != 0 {
-        return None;
-    }
-    let mut specs = Vec::new();
-    for pair in parts.chunks_exact(2) {
-        let name = pair[0];
-        let level = pair[1];
-        if name.is_empty() || name.starts_with('\\') || name.contains('"') || level.contains('"') {
-            return None;
-        }
-        let level = level.parse::<u8>().ok()?;
-        if !(1..=9).contains(&level) {
-            return None;
-        }
-        specs.push(TocStyleSpec {
-            name: name.to_string(),
-            level,
-        });
-    }
-    Some(specs)
 }
 
 fn normalize_instruction(s: &str) -> String {
