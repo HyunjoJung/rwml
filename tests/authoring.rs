@@ -43,6 +43,43 @@ fn tiny_png() -> Vec<u8> {
     ]
 }
 
+fn tiny_jpeg() -> Vec<u8> {
+    vec![
+        0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, b'J', b'F', b'I', b'F', 0x00, 0x01, 0x01, 0x00, 0x00,
+        0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xC0, 0x00, 0x11, 0x08, 0x00, 0x03, 0x00, 0x02, 0x03,
+        0x01, 0x11, 0x00, 0x02, 0x11, 0x00, 0x03, 0x11, 0x00, 0xFF, 0xDA, 0x00, 0x0C, 0x03, 0x01,
+        0x00, 0x02, 0x00, 0x03, 0x00, 0x00, 0x3F, 0x00, 0x00, 0xFF, 0xD9,
+    ]
+}
+
+fn tiny_gif() -> Vec<u8> {
+    vec![
+        b'G', b'I', b'F', b'8', b'9', b'a', 0x02, 0x00, 0x03, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0xff, 0xff, 0xff, 0x2c, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x03, 0x00, 0x00, 0x02,
+        0x02, 0x44, 0x01, 0x00, 0x3b,
+    ]
+}
+
+fn tiny_bmp() -> Vec<u8> {
+    let pixel_bytes = vec![0u8; 24];
+    let file_size = 54 + pixel_bytes.len();
+    let mut out = Vec::new();
+    out.extend_from_slice(b"BM");
+    out.extend_from_slice(&(file_size as u32).to_le_bytes());
+    out.extend_from_slice(&[0, 0, 0, 0]);
+    out.extend_from_slice(&54u32.to_le_bytes());
+    out.extend_from_slice(&40u32.to_le_bytes());
+    out.extend_from_slice(&2i32.to_le_bytes());
+    out.extend_from_slice(&3i32.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&24u16.to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes());
+    out.extend_from_slice(&(pixel_bytes.len() as u32).to_le_bytes());
+    out.extend_from_slice(&[0; 16]);
+    out.extend_from_slice(&pixel_bytes);
+    out
+}
+
 fn tiny_webp() -> Vec<u8> {
     vec![
         b'R', b'I', b'F', b'F', 22, 0, 0, 0, b'W', b'E', b'B', b'P', b'V', b'P', b'8', b'X', 10, 0,
@@ -3225,6 +3262,44 @@ fn image_builder_adds_alt_text_and_size() {
     let images = reopened.images();
     assert_eq!(images.len(), 1);
     assert_eq!(images[0].bytes.as_deref(), Some(png.as_slice()));
+}
+
+#[test]
+fn image_builder_preserves_common_raster_media_types() {
+    for (mime, ext, bytes) in [
+        ("image/jpeg", "jpg", tiny_jpeg()),
+        ("image/gif", "gif", tiny_gif()),
+        ("image/bmp", "bmp", tiny_bmp()),
+    ] {
+        let model = DocBuilder::new()
+            .rich_image(ImageBuilder::new(bytes.clone(), mime))
+            .build();
+
+        let docx = rdoc::write_docx(&model);
+        let parts = unzip_parts(&docx);
+        let media = format!("word/media/image1.{ext}");
+        let target = format!(r#"Target="media/image1.{ext}""#);
+        let rels = String::from_utf8(parts["word/_rels/document.xml.rels"].clone()).unwrap();
+        let content_types = String::from_utf8(parts["[Content_Types].xml"].clone()).unwrap();
+
+        assert!(
+            rels.contains(&target),
+            "expected media target {target}: {rels}"
+        );
+        assert!(
+            content_types.contains(&format!(r#"ContentType="{mime}""#)),
+            "expected content type {mime}: {content_types}"
+        );
+        assert_eq!(parts[&media], bytes);
+
+        let reopened = Document::open(&docx).expect("authored image .docx reopens");
+        let images = reopened.images();
+        assert_eq!(images.len(), 1);
+        assert_eq!(images[0].mime.as_deref(), Some(mime));
+        assert_eq!(images[0].bytes.as_deref(), Some(bytes.as_slice()));
+        assert_eq!(images[0].width_px, Some(2));
+        assert_eq!(images[0].height_px, Some(3));
+    }
 }
 
 #[test]
