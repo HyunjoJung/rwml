@@ -772,8 +772,8 @@ negative numeric counts, and duplicate warning tokens before embedding totals.
 The same manifest records a compact `release_evidence` section so consumers can
 tell whether strict local evidence was enforced, whether complete inputs were
 provided without enforcement, and which strict public-release inputs are still
-missing; public corpus evidence is incomplete when the two manifest document
-path lists do not match.
+missing; public corpus evidence is incomplete when the manifests are invalid or
+their document path lists do not match.
 The hygiene audit covers normal text files, bounded decoded byte text views from
 legacy `.doc` files, and textual Office package parts from `.docx`, `.xlsx`, and
 related OPC packages, including core metadata, relationships, content types,

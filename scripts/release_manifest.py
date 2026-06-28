@@ -376,10 +376,12 @@ def public_release_policy_input_gaps(
         missing.append("corpus manifest")
     elif not public_release_corpus_manifest_pair_matches(corpus_manifests):
         missing.append("exact public corpus manifest pair")
-    elif all(path.is_file() for path in corpus_manifests) and not (
-        public_release_corpus_manifest_documents_match(corpus_manifests)
-    ):
-        missing.append("matching public corpus manifest documents")
+    elif all(path.is_file() for path in corpus_manifests):
+        try:
+            if not public_release_corpus_manifest_documents_match(corpus_manifests):
+                missing.append("matching public corpus manifest documents")
+        except (OSError, UnicodeDecodeError, ValueError):
+            missing.append("valid public corpus manifests")
     missing.extend(
         public_release_report_strength_gaps(
             hygiene_report=hygiene_report,

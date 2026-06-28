@@ -1066,8 +1066,8 @@ Initial status:
   counts, and duplicate warning tokens before embedding totals. Its
   `release_evidence` metadata distinguishes embedded policy,
   complete-but-not-enforced inputs, enforced strict local evidence, and missing
-  strict public-release inputs, including public corpus manifest pairs whose
-  document path lists do not match. It also provides
+  strict public-release inputs, including invalid public corpus manifests and
+  manifest pairs whose document path lists do not match. It also provides
   `--enforce-policy-inputs` validation that requires a passing public hygiene
   report, render validation, extraction benchmark, and exactly the public
   `MANIFEST.tsv` plus `RENDER_MANIFEST.tsv` corpus manifest pair with matching

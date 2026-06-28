@@ -1326,9 +1326,10 @@ Rust gates, and optional local render/extraction threshold values. A compact
 `release_evidence` section records a strict-policy status, whether strict local
 evidence enforcement was enabled, which evidence paths were provided, whether
 the strict public-release input set is complete, and which strict inputs are
-still missing, including public corpus manifest pairs whose document path lists
-do not match. Tagged release automation intentionally emits the non-strict policy
-manifest until local render and extraction reports are generated in the workflow.
+still missing, including invalid public corpus manifests and manifest pairs
+whose document path lists do not match. Tagged release automation intentionally
+emits the non-strict policy manifest until local render and extraction reports
+are generated in the workflow.
 When invoked
 with `--enforce-policy-inputs`, the manifest generator requires a passing public
 hygiene report, the local render-validation report, at least one extraction
