@@ -846,12 +846,12 @@ Initial status:
   broader generated bibliography/citation/index/table-of-authorities fields
   preserve cached text with `NoComputedResult` diagnostics.
   Numbering/list fields compute deterministic source-order plain `AUTONUM`
-  values with common number-format switches and the documented `\s` separator
+  values with common number and text format switches and the documented `\s` separator
   switch, including unquoted or quoted one-character separators, standalone
-  plain, neutral, or common-number-format `AUTONUMLGL` and `AUTONUMOUT`
+  plain, neutral, common-number-format, or text-format `AUTONUMLGL` and `AUTONUMOUT`
   values on the same source-order counter,
-  and level-1 `LISTNUM NumberDefault`/`LegalDefault` values with common number-format
-  switches, neutral field-format switches, and `\s` starts/resets; invalid
+  and level-1 `LISTNUM NumberDefault`/`LegalDefault` values with common number
+  and text format switches, neutral field-format switches, and `\s` starts/resets; invalid
   numbering/list syntax reports `UnsupportedSwitch`; remaining
   automatic-numbering/list fields
   are named separately from unknown fields and preserve cached text with
