@@ -1933,6 +1933,7 @@ impl XmlTree {
         if self.resolves_to(id, WML_NS, b"hyperlink", scope) {
             if let Node::Element { attrs, .. } = &self.nodes[id.0 as usize].node {
                 if let Some(rid) = attr_value_ns_local(attrs, scope, OOXML_REL_NS, b"id")
+                    .map(trim_ascii_whitespace)
                     .and_then(|v| std::str::from_utf8(v).ok())
                 {
                     out.push(rid.to_string());

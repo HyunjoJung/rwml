@@ -1946,7 +1946,7 @@ fn read_hyperlink(r: &mut Xml<'_>, start: &BytesStart<'_>, ctx: &Ctx<'_>, depth:
 
 fn hyperlink_url(start: &BytesStart<'_>, ctx: &Ctx<'_>) -> Option<String> {
     if let Some(id) = attr_local(start, b"id") {
-        if let Some((target, _external)) = ctx.rels.get(&id) {
+        if let Some((target, _external)) = ctx.rels.get(id.trim()) {
             return Some(target.clone());
         }
     }

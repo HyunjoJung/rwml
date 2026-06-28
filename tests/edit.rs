@@ -465,7 +465,7 @@ fn hyperlink_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:hyperlink r:id="rIdFirst"><w:r><w:t>First</w:t></w:r></w:hyperlink><w:r><w:t> and </w:t></w:r><w:hyperlink r:id="rIdSecond"><w:r><w:t>Second</w:t></w:r></w:hyperlink></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:hyperlink r:id="rIdFirst"><w:r><w:t>First</w:t></w:r></w:hyperlink><w:r><w:t> and </w:t></w:r><w:hyperlink r:id=" rIdSecond "><w:r><w:t>Second</w:t></w:r></w:hyperlink></w:p></w:body></w:document>"#,
         ),
     ])
 }
