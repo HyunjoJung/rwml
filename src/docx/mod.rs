@@ -1840,7 +1840,8 @@ fn parse_rels(xml: &str) -> Rels {
             {
                 if let (Some(id), Some(target)) = (attr_local(&e, b"Id"), attr_local(&e, b"Target"))
                 {
-                    let external = attr_local(&e, b"TargetMode").as_deref() == Some("External");
+                    let external = attr_local(&e, b"TargetMode")
+                        .is_some_and(|value| value.trim() == "External");
                     map.insert(id, (target, external));
                 }
             }
@@ -2120,6 +2121,16 @@ mod tests {
             parse_rels(&s).len() <= MAX_REL_RECORDS,
             "reader rels not bounded"
         );
+    }
+
+    #[test]
+    fn reader_rels_target_mode_trims_ooxml_value() {
+        let rels = parse_rels(
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+                <Relationship Id="rLink" Target="https://example.com/" TargetMode=" External "/>
+            </Relationships>"#,
+        );
+        assert_eq!(rels.get("rLink").map(|(_, external)| *external), Some(true));
     }
 
     /// Relationship targets resolve relative to `word/` with `.`/`..`/
