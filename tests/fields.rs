@@ -2180,7 +2180,7 @@ fn page_ref_final_section_page_number_format_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:br w:type="page"/></w:r></w:p><w:p><w:bookmarkStart w:id="7" w:name="FinalSection"/><w:r><w:t>Final-section target</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF FinalSection \h "><w:r><w:t>stale final roman</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF FinalSection \* Arabic "><w:r><w:t>stale final arabic</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF FinalSection \p "><w:r><w:t>stale final relative</w:t></w:r></w:fldSimple></w:p><w:sectPr><w:pgNumType w:start="5" w:fmt="lowerRoman"/></w:sectPr></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:br w:type="page"/></w:r></w:p><w:p><w:bookmarkStart w:id="7" w:name="FinalSection"/><w:r><w:t>Final-section target</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" PAGE \* Arabic "><w:r><w:t>stale final current</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF FinalSection \h "><w:r><w:t>stale final roman</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF FinalSection \* Arabic "><w:r><w:t>stale final arabic</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF FinalSection \p "><w:r><w:t>stale final relative</w:t></w:r></w:fldSimple></w:p><w:sectPr><w:pgNumType w:start="5" w:fmt="lowerRoman"/></w:sectPr></w:body></w:document>"#,
         ),
     ])
 }
@@ -9728,30 +9728,33 @@ fn docx_page_ref_applies_korean_numeric_section_page_number_formats() {
 }
 
 #[test]
-fn docx_page_ref_applies_final_section_page_number_format() {
+fn docx_page_and_page_ref_apply_final_section_page_number_format() {
     let doc =
         Document::open(&page_ref_final_section_page_number_format_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 3);
-    assert_eq!(fields[0].kind, FieldKind::PageRef);
-    assert_eq!(fields[0].instruction, "PAGEREF FinalSection \\h");
-    assert_eq!(fields[0].computed_result.as_deref(), Some("vi"));
+    assert_eq!(fields.len(), 4);
+    assert_eq!(fields[0].kind, FieldKind::Page);
+    assert_eq!(fields[0].instruction, "PAGE \\* Arabic");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("6"));
     assert_eq!(fields[1].kind, FieldKind::PageRef);
-    assert_eq!(fields[1].instruction, "PAGEREF FinalSection \\* Arabic");
-    assert_eq!(fields[1].computed_result.as_deref(), Some("6"));
+    assert_eq!(fields[1].instruction, "PAGEREF FinalSection \\h");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("vi"));
     assert_eq!(fields[2].kind, FieldKind::PageRef);
-    assert_eq!(fields[2].instruction, "PAGEREF FinalSection \\p");
-    assert_eq!(fields[2].computed_result.as_deref(), Some("above"));
+    assert_eq!(fields[2].instruction, "PAGEREF FinalSection \\* Arabic");
+    assert_eq!(fields[2].computed_result.as_deref(), Some("6"));
+    assert_eq!(fields[3].kind, FieldKind::PageRef);
+    assert_eq!(fields[3].instruction, "PAGEREF FinalSection \\p");
+    assert_eq!(fields[3].computed_result.as_deref(), Some("above"));
 
     let main_text = doc.main_text();
     assert!(
-        main_text.contains("vi\n6\nabove"),
-        "final section page-number format should apply to computed PAGEREF output: {main_text:?}"
+        main_text.contains("6\nvi\n6\nabove"),
+        "final section page-number format should apply to computed PAGE and PAGEREF output: {main_text:?}"
     );
     assert!(
         !main_text.contains("stale final"),
-        "computed final-section PAGEREF fields should replace stale cached text: {main_text:?}"
+        "computed final-section PAGE and PAGEREF fields should replace stale cached text: {main_text:?}"
     );
 }
 
