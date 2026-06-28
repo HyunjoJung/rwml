@@ -272,6 +272,10 @@ impl CoreProperties {
             creator: setup.creator.clone(),
             description: setup.description.clone(),
             keywords: setup.keywords.clone(),
+            category: setup.category.clone(),
+            content_status: setup.content_status.clone(),
+            last_modified_by: setup.last_modified_by.clone(),
+            version: setup.version.clone(),
             ..CoreProperties::default()
         }
     }

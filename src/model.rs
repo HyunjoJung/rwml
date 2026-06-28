@@ -1378,6 +1378,14 @@ pub struct DocSetup {
     pub description: Option<String>,
     /// Document keywords metadata.
     pub keywords: Option<String>,
+    /// Document category metadata.
+    pub category: Option<String>,
+    /// Document content-status metadata.
+    pub content_status: Option<String>,
+    /// Document last-modified-by metadata.
+    pub last_modified_by: Option<String>,
+    /// Document version metadata.
+    pub version: Option<String>,
 }
 
 impl From<&DocSetup> for SectionSetup {

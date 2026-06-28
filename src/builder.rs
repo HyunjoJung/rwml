@@ -1587,6 +1587,35 @@ impl DocBuilder {
         self
     }
 
+    /// Set document category metadata.
+    pub fn category(mut self, category: impl Into<String>) -> Self {
+        let category = category.into().trim().to_string();
+        self.model.setup.category = (!category.is_empty()).then_some(category);
+        self
+    }
+
+    /// Set document content-status metadata.
+    pub fn content_status(mut self, content_status: impl Into<String>) -> Self {
+        let content_status = content_status.into().trim().to_string();
+        self.model.setup.content_status = (!content_status.is_empty()).then_some(content_status);
+        self
+    }
+
+    /// Set document last-modified-by metadata.
+    pub fn last_modified_by(mut self, last_modified_by: impl Into<String>) -> Self {
+        let last_modified_by = last_modified_by.into().trim().to_string();
+        self.model.setup.last_modified_by =
+            (!last_modified_by.is_empty()).then_some(last_modified_by);
+        self
+    }
+
+    /// Set document version metadata.
+    pub fn version(mut self, version: impl Into<String>) -> Self {
+        let version = version.into().trim().to_string();
+        self.model.setup.version = (!version.is_empty()).then_some(version);
+        self
+    }
+
     /// Set a string custom document property.
     pub fn custom_property(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         let name = name.into().trim().to_string();

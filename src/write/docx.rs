@@ -1517,11 +1517,19 @@ fn core_properties_xml(setup: &DocSetup) -> Option<Vec<u8>> {
     let creator = non_empty_trimmed(setup.creator.as_deref());
     let description = non_empty_trimmed(setup.description.as_deref());
     let keywords = non_empty_trimmed(setup.keywords.as_deref());
+    let category = non_empty_trimmed(setup.category.as_deref());
+    let content_status = non_empty_trimmed(setup.content_status.as_deref());
+    let last_modified_by = non_empty_trimmed(setup.last_modified_by.as_deref());
+    let version = non_empty_trimmed(setup.version.as_deref());
     if title.is_none()
         && subject.is_none()
         && creator.is_none()
         && description.is_none()
         && keywords.is_none()
+        && category.is_none()
+        && content_status.is_none()
+        && last_modified_by.is_none()
+        && version.is_none()
     {
         return None;
     }
@@ -1551,6 +1559,27 @@ fn core_properties_xml(setup: &DocSetup) -> Option<Vec<u8>> {
             "<cp:keywords>{}</cp:keywords>",
             esc_text(keywords)
         ));
+    }
+    if let Some(category) = category {
+        s.push_str(&format!(
+            "<cp:category>{}</cp:category>",
+            esc_text(category)
+        ));
+    }
+    if let Some(content_status) = content_status {
+        s.push_str(&format!(
+            "<cp:contentStatus>{}</cp:contentStatus>",
+            esc_text(content_status)
+        ));
+    }
+    if let Some(last_modified_by) = last_modified_by {
+        s.push_str(&format!(
+            "<cp:lastModifiedBy>{}</cp:lastModifiedBy>",
+            esc_text(last_modified_by)
+        ));
+    }
+    if let Some(version) = version {
+        s.push_str(&format!("<cp:version>{}</cp:version>", esc_text(version)));
     }
     s.push_str("</cp:coreProperties>");
     Some(s.into_bytes())

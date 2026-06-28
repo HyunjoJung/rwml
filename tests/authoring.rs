@@ -2355,6 +2355,10 @@ fn doc_builder_creates_basic_report_model() {
         .creator(" rdoc ")
         .description(" Quarterly <plan> & review ")
         .keywords(" rdoc,metadata ")
+        .category(" Operations ")
+        .content_status(" Draft ")
+        .last_modified_by(" Reviewer ")
+        .version(" 1.2 ")
         .page_setup(PageSetup {
             margin_pt: 54.0,
             ..PageSetup::default()
@@ -2375,6 +2379,10 @@ fn doc_builder_creates_basic_report_model() {
         Some("Quarterly <plan> & review")
     );
     assert_eq!(model.setup.keywords.as_deref(), Some("rdoc,metadata"));
+    assert_eq!(model.setup.category.as_deref(), Some("Operations"));
+    assert_eq!(model.setup.content_status.as_deref(), Some("Draft"));
+    assert_eq!(model.setup.last_modified_by.as_deref(), Some("Reviewer"));
+    assert_eq!(model.setup.version.as_deref(), Some("1.2"));
     assert_eq!(model.setup.page.margin_pt, 54.0);
     assert_eq!(model.setup.header.len(), 1);
     assert_eq!(model.setup.footer.len(), 1);
@@ -2422,6 +2430,13 @@ fn doc_builder_creates_basic_report_model() {
             && core_xml.contains("<cp:keywords>rdoc,metadata</cp:keywords>"),
         "core properties XML missing descriptive metadata: {core_xml}"
     );
+    assert!(
+        core_xml.contains("<cp:category>Operations</cp:category>")
+            && core_xml.contains("<cp:contentStatus>Draft</cp:contentStatus>")
+            && core_xml.contains("<cp:lastModifiedBy>Reviewer</cp:lastModifiedBy>")
+            && core_xml.contains("<cp:version>1.2</cp:version>"),
+        "core properties XML missing package metadata: {core_xml}"
+    );
     let reopened = Document::open(&bytes).expect("builder-authored .docx reopens");
     let core = reopened.core_properties();
     assert_eq!(core.title.as_deref(), Some("Builder Report"));
@@ -2432,6 +2447,10 @@ fn doc_builder_creates_basic_report_model() {
         Some("Quarterly <plan> & review")
     );
     assert_eq!(core.keywords.as_deref(), Some("rdoc,metadata"));
+    assert_eq!(core.category.as_deref(), Some("Operations"));
+    assert_eq!(core.content_status.as_deref(), Some("Draft"));
+    assert_eq!(core.last_modified_by.as_deref(), Some("Reviewer"));
+    assert_eq!(core.version.as_deref(), Some("1.2"));
     let text = reopened.text();
     assert!(text.contains("Builder Report"), "title lost: {text:?}");
     assert!(
@@ -2448,6 +2467,10 @@ fn doc_builder_ignores_blank_core_metadata() {
         .creator("\t")
         .description(" ")
         .keywords("\n")
+        .category(" ")
+        .content_status("\n")
+        .last_modified_by("\t")
+        .version(" ")
         .paragraph("Body")
         .build();
 
@@ -2456,12 +2479,20 @@ fn doc_builder_ignores_blank_core_metadata() {
     assert_eq!(model.setup.creator, None);
     assert_eq!(model.setup.description, None);
     assert_eq!(model.setup.keywords, None);
+    assert_eq!(model.setup.category, None);
+    assert_eq!(model.setup.content_status, None);
+    assert_eq!(model.setup.last_modified_by, None);
+    assert_eq!(model.setup.version, None);
 
     model.setup.title = Some(" \n ".to_string());
     model.setup.subject = Some(" ".to_string());
     model.setup.creator = Some("\t".to_string());
     model.setup.description = Some("\r".to_string());
     model.setup.keywords = Some("\n".to_string());
+    model.setup.category = Some(" ".to_string());
+    model.setup.content_status = Some("\n".to_string());
+    model.setup.last_modified_by = Some("\t".to_string());
+    model.setup.version = Some(" ".to_string());
 
     let bytes = rdoc::write_docx(&model);
     let parts = unzip_parts(&bytes);
