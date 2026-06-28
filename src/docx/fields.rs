@@ -3369,11 +3369,13 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
     let mut field_positions = Vec::new();
     let mut page_field_positions = Vec::new();
     let mut current: Option<PageRefScanField> = None;
+    let mut paragraph_depth = 0usize;
     let mut paragraph_properties_depth = 0usize;
     let mut section_properties_depth = 0usize;
     let mut section_type_seen = false;
     let mut section_is_paragraph_break = false;
     let mut section_break_pending = None;
+    let mut paragraph_section_break_pending = None;
     let mut section_page_number_start = None;
     let mut section_page_number_format = None;
     let mut xml_depth = 0usize;
@@ -3399,6 +3401,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                             took_branch: false,
                         });
                     }
+                    b"p" => paragraph_depth += 1,
                     b"pPr" => paragraph_properties_depth += 1,
                     b"pageBreakBefore"
                         if paragraph_properties_depth > 0 && page_ref_on_off_enabled(&e) =>
@@ -3534,14 +3537,8 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                         pages.advance_page_break_before(&mut source_order);
                     }
                     b"sectPr" if paragraph_properties_depth > 0 => {
-                        pages.advance_section_break(
-                            PageRefSectionBreak::Next,
-                            saw_visible_content,
-                            saw_rendered_page_break,
-                            None,
-                            None,
-                            &mut source_order,
-                        );
+                        paragraph_section_break_pending =
+                            Some((PageRefSectionBreak::Next, None, None));
                     }
                     b"type" if section_properties_depth > 0 && !section_type_seen => {
                         section_type_seen = true;
@@ -3638,14 +3635,11 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                                 Some(PageRefSectionBreak::Next)
                             };
                             if let Some(section_break) = section_break {
-                                pages.advance_section_break(
+                                paragraph_section_break_pending = Some((
                                     section_break,
-                                    saw_visible_content,
-                                    saw_rendered_page_break,
                                     section_page_number_start,
                                     section_page_number_format,
-                                    &mut source_order,
-                                );
+                                ));
                             }
                         }
                         section_properties_depth = section_properties_depth.saturating_sub(1);
@@ -3656,6 +3650,23 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                             section_page_number_start = None;
                             section_page_number_format = None;
                         }
+                    }
+                    b"p" => {
+                        if paragraph_depth == 1 {
+                            if let Some((section_break, page_number_start, page_number_format)) =
+                                paragraph_section_break_pending.take()
+                            {
+                                pages.advance_section_break(
+                                    section_break,
+                                    saw_visible_content,
+                                    saw_rendered_page_break,
+                                    page_number_start,
+                                    page_number_format,
+                                    &mut source_order,
+                                );
+                            }
+                        }
+                        paragraph_depth = paragraph_depth.saturating_sub(1);
                     }
                     b"pPr" => {
                         paragraph_properties_depth = paragraph_properties_depth.saturating_sub(1);
