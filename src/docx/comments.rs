@@ -132,8 +132,25 @@ pub(crate) fn parse_anchors(xml: &str) -> HashMap<String, TextAnchor> {
     let mut anchors: HashMap<String, TextAnchor> = HashMap::new();
     let mut active: Vec<(String, bool)> = Vec::new();
     let mut old_content_depth = 0usize;
+    let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
+            Ok(Event::Start(e))
+                if skip_alternate_content_branch(
+                    &mut alternate_content_stack,
+                    local(e.name().as_ref()),
+                ) =>
+            {
+                skip_subtree(&mut r);
+            }
+            Ok(Event::Empty(e))
+                if skip_alternate_content_branch(
+                    &mut alternate_content_stack,
+                    local(e.name().as_ref()),
+                ) => {}
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                alternate_content_stack.push(AlternateContentBranchState::default());
+            }
             Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
                 old_content_depth += 1;
             }
@@ -180,6 +197,9 @@ pub(crate) fn parse_anchors(xml: &str) -> HashMap<String, TextAnchor> {
             Ok(Event::End(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
                 old_content_depth = old_content_depth.saturating_sub(1);
             }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                alternate_content_stack.pop();
+            }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
@@ -190,8 +210,25 @@ pub(crate) fn parse_anchors(xml: &str) -> HashMap<String, TextAnchor> {
 fn read_comment(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Option<Comment> {
     let mut c = comment_shell(start);
     let mut old_content_depth = 0usize;
+    let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
+            Ok(Event::Start(e))
+                if skip_alternate_content_branch(
+                    &mut alternate_content_stack,
+                    local(e.name().as_ref()),
+                ) =>
+            {
+                skip_subtree(r);
+            }
+            Ok(Event::Empty(e))
+                if skip_alternate_content_branch(
+                    &mut alternate_content_stack,
+                    local(e.name().as_ref()),
+                ) => {}
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                alternate_content_stack.push(AlternateContentBranchState::default());
+            }
             Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
                 old_content_depth += 1;
             }
@@ -213,6 +250,9 @@ fn read_comment(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Option<Comment> {
             Ok(Event::End(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
                 old_content_depth = old_content_depth.saturating_sub(1);
             }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                alternate_content_stack.pop();
+            }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"comment" => break,
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
@@ -220,6 +260,44 @@ fn read_comment(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Option<Comment> {
     }
     c
 }
+
+#[derive(Default)]
+struct AlternateContentBranchState {
+    took_branch: bool,
+}
+
+fn skip_alternate_content_branch(stack: &mut [AlternateContentBranchState], name: &[u8]) -> bool {
+    if !matches!(name, b"Choice" | b"Fallback") {
+        return false;
+    }
+    let Some(state) = stack.last_mut() else {
+        return false;
+    };
+    if state.took_branch {
+        true
+    } else {
+        state.took_branch = true;
+        false
+    }
+}
+
+fn skip_subtree(r: &mut Xml<'_>) {
+    let mut depth = 1usize;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(_)) => depth += 1,
+            Ok(Event::End(_)) => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    break;
+                }
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+}
+
 fn read_text(r: &mut Xml<'_>) -> String {
     let mut s = String::new();
     loop {
