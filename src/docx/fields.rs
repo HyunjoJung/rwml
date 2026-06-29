@@ -9,8 +9,13 @@ use crate::annotation::{
     accept_field_number_format_switch,
     accept_field_text_format_switch as accept_field_format_switch, accept_general_format_switch,
     action_field_syntax, advance_field_syntax, compare_field_syntax, direct_ref_field_syntax,
-    document_property_key, field_identifier_token, field_literal_token, field_name_token,
-    field_non_empty_literal_token, field_points_token, field_quoted_literal_token,
+    document_property_key, eq_enclosed_operand as take_eq_enclosed_operand,
+    eq_fraction_operands as split_eq_fraction_operands, eq_list_operands as split_eq_list_operands,
+    eq_numeric_prefix_option as consume_eq_numeric_prefix_option,
+    eq_parenthesized_operand as take_eq_parenthesized_operand,
+    eq_prefix_switch_tail as consume_eq_prefix_switch,
+    eq_radical_operands as split_eq_radical_operands, field_identifier_token, field_literal_token,
+    field_name_token, field_non_empty_literal_token, field_quoted_literal_token,
     filename_field_syntax, formula_field_syntax, if_field_syntax, instruction_parts,
     is_neutral_field_format_switch, legacy_form_field_syntax, merge_control_field_syntax,
     note_ref_field_syntax, numbering_field_syntax, page_field_format_syntax_tail,
@@ -7551,174 +7556,8 @@ fn eq_enclosed_operand_with_prefix_switches<'a>(
     take_eq_enclosed_operand(body)
 }
 
-fn consume_eq_prefix_switch<'a>(value: &'a str, switch: &str) -> Option<&'a str> {
-    let rest = strip_ascii_switch_prefix(value, switch)?;
-    if matches!(
-        rest.chars().next(),
-        Some(ch) if ch.is_ascii_alphabetic()
-    ) {
-        return None;
-    }
-    Some(rest)
-}
-
-fn consume_eq_numeric_prefix_option<'a>(value: &'a str, option: &str) -> Option<(f32, &'a str)> {
-    let rest = strip_ascii_switch_prefix(value, option)?;
-    if matches!(
-        rest.chars().next(),
-        Some(ch) if ch.is_ascii_alphabetic()
-    ) {
-        return None;
-    }
-    let rest = rest.trim_start();
-    let mut end = 0usize;
-    for (index, ch) in rest.char_indices() {
-        if index == 0 && (ch == '-' || ch == '+') {
-            end = ch.len_utf8();
-            continue;
-        }
-        if !ch.is_ascii_digit() && ch != '.' && ch != 'e' && ch != 'E' && ch != '-' && ch != '+' {
-            break;
-        }
-        end = index + ch.len_utf8();
-    }
-    if end == 0 || matches!(rest.get(..end), Some("+") | Some("-")) {
-        return None;
-    }
-    let value = field_points_token(&rest[..end])?;
-    Some((value, &rest[end..]))
-}
-
 fn eq_column_count(value: f32) -> Option<usize> {
     (value.fract() == 0.0 && value >= 1.0 && value <= usize::MAX as f32).then_some(value as usize)
-}
-
-fn take_eq_parenthesized_operand(value: &str) -> Option<(&str, &str)> {
-    let value = value.trim_start();
-    if !value.starts_with('(') {
-        return None;
-    }
-    let mut depth = 0usize;
-    let mut in_quotes = false;
-    let mut escaped = false;
-    for (index, ch) in value.char_indices().skip(1) {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-        match ch {
-            '\\' => escaped = true,
-            '"' => in_quotes = !in_quotes,
-            '(' if !in_quotes => depth += 1,
-            ')' if !in_quotes && depth == 0 => {
-                return Some((&value[1..index], &value[index + 1..]))
-            }
-            ')' if !in_quotes => depth = depth.checked_sub(1)?,
-            _ => {}
-        }
-    }
-    None
-}
-
-fn take_eq_enclosed_operand(value: &str) -> Option<&str> {
-    let (inner, rest) = take_eq_parenthesized_operand(value)?;
-    rest.trim().is_empty().then_some(inner)
-}
-
-fn split_eq_fraction_operands(inner: &str) -> Option<(&str, &str)> {
-    let mut depth = 0usize;
-    let mut separator = None;
-    let mut in_quotes = false;
-    let mut escaped = false;
-    for (index, ch) in inner.char_indices() {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-        match ch {
-            '\\' => escaped = true,
-            '"' => in_quotes = !in_quotes,
-            '(' if !in_quotes => depth += 1,
-            ')' if !in_quotes => depth = depth.checked_sub(1)?,
-            ',' | ';' if !in_quotes && depth == 0 && separator.replace(index).is_some() => {
-                return None;
-            }
-            _ => {}
-        }
-    }
-    if in_quotes || escaped || depth != 0 {
-        return None;
-    }
-    let index = separator?;
-    Some((&inner[..index], &inner[index + 1..]))
-}
-
-fn split_eq_radical_operands(inner: &str) -> Option<(&str, Option<&str>)> {
-    let mut depth = 0usize;
-    let mut separator = None;
-    let mut in_quotes = false;
-    let mut escaped = false;
-    for (index, ch) in inner.char_indices() {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-        match ch {
-            '\\' => escaped = true,
-            '"' => in_quotes = !in_quotes,
-            '(' if !in_quotes => depth += 1,
-            ')' if !in_quotes => depth = depth.checked_sub(1)?,
-            ',' | ';' if !in_quotes && depth == 0 && separator.replace(index).is_some() => {
-                return None;
-            }
-            _ => {}
-        }
-    }
-    if in_quotes || escaped || depth != 0 {
-        return None;
-    }
-    match separator {
-        Some(index) => Some((&inner[..index], Some(&inner[index + 1..]))),
-        None => Some((inner, None)),
-    }
-}
-
-fn split_eq_list_operands(inner: &str) -> Option<Vec<&str>> {
-    let mut depth = 0usize;
-    let mut operands = Vec::new();
-    let mut start = 0usize;
-    let mut in_quotes = false;
-    let mut escaped = false;
-    for (index, ch) in inner.char_indices() {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-        match ch {
-            '\\' => escaped = true,
-            '"' => in_quotes = !in_quotes,
-            '(' if !in_quotes => depth += 1,
-            ')' if !in_quotes => depth = depth.checked_sub(1)?,
-            ',' | ';' if !in_quotes && depth == 0 => {
-                let operand = &inner[start..index];
-                if operand.trim().is_empty() {
-                    return None;
-                }
-                operands.push(operand);
-                start = index + ch.len_utf8();
-            }
-            _ => {}
-        }
-    }
-    if in_quotes || escaped || depth != 0 {
-        return None;
-    }
-    let operand = &inner[start..];
-    if operand.trim().is_empty() {
-        return None;
-    }
-    operands.push(operand);
-    Some(operands)
 }
 
 fn eq_operand_text(operand: &str) -> Option<String> {

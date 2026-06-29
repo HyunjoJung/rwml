@@ -17,7 +17,11 @@ use crate::annotation::{
     FieldTextFormat, RefFieldSyntax,
 };
 #[cfg(not(feature = "docx"))]
-use crate::annotation::{advance_field_syntax, field_points_token, symbol_field_syntax};
+use crate::annotation::{
+    advance_field_syntax, eq_enclosed_operand, eq_fraction_operands, eq_list_operands,
+    eq_numeric_prefix_option, eq_parenthesized_operand, eq_prefix_switch_tail, eq_radical_operands,
+    symbol_field_syntax,
+};
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{
     compare_field_syntax, formula_field_syntax, if_field_syntax, merge_control_field_syntax,
@@ -2133,14 +2137,14 @@ fn supported_eq_displacement_syntax(instruction: &str) -> bool {
     body = body.trim_start();
     let mut has_option = false;
     loop {
-        if let Some(rest) = consume_eq_numeric_prefix_option_for_report(body, "\\fo")
-            .or_else(|| consume_eq_numeric_prefix_option_for_report(body, "\\ba"))
+        if let Some(rest) = eq_numeric_prefix_tail_for_report(body, "\\fo")
+            .or_else(|| eq_numeric_prefix_tail_for_report(body, "\\ba"))
         {
             has_option = true;
             body = rest.trim_start();
             continue;
         }
-        if let Some(rest) = consume_eq_prefix_switch_for_report(body, "\\li") {
+        if let Some(rest) = eq_prefix_switch_tail(body, "\\li") {
             has_option = true;
             body = rest.trim_start();
             continue;
@@ -2157,54 +2161,8 @@ fn supported_eq_displacement_syntax(instruction: &str) -> bool {
 }
 
 #[cfg(not(feature = "docx"))]
-fn consume_eq_numeric_prefix_option_for_report<'a>(
-    value: &'a str,
-    option: &str,
-) -> Option<&'a str> {
-    consume_eq_numeric_prefix_value_for_report(value, option).map(|(_, rest)| rest)
-}
-
-#[cfg(not(feature = "docx"))]
-fn consume_eq_numeric_prefix_value_for_report<'a>(
-    value: &'a str,
-    option: &str,
-) -> Option<(f32, &'a str)> {
-    let rest = strip_ascii_switch_prefix(value, option)?;
-    if matches!(
-        rest.chars().next(),
-        Some(ch) if ch.is_ascii_alphabetic()
-    ) {
-        return None;
-    }
-    let rest = rest.trim_start();
-    let mut end = 0usize;
-    for (index, ch) in rest.char_indices() {
-        if index == 0 && (ch == '-' || ch == '+') {
-            end = ch.len_utf8();
-            continue;
-        }
-        if !ch.is_ascii_digit() && ch != '.' && ch != 'e' && ch != 'E' && ch != '-' && ch != '+' {
-            break;
-        }
-        end = index + ch.len_utf8();
-    }
-    if end == 0 || matches!(rest.get(..end), Some("+") | Some("-")) {
-        return None;
-    }
-    let points = field_points_token(&rest[..end])?;
-    Some((points, &rest[end..]))
-}
-
-#[cfg(not(feature = "docx"))]
-fn consume_eq_prefix_switch_for_report<'a>(value: &'a str, switch: &str) -> Option<&'a str> {
-    let rest = strip_ascii_switch_prefix(value, switch)?;
-    if matches!(
-        rest.chars().next(),
-        Some(ch) if ch.is_ascii_alphabetic()
-    ) {
-        return None;
-    }
-    Some(rest)
+fn eq_numeric_prefix_tail_for_report<'a>(value: &'a str, option: &str) -> Option<&'a str> {
+    eq_numeric_prefix_option(value, option).map(|(_, rest)| rest)
 }
 
 #[cfg(not(feature = "docx"))]
@@ -2250,7 +2208,7 @@ fn eq_expression_for_report(instruction: &str) -> Option<String> {
 fn eq_script_syntax_segment_for_report(mut body: &str) -> Option<&str> {
     let mut saw_option = false;
     loop {
-        if body.is_empty() || consume_eq_prefix_switch_for_report(body, "\\s").is_some() {
+        if body.is_empty() || eq_prefix_switch_tail(body, "\\s").is_some() {
             return saw_option.then_some(body);
         }
         if let Some(rest) = consume_eq_script_option_for_report(body, "\\up", false)
@@ -2272,40 +2230,12 @@ fn consume_eq_script_option_for_report<'a>(
     option: &str,
     allow_empty: bool,
 ) -> Option<&'a str> {
-    let rest = consume_eq_numeric_prefix_option_for_report(value, option)?;
-    let (operand, rest) = take_eq_parenthesized_operand_for_report(rest)?;
+    let rest = eq_numeric_prefix_tail_for_report(value, option)?;
+    let (operand, rest) = eq_parenthesized_operand(rest)?;
     if operand.trim().is_empty() {
         return allow_empty.then_some(rest);
     }
     eq_operand_for_report(operand).then_some(rest)
-}
-
-#[cfg(not(feature = "docx"))]
-fn take_eq_parenthesized_operand_for_report(value: &str) -> Option<(&str, &str)> {
-    let value = value.trim_start();
-    if !value.starts_with('(') {
-        return None;
-    }
-    let mut depth = 0usize;
-    let mut in_quotes = false;
-    let mut escaped = false;
-    for (index, ch) in value.char_indices().skip(1) {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-        match ch {
-            '\\' => escaped = true,
-            '"' => in_quotes = !in_quotes,
-            '(' if !in_quotes => depth += 1,
-            ')' if !in_quotes && depth == 0 => {
-                return Some((&value[1..index], &value[index + 1..]));
-            }
-            ')' if !in_quotes => depth = depth.checked_sub(1)?,
-            _ => {}
-        }
-    }
-    None
 }
 
 #[cfg(not(feature = "docx"))]
@@ -2322,39 +2252,10 @@ fn supported_eq_fraction_syntax(instruction: &str) -> bool {
     else {
         return false;
     };
-    let Some((numerator, denominator)) = split_eq_fraction_operands_for_report(inner) else {
+    let Some((numerator, denominator)) = eq_fraction_operands(inner) else {
         return false;
     };
     eq_operand_for_report(numerator) && eq_operand_for_report(denominator)
-}
-
-#[cfg(not(feature = "docx"))]
-fn split_eq_fraction_operands_for_report(inner: &str) -> Option<(&str, &str)> {
-    let mut depth = 0usize;
-    let mut separator = None;
-    let mut in_quotes = false;
-    let mut escaped = false;
-    for (index, ch) in inner.char_indices() {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-        match ch {
-            '\\' => escaped = true,
-            '"' => in_quotes = !in_quotes,
-            '(' if !in_quotes => depth += 1,
-            ')' if !in_quotes => depth = depth.checked_sub(1)?,
-            ',' | ';' if !in_quotes && depth == 0 && separator.replace(index).is_some() => {
-                return None;
-            }
-            _ => {}
-        }
-    }
-    if in_quotes || escaped || depth != 0 {
-        return None;
-    }
-    let index = separator?;
-    Some((&inner[..index], &inner[index + 1..]))
 }
 
 #[cfg(not(feature = "docx"))]
@@ -2410,7 +2311,7 @@ fn supported_eq_radical_syntax(instruction: &str) -> bool {
     else {
         return false;
     };
-    let Some((degree, radicand)) = split_eq_radical_operands_for_report(inner) else {
+    let Some((degree, radicand)) = eq_radical_operands(inner) else {
         return false;
     };
     eq_operand_for_report(degree)
@@ -2418,37 +2319,6 @@ fn supported_eq_radical_syntax(instruction: &str) -> bool {
             Some(radicand) => eq_operand_for_report(radicand),
             None => true,
         }
-}
-
-#[cfg(not(feature = "docx"))]
-fn split_eq_radical_operands_for_report(inner: &str) -> Option<(&str, Option<&str>)> {
-    let mut depth = 0usize;
-    let mut separator = None;
-    let mut in_quotes = false;
-    let mut escaped = false;
-    for (index, ch) in inner.char_indices() {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-        match ch {
-            '\\' => escaped = true,
-            '"' => in_quotes = !in_quotes,
-            '(' if !in_quotes => depth += 1,
-            ')' if !in_quotes => depth = depth.checked_sub(1)?,
-            ',' | ';' if !in_quotes && depth == 0 && separator.replace(index).is_some() => {
-                return None;
-            }
-            _ => {}
-        }
-    }
-    if in_quotes || escaped || depth != 0 {
-        return None;
-    }
-    match separator {
-        Some(index) => Some((&inner[..index], Some(&inner[index + 1..]))),
-        None => Some((inner, None)),
-    }
 }
 
 #[cfg(not(feature = "docx"))]
@@ -2465,7 +2335,7 @@ fn supported_eq_list_syntax(instruction: &str) -> bool {
     else {
         return false;
     };
-    split_eq_list_operands_for_report(inner).is_some_and(|operands| {
+    eq_list_operands(inner).is_some_and(|operands| {
         operands
             .iter()
             .all(|operand| eq_operand_for_report(operand))
@@ -2482,22 +2352,22 @@ fn supported_eq_array_syntax(instruction: &str) -> bool {
     };
     body = body.trim_start();
     loop {
-        if let Some(rest) = consume_eq_prefix_switch_for_report(body, "\\al")
-            .or_else(|| consume_eq_prefix_switch_for_report(body, "\\ac"))
-            .or_else(|| consume_eq_prefix_switch_for_report(body, "\\ar"))
+        if let Some(rest) = eq_prefix_switch_tail(body, "\\al")
+            .or_else(|| eq_prefix_switch_tail(body, "\\ac"))
+            .or_else(|| eq_prefix_switch_tail(body, "\\ar"))
         {
             body = rest.trim_start();
             continue;
         }
-        if let Some((columns, rest)) = consume_eq_numeric_prefix_value_for_report(body, "\\co") {
+        if let Some((columns, rest)) = eq_numeric_prefix_option(body, "\\co") {
             if columns.fract() != 0.0 || columns < 1.0 {
                 return false;
             }
             body = rest.trim_start();
             continue;
         }
-        if let Some(rest) = consume_eq_numeric_prefix_option_for_report(body, "\\vs")
-            .or_else(|| consume_eq_numeric_prefix_option_for_report(body, "\\hs"))
+        if let Some(rest) = eq_numeric_prefix_tail_for_report(body, "\\vs")
+            .or_else(|| eq_numeric_prefix_tail_for_report(body, "\\hs"))
         {
             body = rest.trim_start();
             continue;
@@ -2510,7 +2380,7 @@ fn supported_eq_array_syntax(instruction: &str) -> bool {
     else {
         return false;
     };
-    split_eq_list_operands_for_report(inner).is_some_and(|operands| {
+    eq_list_operands(inner).is_some_and(|operands| {
         operands
             .iter()
             .all(|operand| eq_operand_for_report(operand))
@@ -2527,9 +2397,9 @@ fn supported_eq_integral_syntax(instruction: &str) -> bool {
     };
     body = body.trim_start();
     loop {
-        if let Some(rest) = consume_eq_prefix_switch_for_report(body, "\\su")
-            .or_else(|| consume_eq_prefix_switch_for_report(body, "\\pr"))
-            .or_else(|| consume_eq_prefix_switch_for_report(body, "\\in"))
+        if let Some(rest) = eq_prefix_switch_tail(body, "\\su")
+            .or_else(|| eq_prefix_switch_tail(body, "\\pr"))
+            .or_else(|| eq_prefix_switch_tail(body, "\\in"))
         {
             body = rest.trim_start();
             continue;
@@ -2548,52 +2418,13 @@ fn supported_eq_integral_syntax(instruction: &str) -> bool {
     else {
         return false;
     };
-    let Some(operands) = split_eq_list_operands_for_report(inner) else {
+    let Some(operands) = eq_list_operands(inner) else {
         return false;
     };
     operands.len() == 3
         && operands
             .iter()
             .all(|operand| eq_operand_for_report(operand))
-}
-
-#[cfg(not(feature = "docx"))]
-fn split_eq_list_operands_for_report(inner: &str) -> Option<Vec<&str>> {
-    let mut depth = 0usize;
-    let mut operands = Vec::new();
-    let mut start = 0usize;
-    let mut in_quotes = false;
-    let mut escaped = false;
-    for (index, ch) in inner.char_indices() {
-        if escaped {
-            escaped = false;
-            continue;
-        }
-        match ch {
-            '\\' => escaped = true,
-            '"' => in_quotes = !in_quotes,
-            '(' if !in_quotes => depth += 1,
-            ')' if !in_quotes => depth = depth.checked_sub(1)?,
-            ',' | ';' if !in_quotes && depth == 0 => {
-                let operand = &inner[start..index];
-                if operand.trim().is_empty() {
-                    return None;
-                }
-                operands.push(operand);
-                start = index + ch.len_utf8();
-            }
-            _ => {}
-        }
-    }
-    if in_quotes || escaped || depth != 0 {
-        return None;
-    }
-    let operand = &inner[start..];
-    if operand.trim().is_empty() {
-        return None;
-    }
-    operands.push(operand);
-    Some(operands)
 }
 
 #[cfg(not(feature = "docx"))]
@@ -2605,9 +2436,9 @@ fn supported_eq_overstrike_syntax(instruction: &str) -> bool {
         return false;
     };
     body = body.trim_start();
-    while let Some(rest) = consume_eq_prefix_switch_for_report(body, "\\al")
-        .or_else(|| consume_eq_prefix_switch_for_report(body, "\\ac"))
-        .or_else(|| consume_eq_prefix_switch_for_report(body, "\\ar"))
+    while let Some(rest) = eq_prefix_switch_tail(body, "\\al")
+        .or_else(|| eq_prefix_switch_tail(body, "\\ac"))
+        .or_else(|| eq_prefix_switch_tail(body, "\\ar"))
     {
         body = rest.trim_start();
     }
@@ -2617,7 +2448,7 @@ fn supported_eq_overstrike_syntax(instruction: &str) -> bool {
     else {
         return false;
     };
-    split_eq_list_operands_for_report(inner).is_some_and(|operands| {
+    eq_list_operands(inner).is_some_and(|operands| {
         operands
             .iter()
             .all(|operand| eq_operand_for_report(operand))
@@ -2649,7 +2480,7 @@ fn eq_enclosed_operand_with_prefixes_for_report<'a>(
     loop {
         let mut consumed = false;
         for option in options {
-            if let Some(rest) = consume_eq_prefix_switch_for_report(body, option) {
+            if let Some(rest) = eq_prefix_switch_tail(body, option) {
                 body = rest.trim_start();
                 consumed = true;
                 break;
@@ -2659,8 +2490,7 @@ fn eq_enclosed_operand_with_prefixes_for_report<'a>(
             break;
         }
     }
-    let (inner, rest) = take_eq_parenthesized_operand_for_report(body)?;
-    rest.trim().is_empty().then_some(inner)
+    eq_enclosed_operand(body)
 }
 
 #[cfg(not(feature = "docx"))]
@@ -2682,7 +2512,7 @@ fn supported_eq_bracket_syntax(instruction: &str) -> bool {
         }
         break;
     }
-    let (inner, rest) = match take_eq_parenthesized_operand_for_report(body.trim_start()) {
+    let (inner, rest) = match eq_parenthesized_operand(body.trim_start()) {
         Some(value) => value,
         None => return false,
     };

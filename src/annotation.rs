@@ -2303,6 +2303,172 @@ pub(crate) fn symbol_field_syntax(instruction: &str) -> Option<SymbolFieldSyntax
     })
 }
 
+pub(crate) fn eq_prefix_switch_tail<'a>(value: &'a str, switch: &str) -> Option<&'a str> {
+    let rest = strip_ascii_switch_prefix(value, switch)?;
+    if matches!(
+        rest.chars().next(),
+        Some(ch) if ch.is_ascii_alphabetic()
+    ) {
+        return None;
+    }
+    Some(rest)
+}
+
+pub(crate) fn eq_numeric_prefix_option<'a>(value: &'a str, option: &str) -> Option<(f32, &'a str)> {
+    let rest = strip_ascii_switch_prefix(value, option)?;
+    if matches!(
+        rest.chars().next(),
+        Some(ch) if ch.is_ascii_alphabetic()
+    ) {
+        return None;
+    }
+    let rest = rest.trim_start();
+    let mut end = 0usize;
+    for (index, ch) in rest.char_indices() {
+        if index == 0 && (ch == '-' || ch == '+') {
+            end = ch.len_utf8();
+            continue;
+        }
+        if !ch.is_ascii_digit() && ch != '.' && ch != 'e' && ch != 'E' && ch != '-' && ch != '+' {
+            break;
+        }
+        end = index + ch.len_utf8();
+    }
+    if end == 0 || matches!(rest.get(..end), Some("+") | Some("-")) {
+        return None;
+    }
+    let value = field_points_token(&rest[..end])?;
+    Some((value, &rest[end..]))
+}
+
+pub(crate) fn eq_parenthesized_operand(value: &str) -> Option<(&str, &str)> {
+    let value = value.trim_start();
+    if !value.starts_with('(') {
+        return None;
+    }
+    let mut depth = 0usize;
+    let mut in_quotes = false;
+    let mut escaped = false;
+    for (index, ch) in value.char_indices().skip(1) {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' => escaped = true,
+            '"' => in_quotes = !in_quotes,
+            '(' if !in_quotes => depth += 1,
+            ')' if !in_quotes && depth == 0 => {
+                return Some((&value[1..index], &value[index + 1..]));
+            }
+            ')' if !in_quotes => depth = depth.checked_sub(1)?,
+            _ => {}
+        }
+    }
+    None
+}
+
+pub(crate) fn eq_enclosed_operand(value: &str) -> Option<&str> {
+    let (inner, rest) = eq_parenthesized_operand(value)?;
+    rest.trim().is_empty().then_some(inner)
+}
+
+pub(crate) fn eq_fraction_operands(inner: &str) -> Option<(&str, &str)> {
+    let mut depth = 0usize;
+    let mut separator = None;
+    let mut in_quotes = false;
+    let mut escaped = false;
+    for (index, ch) in inner.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' => escaped = true,
+            '"' => in_quotes = !in_quotes,
+            '(' if !in_quotes => depth += 1,
+            ')' if !in_quotes => depth = depth.checked_sub(1)?,
+            ',' | ';' if !in_quotes && depth == 0 && separator.replace(index).is_some() => {
+                return None;
+            }
+            _ => {}
+        }
+    }
+    if in_quotes || escaped || depth != 0 {
+        return None;
+    }
+    let index = separator?;
+    Some((&inner[..index], &inner[index + 1..]))
+}
+
+pub(crate) fn eq_radical_operands(inner: &str) -> Option<(&str, Option<&str>)> {
+    let mut depth = 0usize;
+    let mut separator = None;
+    let mut in_quotes = false;
+    let mut escaped = false;
+    for (index, ch) in inner.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' => escaped = true,
+            '"' => in_quotes = !in_quotes,
+            '(' if !in_quotes => depth += 1,
+            ')' if !in_quotes => depth = depth.checked_sub(1)?,
+            ',' | ';' if !in_quotes && depth == 0 && separator.replace(index).is_some() => {
+                return None;
+            }
+            _ => {}
+        }
+    }
+    if in_quotes || escaped || depth != 0 {
+        return None;
+    }
+    match separator {
+        Some(index) => Some((&inner[..index], Some(&inner[index + 1..]))),
+        None => Some((inner, None)),
+    }
+}
+
+pub(crate) fn eq_list_operands(inner: &str) -> Option<Vec<&str>> {
+    let mut depth = 0usize;
+    let mut operands = Vec::new();
+    let mut start = 0usize;
+    let mut in_quotes = false;
+    let mut escaped = false;
+    for (index, ch) in inner.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' => escaped = true,
+            '"' => in_quotes = !in_quotes,
+            '(' if !in_quotes => depth += 1,
+            ')' if !in_quotes => depth = depth.checked_sub(1)?,
+            ',' | ';' if !in_quotes && depth == 0 => {
+                let operand = &inner[start..index];
+                if operand.trim().is_empty() {
+                    return None;
+                }
+                operands.push(operand);
+                start = index + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    if in_quotes || escaped || depth != 0 {
+        return None;
+    }
+    let operand = &inner[start..];
+    if operand.trim().is_empty() {
+        return None;
+    }
+    operands.push(operand);
+    Some(operands)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ActionFieldSyntax {
     pub(crate) computed_text: Option<String>,
@@ -2419,10 +2585,11 @@ where
 mod tests {
     use super::{
         action_field_syntax, advance_field_syntax, compare_field_syntax, direct_ref_field_syntax,
-        if_field_syntax, legacy_form_field_syntax, merge_control_field_syntax,
-        note_ref_field_syntax, opaque_field_syntax, page_ref_field_syntax, ref_field_syntax,
-        symbol_field_syntax, toc_field_syntax, FieldNumberFormat, FieldTextFormat,
-        TocSequenceFilter, TocTcFilter,
+        eq_enclosed_operand, eq_fraction_operands, eq_list_operands, eq_numeric_prefix_option,
+        eq_parenthesized_operand, eq_prefix_switch_tail, eq_radical_operands, if_field_syntax,
+        legacy_form_field_syntax, merge_control_field_syntax, note_ref_field_syntax,
+        opaque_field_syntax, page_ref_field_syntax, ref_field_syntax, symbol_field_syntax,
+        toc_field_syntax, FieldNumberFormat, FieldTextFormat, TocSequenceFilter, TocTcFilter,
     };
 
     #[test]
@@ -2603,6 +2770,39 @@ mod tests {
         assert!(symbol_field_syntax(r#"SYMBOL 65 \f"Symbol"#).is_none());
         assert!(symbol_field_syntax(r#"SYMBOL 65 \s "12"#).is_none());
         assert!(symbol_field_syntax(r#"SYMBOL 65 \j"#).is_none());
+    }
+
+    #[test]
+    fn eq_scanners_handle_nested_quotes_and_prefix_options() {
+        assert_eq!(
+            eq_prefix_switch_tail(r"\li(Title)", r"\li"),
+            Some("(Title)")
+        );
+        assert_eq!(eq_prefix_switch_tail(r"\left", r"\li"), None);
+
+        let (points, rest) = eq_numeric_prefix_option(r"\fo10.5(A)", r"\fo").unwrap();
+        assert_eq!(points, 10.5);
+        assert_eq!(rest, "(A)");
+        assert!(eq_numeric_prefix_option(r"\foe10(A)", r"\fo").is_none());
+
+        assert_eq!(
+            eq_parenthesized_operand(r#"(A,\f(1,2),"B,C")tail"#),
+            Some((r#"A,\f(1,2),"B,C""#, "tail"))
+        );
+        assert_eq!(
+            eq_enclosed_operand(r#"(A,\f(1,2),"B,C")"#),
+            Some(r#"A,\f(1,2),"B,C""#)
+        );
+        assert!(eq_enclosed_operand(r#"(A) tail"#).is_none());
+
+        assert_eq!(
+            eq_fraction_operands(r#"A,\f(1,2)"#),
+            Some(("A", r"\f(1,2)"))
+        );
+        assert_eq!(eq_radical_operands(r#"3,27"#), Some(("3", Some("27"))));
+        assert_eq!(eq_radical_operands("27"), Some(("27", None)));
+        assert_eq!(eq_list_operands(r#"A,"B,C",\f(1,2)"#).unwrap().len(), 3);
+        assert!(eq_list_operands(r#"A,"B,C"#).is_none());
     }
 }
 
