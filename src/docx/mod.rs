@@ -1673,7 +1673,7 @@ pub(crate) fn parse_rgb_hex_color(value: &str) -> Option<Color> {
     })
 }
 
-fn attr_i64(e: &BytesStart<'_>, key: &[u8]) -> Option<i64> {
+pub(crate) fn attr_i64(e: &BytesStart<'_>, key: &[u8]) -> Option<i64> {
     attr_local(e, key)?.trim().parse().ok()
 }
 

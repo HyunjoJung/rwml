@@ -20,8 +20,8 @@ use super::parse_rgb_hex_color;
 use super::styles::Styles;
 use super::xml_text::{read_text, skip_subtree};
 use super::{
-    attr_f32, attr_local, attr_local_trimmed, attr_u16, attr_u32, attr_u8, field_char_type,
-    is_page_break_type, local, toggle_on,
+    attr_f32, attr_i64, attr_local, attr_local_trimmed, attr_u16, attr_u32, attr_u8,
+    field_char_type, is_page_break_type, local, toggle_on,
 };
 use crate::annotation::{normalized_field_instruction, FieldKind};
 use crate::model::{
@@ -1848,7 +1848,7 @@ fn apply_image_rotation(img: &mut Option<Image>, e: &BytesStart<'_>) {
     let Some(image) = img.as_mut() else {
         return;
     };
-    let Some(rot) = attr_local(e, b"rot").and_then(|rot| rot.trim().parse::<i64>().ok()) else {
+    let Some(rot) = attr_i64(e, b"rot") else {
         return;
     };
     let units = rot.rem_euclid(21_600_000);
