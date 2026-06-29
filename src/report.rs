@@ -13,9 +13,9 @@ use crate::annotation::{
     accept_general_format_switch, field_identifier_token as diagnostic_identifier_token,
     field_level_range_token as diagnostic_level_range_token,
     field_literal_token as diagnostic_literal_token, instruction_parts, is_note_ref_kind,
-    is_ref_value_neutral_switch, is_toc_value_neutral_switch, opaque_field_syntax,
-    strip_ascii_switch_prefix, toc_style_specs, Field, FieldKind, FieldNumberFormat,
-    FieldTextFormat,
+    is_ref_value_neutral_switch, is_toc_value_neutral_switch, legacy_form_field_syntax,
+    opaque_field_syntax, strip_ascii_switch_prefix, toc_style_specs, Field, FieldKind,
+    FieldNumberFormat, FieldTextFormat,
 };
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{
@@ -3008,32 +3008,7 @@ fn form_field_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
 }
 
 fn supported_form_field_syntax(instruction: &str) -> bool {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let Some(kind) = parts.next() else {
-        return false;
-    };
-    if !is_form_field_kind(kind) {
-        return false;
-    }
-    let mut text_format = false;
-    while let Some(part) = parts.next() {
-        let Some(accepted) = accept_field_format_for_report(part, &mut parts, &mut text_format)
-        else {
-            return false;
-        };
-        if !accepted {
-            return false;
-        }
-    }
-    true
-}
-
-fn is_form_field_kind(kind: &str) -> bool {
-    matches!(
-        kind.to_ascii_uppercase().as_str(),
-        "FORMCHECKBOX" | "FORMDROPDOWN" | "FORMTEXT"
-    )
+    legacy_form_field_syntax(instruction).is_some()
 }
 
 fn diagnostic_format_switch_token_well_formed(part: &str) -> bool {

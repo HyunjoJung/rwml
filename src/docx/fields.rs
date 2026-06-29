@@ -13,13 +13,14 @@ use crate::annotation::{
     field_points_token, field_positive_points_token, field_quoted_literal_token,
     field_symbol_code_token, filename_field_syntax, formula_field_syntax, if_field_syntax,
     instruction_parts, is_neutral_field_format_switch, is_note_ref_kind,
-    is_ref_value_neutral_switch, is_toc_value_neutral_switch, merge_control_field_syntax,
-    numbering_field_syntax, page_field_format_syntax_tail, prompt_field_syntax, quote_field_syntax,
-    reference_index_category_token, reference_index_literal_token,
-    reference_index_plain_value_token, revision_number_field_text_format, sequence_field_syntax,
-    set_field_syntax, strip_ascii_switch_prefix, style_ref_field_syntax, toc_entry_field_syntax,
-    toc_style_specs, Field, FieldKind, FieldNumberFormat, FieldTextFormat, PromptFieldSyntax,
-    StyleRefFieldSyntax, StyleRefResult,
+    is_ref_value_neutral_switch, is_toc_value_neutral_switch, legacy_form_field_syntax,
+    merge_control_field_syntax, numbering_field_syntax, page_field_format_syntax_tail,
+    prompt_field_syntax, quote_field_syntax, reference_index_category_token,
+    reference_index_literal_token, reference_index_plain_value_token,
+    revision_number_field_text_format, sequence_field_syntax, set_field_syntax,
+    strip_ascii_switch_prefix, style_ref_field_syntax, toc_entry_field_syntax, toc_style_specs,
+    Field, FieldKind, FieldNumberFormat, FieldTextFormat, PromptFieldSyntax, StyleRefFieldSyntax,
+    StyleRefResult,
 };
 use crate::{numfmt, CoreProperties};
 
@@ -3295,27 +3296,8 @@ fn read_legacy_form_data_element(
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct LegacyFormInstruction {
-    kind: String,
-    text_format: Option<FieldTextFormat>,
-}
-
-fn legacy_form_instruction(instruction: &str) -> Option<LegacyFormInstruction> {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let kind = legacy_form_kind(parts.next()?)?;
-    let text_format = field_format_tail(&mut parts)?;
-    Some(LegacyFormInstruction { kind, text_format })
-}
-
-fn legacy_form_kind(kind: &str) -> Option<String> {
-    let kind = kind.to_ascii_uppercase();
-    matches!(kind.as_str(), "FORMCHECKBOX" | "FORMDROPDOWN" | "FORMTEXT").then_some(kind)
-}
-
 fn legacy_form_field_result(instruction: &str, data: &LegacyFormData) -> Option<String> {
-    let spec = legacy_form_instruction(instruction)?;
+    let spec = legacy_form_field_syntax(instruction)?;
     let text = match spec.kind.as_str() {
         "FORMCHECKBOX" => Some(
             if data.checkbox? {
@@ -3349,7 +3331,7 @@ pub(crate) fn computed_legacy_form_result(
     if legacy_forms.preserves_cached() {
         return None;
     }
-    let spec = legacy_form_instruction(instruction)?;
+    let spec = legacy_form_field_syntax(instruction)?;
     match spec.kind.as_str() {
         "FORMTEXT" if !current_result.is_empty() => Some(apply_field_text_format(
             current_result.to_string(),

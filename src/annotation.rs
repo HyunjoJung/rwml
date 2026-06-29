@@ -661,6 +661,39 @@ pub(crate) fn opaque_field_syntax(instruction: &str, is_kind: fn(&str) -> bool) 
     true
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LegacyFormFieldSyntax {
+    pub(crate) kind: String,
+    pub(crate) text_format: Option<FieldTextFormat>,
+}
+
+pub(crate) fn legacy_form_field_syntax(instruction: &str) -> Option<LegacyFormFieldSyntax> {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let kind = legacy_form_field_kind(parts.next()?)?;
+    let text_format = field_text_format_tail(&mut parts)?;
+    Some(LegacyFormFieldSyntax { kind, text_format })
+}
+
+fn legacy_form_field_kind(kind: &str) -> Option<String> {
+    let kind = kind.to_ascii_uppercase();
+    matches!(kind.as_str(), "FORMCHECKBOX" | "FORMDROPDOWN" | "FORMTEXT").then_some(kind)
+}
+
+fn field_text_format_tail<'a, I>(parts: &mut I) -> Option<Option<FieldTextFormat>>
+where
+    I: Iterator<Item = &'a str>,
+{
+    let mut text_format = None;
+    while let Some(part) = parts.next() {
+        if accept_field_text_format_syntax(part, parts, &mut text_format)? {
+            continue;
+        }
+        return None;
+    }
+    Some(text_format)
+}
+
 fn field_text_format_tail_syntax<'a, I>(parts: &mut I) -> bool
 where
     I: Iterator<Item = &'a str>,
@@ -1690,8 +1723,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        action_field_syntax, compare_field_syntax, if_field_syntax, merge_control_field_syntax,
-        opaque_field_syntax,
+        action_field_syntax, compare_field_syntax, if_field_syntax, legacy_form_field_syntax,
+        merge_control_field_syntax, opaque_field_syntax, FieldTextFormat,
     };
 
     #[test]
@@ -1743,6 +1776,18 @@ mod tests {
             r#"LINK "chapter.docx""#,
             inserted_kind
         ));
+    }
+
+    #[test]
+    fn legacy_form_field_syntax_accepts_text_format_tails() {
+        let form = legacy_form_field_syntax(r#"FORMDROPDOWN \* Upper"#).unwrap();
+        assert_eq!(form.kind, "FORMDROPDOWN");
+        assert_eq!(form.text_format, Some(FieldTextFormat::Upper));
+        assert!(legacy_form_field_syntax(r#"FORMTEXT \* MERGEFORMAT"#).is_some());
+        assert!(legacy_form_field_syntax(r#"FORMCHECKBOX"#).is_some());
+        assert!(legacy_form_field_syntax(r#"FORMTEXT \x"#).is_none());
+        assert!(legacy_form_field_syntax(r#"FORMTEXT \* BadFormat"#).is_none());
+        assert!(legacy_form_field_syntax("FORMFIELD").is_none());
     }
 }
 
