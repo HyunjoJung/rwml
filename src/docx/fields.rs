@@ -27,6 +27,7 @@ use crate::annotation::{
     PromptFieldSyntax, StyleRefFieldSyntax, StyleRefResult, TocFieldSyntax as TocSpec,
     TocSequenceFilter, TocTcFilter as TcFilter,
 };
+use crate::model::SectionBreakKind;
 use crate::{numfmt, CoreProperties};
 
 use super::numbering::Numbering;
@@ -2902,6 +2903,16 @@ enum PageRefSectionBreak {
     Odd,
 }
 
+impl From<SectionBreakKind> for PageRefSectionBreak {
+    fn from(kind: SectionBreakKind) -> Self {
+        match kind {
+            SectionBreakKind::NextPage => PageRefSectionBreak::Next,
+            SectionBreakKind::EvenPage => PageRefSectionBreak::Even,
+            SectionBreakKind::OddPage => PageRefSectionBreak::Odd,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 struct PageRefPageState {
     leading_page_number: usize,
@@ -3765,9 +3776,7 @@ fn page_ref_on_off_enabled(e: &BytesStart<'_>) -> bool {
 fn page_ref_section_break(e: &BytesStart<'_>) -> Option<PageRefSectionBreak> {
     match attr_local_trimmed_preserve_empty(e, b"val").as_deref() {
         None | Some("") | Some("nextPage") => Some(PageRefSectionBreak::Next),
-        Some("evenPage") => Some(PageRefSectionBreak::Even),
-        Some("oddPage") => Some(PageRefSectionBreak::Odd),
-        _ => None,
+        Some(value) => SectionBreakKind::from_wml_value(value).map(PageRefSectionBreak::from),
     }
 }
 
