@@ -2588,6 +2588,24 @@ fn toc_tc_field_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn toc_deleted_tc_field_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:del><w:p><w:fldSimple w:instr=" TC &quot;Deleted Entry&quot; \f m \l 1 "/></w:p></w:del><w:moveFrom><w:p><w:fldSimple w:instr=" TC &quot;Moved Entry&quot; \f m \l 1 "/></w:p></w:moveFrom><w:p><w:fldSimple w:instr=" TC &quot;Visible Entry&quot; \f m \l 1 "><w:r><w:t>stale visible marker</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TOC \f m "><w:r><w:t>stale deleted tc toc</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn toc_sequence_caption_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -8153,6 +8171,51 @@ fn report_toc_field_warning_ignores_supported_tc_entry_tocs() {
         .warnings
         .iter()
         .all(|warning| !matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })));
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_toc_deleted_tc_entries_are_ignored() {
+    let doc = Document::open(&toc_deleted_tc_field_diagnostics_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::TocEntry);
+    assert_eq!(fields[0].instruction, "TC \"Visible Entry\" \\f m \\l 1");
+    let toc = fields
+        .iter()
+        .find(|field| field.kind == FieldKind::Toc)
+        .expect("TOC field is parsed");
+    assert_eq!(toc.instruction, "TOC \\f m");
+    assert_eq!(toc.computed_result.as_deref(), Some("Visible Entry"));
+
+    let report = doc.report();
+    assert_eq!(report.features.fields, 2);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![
+            field_kind_count(FieldKind::TocEntry, 1),
+            field_kind_count(FieldKind::Toc, 1),
+        ]
+    );
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+    assert!(
+        report
+            .warnings
+            .iter()
+            .all(|warning| !matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })),
+        "{:?}",
+        report.warnings
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Visible Entry")
+            && !main_text.contains("Deleted Entry")
+            && !main_text.contains("Moved Entry"),
+        "TOC report diagnostics must follow accepted-current TC entries: {main_text:?}"
+    );
 }
 
 #[cfg(feature = "docx")]
