@@ -1622,16 +1622,19 @@ fn read_run(
                     let (img, txbx) = read_drawing(r, ctx, depth);
                     push_drawing_runs(&mut images, img, txbx);
                 }
-                // A floating shape often sits as <w:r><mc:AlternateContent> wrapping
-                // the DrawingML <w:drawing> (Choice) and VML <w:pict> (Fallback) of
-                // the SAME shape — descend one branch so its text box is recovered
-                // (and not doubled), instead of skipping the whole shape.
+                // AlternateContent can wrap either ordinary run children or the
+                // DrawingML/VML forms of the same shape; materialize one branch.
                 b"AlternateContent" => {
-                    let mut img = None;
-                    let mut txbx = String::new();
-                    let mut anchor = DrawingAnchorOffset::default();
-                    walk_alternate_content(r, ctx, &mut img, &mut txbx, &mut anchor, depth + 1);
-                    push_drawing_runs(&mut images, img, txbx);
+                    append_run_alternate_content(
+                        r,
+                        ctx,
+                        depth + 1,
+                        complex_field.as_deref_mut(),
+                        base_index,
+                        &mut text,
+                        &mut text_is_field_result,
+                        &mut images,
+                    );
                 }
                 _ => skip_subtree(r),
             },
@@ -1680,6 +1683,121 @@ fn read_run(
     }
     runs.extend(images);
     runs
+}
+
+fn append_run_alternate_content(
+    r: &mut Xml<'_>,
+    ctx: &Ctx<'_>,
+    depth: u32,
+    mut complex_field: Option<&mut ComplexFieldTracker>,
+    base_index: usize,
+    text: &mut String,
+    text_is_field_result: &mut bool,
+    images: &mut Vec<Run>,
+) {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return;
+    }
+    let mut took = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
+                b"Choice" | b"Fallback" if !took => {
+                    took = true;
+                    append_run_alternate_content_branch(
+                        r,
+                        ctx,
+                        depth + 1,
+                        complex_field.as_deref_mut(),
+                        base_index,
+                        text,
+                        text_is_field_result,
+                        images,
+                    );
+                }
+                _ => skip_subtree(r),
+            },
+            Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+}
+
+fn append_run_alternate_content_branch(
+    r: &mut Xml<'_>,
+    ctx: &Ctx<'_>,
+    depth: u32,
+    mut complex_field: Option<&mut ComplexFieldTracker>,
+    base_index: usize,
+    text: &mut String,
+    text_is_field_result: &mut bool,
+    images: &mut Vec<Run>,
+) {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return;
+    }
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
+                b"fldChar" => {
+                    apply_complex_field_char(&e, ctx, complex_field.as_deref_mut(), base_index);
+                    skip_subtree(r);
+                }
+                b"instrText" => {
+                    let instruction = read_text(r);
+                    if let Some(tracker) = complex_field.as_deref_mut() {
+                        tracker.push_instruction(&instruction);
+                    }
+                }
+                b"t" => {
+                    let in_result = complex_field
+                        .as_deref()
+                        .map(ComplexFieldTracker::in_result)
+                        .unwrap_or(false);
+                    if in_result {
+                        *text_is_field_result = true;
+                    }
+                    text.push_str(&read_text(r));
+                }
+                b"drawing" | b"pict" | b"object" => {
+                    let (img, txbx) = read_drawing(r, ctx, depth);
+                    push_drawing_runs(images, img, txbx);
+                }
+                b"AlternateContent" => append_run_alternate_content(
+                    r,
+                    ctx,
+                    depth + 1,
+                    complex_field.as_deref_mut(),
+                    base_index,
+                    text,
+                    text_is_field_result,
+                    images,
+                ),
+                _ => skip_subtree(r),
+            },
+            Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
+                b"fldChar" => {
+                    apply_complex_field_char(&e, ctx, complex_field.as_deref_mut(), base_index)
+                }
+                b"tab" => text.push('\t'),
+                b"br" => {
+                    if is_page_break_type(&e) {
+                        text.push(PAGE_BREAK_MARKER);
+                    } else {
+                        text.push('\n');
+                    }
+                }
+                b"cr" => text.push('\n'),
+                b"noBreakHyphen" => text.push('-'),
+                b"softHyphen" => text.push('\u{00ad}'),
+                _ => {}
+            },
+            Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
 }
 
 fn apply_complex_field_char(

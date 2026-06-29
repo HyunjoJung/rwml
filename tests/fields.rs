@@ -3489,6 +3489,27 @@ fn docx_fields_use_single_alternate_content_branch() {
 }
 
 #[test]
+fn docx_body_text_uses_single_inline_alternate_content_branch() {
+    let doc = Document::open(&docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:p><w:r><w:t>Before </w:t><mc:AlternateContent><mc:Choice Requires="wps"><w:t>Choice inline</w:t></mc:Choice><mc:Fallback><w:t>Fallback inline</w:t></mc:Fallback></mc:AlternateContent><w:t> after</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ]))
+    .expect("fixture opens");
+
+    assert_eq!(doc.main_text(), "Before Choice inline after");
+}
+
+#[test]
 fn docx_page_fields_compute_trusted_current_page_numbers() {
     let doc = Document::open(&page_field_docx()).expect("fixture opens");
     let fields = doc.fields();
