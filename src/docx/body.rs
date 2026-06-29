@@ -2711,7 +2711,7 @@ fn apply_tc_mar_side(margins: &mut CellMargins, seen: &mut bool, e: &BytesStart<
     if !attr_local(e, b"type").map_or(true, |value| value.trim() == "dxa") {
         return;
     }
-    let Some(value) = attr_local(e, b"w").and_then(|v| v.trim().parse::<u32>().ok()) else {
+    let Some(value) = attr_u32(e, b"w") else {
         return;
     };
     match side {
