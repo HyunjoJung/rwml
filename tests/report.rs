@@ -1820,6 +1820,24 @@ fn toc_bookmark_scope_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn toc_scope_gap_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="PlainText"/><w:r><w:t>Plain target</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" TOC \b PlainText "><w:r><w:t>cached empty toc</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TOC \b MissingScope "><w:r><w:t>cached missing toc scope</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn toc_bookmark_only_scope_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -5002,6 +5020,77 @@ fn report_toc_field_warning_ignores_resolved_bookmark_scope_tocs() {
         vec![FieldKindCount {
             kind: FieldKind::Toc,
             count: 3,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Toc,
+            count: 2,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::NoComputedResult,
+                count: 1,
+            },
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::UnresolvedBookmark,
+                count: 1,
+            },
+        ]
+    );
+    assert_eq!(
+        report
+            .warnings
+            .iter()
+            .find(|warning| matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })),
+        Some(&DocumentWarning::UnsupportedFieldEvaluation {
+            count: 2,
+            field_kinds: vec![FieldKindCount {
+                kind: FieldKind::Toc,
+                count: 2,
+            }],
+        })
+    );
+
+    let json = report.to_json();
+    assert!(
+        json.contains(r#""unsupported_field_kinds":[{"kind":"TOC","count":2}]"#),
+        "{json}"
+    );
+    assert!(
+        json.contains(r#""unsupported_field_reasons":[{"reason":"NoComputedResult","count":1},{"reason":"UnresolvedBookmark","count":1}]"#),
+        "{json}"
+    );
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_toc_field_warning_reports_scope_gap_cases() {
+    let doc = Document::open(&toc_scope_gap_diagnostics_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::Toc);
+    assert_eq!(fields[0].instruction, "TOC \\b PlainText");
+    assert_eq!(fields[0].result, "cached empty toc");
+    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(fields[1].kind, FieldKind::Toc);
+    assert_eq!(fields[1].instruction, "TOC \\b MissingScope");
+    assert_eq!(fields[1].result, "cached missing toc scope");
+    assert_eq!(fields[1].computed_result, None);
+
+    let report = doc.report();
+
+    assert_eq!(report.features.fields, 2);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Toc,
+            count: 2,
         }]
     );
     assert_eq!(
