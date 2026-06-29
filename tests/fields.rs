@@ -1300,6 +1300,23 @@ fn display_field_docx() -> Vec<u8> {
     ])
 }
 
+fn advance_compact_quoted_display_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" ADVANCE \r&quot;2&quot; "><w:r><w:t>stale compact right</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" ADVANCE \u &quot;3&quot; \d4 "><w:r><w:t>stale quoted up down</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" ADVANCE \l2 \y &quot;5&quot; \* Upper "><w:r><w:t>stale compact left vertical</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn symbol_field_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -7711,6 +7728,37 @@ fn docx_display_fields_compute_deterministic_subset() {
             && !main_text.contains("stale empty script equation")
             && !main_text.contains("stale layout script equation"),
         "computed display fields should replace stale cached text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_advance_fields_accept_compact_and_quoted_point_switches() {
+    let doc = Document::open(&advance_compact_quoted_display_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let expected = [
+        r#"ADVANCE \r"2""#,
+        r#"ADVANCE \u "3" \d4"#,
+        r#"ADVANCE \l2 \y "5" \* Upper"#,
+    ];
+
+    assert_eq!(fields.len(), expected.len());
+    for (field, instruction) in fields.iter().zip(expected) {
+        assert_eq!(field.kind, FieldKind::Display("ADVANCE".to_string()));
+        assert_eq!(field.instruction, instruction);
+        assert_eq!(field.computed_result.as_deref(), Some(""));
+    }
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        !main_text.contains("stale compact right")
+            && !main_text.contains("stale quoted up down")
+            && !main_text.contains("stale compact left vertical"),
+        "computed ADVANCE fields should remove stale cached text: {main_text:?}"
     );
 }
 
