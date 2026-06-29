@@ -17,6 +17,8 @@ use crate::annotation::{
     FieldTextFormat, RefFieldSyntax,
 };
 #[cfg(not(feature = "docx"))]
+use crate::annotation::{advance_field_syntax, field_points_token, symbol_field_syntax};
+#[cfg(not(feature = "docx"))]
 use crate::annotation::{
     compare_field_syntax, formula_field_syntax, if_field_syntax, merge_control_field_syntax,
     numbering_field_syntax, page_field_format_syntax_tail, prompt_field_syntax, quote_field_syntax,
@@ -29,8 +31,6 @@ use crate::annotation::{
     document_property_key, field_non_empty_literal_token, field_quoted_literal_token,
     filename_field_syntax,
 };
-#[cfg(not(feature = "docx"))]
-use crate::annotation::{field_points_token, field_positive_points_token, field_symbol_code_token};
 use crate::model::{Block, FieldRole, Stats, Table};
 use crate::CoreProperties;
 #[cfg(feature = "docx")]
@@ -2114,114 +2114,12 @@ fn display_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
 
 #[cfg(not(feature = "docx"))]
 fn supported_advance_syntax(instruction: &str) -> bool {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let Some(kind) = parts.next() else {
-        return false;
-    };
-    if !kind.eq_ignore_ascii_case("ADVANCE") {
-        return false;
-    }
-    let mut text_format = false;
-    while let Some(part) = parts.next() {
-        let Some(accepted) = accept_field_format_for_report(part, &mut parts, &mut text_format)
-        else {
-            return false;
-        };
-        if accepted {
-            continue;
-        }
-        if accept_advance_switch_for_report(part, &mut parts).is_none() {
-            return false;
-        }
-    }
-    true
-}
-
-#[cfg(not(feature = "docx"))]
-fn accept_advance_switch_for_report<'a>(
-    part: &str,
-    parts: &mut impl Iterator<Item = &'a str>,
-) -> Option<()> {
-    for switch in ["\\d", "\\u", "\\l", "\\r", "\\x", "\\y"] {
-        if part.eq_ignore_ascii_case(switch) {
-            field_points_token(parts.next()?)?;
-            return Some(());
-        }
-        if let Some(value) = strip_ascii_switch_prefix(part, switch) {
-            if value.is_empty() {
-                return None;
-            }
-            field_points_token(value)?;
-            return Some(());
-        }
-    }
-    None
+    advance_field_syntax(instruction)
 }
 
 #[cfg(not(feature = "docx"))]
 fn supported_symbol_syntax(instruction: &str) -> bool {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let Some(kind) = parts.next() else {
-        return false;
-    };
-    if !kind.eq_ignore_ascii_case("SYMBOL") {
-        return false;
-    }
-    if parts.next().and_then(field_symbol_code_token).is_none() {
-        return false;
-    }
-    let mut text_format = false;
-    while let Some(part) = parts.next() {
-        if part.eq_ignore_ascii_case("\\a") || part.eq_ignore_ascii_case("\\h") {
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\u") {
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\j") {
-            return false;
-        }
-        if part.eq_ignore_ascii_case("\\f") {
-            let Some(font) = parts.next() else {
-                return false;
-            };
-            if diagnostic_name_token(font).is_none() {
-                return false;
-            }
-            continue;
-        }
-        if let Some(font) = strip_ascii_switch_prefix(part, "\\f") {
-            if font.is_empty() || diagnostic_name_token(font).is_none() {
-                return false;
-            }
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\s") {
-            let Some(size) = parts.next() else {
-                return false;
-            };
-            if field_positive_points_token(size).is_none() {
-                return false;
-            }
-            continue;
-        }
-        if let Some(size) = strip_ascii_switch_prefix(part, "\\s") {
-            if size.is_empty() || field_positive_points_token(size).is_none() {
-                return false;
-            }
-            continue;
-        }
-        let Some(accepted) = accept_field_format_for_report(part, &mut parts, &mut text_format)
-        else {
-            return false;
-        };
-        if !accepted {
-            return false;
-        }
-    }
-    true
+    symbol_field_syntax(instruction).is_some()
 }
 
 #[cfg(not(feature = "docx"))]

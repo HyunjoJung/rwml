@@ -8,19 +8,19 @@ use quick_xml::Reader;
 use crate::annotation::{
     accept_field_number_format_switch,
     accept_field_text_format_switch as accept_field_format_switch, accept_general_format_switch,
-    action_field_syntax, compare_field_syntax, direct_ref_field_syntax, document_property_key,
-    field_identifier_token, field_literal_token, field_name_token, field_non_empty_literal_token,
-    field_points_token, field_positive_points_token, field_quoted_literal_token,
-    field_symbol_code_token, filename_field_syntax, formula_field_syntax, if_field_syntax,
-    instruction_parts, is_neutral_field_format_switch, legacy_form_field_syntax,
-    merge_control_field_syntax, note_ref_field_syntax, numbering_field_syntax,
-    page_field_format_syntax_tail, page_ref_field_syntax, prompt_field_syntax, quote_field_syntax,
-    ref_field_syntax, reference_index_category_token, reference_index_literal_token,
+    action_field_syntax, advance_field_syntax, compare_field_syntax, direct_ref_field_syntax,
+    document_property_key, field_identifier_token, field_literal_token, field_name_token,
+    field_non_empty_literal_token, field_points_token, field_quoted_literal_token,
+    filename_field_syntax, formula_field_syntax, if_field_syntax, instruction_parts,
+    is_neutral_field_format_switch, legacy_form_field_syntax, merge_control_field_syntax,
+    note_ref_field_syntax, numbering_field_syntax, page_field_format_syntax_tail,
+    page_ref_field_syntax, prompt_field_syntax, quote_field_syntax, ref_field_syntax,
+    reference_index_category_token, reference_index_literal_token,
     reference_index_plain_value_token, revision_number_field_text_format, sequence_field_syntax,
-    set_field_syntax, strip_ascii_switch_prefix, style_ref_field_syntax, toc_entry_field_syntax,
-    toc_field_syntax, Field, FieldKind, FieldNumberFormat, FieldTextFormat, PromptFieldSyntax,
-    StyleRefFieldSyntax, StyleRefResult, TocFieldSyntax as TocSpec, TocSequenceFilter,
-    TocTcFilter as TcFilter,
+    set_field_syntax, strip_ascii_switch_prefix, style_ref_field_syntax, symbol_field_syntax,
+    toc_entry_field_syntax, toc_field_syntax, Field, FieldKind, FieldNumberFormat, FieldTextFormat,
+    PromptFieldSyntax, StyleRefFieldSyntax, StyleRefResult, TocFieldSyntax as TocSpec,
+    TocSequenceFilter, TocTcFilter as TcFilter,
 };
 use crate::{numfmt, CoreProperties};
 
@@ -7068,14 +7068,6 @@ fn unquote_field_text(text: &str) -> String {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct SymbolInstruction {
-    code: u32,
-    unicode: bool,
-    font: Option<String>,
-    text_format: Option<FieldTextFormat>,
-}
-
 pub(crate) fn computed_display_result(instruction: &str) -> Option<String> {
     computed_advance_result(instruction)
         .or_else(|| computed_eq_result(instruction))
@@ -7086,7 +7078,7 @@ pub(crate) fn supports_display_field_syntax(instruction: &str) -> bool {
     if computed_display_result(instruction).is_some() {
         return true;
     }
-    if symbol_instruction(instruction).is_some() {
+    if symbol_field_syntax(instruction).is_some() {
         return true;
     }
     let Some(spec) = eq_instruction(instruction) else {
@@ -7096,45 +7088,8 @@ pub(crate) fn supports_display_field_syntax(instruction: &str) -> bool {
 }
 
 fn computed_advance_result(instruction: &str) -> Option<String> {
-    advance_instruction(instruction)?;
+    advance_field_syntax(instruction).then_some(())?;
     Some(String::new())
-}
-
-fn advance_instruction(instruction: &str) -> Option<()> {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let kind = parts.next()?;
-    if !kind.eq_ignore_ascii_case("ADVANCE") {
-        return None;
-    }
-    let mut text_format = None;
-    while let Some(part) = parts.next() {
-        if accept_field_format_switch_for_tail(part, &mut parts, &mut text_format)? {
-            continue;
-        }
-        if accept_advance_switch(part, &mut parts).is_some() {
-            continue;
-        }
-        return None;
-    }
-    Some(())
-}
-
-fn accept_advance_switch<'a>(part: &str, parts: &mut impl Iterator<Item = &'a str>) -> Option<()> {
-    for switch in ["\\d", "\\u", "\\l", "\\r", "\\x", "\\y"] {
-        if part.eq_ignore_ascii_case(switch) {
-            field_points_token(parts.next()?)?;
-            return Some(());
-        }
-        if let Some(value) = strip_ascii_switch_prefix(part, switch) {
-            if value.is_empty() {
-                return None;
-            }
-            field_points_token(value)?;
-            return Some(());
-        }
-    }
-    None
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -7800,7 +7755,7 @@ fn unescape_eq_literal_operand(operand: &str) -> Option<String> {
 }
 
 fn computed_symbol_result(instruction: &str) -> Option<String> {
-    let spec = symbol_instruction(instruction)?;
+    let spec = symbol_field_syntax(instruction)?;
     let text = if spec.unicode {
         char::from_u32(spec.code)?.to_string()
     } else if symbol_font_matches(spec.font.as_deref(), "symbol") {
@@ -7811,63 +7766,6 @@ fn computed_symbol_result(instruction: &str) -> Option<String> {
         ansi_char(spec.code)?.to_string()
     };
     Some(apply_field_text_format(text, spec.text_format))
-}
-
-fn symbol_instruction(instruction: &str) -> Option<SymbolInstruction> {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let kind = parts.next()?;
-    if !kind.eq_ignore_ascii_case("SYMBOL") {
-        return None;
-    }
-    let code = field_symbol_code_token(parts.next()?)?;
-    let mut unicode = false;
-    let mut font = None;
-    let mut text_format = None;
-    while let Some(part) = parts.next() {
-        if part.eq_ignore_ascii_case("\\a") || part.eq_ignore_ascii_case("\\h") {
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\u") {
-            unicode = true;
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\j") {
-            return None;
-        }
-        if part.eq_ignore_ascii_case("\\f") {
-            font = Some(field_name_token(parts.next()?)?.to_string());
-            continue;
-        }
-        if let Some(value) = strip_ascii_switch_prefix(part, "\\f") {
-            if value.is_empty() {
-                return None;
-            }
-            font = Some(field_name_token(value)?.to_string());
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\s") {
-            field_positive_points_token(parts.next()?)?;
-            continue;
-        }
-        if let Some(size) = strip_ascii_switch_prefix(part, "\\s") {
-            if size.is_empty() {
-                return None;
-            }
-            field_positive_points_token(size)?;
-            continue;
-        }
-        if accept_field_format_switch_for_tail(part, &mut parts, &mut text_format)? {
-            continue;
-        }
-        return None;
-    }
-    Some(SymbolInstruction {
-        code,
-        unicode,
-        font,
-        text_format,
-    })
 }
 
 fn ansi_char(code: u32) -> Option<char> {

@@ -2193,6 +2193,116 @@ pub(crate) fn quote_field_syntax(instruction: &str) -> Option<QuoteFieldSyntax> 
     })
 }
 
+pub(crate) fn advance_field_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if !kind.eq_ignore_ascii_case("ADVANCE") {
+        return false;
+    }
+    let mut text_format = None;
+    while let Some(part) = parts.next() {
+        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_text_format_switch(format, &mut text_format)
+        }) else {
+            return false;
+        };
+        if accepted {
+            continue;
+        }
+        if accept_advance_switch(part, &mut parts).is_none() {
+            return false;
+        }
+    }
+    true
+}
+
+fn accept_advance_switch<'a>(part: &str, parts: &mut impl Iterator<Item = &'a str>) -> Option<()> {
+    for switch in ["\\d", "\\u", "\\l", "\\r", "\\x", "\\y"] {
+        if part.eq_ignore_ascii_case(switch) {
+            field_points_token(parts.next()?)?;
+            return Some(());
+        }
+        if let Some(value) = strip_ascii_switch_prefix(part, switch) {
+            if value.is_empty() {
+                return None;
+            }
+            field_points_token(value)?;
+            return Some(());
+        }
+    }
+    None
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SymbolFieldSyntax {
+    pub(crate) code: u32,
+    pub(crate) unicode: bool,
+    pub(crate) font: Option<String>,
+    pub(crate) text_format: Option<FieldTextFormat>,
+}
+
+pub(crate) fn symbol_field_syntax(instruction: &str) -> Option<SymbolFieldSyntax> {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let kind = parts.next()?;
+    if !kind.eq_ignore_ascii_case("SYMBOL") {
+        return None;
+    }
+    let code = field_symbol_code_token(parts.next()?)?;
+    let mut unicode = false;
+    let mut font = None;
+    let mut text_format = None;
+    while let Some(part) = parts.next() {
+        if part.eq_ignore_ascii_case("\\a") || part.eq_ignore_ascii_case("\\h") {
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\u") {
+            unicode = true;
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\j") {
+            return None;
+        }
+        if part.eq_ignore_ascii_case("\\f") {
+            font = Some(field_name_token(parts.next()?)?.to_string());
+            continue;
+        }
+        if let Some(value) = strip_ascii_switch_prefix(part, "\\f") {
+            if value.is_empty() {
+                return None;
+            }
+            font = Some(field_name_token(value)?.to_string());
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\s") {
+            field_positive_points_token(parts.next()?)?;
+            continue;
+        }
+        if let Some(size) = strip_ascii_switch_prefix(part, "\\s") {
+            if size.is_empty() {
+                return None;
+            }
+            field_positive_points_token(size)?;
+            continue;
+        }
+        if accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_text_format_switch(format, &mut text_format)
+        })? {
+            continue;
+        }
+        return None;
+    }
+    Some(SymbolFieldSyntax {
+        code,
+        unicode,
+        font,
+        text_format,
+    })
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ActionFieldSyntax {
     pub(crate) computed_text: Option<String>,
@@ -2308,10 +2418,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        action_field_syntax, compare_field_syntax, direct_ref_field_syntax, if_field_syntax,
-        legacy_form_field_syntax, merge_control_field_syntax, note_ref_field_syntax,
-        opaque_field_syntax, page_ref_field_syntax, ref_field_syntax, toc_field_syntax,
-        FieldNumberFormat, FieldTextFormat, TocSequenceFilter, TocTcFilter,
+        action_field_syntax, advance_field_syntax, compare_field_syntax, direct_ref_field_syntax,
+        if_field_syntax, legacy_form_field_syntax, merge_control_field_syntax,
+        note_ref_field_syntax, opaque_field_syntax, page_ref_field_syntax, ref_field_syntax,
+        symbol_field_syntax, toc_field_syntax, FieldNumberFormat, FieldTextFormat,
+        TocSequenceFilter, TocTcFilter,
     };
 
     #[test]
@@ -2472,6 +2583,26 @@ mod tests {
         assert!(toc_field_syntax(r#"TOC \f A \f B"#).is_none());
         assert!(toc_field_syntax(r#"TOC \o "1-2"#).is_none());
         assert!(toc_field_syntax(r#"TOC \b "Chapter List""#).is_none());
+    }
+
+    #[test]
+    fn display_field_syntax_accepts_advance_and_symbol_forms() {
+        assert!(advance_field_syntax(r#"ADVANCE \r 2 \d4 \* MERGEFORMAT"#));
+        assert!(advance_field_syntax(r#"ADVANCE \r"2" \* Upper"#));
+        assert!(!advance_field_syntax(r#"ADVANCE \z 2"#));
+        assert!(!advance_field_syntax(r#"ADVANCE \r "2"#));
+
+        let symbol = symbol_field_syntax(r#"SYMBOL 0x0063 \u \f "Symbol" \s12 \* Upper"#)
+            .expect("valid symbol syntax");
+        assert_eq!(symbol.code, 0x0063);
+        assert!(symbol.unicode);
+        assert_eq!(symbol.font.as_deref(), Some("Symbol"));
+        assert_eq!(symbol.text_format, Some(FieldTextFormat::Upper));
+
+        assert!(symbol_field_syntax(r#"SYMBOL "65""#).is_some());
+        assert!(symbol_field_syntax(r#"SYMBOL 65 \f"Symbol"#).is_none());
+        assert!(symbol_field_syntax(r#"SYMBOL 65 \s "12"#).is_none());
+        assert!(symbol_field_syntax(r#"SYMBOL 65 \j"#).is_none());
     }
 }
 
