@@ -831,6 +831,28 @@ fn document_structure_field_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn style_ref_supported_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style><w:style w:type="paragraph" w:styleId="CustomCallout"><w:name w:val="Custom Heading"/></w:style><w:style w:type="character" w:styleId="LastName"><w:name w:val="Last Name"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Executive Summary</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;heading 1&quot; \* Upper "><w:r><w:t>stale heading style</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;Last Name&quot; "><w:r><w:t>stale forward last</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:rPr><w:rStyle w:val="LastName"/></w:rPr><w:t>Ackerman</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="CustomCallout"/></w:pPr><w:r><w:t>Forward Finding</w:t></w:r></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> STYLEREF &quot;Custom Heading&quot; \* MERGEFORMAT </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale custom style</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn section_field_text_format_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -3874,6 +3896,48 @@ fn report_document_structure_fields_split_computed_cached_and_malformed_diagnost
             field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 2),
         ],
     );
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_style_ref_supported_fields_stay_out_of_unsupported_diagnostics() {
+    let doc = Document::open(&style_ref_supported_diagnostics_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let expected = [
+        ("STYLEREF \"heading 1\" \\* Upper", "EXECUTIVE SUMMARY"),
+        ("STYLEREF \"Last Name\"", "Ackerman"),
+        (
+            "STYLEREF \"Custom Heading\" \\* MERGEFORMAT",
+            "Forward Finding",
+        ),
+    ];
+
+    assert_eq!(fields.len(), expected.len());
+    for (field, (instruction, computed)) in fields.iter().zip(expected) {
+        assert_eq!(
+            field.kind,
+            FieldKind::DocumentStructure("STYLEREF".to_string())
+        );
+        assert_eq!(field.instruction, instruction);
+        assert_eq!(field.computed_result.as_deref(), Some(computed));
+    }
+
+    let report = doc.report();
+    assert_eq!(report.features.fields, 3);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![field_kind_count(
+            FieldKind::DocumentStructure("STYLEREF".to_string()),
+            3,
+        )]
+    );
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+    assert!(report
+        .warnings
+        .iter()
+        .all(|warning| !matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })));
 }
 
 #[cfg(feature = "docx")]
