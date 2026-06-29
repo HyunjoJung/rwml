@@ -1009,6 +1009,14 @@ fn read_paragraph(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Paragraph, Opt
                         &mut complex_field,
                     )
                 }
+                b"AlternateContent" => append_alternate_content_runs_with_complex(
+                    r,
+                    ctx,
+                    None,
+                    depth + 1,
+                    &mut runs,
+                    &mut complex_field,
+                ),
                 // `w:del` = tracked deletion (removed text) → drop.
                 _ => skip_subtree(r),
             },
@@ -1246,6 +1254,9 @@ fn read_runs_container(r: &mut Xml<'_>, ctx: &Ctx<'_>, link: Option<&str>, depth
                 b"ins" | b"moveTo" | b"smartTag" | b"sdtContent" | b"bdo" | b"dir" => {
                     runs.extend(read_runs_container(r, ctx, link, depth + 1))
                 }
+                b"AlternateContent" => {
+                    runs.extend(read_alternate_content_runs(r, ctx, link, depth + 1))
+                }
                 _ => skip_subtree(r),
             },
             Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
@@ -1288,6 +1299,14 @@ fn append_runs_container_with_complex(
                 b"ins" | b"moveTo" | b"smartTag" | b"sdtContent" | b"bdo" | b"dir" => {
                     append_runs_container_with_complex(r, ctx, link, depth + 1, runs, complex_field)
                 }
+                b"AlternateContent" => append_alternate_content_runs_with_complex(
+                    r,
+                    ctx,
+                    link,
+                    depth + 1,
+                    runs,
+                    complex_field,
+                ),
                 _ => skip_subtree(r),
             },
             Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
@@ -1319,6 +1338,9 @@ fn read_content_control_runs(
                 b"sdt" => runs.extend(read_content_control_runs(r, ctx, link, depth + 1)),
                 b"ins" | b"moveTo" | b"smartTag" | b"bdo" | b"dir" => {
                     runs.extend(read_runs_container(r, ctx, link, depth + 1))
+                }
+                b"AlternateContent" => {
+                    runs.extend(read_alternate_content_runs(r, ctx, link, depth + 1))
                 }
                 _ => skip_subtree(r),
             },
@@ -1369,6 +1391,14 @@ fn append_content_control_runs_with_complex(
                 b"ins" | b"moveTo" | b"smartTag" | b"bdo" | b"dir" => {
                     append_runs_container_with_complex(r, ctx, link, depth + 1, runs, complex_field)
                 }
+                b"AlternateContent" => append_alternate_content_runs_with_complex(
+                    r,
+                    ctx,
+                    link,
+                    depth + 1,
+                    runs,
+                    complex_field,
+                ),
                 _ => skip_subtree(r),
             },
             Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
@@ -1376,6 +1406,69 @@ fn append_content_control_runs_with_complex(
         }
     }
     apply_content_control(&mut runs[start..], control);
+}
+
+fn read_alternate_content_runs(
+    r: &mut Xml<'_>,
+    ctx: &Ctx<'_>,
+    link: Option<&str>,
+    depth: u32,
+) -> Vec<Run> {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return Vec::new();
+    }
+    let mut runs = Vec::new();
+    let mut took = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
+                b"Choice" | b"Fallback" if !took => {
+                    took = true;
+                    runs.extend(read_runs_container(r, ctx, link, depth + 1));
+                }
+                _ => skip_subtree(r),
+            },
+            Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    runs
+}
+
+fn append_alternate_content_runs_with_complex(
+    r: &mut Xml<'_>,
+    ctx: &Ctx<'_>,
+    link: Option<&str>,
+    depth: u32,
+    runs: &mut Vec<Run>,
+    complex_field: &mut ComplexFieldTracker,
+) {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return;
+    }
+    let mut took = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
+                b"Choice" | b"Fallback" if !took => {
+                    took = true;
+                    append_runs_container_with_complex(
+                        r,
+                        ctx,
+                        link,
+                        depth + 1,
+                        runs,
+                        complex_field,
+                    );
+                }
+                _ => skip_subtree(r),
+            },
+            Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
 }
 
 fn read_content_control_pr(r: &mut Xml<'_>) -> Option<AuthoredContentControl> {
