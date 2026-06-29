@@ -515,7 +515,8 @@ Implementation:
   matching cached `SEQ Identifier` fields,
   and standalone `TOC \u` fields over explicit paragraph outline levels, plus
   `TOC \b` bookmark-scoped variants when the bookmark range is recoverable, as
-  `Field::computed_result`, normalizing simple inline heading
+  `Field::computed_result`, including empty computed results for existing
+  scopes with no matching entries, normalizing simple inline heading
   tabs, line breaks, and no-break/soft hyphens, and use that text in the read/render
   model instead of stale cached text for simple and common complex fields;
 - compute deterministic body paragraph- and character-style `.docx`
@@ -691,7 +692,7 @@ Implementation:
   targets, missing `NOTEREF` bookmark targets, existing `NOTEREF` bookmark targets without
   body note-reference marks, unsupported `NOTEREF` switches,
   layout-dependent `PAGEREF`,
-  missing `TOC \b` scopes, existing `TOC \b` scopes with no matching entries,
+  missing `TOC \b` scopes,
   and broader TOC field cases while
   preserving cached field-result inline tabs, line breaks, and no-break/soft hyphens;
 - populate `FeatureInventory::unsupported_field_reasons` and diagnostics JSON
@@ -703,8 +704,7 @@ Implementation:
   with no computed result, missing explicit or direct `REF \f` targets, existing
   explicit or direct non-note `REF \f` unsupported-switch cases, missing
   `NOTEREF` targets, existing non-note `NOTEREF` targets, unsupported
-  `NOTEREF` switches, missing `TOC \b` scopes, existing empty `TOC \b` scopes,
-  and truly unresolved
+  `NOTEREF` switches, missing `TOC \b` scopes, and truly unresolved
   bookmarks.
 
 Acceptance:
@@ -1147,6 +1147,7 @@ open and edit the chart data.
   matching cached `SEQ Identifier` fields,
   and standalone `TOC \u` fields over explicit paragraph outline levels, plus
   `TOC \b` bookmark-scoped variants when the bookmark range is recoverable,
+  including empty computed results for existing scopes with no matching entries,
   body `PAGE` current-page fields with deterministic page-number and common
   field-result format switches in trusted source-marker contexts,
   deterministic display-only body `PAGE` `w:start` restart labels for immediate

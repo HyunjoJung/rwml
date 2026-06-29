@@ -2363,13 +2363,6 @@ fn field_diagnostic_inventory_cases() -> Vec<FieldDiagnosticInventoryCase> {
             FieldEvaluationReason::UnsupportedSwitch,
         ),
         field_diagnostic_inventory_case(
-            "D9",
-            r"TOC \b PlainText",
-            "cached empty toc",
-            FieldKind::Toc,
-            FieldEvaluationReason::NoComputedResult,
-        ),
-        field_diagnostic_inventory_case(
             "D10",
             r"TOC \b MissingScope",
             "cached missing toc scope",
@@ -8312,7 +8305,7 @@ fn report_note_ref_field_warning_reports_gap_cases() {
 fn report_field_diagnostic_inventory_tracks_active_gap_buckets() {
     let cases = field_diagnostic_inventory_cases();
     let expected_rows = [
-        "D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9", "D10", "D11", "D12",
+        "D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D10", "D11", "D12",
     ];
     let rows = cases.iter().map(|case| case.row).collect::<Vec<_>>();
     assert_eq!(rows, expected_rows);
@@ -8350,7 +8343,7 @@ fn report_field_diagnostic_inventory_tracks_active_gap_buckets() {
     );
 
     let json = report.to_json();
-    assert!(json.contains(r#""unsupported_field_reasons":[{"reason":"UnsupportedSwitch","count":4},{"reason":"NoComputedResult","count":3},{"reason":"UnresolvedBookmark","count":4},{"reason":"UnknownField","count":1}]"#), "{json}");
+    assert!(json.contains(r#""unsupported_field_reasons":[{"reason":"UnsupportedSwitch","count":4},{"reason":"NoComputedResult","count":2},{"reason":"UnresolvedBookmark","count":4},{"reason":"UnknownField","count":1}]"#), "{json}");
 }
 
 #[cfg(feature = "docx")]
@@ -9089,21 +9082,15 @@ fn report_toc_field_warning_ignores_resolved_bookmark_scope_tocs() {
         report.features.unsupported_field_kinds,
         vec![FieldKindCount {
             kind: FieldKind::Toc,
-            count: 2,
+            count: 1,
         }]
     );
     assert_eq!(
         report.features.unsupported_field_reasons,
-        vec![
-            FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::NoComputedResult,
-                count: 1,
-            },
-            FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::UnresolvedBookmark,
-                count: 1,
-            },
-        ]
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnresolvedBookmark,
+            count: 1,
+        }]
     );
     assert_eq!(
         report
@@ -9111,21 +9098,21 @@ fn report_toc_field_warning_ignores_resolved_bookmark_scope_tocs() {
             .iter()
             .find(|warning| matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })),
         Some(&DocumentWarning::UnsupportedFieldEvaluation {
-            count: 2,
+            count: 1,
             field_kinds: vec![FieldKindCount {
                 kind: FieldKind::Toc,
-                count: 2,
+                count: 1,
             }],
         })
     );
 
     let json = report.to_json();
     assert!(
-        json.contains(r#""unsupported_field_kinds":[{"kind":"TOC","count":2}]"#),
+        json.contains(r#""unsupported_field_kinds":[{"kind":"TOC","count":1}]"#),
         "{json}"
     );
     assert!(
-        json.contains(r#""unsupported_field_reasons":[{"reason":"NoComputedResult","count":1},{"reason":"UnresolvedBookmark","count":1}]"#),
+        json.contains(r#""unsupported_field_reasons":[{"reason":"UnresolvedBookmark","count":1}]"#),
         "{json}"
     );
 }
@@ -9165,7 +9152,7 @@ fn report_toc_field_warning_ignores_bookmark_scoped_tc_entry_tocs() {
 
 #[cfg(feature = "docx")]
 #[test]
-fn report_toc_field_warning_reports_scope_gap_cases() {
+fn report_toc_field_warning_ignores_existing_empty_scope_tocs() {
     let doc = Document::open(&toc_scope_gap_diagnostics_docx()).expect("fixture opens");
     let fields = doc.fields();
 
@@ -9173,7 +9160,7 @@ fn report_toc_field_warning_reports_scope_gap_cases() {
     assert_eq!(fields[0].kind, FieldKind::Toc);
     assert_eq!(fields[0].instruction, "TOC \\b PlainText");
     assert_eq!(fields[0].result, "cached empty toc");
-    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(fields[0].computed_result.as_deref(), Some(""));
     assert_eq!(fields[1].kind, FieldKind::Toc);
     assert_eq!(fields[1].instruction, "TOC \\b MissingScope");
     assert_eq!(fields[1].result, "cached missing toc scope");
@@ -9193,21 +9180,15 @@ fn report_toc_field_warning_reports_scope_gap_cases() {
         report.features.unsupported_field_kinds,
         vec![FieldKindCount {
             kind: FieldKind::Toc,
-            count: 2,
+            count: 1,
         }]
     );
     assert_eq!(
         report.features.unsupported_field_reasons,
-        vec![
-            FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::NoComputedResult,
-                count: 1,
-            },
-            FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::UnresolvedBookmark,
-                count: 1,
-            },
-        ]
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnresolvedBookmark,
+            count: 1,
+        }]
     );
     assert_eq!(
         report
@@ -9215,21 +9196,21 @@ fn report_toc_field_warning_reports_scope_gap_cases() {
             .iter()
             .find(|warning| matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })),
         Some(&DocumentWarning::UnsupportedFieldEvaluation {
-            count: 2,
+            count: 1,
             field_kinds: vec![FieldKindCount {
                 kind: FieldKind::Toc,
-                count: 2,
+                count: 1,
             }],
         })
     );
 
     let json = report.to_json();
     assert!(
-        json.contains(r#""unsupported_field_kinds":[{"kind":"TOC","count":2}]"#),
+        json.contains(r#""unsupported_field_kinds":[{"kind":"TOC","count":1}]"#),
         "{json}"
     );
     assert!(
-        json.contains(r#""unsupported_field_reasons":[{"reason":"NoComputedResult","count":1},{"reason":"UnresolvedBookmark","count":1}]"#),
+        json.contains(r#""unsupported_field_reasons":[{"reason":"UnresolvedBookmark","count":1}]"#),
         "{json}"
     );
 }

@@ -9941,7 +9941,7 @@ fn docx_toc_b_field_with_missing_bookmark_keeps_cached_text() {
 }
 
 #[test]
-fn docx_toc_b_scope_gap_cases_keep_cached_text() {
+fn docx_toc_b_existing_empty_scope_computes_empty_result() {
     let doc = Document::open(&toc_scope_gap_docx()).expect("fixture opens");
     let fields = doc.fields();
 
@@ -9949,7 +9949,7 @@ fn docx_toc_b_scope_gap_cases_keep_cached_text() {
     assert_eq!(fields[0].kind, FieldKind::Toc);
     assert_eq!(fields[0].instruction, "TOC \\b PlainText");
     assert_eq!(fields[0].result, "cached empty toc");
-    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(fields[0].computed_result.as_deref(), Some(""));
     assert_eq!(fields[1].kind, FieldKind::Toc);
     assert_eq!(fields[1].instruction, "TOC \\b MissingScope");
     assert_eq!(fields[1].result, "cached missing toc scope");
@@ -9960,27 +9960,21 @@ fn docx_toc_b_scope_gap_cases_keep_cached_text() {
         report.features.unsupported_field_kinds,
         vec![FieldKindCount {
             kind: FieldKind::Toc,
-            count: 2,
+            count: 1,
         }]
     );
     assert_eq!(
         report.features.unsupported_field_reasons,
-        vec![
-            FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::NoComputedResult,
-                count: 1,
-            },
-            FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::UnresolvedBookmark,
-                count: 1,
-            },
-        ]
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnresolvedBookmark,
+            count: 1,
+        }]
     );
 
     let main_text = doc.main_text();
     assert!(
-        main_text.contains("cached empty toc") && main_text.contains("cached missing toc scope"),
-        "TOC scope gaps should preserve cached result text: {main_text:?}"
+        !main_text.contains("cached empty toc") && main_text.contains("cached missing toc scope"),
+        "TOC \\b with an existing empty scope should compute empty text while missing scopes keep cached text: {main_text:?}"
     );
 }
 

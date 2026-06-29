@@ -729,8 +729,8 @@ separate missing `PAGEREF` bookmark targets, explicit and direct bookmark-name
 `REF \f` bookmark targets, and existing explicit or direct non-note `REF \f`
 unsupported-switch reasons, plus separate missing `NOTEREF`
 bookmark targets, existing non-note `NOTEREF` bookmark targets, and unsupported
-`NOTEREF` switch reasons, plus missing `TOC \b` scopes and existing `TOC \b`
-scopes with no matching entries. On a real
+`NOTEREF` switch reasons, plus missing `TOC \b` scopes. Existing `TOC \b`
+scopes with no matching entries compute as empty results. On a real
 `.docx` corpus it reaches **~0.93 mean text recall** (extracting headers/footers,
 text boxes, nested tables, real list labels, caps; model-driven page geometry makes
 `.doc` page counts line up — mean `.doc` render recall ~0.96). It still trails
@@ -997,7 +997,8 @@ deterministic computation or precise cached-result diagnostics.
       `SEQ Identifier` fields,
       standalone `TOC \u` explicit paragraph
       outline-level computation and `TOC \b` bookmark-scoped computation when
-      the bookmark range is recoverable, with normalized simple inline heading
+      the bookmark range is recoverable, including empty computed results for
+      existing scopes with no matching entries, with normalized simple inline heading
       tabs, line breaks, and no-break/soft hyphens for simple and common complex
       fields, body `PAGE` trusted current-page computation with page-number and
       field-result format switches, named `PAGEREF` classification with leading

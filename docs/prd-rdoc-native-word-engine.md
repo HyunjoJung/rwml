@@ -259,6 +259,7 @@ The first public maturity release should meet these requirements.
   `SEQ Identifier` fields, and standalone `TOC \u` fields over explicit
   paragraph outline levels, plus
   `TOC \b` bookmark-scoped variants when the bookmark range is recoverable,
+  including empty computed results for existing scopes with no matching entries,
   normalize simple inline heading tabs, line breaks, and no-break
   hyphens and expose computed results for simple and common complex field forms;
   cached `MERGEFIELD` results, deterministic simple source-order `SEQ` fields
@@ -471,8 +472,7 @@ The first public maturity release should meet these requirements.
   `REF \d` no-computed-result, missing explicit or direct `REF \f` targets, and
   existing explicit or direct non-note `REF \f` unsupported-switch reasons, plus
   separate missing `NOTEREF` targets, existing non-note `NOTEREF` targets, and
-  unsupported `NOTEREF` switch reasons, plus separate missing `TOC \b` scopes
-  and existing `TOC \b` scopes with no matching entries.
+  unsupported `NOTEREF` switch reasons, plus separate missing `TOC \b` scopes.
 
 ### Editor
 

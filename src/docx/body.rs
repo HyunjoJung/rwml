@@ -9,7 +9,7 @@
 //! (`w:pPr`/`w:rPr`/`w:tcPr`/`w:trPr` flatten their simple children instead and
 //! break on their *named* end.)
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
@@ -72,6 +72,7 @@ pub(crate) struct Ctx<'a> {
     pub legacy_form_context: &'a super::fields::LegacyFormContext,
     pub table_formula_context: &'a super::fields::TableFormulaContext,
     pub toc_entries: &'a [TocEntry],
+    pub bookmark_names: &'a HashSet<String>,
     pub core_properties: &'a CoreProperties,
     pub custom_properties: &'a HashMap<String, String>,
     pub document_variables: &'a HashMap<String, String>,
@@ -2589,7 +2590,9 @@ fn computed_simple_field_result(
                 note_ref_position,
             )
         })
-        .or_else(|| super::fields::computed_toc_result(instruction, ctx.toc_entries))
+        .or_else(|| {
+            super::fields::computed_toc_result(instruction, ctx.toc_entries, ctx.bookmark_names)
+        })
 }
 
 fn computed_dynamic_field_result(instruction: &str, ctx: &Ctx<'_>) -> Option<String> {
@@ -3237,6 +3240,7 @@ mod tests {
         let legacy_form_context = super::super::fields::LegacyFormContext::default();
         let table_formula_context = super::super::fields::TableFormulaContext::empty();
         let toc_entries = Vec::new();
+        let bookmark_names = HashSet::new();
         let core_properties = crate::CoreProperties::default();
         let custom_properties = HashMap::new();
         let document_variables = HashMap::new();
@@ -3256,6 +3260,7 @@ mod tests {
             legacy_form_context: &legacy_form_context,
             table_formula_context: &table_formula_context,
             toc_entries: &toc_entries,
+            bookmark_names: &bookmark_names,
             core_properties: &core_properties,
             custom_properties: &custom_properties,
             document_variables: &document_variables,
@@ -3550,6 +3555,7 @@ mod tests {
         let legacy_form_context = super::super::fields::LegacyFormContext::default();
         let table_formula_context = super::super::fields::TableFormulaContext::empty();
         let toc_entries = Vec::new();
+        let bookmark_names = HashSet::new();
         let core_properties = crate::CoreProperties::default();
         let custom_properties = HashMap::new();
         let document_variables = HashMap::new();
@@ -3569,6 +3575,7 @@ mod tests {
             legacy_form_context: &legacy_form_context,
             table_formula_context: &table_formula_context,
             toc_entries: &toc_entries,
+            bookmark_names: &bookmark_names,
             core_properties: &core_properties,
             custom_properties: &custom_properties,
             document_variables: &document_variables,
@@ -3621,6 +3628,7 @@ mod tests {
         let legacy_form_context = super::super::fields::LegacyFormContext::default();
         let table_formula_context = super::super::fields::TableFormulaContext::empty();
         let toc_entries = Vec::new();
+        let bookmark_names = HashSet::new();
         let core_properties = crate::CoreProperties::default();
         let custom_properties = HashMap::new();
         let document_variables = HashMap::new();
@@ -3640,6 +3648,7 @@ mod tests {
             legacy_form_context: &legacy_form_context,
             table_formula_context: &table_formula_context,
             toc_entries: &toc_entries,
+            bookmark_names: &bookmark_names,
             core_properties: &core_properties,
             custom_properties: &custom_properties,
             document_variables: &document_variables,

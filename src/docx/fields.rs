@@ -137,6 +137,7 @@ pub(crate) fn parse(
     preserve_legacy_form_cache: bool,
 ) -> Vec<Field> {
     let bookmarks = ref_targets(xml);
+    let all_bookmark_names = bookmark_names(xml);
     let ref_positions = ref_position_context(xml, numbering);
     let ref_numbers = ref_number_context(xml, numbering);
     let page_refs = page_ref_context(xml);
@@ -267,6 +268,7 @@ pub(crate) fn parse(
             legacy_forms: &legacy_forms,
             table_formulas: &table_formulas,
             toc_entries,
+            bookmark_names: &all_bookmark_names,
             core_properties: properties.core,
             custom_properties: properties.custom,
             document_variables: properties.variables,
@@ -425,6 +427,65 @@ fn bookmark_name(e: &BytesStart<'_>) -> Option<String> {
     attr_local_trimmed(e, b"name")
 }
 
+pub(crate) fn bookmark_names(xml: &str) -> HashSet<String> {
+    let mut r = Reader::from_str(xml);
+    let mut names = HashSet::new();
+    let mut xml_depth = 0usize;
+    let mut alternate_content_stack = Vec::new();
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    skip_subtree(&mut r);
+                    continue;
+                }
+                if matches!(name, b"del" | b"moveFrom") {
+                    skip_subtree(&mut r);
+                    continue;
+                }
+                match name {
+                    b"AlternateContent" => {
+                        alternate_content_stack.push(AlternateContentBranchState {
+                            branch_depth: xml_depth + 1,
+                            took_branch: false,
+                        });
+                    }
+                    b"bookmarkStart" => {
+                        if let Some(name) = bookmark_name(&e) {
+                            names.insert(name);
+                        }
+                    }
+                    _ => {}
+                }
+                xml_depth = xml_depth.saturating_add(1);
+            }
+            Ok(Event::Empty(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    continue;
+                }
+                if name == b"bookmarkStart" {
+                    if let Some(name) = bookmark_name(&e) {
+                        names.insert(name);
+                    }
+                }
+            }
+            Ok(Event::End(e)) => {
+                if local(e.name().as_ref()) == b"AlternateContent" {
+                    alternate_content_stack.pop();
+                }
+                xml_depth = xml_depth.saturating_sub(1);
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    names
+}
+
 fn skip_element(r: &mut Xml<'_>, element: &[u8]) {
     let mut depth = 1usize;
     loop {
@@ -482,6 +543,7 @@ struct ComputedResultContexts<'a> {
     legacy_forms: &'a LegacyFormContext,
     table_formulas: &'a TableFormulaContext,
     toc_entries: &'a [TocEntry],
+    bookmark_names: &'a HashSet<String>,
     core_properties: &'a CoreProperties,
     custom_properties: &'a HashMap<String, String>,
     document_variables: &'a HashMap<String, String>,
@@ -536,7 +598,9 @@ fn apply_computed_results(fields: &mut [Field], ctx: ComputedResultContexts<'_>)
                 computed_sequence_result(&field.instruction, &mut sequence_counters)
             }
             FieldKind::TocEntry => computed_toc_entry_result(&field.instruction),
-            FieldKind::Toc => computed_toc_result(&field.instruction, ctx.toc_entries),
+            FieldKind::Toc => {
+                computed_toc_result(&field.instruction, ctx.toc_entries, ctx.bookmark_names)
+            }
             FieldKind::DocumentStructure(kind) if kind == "REVNUM" => {
                 computed_revision_number_result(&field.instruction, ctx.core_properties)
             }

@@ -288,7 +288,7 @@ Initial status:
   direct `REF \f` bookmark targets, existing non-note `REF \f` targets,
   missing `NOTEREF` bookmark targets, existing `NOTEREF` bookmark targets without body
   note-reference marks, unsupported `NOTEREF` switches, missing `TOC \b`
-  scopes, existing `TOC \b` scopes with no matching entries, and remaining broader TOC field cases whose
+  scopes, and remaining broader TOC field cases whose
   computed values are not evaluated; cached `MERGEFIELD` results, malformed
   merge-field names reporting `UnsupportedSwitch`,
   deterministic simple source-order `SEQ` fields with `\n`/`\r`/`\c`, hidden
@@ -967,7 +967,8 @@ Initial status:
   containing matching cached `SEQ Identifier` fields, and standalone
   `TOC \u` fields over explicit paragraph
   outline levels plus `TOC \b` bookmark-scoped variants when the bookmark range
-  is recoverable normalize simple inline heading tabs, line breaks,
+  is recoverable, including empty computed results for existing scopes with no
+  matching entries, normalize simple inline heading tabs, line breaks,
   and no-break/soft hyphens, expose computed results, and display the computed text
   for simple and common complex fields. `PAGE` computes current page numbers
   from trusted leading structural and source-rendered current-page contexts,
@@ -1000,7 +1001,7 @@ Initial status:
   direct `REF \f` bookmark targets, existing non-note `REF \f` targets,
   missing `NOTEREF` bookmark targets, existing `NOTEREF` bookmark targets without body
   note-reference marks, unsupported `NOTEREF` switches, remaining layout-dependent `PAGEREF`,
-  missing `TOC \b` scopes, existing `TOC \b` scopes with no matching entries,
+  missing `TOC \b` scopes,
   and broader TOC body fields as unsupported
   evaluation while preserving cached field-result inline tabs, line breaks, and
   no-break/soft hyphens, and they expose reason counts alongside unsupported field
@@ -1008,8 +1009,7 @@ Initial status:
   explicit and direct bookmark-name `REF \d` supported syntax with no computed
   result, missing explicit or direct `REF \f` targets, and existing explicit or
   direct non-note `REF \f` unsupported-switch cases, missing `NOTEREF` targets,
-  existing non-note `NOTEREF` targets, missing `TOC \b` scopes, existing
-  empty `TOC \b` scopes, and
+  existing non-note `NOTEREF` targets, missing `TOC \b` scopes, and
   truly unresolved bookmarks.
 - The field evaluator and renderer map common Symbol/Wingdings legacy font code
   points to Unicode, including the Symbol `0xB7` bullet. The mapping is

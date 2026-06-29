@@ -266,6 +266,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     let legacy_form_context = fields::legacy_form_context(&doc_xml, preserve_legacy_form_cache);
     let table_formula_context = fields::table_formula_context(&doc_xml);
     let toc_entries = fields::toc_entries(&doc_xml, &styles);
+    let bookmark_names = fields::bookmark_names(&doc_xml);
     let document_properties = DocumentPropertyRefs {
         core: &core_properties,
         custom: &custom_property_fields,
@@ -289,6 +290,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         legacy_form_context: &legacy_form_context,
         table_formula_context: &table_formula_context,
         toc_entries: &toc_entries,
+        bookmark_names: &bookmark_names,
         core_properties: &core_properties,
         custom_properties: &custom_property_fields,
         document_variables: &document_variables,
@@ -782,6 +784,7 @@ fn read_hf_parts(
         let legacy_form_context = fields::legacy_form_context(&xml, preserve_legacy_form_cache);
         let table_formula_context = fields::TableFormulaContext::empty();
         let toc_entries = fields::toc_entries(&xml, styles);
+        let bookmark_names = fields::bookmark_names(&xml);
         let hf_ctx = body::Ctx {
             styles,
             numbering,
@@ -797,6 +800,7 @@ fn read_hf_parts(
             legacy_form_context: &legacy_form_context,
             table_formula_context: &table_formula_context,
             toc_entries: &toc_entries,
+            bookmark_names: &bookmark_names,
             core_properties: properties.core,
             custom_properties: properties.custom,
             document_variables: properties.variables,
@@ -947,6 +951,7 @@ fn read_notes(
     let legacy_form_context = fields::legacy_form_context(&xml, preserve_legacy_form_cache);
     let table_formula_context = fields::TableFormulaContext::empty();
     let toc_entries = fields::toc_entries(&xml, styles);
+    let bookmark_names = fields::bookmark_names(&xml);
     let ctx = body::Ctx {
         styles,
         numbering,
@@ -962,6 +967,7 @@ fn read_notes(
         legacy_form_context: &legacy_form_context,
         table_formula_context: &table_formula_context,
         toc_entries: &toc_entries,
+        bookmark_names: &bookmark_names,
         core_properties: properties.core,
         custom_properties: properties.custom,
         document_variables: properties.variables,

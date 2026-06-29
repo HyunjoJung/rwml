@@ -433,7 +433,11 @@ fn read_toc_ppr(r: &mut Xml<'_>, style_id: &mut Option<String>, outline: &mut Op
     }
 }
 
-pub(crate) fn computed_toc_result(instruction: &str, toc_entries: &[TocEntry]) -> Option<String> {
+pub(crate) fn computed_toc_result(
+    instruction: &str,
+    toc_entries: &[TocEntry],
+    bookmark_names: &HashSet<String>,
+) -> Option<String> {
     let spec = toc_spec(instruction)?;
     let lines: Vec<_> = toc_entries
         .iter()
@@ -446,7 +450,19 @@ pub(crate) fn computed_toc_result(instruction: &str, toc_entries: &[TocEntry]) -
             )
         })
         .collect();
-    (!lines.is_empty()).then(|| apply_field_text_format(lines.join("\n"), spec.text_format))
+    if lines.is_empty() {
+        if spec
+            .bookmark
+            .as_ref()
+            .is_some_and(|bookmark| bookmark_names.contains(bookmark))
+        {
+            Some(apply_field_text_format(String::new(), spec.text_format))
+        } else {
+            None
+        }
+    } else {
+        Some(apply_field_text_format(lines.join("\n"), spec.text_format))
+    }
 }
 
 fn toc_entry_for_spec<'a>(entry: &'a TocEntry, spec: &TocSpec) -> Option<(u8, &'a str)> {
