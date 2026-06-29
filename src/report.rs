@@ -4502,6 +4502,12 @@ mod tests {
             super::unsupported_field_reason(&valid_switches),
             Some(super::FieldEvaluationReason::NoComputedResult)
         );
+        assert_eq!(
+            super::barcode_uncomputed_reason(
+                r#"MERGEBARCODE Zip JPPOST \h1440 \s100 \r1 \f0x000000 \bFFFFFF \t \a"#
+            ),
+            super::FieldEvaluationReason::NoComputedResult
+        );
     }
 
     #[test]

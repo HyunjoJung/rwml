@@ -3104,8 +3104,9 @@ mod tests {
     #[test]
     fn barcode_field_syntax_accepts_known_switches_and_rejects_malformed_forms() {
         assert!(barcode_field_syntax(r#"DISPLAYBARCODE "12345" QR \q H"#));
+        assert!(barcode_field_syntax(r#"DISPLAYBARCODE "12345" QR \qH"#));
         assert!(barcode_field_syntax(
-            r#"MERGEBARCODE Zip JPPOST \h1440 \s 100 \r 1 \f0x000000 \bFFFFFF \t \a"#
+            r#"MERGEBARCODE Zip JPPOST \h1440 \s100 \r1 \f0x000000 \bFFFFFF \t \a"#
         ));
         assert!(barcode_field_syntax(r#"BARCODE "9781234567890""#));
         assert!(!barcode_field_syntax(r#"DISPLAYBARCODE "12345" QR \h"#));

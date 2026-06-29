@@ -8327,6 +8327,71 @@ fn docx_barcode_diagnostics_split_valid_broader_fields_from_malformed_syntax() {
 }
 
 #[test]
+fn docx_barcode_fields_accept_compact_argument_switches() {
+    let doc = Document::open(&docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" DISPLAYBARCODE &quot;12345&quot; QR \qH "><w:r><w:t>Compact QR preview</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" MERGEBARCODE Zip JPPOST \h1440 \s100 \r1 \f0x000000 \bFFFFFF \t \a "><w:r><w:t>Compact merge barcode preview</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ]))
+    .expect("fixture opens");
+
+    let fields = doc.fields();
+    assert_eq!(fields.len(), 2);
+    assert_eq!(
+        fields[0].kind,
+        FieldKind::Barcode("DISPLAYBARCODE".to_string())
+    );
+    assert_eq!(fields[0].instruction, r#"DISPLAYBARCODE "12345" QR \qH"#);
+    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(
+        fields[1].kind,
+        FieldKind::Barcode("MERGEBARCODE".to_string())
+    );
+    assert_eq!(
+        fields[1].instruction,
+        r#"MERGEBARCODE Zip JPPOST \h1440 \s100 \r1 \f0x000000 \bFFFFFF \t \a"#
+    );
+    assert_eq!(fields[1].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![
+            FieldKindCount {
+                kind: FieldKind::Barcode("DISPLAYBARCODE".to_string()),
+                count: 1,
+            },
+            FieldKindCount {
+                kind: FieldKind::Barcode("MERGEBARCODE".to_string()),
+                count: 1,
+            },
+        ]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::NoComputedResult,
+            count: 2,
+        }]
+    );
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Compact QR preview")
+            && main_text.contains("Compact merge barcode preview"),
+        "known barcode forms should preserve cached preview text: {main_text:?}"
+    );
+}
+
+#[test]
 fn docx_legacy_form_fields_materialize_deterministic_values() {
     let doc = Document::open(&legacy_form_field_docx()).expect("fixture opens");
     let fields = doc.fields();
