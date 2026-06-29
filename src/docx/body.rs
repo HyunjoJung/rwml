@@ -2412,18 +2412,27 @@ fn computed_simple_field_result(
             super::fields::computed_page_result(instruction, position)
         })
         .or_else(|| {
-            let position = if FieldKind::from_instruction(instruction) == FieldKind::PageRef {
-                let index = {
-                    let mut cursor = ctx.page_ref_field_cursor.borrow_mut();
-                    let index = *cursor;
-                    *cursor += 1;
-                    index
+            let (position, order) =
+                if FieldKind::from_instruction(instruction) == FieldKind::PageRef {
+                    let index = {
+                        let mut cursor = ctx.page_ref_field_cursor.borrow_mut();
+                        let index = *cursor;
+                        *cursor += 1;
+                        index
+                    };
+                    (
+                        ctx.page_ref_context.field_position(index),
+                        ctx.page_ref_context.field_order(index),
+                    )
+                } else {
+                    (None, None)
                 };
-                ctx.page_ref_context.field_position(index)
-            } else {
-                None
-            };
-            super::fields::computed_page_ref_result(instruction, ctx.page_ref_context, position)
+            super::fields::computed_page_ref_result(
+                instruction,
+                ctx.page_ref_context,
+                position,
+                order,
+            )
         })
         .or_else(|| {
             let position = if FieldKind::from_instruction(instruction) == FieldKind::NoteRef {

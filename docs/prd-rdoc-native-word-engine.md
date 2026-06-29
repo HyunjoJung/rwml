@@ -456,8 +456,9 @@ The first public maturity release should meet these requirements.
   and page-number-only `\* ArabicDash`
   number-format switches plus common field-result format switches, compute `\p` relative results (`above`, `below`, or
   `on page N`) when trusted leading structural page context, source page
-  markers, or deterministic display-only restart target/order context provide
-  both target and field page/order, and preserve cached page-reference text for
+  markers, deterministic display-only restart target/order context, or a
+  paragraph-end section break after the target provide deterministic
+  target/field ordering, and preserve cached page-reference text for
   remaining layout-dependent cases until layout can map bookmarks to emitted pages; cached field results
   preserve simple inline tabs, line breaks, and no-break hyphens for simple and
   common complex body fields;

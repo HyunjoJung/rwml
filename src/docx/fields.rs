@@ -586,8 +586,9 @@ fn apply_computed_results(fields: &mut [Field], ctx: ComputedResultContexts<'_>)
             }
             FieldKind::PageRef => {
                 let position = ctx.page_refs.field_position(page_ref_field_index);
+                let order = ctx.page_refs.field_order(page_ref_field_index);
                 page_ref_field_index += 1;
-                computed_page_ref_result(&field.instruction, ctx.page_refs, position)
+                computed_page_ref_result(&field.instruction, ctx.page_refs, position, order)
             }
             FieldKind::NoteRef => {
                 let position = ctx.note_refs.field_position(note_ref_field_index);

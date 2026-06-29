@@ -619,9 +619,10 @@ Implementation:
   `\* Hex`, integer-valued `\* DollarText`, and page-number-only `\* ArabicDash`
   number-format switches plus common field-result format switches, compute `\p`
   relative results (`above`, `below`, or `on page N`) when trusted leading
-  structural page context, source page markers, or deterministic display-only
-  restart target/order context provide both target and field page/order, and
-  preserve cached page-reference text for remaining layout-dependent cases while
+  structural page context, source page markers, deterministic display-only
+  restart target/order context, or a paragraph-end section break after the
+  target provide deterministic target/field ordering, and preserve cached
+  page-reference text for remaining layout-dependent cases while
   leaving full layout-derived bookmark-to-page computation unsupported;
 - report unsupported evaluation only for unknown fields beyond named
   document-info/date/stat display fields, dynamic/control fields beyond

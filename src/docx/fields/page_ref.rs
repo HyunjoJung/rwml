@@ -7,7 +7,9 @@ use crate::numfmt;
 pub(crate) struct PageRefContext {
     targets: HashMap<String, PageRefTarget>,
     target_positions: HashMap<String, PageRefPosition>,
+    target_forced_break_after_orders: HashMap<String, usize>,
     field_positions: Vec<Option<PageRefPosition>>,
+    field_orders: Vec<usize>,
     page_field_positions: Vec<Option<PageRefPosition>>,
 }
 
@@ -24,8 +26,16 @@ impl PageRefContext {
         self.target_positions.get(name).copied()
     }
 
+    fn target_forced_break_after_order(&self, name: &str) -> Option<usize> {
+        self.target_forced_break_after_orders.get(name).copied()
+    }
+
     pub(crate) fn field_position(&self, index: usize) -> Option<PageRefPosition> {
         self.field_positions.get(index).copied().flatten()
+    }
+
+    pub(crate) fn field_order(&self, index: usize) -> Option<usize> {
+        self.field_orders.get(index).copied()
     }
 
     pub(crate) fn page_field_position(&self, index: usize) -> Option<PageRefPosition> {
@@ -238,7 +248,9 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
     let mut saw_rendered_page_break = false;
     let mut rendered_targets = HashMap::new();
     let mut target_positions = HashMap::new();
+    let mut target_forced_break_after_orders = HashMap::new();
     let mut field_positions = Vec::new();
+    let mut field_orders = Vec::new();
     let mut page_field_positions = Vec::new();
     let mut current: Option<PageRefScanField> = None;
     let mut paragraph_depth = 0usize;
@@ -248,6 +260,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
     let mut section_is_paragraph_break = false;
     let mut section_break_pending = None;
     let mut paragraph_section_break_pending = None;
+    let mut paragraph_section_break_targets = Vec::new();
     let mut section_page_number_start = None;
     let mut section_page_number_format = None;
     let mut xml_depth = 0usize;
@@ -273,7 +286,12 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                             took_branch: false,
                         });
                     }
-                    b"p" => paragraph_depth += 1,
+                    b"p" => {
+                        if paragraph_depth == 0 {
+                            paragraph_section_break_targets.clear();
+                        }
+                        paragraph_depth += 1;
+                    }
                     b"pPr" => paragraph_properties_depth += 1,
                     b"pageBreakBefore"
                         if paragraph_properties_depth > 0 && page_ref_on_off_enabled(&e) =>
@@ -308,6 +326,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                         current_page_field_position(&pages, source_order),
                         &mut source_order,
                         &mut field_positions,
+                        &mut field_orders,
                         &mut page_field_positions,
                     ),
                     b"fldChar" => apply_page_ref_scan_fld_char(
@@ -317,6 +336,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                         &mut source_order,
                         &mut current,
                         &mut field_positions,
+                        &mut field_orders,
                         &mut page_field_positions,
                     ),
                     b"instrText" => {
@@ -337,6 +357,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                         &mut targets,
                         &mut rendered_targets,
                         &mut target_positions,
+                        &mut paragraph_section_break_targets,
                     ),
                     b"t" => {
                         let visible_text = !read_text(&mut r).is_empty();
@@ -409,6 +430,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                         current_page_field_position(&pages, source_order),
                         &mut source_order,
                         &mut field_positions,
+                        &mut field_orders,
                         &mut page_field_positions,
                     ),
                     b"fldChar" => apply_page_ref_scan_fld_char(
@@ -418,6 +440,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                         &mut source_order,
                         &mut current,
                         &mut field_positions,
+                        &mut field_orders,
                         &mut page_field_positions,
                     ),
                     b"bookmarkStart" => record_page_ref_bookmark_start(
@@ -429,6 +452,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                         &mut targets,
                         &mut rendered_targets,
                         &mut target_positions,
+                        &mut paragraph_section_break_targets,
                     ),
                     b"br" if is_page_break_type(&e) => {
                         pages.advance_explicit_break(
@@ -486,6 +510,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                             if let Some((section_break, page_number_start, page_number_format)) =
                                 paragraph_section_break_pending.take()
                             {
+                                let break_order = source_order;
                                 pages.advance_section_break(
                                     section_break,
                                     saw_visible_content,
@@ -494,9 +519,17 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                                     page_number_format,
                                     &mut source_order,
                                 );
+                                for name in paragraph_section_break_targets.drain(..) {
+                                    target_forced_break_after_orders
+                                        .entry(name)
+                                        .or_insert(break_order);
+                                }
                             }
                         }
                         paragraph_depth = paragraph_depth.saturating_sub(1);
+                        if paragraph_depth == 0 {
+                            paragraph_section_break_targets.clear();
+                        }
                     }
                     b"pPr" => {
                         paragraph_properties_depth = paragraph_properties_depth.saturating_sub(1);
@@ -532,7 +565,9 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
     PageRefContext {
         targets,
         target_positions,
+        target_forced_break_after_orders,
         field_positions,
+        field_orders,
         page_field_positions,
     }
 }
@@ -699,6 +734,7 @@ fn record_page_ref_bookmark_start(
     targets: &mut HashMap<String, PageRefTarget>,
     rendered_targets: &mut HashMap<String, PageRefPosition>,
     target_positions: &mut HashMap<String, PageRefPosition>,
+    paragraph_section_break_targets: &mut Vec<String>,
 ) {
     let Some(name) = bookmark_name(e) else {
         return;
@@ -733,6 +769,7 @@ fn record_page_ref_bookmark_start(
                 order: *source_order,
             },
         );
+        paragraph_section_break_targets.push(name.clone());
     }
     if pages.rendered_context_trusted {
         rendered_targets.entry(name).or_insert(PageRefPosition {
@@ -801,6 +838,7 @@ fn record_page_ref_field_position(
     page_position: Option<PageRefPosition>,
     source_order: &mut usize,
     field_positions: &mut Vec<Option<PageRefPosition>>,
+    field_orders: &mut Vec<usize>,
     page_field_positions: &mut Vec<Option<PageRefPosition>>,
 ) {
     match instruction
@@ -810,6 +848,7 @@ fn record_page_ref_field_position(
     {
         Some(FieldKind::PageRef) => {
             field_positions.push(page_ref_position);
+            field_orders.push(*source_order);
             *source_order += 1;
         }
         Some(FieldKind::Page) => {
@@ -827,6 +866,7 @@ fn apply_page_ref_scan_fld_char(
     source_order: &mut usize,
     current: &mut Option<PageRefScanField>,
     field_positions: &mut Vec<Option<PageRefPosition>>,
+    field_orders: &mut Vec<usize>,
     page_field_positions: &mut Vec<Option<PageRefPosition>>,
 ) {
     match field_char_type(e).as_deref() {
@@ -850,6 +890,7 @@ fn apply_page_ref_scan_fld_char(
                     field.page_position,
                     source_order,
                     field_positions,
+                    field_orders,
                     page_field_positions,
                 );
             }
@@ -880,11 +921,12 @@ pub(crate) fn computed_page_ref_result(
     instruction: &str,
     page_refs: &PageRefContext,
     field_position: Option<PageRefPosition>,
+    field_order: Option<usize>,
 ) -> Option<String> {
     let spec = page_ref_instruction(instruction)?;
     let target = page_refs.target(&spec.target)?;
     let text = if spec.relative {
-        computed_relative_page_ref_result(&spec, page_refs, field_position)?
+        computed_relative_page_ref_result(&spec, page_refs, field_position, field_order)?
     } else {
         format_page_ref_number(
             target.display_page,
@@ -899,15 +941,23 @@ fn computed_relative_page_ref_result(
     spec: &PageRefInstruction,
     page_refs: &PageRefContext,
     field_position: Option<PageRefPosition>,
+    field_order: Option<usize>,
 ) -> Option<String> {
     let target = page_refs.target_position(&spec.target)?;
-    let field = field_position?;
-    if target.physical_page == field.physical_page {
-        return Some(if target.order <= field.order {
-            "above".to_string()
-        } else {
-            "below".to_string()
-        });
+    if let Some(field) = field_position {
+        if target.physical_page == field.physical_page {
+            return Some(if target.order <= field.order {
+                "above".to_string()
+            } else {
+                "below".to_string()
+            });
+        }
+    } else {
+        let field_order = field_order?;
+        let break_order = page_refs.target_forced_break_after_order(&spec.target)?;
+        if field_order <= break_order {
+            return None;
+        }
     }
     Some(format!(
         "on page {}",

@@ -6376,24 +6376,27 @@ fn report_page_ref_defers_content_paragraph_section_format_until_paragraph_end()
     assert_eq!(fields.len(), 2);
     assert_eq!(fields[0].kind, FieldKind::PageRef);
     assert_eq!(fields[0].instruction, "PAGEREF BeforeFormatBreak \\p");
-    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(fields[0].result, "stale before");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("on page 1"));
     assert_eq!(fields[1].kind, FieldKind::PageRef);
     assert_eq!(fields[1].instruction, "PAGEREF AfterFormatBreak \\p");
+    assert_eq!(fields[1].result, "stale after");
     assert_eq!(fields[1].computed_result, None);
 
     let report = doc.report();
     assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::PageRef,
+            count: 1,
+        }]
+    );
+    assert_eq!(
         report.features.unsupported_field_reasons,
-        vec![
-            FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::NoComputedResult,
-                count: 1,
-            },
-            FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::UnsupportedSwitch,
-                count: 1,
-            },
-        ]
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnsupportedSwitch,
+            count: 1,
+        }]
     );
 }
 
