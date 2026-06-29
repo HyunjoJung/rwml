@@ -700,10 +700,12 @@ pub(crate) fn fields_for_model(blocks: &[Block]) -> Vec<Field> {
 pub(crate) fn feature_inventory_for_model(blocks: &[Block]) -> FeatureInventory {
     let mut inventory = FeatureInventory::default();
     let fields = fields_for_model(blocks);
+    let reason_context = model_field_reason_context(blocks);
     inventory.fields = fields.len();
     inventory.field_kinds = count_field_kinds(&fields);
     inventory.unsupported_field_kinds = count_unsupported_field_kinds(&fields);
-    inventory.unsupported_field_reasons = count_unsupported_field_reasons(&fields);
+    inventory.unsupported_field_reasons =
+        count_model_unsupported_field_reasons(&fields, &reason_context);
     inventory.hyperlinks = fields
         .iter()
         .filter(|field| field.kind == FieldKind::Hyperlink)
@@ -716,7 +718,7 @@ pub(crate) fn feature_inventory_for_model(blocks: &[Block]) -> FeatureInventory 
 pub(crate) fn render_inventory_for_model(blocks: &[Block]) -> FeatureInventory {
     let mut inventory = FeatureInventory::default();
     let fields = fields_for_model(blocks);
-    let reason_context = render_model_field_reason_context(blocks);
+    let reason_context = model_field_reason_context(blocks);
     inventory.fields = fields.len();
     inventory.field_kinds = count_field_kinds(&fields);
     inventory.hyperlinks = fields
@@ -750,25 +752,19 @@ pub(crate) fn render_inventory_for_model(blocks: &[Block]) -> FeatureInventory {
     inventory
 }
 
-#[cfg(feature = "render")]
 #[derive(Default)]
-struct RenderModelFieldReasonContext {
+struct ModelFieldReasonContext {
     bookmark_names: HashSet<String>,
     note_ref_target_names: HashSet<String>,
 }
 
-#[cfg(feature = "render")]
-fn render_model_field_reason_context(blocks: &[Block]) -> RenderModelFieldReasonContext {
-    let mut context = RenderModelFieldReasonContext::default();
-    collect_render_model_field_reason_context(blocks, &mut context);
+fn model_field_reason_context(blocks: &[Block]) -> ModelFieldReasonContext {
+    let mut context = ModelFieldReasonContext::default();
+    collect_model_field_reason_context(blocks, &mut context);
     context
 }
 
-#[cfg(feature = "render")]
-fn collect_render_model_field_reason_context(
-    blocks: &[Block],
-    context: &mut RenderModelFieldReasonContext,
-) {
+fn collect_model_field_reason_context(blocks: &[Block], context: &mut ModelFieldReasonContext) {
     for block in blocks {
         match block {
             Block::Paragraph(paragraph) => {
@@ -784,7 +780,7 @@ fn collect_render_model_field_reason_context(
             Block::Table(table) => {
                 for row in &table.rows {
                     for cell in &row.cells {
-                        collect_render_model_field_reason_context(&cell.blocks, context);
+                        collect_model_field_reason_context(&cell.blocks, context);
                     }
                 }
             }
@@ -796,22 +792,22 @@ fn collect_render_model_field_reason_context(
 #[cfg(feature = "render")]
 fn render_model_unsupported_field_reason(
     field: &Field,
-    context: &RenderModelFieldReasonContext,
+    context: &ModelFieldReasonContext,
 ) -> Option<FieldEvaluationReason> {
+    if !supports_render_model_field_evaluation(field) && field.kind == FieldKind::PageRef {
+        return Some(page_ref_uncomputed_reason(
+            &field.instruction,
+            Some(&context.bookmark_names),
+        ));
+    }
+    if !supports_render_model_field_evaluation(field) && field.kind == FieldKind::Ref {
+        return Some(ref_uncomputed_reason(
+            &field.instruction,
+            Some(&context.bookmark_names),
+        ));
+    }
     #[cfg(feature = "docx")]
     {
-        if !supports_render_model_field_evaluation(field) && field.kind == FieldKind::PageRef {
-            return Some(page_ref_uncomputed_reason(
-                &field.instruction,
-                Some(&context.bookmark_names),
-            ));
-        }
-        if !supports_render_model_field_evaluation(field) && field.kind == FieldKind::Ref {
-            return Some(ref_uncomputed_reason(
-                &field.instruction,
-                Some(&context.bookmark_names),
-            ));
-        }
         if !supports_render_model_field_evaluation(field) && field.kind == FieldKind::NoteRef {
             return Some(note_ref_uncomputed_reason(
                 &field.instruction,
@@ -819,15 +815,13 @@ fn render_model_unsupported_field_reason(
                 Some(&context.note_ref_target_names),
             ));
         }
-        if !supports_render_model_field_evaluation(field) && field.kind == FieldKind::Toc {
-            return Some(toc_uncomputed_reason(
-                &field.instruction,
-                Some(&context.bookmark_names),
-            ));
-        }
     }
-    #[cfg(not(feature = "docx"))]
-    let _ = context;
+    if !supports_render_model_field_evaluation(field) && field.kind == FieldKind::Toc {
+        return Some(toc_uncomputed_reason(
+            &field.instruction,
+            Some(&context.bookmark_names),
+        ));
+    }
     unsupported_field_reason(field)
 }
 
@@ -1683,10 +1677,13 @@ fn count_unsupported_field_kinds(fields: &[Field]) -> Vec<FieldKindCount> {
     counts
 }
 
-fn count_unsupported_field_reasons(fields: &[Field]) -> Vec<FieldEvaluationReasonCount> {
+fn count_model_unsupported_field_reasons(
+    fields: &[Field],
+    context: &ModelFieldReasonContext,
+) -> Vec<FieldEvaluationReasonCount> {
     let mut counts: Vec<FieldEvaluationReasonCount> = Vec::new();
     for field in fields {
-        if let Some(reason) = unsupported_field_reason(field) {
+        if let Some(reason) = model_unsupported_field_reason(field, context) {
             increment_field_evaluation_reason_count(&mut counts, reason);
         }
     }
@@ -1760,6 +1757,44 @@ fn unsupported_docx_field_reason(
     }
     if field.kind == FieldKind::Toc {
         return Some(toc_uncomputed_reason(&field.instruction, bookmark_names));
+    }
+    unsupported_field_reason(field)
+}
+
+fn model_unsupported_field_reason(
+    field: &Field,
+    context: &ModelFieldReasonContext,
+) -> Option<FieldEvaluationReason> {
+    if supports_field_evaluation(field) {
+        return None;
+    }
+    if field.kind == FieldKind::PageRef {
+        return Some(page_ref_uncomputed_reason(
+            &field.instruction,
+            Some(&context.bookmark_names),
+        ));
+    }
+    if field.kind == FieldKind::Ref {
+        return Some(ref_uncomputed_reason(
+            &field.instruction,
+            Some(&context.bookmark_names),
+        ));
+    }
+    #[cfg(feature = "docx")]
+    {
+        if field.kind == FieldKind::NoteRef {
+            return Some(note_ref_uncomputed_reason(
+                &field.instruction,
+                Some(&context.bookmark_names),
+                Some(&context.note_ref_target_names),
+            ));
+        }
+    }
+    if field.kind == FieldKind::Toc {
+        return Some(toc_uncomputed_reason(
+            &field.instruction,
+            Some(&context.bookmark_names),
+        ));
     }
     unsupported_field_reason(field)
 }
@@ -4709,6 +4744,58 @@ mod tests {
                 },
                 super::FieldKindCount {
                     kind: FieldKind::Hyperlink,
+                    count: 1,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn model_toc_scope_reasons_use_model_bookmarks() {
+        let blocks = vec![Block::Paragraph(Paragraph {
+            runs: vec![
+                Run {
+                    text: "Scoped target".to_string(),
+                    bookmark: Some("ExistingScope".to_string()),
+                    ..Run::default()
+                },
+                Run {
+                    text: "cached existing scope toc".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r"TOC \b ExistingScope".to_string(),
+                    },
+                    ..Run::default()
+                },
+                Run {
+                    text: "cached missing scope toc".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r"TOC \b MissingScope".to_string(),
+                    },
+                    ..Run::default()
+                },
+            ],
+            ..Paragraph::default()
+        })];
+
+        let inventory = super::feature_inventory_for_model(&blocks);
+
+        assert_eq!(inventory.fields, 2);
+        assert_eq!(
+            inventory.unsupported_field_kinds,
+            vec![super::FieldKindCount {
+                kind: FieldKind::Toc,
+                count: 2,
+            }]
+        );
+        assert_eq!(
+            inventory.unsupported_field_reasons,
+            vec![
+                super::FieldEvaluationReasonCount {
+                    reason: super::FieldEvaluationReason::NoComputedResult,
+                    count: 1,
+                },
+                super::FieldEvaluationReasonCount {
+                    reason: super::FieldEvaluationReason::UnresolvedBookmark,
                     count: 1,
                 },
             ]
