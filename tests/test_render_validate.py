@@ -227,6 +227,40 @@ class RenderValidateReportTests(unittest.TestCase):
             ["Visible"],
         )
 
+    def test_token_recall_accepts_tracked_change_reference_compounds_only_with_context(self):
+        ref_tokens = ["StableAddedRemovedMoved", "fromMoved", "to"]
+        got_tokens = ["Stable", "AddedMoved", "to"]
+
+        self.assertLess(render_validate.token_recall(ref_tokens, got_tokens), 1.0)
+        self.assertEqual(
+            render_validate.token_recall(
+                ref_tokens,
+                got_tokens,
+                render_report={
+                    "unsupported": {
+                        "tracked_insertions": 1,
+                        "tracked_deletions": 1,
+                        "tracked_moves": 2,
+                    }
+                },
+            ),
+            1.0,
+        )
+
+    def test_token_recall_accepts_joined_footnote_markers_only_with_context(self):
+        ref_tokens = ["Footnoted1", "1A"]
+        got_tokens = ["Footnoted", "A"]
+
+        self.assertEqual(render_validate.token_recall(ref_tokens, got_tokens), 0.0)
+        self.assertEqual(
+            render_validate.token_recall(
+                ref_tokens,
+                got_tokens,
+                render_report={"unsupported": {"footnotes": 1}},
+            ),
+            1.0,
+        )
+
     def test_validation_report_rejects_measured_skip_rows(self):
         row = render_validate.ValidationRow(
             document="sample.docx",

@@ -12,8 +12,8 @@ and report three metrics per document:
                     also appear in rdoc's text layer, after dropping volatile
                     LibreOffice-only field text such as local file paths and
                     missing-reference placeholders, plus known fallback shape
-                    placeholders when rdoc reports unsupported shape/object
-                    warnings.
+                    placeholders and joined tracked-change/footnote markers
+                    when rdoc's report proves that context.
   * page ratio    — rdoc page count / reference page count (≈ 1.0 is good).
   * visual aHash  — mean per-page average-hash Hamming similarity of page 1
                     (0..1; a coarse "does it look alike" signal, not exactness).
@@ -37,6 +37,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import shutil
 import subprocess
 import sys
@@ -547,17 +548,110 @@ def is_volatile_reference_shape_placeholder_token(
     return any(kind in UNSUPPORTED_OBJECT_WARNING_KINDS for kind in render_warning_kinds)
 
 
+def token_recall(
+    ref_tokens: list[str],
+    got_tokens: list[str],
+    render_report: dict | None = None,
+) -> float:
+    if not ref_tokens:
+        return 1.0
+    got_set = set(got_tokens)
+    hit = sum(
+        1
+        for token in ref_tokens
+        if reference_token_recalled(token, got_tokens, got_set, render_report)
+    )
+    return hit / len(ref_tokens)
+
+
+def reference_token_recalled(
+    token: str,
+    got_tokens: list[str],
+    got_set: set[str],
+    render_report: dict | None,
+) -> bool:
+    if token in got_set:
+        return True
+    if report_has_tracked_changes(render_report) and tracked_reference_token_recalled(
+        token, got_tokens
+    ):
+        return True
+    if report_unsupported_count(render_report, "footnotes") > 0 and joined_note_marker_recalled(
+        token, got_set
+    ):
+        return True
+    return False
+
+
+def report_unsupported_count(report: dict | None, key: str) -> int:
+    if not isinstance(report, dict):
+        return 0
+    unsupported = report.get("unsupported")
+    if not isinstance(unsupported, dict):
+        return 0
+    value = unsupported.get(key, 0)
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
+def report_has_tracked_changes(report: dict | None) -> bool:
+    return any(
+        report_unsupported_count(report, key) > 0
+        for key in (
+            "tracked_insertions",
+            "tracked_deletions",
+            "tracked_moves",
+            "tracked_property_changes",
+        )
+    )
+
+
+def tracked_reference_token_recalled(token: str, got_tokens: list[str]) -> bool:
+    value = token.strip(" \t\r\n\"'`.,;:()[]{}<>")
+    if len(value) < 5:
+        return False
+    needle = value.lower()
+    fragments = []
+    for got in got_tokens:
+        fragments.extend(visible_token_fragments(got))
+    matches = {
+        fragment.lower()
+        for fragment in fragments
+        if len(fragment) >= 4 and fragment.lower() in needle
+    }
+    if len(matches) >= 2:
+        return True
+    return any(
+        len(fragment) >= 5
+        and len(value) > len(fragment)
+        and needle.endswith(fragment.lower())
+        for fragment in matches
+    )
+
+
+def visible_token_fragments(token: str) -> list[str]:
+    value = token.strip(" \t\r\n\"'`.,;:()[]{}<>")
+    if not value:
+        return []
+    return re.findall(r"[A-Z]+(?=[A-Z][a-z]|$)|[A-Z]?[a-z]+|\d+", value)
+
+
+def joined_note_marker_recalled(token: str, got_set: set[str]) -> bool:
+    value = token.strip(" \t\r\n\"'`.,;:()[]{}<>")
+    if len(value) < 2:
+        return False
+    if value[-1].isdigit() and value[:-1] in got_set:
+        return True
+    return value[0].isdigit() and value[1:] in got_set
+
+
 def text_recall(
     ref: Path,
     got: Path,
     render_warning_kinds: list[str] | None = None,
+    render_report: dict | None = None,
 ) -> float:
     ref_tokens = reference_recall_tokens(tokens(ref), render_warning_kinds)
-    if not ref_tokens:
-        return 1.0
-    got_set = set(tokens(got))
-    hit = sum(1 for t in ref_tokens if t in got_set)
-    return hit / len(ref_tokens)
+    return token_recall(ref_tokens, tokens(got), render_report)
 
 
 def page_count(pdf: Path) -> int:
@@ -673,7 +767,7 @@ def main() -> int:
                         f"{'--':>8} {'--':>5}  SKIP (render report invalid warnings)"
                     )
                 continue
-            rec = text_recall(ref, got, kinds)
+            rec = text_recall(ref, got, kinds, render_report)
             got_pages = page_count(got)
             ref_pages = page_count(ref)
             pr = got_pages / max(1, ref_pages)
