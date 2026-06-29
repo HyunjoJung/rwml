@@ -878,10 +878,13 @@ Initial status:
   `EQ \l` lists, `EQ \a` arrays, `EQ \s` scripts including empty
   `\ai n()`/`\di n()` layout controls, `EQ \i` integrals/sums/products,
   `EQ \o` overstrikes, operand-preserving or hidden empty `EQ \d` displacement controls, and
-  `SYMBOL` fields compute supported separated or compact
-  font switches and quoted or unquoted separated/compact size switches; invalid
-  display/layout syntax reports `UnsupportedSwitch`, while valid broader
-  display/layout cases preserve cached text with `NoComputedResult` diagnostics.
+  deterministic `SYMBOL` fields compute decimal/hex/default ANSI codepoints,
+  Unicode `\u`, neutral `\h`, separated or compact font `\f` switches,
+  quoted or unquoted separated/compact size `\s` switches, common
+  Symbol/Wingdings mappings including Symbol `0xB7` bullet, and field-result
+  format switches; invalid display/layout syntax reports `UnsupportedSwitch`,
+  while valid broader display/layout cases preserve cached text with
+  `NoComputedResult` diagnostics.
   Action/automation fields are named separately from unknown fields;
   deterministic `GOTOBUTTON`/`MACROBUTTON` quoted or unquoted display text with
   field text-format switches computes without executing actions, validated
