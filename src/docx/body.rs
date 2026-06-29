@@ -20,7 +20,7 @@ use super::styles::Styles;
 use super::{
     attr_local, attr_local_trimmed, attr_u8, field_char_type, is_page_break_type, local, toggle_on,
 };
-use crate::annotation::FieldKind;
+use crate::annotation::{normalized_field_instruction, FieldKind};
 use crate::model::{
     Align, AuthoredContentControl, Block, Cell, CellMargins, CharProps, Color, DocGrid,
     DocGridType, FieldRole, Image, Indent, ListInfo, PageNumberFormat, ParaProps, Paragraph, Row,
@@ -1073,7 +1073,7 @@ impl ComplexFieldTracker {
 
     fn end(&mut self, ctx: &Ctx<'_>, index: usize) {
         if self.phase.is_some() {
-            let instruction = normalize_field_instruction(&self.instruction);
+            let instruction = normalized_field_instruction(&self.instruction);
             if !instruction.is_empty() {
                 let has_result_runs = !self.result_runs.is_empty();
                 let current_result = if has_result_runs { "\u{0}" } else { "" };
@@ -1979,7 +1979,7 @@ fn read_fldsimple(r: &mut Xml<'_>, start: &BytesStart<'_>, ctx: &Ctx<'_>, depth:
     let url = hyperlink_instr_url(&instruction);
     let mut runs = read_runs_container(r, ctx, url.as_deref(), depth + 1);
     if url.is_none() {
-        let instruction = normalize_field_instruction(&instruction);
+        let instruction = normalized_field_instruction(&instruction);
         if !instruction.is_empty() {
             let current_result = runs.iter().map(|run| run.text.as_str()).collect::<String>();
             let computed = computed_simple_field_result(&instruction, ctx, &current_result);
@@ -2266,28 +2266,6 @@ fn ref_field_positions(
 /// field-code parser).
 pub(crate) fn hyperlink_instr_url(instr: &str) -> Option<String> {
     crate::annotation::hyperlink_field_target(instr)
-}
-
-fn normalize_field_instruction(instruction: &str) -> String {
-    let mut parts = Vec::new();
-    let mut current = String::new();
-    let mut in_quotes = false;
-    for ch in instruction.chars() {
-        if ch == '"' {
-            in_quotes = !in_quotes;
-            current.push(ch);
-        } else if ch.is_whitespace() && !in_quotes {
-            if !current.is_empty() {
-                parts.push(std::mem::take(&mut current));
-            }
-        } else {
-            current.push(ch);
-        }
-    }
-    if !current.is_empty() {
-        parts.push(current);
-    }
-    parts.join(" ")
 }
 
 /// Resolve paragraph-level properties (heading level, alignment, list) from the

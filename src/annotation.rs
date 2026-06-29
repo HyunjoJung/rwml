@@ -2845,9 +2845,10 @@ mod tests {
         direct_ref_field_syntax, eq_enclosed_operand, eq_fraction_operands, eq_list_operands,
         eq_numeric_prefix_option, eq_parenthesized_operand, eq_prefix_switch_tail,
         eq_radical_operands, hyperlink_field_target, if_field_syntax, legacy_form_field_syntax,
-        merge_control_field_syntax, merge_field_name, note_ref_field_syntax, opaque_field_syntax,
-        page_ref_field_syntax, ref_field_syntax, symbol_field_syntax, toc_field_syntax,
-        FieldNumberFormat, FieldTextFormat, TocSequenceFilter, TocTcFilter,
+        merge_control_field_syntax, merge_field_name, normalized_field_instruction,
+        note_ref_field_syntax, opaque_field_syntax, page_ref_field_syntax, ref_field_syntax,
+        symbol_field_syntax, toc_field_syntax, FieldNumberFormat, FieldTextFormat,
+        TocSequenceFilter, TocTcFilter,
     };
 
     #[test]
@@ -3105,6 +3106,18 @@ mod tests {
         assert!(merge_field_name(r#"MERGEFIELD "Client Name"#).is_none());
         assert!(merge_field_name(r#"MERGEFIELD "Client"Name""#).is_none());
     }
+
+    #[test]
+    fn normalized_field_instruction_preserves_quoted_whitespace() {
+        assert_eq!(
+            normalized_field_instruction(r#" DOCPROPERTY   "Client Name"   \*  MERGEFORMAT "#),
+            r#"DOCPROPERTY "Client Name" \* MERGEFORMAT"#
+        );
+        assert_eq!(
+            normalized_field_instruction(r#"TITLE   "Unclosed value   tail"#),
+            r#"TITLE "Unclosed value   tail"#
+        );
+    }
 }
 
 pub(crate) fn document_property_key(value: &str) -> String {
@@ -3221,6 +3234,10 @@ pub(crate) fn instruction_parts(s: &str) -> Vec<String> {
         parts.push(current);
     }
     parts
+}
+
+pub(crate) fn normalized_field_instruction(instruction: &str) -> String {
+    instruction_parts(instruction).join(" ")
 }
 
 fn is_document_info_field(token: &str) -> bool {
