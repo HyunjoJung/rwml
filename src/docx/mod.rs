@@ -1677,6 +1677,10 @@ pub(crate) fn attr_i64(e: &BytesStart<'_>, key: &[u8]) -> Option<i64> {
     attr_local(e, key)?.trim().parse().ok()
 }
 
+pub(crate) fn attr_i32(e: &BytesStart<'_>, key: &[u8]) -> Option<i32> {
+    attr_local(e, key)?.trim().parse().ok()
+}
+
 pub(crate) fn attr_u8(e: &BytesStart<'_>, key: &[u8]) -> Option<u8> {
     attr_local(e, key)?.trim().parse().ok()
 }

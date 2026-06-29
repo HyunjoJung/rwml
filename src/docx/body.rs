@@ -20,7 +20,7 @@ use super::parse_rgb_hex_color;
 use super::styles::Styles;
 use super::xml_text::{read_text, skip_subtree};
 use super::{
-    attr_f32, attr_i64, attr_local, attr_local_trimmed, attr_u16, attr_u32, attr_u8,
+    attr_f32, attr_i32, attr_i64, attr_local, attr_local_trimmed, attr_u16, attr_u32, attr_u8,
     field_char_type, is_page_break_type, local, toggle_on,
 };
 use crate::annotation::{normalized_field_instruction, FieldKind};
@@ -37,6 +37,12 @@ use crate::CoreProperties;
 /// Twips (1/20 pt) string → points.
 fn twips_to_pt(s: &str) -> Option<f32> {
     s.trim().parse::<f32>().ok().map(|t| t / 20.0)
+}
+
+fn type_defaults_to_dxa(e: &BytesStart<'_>) -> bool {
+    attr_local_trimmed(e, b"type")
+        .as_deref()
+        .map_or(true, |value| value == "dxa")
 }
 
 /// The borrowing reader produced by `Reader::from_str`.
@@ -2384,8 +2390,8 @@ fn read_tblpr(r: &mut Xml<'_>) -> TableProps {
                     attr_local_trimmed(&e, b"type").is_some_and(|value| value == "fixed");
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"tblInd" => {
-                if attr_local(&e, b"type").map_or(true, |value| value.trim() == "dxa") {
-                    props.indent_twips = attr_local(&e, b"w").and_then(|v| v.trim().parse().ok());
+                if type_defaults_to_dxa(&e) {
+                    props.indent_twips = attr_i32(&e, b"w");
                 }
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"jc" => {
@@ -2691,7 +2697,7 @@ fn apply_tc_mar_side(margins: &mut CellMargins, seen: &mut bool, e: &BytesStart<
     if !matches!(side, b"top" | b"right" | b"bottom" | b"left") {
         return;
     }
-    if !attr_local(e, b"type").map_or(true, |value| value.trim() == "dxa") {
+    if !type_defaults_to_dxa(e) {
         return;
     }
     let Some(value) = attr_u32(e, b"w") else {
