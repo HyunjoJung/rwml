@@ -17,11 +17,13 @@ and report three metrics per document:
 
 This is a developer tool, not part of the crate. It needs PyMuPDF (`pip install
 pymupdf`), Pillow, and either a local `soffice` or the `lo-cli` Docker image.
+By default, `--soffice auto` prefers local `soffice` when present and falls back
+to Docker.
 
-  python scripts/render_validate.py corpus/*.docx
+  python scripts/render_validate.py corpus/public/**/*.docx
   python scripts/render_validate.py --soffice docker corpus/*.doc
-  python scripts/render_validate.py --json corpus/*.docx > render-report.json
-  python scripts/render_validate.py --json --min-mean-recall 0.90 --max-skipped 0 corpus/*.docx > render-report.json
+  python scripts/render_validate.py --json corpus/public/**/*.docx > render-report.json
+  python scripts/render_validate.py --json --min-mean-recall 0.90 --max-skipped 0 corpus/public/**/*.docx > render-report.json
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -97,6 +100,19 @@ def require_pdf_deps() -> None:
         missing.append("Pillow (pip install pillow)")
     if missing:
         sys.exit("PDF validation dependencies required: " + ", ".join(missing))
+
+
+def resolve_soffice_mode(mode: str) -> str:
+    if mode != "auto":
+        return mode
+    if shutil.which("soffice") is not None:
+        return "local"
+    if shutil.which("docker") is not None:
+        return "docker"
+    raise RenderDependencyError(
+        "LibreOffice validation dependency required: neither soffice nor docker "
+        "executable found; install LibreOffice or Docker"
+    )
 
 
 def mean(values: list[float]) -> float | None:
@@ -454,7 +470,12 @@ def hash_similarity(ref: Path, got: Path, size: int = 16) -> float:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("inputs", nargs="+", type=Path)
-    ap.add_argument("--soffice", choices=["local", "docker"], default="docker")
+    ap.add_argument(
+        "--soffice",
+        choices=["auto", "local", "docker"],
+        default="auto",
+        help="LibreOffice backend; auto prefers local soffice, then Docker lo-cli.",
+    )
     ap.add_argument("--recall-min", type=float, default=0.97)
     ap.add_argument("--min-mean-recall", type=float)
     ap.add_argument("--min-mean-page-ratio", type=float)
@@ -476,13 +497,17 @@ def main() -> int:
         )
         print("-" * 88)
     rows = []
+    try:
+        soffice_mode = resolve_soffice_mode(args.soffice)
+    except RenderDependencyError as exc:
+        sys.exit(str(exc))
     # Temp dir under cwd so Docker Desktop (which can't mount the system temp on
     # Windows) can bind-mount it for the LibreOffice reference render.
     with tempfile.TemporaryDirectory(dir=Path.cwd()) as td:
         tmp = Path(td)
         for src in args.inputs:
             try:
-                ref = render_libreoffice(src, tmp, args.soffice)
+                ref = render_libreoffice(src, tmp, soffice_mode)
             except RenderDependencyError as exc:
                 sys.exit(str(exc))
             got = tmp / (src.stem + ".rdoc.pdf")

@@ -305,6 +305,30 @@ class RenderValidateReportTests(unittest.TestCase):
                         src, pathlib.Path(tmp), "docker"
                     )
 
+    def test_soffice_auto_mode_prefers_local_libreoffice(self):
+        with mock.patch.object(
+            render_validate.shutil,
+            "which",
+            side_effect=lambda name: f"/usr/bin/{name}" if name == "soffice" else None,
+        ):
+            self.assertEqual(render_validate.resolve_soffice_mode("auto"), "local")
+
+    def test_soffice_auto_mode_falls_back_to_docker(self):
+        with mock.patch.object(
+            render_validate.shutil,
+            "which",
+            side_effect=lambda name: f"/usr/bin/{name}" if name == "docker" else None,
+        ):
+            self.assertEqual(render_validate.resolve_soffice_mode("auto"), "docker")
+
+    def test_soffice_auto_mode_reports_missing_backends(self):
+        with mock.patch.object(render_validate.shutil, "which", return_value=None):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "neither soffice nor docker executable found",
+            ):
+                render_validate.resolve_soffice_mode("auto")
+
     def test_validation_gate_rejects_non_finite_thresholds(self):
         with self.assertRaisesRegex(ValueError, "non-finite threshold"):
             render_validate.validation_gate(

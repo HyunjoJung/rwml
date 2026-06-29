@@ -304,7 +304,7 @@ cargo run --features render --bin rdoc -- to-pdf file.docx out.pdf --report-json
 cargo run --example report   -- report.docx            # author a styled report
 cargo run --features render --example to_pdf -- file.docx out.pdf
 cargo run --features render --example to_pdf -- file.docx out.pdf --report-json render.json
-python scripts/render_validate.py --json --min-mean-recall 0.90 --max-skipped 0 corpus/*.docx > render.json
+python scripts/render_validate.py --json --min-mean-recall 0.90 --max-skipped 0 corpus/public/**/*.docx > render.json
 python scripts/bench_vs_mature.py --corpus "$RDOC_BENCH_CORPUS" --json \
   --version 0.1.0 --git-rev "$(git rev-parse HEAD)" \
   --min-poi-recall-mean 0.95 --min-poi-f1-mean 0.95 --max-errors 0 \
@@ -428,7 +428,9 @@ file and a structurally-broken original. To author/convert from a `DocModel`, us
 **Rendering.** [`scripts/render_validate.py`](scripts/render_validate.py) compares
 the renderer to LibreOffice per document on three metrics (text recall, page-count
 ratio, average-hash visual similarity) plus rdoc render-warning counts/kinds, and
-can emit a JSON report for release tracking. The public synthetic corpus also includes a render manifest checked by
+can emit a JSON report for release tracking. Its `--soffice auto` default uses a
+local `soffice` when available and otherwise falls back to the Docker `lo-cli`
+backend. The public synthetic corpus also includes a render manifest checked by
 `cargo test --features render`. rdoc is a **preview-grade**
 renderer, faithful to the model but **not** a LibreOffice replacement. Generated
 running footer page numbers and body `PAGE` fields are computed from the emitted
