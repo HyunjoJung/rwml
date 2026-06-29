@@ -9,7 +9,9 @@ For each input `.doc`/`.docx`, render it two ways and compare:
 and report three metrics per document:
 
   * text recall   — fraction of the reference's whitespace-normalized tokens that
-                    also appear in rdoc's text layer (selectable-text fidelity).
+                    also appear in rdoc's text layer, after dropping volatile
+                    LibreOffice-only field text such as local file paths and
+                    missing-reference placeholders.
   * page ratio    — rdoc page count / reference page count (≈ 1.0 is good).
   * visual aHash  — mean per-page average-hash Hamming similarity of page 1
                     (0..1; a coarse "does it look alike" signal, not exactness).
@@ -430,8 +432,40 @@ def tokens(pdf: Path) -> list[str]:
     return text.split()
 
 
+def reference_recall_tokens(raw_tokens: list[str]) -> list[str]:
+    tokens = []
+    index = 0
+    missing_reference = ["Error:", "Reference", "source", "not", "found"]
+    while index < len(raw_tokens):
+        if raw_tokens[index : index + len(missing_reference)] == missing_reference:
+            index += len(missing_reference)
+            continue
+        token = raw_tokens[index]
+        if not is_volatile_reference_path_token(token):
+            tokens.append(token)
+        index += 1
+    return tokens
+
+
+def is_volatile_reference_path_token(token: str) -> bool:
+    value = token.strip(" \t\r\n\"'`.,;:()[]{}<>")
+    if not value:
+        return False
+    lower = value.lower()
+    office_extensions = (".doc", ".docx", ".docm", ".dot", ".dotx", ".rtf")
+    if value.startswith(("/", "~/", "\\\\")):
+        return True
+    if len(value) >= 3 and value[1] == ":" and value[2] in {"/", "\\"}:
+        return True
+    if "/" in value and lower.endswith(office_extensions):
+        return True
+    if "\\" in value and lower.endswith(office_extensions):
+        return True
+    return False
+
+
 def text_recall(ref: Path, got: Path) -> float:
-    ref_tokens = tokens(ref)
+    ref_tokens = reference_recall_tokens(tokens(ref))
     if not ref_tokens:
         return 1.0
     got_set = set(tokens(got))

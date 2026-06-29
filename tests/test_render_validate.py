@@ -177,6 +177,24 @@ class RenderValidateReportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "render warning count mismatch"):
             render_validate.validation_report([row], recall_min=0.8)
 
+    def test_reference_recall_tokens_drop_volatile_libreoffice_field_text(self):
+        tokens = [
+            "Stable",
+            "Error:",
+            "Reference",
+            "source",
+            "not",
+            "found",
+            "/workspace/project/rdoc/",
+            "corpus/public/synthetic/fields.docx",
+            "report.docx",
+        ]
+
+        self.assertEqual(
+            render_validate.reference_recall_tokens(tokens),
+            ["Stable", "report.docx"],
+        )
+
     def test_validation_report_rejects_measured_skip_rows(self):
         row = render_validate.ValidationRow(
             document="sample.docx",
