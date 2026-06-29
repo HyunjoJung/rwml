@@ -31,7 +31,7 @@ use crate::text;
 use crate::CoreProperties;
 
 pub(crate) use self::xml_text::skip_subtree as skip_xml_subtree;
-use self::xml_text::{read_text, skip_subtree};
+use self::xml_text::{read_i64_text, read_text, skip_subtree};
 
 mod body;
 mod comments;
@@ -1526,7 +1526,7 @@ fn read_shape_position(r: &mut Reader<&[u8]>, start: &BytesStart<'_>) -> ShapePo
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"posOffset" => {
-                position.offset_emu = read_text(r).trim().parse().ok();
+                position.offset_emu = read_i64_text(r);
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"align" => {
                 position.align = Some(read_text(r));

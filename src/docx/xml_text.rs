@@ -66,9 +66,13 @@ pub(crate) fn read_text(r: &mut Reader<&[u8]>) -> String {
     s
 }
 
+pub(crate) fn read_i64_text(r: &mut Reader<&[u8]>) -> Option<i64> {
+    read_text(r).trim().parse().ok()
+}
+
 #[cfg(test)]
 mod tests {
-    use super::read_text;
+    use super::{read_i64_text, read_text};
     use quick_xml::events::Event;
     use quick_xml::Reader;
 
@@ -78,6 +82,14 @@ mod tests {
         assert!(matches!(r.read_event(), Ok(Event::Start(_))));
 
         assert_eq!(read_text(&mut r), "A & B <C> &unknown;");
+    }
+
+    #[test]
+    fn read_i64_text_trims_ooxml_text() {
+        let mut r = Reader::from_str("<wp:posOffset> 91440 </wp:posOffset>");
+        assert!(matches!(r.read_event(), Ok(Event::Start(_))));
+
+        assert_eq!(read_i64_text(&mut r), Some(91_440));
     }
 }
 

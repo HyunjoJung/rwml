@@ -18,7 +18,7 @@ use super::fields::TocEntry;
 use super::numbering::Numbering;
 use super::parse_rgb_hex_color;
 use super::styles::Styles;
-use super::xml_text::{read_text, skip_subtree};
+use super::xml_text::{read_i64_text, read_text, skip_subtree};
 use super::{
     attr_f32, attr_i32, attr_i64, attr_local, attr_local_trimmed, attr_u16, attr_u32, attr_u8,
     field_char_type, is_page_break_type, local, toggle_on,
@@ -1819,7 +1819,7 @@ fn read_page_position_offset(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Option<
         match r.read_event() {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"posOffset" => {
                 if page_relative {
-                    offset = read_text(r).trim().parse().ok();
+                    offset = read_i64_text(r);
                 } else {
                     skip_subtree(r);
                 }
