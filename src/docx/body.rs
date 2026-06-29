@@ -1683,7 +1683,7 @@ fn read_rpr(r: &mut Xml<'_>) -> CharProps {
                 b"color" => p.color = attr_local(&e, b"val").and_then(|v| parse_rgb_hex_color(&v)),
                 b"highlight" => p.highlight = attr_local_trimmed(&e, b"val"),
                 b"vertAlign" => {
-                    p.vert_align = match attr_local(&e, b"val").as_deref().map(str::trim) {
+                    p.vert_align = match attr_local_trimmed(&e, b"val").as_deref() {
                         Some("superscript") => VertAlign::Super,
                         Some("subscript") => VertAlign::Sub,
                         _ => VertAlign::Baseline,
