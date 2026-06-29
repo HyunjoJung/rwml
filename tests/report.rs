@@ -2606,6 +2606,28 @@ fn toc_deleted_tc_field_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn toc_alternate_content_heading_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="wps"><w:body><mc:AlternateContent><mc:Choice Requires="wps"><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Choice </w:t><mc:AlternateContent><mc:Choice Requires="wps"><w:t>Inline</w:t></mc:Choice><mc:Fallback><w:t>Fallback Inline</w:t></mc:Fallback></mc:AlternateContent></w:r></w:p></mc:Choice><mc:Fallback><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Fallback Heading</w:t></w:r></w:p></mc:Fallback></mc:AlternateContent><w:p><w:fldSimple w:instr=" TOC \o &quot;1-1&quot; "><w:r><w:t>stale alternate toc</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn toc_sequence_caption_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -8215,6 +8237,44 @@ fn report_toc_deleted_tc_entries_are_ignored() {
             && !main_text.contains("Deleted Entry")
             && !main_text.contains("Moved Entry"),
         "TOC report diagnostics must follow accepted-current TC entries: {main_text:?}"
+    );
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_toc_alternate_content_entries_use_single_branch() {
+    let doc =
+        Document::open(&toc_alternate_content_heading_diagnostics_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::Toc);
+    assert_eq!(fields[0].instruction, "TOC \\o \"1-1\"");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("Choice Inline"));
+
+    let report = doc.report();
+    assert_eq!(report.features.fields, 1);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![field_kind_count(FieldKind::Toc, 1)]
+    );
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+    assert!(
+        report
+            .warnings
+            .iter()
+            .all(|warning| !matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })),
+        "{:?}",
+        report.warnings
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Choice Inline")
+            && !main_text.contains("Fallback Heading")
+            && !main_text.contains("Fallback Inline"),
+        "TOC report diagnostics must use one AlternateContent branch: {main_text:?}"
     );
 }
 
