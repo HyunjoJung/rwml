@@ -715,6 +715,24 @@ fn action_accepted_current_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn inserted_content_field_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" INCLUDETEXT &quot;appendix.docx&quot; "><w:r><w:t>Appendix text</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" INCLUDEPICTURE &quot;chart.png "><w:r><w:t>cached malformed include picture</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" LINK \* "><w:r><w:t>cached dangling format switch</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" INCLUDETEXT &quot;chapter.docx&quot; \* BadFormat "><w:r><w:t>cached bad include format</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn compatibility_field_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -4102,6 +4120,83 @@ fn report_action_fields_follow_accepted_current_view() {
         ],
         vec![],
         vec![],
+    );
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_inserted_content_fields_split_cached_and_malformed_diagnostics() {
+    let doc = Document::open(&inserted_content_field_diagnostics_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 4);
+    assert_eq!(
+        fields[0].kind,
+        FieldKind::InsertedContent("INCLUDETEXT".to_string())
+    );
+    assert_eq!(fields[0].instruction, r#"INCLUDETEXT "appendix.docx""#);
+    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(
+        fields[1].kind,
+        FieldKind::InsertedContent("INCLUDEPICTURE".to_string())
+    );
+    assert_eq!(fields[1].instruction, r#"INCLUDEPICTURE "chart.png "#);
+    assert_eq!(fields[1].computed_result, None);
+    assert_eq!(
+        fields[2].kind,
+        FieldKind::InsertedContent("LINK".to_string())
+    );
+    assert_eq!(fields[2].instruction, r#"LINK \*"#);
+    assert_eq!(fields[2].computed_result, None);
+    assert_eq!(
+        fields[3].kind,
+        FieldKind::InsertedContent("INCLUDETEXT".to_string())
+    );
+    assert_eq!(
+        fields[3].instruction,
+        r#"INCLUDETEXT "chapter.docx" \* BadFormat"#
+    );
+    assert_eq!(fields[3].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(report.features.fields, 4);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![
+            field_kind_count(FieldKind::InsertedContent("INCLUDETEXT".to_string()), 2),
+            field_kind_count(FieldKind::InsertedContent("INCLUDEPICTURE".to_string()), 1),
+            field_kind_count(FieldKind::InsertedContent("LINK".to_string()), 1),
+        ]
+    );
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        report.features.field_kinds
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![
+            field_reason_count(FieldEvaluationReason::NoComputedResult, 1),
+            field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 3),
+        ]
+    );
+    assert!(report
+        .warnings
+        .iter()
+        .any(|warning| matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })));
+
+    let main_text = doc.main_text();
+    assert!(main_text.contains("Appendix text"), "{main_text:?}");
+    assert!(
+        main_text.contains("cached malformed include picture"),
+        "{main_text:?}"
+    );
+    assert!(
+        main_text.contains("cached dangling format switch"),
+        "{main_text:?}"
+    );
+    assert!(
+        main_text.contains("cached bad include format"),
+        "{main_text:?}"
     );
 }
 
