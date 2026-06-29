@@ -1495,7 +1495,8 @@ established infrastructure and promote only bounded compatibility slices:
   diagnostics, and render-model diagnostics when exact duplicated logic or
   report/evaluator drift is proven;
 - R2-b: promote `PAGE` and `PAGEREF` semantics only for deterministic layout
-  contexts already represented by the reader or renderer evidence;
+  contexts already represented by reader or renderer evidence, including
+  paragraph-end section-break targets;
 - R2-c: promote `REF`, direct bookmark references, `NOTEREF`/`FTNREF`, and TOC
   semantics only for deterministic source-order, note-mark, numbering, and
   scope contexts;

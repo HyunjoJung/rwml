@@ -332,6 +332,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                         &e,
                         &pages,
                         saw_visible_content,
+                        paragraph_section_break_pending.is_some(),
                         &mut source_order,
                         &mut targets,
                         &mut rendered_targets,
@@ -423,6 +424,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                         &e,
                         &pages,
                         saw_visible_content,
+                        paragraph_section_break_pending.is_some(),
                         &mut source_order,
                         &mut targets,
                         &mut rendered_targets,
@@ -692,6 +694,7 @@ fn record_page_ref_bookmark_start(
     e: &BytesStart<'_>,
     pages: &PageRefPageState,
     saw_visible_content: bool,
+    paragraph_section_break_pending: bool,
     source_order: &mut usize,
     targets: &mut HashMap<String, PageRefTarget>,
     rendered_targets: &mut HashMap<String, PageRefPosition>,
@@ -712,6 +715,21 @@ fn record_page_ref_bookmark_start(
                 physical_page: pages.leading_page_number,
                 display_page: pages.leading_display_page_number,
                 display_format: pages.leading_display_format,
+                order: *source_order,
+            },
+        );
+    } else if paragraph_section_break_pending && pages.rendered_context_trusted {
+        targets.entry(name.clone()).or_insert(PageRefTarget {
+            display_page: pages.rendered_display_page_number,
+            display_format: pages.rendered_display_format,
+        });
+        target_positions_insert(
+            target_positions,
+            name.clone(),
+            PageRefPosition {
+                physical_page: pages.rendered_page_number,
+                display_page: pages.rendered_display_page_number,
+                display_format: pages.rendered_display_format,
                 order: *source_order,
             },
         );

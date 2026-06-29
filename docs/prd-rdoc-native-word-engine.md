@@ -657,7 +657,8 @@ public-readable R2 sub-buckets:
   computation, document-report diagnostics, or render-model diagnostics can
   drift;
 - R2-b layout-derived `PAGE` and `PAGEREF` outside trusted structural,
-  source-rendered, section-start, source-marker, and hard-break contexts;
+  source-rendered, section-start, paragraph-end section-break target,
+  source-marker, and hard-break contexts;
 - R2-c remaining value-changing `REF`, direct bookmark reference,
   `NOTEREF`/`FTNREF`, and TOC/REF body policies where source order, note marks,
   numbering context, or scope membership are not yet unambiguous;

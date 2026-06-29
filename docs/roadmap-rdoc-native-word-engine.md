@@ -1171,8 +1171,8 @@ The active roadmap slices are:
    reports disagree with computation, or render-model reports can drift from the
    opened-document report.
 2. R2-b layout-derived `PAGE`/`PAGEREF`: contexts beyond trusted
-   leading/source-rendered, section-start, source-marker, display-only restart
-   target/order, and hard-break cases,
+   leading/source-rendered, section-start, paragraph-end section-break target,
+   source-marker, display-only restart target/order, and hard-break cases,
    including exact pagination current-page/page-reference values,
    target-derived formatting where no trusted marker exists, and remaining
    layout-dependent `\p` results.

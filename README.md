@@ -676,7 +676,8 @@ diagnostics; `PAGEREF` fields are named, compute page numbers only when leading
 explicit page breaks before any visible body content,
 enabled paragraph `w:pageBreakBefore`, explicit or default `nextPage`, and
 explicit `evenPage`/`oddPage` section starts in leading or trusted rendered
-context, including deterministic display-only `w:pgNumType w:start`
+context, plus bookmarks in the paragraph that carries a pending section break,
+including deterministic display-only `w:pgNumType w:start`
 page-number restart labels and trusted supported `w:pgNumType w:fmt` styles (`decimal`, `decimalZero`,
 `numberInDash`, `decimalFullWidth`, `decimalHalfWidth`, `decimalFullWidth2`,
 `decimalEnclosedCircle`, `decimalEnclosedFullstop`, `decimalEnclosedParen`,
@@ -1028,8 +1029,8 @@ deterministic computation or precise cached-result diagnostics.
       diagnostics can drift from computed-result behavior
 - [ ] Reader R2-b: layout-derived `PAGE`/`PAGEREF` current-page,
       page-number, and relative-position computation beyond trusted
-      leading/source-rendered, section-start, source-marker, and hard-break
-      contexts
+      leading/source-rendered, section-start, paragraph-end section-break
+      target, source-marker, and hard-break contexts
 - [ ] Reader R2-c: remaining value-changing `REF`, `NOTEREF`/`FTNREF`, and
       broader TOC/REF policy where source order, note marks, numbering context,
       or scope membership are not yet deterministic

@@ -11516,33 +11516,22 @@ fn docx_page_ref_defers_content_paragraph_section_break_until_paragraph_end() {
     assert_eq!(fields[1].kind, FieldKind::PageRef);
     assert_eq!(fields[1].instruction, "PAGEREF BeforeSectionBreak \\h");
     assert_eq!(fields[1].result, "stale before break");
-    assert_eq!(fields[1].computed_result, None);
+    assert_eq!(fields[1].computed_result.as_deref(), Some("1"));
 
     let main_text = doc.main_text();
     assert!(
-        main_text.contains("Before break1\nAfter break\nstale before break"),
+        main_text.contains("Before break1\nAfter break\n1"),
         "section-break paragraph content should stay on the pre-break page: {main_text:?}"
     );
     assert!(
-        !main_text.contains("stale same-paragraph page"),
+        !main_text.contains("stale same-paragraph page")
+            && !main_text.contains("stale before break"),
         "computed fields should replace stale section-break paragraph text: {main_text:?}"
     );
 
     let report = doc.report();
-    assert_eq!(
-        report.features.unsupported_field_kinds,
-        vec![FieldKindCount {
-            kind: FieldKind::PageRef,
-            count: 1,
-        }]
-    );
-    assert_eq!(
-        report.features.unsupported_field_reasons,
-        vec![FieldEvaluationReasonCount {
-            reason: FieldEvaluationReason::NoComputedResult,
-            count: 1,
-        }]
-    );
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
 }
 
 #[test]
