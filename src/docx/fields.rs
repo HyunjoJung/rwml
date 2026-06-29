@@ -27,7 +27,7 @@ use crate::annotation::{
     PromptFieldSyntax, StyleRefFieldSyntax, StyleRefResult, TocFieldSyntax as TocSpec,
     TocSequenceFilter, TocTcFilter as TcFilter,
 };
-use crate::model::SectionBreakKind;
+use crate::model::{PageNumberFormat as ModelPageNumberFormat, SectionBreakKind};
 use crate::{numfmt, CoreProperties};
 
 use super::numbering::Numbering;
@@ -3785,33 +3785,15 @@ fn page_ref_section_page_number_start(e: &BytesStart<'_>) -> Option<usize> {
 }
 
 fn page_ref_section_page_number_format(e: &BytesStart<'_>) -> Option<PageRefDisplayFormat> {
-    let format = match attr_local_trimmed_preserve_empty(e, b"fmt").as_deref()? {
-        "" => return Some(PageRefDisplayFormat::default()),
-        "decimal" => PageNumberFormat::Arabic,
-        "decimalZero" => PageNumberFormat::DecimalZero,
-        "numberInDash" => PageNumberFormat::ArabicDash,
-        "decimalFullWidth" => PageNumberFormat::DecimalFullWidth,
-        "decimalHalfWidth" => PageNumberFormat::DecimalHalfWidth,
-        "decimalFullWidth2" => PageNumberFormat::DecimalFullWidth2,
-        "decimalEnclosedCircle" => PageNumberFormat::DecimalEnclosedCircle,
-        "decimalEnclosedFullstop" => PageNumberFormat::DecimalEnclosedFullstop,
-        "decimalEnclosedParen" => PageNumberFormat::DecimalEnclosedParen,
-        "ganada" => PageNumberFormat::Ganada,
-        "chosung" => PageNumberFormat::Chosung,
-        "koreanDigital" => PageNumberFormat::KoreanDigital,
-        "koreanCounting" => PageNumberFormat::KoreanCounting,
-        "koreanLegal" => PageNumberFormat::KoreanLegal,
-        "koreanDigital2" => PageNumberFormat::KoreanDigital2,
-        "lowerLetter" => PageNumberFormat::AlphabeticLower,
-        "upperLetter" => PageNumberFormat::AlphabeticUpper,
-        "lowerRoman" => PageNumberFormat::RomanLower,
-        "upperRoman" => PageNumberFormat::RomanUpper,
-        "ordinal" => PageNumberFormat::Ordinal,
-        "cardinalText" => PageNumberFormat::CardText,
-        "ordinalText" => PageNumberFormat::OrdText,
-        _ => return Some(PageRefDisplayFormat::Unsupported),
-    };
-    Some(PageRefDisplayFormat::Known(Some(format)))
+    let value = attr_local_trimmed_preserve_empty(e, b"fmt")?;
+    if value.is_empty() {
+        return Some(PageRefDisplayFormat::default());
+    }
+    Some(
+        ModelPageNumberFormat::from_wml_value(&value)
+            .map(|format| PageRefDisplayFormat::Known(Some(PageNumberFormat::from(format))))
+            .unwrap_or(PageRefDisplayFormat::Unsupported),
+    )
 }
 
 fn page_after_section_break(page: usize, section_break: PageRefSectionBreak) -> usize {
@@ -7796,6 +7778,37 @@ enum PageNumberFormat {
     Ordinal,
     CardText,
     OrdText,
+}
+
+impl From<ModelPageNumberFormat> for PageNumberFormat {
+    fn from(format: ModelPageNumberFormat) -> Self {
+        match format {
+            ModelPageNumberFormat::Decimal => PageNumberFormat::Arabic,
+            ModelPageNumberFormat::DecimalZero => PageNumberFormat::DecimalZero,
+            ModelPageNumberFormat::NumberInDash => PageNumberFormat::ArabicDash,
+            ModelPageNumberFormat::DecimalFullWidth => PageNumberFormat::DecimalFullWidth,
+            ModelPageNumberFormat::DecimalHalfWidth => PageNumberFormat::DecimalHalfWidth,
+            ModelPageNumberFormat::DecimalFullWidth2 => PageNumberFormat::DecimalFullWidth2,
+            ModelPageNumberFormat::DecimalEnclosedCircle => PageNumberFormat::DecimalEnclosedCircle,
+            ModelPageNumberFormat::DecimalEnclosedFullstop => {
+                PageNumberFormat::DecimalEnclosedFullstop
+            }
+            ModelPageNumberFormat::DecimalEnclosedParen => PageNumberFormat::DecimalEnclosedParen,
+            ModelPageNumberFormat::Ganada => PageNumberFormat::Ganada,
+            ModelPageNumberFormat::Chosung => PageNumberFormat::Chosung,
+            ModelPageNumberFormat::KoreanDigital => PageNumberFormat::KoreanDigital,
+            ModelPageNumberFormat::KoreanCounting => PageNumberFormat::KoreanCounting,
+            ModelPageNumberFormat::KoreanLegal => PageNumberFormat::KoreanLegal,
+            ModelPageNumberFormat::KoreanDigital2 => PageNumberFormat::KoreanDigital2,
+            ModelPageNumberFormat::LowerLetter => PageNumberFormat::AlphabeticLower,
+            ModelPageNumberFormat::UpperLetter => PageNumberFormat::AlphabeticUpper,
+            ModelPageNumberFormat::LowerRoman => PageNumberFormat::RomanLower,
+            ModelPageNumberFormat::UpperRoman => PageNumberFormat::RomanUpper,
+            ModelPageNumberFormat::Ordinal => PageNumberFormat::Ordinal,
+            ModelPageNumberFormat::CardinalText => PageNumberFormat::CardText,
+            ModelPageNumberFormat::OrdinalText => PageNumberFormat::OrdText,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
