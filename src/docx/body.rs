@@ -16,6 +16,7 @@ use quick_xml::Reader;
 
 use super::fields::TocEntry;
 use super::numbering::Numbering;
+use super::parse_rgb_hex_color;
 use super::styles::Styles;
 use super::xml_text::{read_text, skip_subtree};
 use super::{
@@ -30,20 +31,6 @@ use crate::model::{
 };
 use crate::text;
 use crate::CoreProperties;
-
-/// Parse an OOXML hex color (`"RRGGBB"`); `"auto"`/invalid → `None`.
-fn parse_hex_color(s: &str) -> Option<Color> {
-    let s = s.trim();
-    if s.eq_ignore_ascii_case("auto") || s.len() != 6 {
-        return None;
-    }
-    let n = u32::from_str_radix(s, 16).ok()?;
-    Some(Color {
-        r: (n >> 16) as u8,
-        g: (n >> 8) as u8,
-        b: n as u8,
-    })
-}
 
 /// Half-points (`w:val` twentieths-of-a-point are NOT used here; `w:sz` is in
 /// half-points) → `Option<u16>`.
@@ -1439,7 +1426,7 @@ fn read_ppr_item(pp: &mut PPr, e: &BytesStart<'_>, num_id: &mut Option<String>, 
             pp.indent.first_line_pt = attr_local(e, b"firstLine").and_then(|v| twips_to_pt(&v));
             pp.indent.hanging_pt = attr_local(e, b"hanging").and_then(|v| twips_to_pt(&v));
         }
-        b"shd" => pp.shading = attr_local(e, b"fill").and_then(|v| parse_hex_color(&v)),
+        b"shd" => pp.shading = attr_local(e, b"fill").and_then(|v| parse_rgb_hex_color(&v)),
         _ => {}
     }
 }
@@ -1693,7 +1680,7 @@ fn read_rpr(r: &mut Xml<'_>) -> CharProps {
                         .or_else(|| attr_local_trimmed(&e, b"ascii"));
                 }
                 b"sz" => p.size_half_pt = attr_local(&e, b"val").and_then(|v| parse_u16(&v)),
-                b"color" => p.color = attr_local(&e, b"val").and_then(|v| parse_hex_color(&v)),
+                b"color" => p.color = attr_local(&e, b"val").and_then(|v| parse_rgb_hex_color(&v)),
                 b"highlight" => p.highlight = attr_local_trimmed(&e, b"val"),
                 b"vertAlign" => {
                     p.vert_align = match attr_local(&e, b"val").as_deref().map(str::trim) {
@@ -2448,7 +2435,7 @@ fn read_tbl_borders(
                 let Some(side) = table_border_side(&e) else {
                     continue;
                 };
-                if let Some(next) = attr_local(&e, b"color").and_then(|v| parse_hex_color(&v)) {
+                if let Some(next) = attr_local(&e, b"color").and_then(|v| parse_rgb_hex_color(&v)) {
                     colors.set(side, next);
                     color_seen = true;
                     match color {
@@ -2661,7 +2648,7 @@ fn apply_tcpr_child(t: &mut TcPr, e: &BytesStart<'_>) {
                 _ => VMerge::Continue, // present with "continue"/no val
             };
         }
-        b"shd" => t.shading = attr_local(e, b"fill").and_then(|v| parse_hex_color(&v)),
+        b"shd" => t.shading = attr_local(e, b"fill").and_then(|v| parse_rgb_hex_color(&v)),
         b"vAlign" => {
             t.valign = match attr_local(e, b"val").as_deref().map(str::trim) {
                 Some("center") => VCell::Center,
