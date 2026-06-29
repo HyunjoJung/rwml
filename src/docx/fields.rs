@@ -17,9 +17,9 @@ use crate::annotation::{
     is_ref_value_neutral_switch, is_toc_value_neutral_switch, page_field_format_syntax_tail,
     prompt_field_syntax, quote_field_syntax, reference_index_category_token,
     reference_index_literal_token, reference_index_plain_value_token,
-    revision_number_field_text_format, set_field_syntax, strip_ascii_switch_prefix,
-    style_ref_field_syntax, toc_style_specs, Field, FieldKind, FieldNumberFormat, FieldTextFormat,
-    PromptFieldSyntax, StyleRefFieldSyntax, StyleRefResult,
+    revision_number_field_text_format, sequence_field_syntax, set_field_syntax,
+    strip_ascii_switch_prefix, style_ref_field_syntax, toc_style_specs, Field, FieldKind,
+    FieldNumberFormat, FieldTextFormat, PromptFieldSyntax, StyleRefFieldSyntax, StyleRefResult,
 };
 use crate::{numfmt, CoreProperties};
 
@@ -8450,7 +8450,7 @@ fn sequence_reset_value(value: i64, allow_negative: bool) -> Option<i64> {
 }
 
 pub(crate) fn supports_sequence_field_syntax(instruction: &str) -> bool {
-    sequence_instruction_with_reset_policy(instruction, true, true).is_some()
+    sequence_field_syntax(instruction)
 }
 
 pub(crate) fn computed_sequence_result(

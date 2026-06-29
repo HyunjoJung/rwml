@@ -695,6 +695,111 @@ fn is_field_format_start(part: &str) -> bool {
     part == "\\*" || part.starts_with("\\*")
 }
 
+pub(crate) fn sequence_field_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if !kind.eq_ignore_ascii_case("SEQ")
+        || field_identifier_token(parts.next().unwrap_or("")).is_none()
+    {
+        return false;
+    }
+    let mut action_seen = false;
+    let mut heading_reset_seen = false;
+    let mut hidden = false;
+    let mut number_format = None;
+    let mut text_format = None;
+    while let Some(part) = parts.next() {
+        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_number_format_switch(format, &mut number_format)
+                || accept_field_text_format_switch(format, &mut text_format)
+        }) else {
+            return false;
+        };
+        if accepted {
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\n") || part.eq_ignore_ascii_case("\\c") {
+            if action_seen {
+                return false;
+            }
+            action_seen = true;
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\h") {
+            if hidden {
+                return false;
+            }
+            hidden = true;
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\s") {
+            let Some(level) = parts.next() else {
+                return false;
+            };
+            if !accept_sequence_heading_reset_syntax(level, &mut heading_reset_seen) {
+                return false;
+            }
+            continue;
+        }
+        if let Some(level) = strip_ascii_switch_prefix(part, "\\s") {
+            if level.is_empty()
+                || !accept_sequence_heading_reset_syntax(level, &mut heading_reset_seen)
+            {
+                return false;
+            }
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\r") {
+            let Some(reset) = parts.next() else {
+                return false;
+            };
+            if !accept_sequence_reset_syntax(reset, &mut action_seen) {
+                return false;
+            }
+            continue;
+        }
+        if let Some(reset) = strip_ascii_switch_prefix(part, "\\r") {
+            if reset.is_empty() || !accept_sequence_reset_syntax(reset, &mut action_seen) {
+                return false;
+            }
+            continue;
+        }
+        return false;
+    }
+    true
+}
+
+fn accept_sequence_heading_reset_syntax(part: &str, heading_reset_seen: &mut bool) -> bool {
+    if *heading_reset_seen {
+        return false;
+    }
+    let Some(level) = field_name_token(part).and_then(|part| part.parse::<u8>().ok()) else {
+        return false;
+    };
+    if !(1..=9).contains(&level) {
+        return false;
+    }
+    *heading_reset_seen = true;
+    true
+}
+
+fn accept_sequence_reset_syntax(part: &str, action_seen: &mut bool) -> bool {
+    if *action_seen {
+        return false;
+    }
+    if field_name_token(part)
+        .and_then(|part| part.parse::<i64>().ok())
+        .is_none()
+    {
+        return false;
+    }
+    *action_seen = true;
+    true
+}
+
 pub(crate) fn filename_field_syntax(instruction: &str) -> bool {
     let tokens = instruction_parts(instruction);
     let mut parts = tokens.iter().map(String::as_str);

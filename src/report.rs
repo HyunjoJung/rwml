@@ -26,7 +26,8 @@ use crate::annotation::{
     field_comparison_syntax, formula_field_syntax, page_field_format_syntax_tail,
     prompt_field_syntax, quote_field_syntax, reference_index_category_token,
     reference_index_literal_token, reference_index_plain_value_token,
-    revision_number_field_text_format, set_field_syntax, style_ref_field_syntax,
+    revision_number_field_text_format, sequence_field_syntax, set_field_syntax,
+    style_ref_field_syntax,
 };
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{
@@ -3719,118 +3720,12 @@ fn sequence_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     }
     #[cfg(not(feature = "docx"))]
     {
-        if supported_sequence_syntax(instruction) {
+        if sequence_field_syntax(instruction) {
             FieldEvaluationReason::NoComputedResult
         } else {
             FieldEvaluationReason::UnsupportedSwitch
         }
     }
-}
-
-#[cfg(not(feature = "docx"))]
-fn supported_sequence_syntax(instruction: &str) -> bool {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let Some(kind) = parts.next() else {
-        return false;
-    };
-    if !kind.eq_ignore_ascii_case("SEQ")
-        || diagnostic_identifier_token(parts.next().unwrap_or("")).is_none()
-    {
-        return false;
-    }
-    let mut action_seen = false;
-    let mut heading_reset_seen = false;
-    let mut hidden = false;
-    let mut number_format = false;
-    while let Some(part) = parts.next() {
-        let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
-            accept_page_number_format_switch(format, &mut number_format)
-        }) else {
-            return false;
-        };
-        if accepted {
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\n") || part.eq_ignore_ascii_case("\\c") {
-            if action_seen {
-                return false;
-            }
-            action_seen = true;
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\h") {
-            if hidden {
-                return false;
-            }
-            hidden = true;
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\s") {
-            let Some(level) = parts.next() else {
-                return false;
-            };
-            if !accept_sequence_heading_reset_for_report(level, &mut heading_reset_seen) {
-                return false;
-            }
-            continue;
-        }
-        if let Some(level) = strip_ascii_switch_prefix(part, "\\s") {
-            if level.is_empty()
-                || !accept_sequence_heading_reset_for_report(level, &mut heading_reset_seen)
-            {
-                return false;
-            }
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\r") {
-            let Some(reset) = parts.next() else {
-                return false;
-            };
-            if !accept_sequence_reset_for_report(reset, &mut action_seen) {
-                return false;
-            }
-            continue;
-        }
-        if let Some(reset) = strip_ascii_switch_prefix(part, "\\r") {
-            if reset.is_empty() || !accept_sequence_reset_for_report(reset, &mut action_seen) {
-                return false;
-            }
-            continue;
-        }
-        return false;
-    }
-    true
-}
-
-#[cfg(not(feature = "docx"))]
-fn accept_sequence_heading_reset_for_report(part: &str, heading_reset_seen: &mut bool) -> bool {
-    if *heading_reset_seen {
-        return false;
-    }
-    let Some(level) = diagnostic_name_token(part).and_then(|part| part.parse::<u8>().ok()) else {
-        return false;
-    };
-    if !(1..=9).contains(&level) {
-        return false;
-    }
-    *heading_reset_seen = true;
-    true
-}
-
-#[cfg(not(feature = "docx"))]
-fn accept_sequence_reset_for_report(part: &str, action_seen: &mut bool) -> bool {
-    if *action_seen {
-        return false;
-    }
-    if diagnostic_name_token(part)
-        .and_then(|part| part.parse::<i64>().ok())
-        .is_none()
-    {
-        return false;
-    }
-    *action_seen = true;
-    true
 }
 
 fn if_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
