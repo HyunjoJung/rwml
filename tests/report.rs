@@ -585,6 +585,28 @@ fn document_structure_field_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn revision_number_text_format_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rIdCore" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>"#,
+        ),
+        (
+            "docProps/core.xml",
+            r#"<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"><cp:revision>draft REVISION</cp:revision></cp:coreProperties>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" REVNUM \* Upper "><w:r><w:t>stale upper revision</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REVNUM \*Lower "><w:r><w:t>stale lower revision</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REVNUM \* Caps "><w:r><w:t>stale caps revision</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REVNUM \* FirstCap "><w:r><w:t>stale first-cap revision</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn merge_field_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -3036,6 +3058,51 @@ fn report_document_structure_fields_split_computed_cached_and_malformed_diagnost
             field_reason_count(FieldEvaluationReason::NoComputedResult, 2),
             field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 2),
         ],
+    );
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_revnum_text_format_switches_are_supported() {
+    let doc =
+        Document::open(&revision_number_text_format_diagnostics_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let expected = [
+        ("REVNUM \\* Upper", "DRAFT REVISION"),
+        ("REVNUM \\*Lower", "draft revision"),
+        ("REVNUM \\* Caps", "Draft REVISION"),
+        ("REVNUM \\* FirstCap", "Draft REVISION"),
+    ];
+
+    assert_eq!(fields.len(), expected.len());
+    for (field, (instruction, computed)) in fields.iter().zip(expected) {
+        assert_eq!(
+            field.kind,
+            FieldKind::DocumentStructure("REVNUM".to_string())
+        );
+        assert_eq!(field.instruction, instruction);
+        assert_eq!(field.computed_result.as_deref(), Some(computed));
+    }
+
+    let report = doc.report();
+    assert_eq!(report.features.fields, 4);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![field_kind_count(
+            FieldKind::DocumentStructure("REVNUM".to_string()),
+            4,
+        )]
+    );
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+    assert!(
+        report
+            .warnings
+            .iter()
+            .all(|warning| !matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })),
+        "{:?}",
+        report.warnings
     );
 }
 
