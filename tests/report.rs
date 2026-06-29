@@ -1052,6 +1052,24 @@ fn ref_field_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn ref_gap_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="PlainText"/><w:r><w:t>Plain target</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" REF PlainText \f "><w:r><w:t>cached non-note ref mark</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF PlainText \d- "><w:r><w:t>cached ref separator</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF MissingRef "><w:r><w:t>cached missing ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn ref_note_reference_mark_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -4260,6 +4278,82 @@ fn report_ref_field_warning_ignores_computed_bookmark_refs() {
         "{json}"
     );
     assert!(json.contains(r#""kind":"UnsupportedFieldEvaluation","count":6,"field_kinds":[{"kind":"REF","count":6}]"#), "{json}");
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_ref_field_warning_reports_gap_cases() {
+    let doc = Document::open(&ref_gap_diagnostics_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 3);
+    assert!(fields.iter().all(|field| field.kind == FieldKind::Ref));
+    assert_eq!(fields[0].instruction, "REF PlainText \\f");
+    assert_eq!(fields[0].result, "cached non-note ref mark");
+    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(fields[1].instruction, "REF PlainText \\d-");
+    assert_eq!(fields[1].result, "cached ref separator");
+    assert_eq!(fields[1].computed_result, None);
+    assert_eq!(fields[2].instruction, "REF MissingRef");
+    assert_eq!(fields[2].result, "cached missing ref");
+    assert_eq!(fields[2].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(report.features.fields, 3);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Ref,
+            count: 3,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Ref,
+            count: 3,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::UnsupportedSwitch,
+                count: 1,
+            },
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::NoComputedResult,
+                count: 1,
+            },
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::UnresolvedBookmark,
+                count: 1,
+            },
+        ]
+    );
+    assert_eq!(
+        report
+            .warnings
+            .iter()
+            .find(|warning| matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })),
+        Some(&DocumentWarning::UnsupportedFieldEvaluation {
+            count: 3,
+            field_kinds: vec![FieldKindCount {
+                kind: FieldKind::Ref,
+                count: 3,
+            }],
+        })
+    );
+
+    let json = report.to_json();
+    assert!(
+        json.contains(r#""unsupported_field_kinds":[{"kind":"REF","count":3}]"#),
+        "{json}"
+    );
+    assert!(
+        json.contains(r#""unsupported_field_reasons":[{"reason":"UnsupportedSwitch","count":1},{"reason":"NoComputedResult","count":1},{"reason":"UnresolvedBookmark","count":1}]"#),
+        "{json}"
+    );
 }
 
 #[cfg(feature = "docx")]
