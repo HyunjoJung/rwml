@@ -719,6 +719,36 @@ fn compact_form_field_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn non_body_form_field_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rIdFootnotes" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:r><w:t>Body</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r></w:p><w:sectPr><w:headerReference w:type="default" r:id="rIdHeader"/></w:sectPr></w:body></w:document>"#,
+        ),
+        (
+            "word/header1.xml",
+            r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:fldSimple w:instr=" FORMCHECKBOX "><w:ffData><w:checkBox><w:checked w:val="true"/></w:checkBox></w:ffData><w:r><w:t>stale header checkbox</w:t></w:r></w:fldSimple></w:p></w:hdr>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:footnote><w:footnote w:id="1"><w:p><w:fldSimple w:instr=" FORMDROPDOWN "><w:ffData><w:ddList><w:result w:val="1"/><w:listEntry w:val="Option A"/><w:listEntry w:val="Option B"/></w:ddList></w:ffData><w:r><w:t>stale footnote option</w:t></w:r></w:fldSimple></w:p></w:footnote></w:footnotes>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn numbering_field_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -3672,6 +3702,43 @@ fn report_field_category_matrix_splits_cached_and_malformed_diagnostics() {
         vec![],
         vec![],
     );
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_non_body_legacy_form_fields_are_supported_when_unprotected() {
+    let doc = Document::open(&non_body_form_field_diagnostics_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert!(fields.iter().any(|field| {
+        field.kind == FieldKind::FormField("FORMCHECKBOX".to_string())
+            && field.result == "stale header checkbox"
+            && field.computed_result.as_deref() == Some("\u{2612}")
+    }));
+    assert!(fields.iter().any(|field| {
+        field.kind == FieldKind::FormField("FORMDROPDOWN".to_string())
+            && field.result == "stale footnote option"
+            && field.computed_result.as_deref() == Some("Option B")
+    }));
+
+    let report = doc.report();
+    assert_eq!(report.features.fields, 2);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![
+            field_kind_count(FieldKind::FormField("FORMDROPDOWN".to_string()), 1),
+            field_kind_count(FieldKind::FormField("FORMCHECKBOX".to_string()), 1),
+        ]
+    );
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+    assert!(report
+        .warnings
+        .iter()
+        .all(|warning| !matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })));
+    assert!(doc.header_text().contains('\u{2612}'));
+    assert!(doc.footnote_text().contains("Option B"));
 }
 
 #[cfg(feature = "docx")]
