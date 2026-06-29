@@ -865,12 +865,24 @@ fn computed_relative_page_ref_result(
     }
     Some(format!(
         "on page {}",
-        format_page_ref_number(
+        format_relative_page_ref_number(
             target.display_page,
             spec.number_format,
-            target.display_format
+            target.display_format,
         )?
     ))
+}
+
+fn format_relative_page_ref_number(
+    page: usize,
+    field_format: Option<PageNumberFormat>,
+    page_format: PageRefDisplayFormat,
+) -> Option<String> {
+    let format = match (field_format, page_format) {
+        (None, PageRefDisplayFormat::Unsupported) => Some(PageNumberFormat::Arabic),
+        (format, _) => format,
+    };
+    format_page_ref_number(page, format, page_format)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

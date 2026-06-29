@@ -10676,7 +10676,7 @@ fn docx_page_ref_applies_textual_section_page_number_formats() {
 }
 
 #[test]
-fn docx_page_ref_relative_unsupported_section_format_reports_unsupported_switch() {
+fn docx_page_ref_relative_unsupported_section_format_uses_arabic_fallback() {
     let doc = Document::open(&page_ref_relative_unsupported_section_page_number_format_docx())
         .expect("fixture opens");
     let fields = doc.fields();
@@ -10685,15 +10685,16 @@ fn docx_page_ref_relative_unsupported_section_format_reports_unsupported_switch(
     assert_eq!(fields[0].kind, FieldKind::PageRef);
     assert_eq!(fields[0].instruction, "PAGEREF UnsupportedFmt \\p");
     assert_eq!(fields[0].result, "stale relative");
-    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(fields[0].computed_result.as_deref(), Some("on page 2"));
 
     let report = doc.report();
-    assert_eq!(
-        report.features.unsupported_field_reasons,
-        vec![FieldEvaluationReasonCount {
-            reason: FieldEvaluationReason::UnsupportedSwitch,
-            count: 1,
-        }]
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("on page 2") && !main_text.contains("stale relative"),
+        "relative PAGEREF should use a deterministic fallback page label: {main_text:?}"
     );
 }
 
