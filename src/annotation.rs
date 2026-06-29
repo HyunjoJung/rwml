@@ -1515,6 +1515,159 @@ pub(crate) fn note_ref_field_syntax(instruction: &str) -> Option<NoteRefFieldSyn
     })
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RefFieldSyntax {
+    pub(crate) target: String,
+    pub(crate) number_format: Option<FieldNumberFormat>,
+    pub(crate) text_format: Option<FieldTextFormat>,
+    pub(crate) note_reference: bool,
+    pub(crate) sequence_separator: bool,
+    pub(crate) relative: bool,
+    pub(crate) paragraph_number: bool,
+    pub(crate) full_context_number: bool,
+    pub(crate) relative_context_number: bool,
+    pub(crate) suppress_non_numeric: bool,
+}
+
+pub(crate) fn ref_field_syntax(instruction: &str) -> Option<RefFieldSyntax> {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let kind = parts.next()?;
+    if !kind.eq_ignore_ascii_case("REF") {
+        return None;
+    }
+    ref_field_syntax_parts(parts)
+}
+
+pub(crate) fn direct_ref_field_syntax(instruction: &str) -> Option<RefFieldSyntax> {
+    let tokens = instruction_parts(instruction);
+    let first = tokens.first()?;
+    if first.eq_ignore_ascii_case("REF") {
+        return None;
+    }
+    ref_field_syntax_parts(tokens.iter().map(String::as_str))
+}
+
+fn ref_field_syntax_parts<'a>(mut parts: impl Iterator<Item = &'a str>) -> Option<RefFieldSyntax> {
+    let target = field_identifier_token(parts.next()?)?.to_string();
+    let mut number_format = None;
+    let mut text_format = None;
+    let mut note_reference = false;
+    let mut sequence_separator = false;
+    let mut relative = false;
+    let mut paragraph_number = false;
+    let mut full_context_number = false;
+    let mut relative_context_number = false;
+    let mut suppress_non_numeric = false;
+    while let Some(part) = parts.next() {
+        if accept_general_format_switch(part, &mut parts, |format| {
+            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
+        })? {
+            continue;
+        }
+        if part.starts_with('\\') {
+            if part.eq_ignore_ascii_case("\\t") {
+                if suppress_non_numeric {
+                    return None;
+                }
+                suppress_non_numeric = true;
+                continue;
+            }
+            if part.eq_ignore_ascii_case("\\f") {
+                if note_reference {
+                    return None;
+                }
+                note_reference = true;
+                continue;
+            }
+            if part.eq_ignore_ascii_case("\\d") {
+                if sequence_separator {
+                    return None;
+                }
+                let separator = field_literal_token(parts.next()?)?;
+                if separator.is_empty() || separator.starts_with('\\') {
+                    return None;
+                }
+                sequence_separator = true;
+                continue;
+            }
+            if let Some(separator) = strip_ascii_switch_prefix(part, "\\d") {
+                if sequence_separator {
+                    return None;
+                }
+                let separator = field_literal_token(separator)?;
+                if separator.is_empty() || separator.starts_with('\\') {
+                    return None;
+                }
+                sequence_separator = true;
+                continue;
+            }
+            if part.eq_ignore_ascii_case("\\n") {
+                if paragraph_number || full_context_number || relative_context_number {
+                    return None;
+                }
+                paragraph_number = true;
+                continue;
+            }
+            if part.eq_ignore_ascii_case("\\w") {
+                if full_context_number || paragraph_number || relative_context_number {
+                    return None;
+                }
+                full_context_number = true;
+                continue;
+            }
+            if part.eq_ignore_ascii_case("\\r") {
+                if relative_context_number || paragraph_number || full_context_number {
+                    return None;
+                }
+                relative_context_number = true;
+                continue;
+            }
+            if part.eq_ignore_ascii_case("\\p") {
+                if relative {
+                    return None;
+                }
+                relative = true;
+                continue;
+            }
+            if is_ref_value_neutral_switch(part) {
+                continue;
+            }
+            return None;
+        }
+        return None;
+    }
+    if suppress_non_numeric && !(paragraph_number || full_context_number || relative_context_number)
+    {
+        return None;
+    }
+    if note_reference
+        && (relative
+            || paragraph_number
+            || full_context_number
+            || relative_context_number
+            || suppress_non_numeric
+            || sequence_separator)
+    {
+        return None;
+    }
+    if number_format.is_some() && !note_reference {
+        return None;
+    }
+    Some(RefFieldSyntax {
+        target,
+        number_format,
+        text_format,
+        note_reference,
+        sequence_separator,
+        relative,
+        paragraph_number,
+        full_context_number,
+        relative_context_number,
+        suppress_non_numeric,
+    })
+}
+
 fn accept_page_field_format_switch(
     part: &str,
     number_format: &mut Option<FieldNumberFormat>,
@@ -1830,9 +1983,10 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        action_field_syntax, compare_field_syntax, if_field_syntax, legacy_form_field_syntax,
-        merge_control_field_syntax, note_ref_field_syntax, opaque_field_syntax,
-        page_ref_field_syntax, FieldNumberFormat, FieldTextFormat,
+        action_field_syntax, compare_field_syntax, direct_ref_field_syntax, if_field_syntax,
+        legacy_form_field_syntax, merge_control_field_syntax, note_ref_field_syntax,
+        opaque_field_syntax, page_ref_field_syntax, ref_field_syntax, FieldNumberFormat,
+        FieldTextFormat,
     };
 
     #[test]
@@ -1935,6 +2089,36 @@ mod tests {
         assert!(note_ref_field_syntax(r#"NOTEREF \p FootOne"#).is_none());
         assert!(note_ref_field_syntax(r#"NOTEREF "Foot One""#).is_none());
         assert!(note_ref_field_syntax(r#"NOTEREF FootOne \x"#).is_none());
+    }
+
+    #[test]
+    fn ref_field_syntax_accepts_explicit_and_direct_bookmark_forms() {
+        let note_ref =
+            ref_field_syntax(r#"REF FootOne \f \* roman \* Upper"#).expect("valid note REF syntax");
+        assert_eq!(note_ref.target, "FootOne");
+        assert_eq!(note_ref.number_format, Some(FieldNumberFormat::RomanLower));
+        assert_eq!(note_ref.text_format, Some(FieldTextFormat::Upper));
+        assert!(note_ref.note_reference);
+        assert!(!note_ref.sequence_separator);
+
+        let direct = direct_ref_field_syntax(r#"Figure1 \p \* FirstCap"#)
+            .expect("valid direct bookmark REF syntax");
+        assert_eq!(direct.target, "Figure1");
+        assert_eq!(direct.text_format, Some(FieldTextFormat::FirstCap));
+        assert!(direct.relative);
+
+        let sequence =
+            ref_field_syntax(r#"REF Figure1 \d-"#).expect("valid compact sequence separator");
+        assert_eq!(sequence.target, "Figure1");
+        assert!(sequence.sequence_separator);
+
+        assert!(direct_ref_field_syntax("REF Figure1").is_none());
+        assert!(ref_field_syntax(r#"REF Figure1 \* roman"#).is_none());
+        assert!(ref_field_syntax(r#"REF FootOne \f \p"#).is_none());
+        assert!(ref_field_syntax(r#"REF Figure1 \t"#).is_none());
+        assert!(ref_field_syntax(r#"REF \h Figure1"#).is_none());
+        assert!(direct_ref_field_syntax(r#"\h Figure1"#).is_none());
+        assert!(direct_ref_field_syntax(r#"Figure1 \d"-"#).is_none());
     }
 }
 

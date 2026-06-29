@@ -10,12 +10,13 @@ use crate::annotation::action_field_syntax;
 use crate::annotation::field_name_token as diagnostic_name_token;
 use crate::annotation::{
     accept_field_number_format_switch, accept_field_text_format_switch,
-    accept_general_format_switch, field_identifier_token as diagnostic_identifier_token,
+    accept_general_format_switch, direct_ref_field_syntax,
+    field_identifier_token as diagnostic_identifier_token,
     field_level_range_token as diagnostic_level_range_token,
     field_literal_token as diagnostic_literal_token, instruction_parts,
-    is_ref_value_neutral_switch, is_toc_value_neutral_switch, legacy_form_field_syntax,
-    note_ref_field_syntax, opaque_field_syntax, page_ref_field_syntax, strip_ascii_switch_prefix,
-    toc_style_specs, Field, FieldKind, FieldNumberFormat, FieldTextFormat,
+    is_toc_value_neutral_switch, legacy_form_field_syntax, note_ref_field_syntax,
+    opaque_field_syntax, page_ref_field_syntax, ref_field_syntax, strip_ascii_switch_prefix,
+    toc_style_specs, Field, FieldKind, FieldNumberFormat, FieldTextFormat, RefFieldSyntax,
 };
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{
@@ -1952,13 +1953,6 @@ fn supported_filename_syntax(instruction: &str) -> bool {
     filename_field_syntax(instruction)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct RefDiagnosticSyntax {
-    target: String,
-    note_reference: bool,
-    sequence_separator: bool,
-}
-
 fn ref_uncomputed_reason(
     instruction: &str,
     bookmark_names: Option<&HashSet<String>>,
@@ -1980,23 +1974,12 @@ fn ref_uncomputed_reason(
     }
 }
 
-fn supported_ref_syntax(instruction: &str) -> Option<RefDiagnosticSyntax> {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let kind = parts.next()?;
-    if !kind.eq_ignore_ascii_case("REF") {
-        return None;
-    }
-    supported_ref_syntax_parts(parts)
+fn supported_ref_syntax(instruction: &str) -> Option<RefFieldSyntax> {
+    ref_field_syntax(instruction)
 }
 
-fn supported_direct_ref_syntax(instruction: &str) -> Option<RefDiagnosticSyntax> {
-    let tokens = instruction_parts(instruction);
-    let first = tokens.first()?;
-    if first.eq_ignore_ascii_case("REF") {
-        return None;
-    }
-    supported_ref_syntax_parts(tokens.iter().map(String::as_str))
+fn supported_direct_ref_syntax(instruction: &str) -> Option<RefFieldSyntax> {
+    direct_ref_field_syntax(instruction)
 }
 
 fn page_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -3395,122 +3378,6 @@ fn merge_control_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
             FieldEvaluationReason::UnsupportedSwitch
         }
     }
-}
-
-fn supported_ref_syntax_parts<'a>(
-    mut parts: impl Iterator<Item = &'a str>,
-) -> Option<RefDiagnosticSyntax> {
-    let target = diagnostic_identifier_token(parts.next()?)?.to_string();
-    let mut number_format = false;
-    let mut text_format = false;
-    let mut note_reference = false;
-    let mut sequence_separator = false;
-    let mut relative = false;
-    let mut paragraph_number = false;
-    let mut full_context_number = false;
-    let mut relative_context_number = false;
-    let mut suppress_non_numeric = false;
-    while let Some(part) = parts.next() {
-        if accept_general_format_switch(part, &mut parts, |format| {
-            accept_page_number_format_switch(format, &mut number_format)
-                || accept_field_format_switch(format, &mut text_format)
-        })? {
-            continue;
-        }
-        if part.starts_with('\\') {
-            if part.eq_ignore_ascii_case("\\t") {
-                if suppress_non_numeric {
-                    return None;
-                }
-                suppress_non_numeric = true;
-                continue;
-            }
-            if part.eq_ignore_ascii_case("\\f") {
-                if note_reference {
-                    return None;
-                }
-                note_reference = true;
-                continue;
-            }
-            if part.eq_ignore_ascii_case("\\d") {
-                if sequence_separator {
-                    return None;
-                }
-                let separator = diagnostic_literal_token(parts.next()?)?;
-                if separator.is_empty() || separator.starts_with('\\') {
-                    return None;
-                }
-                sequence_separator = true;
-                continue;
-            }
-            if let Some(separator) = strip_ascii_switch_prefix(part, "\\d") {
-                if sequence_separator {
-                    return None;
-                }
-                let separator = diagnostic_literal_token(separator)?;
-                if separator.is_empty() || separator.starts_with('\\') {
-                    return None;
-                }
-                sequence_separator = true;
-                continue;
-            }
-            if part.eq_ignore_ascii_case("\\n") {
-                if paragraph_number || full_context_number || relative_context_number {
-                    return None;
-                }
-                paragraph_number = true;
-                continue;
-            }
-            if part.eq_ignore_ascii_case("\\w") {
-                if full_context_number || paragraph_number || relative_context_number {
-                    return None;
-                }
-                full_context_number = true;
-                continue;
-            }
-            if part.eq_ignore_ascii_case("\\r") {
-                if relative_context_number || paragraph_number || full_context_number {
-                    return None;
-                }
-                relative_context_number = true;
-                continue;
-            }
-            if part.eq_ignore_ascii_case("\\p") {
-                if relative {
-                    return None;
-                }
-                relative = true;
-                continue;
-            }
-            if is_ref_value_neutral_switch(part) {
-                continue;
-            }
-            return None;
-        }
-        return None;
-    }
-    if suppress_non_numeric && !(paragraph_number || full_context_number || relative_context_number)
-    {
-        return None;
-    }
-    if number_format && !note_reference {
-        return None;
-    }
-    if note_reference
-        && (relative
-            || paragraph_number
-            || full_context_number
-            || relative_context_number
-            || suppress_non_numeric
-            || sequence_separator)
-    {
-        return None;
-    }
-    Some(RefDiagnosticSyntax {
-        target,
-        note_reference,
-        sequence_separator,
-    })
 }
 
 struct PageRefDiagnosticSyntax {

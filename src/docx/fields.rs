@@ -8,19 +8,19 @@ use quick_xml::Reader;
 use crate::annotation::{
     accept_field_number_format_switch,
     accept_field_text_format_switch as accept_field_format_switch, accept_general_format_switch,
-    action_field_syntax, compare_field_syntax, document_property_key, field_identifier_token,
-    field_level_range_token, field_literal_token, field_name_token, field_non_empty_literal_token,
-    field_points_token, field_positive_points_token, field_quoted_literal_token,
-    field_symbol_code_token, filename_field_syntax, formula_field_syntax, if_field_syntax,
-    instruction_parts, is_neutral_field_format_switch, is_ref_value_neutral_switch,
+    action_field_syntax, compare_field_syntax, direct_ref_field_syntax, document_property_key,
+    field_identifier_token, field_level_range_token, field_literal_token, field_name_token,
+    field_non_empty_literal_token, field_points_token, field_positive_points_token,
+    field_quoted_literal_token, field_symbol_code_token, filename_field_syntax,
+    formula_field_syntax, if_field_syntax, instruction_parts, is_neutral_field_format_switch,
     is_toc_value_neutral_switch, legacy_form_field_syntax, merge_control_field_syntax,
     note_ref_field_syntax, numbering_field_syntax, page_field_format_syntax_tail,
-    page_ref_field_syntax, prompt_field_syntax, quote_field_syntax, reference_index_category_token,
-    reference_index_literal_token, reference_index_plain_value_token,
-    revision_number_field_text_format, sequence_field_syntax, set_field_syntax,
-    strip_ascii_switch_prefix, style_ref_field_syntax, toc_entry_field_syntax, toc_style_specs,
-    Field, FieldKind, FieldNumberFormat, FieldTextFormat, PromptFieldSyntax, StyleRefFieldSyntax,
-    StyleRefResult,
+    page_ref_field_syntax, prompt_field_syntax, quote_field_syntax, ref_field_syntax,
+    reference_index_category_token, reference_index_literal_token,
+    reference_index_plain_value_token, revision_number_field_text_format, sequence_field_syntax,
+    set_field_syntax, strip_ascii_switch_prefix, style_ref_field_syntax, toc_entry_field_syntax,
+    toc_style_specs, Field, FieldKind, FieldNumberFormat, FieldTextFormat, PromptFieldSyntax,
+    StyleRefFieldSyntax, StyleRefResult,
 };
 use crate::{numfmt, CoreProperties};
 
@@ -4790,11 +4790,6 @@ fn relative_context_ref_number(target: &str, field: &str) -> String {
     relative.join(".")
 }
 
-fn direct_bookmark_ref_instruction(instruction: &str) -> Option<RefInstruction> {
-    let tokens = instruction_parts(instruction);
-    parse_ref_instruction_parts(tokens.iter().map(String::as_str))
-}
-
 pub(crate) fn is_ref_position_field_instruction(instruction: &str) -> bool {
     field_kind(instruction) == FieldKind::Ref
         || direct_bookmark_ref_instruction(instruction).is_some()
@@ -8790,142 +8785,30 @@ struct RefInstruction {
 }
 
 fn ref_instruction(instruction: &str) -> Option<RefInstruction> {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let kind = parts.next()?;
-    if !kind.eq_ignore_ascii_case("REF") {
-        return None;
-    }
-    parse_ref_instruction_parts(parts)
+    ref_instruction_from_syntax(ref_field_syntax(instruction)?)
 }
 
-fn parse_ref_instruction_parts<'a>(
-    mut parts: impl Iterator<Item = &'a str>,
+fn direct_bookmark_ref_instruction(instruction: &str) -> Option<RefInstruction> {
+    ref_instruction_from_syntax(direct_ref_field_syntax(instruction)?)
+}
+
+fn ref_instruction_from_syntax(
+    syntax: crate::annotation::RefFieldSyntax,
 ) -> Option<RefInstruction> {
-    let target = bookmark_target_identifier(parts.next()?)?.to_string();
-    let mut number_format = None;
-    let mut text_format = None;
-    let mut note_reference = false;
-    let mut sequence_separator = false;
-    let mut relative = false;
-    let mut paragraph_number = false;
-    let mut full_context_number = false;
-    let mut relative_context_number = false;
-    let mut suppress_non_numeric = false;
-    while let Some(part) = parts.next() {
-        if accept_page_field_format_switch_for_tail(
-            part,
-            &mut parts,
-            &mut number_format,
-            &mut text_format,
-        )? {
-            continue;
-        }
-        if part.starts_with('\\') {
-            if part.eq_ignore_ascii_case("\\t") {
-                if suppress_non_numeric {
-                    return None;
-                }
-                suppress_non_numeric = true;
-                continue;
-            }
-            if part.eq_ignore_ascii_case("\\f") {
-                if note_reference {
-                    return None;
-                }
-                note_reference = true;
-                continue;
-            }
-            if part.eq_ignore_ascii_case("\\d") {
-                if sequence_separator {
-                    return None;
-                }
-                let separator = field_literal_token(parts.next()?)?;
-                if separator.is_empty() || separator.starts_with('\\') {
-                    return None;
-                }
-                sequence_separator = true;
-                continue;
-            }
-            if let Some(separator) = strip_ascii_switch_prefix(part, "\\d") {
-                if sequence_separator {
-                    return None;
-                }
-                let separator = field_literal_token(separator)?;
-                if separator.is_empty() || separator.starts_with('\\') {
-                    return None;
-                }
-                sequence_separator = true;
-                continue;
-            }
-            if part.eq_ignore_ascii_case("\\n") {
-                if paragraph_number || full_context_number || relative_context_number {
-                    return None;
-                }
-                paragraph_number = true;
-                continue;
-            }
-            if part.eq_ignore_ascii_case("\\w") {
-                if full_context_number || paragraph_number || relative_context_number {
-                    return None;
-                }
-                full_context_number = true;
-                continue;
-            }
-            if part.eq_ignore_ascii_case("\\r") {
-                if relative_context_number || paragraph_number || full_context_number {
-                    return None;
-                }
-                relative_context_number = true;
-                continue;
-            }
-            if part.eq_ignore_ascii_case("\\p") {
-                if relative {
-                    return None;
-                }
-                relative = true;
-                continue;
-            }
-            if is_ref_value_neutral_switch(part) {
-                continue;
-            }
-            return None;
-        }
-        return None;
-    }
-    if suppress_non_numeric && !(paragraph_number || full_context_number || relative_context_number)
-    {
-        return None;
-    }
-    if note_reference
-        && (relative
-            || paragraph_number
-            || full_context_number
-            || relative_context_number
-            || suppress_non_numeric
-            || sequence_separator)
-    {
-        return None;
-    }
-    if number_format.is_some() && !note_reference {
-        return None;
-    }
     Some(RefInstruction {
-        target,
-        number_format,
-        text_format,
-        note_reference,
-        sequence_separator,
-        relative,
-        paragraph_number,
-        full_context_number,
-        relative_context_number,
-        suppress_non_numeric,
+        target: syntax.target,
+        number_format: syntax
+            .number_format
+            .map(page_number_format_from_field_format),
+        text_format: syntax.text_format,
+        note_reference: syntax.note_reference,
+        sequence_separator: syntax.sequence_separator,
+        relative: syntax.relative,
+        paragraph_number: syntax.paragraph_number,
+        full_context_number: syntax.full_context_number,
+        relative_context_number: syntax.relative_context_number,
+        suppress_non_numeric: syntax.suppress_non_numeric,
     })
-}
-
-fn bookmark_target_identifier(value: &str) -> Option<&str> {
-    field_identifier_token(value)
 }
 
 fn ref_note_field_target(instruction: &str) -> Option<String> {
