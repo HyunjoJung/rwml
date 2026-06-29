@@ -2056,6 +2056,24 @@ fn sequence_field_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn sequence_numbering_text_format_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SEQ Figure \* CardText \* Upper "><w:r><w:t>stale sequence card</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SEQ Figure \* roman \* Upper "><w:r><w:t>stale sequence roman</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SEQ Invoice \r 21 \* DollarText "><w:r><w:t>stale sequence dollars</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTONUM \* CardText \* Upper "><w:r><w:t>stale autonum card</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTONUM \* roman \* Upper "><w:r><w:t>stale autonum roman</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" LISTNUM NumberDefault \* CardText \* Upper "><w:r><w:t>stale listnum card</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" LISTNUM NumberDefault \* roman \* Upper "><w:r><w:t>stale listnum roman</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn toc_general_format_switch_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -6349,6 +6367,22 @@ fn report_sequence_fields_split_computed_cached_and_malformed_diagnostics() {
                 count: 1,
             },
         ]
+    );
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_sequence_and_numbering_text_format_switches_are_supported() {
+    assert_report_field_diagnostics(
+        sequence_numbering_text_format_diagnostics_docx(),
+        7,
+        vec![
+            field_kind_count(FieldKind::Sequence, 3),
+            field_kind_count(FieldKind::Numbering("AUTONUM".to_string()), 2),
+            field_kind_count(FieldKind::Numbering("LISTNUM".to_string()), 2),
+        ],
+        vec![],
+        vec![],
     );
 }
 
