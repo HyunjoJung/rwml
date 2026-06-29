@@ -585,6 +585,24 @@ fn document_structure_field_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn section_field_text_format_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SECTION \* ROMAN "><w:r><w:t>stale roman section</w:t></w:r></w:fldSimple></w:p><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/></w:sectPr></w:pPr></w:p><w:p><w:fldSimple w:instr=" SECTION \* CardText \* Upper "><w:r><w:t>stale card section</w:t></w:r></w:fldSimple></w:p><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/></w:sectPr></w:pPr></w:p><w:p><w:fldSimple w:instr=" SECTION \* Ordinal "><w:r><w:t>stale ordinal section</w:t></w:r></w:fldSimple></w:p><w:sectPr/></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn revision_number_text_format_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -3058,6 +3076,49 @@ fn report_document_structure_fields_split_computed_cached_and_malformed_diagnost
             field_reason_count(FieldEvaluationReason::NoComputedResult, 2),
             field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 2),
         ],
+    );
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_section_text_format_switches_are_supported() {
+    let doc = Document::open(&section_field_text_format_diagnostics_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let expected = [
+        ("SECTION \\* ROMAN", "I"),
+        ("SECTION \\* CardText \\* Upper", "TWO"),
+        ("SECTION \\* Ordinal", "3rd"),
+    ];
+
+    assert_eq!(fields.len(), expected.len());
+    for (field, (instruction, computed)) in fields.iter().zip(expected) {
+        assert_eq!(
+            field.kind,
+            FieldKind::DocumentStructure("SECTION".to_string())
+        );
+        assert_eq!(field.instruction, instruction);
+        assert_eq!(field.computed_result.as_deref(), Some(computed));
+    }
+
+    let report = doc.report();
+    assert_eq!(report.features.fields, 3);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![field_kind_count(
+            FieldKind::DocumentStructure("SECTION".to_string()),
+            3,
+        )]
+    );
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+    assert!(
+        report
+            .warnings
+            .iter()
+            .all(|warning| !matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })),
+        "{:?}",
+        report.warnings
     );
 }
 

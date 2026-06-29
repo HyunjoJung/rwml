@@ -1026,6 +1026,23 @@ fn section_field_docx() -> Vec<u8> {
     ])
 }
 
+fn section_field_text_format_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SECTION \* ROMAN "><w:r><w:t>stale roman section</w:t></w:r></w:fldSimple></w:p><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/></w:sectPr></w:pPr></w:p><w:p><w:fldSimple w:instr=" SECTION \* CardText \* Upper "><w:r><w:t>stale card section</w:t></w:r></w:fldSimple></w:p><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/></w:sectPr></w:pPr></w:p><w:p><w:fldSimple w:instr=" SECTION \* Ordinal "><w:r><w:t>stale ordinal section</w:t></w:r></w:fldSimple></w:p><w:sectPr/></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn section_field_invalid_switch_alignment_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -6878,6 +6895,49 @@ fn docx_section_field_computes_current_structural_section_number() {
     assert!(main_text.contains("1"), "{main_text:?}");
     assert!(main_text.contains("2"), "{main_text:?}");
     assert!(main_text.contains("3"), "{main_text:?}");
+}
+
+#[test]
+fn docx_section_field_computes_with_number_and_text_format_switches() {
+    let doc = Document::open(&section_field_text_format_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let expected = [
+        ("SECTION \\* ROMAN", "stale roman section", "I"),
+        (
+            "SECTION \\* CardText \\* Upper",
+            "stale card section",
+            "TWO",
+        ),
+        ("SECTION \\* Ordinal", "stale ordinal section", "3rd"),
+    ];
+
+    assert_eq!(fields.len(), expected.len());
+    for (field, (instruction, result, computed)) in fields.iter().zip(expected) {
+        assert_eq!(
+            field.kind,
+            FieldKind::DocumentStructure("SECTION".to_string())
+        );
+        assert_eq!(field.instruction, instruction);
+        assert_eq!(field.result, result);
+        assert_eq!(field.computed_result.as_deref(), Some(computed));
+    }
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    for computed in ["I", "TWO", "3rd"] {
+        assert!(
+            main_text.contains(computed),
+            "formatted SECTION output should be materialized: {main_text:?}"
+        );
+    }
+    assert!(
+        !main_text.contains("stale"),
+        "formatted SECTION fields should replace stale cached text: {main_text:?}"
+    );
 }
 
 #[test]
