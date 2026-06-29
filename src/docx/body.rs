@@ -872,6 +872,32 @@ fn read_blocks(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Vec<Block> {
                 b"sdtContent" | b"customXml" | b"smartTag" | b"ins" | b"moveTo" => {
                     blocks.extend(read_blocks(r, ctx, depth + 1))
                 }
+                b"AlternateContent" => {
+                    blocks.extend(read_alternate_content_blocks(r, ctx, depth + 1))
+                }
+                _ => skip_subtree(r),
+            },
+            Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    blocks
+}
+
+fn read_alternate_content_blocks(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Vec<Block> {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return Vec::new();
+    }
+    let mut blocks = Vec::new();
+    let mut took = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
+                b"Choice" | b"Fallback" if !took => {
+                    took = true;
+                    blocks.extend(read_blocks(r, ctx, depth + 1));
+                }
                 _ => skip_subtree(r),
             },
             Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
@@ -903,6 +929,9 @@ fn read_content_control_blocks(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Ve
                 b"sdt" => blocks.extend(read_content_control_blocks(r, ctx, depth + 1)),
                 b"customXml" | b"smartTag" | b"ins" | b"moveTo" => {
                     blocks.extend(read_blocks(r, ctx, depth + 1))
+                }
+                b"AlternateContent" => {
+                    blocks.extend(read_alternate_content_blocks(r, ctx, depth + 1))
                 }
                 _ => skip_subtree(r),
             },
@@ -2586,6 +2615,9 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
                 }
                 b"sdt" | b"sdtContent" | b"customXml" | b"smartTag" | b"ins" | b"moveTo" => {
                     blocks.extend(read_blocks(r, ctx, depth + 1))
+                }
+                b"AlternateContent" => {
+                    blocks.extend(read_alternate_content_blocks(r, ctx, depth + 1))
                 }
                 _ => skip_subtree(r),
             },

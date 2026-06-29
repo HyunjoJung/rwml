@@ -697,6 +697,24 @@ fn action_button_compact_format_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn action_accepted_current_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="wps"><w:body><w:del><w:p><w:fldSimple w:instr=" GOTOBUTTON HiddenTarget &quot;Deleted Jump&quot; "><w:r><w:t>deleted cached jump</w:t></w:r></w:fldSimple></w:p></w:del><mc:AlternateContent><mc:Choice Requires="wps"><w:p><w:fldSimple w:instr=" GOTOBUTTON TargetBookmark &quot;Choice Jump&quot; "><w:r><w:t>stale choice jump</w:t></w:r></w:fldSimple></w:p></mc:Choice><mc:Fallback><w:p><w:fldSimple w:instr=" GOTOBUTTON FallbackTarget &quot;Fallback Jump&quot; "><w:r><w:t>fallback cached jump</w:t></w:r></w:fldSimple></w:p></mc:Fallback></mc:AlternateContent><w:moveFrom><w:p><w:fldSimple w:instr=" PRINT moved status "><w:r><w:t>moved print cache</w:t></w:r></w:fldSimple></w:p></w:moveFrom><w:p><w:fldSimple w:instr=" PRINT status ready "><w:r><w:t>visible print cache</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn compatibility_field_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -4043,6 +4061,21 @@ fn report_button_action_fields_accept_compact_format_switches() {
             FieldEvaluationReason::NoComputedResult,
             1,
         )],
+    );
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_action_fields_follow_accepted_current_view() {
+    assert_report_field_diagnostics(
+        action_accepted_current_diagnostics_docx(),
+        2,
+        vec![
+            field_kind_count(FieldKind::Action("GOTOBUTTON".to_string()), 1),
+            field_kind_count(FieldKind::Action("PRINT".to_string()), 1),
+        ],
+        vec![],
+        vec![],
     );
 }
 

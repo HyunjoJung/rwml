@@ -1402,6 +1402,23 @@ fn action_button_compact_format_docx() -> Vec<u8> {
     ])
 }
 
+fn action_accepted_current_field_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="wps"><w:body><w:del><w:p><w:fldSimple w:instr=" GOTOBUTTON HiddenTarget &quot;Deleted Jump&quot; "><w:r><w:t>deleted cached jump</w:t></w:r></w:fldSimple></w:p></w:del><mc:AlternateContent><mc:Choice Requires="wps"><w:p><w:fldSimple w:instr=" GOTOBUTTON TargetBookmark &quot;Choice Jump&quot; "><w:r><w:t>stale choice jump</w:t></w:r></w:fldSimple></w:p></mc:Choice><mc:Fallback><w:p><w:fldSimple w:instr=" GOTOBUTTON FallbackTarget &quot;Fallback Jump&quot; "><w:r><w:t>fallback cached jump</w:t></w:r></w:fldSimple></w:p></mc:Fallback></mc:AlternateContent><w:moveFrom><w:p><w:fldSimple w:instr=" PRINT moved status "><w:r><w:t>moved print cache</w:t></w:r></w:fldSimple></w:p></w:moveFrom><w:p><w:fldSimple w:instr=" PRINT status ready "><w:r><w:t>visible print cache</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn compatibility_field_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -8207,6 +8224,42 @@ fn docx_button_action_fields_accept_compact_format_switches() {
             && main_text.contains("cached compact target-only action")
             && !main_text.contains("stale compact jump"),
         "compact button action output/cached text should be stable: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_action_fields_follow_accepted_current_view() {
+    let doc = Document::open(&action_accepted_current_field_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::Action("GOTOBUTTON".to_string()));
+    assert_eq!(
+        fields[0].instruction,
+        "GOTOBUTTON TargetBookmark \"Choice Jump\""
+    );
+    assert_eq!(fields[0].result, "stale choice jump");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("Choice Jump"));
+    assert_eq!(fields[1].kind, FieldKind::Action("PRINT".to_string()));
+    assert_eq!(fields[1].instruction, "PRINT status ready");
+    assert_eq!(fields[1].result, "visible print cache");
+    assert_eq!(fields[1].computed_result.as_deref(), Some(""));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(main_text.contains("Choice Jump"), "{main_text:?}");
+    assert!(
+        !main_text.contains("stale choice jump")
+            && !main_text.contains("visible print cache")
+            && !main_text.contains("Deleted Jump")
+            && !main_text.contains("deleted cached jump")
+            && !main_text.contains("Fallback Jump")
+            && !main_text.contains("fallback cached jump")
+            && !main_text.contains("moved print cache"),
+        "accepted-current action fields should replace visible cached text and ignore non-current branches: {main_text:?}"
     );
 }
 
