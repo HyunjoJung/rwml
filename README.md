@@ -482,7 +482,7 @@ grouping commas, literal
 prefix/suffix characters such as `$` or `%`, single-section leading `+`/`-`
 sign-control items, and `x` digit-drop/rounding positions, plus two- and
 three-section positive/negative/zero numeric pictures separated by semicolons,
-with optional neutral `\* MERGEFORMAT`/`\* CHARFORMAT` formula tails,
+with optional neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT` formula tails,
 malformed formula switch syntax reports `UnsupportedSwitch`,
 deterministic literal `QUOTE` fields render quoted or unquoted computed text
 with general text-format switches, malformed literal `QUOTE` syntax reports
@@ -644,7 +644,7 @@ text with `UnsupportedSwitch` diagnostics,
 `TOC \c` full-caption entries and `TOC \a` label/number-omitted caption-text
 entries from paragraphs containing matching cached `SEQ Identifier` fields,
 deterministic TOC `\* Upper`/`\* Lower`/`\* Caps`/`\* FirstCap` field-result
-format switches, neutral TOC `\* MERGEFORMAT`/`\* CHARFORMAT`, and standalone `TOC \u` fields over explicit paragraph outline levels, plus
+format switches, neutral TOC `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT`, and standalone `TOC \u` fields over explicit paragraph outline levels, plus
 `TOC \b` bookmark-scoped variants when the bookmark range is recoverable,
 normalize simple inline heading tabs, line breaks, and no-break/soft hyphens and
 expose computed results for simple and common complex begin/separate/end fields
@@ -977,7 +977,7 @@ render/extraction benchmarks.
       sequence/page separator switches, `\s` sequence-number page prefixes,
       deterministic TOC `\* Upper`/`\* Lower`/
       `\* Caps`/`\* FirstCap` field-result format switches, neutral TOC
-      `\* MERGEFORMAT`/`\* CHARFORMAT`, plus
+      `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT`, plus
       quoted `TOC \t` custom-style entries, `TOC \f` entries from matching
       `TC "Text"` markers with optional `\f` type identifiers and `\l` levels,
       `TOC \c` full-caption entries and `TOC \a` label/number-omitted

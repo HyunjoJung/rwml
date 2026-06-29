@@ -179,7 +179,7 @@ Initial status:
   no-page-number, `\p` entry/page separator, `\s` sequence-number page prefix,
   and `\d` sequence/page separator switches, deterministic TOC `\* Upper`/
   `\* Lower`/`\* Caps`/`\* FirstCap` field-result format switches, neutral TOC
-  `\* MERGEFORMAT`/`\* CHARFORMAT`, quoted `TOC \t`
+  `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT`, quoted `TOC \t`
   custom-style entries, `TOC \f` entries from matching `TC "Text"` markers with
   optional `\f` type identifiers and `\l` levels, with supported `TC` marker
   fields themselves rendering as hidden output and unsupported `TC` marker
@@ -204,7 +204,7 @@ Initial status:
   single-section leading `+`/`-` sign-control items, and `x`
   digit-drop/rounding positions, plus two- and three-section
   positive/negative/zero numeric pictures separated by semicolons,
-  with optional neutral `\* MERGEFORMAT`/`\* CHARFORMAT` formula tails,
+  with optional neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT` formula tails,
   malformed formula switch syntax reports `UnsupportedSwitch`,
   deterministic literal `QUOTE` fields with quoted/unquoted text and general text-format switches,
   deterministic literal `IF` fields for numeric comparisons and quoted string
@@ -314,7 +314,7 @@ Initial status:
   `+`/`-` sign-control items, and `x` digit-drop/rounding positions, plus
   two- and three-section
   positive/negative/zero numeric pictures separated by semicolons,
-  with optional neutral `\* MERGEFORMAT`/`\* CHARFORMAT` formula tails,
+  with optional neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT` formula tails,
   malformed formula switch syntax reports `UnsupportedSwitch`,
   deterministic literal `QUOTE` fields compute quoted/unquoted text with
   general text-format switches, malformed literal `QUOTE` syntax reports
@@ -817,7 +817,7 @@ Initial status:
   single-section leading `+`/`-` sign-control items, and `x`
   digit-drop/rounding positions, plus two- and three-section
   positive/negative/zero numeric pictures separated by semicolons,
-  with optional neutral `\* MERGEFORMAT`/`\* CHARFORMAT` formula tails,
+  with optional neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT` formula tails,
   malformed formula switch syntax reports `UnsupportedSwitch`,
   deterministic literal `QUOTE` fields render quoted or unquoted computed text
   with general text-format switches, malformed literal `QUOTE` syntax reports
@@ -945,7 +945,7 @@ Initial status:
   no-page-number, `\p` entry/page separator, `\s` sequence-number page prefix,
   and `\d` sequence/page separator switches, deterministic TOC `\* Upper`/
   `\* Lower`/`\* Caps`/`\* FirstCap` field-result format switches, neutral TOC
-  `\* MERGEFORMAT`/`\* CHARFORMAT`, quoted `TOC \t`
+  `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT`, quoted `TOC \t`
   custom-style entries, `TOC \f` entries from matching `TC "Text"` markers with
   optional `\f` type identifiers and `\l` levels, with supported `TC` marker
   fields themselves rendering as hidden output and unsupported `TC` marker

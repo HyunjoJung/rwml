@@ -8895,6 +8895,10 @@ mod tests {
             Some("2.5")
         );
         assert_eq!(
+            computed_dynamic_result(r#"= 10 / 4 \# "0.00" \* MERGEFORMATINET"#).as_deref(),
+            Some("2.50")
+        );
+        assert_eq!(
             computed_dynamic_result(r#"= 10 / 4 \# "0.00" \* Upper"#),
             None
         );

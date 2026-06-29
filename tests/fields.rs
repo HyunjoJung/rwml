@@ -1551,7 +1551,7 @@ fn ref_text_format_switch_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="Figure1"/><w:r><w:t>figure one</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" REF Figure1 \* Upper "><w:r><w:t>stale upper ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF Figure1 \*Lower "><w:r><w:t>stale lower ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF Figure1 \* Caps "><w:r><w:t>stale caps ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF Figure1 \*FirstCap "><w:r><w:t>stale first-cap ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="Figure1"/><w:r><w:t>figure one</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" REF Figure1 \* Upper "><w:r><w:t>stale upper ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF Figure1 \*Lower "><w:r><w:t>stale lower ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF Figure1 \* Caps "><w:r><w:t>stale caps ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF Figure1 \*FirstCap "><w:r><w:t>stale first-cap ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF Figure1 \* MERGEFORMATINET "><w:r><w:t>stale web-format ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -2730,7 +2730,7 @@ fn toc_general_format_switch_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>executive summary</w:t></w:r></w:p><w:p><w:pPr><w:outlineLvl w:val="1"/></w:pPr><w:r><w:t>risk review</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" TOC \o &quot;1-2&quot; \* Upper "><w:r><w:t>stale upper toc</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TOC \o &quot;1-2&quot; \* Caps "><w:r><w:t>stale caps toc</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TOC \o &quot;1-2&quot; \* MERGEFORMAT "><w:r><w:t>stale mergeformat toc</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>executive summary</w:t></w:r></w:p><w:p><w:pPr><w:outlineLvl w:val="1"/></w:pPr><w:r><w:t>risk review</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" TOC \o &quot;1-2&quot; \* Upper "><w:r><w:t>stale upper toc</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TOC \o &quot;1-2&quot; \* Caps "><w:r><w:t>stale caps toc</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TOC \o &quot;1-2&quot; \* MERGEFORMAT "><w:r><w:t>stale mergeformat toc</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TOC \o &quot;1-2&quot; \* MERGEFORMATINET "><w:r><w:t>stale web-format toc</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -8468,7 +8468,7 @@ fn docx_toc_field_applies_general_format_switches() {
     let doc = Document::open(&toc_general_format_switch_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 3);
+    assert_eq!(fields.len(), 4);
     assert_eq!(fields[0].kind, FieldKind::Toc);
     assert_eq!(fields[0].instruction, "TOC \\o \"1-2\" \\* Upper");
     assert_eq!(fields[0].result, "stale upper toc");
@@ -8490,12 +8490,20 @@ fn docx_toc_field_applies_general_format_switches() {
         fields[2].computed_result.as_deref(),
         Some("executive summary\n  risk review")
     );
+    assert_eq!(fields[3].kind, FieldKind::Toc);
+    assert_eq!(fields[3].instruction, "TOC \\o \"1-2\" \\* MERGEFORMATINET");
+    assert_eq!(fields[3].result, "stale web-format toc");
+    assert_eq!(
+        fields[3].computed_result.as_deref(),
+        Some("executive summary\n  risk review")
+    );
 
     let main_text = doc.main_text();
     assert!(
         !main_text.contains("stale upper toc")
             && !main_text.contains("stale caps toc")
-            && !main_text.contains("stale mergeformat toc"),
+            && !main_text.contains("stale mergeformat toc")
+            && !main_text.contains("stale web-format toc"),
         "TOC general format switches should display computed field text: {main_text:?}"
     );
     assert!(main_text.contains("EXECUTIVE SUMMARY"), "{main_text:?}");
@@ -9237,7 +9245,7 @@ fn docx_ref_field_applies_upper_lower_format_switches() {
     let doc = Document::open(&ref_text_format_switch_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 4);
+    assert_eq!(fields.len(), 5);
     assert_eq!(fields[0].kind, FieldKind::Ref);
     assert_eq!(fields[0].instruction, "REF Figure1 \\* Upper");
     assert_eq!(fields[0].result, "stale upper ref");
@@ -9254,13 +9262,18 @@ fn docx_ref_field_applies_upper_lower_format_switches() {
     assert_eq!(fields[3].instruction, "REF Figure1 \\*FirstCap");
     assert_eq!(fields[3].result, "stale first-cap ref");
     assert_eq!(fields[3].computed_result.as_deref(), Some("Figure one"));
+    assert_eq!(fields[4].kind, FieldKind::Ref);
+    assert_eq!(fields[4].instruction, "REF Figure1 \\* MERGEFORMATINET");
+    assert_eq!(fields[4].result, "stale web-format ref");
+    assert_eq!(fields[4].computed_result.as_deref(), Some("figure one"));
 
     let main_text = doc.main_text();
     assert!(
         !main_text.contains("stale upper ref")
             && !main_text.contains("stale lower ref")
             && !main_text.contains("stale caps ref")
-            && !main_text.contains("stale first-cap ref"),
+            && !main_text.contains("stale first-cap ref")
+            && !main_text.contains("stale web-format ref"),
         "resolved REF format switches should display computed bookmark text in the read model: {main_text:?}"
     );
     assert!(main_text.contains("FIGURE ONE"), "{main_text:?}");

@@ -505,7 +505,7 @@ Implementation:
   `\p` entry/page separator, `\s` sequence-number page prefix, and `\d`
   sequence/page separator switches, deterministic TOC `\* Upper`/`\* Lower`/
   `\* Caps`/`\* FirstCap` field-result format switches,
-  neutral TOC `\* MERGEFORMAT`/`\* CHARFORMAT`, quoted `TOC \t` custom-style entries,
+  neutral TOC `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT`, quoted `TOC \t` custom-style entries,
   `TOC \f` entries from matching `TC "Text"` markers with optional `\f` type
   identifiers and `\l` levels, with supported `TC` marker fields themselves
   rendering as hidden output and unsupported `TC` marker syntax preserving cached
@@ -629,7 +629,7 @@ Implementation:
   nested aggregate calls inside literal formula expressions, simple separated or compact `\#` numeric pictures,
   literal affixes, single-section leading `+`/`-` sign-control items, `x`
   digit-drop/rounding positions, and sectioned
-  positive/negative/zero pictures, plus neutral `\* MERGEFORMAT`/`\* CHARFORMAT`
+  positive/negative/zero pictures, plus neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT`
   formula tails, malformed formula switch syntax reporting `UnsupportedSwitch`,
   and literal `DEFINED(expr)` checks for parser-local literal expressions, literal
   quoted/unquoted literal `QUOTE`, literal `IF` finite numeric/text comparisons, literal `COMPARE`
@@ -659,7 +659,7 @@ Implementation:
   nested aggregate calls inside literal formula expressions, simple separated or compact `\#`
   numeric pictures, literal affixes, single-section leading `+`/`-` sign-control items, `x`
   digit-drop/rounding positions, and sectioned positive/negative/zero pictures,
-  plus neutral `\* MERGEFORMAT`/`\* CHARFORMAT` formula tails,
+  plus neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT` formula tails,
   malformed formula switch syntax reporting `UnsupportedSwitch`,
   quoted/unquoted literal `QUOTE`, literal `IF` finite numeric/text comparisons, literal
   `COMPARE` finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields, and
@@ -717,7 +717,7 @@ Acceptance:
   nested aggregate calls inside literal formula expressions, simple separated or compact `\#` numeric pictures,
   literal affixes, single-section leading `+`/`-`
   sign-control items, `x` digit-drop/rounding positions, and sectioned
-  positive/negative/zero pictures, plus neutral `\* MERGEFORMAT`/`\* CHARFORMAT`
+  positive/negative/zero pictures, plus neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT`
   formula tails, malformed formula switch syntax reporting `UnsupportedSwitch`,
   and literal `DEFINED(expr)` checks for parser-local literal expressions,
   quoted/unquoted literal `QUOTE`, malformed literal `QUOTE` syntax reporting
@@ -1128,7 +1128,7 @@ open and edit the chart data.
   `\p` entry/page separator, `\s` sequence-number page prefix, and `\d`
   sequence/page separator switches, deterministic TOC `\* Upper`/`\* Lower`/
   `\* Caps`/`\* FirstCap` field-result format switches,
-  neutral TOC `\* MERGEFORMAT`/`\* CHARFORMAT`, quoted `TOC \t` custom-style entries,
+  neutral TOC `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT`, quoted `TOC \t` custom-style entries,
   `TOC \f` entries from matching `TC "Text"` markers with optional `\f` type
   identifiers and `\l` levels, with supported `TC` marker fields themselves
   rendering as hidden output and unsupported `TC` marker syntax preserving cached
@@ -1167,7 +1167,7 @@ open and edit the chart data.
   nested aggregate calls inside literal formula expressions, simple separated or compact `\#` numeric pictures,
   literal affixes, single-section leading `+`/`-` sign-control items, `x`
   digit-drop/rounding positions, and sectioned
-  positive/negative/zero pictures, plus neutral `\* MERGEFORMAT`/`\* CHARFORMAT`
+  positive/negative/zero pictures, plus neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT`
   formula tails, malformed formula switch syntax reporting `UnsupportedSwitch`,
   and literal `DEFINED(expr)` checks for parser-local literal expressions, literal
   quoted/unquoted literal `QUOTE`, literal `IF` finite numeric/text comparisons, literal `COMPARE`
@@ -1197,7 +1197,7 @@ open and edit the chart data.
   nested aggregate calls inside literal formula expressions, simple separated or compact `\#`
   numeric pictures, literal affixes, single-section leading `+`/`-` sign-control items, `x`
   digit-drop/rounding positions, and sectioned positive/negative/zero pictures,
-  plus neutral `\* MERGEFORMAT`/`\* CHARFORMAT` formula tails,
+  plus neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT` formula tails,
   malformed formula switch syntax reporting `UnsupportedSwitch`,
   literal `DEFINED(expr)` checks for parser-local literal expressions,
   quoted/unquoted literal `QUOTE`, literal `IF` comparisons, literal `COMPARE` results,

@@ -384,7 +384,9 @@ impl FieldKind {
 }
 
 pub(crate) fn is_neutral_field_format_switch(part: &str) -> bool {
-    part.eq_ignore_ascii_case("MERGEFORMAT") || part.eq_ignore_ascii_case("CHARFORMAT")
+    part.eq_ignore_ascii_case("MERGEFORMAT")
+        || part.eq_ignore_ascii_case("MERGEFORMATINET")
+        || part.eq_ignore_ascii_case("CHARFORMAT")
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
