@@ -1225,6 +1225,32 @@ fn style_ref_supported_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn style_ref_numbering_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="NumberedTarget"><w:name w:val="Numbered Target"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="91"/></w:numPr></w:pPr><w:r><w:t>Top 4</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="91"/></w:numPr></w:pPr><w:r><w:t>Child 4.3</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val="2"/><w:numId w:val="91"/></w:numPr></w:pPr><w:fldSimple w:instr=" STYLEREF NumberedTarget \r "><w:r><w:t>stale relative style number</w:t></w:r></w:fldSimple><w:r><w:t> </w:t></w:r><w:fldSimple w:instr=" STYLEREF NumberedTarget \r \t "><w:r><w:t>stale relative numeric style number</w:t></w:r></w:fldSimple></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="91"/></w:numPr></w:pPr><w:r><w:t>Child 4.4</w:t></w:r></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="91"/></w:numPr></w:pPr><w:r><w:t>Child 4.5</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="NumberedTarget"/><w:numPr><w:ilvl w:val="2"/><w:numId w:val="91"/></w:numPr></w:pPr><w:r><w:t>Target number</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" STYLEREF NumberedTarget \n "><w:r><w:t>stale style number</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" STYLEREF NumberedTarget \n \t "><w:r><w:t>stale numeric style number</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> STYLEREF &quot;Numbered Target&quot; \w \* MERGEFORMAT </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale full style number</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/numbering.xml",
+            r#"<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="15"><w:lvl w:ilvl="0"><w:start w:val="4"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl><w:lvl w:ilvl="1"><w:start w:val="3"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%2."/></w:lvl><w:lvl w:ilvl="2"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="Part %3."/></w:lvl></w:abstractNum><w:num w:numId="91"><w:abstractNumId w:val="15"/></w:num></w:numbering>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn style_ref_alternate_content_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -5414,6 +5440,64 @@ fn report_style_ref_supported_fields_stay_out_of_unsupported_diagnostics() {
         .warnings
         .iter()
         .all(|warning| !matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })));
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_style_ref_number_switches_are_supported() {
+    let doc = Document::open(&style_ref_numbering_diagnostics_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let expected = [
+        ("STYLEREF NumberedTarget \\r", "5.1"),
+        ("STYLEREF NumberedTarget \\r \\t", "5.1"),
+        ("STYLEREF NumberedTarget \\n", "Part 1"),
+        ("STYLEREF NumberedTarget \\n \\t", "1"),
+        ("STYLEREF \"Numbered Target\" \\w \\* MERGEFORMAT", "4.5.1"),
+    ];
+
+    assert_eq!(fields.len(), expected.len());
+    for (field, (instruction, computed)) in fields.iter().zip(expected) {
+        assert_eq!(
+            field.kind,
+            FieldKind::DocumentStructure("STYLEREF".to_string())
+        );
+        assert_eq!(field.instruction, instruction);
+        assert_eq!(field.computed_result.as_deref(), Some(computed));
+    }
+
+    let report = doc.report();
+    assert_eq!(report.features.fields, expected.len());
+    assert_eq!(
+        report.features.field_kinds,
+        vec![field_kind_count(
+            FieldKind::DocumentStructure("STYLEREF".to_string()),
+            expected.len(),
+        )]
+    );
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+    assert!(report
+        .warnings
+        .iter()
+        .all(|warning| !matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })));
+
+    let main_text = doc.main_text();
+    assert!(main_text.contains("5.1"), "{main_text:?}");
+    assert!(main_text.contains("Part 1"), "{main_text:?}");
+    assert!(main_text.contains("4.5.1"), "{main_text:?}");
+    assert!(
+        !main_text.contains("stale relative style number"),
+        "{main_text:?}"
+    );
+    assert!(
+        !main_text.contains("stale numeric style number"),
+        "{main_text:?}"
+    );
+    assert!(
+        !main_text.contains("stale full style number"),
+        "{main_text:?}"
+    );
 }
 
 #[cfg(feature = "docx")]
