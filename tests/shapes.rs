@@ -106,6 +106,23 @@ fn sdt_wrapped_floating_shape_docx() -> Vec<u8> {
     ])
 }
 
+fn custom_xml_wrapped_floating_shape_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:body><w:p><w:r><w:t>Before block</w:t></w:r></w:p><w:customXml w:element="record" w:uri="urn:rdoc:test"><w:customXmlPr><w:attr w:name="kind" w:val="fixture"/></w:customXmlPr><w:p><w:r><w:t>Custom before </w:t></w:r><w:r><w:drawing><wp:anchor relativeHeight="4" behindDoc="0"><wp:extent cx="914400" cy="457200"/><wp:docPr id="14" name="Custom XML float"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>Custom XML shape body</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:t>Custom after</w:t></w:r></w:p></w:customXml><w:p><w:r><w:t>After block</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn smart_tag_wrapped_floating_shape_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -397,6 +414,38 @@ fn docx_floating_shape_anchor_survives_body_level_content_control() {
     assert_eq!(
         shape.anchor_char_offset,
         Some("Wrapped before ".chars().count())
+    );
+}
+
+#[test]
+fn docx_floating_shape_anchor_survives_body_level_custom_xml() {
+    let doc = Document::open(&custom_xml_wrapped_floating_shape_docx()).expect("fixture opens");
+    let model = doc.model();
+    let shape = doc
+        .floating_shapes()
+        .into_iter()
+        .next()
+        .expect("floating shape extracted");
+
+    assert_eq!(model.blocks.len(), 3);
+    let Block::Paragraph(wrapped) = &model.blocks[1] else {
+        panic!("customXml paragraph should become a body block");
+    };
+    assert!(
+        wrapped.text().contains("Custom XML shape body"),
+        "body parser should still expose text-bearing customXml shape body: {:?}",
+        wrapped.text()
+    );
+    assert_eq!(shape.anchor_block_index, Some(1));
+    assert_eq!(shape.name.as_deref(), Some("Custom XML float"));
+    assert_eq!(shape.text.as_deref(), Some("Custom XML shape body"));
+    assert_eq!(
+        shape.anchor_text.as_deref(),
+        Some("Custom before Custom after")
+    );
+    assert_eq!(
+        shape.anchor_char_offset,
+        Some("Custom before ".chars().count())
     );
 }
 
