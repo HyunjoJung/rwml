@@ -2215,7 +2215,8 @@ fn computed_dynamic_field_result(instruction: &str, ctx: &Ctx<'_>) -> Option<Str
             return Some(result);
         }
     }
-    super::fields::computed_dynamic_result(instruction)
+    let field_bookmarks = ctx.field_bookmarks.borrow();
+    super::fields::computed_dynamic_result_with_bookmarks(instruction, &field_bookmarks)
 }
 
 fn ref_field_positions(

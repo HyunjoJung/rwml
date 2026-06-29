@@ -4554,7 +4554,7 @@ fn apply_computed_results(fields: &mut [Field], ctx: ComputedResultContexts<'_>)
                     || kind == "NEXTIF"
                     || kind == "SKIPIF" =>
             {
-                computed_dynamic_result(&field.instruction)
+                computed_dynamic_result_with_bookmarks(&field.instruction, &field_bookmarks)
             }
             FieldKind::Dynamic(kind) if kind == "ASK" => {
                 computed_ask_result(&field.instruction, &mut field_bookmarks)
@@ -4942,6 +4942,18 @@ pub(crate) fn computed_dynamic_result(instruction: &str) -> Option<String> {
         .or_else(|| computed_merge_control_result(instruction))
 }
 
+pub(crate) fn computed_dynamic_result_with_bookmarks(
+    instruction: &str,
+    field_bookmarks: &HashMap<String, String>,
+) -> Option<String> {
+    computed_formula_result(instruction)
+        .or_else(|| computed_quote_result(instruction))
+        .or_else(|| computed_fill_in_result(instruction))
+        .or_else(|| computed_if_result_with_bookmarks(instruction, field_bookmarks))
+        .or_else(|| computed_compare_result_with_bookmarks(instruction, field_bookmarks))
+        .or_else(|| computed_merge_control_result(instruction))
+}
+
 fn computed_merge_control_result(instruction: &str) -> Option<String> {
     merge_control_instruction(instruction)?;
     Some(String::new())
@@ -4961,7 +4973,7 @@ fn merge_control_instruction(instruction: &str) -> Option<()> {
     }
     if kind.eq_ignore_ascii_case("NEXTIF") || kind.eq_ignore_ascii_case("SKIPIF") {
         let first = parts.next()?;
-        let (left, operator, right) = comparison_operands(first, &mut parts)?;
+        let (left, operator, right) = comparison_operands(first, &mut parts, &HashMap::new())?;
         compare_if_operands(&left, operator, &right)?;
         accept_field_format_tail(&mut parts)?;
         return Some(());
@@ -6665,7 +6677,14 @@ struct IfInstruction {
 }
 
 fn computed_if_result(instruction: &str) -> Option<String> {
-    let spec = if_instruction(instruction)?;
+    computed_if_result_with_bookmarks(instruction, &HashMap::new())
+}
+
+fn computed_if_result_with_bookmarks(
+    instruction: &str,
+    field_bookmarks: &HashMap<String, String>,
+) -> Option<String> {
+    let spec = if_instruction(instruction, field_bookmarks)?;
     let selected = if compare_if_operands(&spec.left, spec.operator, &spec.right)? {
         spec.true_text
     } else {
@@ -6674,7 +6693,10 @@ fn computed_if_result(instruction: &str) -> Option<String> {
     Some(apply_field_text_format(selected, spec.text_format))
 }
 
-fn if_instruction(instruction: &str) -> Option<IfInstruction> {
+fn if_instruction(
+    instruction: &str,
+    field_bookmarks: &HashMap<String, String>,
+) -> Option<IfInstruction> {
     let tokens = instruction_parts(instruction);
     let mut parts = tokens.iter().map(String::as_str);
     let kind = parts.next()?;
@@ -6682,7 +6704,7 @@ fn if_instruction(instruction: &str) -> Option<IfInstruction> {
         return None;
     }
     let first = parts.next()?;
-    let (left, operator, right) = comparison_operands(first, &mut parts)?;
+    let (left, operator, right) = comparison_operands(first, &mut parts, field_bookmarks)?;
     let true_text = if_result_text(parts.next()?)?;
     let mut false_text = String::new();
     let mut text_format = None;
@@ -6711,7 +6733,14 @@ pub(crate) fn supports_if_field_syntax(instruction: &str) -> bool {
 }
 
 fn computed_compare_result(instruction: &str) -> Option<String> {
-    let spec = compare_instruction(instruction)?;
+    computed_compare_result_with_bookmarks(instruction, &HashMap::new())
+}
+
+fn computed_compare_result_with_bookmarks(
+    instruction: &str,
+    field_bookmarks: &HashMap<String, String>,
+) -> Option<String> {
+    let spec = compare_instruction(instruction, field_bookmarks)?;
     let result = if compare_if_operands(&spec.left, spec.operator, &spec.right)? {
         "1"
     } else {
@@ -6727,7 +6756,10 @@ pub(crate) fn supports_compare_field_syntax(instruction: &str) -> bool {
     compare_field_syntax(instruction)
 }
 
-fn compare_instruction(instruction: &str) -> Option<IfInstruction> {
+fn compare_instruction(
+    instruction: &str,
+    field_bookmarks: &HashMap<String, String>,
+) -> Option<IfInstruction> {
     let tokens = instruction_parts(instruction);
     let mut parts = tokens.iter().map(String::as_str);
     let kind = parts.next()?;
@@ -6735,7 +6767,7 @@ fn compare_instruction(instruction: &str) -> Option<IfInstruction> {
         return None;
     }
     let first = parts.next()?;
-    let (left, operator, right) = comparison_operands(first, &mut parts)?;
+    let (left, operator, right) = comparison_operands(first, &mut parts, field_bookmarks)?;
     let mut text_format = None;
     while let Some(part) = parts.next() {
         if !accept_if_format_switch(part, &mut parts, &mut text_format)? {
@@ -6755,33 +6787,37 @@ fn compare_instruction(instruction: &str) -> Option<IfInstruction> {
 fn comparison_operands<'a, I>(
     first: &str,
     parts: &mut I,
+    field_bookmarks: &HashMap<String, String>,
 ) -> Option<(IfOperand, IfOperator, IfOperand)>
 where
     I: Iterator<Item = &'a str>,
 {
-    if let Some(comparison) = compact_if_comparison(first) {
+    if let Some(comparison) = compact_if_comparison(first, field_bookmarks) {
         Some(comparison)
     } else {
         Some((
-            if_operand(first)?,
+            if_operand(first, field_bookmarks)?,
             if_operator(parts.next()?)?,
-            if_operand(parts.next()?)?,
+            if_operand(parts.next()?, field_bookmarks)?,
         ))
     }
 }
 
-fn if_operand(token: &str) -> Option<IfOperand> {
+fn if_operand(token: &str, field_bookmarks: &HashMap<String, String>) -> Option<IfOperand> {
     if let Some(text) = quoted_literal_text(token) {
         return Some(IfOperand::Text(text));
     }
-    token
-        .parse::<f64>()
-        .ok()
-        .filter(|value| value.is_finite())
-        .map(IfOperand::Number)
+    if let Some(value) = token.parse::<f64>().ok().filter(|value| value.is_finite()) {
+        return Some(IfOperand::Number(value));
+    }
+    let name = field_name_token(token)?;
+    field_bookmarks.get(name).cloned().map(IfOperand::Text)
 }
 
-fn compact_if_comparison(token: &str) -> Option<(IfOperand, IfOperator, IfOperand)> {
+fn compact_if_comparison(
+    token: &str,
+    field_bookmarks: &HashMap<String, String>,
+) -> Option<(IfOperand, IfOperator, IfOperand)> {
     for operator in [">=", "<=", "<>", "=", ">", "<"] {
         let Some(index) = find_unquoted_operator(token, operator) else {
             continue;
@@ -6792,9 +6828,9 @@ fn compact_if_comparison(token: &str) -> Option<(IfOperand, IfOperator, IfOperan
             return None;
         }
         return Some((
-            if_operand(left)?,
+            if_operand(left, field_bookmarks)?,
             if_operator(operator)?,
-            if_operand(right)?,
+            if_operand(right, field_bookmarks)?,
         ));
     }
     None

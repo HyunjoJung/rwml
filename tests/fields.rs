@@ -338,6 +338,23 @@ fn dynamic_field_docx() -> Vec<u8> {
     ])
 }
 
+fn set_backed_comparison_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SET ClientTier &quot;Gold&quot; "><w:r><w:t>cached set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" IF ClientTier = &quot;Gold&quot; &quot;ship&quot; &quot;hold&quot; "><w:r><w:t>stale set if</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" COMPARE ClientTier = &quot;Gold&quot; "><w:r><w:t>stale set compare</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" IF MissingTier = &quot;Gold&quot; &quot;ship&quot; &quot;hold&quot; "><w:r><w:t>cached missing if</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NEXTIF ClientTier = &quot;Gold&quot; "><w:r><w:t>cached nextif</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn if_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -3956,6 +3973,45 @@ fn docx_dynamic_fields_compute_formula_quote_if_compare_and_literal_set_ref() {
             && !main_text.contains("cached skipif")
             && !main_text.contains("stale set ref"),
         "computed formula/IF/COMPARE results should replace stale cached text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_if_and_compare_resolve_prior_set_bookmark_operands() {
+    let doc = Document::open(&set_backed_comparison_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 5);
+    assert_eq!(fields[0].kind, FieldKind::Dynamic("SET".to_string()));
+    assert_eq!(fields[0].instruction, "SET ClientTier \"Gold\"");
+    assert_eq!(fields[0].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[1].kind, FieldKind::Dynamic("IF".to_string()));
+    assert_eq!(
+        fields[1].instruction,
+        "IF ClientTier = \"Gold\" \"ship\" \"hold\""
+    );
+    assert_eq!(fields[1].result, "stale set if");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("ship"));
+    assert_eq!(fields[2].kind, FieldKind::Dynamic("COMPARE".to_string()));
+    assert_eq!(fields[2].instruction, "COMPARE ClientTier = \"Gold\"");
+    assert_eq!(fields[2].result, "stale set compare");
+    assert_eq!(fields[2].computed_result.as_deref(), Some("1"));
+    assert_eq!(fields[3].kind, FieldKind::Dynamic("IF".to_string()));
+    assert_eq!(fields[3].result, "cached missing if");
+    assert_eq!(fields[3].computed_result, None);
+    assert_eq!(fields[4].kind, FieldKind::Dynamic("NEXTIF".to_string()));
+    assert_eq!(fields[4].result, "cached nextif");
+    assert_eq!(fields[4].computed_result, None);
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("ship")
+            && main_text.contains("1")
+            && main_text.contains("cached missing if")
+            && main_text.contains("cached nextif")
+            && !main_text.contains("stale set if")
+            && !main_text.contains("stale set compare"),
+        "computed SET-backed comparison text should replace stale cached text: {main_text:?}"
     );
 }
 
