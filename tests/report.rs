@@ -737,6 +737,24 @@ fn dynamic_control_field_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn set_backed_dynamic_control_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SET ClientTier &quot;Gold&quot; "><w:r><w:t>cached set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" IF ClientTier = &quot;Gold&quot; &quot;ship&quot; &quot;hold&quot; "><w:r><w:t>stale set if</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" COMPARE ClientTier = &quot;Gold&quot; "><w:r><w:t>stale set compare</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" IF MissingTier = &quot;Gold&quot; &quot;ship&quot; &quot;hold&quot; "><w:r><w:t>cached missing if</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NEXTIF ClientTier = &quot;Gold&quot; "><w:r><w:t>cached nextif</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SKIPIF ClientTier &lt;&gt; &quot;Gold&quot; "><w:r><w:t>cached skipif</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn document_structure_field_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -3509,6 +3527,64 @@ fn report_dynamic_control_fields_split_cached_and_malformed_diagnostics() {
             field_reason_count(FieldEvaluationReason::NoComputedResult, 7),
             field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 7),
         ],
+    );
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_set_backed_dynamic_controls_only_flags_unresolved_operands() {
+    let doc =
+        Document::open(&set_backed_dynamic_control_diagnostics_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 6);
+    assert_eq!(fields[0].kind, FieldKind::Dynamic("SET".to_string()));
+    assert_eq!(fields[0].instruction, r#"SET ClientTier "Gold""#);
+    assert_eq!(fields[0].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[1].kind, FieldKind::Dynamic("IF".to_string()));
+    assert_eq!(
+        fields[1].instruction,
+        r#"IF ClientTier = "Gold" "ship" "hold""#
+    );
+    assert_eq!(fields[1].computed_result.as_deref(), Some("ship"));
+    assert_eq!(fields[2].kind, FieldKind::Dynamic("COMPARE".to_string()));
+    assert_eq!(fields[2].instruction, r#"COMPARE ClientTier = "Gold""#);
+    assert_eq!(fields[2].computed_result.as_deref(), Some("1"));
+    assert_eq!(fields[3].kind, FieldKind::Dynamic("IF".to_string()));
+    assert_eq!(
+        fields[3].instruction,
+        r#"IF MissingTier = "Gold" "ship" "hold""#
+    );
+    assert_eq!(fields[3].computed_result, None);
+    assert_eq!(fields[4].kind, FieldKind::Dynamic("NEXTIF".to_string()));
+    assert_eq!(fields[4].instruction, r#"NEXTIF ClientTier = "Gold""#);
+    assert_eq!(fields[4].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[5].kind, FieldKind::Dynamic("SKIPIF".to_string()));
+    assert_eq!(fields[5].instruction, r#"SKIPIF ClientTier <> "Gold""#);
+    assert_eq!(fields[5].computed_result.as_deref(), Some(""));
+
+    let report = doc.report();
+    assert_eq!(report.features.fields, 6);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![
+            field_kind_count(FieldKind::Dynamic("SET".to_string()), 1),
+            field_kind_count(FieldKind::Dynamic("IF".to_string()), 2),
+            field_kind_count(FieldKind::Dynamic("COMPARE".to_string()), 1),
+            field_kind_count(FieldKind::Dynamic("NEXTIF".to_string()), 1),
+            field_kind_count(FieldKind::Dynamic("SKIPIF".to_string()), 1),
+        ]
+    );
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![field_kind_count(FieldKind::Dynamic("IF".to_string()), 1)]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![field_reason_count(
+            FieldEvaluationReason::NoComputedResult,
+            1,
+        )]
     );
 }
 
