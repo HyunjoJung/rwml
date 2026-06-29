@@ -613,7 +613,7 @@ Implementation:
   leading/rendered page context,
   apply deterministic `\* Arabic`, `\* alphabetic`/`\* ALPHABETIC`,
   `\* roman`/`\* ROMAN`, `\* Ordinal`, `\* CardText`, `\* OrdText`, and
-  page-number-only `\* ArabicDash`
+  `\* Hex`, integer-valued `\* DollarText`, and page-number-only `\* ArabicDash`
   number-format switches plus common field-result format switches, compute `\p`
   relative results (`above`, `below`, or `on page N`) when trusted leading
   structural page context or source page markers provide both target and field
@@ -1143,7 +1143,7 @@ open and edit the chart data.
   section-start fields after visible intro text,
   deterministic `PAGEREF` `\* Arabic`, `\* alphabetic`/`\* ALPHABETIC`,
   `\* roman`/`\* ROMAN`, `\* Ordinal`, `\* CardText`, `\* OrdText`, and
-  page-number-only `\* ArabicDash`
+  `\* Hex`, integer-valued `\* DollarText`, and page-number-only `\* ArabicDash`
   number-format switches plus common field-result format switches when the
   target page is structural from trusted source markers or trusted hard-break
   advancement, honoring deterministic display-only `w:pgNumType w:start`

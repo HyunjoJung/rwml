@@ -680,7 +680,7 @@ breaks after a trusted leading/rendered page context make the
 target bookmark page structural, apply deterministic `\* Arabic`,
 `\* alphabetic`/`\* ALPHABETIC`,
 `\* roman`/`\* ROMAN`, `\* Ordinal`, `\* CardText`, `\* OrdText`, and
-page-number-only `\* ArabicDash`
+`\* Hex`, integer-valued `\* DollarText`, and page-number-only `\* ArabicDash`
 number-format switches plus common field-result format switches, compute `\p`
 relative results (`above`, `below`, or `on page N`) when trusted leading
 structural page context or source page markers provide both target and field
