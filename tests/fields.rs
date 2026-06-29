@@ -350,7 +350,7 @@ fn set_backed_comparison_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SET ClientTier &quot;Gold&quot; "><w:r><w:t>cached set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" IF ClientTier = &quot;Gold&quot; &quot;ship&quot; &quot;hold&quot; "><w:r><w:t>stale set if</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" COMPARE ClientTier = &quot;Gold&quot; "><w:r><w:t>stale set compare</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" IF MissingTier = &quot;Gold&quot; &quot;ship&quot; &quot;hold&quot; "><w:r><w:t>cached missing if</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NEXTIF ClientTier = &quot;Gold&quot; "><w:r><w:t>cached nextif</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SET ClientTier &quot;Gold&quot; "><w:r><w:t>cached set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" IF ClientTier = &quot;Gold&quot; &quot;ship&quot; &quot;hold&quot; "><w:r><w:t>stale set if</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" COMPARE ClientTier = &quot;Gold&quot; "><w:r><w:t>stale set compare</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" IF MissingTier = &quot;Gold&quot; &quot;ship&quot; &quot;hold&quot; "><w:r><w:t>cached missing if</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NEXTIF ClientTier = &quot;Gold&quot; "><w:r><w:t>cached nextif</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SKIPIF ClientTier &lt;&gt; &quot;Gold&quot; "><w:r><w:t>cached skipif</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -4045,11 +4045,11 @@ fn docx_dynamic_fields_compute_formula_quote_if_compare_and_literal_set_ref() {
 }
 
 #[test]
-fn docx_if_and_compare_resolve_prior_set_bookmark_operands() {
+fn docx_if_compare_and_merge_controls_resolve_prior_set_bookmark_operands() {
     let doc = Document::open(&set_backed_comparison_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 5);
+    assert_eq!(fields.len(), 6);
     assert_eq!(fields[0].kind, FieldKind::Dynamic("SET".to_string()));
     assert_eq!(fields[0].instruction, "SET ClientTier \"Gold\"");
     assert_eq!(fields[0].computed_result.as_deref(), Some(""));
@@ -4069,14 +4069,18 @@ fn docx_if_and_compare_resolve_prior_set_bookmark_operands() {
     assert_eq!(fields[3].computed_result, None);
     assert_eq!(fields[4].kind, FieldKind::Dynamic("NEXTIF".to_string()));
     assert_eq!(fields[4].result, "cached nextif");
-    assert_eq!(fields[4].computed_result, None);
+    assert_eq!(fields[4].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[5].kind, FieldKind::Dynamic("SKIPIF".to_string()));
+    assert_eq!(fields[5].result, "cached skipif");
+    assert_eq!(fields[5].computed_result.as_deref(), Some(""));
 
     let main_text = doc.main_text();
     assert!(
         main_text.contains("ship")
             && main_text.contains("1")
             && main_text.contains("cached missing if")
-            && main_text.contains("cached nextif")
+            && !main_text.contains("cached nextif")
+            && !main_text.contains("cached skipif")
             && !main_text.contains("stale set if")
             && !main_text.contains("stale set compare"),
         "computed SET-backed comparison text should replace stale cached text: {main_text:?}"

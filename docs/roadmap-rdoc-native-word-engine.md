@@ -111,7 +111,8 @@ Deliverables:
   including deterministic literal arithmetic formula fields, literal `QUOTE`,
   literal `IF` comparisons, literal `COMPARE` results, explicit-default
   `FILLIN`/`ASK` prompt fields, and literal `SET`
-  bookmark assignments feeding later plain `REF`/direct bookmark references,
+  bookmark assignments feeding later plain `REF`/direct bookmark references
+  and source-order bookmark-backed `NEXTIF`/`SKIPIF` comparisons,
   inserted-content fields, mail-merge
   helper fields, reference/index fields, numbering/list fields, document-structure
   fields, display/layout fields, action/automation fields,
@@ -210,9 +211,10 @@ Initial status:
   including quoted `?`/`*` wildcard equality/inequality,
   deterministic literal `SET name "value"` or single-token `SET name value` fields with
   field-result format switches rendered as hidden output while
-  feeding later plain `REF`/direct bookmark references in source order,
+  feeding later plain `REF`/direct bookmark references and source-order
+  bookmark-backed `NEXTIF`/`SKIPIF` comparisons,
   malformed `SET` syntax reports `UnsupportedSwitch`,
-  literal `NEXT`, `NEXTIF`, and `SKIPIF` merge-control fields with
+  literal `NEXT` and literal or source-order bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with
   field-result format switches rendered as hidden output without running a mail merge,
   deterministic `GOTOBUTTON`/`MACROBUTTON` quoted or unquoted display text with
   field text-format switches, and deterministic `w:ffData` `FORMCHECKBOX`
@@ -323,14 +325,16 @@ Initial status:
   rendered without simulating prompts, deterministic
   `ASK name prompt \d default` fields with quoted or single-token
   prompt/default literals and field-result format switches rendered as hidden
-  output while feeding later plain `REF`/direct bookmark references, malformed
+  output while feeding later plain `REF`/direct bookmark references and
+  source-order bookmark-backed `NEXTIF`/`SKIPIF` comparisons, malformed
   prompt field syntax reports
   `UnsupportedSwitch`, and
   deterministic literal `SET name "value"` or single-token `SET name value` fields with
   field-result format switches render as hidden output while
-  feeding later plain `REF`/direct bookmark references in source order,
-  malformed `SET` syntax reports `UnsupportedSwitch`, plus literal `NEXT`,
-  `NEXTIF`, and `SKIPIF` merge-control fields with
+  feeding later plain `REF`/direct bookmark references and source-order
+  bookmark-backed `NEXTIF`/`SKIPIF` comparisons,
+  malformed `SET` syntax reports `UnsupportedSwitch`, plus literal `NEXT`
+  and literal or source-order bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with
   field-result format switches render as hidden output without running a mail
   merge; malformed merge-control syntax reports `UnsupportedSwitch`, invalid
   literal `COMPARE` syntax reports `UnsupportedSwitch`, while
@@ -821,13 +825,15 @@ Initial status:
   `COMPARE` fields compute `1`/`0` results for finite decimal/scientific numeric operands and either-side quoted `?`/`*` wildcard equality/inequality,
   deterministic `FILLIN` fields with quoted or single-token prompts and explicit `\d` default responses render without simulating prompts,
   deterministic `ASK name prompt \d default` fields with quoted or single-token prompt/default literals and field-result format
-  switches render as hidden output while feeding later plain `REF`/direct bookmark references,
+  switches render as hidden output while feeding later plain `REF`/direct bookmark references
+  and source-order bookmark-backed `NEXTIF`/`SKIPIF` comparisons,
   malformed prompt field syntax reports `UnsupportedSwitch`,
   and deterministic literal `SET name "value"` or single-token `SET name value` fields with
   field-result format switches render as hidden output while
-  feeding later plain `REF`/direct bookmark references in source order,
+  feeding later plain `REF`/direct bookmark references and source-order
+  bookmark-backed `NEXTIF`/`SKIPIF` comparisons,
   malformed `SET` syntax reports `UnsupportedSwitch`,
-  plus literal `NEXT`, `NEXTIF`, and `SKIPIF` merge-control fields with
+  plus literal `NEXT` and literal or source-order bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with
   field-result format switches render as hidden output without running a mail merge;
   malformed merge-control syntax reports `UnsupportedSwitch`; invalid literal
   `COMPARE` syntax reports `UnsupportedSwitch`; remaining

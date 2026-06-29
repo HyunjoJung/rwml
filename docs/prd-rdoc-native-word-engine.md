@@ -321,13 +321,16 @@ The first public maturity release should meet these requirements.
   quoted or single-token prompts and explicit `\d` default responses rendered
   without simulating prompts, deterministic `ASK name prompt \d default` fields
   with quoted or single-token prompt/default literals rendered as hidden output
-  while feeding later plain `REF`/direct bookmark references, malformed
+  while feeding later plain `REF`/direct bookmark references and source-order
+  bookmark-backed `NEXTIF`/`SKIPIF` comparisons, malformed
   prompt field syntax reports `UnsupportedSwitch`, and deterministic literal
   `SET name "value"` or single-token `SET name value` fields with
   field-result format switches rendered as hidden output while feeding later
-  plain `REF`/direct bookmark references in source order, malformed `SET`
-  syntax reports `UnsupportedSwitch`, plus literal `NEXT`, `NEXTIF`, and
-  `SKIPIF` merge-control fields with field-result format switches
+  plain `REF`/direct bookmark references and source-order bookmark-backed
+  `NEXTIF`/`SKIPIF` comparisons, malformed `SET` syntax reports
+  `UnsupportedSwitch`, plus literal `NEXT` and literal or source-order
+  bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with field-result
+  format switches
   rendered as hidden output without running a mail merge; malformed
   merge-control syntax reports `UnsupportedSwitch`, invalid literal `COMPARE`
   syntax reports `UnsupportedSwitch`, while remaining dynamic/control

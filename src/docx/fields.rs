@@ -4965,11 +4965,19 @@ pub(crate) fn computed_dynamic_result_with_bookmarks(
         .or_else(|| computed_fill_in_result(instruction))
         .or_else(|| computed_if_result_with_bookmarks(instruction, field_bookmarks))
         .or_else(|| computed_compare_result_with_bookmarks(instruction, field_bookmarks))
-        .or_else(|| computed_merge_control_result(instruction))
+        .or_else(|| computed_merge_control_result_with_bookmarks(instruction, field_bookmarks))
 }
 
+#[cfg(test)]
 fn computed_merge_control_result(instruction: &str) -> Option<String> {
-    merge_control_instruction(instruction)?;
+    computed_merge_control_result_with_bookmarks(instruction, &HashMap::new())
+}
+
+fn computed_merge_control_result_with_bookmarks(
+    instruction: &str,
+    field_bookmarks: &HashMap<String, String>,
+) -> Option<String> {
+    merge_control_instruction(instruction, field_bookmarks)?;
     Some(String::new())
 }
 
@@ -4977,7 +4985,10 @@ pub(crate) fn supports_filename_field_syntax(instruction: &str) -> bool {
     filename_field_syntax(instruction)
 }
 
-fn merge_control_instruction(instruction: &str) -> Option<()> {
+fn merge_control_instruction(
+    instruction: &str,
+    field_bookmarks: &HashMap<String, String>,
+) -> Option<()> {
     let tokens = instruction_parts(instruction);
     let mut parts = tokens.iter().map(String::as_str);
     let kind = parts.next()?;
@@ -4987,7 +4998,7 @@ fn merge_control_instruction(instruction: &str) -> Option<()> {
     }
     if kind.eq_ignore_ascii_case("NEXTIF") || kind.eq_ignore_ascii_case("SKIPIF") {
         let first = parts.next()?;
-        let (left, operator, right) = comparison_operands(first, &mut parts, &HashMap::new())?;
+        let (left, operator, right) = comparison_operands(first, &mut parts, field_bookmarks)?;
         compare_if_operands(&left, operator, &right)?;
         accept_field_format_tail(&mut parts)?;
         return Some(());
