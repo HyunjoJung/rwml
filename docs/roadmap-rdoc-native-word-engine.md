@@ -1109,10 +1109,10 @@ Initial status:
   corpus env var assignments, and high-risk secret token literals. It also
   scans bounded decoded byte text views from legacy `.doc` files, rejecting
   oversized legacy binaries rather than passing them uninspected. For Office OPC
-  packages such as `.docx` and `.xlsx`, it scans textual internal parts such as
-  core properties, relationships, content types, WordprocessingML XML, and
-  embedded Office package XML such as chart workbooks while leaving binary media
-  opaque.
+  packages such as `.docx` and `.xlsx`, it scans internal member paths plus
+  textual parts such as core properties, relationships, content types,
+  WordprocessingML XML, and embedded Office package XML such as chart workbooks
+  while leaving binary media opaque.
 - `scripts/bench_vs_mature.py --json` now emits a schema-tagged extraction
   benchmark report with release metadata, rows, and aggregate recall/F1 summary
   metrics against local Apache POI and LibreOffice goldens. It can enforce

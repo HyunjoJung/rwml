@@ -1359,9 +1359,10 @@ policy.
 The public hygiene audit also scans bounded decoded byte text views from legacy
 `.doc` files and rejects oversized legacy binaries rather than passing them
 uninspected. For Office OPC packages such as `.docx` and `.xlsx`, it scans
-textual internal parts such as core properties, relationships, content types,
-WordprocessingML XML, and embedded Office package XML such as chart workbooks for
-release blockers, while leaving binary media payloads opaque.
+internal member paths plus textual parts such as core properties, relationships,
+content types, WordprocessingML XML, and embedded Office package XML such as
+chart workbooks for release blockers, while leaving binary media payloads
+opaque.
 The tag-driven release workflow runs `scripts/public_hygiene_audit.py` before the
 required Rust gates, packages the crate, generates this manifest against the
 packaged `.crate` artifact plus the public hygiene and corpus manifests, and

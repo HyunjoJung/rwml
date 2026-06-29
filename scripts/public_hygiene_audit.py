@@ -3,12 +3,13 @@
 
 The audit is intentionally conservative and local: it scans committed plus
 currently untracked, non-ignored files for release blockers that should never
-reach a public crate snapshot. Textual Office package parts are scanned too, so
-`.docx`/`.xlsx`/`.pptx` metadata, relationships, OOXML bodies, and embedded
-Office workbook/package XML are not treated as opaque binaries. Legacy `.doc`
-files are not parsed as CFB/OLE2, but bounded decoded byte views are scanned for
-high-risk release blockers. It does not inspect git history; the public history
-rewrite remains a separate release step.
+reach a public crate snapshot. Office package member paths and textual parts are
+scanned too, so `.docx`/`.xlsx`/`.pptx` internal names, metadata,
+relationships, OOXML bodies, and embedded Office workbook/package XML are not
+treated as opaque binaries. Legacy `.doc` files are not parsed as CFB/OLE2, but
+bounded decoded byte views are scanned for high-risk release blockers. It does
+not inspect git history; the public history rewrite remains a separate release
+step.
 """
 
 from __future__ import annotations

@@ -789,11 +789,12 @@ provided without enforcement, and which strict public-release inputs are still
 missing; public corpus evidence is incomplete when the manifests are invalid or
 their document path lists do not match.
 The hygiene audit covers normal text files, bounded decoded byte text views from
-legacy `.doc` files, and textual Office package parts from `.docx`, `.xlsx`, and
-related OPC packages, including core metadata, relationships, content types,
-WordprocessingML XML, and embedded Office package XML such as chart workbooks,
-while leaving binary media payloads opaque. Oversized legacy binary documents
-block the audit instead of passing uninspected.
+legacy `.doc` files, and Office package member paths plus textual parts from
+`.docx`, `.xlsx`, and related OPC packages, including internal names, core
+metadata, relationships, content types, WordprocessingML XML, and embedded
+Office package XML such as chart workbooks, while leaving binary media payloads
+opaque. Oversized legacy binary documents block the audit instead of passing
+uninspected.
 Add `--enforce-policy-inputs` when generating a strict public manifest from local
 evidence: the command then requires a passing public hygiene report, render
 validation, extraction benchmark, and exactly the public `MANIFEST.tsv` plus
