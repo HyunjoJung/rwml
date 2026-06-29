@@ -8,9 +8,8 @@ use quick_xml::Reader;
 use crate::annotation::{
     accept_field_number_format_switch,
     accept_field_text_format_switch as accept_field_format_switch, accept_general_format_switch,
-    document_property_key, field_comparison_syntax, field_identifier_token,
+    action_field_syntax, document_property_key, field_comparison_syntax, field_identifier_token,
     field_level_range_token, field_literal_token, field_name_token, field_non_empty_literal_token,
-    field_non_empty_non_switch_literal_token, field_non_empty_quoted_literal_token,
     field_points_token, field_positive_points_token, field_quoted_literal_token,
     field_symbol_code_token, filename_field_syntax, formula_field_syntax, instruction_parts,
     is_neutral_field_format_switch, is_note_ref_kind, is_ref_value_neutral_switch,
@@ -7134,107 +7133,14 @@ where
     accept_field_format_switch_for_tail(part, parts, text_format)
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ActionInstruction {
-    display_text: String,
-    text_format: Option<FieldTextFormat>,
-}
-
 pub(crate) fn supports_action_field_syntax(instruction: &str) -> bool {
-    computed_action_result(instruction).is_some()
-        || action_target_only_instruction(instruction).is_some()
+    action_field_syntax(instruction).is_some()
 }
 
 pub(crate) fn computed_action_result(instruction: &str) -> Option<String> {
-    if print_instruction(instruction).is_some() {
-        return Some(String::new());
-    }
-    let spec = action_instruction(instruction)?;
-    Some(apply_field_text_format(spec.display_text, spec.text_format))
-}
-
-fn print_instruction(instruction: &str) -> Option<()> {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let kind = parts.next()?;
-    if !kind.eq_ignore_ascii_case("PRINT") {
-        return None;
-    }
-    let first = parts.next()?;
-    if first.eq_ignore_ascii_case("\\p") {
-        field_identifier_token(parts.next()?)?;
-        field_non_empty_quoted_literal_token(parts.next()?)?;
-    } else if let Some(group) = strip_ascii_switch_prefix(first, "\\p") {
-        field_identifier_token(group)?;
-        field_non_empty_quoted_literal_token(parts.next()?)?;
-    } else {
-        accept_print_direct_token(first)?;
-        let mut text_format = None;
-        let mut saw_format = false;
-        while let Some(part) = parts.next() {
-            if accept_field_format_switch_for_tail(part, &mut parts, &mut text_format)? {
-                saw_format = true;
-                continue;
-            }
-            if saw_format {
-                return None;
-            }
-            accept_print_direct_token(part)?;
-        }
-        return Some(());
-    }
-    let mut text_format = None;
-    while let Some(part) = parts.next() {
-        if accept_field_format_switch_for_tail(part, &mut parts, &mut text_format)? {
-            continue;
-        }
-        return None;
-    }
-    Some(())
-}
-
-fn accept_print_direct_token(token: &str) -> Option<()> {
-    field_non_empty_non_switch_literal_token(token).map(|_| ())
-}
-
-fn action_instruction(instruction: &str) -> Option<ActionInstruction> {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let kind = parts.next()?;
-    if !kind.eq_ignore_ascii_case("GOTOBUTTON") && !kind.eq_ignore_ascii_case("MACROBUTTON") {
-        return None;
-    }
-    field_identifier_token(parts.next()?)?;
-    let mut display_parts = Vec::new();
-    let mut text_format = None;
-    let mut saw_format = false;
-    while let Some(part) = parts.next() {
-        if accept_field_format_switch_for_tail(part, &mut parts, &mut text_format)? {
-            saw_format = true;
-            continue;
-        }
-        if saw_format || part.starts_with('\\') {
-            return None;
-        }
-        display_parts.push(part);
-    }
-    let display_text = display_parts.join(" ");
-    let display_text = field_literal_token(&display_text)?.to_string();
-    (!display_text.is_empty()).then_some(ActionInstruction {
-        display_text,
-        text_format,
-    })
-}
-
-fn action_target_only_instruction(instruction: &str) -> Option<()> {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let kind = parts.next()?;
-    if !kind.eq_ignore_ascii_case("GOTOBUTTON") && !kind.eq_ignore_ascii_case("MACROBUTTON") {
-        return None;
-    }
-    field_identifier_token(parts.next()?)?;
-    accept_field_format_tail(&mut parts)
+    let spec = action_field_syntax(instruction)?;
+    let text = spec.computed_text?;
+    Some(apply_field_text_format(text, spec.text_format))
 }
 
 fn unquote_field_text(text: &str) -> String {

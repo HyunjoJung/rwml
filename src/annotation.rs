@@ -1416,6 +1416,131 @@ pub(crate) fn quote_field_syntax(instruction: &str) -> Option<QuoteFieldSyntax> 
     })
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ActionFieldSyntax {
+    pub(crate) computed_text: Option<String>,
+    pub(crate) text_format: Option<FieldTextFormat>,
+}
+
+pub(crate) fn action_field_syntax(instruction: &str) -> Option<ActionFieldSyntax> {
+    print_action_field_syntax(instruction).or_else(|| button_action_field_syntax(instruction))
+}
+
+fn print_action_field_syntax(instruction: &str) -> Option<ActionFieldSyntax> {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let kind = parts.next()?;
+    if !kind.eq_ignore_ascii_case("PRINT") {
+        return None;
+    }
+    let first = parts.next()?;
+    if first.eq_ignore_ascii_case("\\p") {
+        field_identifier_token(parts.next()?)?;
+        field_non_empty_quoted_literal_token(parts.next()?)?;
+        action_field_format_tail(&mut parts)?;
+    } else if let Some(group) = strip_ascii_switch_prefix(first, "\\p") {
+        field_identifier_token(group)?;
+        field_non_empty_quoted_literal_token(parts.next()?)?;
+        action_field_format_tail(&mut parts)?;
+    } else {
+        field_non_empty_non_switch_literal_token(first)?;
+        let mut text_format = None;
+        let mut saw_format = false;
+        while let Some(part) = parts.next() {
+            if action_field_format_switch(part, &mut parts, &mut text_format)? {
+                saw_format = true;
+                continue;
+            }
+            if saw_format {
+                return None;
+            }
+            field_non_empty_non_switch_literal_token(part)?;
+        }
+    }
+    Some(ActionFieldSyntax {
+        computed_text: Some(String::new()),
+        text_format: None,
+    })
+}
+
+fn button_action_field_syntax(instruction: &str) -> Option<ActionFieldSyntax> {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let kind = parts.next()?;
+    if !kind.eq_ignore_ascii_case("GOTOBUTTON") && !kind.eq_ignore_ascii_case("MACROBUTTON") {
+        return None;
+    }
+    field_identifier_token(parts.next()?)?;
+    let mut display_parts = Vec::new();
+    let mut text_format = None;
+    let mut saw_format = false;
+    while let Some(part) = parts.next() {
+        if action_field_format_switch(part, &mut parts, &mut text_format)? {
+            saw_format = true;
+            continue;
+        }
+        if saw_format || part.starts_with('\\') {
+            return None;
+        }
+        display_parts.push(part);
+    }
+    if display_parts.is_empty() {
+        return Some(ActionFieldSyntax {
+            computed_text: None,
+            text_format: None,
+        });
+    }
+    let display_text = display_parts.join(" ");
+    let display_text = field_literal_token(&display_text)?;
+    if display_text.is_empty() {
+        return None;
+    }
+    Some(ActionFieldSyntax {
+        computed_text: Some(display_text.to_string()),
+        text_format,
+    })
+}
+
+fn action_field_format_tail<'a, I>(parts: &mut I) -> Option<()>
+where
+    I: Iterator<Item = &'a str>,
+{
+    let mut text_format = None;
+    while let Some(part) = parts.next() {
+        if action_field_format_switch(part, parts, &mut text_format)? {
+            continue;
+        }
+        return None;
+    }
+    Some(())
+}
+
+fn action_field_format_switch<'a, I>(
+    part: &'a str,
+    parts: &mut I,
+    text_format: &mut Option<FieldTextFormat>,
+) -> Option<bool>
+where
+    I: Iterator<Item = &'a str>,
+{
+    accept_general_format_switch(part, parts, |format| {
+        accept_field_text_format_switch(format, text_format)
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::action_field_syntax;
+
+    #[test]
+    fn action_field_syntax_accepts_computed_and_target_only_forms() {
+        assert!(action_field_syntax(r#"GOTOBUTTON TargetBookmark "Jump Now""#).is_some());
+        assert!(action_field_syntax(r#"PRINT \p ReportBox "0 0 moveto""#).is_some());
+        assert!(action_field_syntax(r#"MACROBUTTON RunReport \* MERGEFORMAT"#).is_some());
+        assert!(action_field_syntax(r#"MACROBUTTON RunReport Run \* Upper Again"#).is_none());
+    }
+}
+
 pub(crate) fn document_property_key(value: &str) -> String {
     value
         .chars()

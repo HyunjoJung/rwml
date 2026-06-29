@@ -5,6 +5,8 @@
 //! construct is fully modeled, editable, or renderable.
 
 #[cfg(not(feature = "docx"))]
+use crate::annotation::action_field_syntax;
+#[cfg(not(feature = "docx"))]
 use crate::annotation::field_name_token as diagnostic_name_token;
 use crate::annotation::{
     accept_field_number_format_switch, accept_field_text_format_switch,
@@ -26,10 +28,6 @@ use crate::annotation::{
     reference_index_category_token, reference_index_literal_token,
     reference_index_plain_value_token, revision_number_field_text_format, sequence_field_syntax,
     set_field_syntax, style_ref_field_syntax, toc_entry_field_syntax,
-};
-#[cfg(not(feature = "docx"))]
-use crate::annotation::{
-    field_non_empty_non_switch_literal_token, field_non_empty_quoted_literal_token,
 };
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{field_points_token, field_positive_points_token, field_symbol_code_token};
@@ -2849,99 +2847,7 @@ fn action_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
 
 #[cfg(not(feature = "docx"))]
 fn supported_action_syntax(instruction: &str) -> bool {
-    supported_print_syntax(instruction) || supported_action_button_syntax(instruction)
-}
-
-#[cfg(not(feature = "docx"))]
-fn supported_print_syntax(instruction: &str) -> bool {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let Some(kind) = parts.next() else {
-        return false;
-    };
-    if !kind.eq_ignore_ascii_case("PRINT") {
-        return false;
-    }
-    let Some(first) = parts.next() else {
-        return false;
-    };
-    if first.eq_ignore_ascii_case("\\p") {
-        let Some(group) = parts.next() else {
-            return false;
-        };
-        let mut text_format = false;
-        return diagnostic_identifier_token(group).is_some()
-            && parts
-                .next()
-                .and_then(field_non_empty_quoted_literal_token)
-                .is_some()
-            && supported_field_format_tail_for_report(&mut parts, &mut text_format);
-    }
-    if let Some(group) = strip_ascii_switch_prefix(first, "\\p") {
-        let mut text_format = false;
-        return diagnostic_identifier_token(group).is_some()
-            && parts
-                .next()
-                .and_then(field_non_empty_quoted_literal_token)
-                .is_some()
-            && supported_field_format_tail_for_report(&mut parts, &mut text_format);
-    }
-    if field_non_empty_non_switch_literal_token(first).is_none() {
-        return false;
-    }
-    let mut text_format = false;
-    let mut saw_format = false;
-    while let Some(part) = parts.next() {
-        let Some(accepted) = accept_field_format_for_report(part, &mut parts, &mut text_format)
-        else {
-            return false;
-        };
-        if accepted {
-            saw_format = true;
-            continue;
-        }
-        if saw_format || field_non_empty_non_switch_literal_token(part).is_none() {
-            return false;
-        }
-    }
-    true
-}
-
-#[cfg(not(feature = "docx"))]
-fn supported_action_button_syntax(instruction: &str) -> bool {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let Some(kind) = parts.next() else {
-        return false;
-    };
-    if !kind.eq_ignore_ascii_case("GOTOBUTTON") && !kind.eq_ignore_ascii_case("MACROBUTTON") {
-        return false;
-    }
-    let Some(target) = parts.next() else {
-        return false;
-    };
-    if diagnostic_identifier_token(target).is_none() {
-        return false;
-    }
-    let mut display_parts = Vec::new();
-    let mut text_format = false;
-    let mut saw_format = false;
-    while let Some(part) = parts.next() {
-        let Some(accepted) = accept_field_format_for_report(part, &mut parts, &mut text_format)
-        else {
-            return false;
-        };
-        if accepted {
-            saw_format = true;
-            continue;
-        }
-        if saw_format || part.starts_with('\\') {
-            return false;
-        }
-        display_parts.push(part);
-    }
-    display_parts.is_empty()
-        || field_non_empty_non_switch_literal_token(&display_parts.join(" ")).is_some()
+    action_field_syntax(instruction).is_some()
 }
 
 fn inserted_content_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
