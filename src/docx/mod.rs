@@ -30,6 +30,8 @@ use crate::model::{Block, Color, CustomXmlItem, DocMeta, DocModel, Image};
 use crate::text;
 use crate::CoreProperties;
 
+use self::xml_text::{read_text, skip_subtree};
+
 mod body;
 mod comments;
 mod fields;
@@ -1118,11 +1120,11 @@ fn read_floating_shapes(doc_xml: &str) -> Vec<FloatingShape> {
                     scan_depth,
                     name,
                 ) {
-                    skip_shape_scan_subtree(&mut r);
+                    skip_subtree(&mut r);
                     continue;
                 }
                 if is_old_revision_content(name) {
-                    skip_shape_scan_subtree(&mut r);
+                    skip_subtree(&mut r);
                     continue;
                 }
                 if name == b"AlternateContent" {
@@ -1183,10 +1185,7 @@ fn read_floating_shapes(doc_xml: &str) -> Vec<FloatingShape> {
                     continue;
                 }
                 if in_body && current_body_block_index.is_some() && name == b"t" {
-                    append_floating_anchor_text(
-                        &mut current_body_block_text,
-                        &read_leaf_text(&mut r),
-                    );
+                    append_floating_anchor_text(&mut current_body_block_text, &read_text(&mut r));
                     body_depth = body_depth.saturating_sub(1);
                     continue;
                 }
@@ -1368,7 +1367,7 @@ fn read_floating_shape(
                 let name = local(qname.as_ref());
                 if text_box_depth > 0 {
                     match name {
-                        b"t" => append_shape_text(&mut shape_text, &read_leaf_text(r)),
+                        b"t" => append_shape_text(&mut shape_text, &read_text(r)),
                         _ => text_box_depth += 1,
                     }
                     continue;
@@ -1492,23 +1491,6 @@ fn is_old_revision_content(name: &[u8]) -> bool {
     matches!(name, b"del" | b"moveFrom")
 }
 
-fn skip_shape_scan_subtree(r: &mut Reader<&[u8]>) {
-    let mut depth = 1usize;
-    loop {
-        match r.read_event() {
-            Ok(Event::Start(_)) => depth += 1,
-            Ok(Event::End(_)) => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    break;
-                }
-            }
-            Ok(Event::Eof) | Err(_) => break,
-            _ => {}
-        }
-    }
-}
-
 fn append_shape_text(out: &mut String, text: &str) {
     let previous_is_space = matches!(out.chars().last(), Some(' ' | '\n' | '\t'));
     let previous_is_joiner = out.ends_with('-') || out.ends_with('\u{00ad}');
@@ -1543,10 +1525,10 @@ fn read_shape_position(r: &mut Reader<&[u8]>, start: &BytesStart<'_>) -> ShapePo
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"posOffset" => {
-                position.offset_emu = read_leaf_text(r).trim().parse().ok();
+                position.offset_emu = read_text(r).trim().parse().ok();
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"align" => {
-                position.align = Some(read_leaf_text(r));
+                position.align = Some(read_text(r));
             }
             Ok(Event::End(e))
                 if matches!(local(e.name().as_ref()), b"positionH" | b"positionV") =>
@@ -1710,22 +1692,6 @@ fn attr_bool(e: &BytesStart<'_>, key: &[u8]) -> Option<bool> {
     attr_local(e, key).map(|value| toggle_on(Some(value)))
 }
 
-fn read_leaf_text(r: &mut Reader<&[u8]>) -> String {
-    let mut text = String::new();
-    loop {
-        match r.read_event() {
-            Ok(Event::Text(t)) => match t.unescape().ok().map(|c| c.into_owned()) {
-                Some(c) => text.push_str(&c),
-                None => text.push_str(&String::from_utf8_lossy(t.into_inner().as_ref())),
-            },
-            Ok(Event::CData(t)) => text.push_str(&String::from_utf8_lossy(t.into_inner().as_ref())),
-            Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
-            _ => {}
-        }
-    }
-    text
-}
-
 fn parse_core_properties(xml: &str) -> CoreProperties {
     let mut r = Reader::from_str(xml);
     let mut props = CoreProperties::default();
@@ -1734,7 +1700,7 @@ fn parse_core_properties(xml: &str) -> CoreProperties {
             Ok(Event::Start(e)) => {
                 let key = local(e.name().as_ref()).to_vec();
                 if is_core_property_key(&key) {
-                    set_core_property_value(&mut props, &key, read_core_property_text(&mut r));
+                    set_core_property_value(&mut props, &key, read_text(&mut r));
                 }
             }
             Ok(Event::Empty(e)) => {
@@ -1869,7 +1835,7 @@ fn parse_extended_properties(xml: &str) -> HashMap<String, String> {
                 let key = local(e.name().as_ref()).to_vec();
                 if is_extended_property_key(&key) {
                     if let Ok(name) = std::str::from_utf8(&key) {
-                        props.insert(document_property_key(name), read_core_property_text(&mut r));
+                        props.insert(document_property_key(name), read_text(&mut r));
                     }
                 }
             }
@@ -1981,7 +1947,7 @@ fn read_custom_property_value(r: &mut Reader<&[u8]>) -> Option<String> {
     loop {
         match r.read_event() {
             Ok(Event::Start(_)) if value.is_none() => {
-                value = Some(read_core_property_text(r));
+                value = Some(read_text(r));
             }
             Ok(Event::Empty(_)) if value.is_none() => {
                 value = Some(String::new());
@@ -2009,22 +1975,6 @@ fn skip_custom_property(r: &mut Reader<&[u8]>) {
             _ => {}
         }
     }
-}
-
-fn read_core_property_text(r: &mut Reader<&[u8]>) -> String {
-    let mut text = String::new();
-    loop {
-        match r.read_event() {
-            Ok(Event::Text(t)) => match t.unescape().ok().map(|c| c.into_owned()) {
-                Some(c) => text.push_str(&c),
-                None => text.push_str(&String::from_utf8_lossy(t.into_inner().as_ref())),
-            },
-            Ok(Event::CData(t)) => text.push_str(&String::from_utf8_lossy(t.into_inner().as_ref())),
-            Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
-            _ => {}
-        }
-    }
-    text
 }
 
 /// `word/header1.xml` → `word/_rels/header1.xml.rels`.
