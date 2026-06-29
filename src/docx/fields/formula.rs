@@ -556,7 +556,10 @@ pub(super) fn format_formula_number(value: f64, picture: &str) -> Option<String>
     format_formula_number_section(value, picture, true)
 }
 
-fn format_formula_general_number(value: f64, format: FieldNumberFormat) -> Option<String> {
+pub(super) fn format_formula_general_number(
+    value: f64,
+    format: FieldNumberFormat,
+) -> Option<String> {
     match format {
         FieldNumberFormat::DollarText => format_formula_dollar_text(value),
         _ => {

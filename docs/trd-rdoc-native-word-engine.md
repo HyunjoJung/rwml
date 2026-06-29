@@ -630,7 +630,7 @@ Implementation:
   literal affixes, single-section leading `+`/`-` sign-control items, `x`
   digit-drop/rounding positions, and sectioned
   positive/negative/zero pictures, plus neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT`
-  formula tails and non-table literal formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
+  formula tails and literal/table formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
   malformed formula switch syntax reporting `UnsupportedSwitch`,
   and literal `DEFINED(expr)` checks for parser-local literal expressions, literal
   quoted/unquoted literal `QUOTE`, literal `IF` finite numeric/text comparisons, literal `COMPARE`
@@ -661,7 +661,7 @@ Implementation:
   numeric pictures, literal affixes, single-section leading `+`/`-` sign-control items, `x`
   digit-drop/rounding positions, and sectioned positive/negative/zero pictures,
   plus neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT` formula tails and
-  non-table literal formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
+  literal/table formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
   malformed formula switch syntax reporting `UnsupportedSwitch`,
   quoted/unquoted literal `QUOTE`, literal `IF` finite numeric/text comparisons, literal
   `COMPARE` finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields, and
@@ -720,7 +720,7 @@ Acceptance:
   literal affixes, single-section leading `+`/`-`
   sign-control items, `x` digit-drop/rounding positions, and sectioned
   positive/negative/zero pictures, plus neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT`
-  formula tails and non-table literal formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
+  formula tails and literal/table formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
   malformed formula switch syntax reporting `UnsupportedSwitch`,
   and literal `DEFINED(expr)` checks for parser-local literal expressions,
   quoted/unquoted literal `QUOTE`, malformed literal `QUOTE` syntax reporting
@@ -1171,7 +1171,7 @@ open and edit the chart data.
   literal affixes, single-section leading `+`/`-` sign-control items, `x`
   digit-drop/rounding positions, and sectioned
   positive/negative/zero pictures, plus neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT`
-  formula tails and non-table literal formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
+  formula tails and literal/table formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
   malformed formula switch syntax reporting `UnsupportedSwitch`,
   and literal `DEFINED(expr)` checks for parser-local literal expressions, literal
   quoted/unquoted literal `QUOTE`, literal `IF` finite numeric/text comparisons, literal `COMPARE`
@@ -1202,7 +1202,7 @@ open and edit the chart data.
   numeric pictures, literal affixes, single-section leading `+`/`-` sign-control items, `x`
   digit-drop/rounding positions, and sectioned positive/negative/zero pictures,
   plus neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT` formula tails and
-  non-table literal formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
+  literal/table formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
   malformed formula switch syntax reporting `UnsupportedSwitch`,
   literal `DEFINED(expr)` checks for parser-local literal expressions,
   quoted/unquoted literal `QUOTE`, literal `IF` comparisons, literal `COMPARE` results,

@@ -6,8 +6,8 @@ use crate::annotation::FieldKind;
 use super::super::xml_text::{read_text, skip_subtree};
 use super::super::{attr_local, local};
 use super::formula::{
-    eval_formula_function, format_formula_number, formula_instruction, formula_number_text,
-    FormulaNumberFormat, FormulaParser,
+    eval_formula_function, format_formula_general_number, format_formula_number,
+    formula_instruction, formula_number_text, FormulaNumberFormat, FormulaParser,
 };
 use super::{
     apply_complex_field_scan_fld_char, inline_marker_text, normalize_instruction,
@@ -541,7 +541,7 @@ fn computed_table_formula_result(
     let value = parser.parse()?;
     match spec.number_format {
         Some(FormulaNumberFormat::Picture(format)) => format_formula_number(value, &format),
-        Some(FormulaNumberFormat::General(_)) => None,
+        Some(FormulaNumberFormat::General(format)) => format_formula_general_number(value, format),
         None => formula_number_text(value),
     }
 }
