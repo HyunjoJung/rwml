@@ -1259,8 +1259,8 @@ open and edit the chart data.
 ### R4. Font and script support
 
 - bundled font option behind a feature or explicit font registration;
-- extend the partial render-only Symbol/Wingdings mapping beyond common display
-  code points;
+- extend the partial common Symbol/Wingdings mapping beyond current
+  display/render code points;
 - CJK fallback stability;
 - RTL as a separate milestone, not incidental line-breaking.
 

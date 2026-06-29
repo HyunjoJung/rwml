@@ -827,7 +827,8 @@ code points.
   no-break/soft hyphens for simple and common complex body fields; `.docx`
   REF/TOC cases listed above plus recovered `.doc` field instructions are
   exposed through `fields()`/diagnostics);
-  symbol-font (Symbol/Wingdings) glyph mapping; encrypted files
+  complete symbol-font (Symbol/Wingdings) glyph coverage beyond the common
+  deterministic mapped subset; encrypted files
   (detected and rejected).
 - *`.doc` read only:* per-instance list overrides (`LFOLVL` start-at); Word 6/95.
   Header, footnote/endnote, annotation, and text-box text appears in `text()` and

@@ -1002,10 +1002,9 @@ Initial status:
   existing non-note `NOTEREF` targets, missing `TOC \b` scopes, existing
   empty `TOC \b` scopes, and
   truly unresolved bookmarks.
-- The renderer maps common Symbol/Wingdings legacy font code points to Unicode,
-  including the Symbol `0xB7` bullet,
-  before PDF shaping. The mapping is intentionally partial and render-only:
-  model text, `text()`, and exporters preserve the original source code points.
+- The field evaluator and renderer map common Symbol/Wingdings legacy font code
+  points to Unicode, including the Symbol `0xB7` bullet. The mapping is
+  intentionally partial; complete symbol-font coverage remains later font work.
 - `scripts/render_validate.py --json` emits a machine-readable render validation
   report with per-document text recall, page counts, page-count ratio,
   average-hash similarity, render-warning counts/kinds, skips, and aggregate
