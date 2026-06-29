@@ -1488,6 +1488,23 @@ fn direct_bookmark_ref_switch_field_docx() -> Vec<u8> {
     ])
 }
 
+fn bookmark_ref_number_format_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="InvoiceTotal"/><w:r><w:t>21</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" REF InvoiceTotal \* CardText "><w:r><w:t>stale cardtext ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" InvoiceTotal \* Ordinal "><w:r><w:t>stale direct ordinal</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" InvoiceTotal \* CardText \* Upper "><w:r><w:t>stale direct uppercase cardtext</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn direct_relative_ref_switch_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -9062,6 +9079,39 @@ fn docx_direct_bookmark_field_applies_supported_ref_switches() {
     assert!(main_text.contains("FIGURE ONE"), "{main_text:?}");
     assert!(main_text.contains("Figure one"), "{main_text:?}");
     assert!(main_text.contains("figure one"), "{main_text:?}");
+}
+
+#[test]
+fn docx_ref_fields_apply_number_formats_to_plain_and_direct_bookmarks() {
+    let doc = Document::open(&bookmark_ref_number_format_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 3);
+    assert!(fields.iter().all(|field| field.kind == FieldKind::Ref));
+    assert_eq!(fields[0].instruction, "REF InvoiceTotal \\* CardText");
+    assert_eq!(fields[0].result, "stale cardtext ref");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("twenty-one"));
+    assert_eq!(fields[1].instruction, "InvoiceTotal \\* Ordinal");
+    assert_eq!(fields[1].result, "stale direct ordinal");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("21st"));
+    assert_eq!(fields[2].instruction, "InvoiceTotal \\* CardText \\* Upper");
+    assert_eq!(fields[2].result, "stale direct uppercase cardtext");
+    assert_eq!(fields[2].computed_result.as_deref(), Some("TWENTY-ONE"));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("twenty-one")
+            && main_text.contains("21st")
+            && main_text.contains("TWENTY-ONE")
+            && !main_text.contains("stale cardtext ref")
+            && !main_text.contains("stale direct ordinal")
+            && !main_text.contains("stale direct uppercase cardtext"),
+        "computed numeric bookmark REF formats should replace stale cached text: {main_text:?}"
+    );
 }
 
 #[test]
