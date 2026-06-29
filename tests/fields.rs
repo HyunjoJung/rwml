@@ -359,6 +359,27 @@ fn document_info_compact_property_format_docx() -> Vec<u8> {
     ])
 }
 
+fn document_info_compact_variable_format_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/settings.xml",
+            r#"<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docVars><w:docVar w:name=" ClientCode " w:val="alpha-42"/></w:docVars></w:settings>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" DOCVARIABLE ClientCode \*Upper "><w:r><w:t>stale compact variable</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn document_info_compact_date_format_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -4269,6 +4290,31 @@ fn docx_document_info_property_accepts_compact_format_switch() {
     assert!(
         main_text.contains("Acme Launch") && !main_text.contains("stale compact property"),
         "compact property format should replace stale cached text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_document_info_variable_accepts_compact_format_switch() {
+    let doc = Document::open(&document_info_compact_variable_format_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(
+        fields[0].kind,
+        FieldKind::DocumentInfo("DOCVARIABLE".to_string())
+    );
+    assert_eq!(fields[0].instruction, r#"DOCVARIABLE ClientCode \*Upper"#);
+    assert_eq!(fields[0].result, "stale compact variable");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("ALPHA-42"));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("ALPHA-42") && !main_text.contains("stale compact variable"),
+        "compact variable format should replace stale cached text: {main_text:?}"
     );
 }
 
