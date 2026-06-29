@@ -4459,6 +4459,10 @@ mod tests {
                 Some(super::FieldEvaluationReason::UnsupportedSwitch)
             );
         }
+        assert_eq!(
+            super::form_field_uncomputed_reason(r#"FORMTEXT \*Upper"#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
 
         let missing_quality_operand = Field {
             kind: FieldKind::Barcode("DISPLAYBARCODE".to_string()),

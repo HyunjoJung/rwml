@@ -2938,6 +2938,9 @@ mod tests {
         let form = legacy_form_field_syntax(r#"FORMDROPDOWN \* Upper"#).unwrap();
         assert_eq!(form.kind, "FORMDROPDOWN");
         assert_eq!(form.text_format, Some(FieldTextFormat::Upper));
+        let compact = legacy_form_field_syntax(r#"FORMTEXT \*Upper"#).unwrap();
+        assert_eq!(compact.kind, "FORMTEXT");
+        assert_eq!(compact.text_format, Some(FieldTextFormat::Upper));
         assert!(legacy_form_field_syntax(r#"FORMTEXT \* MERGEFORMAT"#).is_some());
         assert!(legacy_form_field_syntax(r#"FORMCHECKBOX"#).is_some());
         assert!(legacy_form_field_syntax(r#"FORMTEXT \x"#).is_none());

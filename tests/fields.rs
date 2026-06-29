@@ -8449,6 +8449,50 @@ fn docx_legacy_form_field_format_switches_apply_to_dropdowns() {
 }
 
 #[test]
+fn docx_legacy_form_fields_accept_compact_format_switches() {
+    let doc = Document::open(&docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" FORMDROPDOWN \*Upper "><w:ffData><w:ddList><w:result w:val="1"/><w:listEntry w:val="first"/><w:listEntry w:val="chosen option"/></w:ddList></w:ffData><w:r><w:t>stale compact dropdown</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FORMTEXT \*Upper "><w:r><w:t>alice</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ]))
+    .expect("fixture opens");
+
+    let fields = doc.fields();
+    assert_eq!(fields.len(), 2);
+    assert_eq!(
+        fields[0].kind,
+        FieldKind::FormField("FORMDROPDOWN".to_string())
+    );
+    assert_eq!(fields[0].instruction, "FORMDROPDOWN \\*Upper");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("CHOSEN OPTION"));
+    assert_eq!(fields[1].kind, FieldKind::FormField("FORMTEXT".to_string()));
+    assert_eq!(fields[1].instruction, "FORMTEXT \\*Upper");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("ALICE"));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("CHOSEN OPTION")
+            && main_text.contains("ALICE")
+            && !main_text.contains("stale compact dropdown")
+            && !main_text.contains("alice"),
+        "compact legacy form format switches should materialize deterministic results: {main_text:?}"
+    );
+}
+
+#[test]
 fn docx_legacy_form_dropdown_indices_accept_whitespace() {
     let doc = Document::open(&docx_fixture(&[
         (
