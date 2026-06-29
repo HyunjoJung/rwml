@@ -431,6 +431,7 @@ pub(crate) enum FieldNumberFormat {
     CardText,
     OrdText,
     Hex,
+    DollarText,
 }
 
 pub(crate) fn field_number_format_switch(part: &str) -> Option<FieldNumberFormat> {
@@ -445,6 +446,7 @@ pub(crate) fn field_number_format_switch(part: &str) -> Option<FieldNumberFormat
         _ if part.eq_ignore_ascii_case("OrdText") => Some(FieldNumberFormat::OrdText),
         _ if part.eq_ignore_ascii_case("ArabicDash") => Some(FieldNumberFormat::ArabicDash),
         _ if part.eq_ignore_ascii_case("Hex") => Some(FieldNumberFormat::Hex),
+        _ if part.eq_ignore_ascii_case("DollarText") => Some(FieldNumberFormat::DollarText),
         _ => None,
     }
 }

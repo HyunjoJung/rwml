@@ -945,7 +945,7 @@ fn sequence_numbering_text_format_field_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SEQ Figure \* CardText \* Upper "><w:r><w:t>stale sequence card</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SEQ Figure \* roman \* Upper "><w:r><w:t>stale sequence roman</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTONUM \* CardText \* Upper "><w:r><w:t>stale autonum card</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTONUM \* roman \* Upper "><w:r><w:t>stale autonum roman</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" LISTNUM NumberDefault \* CardText \* Upper "><w:r><w:t>stale listnum card</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" LISTNUM NumberDefault \* roman \* Upper "><w:r><w:t>stale listnum roman</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SEQ Figure \* CardText \* Upper "><w:r><w:t>stale sequence card</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SEQ Figure \* roman \* Upper "><w:r><w:t>stale sequence roman</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SEQ Invoice \r 21 \* DollarText "><w:r><w:t>stale sequence dollars</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTONUM \* CardText \* Upper "><w:r><w:t>stale autonum card</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" AUTONUM \* roman \* Upper "><w:r><w:t>stale autonum roman</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" LISTNUM NumberDefault \* CardText \* Upper "><w:r><w:t>stale listnum card</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" LISTNUM NumberDefault \* roman \* Upper "><w:r><w:t>stale listnum roman</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -6390,31 +6390,37 @@ fn docx_sequence_and_numbering_fields_apply_text_format_switches() {
     let doc = Document::open(&sequence_numbering_text_format_field_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 6);
+    assert_eq!(fields.len(), 7);
     assert_eq!(fields[0].kind, FieldKind::Sequence);
     assert_eq!(fields[0].instruction, "SEQ Figure \\* CardText \\* Upper");
     assert_eq!(fields[0].computed_result.as_deref(), Some("ONE"));
     assert_eq!(fields[1].kind, FieldKind::Sequence);
     assert_eq!(fields[1].instruction, "SEQ Figure \\* roman \\* Upper");
     assert_eq!(fields[1].computed_result.as_deref(), Some("II"));
-    assert_eq!(fields[2].kind, FieldKind::Numbering("AUTONUM".to_string()));
-    assert_eq!(fields[2].instruction, "AUTONUM \\* CardText \\* Upper");
-    assert_eq!(fields[2].computed_result.as_deref(), Some("ONE"));
-    assert_eq!(fields[3].kind, FieldKind::Numbering("AUTONUM".to_string()));
-    assert_eq!(fields[3].instruction, "AUTONUM \\* roman \\* Upper");
-    assert_eq!(fields[3].computed_result.as_deref(), Some("II"));
-    assert_eq!(fields[4].kind, FieldKind::Numbering("LISTNUM".to_string()));
+    assert_eq!(fields[2].kind, FieldKind::Sequence);
+    assert_eq!(fields[2].instruction, "SEQ Invoice \\r 21 \\* DollarText");
     assert_eq!(
-        fields[4].instruction,
-        "LISTNUM NumberDefault \\* CardText \\* Upper"
+        fields[2].computed_result.as_deref(),
+        Some("twenty-one and 00/100")
     );
-    assert_eq!(fields[4].computed_result.as_deref(), Some("ONE"));
+    assert_eq!(fields[3].kind, FieldKind::Numbering("AUTONUM".to_string()));
+    assert_eq!(fields[3].instruction, "AUTONUM \\* CardText \\* Upper");
+    assert_eq!(fields[3].computed_result.as_deref(), Some("ONE"));
+    assert_eq!(fields[4].kind, FieldKind::Numbering("AUTONUM".to_string()));
+    assert_eq!(fields[4].instruction, "AUTONUM \\* roman \\* Upper");
+    assert_eq!(fields[4].computed_result.as_deref(), Some("II"));
     assert_eq!(fields[5].kind, FieldKind::Numbering("LISTNUM".to_string()));
     assert_eq!(
         fields[5].instruction,
+        "LISTNUM NumberDefault \\* CardText \\* Upper"
+    );
+    assert_eq!(fields[5].computed_result.as_deref(), Some("ONE"));
+    assert_eq!(fields[6].kind, FieldKind::Numbering("LISTNUM".to_string()));
+    assert_eq!(
+        fields[6].instruction,
         "LISTNUM NumberDefault \\* roman \\* Upper"
     );
-    assert_eq!(fields[5].computed_result.as_deref(), Some("II"));
+    assert_eq!(fields[6].computed_result.as_deref(), Some("II"));
 
     let report = doc.report();
     assert!(report.features.unsupported_field_kinds.is_empty());
@@ -6424,6 +6430,7 @@ fn docx_sequence_and_numbering_fields_apply_text_format_switches() {
     assert!(
         !main_text.contains("stale sequence card")
             && !main_text.contains("stale sequence roman")
+            && !main_text.contains("stale sequence dollars")
             && !main_text.contains("stale autonum card")
             && !main_text.contains("stale autonum roman")
             && !main_text.contains("stale listnum card")

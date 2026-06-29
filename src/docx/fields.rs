@@ -7920,6 +7920,7 @@ enum PageNumberFormat {
     CardText,
     OrdText,
     Hex,
+    DollarText,
 }
 
 impl From<ModelPageNumberFormat> for PageNumberFormat {
@@ -8356,6 +8357,7 @@ fn page_number_format_from_field_format(format: FieldNumberFormat) -> PageNumber
         FieldNumberFormat::CardText => PageNumberFormat::CardText,
         FieldNumberFormat::OrdText => PageNumberFormat::OrdText,
         FieldNumberFormat::Hex => PageNumberFormat::Hex,
+        FieldNumberFormat::DollarText => PageNumberFormat::DollarText,
     }
 }
 
@@ -8408,6 +8410,7 @@ fn format_page_number(page: usize, format: Option<PageNumberFormat>) -> Option<S
         PageNumberFormat::CardText => cardinal_page_number_text(page),
         PageNumberFormat::OrdText => ordinal_page_number_text(page),
         PageNumberFormat::Hex => Some(format!("{page:X}")),
+        PageNumberFormat::DollarText => dollar_page_number_text(page),
     }
 }
 
@@ -8489,6 +8492,10 @@ fn cardinal_page_number_text(page: usize) -> Option<String> {
 
 fn ordinal_page_number_text(page: usize) -> Option<String> {
     ordinal_number_text(page)
+}
+
+fn dollar_page_number_text(page: usize) -> Option<String> {
+    Some(format!("{} and 00/100", cardinal_number_text(page)?))
 }
 
 fn cardinal_number_text(number: usize) -> Option<String> {
