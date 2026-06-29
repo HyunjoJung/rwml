@@ -1352,7 +1352,8 @@ are generated in the workflow.
 When invoked
 with `--enforce-policy-inputs`, the manifest generator requires a passing public
 hygiene report, the local render-validation report, at least one extraction
-benchmark report, and exactly the public `MANIFEST.tsv` plus
+benchmark report identified as `rdoc.benchmark-report.v1` /
+`extract-vs-mature`, and exactly the public `MANIFEST.tsv` plus
 `RENDER_MANIFEST.tsv` corpus manifest pair with matching document paths, then
 rejects hygiene, validation, or benchmark reports whose compact `gate.passed` is
 not true or whose recorded thresholds are weaker than the named `public-release`

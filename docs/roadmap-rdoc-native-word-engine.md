@@ -1194,10 +1194,10 @@ The active roadmap slices are:
    `public-release` manifest policy now fixes the required Rust gates and optional
    threshold values (`0.95` POI recall/F1, `0.90` render mean recall, `0` errors
    or skips), and `scripts/release_manifest.py --enforce-policy-inputs` can make
-   render validation, extraction benchmark, and the exact public
-   `MANIFEST.tsv`/`RENDER_MANIFEST.tsv` corpus pair with matching document paths
-   mandatory with passing compact gates and policy-strength thresholds for
-   strict public manifests.
+   render validation, an `rdoc.benchmark-report.v1` / `extract-vs-mature`
+   extraction benchmark, and the exact public `MANIFEST.tsv`/`RENDER_MANIFEST.tsv`
+   corpus pair with matching document paths mandatory with passing compact gates
+   and policy-strength thresholds for strict public manifests.
    Manifests now record `release_evidence.strict_policy_status`,
    `strict_policy_enforced`, `strict_policy_inputs_complete`, and missing
    strict inputs, including missing evidence files, so tagged automation that

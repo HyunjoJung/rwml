@@ -41,6 +41,8 @@ from typing import Any
 
 SCHEMA = "rdoc.release-manifest.v1"
 PUBLIC_RELEASE_CORPUS_MANIFESTS = ("MANIFEST.tsv", "RENDER_MANIFEST.tsv")
+PUBLIC_RELEASE_BENCHMARK_SCHEMA = "rdoc.benchmark-report.v1"
+PUBLIC_RELEASE_BENCHMARK_NAME = "extract-vs-mature"
 COUNT_POLICY_METRICS = {"below_recall_min", "skipped", "errors"}
 BOUNDED_SCORE_POLICY_METRICS = {"recall_min", "mean_recall", "poi_recall_mean", "poi_f1_mean"}
 KNOWN_WARNING_TOKENS = {
@@ -226,6 +228,22 @@ def report_summary(path: Path) -> dict[str, Any]:
             raise ValueError(f"{path} gate contains non-finite value") from error
         report["gate"] = gate
     return report
+
+
+def require_public_release_benchmark_identity(policy: str, path: Path) -> None:
+    if policy != "public-release":
+        return
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} does not contain a JSON object")
+    if data.get("schema") != PUBLIC_RELEASE_BENCHMARK_SCHEMA:
+        raise ValueError(
+            f"{policy} benchmark report schema must be {PUBLIC_RELEASE_BENCHMARK_SCHEMA}"
+        )
+    if data.get("benchmark") != PUBLIC_RELEASE_BENCHMARK_NAME:
+        raise ValueError(
+            f"{policy} benchmark report benchmark must be {PUBLIC_RELEASE_BENCHMARK_NAME}"
+        )
 
 
 def validation_summary(path: Path | None) -> dict[str, Any] | None:
@@ -450,6 +468,9 @@ def public_release_report_strength_gaps(
             benchmark_strength_missing = True
             continue
         try:
+            require_public_release_benchmark_identity(
+                "public-release", benchmark_report
+            )
             benchmark = report_summary(benchmark_report)
             require_report_gate_passed("public-release", benchmark, "benchmark")
             require_public_release_report_thresholds(
@@ -982,6 +1003,9 @@ def release_manifest(
                 release_policy, validation, "validation"
             )
         manifest["validation"] = validation
+    if enforce_policy_inputs and release_policy is not None:
+        for benchmark_report in benchmark_reports or []:
+            require_public_release_benchmark_identity(release_policy, benchmark_report)
     benchmarks = benchmark_summaries(benchmark_reports)
     if benchmarks:
         if enforce_policy_inputs and release_policy is not None:

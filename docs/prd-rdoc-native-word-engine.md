@@ -666,8 +666,9 @@ The larger non-field maturity gaps are:
   and non-text Office-Art drawing contents;
 - newer extension chart families and actual metafile drawing beyond bounded
   diagnostics/header metadata;
-- stricter public-release evidence from local render and extraction benchmark
-  reports before claiming high compatibility.
+- stricter public-release evidence from local render reports and identified
+  `extract-vs-mature` extraction benchmark reports before claiming high
+  compatibility.
 
 ## 9. Risks
 

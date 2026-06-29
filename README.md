@@ -797,8 +797,9 @@ opaque. Oversized legacy binary documents block the audit instead of passing
 uninspected.
 Add `--enforce-policy-inputs` when generating a strict public manifest from local
 evidence: the command then requires a passing public hygiene report, render
-validation, extraction benchmark, and exactly the public `MANIFEST.tsv` plus
-`RENDER_MANIFEST.tsv` corpus manifests with matching document paths, and rejects
+validation, an `rdoc.benchmark-report.v1` / `extract-vs-mature` extraction
+benchmark, and exactly the public `MANIFEST.tsv` plus `RENDER_MANIFEST.tsv`
+corpus manifests with matching document paths, and rejects
 hygiene, validation, or benchmark reports whose compact gates failed or were
 generated with weaker thresholds than the named `public-release` policy. The
 release workflow intentionally emits the non-strict policy manifest from the

@@ -82,6 +82,8 @@ def write_passing_benchmark(path: pathlib.Path) -> None:
                     "poi_f1_mean": 0.95,
                     "errors": 0,
                 },
+                "schema": "rdoc.benchmark-report.v1",
+                "benchmark": "extract-vs-mature",
                 "gate": {
                     "passed": True,
                     "checks": [
@@ -2429,6 +2431,8 @@ class ReleaseManifestTests(unittest.TestCase):
             benchmark.write_text(
                 json.dumps(
                     {
+                        "schema": "rdoc.benchmark-report.v1",
+                        "benchmark": "extract-vs-mature",
                         "summary": {
                             "files": 1,
                             "poi_recall_mean": 1.0,
@@ -2539,6 +2543,8 @@ class ReleaseManifestTests(unittest.TestCase):
             benchmark.write_text(
                 json.dumps(
                     {
+                        "schema": "rdoc.benchmark-report.v1",
+                        "benchmark": "extract-vs-mature",
                         "summary": {
                             "files": 1,
                             "poi_recall_mean": 1.0,
@@ -2574,6 +2580,73 @@ class ReleaseManifestTests(unittest.TestCase):
             with self.assertRaisesRegex(
                 ValueError,
                 "public-release benchmark report gate must include poi_f1_mean >= 0.95",
+            ):
+                release_manifest.release_manifest(
+                    [artifact],
+                    release_policy="public-release",
+                    enforce_policy_inputs=True,
+                    hygiene_report=hygiene,
+                    validation_report=validation,
+                    benchmark_reports=[benchmark],
+                    corpus_manifests=[corpus, render_corpus],
+                )
+
+    def test_enforced_public_release_policy_rejects_wrong_benchmark_identity(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            artifact = root / "rdoc.tar.gz"
+            hygiene = root / "public-hygiene.json"
+            validation = root / "render-validation.json"
+            benchmark = root / "extract-benchmark.json"
+            artifact.write_bytes(b"release artifact")
+            write_passing_hygiene(hygiene)
+            write_passing_validation(validation)
+            corpus, render_corpus = write_matching_public_manifests(root)
+            benchmark.write_text(
+                json.dumps(
+                    {
+                        "schema": "rdoc.benchmark-report.v1",
+                        "benchmark": "other-benchmark",
+                        "summary": {
+                            "files": 1,
+                            "poi_recall_mean": 1.0,
+                            "poi_f1_mean": 1.0,
+                            "errors": 0,
+                        },
+                        "gate": {
+                            "passed": True,
+                            "checks": [
+                                {
+                                    "metric": "poi_recall_mean",
+                                    "op": ">=",
+                                    "threshold": 0.95,
+                                    "actual": 1.0,
+                                    "passed": True,
+                                },
+                                {
+                                    "metric": "poi_f1_mean",
+                                    "op": ">=",
+                                    "threshold": 0.95,
+                                    "actual": 1.0,
+                                    "passed": True,
+                                },
+                                {
+                                    "metric": "errors",
+                                    "op": "<=",
+                                    "threshold": 0,
+                                    "actual": 0,
+                                    "passed": True,
+                                },
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "public-release benchmark report benchmark must be extract-vs-mature",
             ):
                 release_manifest.release_manifest(
                     [artifact],
@@ -3047,6 +3120,8 @@ class ReleaseManifestTests(unittest.TestCase):
             benchmark.write_text(
                 json.dumps(
                     {
+                        "schema": "rdoc.benchmark-report.v1",
+                        "benchmark": "extract-vs-mature",
                         "summary": {
                             "files": 1,
                             "poi_recall_mean": 0.99,
