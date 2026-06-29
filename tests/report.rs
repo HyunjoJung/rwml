@@ -1732,6 +1732,24 @@ fn page_ref_deleted_rendered_break_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn page_ref_alternate_content_rendered_break_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:p><w:r><w:t>Page one text.</w:t></w:r></w:p><w:p><w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:lastRenderedPageBreak/></mc:Choice><mc:Fallback><w:lastRenderedPageBreak/></mc:Fallback></mc:AlternateContent><w:t>Page two lead.</w:t></w:r></w:p><w:p><w:bookmarkStart w:id="7" w:name="AltPage"/><w:r><w:t>Alternate target</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF AltPage \h "><w:r><w:t>stale alternate page</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn ref_field_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -6109,6 +6127,46 @@ fn report_page_ref_deleted_rendered_break_marker_remains_unsupported() {
             reason: FieldEvaluationReason::NoComputedResult,
             count: 1,
         }]
+    );
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_page_ref_alternate_content_rendered_break_uses_single_branch() {
+    let doc = Document::open(&page_ref_alternate_content_rendered_break_diagnostics_docx())
+        .expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::PageRef);
+    assert_eq!(fields[0].instruction, "PAGEREF AltPage \\h");
+    assert_eq!(fields[0].result, "stale alternate page");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("2"));
+
+    let report = doc.report();
+    assert_eq!(report.features.fields, 1);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::PageRef,
+            count: 1,
+        }]
+    );
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+    assert!(
+        report
+            .warnings
+            .iter()
+            .all(|warning| !matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })),
+        "{:?}",
+        report.warnings
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("2") && !main_text.contains("stale alternate page"),
+        "PAGEREF report diagnostics must not double-count AlternateContent page markers: {main_text:?}"
     );
 }
 
