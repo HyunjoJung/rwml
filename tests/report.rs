@@ -1225,6 +1225,24 @@ fn section_field_text_format_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn section_alternate_content_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="wps"><w:body><mc:AlternateContent><mc:Choice Requires="wps"><w:p><w:pPr><w:sectPr/></w:pPr></w:p></mc:Choice><mc:Fallback><w:p><w:pPr><w:sectPr/></w:pPr></w:p></mc:Fallback></mc:AlternateContent><w:p><w:fldSimple w:instr=" SECTION "><w:r><w:t>stale alternate section</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn section_pages_text_format_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -5361,6 +5379,47 @@ fn report_section_text_format_switches_are_supported() {
             .all(|warning| !matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })),
         "{:?}",
         report.warnings
+    );
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_section_alternate_content_uses_single_branch() {
+    let doc = Document::open(&section_alternate_content_diagnostics_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(
+        fields[0].kind,
+        FieldKind::DocumentStructure("SECTION".to_string())
+    );
+    assert_eq!(fields[0].instruction, "SECTION");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("2"));
+
+    let report = doc.report();
+    assert_eq!(report.features.fields, 1);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![field_kind_count(
+            FieldKind::DocumentStructure("SECTION".to_string()),
+            1,
+        )]
+    );
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+    assert!(
+        report
+            .warnings
+            .iter()
+            .all(|warning| !matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })),
+        "{:?}",
+        report.warnings
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("2") && !main_text.contains("stale alternate section"),
+        "SECTION report diagnostics must use one AlternateContent branch: {main_text:?}"
     );
 }
 
