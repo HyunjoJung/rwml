@@ -361,6 +361,24 @@ fn page_unsupported_switch_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn page_trusted_current_context_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgNumType w:start="4" w:fmt="decimalZero"/></w:sectPr></w:pPr></w:p><w:p><w:fldSimple w:instr=" PAGE "><w:r><w:t>stale restart decimal zero</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGE \* Arabic "><w:r><w:t>stale restart arabic</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGE \* CardText \* Upper "><w:r><w:t>stale restart card upper</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:t>Visible before ambiguous break.</w:t><w:br w:type="page"/></w:r></w:p><w:p><w:fldSimple w:instr=" PAGE "><w:r><w:t>cached ambiguous page</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:lastRenderedPageBreak/><w:t>Rendered page lead.</w:t></w:r></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> PAGE \* roman </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale rendered roman page</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn unknown_field_gap_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -3387,6 +3405,73 @@ fn report_page_field_warning_distinguishes_unsupported_switches() {
             reason: FieldEvaluationReason::UnsupportedSwitch,
             count: 1,
         }]
+    );
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_page_fields_split_trusted_and_ambiguous_current_contexts() {
+    let doc =
+        Document::open(&page_trusted_current_context_diagnostics_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let expected = [
+        ("PAGE", Some("04")),
+        ("PAGE \\* Arabic", Some("4")),
+        ("PAGE \\* CardText \\* Upper", Some("FOUR")),
+        ("PAGE", None),
+        ("PAGE \\* roman", Some("v")),
+    ];
+
+    assert_eq!(fields.len(), expected.len());
+    for (field, (instruction, computed)) in fields.iter().zip(expected) {
+        assert_eq!(field.kind, FieldKind::Page);
+        assert_eq!(field.instruction, instruction);
+        assert_eq!(field.computed_result.as_deref(), computed);
+    }
+
+    let report = doc.report();
+    assert_eq!(report.features.fields, 5);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![field_kind_count(FieldKind::Page, 5)]
+    );
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![field_kind_count(FieldKind::Page, 1)]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![field_reason_count(
+            FieldEvaluationReason::NoComputedResult,
+            1
+        )]
+    );
+    assert_eq!(
+        report
+            .warnings
+            .iter()
+            .find(|warning| matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })),
+        Some(&DocumentWarning::UnsupportedFieldEvaluation {
+            count: 1,
+            field_kinds: vec![field_kind_count(FieldKind::Page, 1)],
+        })
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("04")
+            && main_text.contains("FOUR")
+            && main_text.contains("cached ambiguous page")
+            && main_text.contains("v"),
+        "trusted PAGE fields should use computed text while the ambiguous field keeps its cached text: {main_text:?}"
+    );
+    assert!(
+        !main_text.contains("stale restart decimal zero")
+            && !main_text.contains("stale restart arabic")
+            && !main_text.contains("stale restart card upper")
+            && !main_text.contains("stale rendered roman page"),
+        "computed PAGE fields should replace stale cached text in report fixtures: {main_text:?}"
     );
 }
 
