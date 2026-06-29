@@ -2269,7 +2269,7 @@ pub(crate) fn attr_local_trimmed(e: &BytesStart<'_>, key: &[u8]) -> Option<Strin
 }
 
 pub(crate) fn is_page_break_type(e: &BytesStart<'_>) -> bool {
-    attr_local(e, b"type").is_some_and(|value| value.trim() == "page")
+    attr_local_trimmed(e, b"type").is_some_and(|value| value == "page")
 }
 
 pub(crate) fn field_char_type(e: &BytesStart<'_>) -> Option<String> {
