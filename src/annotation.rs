@@ -661,6 +661,196 @@ pub(crate) fn opaque_field_syntax(instruction: &str, is_kind: fn(&str) -> bool) 
     true
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BarcodeFieldKind {
+    Legacy,
+    Display,
+    Merge,
+}
+
+pub(crate) fn barcode_field_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    let Some(kind) = barcode_field_kind(kind) else {
+        return false;
+    };
+    let mut value_tokens = 0usize;
+    let mut positional_values = true;
+    while let Some(part) = parts.next() {
+        let Some(accepted) = accept_field_diagnostic_format_switch_syntax(part, &mut parts) else {
+            return false;
+        };
+        if accepted {
+            continue;
+        }
+        if part.starts_with('\\') {
+            if !barcode_field_switch_syntax(part, &mut parts, kind) {
+                return false;
+            }
+            positional_values = false;
+            continue;
+        }
+        let Some(value) = field_non_empty_literal_token(part) else {
+            return false;
+        };
+        if positional_values {
+            value_tokens += 1;
+            if value_tokens == 2 && kind != BarcodeFieldKind::Legacy && !barcode_type_token(value) {
+                return false;
+            }
+        }
+    }
+    match kind {
+        BarcodeFieldKind::Legacy => value_tokens >= 1,
+        BarcodeFieldKind::Display | BarcodeFieldKind::Merge => value_tokens >= 2,
+    }
+}
+
+fn barcode_field_kind(kind: &str) -> Option<BarcodeFieldKind> {
+    if kind.eq_ignore_ascii_case("BARCODE") {
+        Some(BarcodeFieldKind::Legacy)
+    } else if kind.eq_ignore_ascii_case("DISPLAYBARCODE") {
+        Some(BarcodeFieldKind::Display)
+    } else if kind.eq_ignore_ascii_case("MERGEBARCODE") {
+        Some(BarcodeFieldKind::Merge)
+    } else {
+        None
+    }
+}
+
+fn barcode_type_token(value: &str) -> bool {
+    matches!(
+        value.to_ascii_uppercase().as_str(),
+        "UPCA"
+            | "UPCE"
+            | "JAN13"
+            | "JAN8"
+            | "EAN13"
+            | "EAN8"
+            | "CASE"
+            | "ITF14"
+            | "NW7"
+            | "CODE39"
+            | "CODE128"
+            | "JPPOST"
+            | "QR"
+    )
+}
+
+fn barcode_field_switch_syntax<'a, I>(part: &'a str, parts: &mut I, kind: BarcodeFieldKind) -> bool
+where
+    I: Iterator<Item = &'a str>,
+{
+    if part.eq_ignore_ascii_case("\\x")
+        || part.eq_ignore_ascii_case("\\d")
+        || part.eq_ignore_ascii_case("\\t")
+    {
+        return true;
+    }
+    if kind == BarcodeFieldKind::Merge && part.eq_ignore_ascii_case("\\a") {
+        return true;
+    }
+    for (switch, accept) in [
+        ("\\h", barcode_unsigned_integer_token as fn(&str) -> bool),
+        ("\\s", barcode_scale_token),
+        ("\\q", barcode_qr_error_correction_token),
+        ("\\p", barcode_pos_style_token),
+        ("\\c", barcode_case_style_token),
+        ("\\r", barcode_rotation_token),
+        ("\\f", barcode_color_token),
+        ("\\b", barcode_color_token),
+    ] {
+        if let Some(accepted) = barcode_argument_switch_syntax(part, parts, switch, accept) {
+            return accepted;
+        }
+    }
+    false
+}
+
+fn barcode_argument_switch_syntax<'a, I>(
+    part: &'a str,
+    parts: &mut I,
+    switch: &str,
+    accept: fn(&str) -> bool,
+) -> Option<bool>
+where
+    I: Iterator<Item = &'a str>,
+{
+    let rest = strip_ascii_switch_prefix(part, switch)?;
+    let value = if rest.is_empty() {
+        match parts.next() {
+            Some(value) => value,
+            None => return Some(false),
+        }
+    } else {
+        rest
+    };
+    let Some(value) = field_non_empty_non_switch_literal_token(value) else {
+        return Some(false);
+    };
+    Some(accept(value))
+}
+
+fn barcode_unsigned_integer_token(value: &str) -> bool {
+    !value.is_empty() && value.chars().all(|ch| ch.is_ascii_digit())
+}
+
+fn barcode_scale_token(value: &str) -> bool {
+    barcode_decimal_u32(value).is_some_and(|value| (10..=1000).contains(&value))
+}
+
+fn barcode_qr_error_correction_token(value: &str) -> bool {
+    matches!(value.to_ascii_uppercase().as_str(), "L" | "M" | "Q" | "H")
+        || barcode_decimal_u32(value).is_some_and(|value| value <= 3)
+}
+
+fn barcode_pos_style_token(value: &str) -> bool {
+    matches!(
+        value.to_ascii_uppercase().as_str(),
+        "STD" | "SUP2" | "SUP5" | "CASE"
+    )
+}
+
+fn barcode_case_style_token(value: &str) -> bool {
+    matches!(value.to_ascii_uppercase().as_str(), "STD" | "EXT" | "ADD")
+}
+
+fn barcode_rotation_token(value: &str) -> bool {
+    barcode_decimal_u32(value).is_some_and(|value| value <= 3)
+}
+
+fn barcode_color_token(value: &str) -> bool {
+    barcode_integer_token(value).is_some_and(|value| value <= 0xFF_FFFF)
+}
+
+fn barcode_decimal_u32(value: &str) -> Option<u32> {
+    (!value.is_empty() && value.chars().all(|ch| ch.is_ascii_digit()))
+        .then(|| value.parse().ok())
+        .flatten()
+}
+
+fn barcode_integer_token(value: &str) -> Option<u32> {
+    let value = value.trim();
+    let Some(hex) = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+    else {
+        if value
+            .chars()
+            .any(|ch| ch.is_ascii_hexdigit() && ch.is_ascii_alphabetic())
+        {
+            return u32::from_str_radix(value, 16).ok();
+        }
+        return barcode_decimal_u32(value);
+    };
+    (!hex.is_empty() && hex.chars().all(|ch| ch.is_ascii_hexdigit()))
+        .then(|| u32::from_str_radix(hex, 16).ok())
+        .flatten()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct LegacyFormFieldSyntax {
     pub(crate) kind: String,
@@ -2584,12 +2774,13 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        action_field_syntax, advance_field_syntax, compare_field_syntax, direct_ref_field_syntax,
-        eq_enclosed_operand, eq_fraction_operands, eq_list_operands, eq_numeric_prefix_option,
-        eq_parenthesized_operand, eq_prefix_switch_tail, eq_radical_operands, if_field_syntax,
-        legacy_form_field_syntax, merge_control_field_syntax, note_ref_field_syntax,
-        opaque_field_syntax, page_ref_field_syntax, ref_field_syntax, symbol_field_syntax,
-        toc_field_syntax, FieldNumberFormat, FieldTextFormat, TocSequenceFilter, TocTcFilter,
+        action_field_syntax, advance_field_syntax, barcode_field_syntax, compare_field_syntax,
+        direct_ref_field_syntax, eq_enclosed_operand, eq_fraction_operands, eq_list_operands,
+        eq_numeric_prefix_option, eq_parenthesized_operand, eq_prefix_switch_tail,
+        eq_radical_operands, if_field_syntax, legacy_form_field_syntax, merge_control_field_syntax,
+        note_ref_field_syntax, opaque_field_syntax, page_ref_field_syntax, ref_field_syntax,
+        symbol_field_syntax, toc_field_syntax, FieldNumberFormat, FieldTextFormat,
+        TocSequenceFilter, TocTcFilter,
     };
 
     #[test]
@@ -2803,6 +2994,19 @@ mod tests {
         assert_eq!(eq_radical_operands("27"), Some(("27", None)));
         assert_eq!(eq_list_operands(r#"A,"B,C",\f(1,2)"#).unwrap().len(), 3);
         assert!(eq_list_operands(r#"A,"B,C"#).is_none());
+    }
+
+    #[test]
+    fn barcode_field_syntax_accepts_known_switches_and_rejects_malformed_forms() {
+        assert!(barcode_field_syntax(r#"DISPLAYBARCODE "12345" QR \q H"#));
+        assert!(barcode_field_syntax(
+            r#"MERGEBARCODE Zip JPPOST \h1440 \s 100 \r 1 \f0x000000 \bFFFFFF \t \a"#
+        ));
+        assert!(barcode_field_syntax(r#"BARCODE "9781234567890""#));
+        assert!(!barcode_field_syntax(r#"DISPLAYBARCODE "12345" QR \h"#));
+        assert!(!barcode_field_syntax(r#"DISPLAYBARCODE "12345" QR \z"#));
+        assert!(!barcode_field_syntax(r#"DISPLAYBARCODE "12345" BADTYPE"#));
+        assert!(!barcode_field_syntax(r#"DISPLAYBARCODE "12345" QR \s 1"#));
     }
 }
 

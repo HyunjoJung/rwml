@@ -8,19 +8,22 @@
 use crate::annotation::action_field_syntax;
 #[cfg(not(feature = "docx"))]
 use crate::annotation::field_name_token as diagnostic_name_token;
+#[cfg(not(feature = "docx"))]
 use crate::annotation::{
-    accept_field_number_format_switch, accept_field_text_format_switch,
-    accept_general_format_switch, direct_ref_field_syntax,
-    field_literal_token as diagnostic_literal_token, instruction_parts, legacy_form_field_syntax,
-    note_ref_field_syntax, opaque_field_syntax, page_ref_field_syntax, ref_field_syntax,
-    strip_ascii_switch_prefix, toc_field_syntax, Field, FieldKind, FieldNumberFormat,
-    FieldTextFormat, RefFieldSyntax,
+    accept_field_text_format_switch, accept_general_format_switch,
+    field_literal_token as diagnostic_literal_token, instruction_parts, strip_ascii_switch_prefix,
+    FieldTextFormat,
 };
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{
     advance_field_syntax, eq_enclosed_operand, eq_fraction_operands, eq_list_operands,
     eq_numeric_prefix_option, eq_parenthesized_operand, eq_prefix_switch_tail, eq_radical_operands,
     symbol_field_syntax,
+};
+use crate::annotation::{
+    barcode_field_syntax, direct_ref_field_syntax, legacy_form_field_syntax, note_ref_field_syntax,
+    opaque_field_syntax, page_ref_field_syntax, ref_field_syntax, toc_field_syntax, Field,
+    FieldKind, RefFieldSyntax,
 };
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{
@@ -2647,65 +2650,11 @@ fn is_compatibility_kind(kind: &str) -> bool {
 }
 
 fn barcode_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
-    if supported_barcode_syntax(instruction) {
+    if barcode_field_syntax(instruction) {
         FieldEvaluationReason::NoComputedResult
     } else {
         FieldEvaluationReason::UnsupportedSwitch
     }
-}
-
-fn supported_barcode_syntax(instruction: &str) -> bool {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let Some(kind) = parts.next() else {
-        return false;
-    };
-    let required_value_tokens = if kind.eq_ignore_ascii_case("BARCODE") {
-        1
-    } else if kind.eq_ignore_ascii_case("DISPLAYBARCODE")
-        || kind.eq_ignore_ascii_case("MERGEBARCODE")
-    {
-        2
-    } else {
-        return false;
-    };
-    let mut value_tokens = 0usize;
-    let mut positional_values = true;
-    while let Some(part) = parts.next() {
-        let Some(accepted) = accept_general_format_switch(
-            part,
-            &mut parts,
-            diagnostic_format_switch_token_well_formed,
-        ) else {
-            return false;
-        };
-        if accepted {
-            continue;
-        }
-        if !diagnostic_field_token_well_formed(part) {
-            return false;
-        }
-        if part.starts_with('\\') {
-            if part.eq_ignore_ascii_case("\\q") {
-                let Some(value) = parts.next() else {
-                    return false;
-                };
-                if value.starts_with('\\') || diagnostic_literal_token(value).is_none() {
-                    return false;
-                }
-            } else if let Some(value) = strip_ascii_switch_prefix(part, "\\q") {
-                if value.is_empty() || diagnostic_literal_token(value).is_none() {
-                    return false;
-                }
-            }
-            positional_values = false;
-            continue;
-        }
-        if positional_values {
-            value_tokens += 1;
-        }
-    }
-    value_tokens >= required_value_tokens
 }
 
 fn form_field_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -2718,22 +2667,6 @@ fn form_field_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
 
 fn supported_form_field_syntax(instruction: &str) -> bool {
     legacy_form_field_syntax(instruction).is_some()
-}
-
-fn diagnostic_format_switch_token_well_formed(part: &str) -> bool {
-    let part = part.trim();
-    let mut text_format = false;
-    let mut number_format = false;
-    accept_field_format_switch(part, &mut text_format)
-        || accept_page_number_format_switch(part, &mut number_format)
-}
-
-fn diagnostic_field_token_well_formed(part: &str) -> bool {
-    if part.starts_with('\\') {
-        !part.contains('"')
-    } else {
-        diagnostic_literal_token(part).is_some()
-    }
 }
 
 fn is_reference_index_marker_kind(kind: &str) -> bool {
@@ -3168,15 +3101,7 @@ fn supported_note_ref_target(instruction: &str) -> Option<String> {
     note_ref_field_syntax(instruction).map(|syntax| syntax.target)
 }
 
-fn accept_page_number_format_switch(part: &str, number_format: &mut bool) -> bool {
-    let mut format = number_format.then_some(FieldNumberFormat::Arabic);
-    let accepted = accept_field_number_format_switch(part, &mut format);
-    if accepted {
-        *number_format = format.is_some();
-    }
-    accepted
-}
-
+#[cfg(not(feature = "docx"))]
 fn accept_field_format_switch(part: &str, text_format: &mut bool) -> bool {
     let mut format = text_format.then_some(FieldTextFormat::Upper);
     let accepted = accept_field_text_format_switch(part, &mut format);
@@ -4581,6 +4506,35 @@ mod tests {
         assert_eq!(
             super::unsupported_field_reason(&missing_quality_operand),
             Some(super::FieldEvaluationReason::UnsupportedSwitch)
+        );
+
+        for instruction in [
+            r#"DISPLAYBARCODE "12345" QR \h"#,
+            r#"DISPLAYBARCODE "12345" QR \z"#,
+            r#"DISPLAYBARCODE "12345" BADTYPE"#,
+        ] {
+            let field = Field {
+                kind: FieldKind::Barcode("DISPLAYBARCODE".to_string()),
+                instruction: instruction.to_string(),
+                ..Field::default()
+            };
+            assert_eq!(
+                super::unsupported_field_reason(&field),
+                Some(super::FieldEvaluationReason::UnsupportedSwitch),
+                "{instruction}"
+            );
+        }
+
+        let valid_switches = Field {
+            kind: FieldKind::Barcode("MERGEBARCODE".to_string()),
+            instruction:
+                r#"MERGEBARCODE Zip JPPOST \h 1440 \s 100 \r 1 \f 0x000000 \b FFFFFF \t \a"#
+                    .to_string(),
+            ..Field::default()
+        };
+        assert_eq!(
+            super::unsupported_field_reason(&valid_switches),
+            Some(super::FieldEvaluationReason::NoComputedResult)
         );
     }
 
