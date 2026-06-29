@@ -12,10 +12,10 @@ use crate::annotation::{
     accept_field_number_format_switch, accept_field_text_format_switch,
     accept_general_format_switch, field_identifier_token as diagnostic_identifier_token,
     field_level_range_token as diagnostic_level_range_token,
-    field_literal_token as diagnostic_literal_token, instruction_parts, is_note_ref_kind,
+    field_literal_token as diagnostic_literal_token, instruction_parts,
     is_ref_value_neutral_switch, is_toc_value_neutral_switch, legacy_form_field_syntax,
-    opaque_field_syntax, page_ref_field_syntax, strip_ascii_switch_prefix, toc_style_specs, Field,
-    FieldKind, FieldNumberFormat, FieldTextFormat,
+    note_ref_field_syntax, opaque_field_syntax, page_ref_field_syntax, strip_ascii_switch_prefix,
+    toc_style_specs, Field, FieldKind, FieldNumberFormat, FieldTextFormat,
 };
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{
@@ -3582,54 +3582,7 @@ fn note_ref_uncomputed_reason(
 }
 
 fn supported_note_ref_target(instruction: &str) -> Option<String> {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let kind = parts.next()?;
-    if !is_note_ref_kind(kind) {
-        return None;
-    }
-    let target = diagnostic_identifier_token(parts.next()?)?.to_string();
-    let mut relative = false;
-    let mut formatted = false;
-    let mut number_format = false;
-    let mut text_format = false;
-    while let Some(part) = parts.next() {
-        if accept_general_format_switch(part, &mut parts, |format| {
-            accept_page_number_format_switch(format, &mut number_format)
-                || accept_note_ref_format_switch(format, &mut text_format)
-        })? {
-            continue;
-        }
-        if part.starts_with('\\') {
-            if part.eq_ignore_ascii_case("\\h") {
-                continue;
-            }
-            if part.eq_ignore_ascii_case("\\f") {
-                if formatted {
-                    return None;
-                }
-                formatted = true;
-                continue;
-            }
-            if part.eq_ignore_ascii_case("\\p") {
-                if relative {
-                    return None;
-                }
-                relative = true;
-                continue;
-            }
-            return None;
-        }
-        return None;
-    }
-    if relative && number_format {
-        return None;
-    }
-    Some(target)
-}
-
-fn accept_note_ref_format_switch(part: &str, text_format: &mut bool) -> bool {
-    accept_field_format_switch(part, text_format)
+    note_ref_field_syntax(instruction).map(|syntax| syntax.target)
 }
 
 fn accept_page_number_format_switch(part: &str, number_format: &mut bool) -> bool {

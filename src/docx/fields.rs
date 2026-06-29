@@ -12,9 +12,9 @@ use crate::annotation::{
     field_level_range_token, field_literal_token, field_name_token, field_non_empty_literal_token,
     field_points_token, field_positive_points_token, field_quoted_literal_token,
     field_symbol_code_token, filename_field_syntax, formula_field_syntax, if_field_syntax,
-    instruction_parts, is_neutral_field_format_switch, is_note_ref_kind,
-    is_ref_value_neutral_switch, is_toc_value_neutral_switch, legacy_form_field_syntax,
-    merge_control_field_syntax, numbering_field_syntax, page_field_format_syntax_tail,
+    instruction_parts, is_neutral_field_format_switch, is_ref_value_neutral_switch,
+    is_toc_value_neutral_switch, legacy_form_field_syntax, merge_control_field_syntax,
+    note_ref_field_syntax, numbering_field_syntax, page_field_format_syntax_tail,
     page_ref_field_syntax, prompt_field_syntax, quote_field_syntax, reference_index_category_token,
     reference_index_literal_token, reference_index_plain_value_token,
     revision_number_field_text_format, sequence_field_syntax, set_field_syntax,
@@ -8448,56 +8448,14 @@ struct NoteRefInstruction {
 }
 
 fn note_ref_instruction(instruction: &str) -> Option<NoteRefInstruction> {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let kind = parts.next()?;
-    if !is_note_ref_kind(kind) {
-        return None;
-    }
-    let target = bookmark_target_identifier(parts.next()?)?.to_string();
-    let mut number_format = None;
-    let mut text_format = None;
-    let mut relative = false;
-    let mut formatted = false;
-    while let Some(part) = parts.next() {
-        if accept_page_field_format_switch_for_tail(
-            part,
-            &mut parts,
-            &mut number_format,
-            &mut text_format,
-        )? {
-            continue;
-        }
-        if part.starts_with('\\') {
-            if part.eq_ignore_ascii_case("\\h") {
-                continue;
-            }
-            if part.eq_ignore_ascii_case("\\f") {
-                if formatted {
-                    return None;
-                }
-                formatted = true;
-                continue;
-            }
-            if part.eq_ignore_ascii_case("\\p") {
-                if relative {
-                    return None;
-                }
-                relative = true;
-                continue;
-            }
-            return None;
-        }
-        return None;
-    }
-    if relative && number_format.is_some() {
-        return None;
-    }
+    let syntax = note_ref_field_syntax(instruction)?;
     Some(NoteRefInstruction {
-        target,
-        number_format,
-        text_format,
-        relative,
+        target: syntax.target,
+        number_format: syntax
+            .number_format
+            .map(page_number_format_from_field_format),
+        text_format: syntax.text_format,
+        relative: syntax.relative,
     })
 }
 

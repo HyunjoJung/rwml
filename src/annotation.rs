@@ -1456,6 +1456,65 @@ pub(crate) fn page_ref_field_syntax(instruction: &str) -> Option<PageRefFieldSyn
     })
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NoteRefFieldSyntax {
+    pub(crate) target: String,
+    pub(crate) number_format: Option<FieldNumberFormat>,
+    pub(crate) text_format: Option<FieldTextFormat>,
+    pub(crate) relative: bool,
+}
+
+pub(crate) fn note_ref_field_syntax(instruction: &str) -> Option<NoteRefFieldSyntax> {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let kind = parts.next()?;
+    if !is_note_ref_kind(kind) {
+        return None;
+    }
+    let target = field_identifier_token(parts.next()?)?.to_string();
+    let mut number_format = None;
+    let mut text_format = None;
+    let mut relative = false;
+    let mut formatted = false;
+    while let Some(part) = parts.next() {
+        if accept_general_format_switch(part, &mut parts, |format| {
+            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
+        })? {
+            continue;
+        }
+        if part.starts_with('\\') {
+            if part.eq_ignore_ascii_case("\\h") {
+                continue;
+            }
+            if part.eq_ignore_ascii_case("\\f") {
+                if formatted {
+                    return None;
+                }
+                formatted = true;
+                continue;
+            }
+            if part.eq_ignore_ascii_case("\\p") {
+                if relative {
+                    return None;
+                }
+                relative = true;
+                continue;
+            }
+            return None;
+        }
+        return None;
+    }
+    if relative && number_format.is_some() {
+        return None;
+    }
+    Some(NoteRefFieldSyntax {
+        target,
+        number_format,
+        text_format,
+        relative,
+    })
+}
+
 fn accept_page_field_format_switch(
     part: &str,
     number_format: &mut Option<FieldNumberFormat>,
@@ -1772,8 +1831,8 @@ where
 mod tests {
     use super::{
         action_field_syntax, compare_field_syntax, if_field_syntax, legacy_form_field_syntax,
-        merge_control_field_syntax, opaque_field_syntax, page_ref_field_syntax, FieldNumberFormat,
-        FieldTextFormat,
+        merge_control_field_syntax, note_ref_field_syntax, opaque_field_syntax,
+        page_ref_field_syntax, FieldNumberFormat, FieldTextFormat,
     };
 
     #[test]
@@ -1852,6 +1911,30 @@ mod tests {
         assert!(page_ref_field_syntax(r#"PAGEREF \p Figure1"#).is_none());
         assert!(page_ref_field_syntax(r#"PAGEREF "Figure List""#).is_none());
         assert!(page_ref_field_syntax(r#"PAGEREF Figure1 \x"#).is_none());
+    }
+
+    #[test]
+    fn note_ref_field_syntax_accepts_target_relative_and_format_tail() {
+        let note_ref = note_ref_field_syntax(r#"NOTEREF FootOne \f \* OrdText \* Upper"#)
+            .expect("valid note ref syntax");
+        assert_eq!(note_ref.target, "FootOne");
+        assert_eq!(note_ref.number_format, Some(FieldNumberFormat::OrdText));
+        assert_eq!(note_ref.text_format, Some(FieldTextFormat::Upper));
+        assert!(!note_ref.relative);
+
+        let relative = note_ref_field_syntax(r#"NOTEREF LaterNote \p \* Upper"#)
+            .expect("valid relative note ref syntax");
+        assert_eq!(relative.target, "LaterNote");
+        assert_eq!(relative.text_format, Some(FieldTextFormat::Upper));
+        assert!(relative.relative);
+
+        assert!(note_ref_field_syntax(r#"FTNREF FootOne \h"#).is_some());
+        assert!(note_ref_field_syntax(r#"NOTEREF FootOne \p \p"#).is_none());
+        assert!(note_ref_field_syntax(r#"NOTEREF FootOne \f \f"#).is_none());
+        assert!(note_ref_field_syntax(r#"NOTEREF LaterNote \p \* roman"#).is_none());
+        assert!(note_ref_field_syntax(r#"NOTEREF \p FootOne"#).is_none());
+        assert!(note_ref_field_syntax(r#"NOTEREF "Foot One""#).is_none());
+        assert!(note_ref_field_syntax(r#"NOTEREF FootOne \x"#).is_none());
     }
 }
 
