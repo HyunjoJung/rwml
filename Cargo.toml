@@ -47,6 +47,21 @@ wasm-bindgen = "0.2"
 name = "extract"
 path = "examples/extract.rs"
 
+[[example]]
+name = "roundtrip"
+path = "examples/roundtrip.rs"
+required-features = ["docx"]
+
+[[example]]
+name = "to_docx"
+path = "examples/to_docx.rs"
+required-features = ["docx"]
+
+[[example]]
+name = "validate_edit"
+path = "examples/validate_edit.rs"
+required-features = ["docx"]
+
 [[bin]]
 name = "rdoc"
 path = "src/bin/rdoc.rs"

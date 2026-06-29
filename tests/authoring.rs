@@ -1,3 +1,5 @@
+#![cfg(feature = "docx")]
+
 //! Integration coverage of the public authoring + rendering entry points: a model
 //! built from data must serialize to an Office-openable `.docx` (and re-open
 //! through the reader) and render to a valid PDF.

@@ -1,3 +1,5 @@
+#![cfg(feature = "docx")]
+
 use rdoc::{DocBuilder, DocumentFormat};
 
 #[test]

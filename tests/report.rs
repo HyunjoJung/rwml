@@ -1,3 +1,5 @@
+#![cfg(feature = "docx")]
+
 use rdoc::{
     CoreProperties, Document, DocumentFormat, DocumentWarning, EditReadOnlyReason,
     FieldEvaluationReason, FieldEvaluationReasonCount, FieldKind, FieldKindCount, MetafileFormat,

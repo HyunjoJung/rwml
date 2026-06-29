@@ -3247,6 +3247,7 @@ pub(crate) fn instruction_parts(s: &str) -> Vec<String> {
     parts
 }
 
+#[cfg_attr(not(feature = "docx"), allow(dead_code))]
 pub(crate) fn normalized_field_instruction(instruction: &str) -> String {
     instruction_parts(instruction).join(" ")
 }
