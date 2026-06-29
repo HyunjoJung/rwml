@@ -395,9 +395,7 @@ fn read_section_columns(r: &mut Xml<'_>) -> Option<u16> {
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"cols" => {
-                columns = attr_local(&e, b"num")
-                    .and_then(|v| v.trim().parse::<u16>().ok())
-                    .map(|value| value.max(1));
+                columns = section_columns(&e);
             }
             Ok(Event::Start(_)) => skip_subtree(r),
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"sectPr" => break,
@@ -408,6 +406,12 @@ fn read_section_columns(r: &mut Xml<'_>) -> Option<u16> {
     columns
 }
 
+fn section_columns(e: &BytesStart<'_>) -> Option<u16> {
+    attr_local(e, b"num")
+        .and_then(|value| value.trim().parse::<u16>().ok())
+        .map(|value| value.max(1))
+}
+
 fn read_section_text_direction(r: &mut Xml<'_>) -> Option<TextDirection> {
     let mut text_direction = None;
     loop {
@@ -415,8 +419,7 @@ fn read_section_text_direction(r: &mut Xml<'_>) -> Option<TextDirection> {
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"textDirection" =>
             {
-                text_direction =
-                    attr_local(&e, b"val").and_then(|value| TextDirection::from_wml_value(&value));
+                text_direction = section_text_direction(&e);
             }
             Ok(Event::Start(_)) => skip_subtree(r),
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"sectPr" => break,
@@ -425,6 +428,10 @@ fn read_section_text_direction(r: &mut Xml<'_>) -> Option<TextDirection> {
         }
     }
     text_direction
+}
+
+fn section_text_direction(e: &BytesStart<'_>) -> Option<TextDirection> {
+    attr_local(e, b"val").and_then(|value| TextDirection::from_wml_value(&value))
 }
 
 fn doc_grid_from_attrs(e: &BytesStart<'_>) -> Option<DocGrid> {
@@ -1476,13 +1483,10 @@ fn read_sect_pr(r: &mut Xml<'_>) -> SectionSetup {
                     section.page_number_format = section_page_number_format(&e);
                 }
                 b"cols" => {
-                    section.columns = attr_local(&e, b"num")
-                        .and_then(|v| v.trim().parse::<u16>().ok())
-                        .map(|value| value.max(1));
+                    section.columns = section_columns(&e);
                 }
                 b"textDirection" => {
-                    section.text_direction = attr_local(&e, b"val")
-                        .and_then(|value| TextDirection::from_wml_value(&value));
+                    section.text_direction = section_text_direction(&e);
                 }
                 b"docGrid" => {
                     section.doc_grid = doc_grid_from_attrs(&e);
