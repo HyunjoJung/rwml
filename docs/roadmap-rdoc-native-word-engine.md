@@ -779,8 +779,8 @@ Initial status:
   inserted, and moved-to shapes are surfaced while deleted and moved-from
   old-only shapes are omitted, so wrapped visible blocks line up with the parsed
   model. Renderer placement now uses those records for approximate
-  overlays, recovered simple absolute placement, recovered effect-extents and
-  wrap-distance labels, recovered z-order, recovered block-page selection, and
+  overlays, recovered simple absolute placement, recovered effect-extents,
+  anchor-distance labels, wrap-distance labels, recovered z-order, recovered block-page selection, and
   compact anchor/body-text preview labels; exact body anchor-range page
   resolution, real text-wrap reflow, and full non-text Office-Art drawing
   contents are still future work.

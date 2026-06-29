@@ -585,6 +585,9 @@ fn floating_shape_label(shape: &FloatingShape, index: usize, w: f32, h: f32) -> 
     if let Some(behind_doc) = shape.behind_doc {
         layout.push(if behind_doc { "behind" } else { "front" }.to_string());
     }
+    if let Some(distance_label) = shape_distance_label("anchor dist", shape.distance) {
+        layout.push(distance_label);
+    }
     if let Some(wrapping) = shape.wrapping.as_ref() {
         layout.push(match wrapping.text.as_deref() {
             Some(text) if !text.trim().is_empty() => {
@@ -4359,7 +4362,12 @@ mod tests {
                 layout_in_cell: Some(true),
                 locked: Some(false),
                 allow_overlap: Some(true),
-                distance: crate::ShapeDistance::default(),
+                distance: crate::ShapeDistance {
+                    top_emu: Some(12_700),
+                    bottom_emu: Some(25_400),
+                    left_emu: Some(38_100),
+                    right_emu: Some(50_800),
+                },
                 wrapping: Some(crate::ShapeWrapping {
                     kind: "square".to_string(),
                     text: Some("bothSides".to_string()),
@@ -4384,7 +4392,7 @@ mod tests {
         assert_eq!(overlay.page_index, 0);
         assert_eq!(
             overlay.label,
-            "floating shape 1: Float one (72 x 36 pt, x simplePos 14.4 pt, y simplePos 21.6 pt, z 251659264, front, wrap square bothSides dist t 0.7 pt, b 1.4 pt, l 2.2 pt, r 2.9 pt, geometry roundRect, effect l 0.7 pt, t 1.4 pt, r 2.2 pt, b 2.9 pt, fill #FF8800, outline #003366, anchor Before anchor After anchor, text Shape body)"
+            "floating shape 1: Float one (72 x 36 pt, x simplePos 14.4 pt, y simplePos 21.6 pt, z 251659264, front, anchor dist t 1 pt, b 2 pt, l 3 pt, r 4 pt, wrap square bothSides dist t 0.7 pt, b 1.4 pt, l 2.2 pt, r 2.9 pt, geometry roundRect, effect l 0.7 pt, t 1.4 pt, r 2.2 pt, b 2.9 pt, fill #FF8800, outline #003366, anchor Before anchor After anchor, text Shape body)"
         );
     }
 

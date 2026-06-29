@@ -771,7 +771,7 @@ controls, custom XML, smart tags, single-branch `mc:AlternateContent`, or
 accepted/current revision wrappers, while omitting deleted and moved-from
 old-only shape anchors. It
 surfaces recovered containing-block anchor text, zero-width anchor character offsets inside that text, DrawingML preset geometry
-names, simple sRGB solid fill/outline colors, wrap-distance labels, and
+names, simple sRGB solid fill/outline colors, anchor-distance and wrap-distance labels, and
 text-bearing shape body text in preview labels.
 It appends compact placeholder lines for
 preserved-but-unmodeled chart parts, OLE objects, unsupported metafile images,

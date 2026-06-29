@@ -1266,8 +1266,8 @@ open and edit the chart data.
   extents, enabled `wp:simplePos` absolute placement or simple
   `positionH`/`positionV` offset/alignment policy, recovered relative z-order,
   recovered visible top-level body block page, and compact anchor-text preview
-  labels that include recovered effect extents and wrap-element distance margins
-  when present;
+  labels that include recovered effect extents, anchor distance margins, and
+  wrap-element distance margins when present;
 - keep exact body anchor range/page resolution, real text-wrap reflow, deeper
   z-order semantics, and full non-text Office-Art drawing as later layout work;
 - validate against golden fixtures.
