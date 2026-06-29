@@ -3776,6 +3776,10 @@ mod tests {
             super::FieldEvaluationReason::NoComputedResult
         );
         assert_eq!(
+            super::document_info_uncomputed_reason(r#"DOCPROPERTY "Client Name" \*Caps"#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
             super::document_info_uncomputed_reason(r#"DOCPROPERTY "Client Name"#),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
