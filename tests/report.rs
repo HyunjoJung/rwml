@@ -4064,6 +4064,39 @@ fn report_field_category_matrix_splits_cached_and_malformed_diagnostics() {
     );
 }
 
+#[test]
+fn report_barcode_broader_syntax_splits_valid_and_malformed_diagnostics() {
+    assert_report_field_diagnostics(
+        docx_fixture(&[
+            (
+                "[Content_Types].xml",
+                r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+            ),
+            (
+                "_rels/.rels",
+                r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            (
+                "word/document.xml",
+                r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" DISPLAYBARCODE &quot;https://example.com&quot; QR \q H "><w:r><w:t>QR preview</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DISPLAYBARCODE &quot;https://example.com&quot; QR \* Upper "><w:r><w:t>formatted QR preview</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DISPLAYBARCODE &quot;https://example.com&quot; \q H "><w:r><w:t>cached missing barcode type</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DISPLAYBARCODE &quot;https://example.com&quot; QR \q "><w:r><w:t>cached missing quality operand</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DISPLAYBARCODE &quot;https://example.com QR "><w:r><w:t>cached malformed barcode</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DISPLAYBARCODE &quot;https://example.com&quot; QR \* "><w:r><w:t>cached dangling barcode format</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DISPLAYBARCODE &quot;https://example.com&quot; QR \* BadFormat "><w:r><w:t>cached bad barcode format</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            ),
+        ]),
+        7,
+        vec![field_kind_count(
+            FieldKind::Barcode("DISPLAYBARCODE".to_string()),
+            7,
+        )],
+        vec![field_kind_count(
+            FieldKind::Barcode("DISPLAYBARCODE".to_string()),
+            7,
+        )],
+        vec![
+            field_reason_count(FieldEvaluationReason::NoComputedResult, 2),
+            field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 5),
+        ],
+    );
+}
+
 #[cfg(feature = "docx")]
 #[test]
 fn report_legacy_form_spaced_dropdown_index_is_supported() {
