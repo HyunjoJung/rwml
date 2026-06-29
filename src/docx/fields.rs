@@ -12,13 +12,14 @@ use crate::annotation::{
     field_level_range_token, field_level_token, field_literal_token, field_name_token,
     field_non_empty_literal_token, field_non_empty_non_switch_literal_token,
     field_non_empty_quoted_literal_token, field_points_token, field_positive_points_token,
-    field_quoted_literal_token, field_symbol_code_token, filename_field_syntax, instruction_parts,
-    is_neutral_field_format_switch, is_note_ref_kind, is_ref_value_neutral_switch,
-    is_toc_value_neutral_switch, page_field_format_syntax_tail, prompt_field_syntax,
-    quote_field_syntax, reference_index_category_token, reference_index_literal_token,
-    reference_index_plain_value_token, revision_number_field_text_format, set_field_syntax,
-    strip_ascii_switch_prefix, style_ref_field_syntax, toc_style_specs, Field, FieldKind,
-    FieldNumberFormat, FieldTextFormat, PromptFieldSyntax, StyleRefFieldSyntax, StyleRefResult,
+    field_quoted_literal_token, field_symbol_code_token, filename_field_syntax,
+    formula_field_syntax, instruction_parts, is_neutral_field_format_switch, is_note_ref_kind,
+    is_ref_value_neutral_switch, is_toc_value_neutral_switch, page_field_format_syntax_tail,
+    prompt_field_syntax, quote_field_syntax, reference_index_category_token,
+    reference_index_literal_token, reference_index_plain_value_token,
+    revision_number_field_text_format, set_field_syntax, strip_ascii_switch_prefix,
+    style_ref_field_syntax, toc_style_specs, Field, FieldKind, FieldNumberFormat, FieldTextFormat,
+    PromptFieldSyntax, StyleRefFieldSyntax, StyleRefResult,
 };
 use crate::{numfmt, CoreProperties};
 
@@ -5725,40 +5726,7 @@ fn formula_instruction(instruction: &str) -> Option<FormulaInstruction> {
 }
 
 pub(crate) fn supports_formula_field_syntax(instruction: &str) -> bool {
-    formula_field_syntax(instruction).is_some()
-}
-
-fn formula_field_syntax(instruction: &str) -> Option<()> {
-    let body = instruction.trim().strip_prefix('=')?.trim();
-    if body.is_empty() {
-        return None;
-    }
-    let tokens = instruction_parts(body);
-    let Some(format_switch) = formula_number_format_switch(&tokens) else {
-        if let Some(tail_index) = tokens.iter().position(|part| is_field_format_start(part)) {
-            if tail_index == 0 {
-                return None;
-            }
-            let mut tail = tokens[tail_index..].iter().map(String::as_str);
-            return accept_field_format_tail(&mut tail);
-        }
-        return Some(());
-    };
-    let (format_index, tail_start) = match format_switch {
-        FormulaNumberFormatSwitch::Separate(format_index) => {
-            formula_number_format_picture(tokens.get(format_index + 1)?)?;
-            (format_index, format_index + 2)
-        }
-        FormulaNumberFormatSwitch::Compact { index, picture } => {
-            formula_number_format_picture(&picture)?;
-            (index, index + 1)
-        }
-    };
-    if format_index == 0 {
-        return None;
-    }
-    let mut tail = tokens[tail_start..].iter().map(String::as_str);
-    accept_field_format_tail(&mut tail)
+    formula_field_syntax(instruction)
 }
 
 fn formula_number_format_switch(tokens: &[String]) -> Option<FormulaNumberFormatSwitch> {

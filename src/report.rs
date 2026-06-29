@@ -23,10 +23,10 @@ use crate::annotation::{
 };
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{
-    field_comparison_syntax, page_field_format_syntax_tail, prompt_field_syntax,
-    quote_field_syntax, reference_index_category_token, reference_index_literal_token,
-    reference_index_plain_value_token, revision_number_field_text_format, set_field_syntax,
-    style_ref_field_syntax,
+    field_comparison_syntax, formula_field_syntax, page_field_format_syntax_tail,
+    prompt_field_syntax, quote_field_syntax, reference_index_category_token,
+    reference_index_literal_token, reference_index_plain_value_token,
+    revision_number_field_text_format, set_field_syntax, style_ref_field_syntax,
 };
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{
@@ -3701,65 +3701,12 @@ fn formula_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     }
     #[cfg(not(feature = "docx"))]
     {
-        if supported_formula_syntax(instruction) {
+        if formula_field_syntax(instruction) {
             FieldEvaluationReason::NoComputedResult
         } else {
             FieldEvaluationReason::UnsupportedSwitch
         }
     }
-}
-
-#[cfg(not(feature = "docx"))]
-fn supported_formula_syntax(instruction: &str) -> bool {
-    let Some(body) = instruction.trim().strip_prefix('=') else {
-        return false;
-    };
-    let body = body.trim();
-    if body.is_empty() {
-        return false;
-    }
-    let tokens = instruction_parts(body);
-    let Some(format_index) = tokens.iter().position(|part| {
-        part == "\\#"
-            || strip_ascii_switch_prefix(part, "\\#").is_some_and(|picture| !picture.is_empty())
-    }) else {
-        if let Some(tail_index) = tokens
-            .iter()
-            .position(|part| part == "\\*" || part.starts_with("\\*"))
-        {
-            if tail_index == 0 {
-                return false;
-            }
-            let mut tail = tokens[tail_index..].iter().map(String::as_str);
-            let mut text_format = false;
-            return supported_field_format_tail_for_report(&mut tail, &mut text_format);
-        }
-        return true;
-    };
-    if format_index == 0 {
-        return false;
-    }
-    let (picture, tail_start) = if tokens[format_index] == "\\#" {
-        let Some(picture) = tokens.get(format_index + 1) else {
-            return false;
-        };
-        (picture.as_str(), format_index + 2)
-    } else if let Some(picture) = strip_ascii_switch_prefix(&tokens[format_index], "\\#") {
-        (picture, format_index + 1)
-    } else {
-        return false;
-    };
-    let valid_picture = if picture.starts_with('"') {
-        diagnostic_literal_token(picture).is_some()
-    } else {
-        diagnostic_literal_token(picture).is_some_and(|picture| !picture.starts_with('\\'))
-    };
-    if !valid_picture {
-        return false;
-    }
-    let mut tail = tokens[tail_start..].iter().map(String::as_str);
-    let mut text_format = false;
-    supported_field_format_tail_for_report(&mut tail, &mut text_format)
 }
 
 fn sequence_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {

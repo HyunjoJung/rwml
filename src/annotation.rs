@@ -611,6 +611,90 @@ fn field_comparison_operand_syntax(token: &str) -> bool {
     }
 }
 
+pub(crate) fn formula_field_syntax(instruction: &str) -> bool {
+    let Some(body) = instruction.trim().strip_prefix('=') else {
+        return false;
+    };
+    let body = body.trim();
+    if body.is_empty() {
+        return false;
+    }
+    let tokens = instruction_parts(body);
+    let Some(format_switch) = formula_field_number_format_switch(&tokens) else {
+        if let Some(tail_index) = tokens.iter().position(|part| is_field_format_start(part)) {
+            if tail_index == 0 {
+                return false;
+            }
+            let mut tail = tokens[tail_index..].iter().map(String::as_str);
+            return formula_field_format_tail(&mut tail);
+        }
+        return true;
+    };
+    let (format_index, tail_start) = match format_switch {
+        FormulaFieldNumberFormatSwitch::Separate(format_index) => {
+            if !tokens
+                .get(format_index + 1)
+                .is_some_and(|picture| formula_field_number_format_picture(picture))
+            {
+                return false;
+            }
+            (format_index, format_index + 2)
+        }
+        FormulaFieldNumberFormatSwitch::Compact { index, picture } => {
+            if !formula_field_number_format_picture(&picture) {
+                return false;
+            }
+            (index, index + 1)
+        }
+    };
+    if format_index == 0 {
+        return false;
+    }
+    let mut tail = tokens[tail_start..].iter().map(String::as_str);
+    formula_field_format_tail(&mut tail)
+}
+
+enum FormulaFieldNumberFormatSwitch {
+    Separate(usize),
+    Compact { index: usize, picture: String },
+}
+
+fn formula_field_number_format_switch(tokens: &[String]) -> Option<FormulaFieldNumberFormatSwitch> {
+    tokens.iter().enumerate().find_map(|(index, part)| {
+        if part == "\\#" {
+            return Some(FormulaFieldNumberFormatSwitch::Separate(index));
+        }
+        let picture = strip_ascii_switch_prefix(part, "\\#")?;
+        (!picture.is_empty()).then(|| FormulaFieldNumberFormatSwitch::Compact {
+            index,
+            picture: picture.to_string(),
+        })
+    })
+}
+
+fn formula_field_number_format_picture(token: &str) -> bool {
+    field_quoted_literal_token(token).is_some() || field_non_switch_literal_token(token).is_some()
+}
+
+fn formula_field_format_tail<'a>(parts: &mut impl Iterator<Item = &'a str>) -> bool {
+    let mut text_format = None;
+    while let Some(part) = parts.next() {
+        let Some(accepted) = accept_general_format_switch(part, parts, |format| {
+            accept_field_text_format_switch(format, &mut text_format)
+        }) else {
+            return false;
+        };
+        if !accepted {
+            return false;
+        }
+    }
+    true
+}
+
+fn is_field_format_start(part: &str) -> bool {
+    part == "\\*" || part.starts_with("\\*")
+}
+
 pub(crate) fn filename_field_syntax(instruction: &str) -> bool {
     let tokens = instruction_parts(instruction);
     let mut parts = tokens.iter().map(String::as_str);
