@@ -35,7 +35,7 @@ import hashlib
 import json
 import math
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 
@@ -404,6 +404,7 @@ def public_release_policy_input_gaps(
     corpus_manifests: list[Path] | None,
 ) -> list[str]:
     missing = []
+    corpus_ready_for_validation = False
     if hygiene_report is None:
         missing.append("hygiene report")
     if validation_report is None:
@@ -424,15 +425,30 @@ def public_release_policy_input_gaps(
                 corpus_manifests
             ):
                 missing.append("existing public corpus documents")
+            else:
+                corpus_ready_for_validation = True
         except (OSError, UnicodeDecodeError, ValueError):
             missing.append("valid public corpus manifests")
-    missing.extend(
-        public_release_report_strength_gaps(
-            hygiene_report=hygiene_report,
-            validation_report=validation_report,
-            benchmark_reports=benchmark_reports,
-        )
+    report_strength_missing = public_release_report_strength_gaps(
+        hygiene_report=hygiene_report,
+        validation_report=validation_report,
+        benchmark_reports=benchmark_reports,
     )
+    missing.extend(report_strength_missing)
+    if (
+        corpus_ready_for_validation
+        and validation_report is not None
+        and validation_report.is_file()
+        and "policy-strength validation report" not in report_strength_missing
+    ):
+        try:
+            require_public_release_validation_report_coverage(
+                "public-release",
+                validation_report,
+                corpus_manifests or [],
+            )
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
+            missing.append("validation report covering public corpus")
     return missing
 
 
@@ -511,6 +527,82 @@ def public_release_corpus_manifest_document_files_exist(
             if not (manifest.parent / document_path).is_file():
                 return False
     return True
+
+
+def public_release_render_manifest_document_names(
+    corpus_manifests: list[Path],
+) -> set[str]:
+    by_name = {path.name: path for path in corpus_manifests}
+    document_names = [
+        PurePosixPath(document_path).name
+        for document_path in corpus_manifest_document_paths(
+            by_name["RENDER_MANIFEST.tsv"]
+        )
+    ]
+    if len(set(document_names)) != len(document_names):
+        raise ValueError(
+            "public-release requires unique public render manifest document names"
+        )
+    return set(document_names)
+
+
+def validation_report_document_names(path: Path) -> set[str]:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} does not contain a JSON object")
+    rows = data.get("rows")
+    if not isinstance(rows, list):
+        raise ValueError(f"{path} validation report rows are required")
+    if not rows:
+        raise ValueError(f"{path} validation report rows must not be empty")
+
+    document_names: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ValueError(f"{path} validation report row is not a JSON object")
+        document = row.get("document")
+        if not isinstance(document, str):
+            raise ValueError(f"{path} validation report row document is invalid")
+        if (
+            not document
+            or document != document.strip()
+            or "/" in document
+            or "\\" in document
+            or ":" in document
+            or any(char.isspace() for char in document)
+        ):
+            raise ValueError(f"{path} validation report row document is invalid")
+        if document in document_names:
+            raise ValueError(f"{path} duplicate validation report document: {document}")
+        document_names.add(document)
+    return document_names
+
+
+def public_release_validation_report_documents_match(
+    validation_report: Path,
+    corpus_manifests: list[Path],
+) -> bool:
+    return validation_report_document_names(
+        validation_report
+    ) == public_release_render_manifest_document_names(corpus_manifests)
+
+
+def require_public_release_validation_report_coverage(
+    name: str,
+    validation_report: Path,
+    corpus_manifests: list[Path],
+) -> None:
+    try:
+        documents_match = public_release_validation_report_documents_match(
+            validation_report,
+            corpus_manifests,
+        )
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
+        raise ValueError(
+            f"{name} requires validation report covering public corpus"
+        ) from error
+    if not documents_match:
+        raise ValueError(f"{name} requires validation report covering public corpus")
 
 
 def require_public_release_corpus_manifest_pair(name: str, corpus_manifests: list[Path]) -> None:
@@ -1031,6 +1123,17 @@ def release_manifest(
                     release_policy, benchmark, "benchmark"
                 )
         manifest["benchmarks"] = benchmarks
+    if (
+        enforce_policy_inputs
+        and release_policy == "public-release"
+        and validation_report is not None
+        and corpus_manifests is not None
+    ):
+        require_public_release_validation_report_coverage(
+            release_policy,
+            validation_report,
+            corpus_manifests,
+        )
     corpus = corpus_manifest_summaries(corpus_manifests)
     if corpus:
         manifest["corpus_manifests"] = corpus

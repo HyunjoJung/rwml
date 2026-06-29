@@ -29,12 +29,14 @@ def write_passing_hygiene(path: pathlib.Path) -> None:
     )
 
 
-def write_passing_validation(path: pathlib.Path) -> None:
+def write_passing_validation(
+    path: pathlib.Path, documents: tuple[str, ...] = ("a.docx",)
+) -> None:
     path.write_text(
         json.dumps(
             {
                 "summary": {
-                    "documents": 1,
+                    "documents": len(documents),
                     "recall_min": 0.97,
                     "below_recall_min": 0,
                     "mean_recall": 0.9,
@@ -66,6 +68,10 @@ def write_passing_validation(path: pathlib.Path) -> None:
                         },
                     ],
                 },
+                "rows": [
+                    {"document": document, "status": "pass", "recall": 0.97}
+                    for document in documents
+                ],
             }
         ),
         encoding="utf-8",
@@ -1097,6 +1103,13 @@ class ReleaseManifestTests(unittest.TestCase):
                                 },
                             ],
                         },
+                        "rows": [
+                            {
+                                "document": "a.docx",
+                                "status": "pass",
+                                "recall": 0.97,
+                            }
+                        ],
                     }
                 ),
                 encoding="utf-8",
@@ -2029,6 +2042,33 @@ class ReleaseManifestTests(unittest.TestCase):
             ["existing public corpus documents"],
         )
 
+    def test_release_evidence_marks_validation_report_not_covering_public_corpus_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            hygiene = root / "public-hygiene.json"
+            validation = root / "render-validation.json"
+            benchmark = root / "extract-benchmark.json"
+            write_passing_hygiene(hygiene)
+            write_passing_validation(validation, documents=("other.docx",))
+            write_passing_benchmark(benchmark)
+            corpus, render_corpus = write_matching_public_manifests(root)
+
+            evidence = release_manifest.release_evidence_summary(
+                "public-release",
+                enforce_policy_inputs=False,
+                hygiene_report=hygiene,
+                validation_report=validation,
+                benchmark_reports=[benchmark],
+                corpus_manifests=[corpus, render_corpus],
+            )
+
+        self.assertEqual(evidence["strict_policy_status"], "missing_inputs")
+        self.assertFalse(evidence["strict_policy_inputs_complete"])
+        self.assertEqual(
+            evidence["strict_missing"],
+            ["validation report covering public corpus"],
+        )
+
     def test_release_evidence_marks_invalid_corpus_manifests_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
@@ -2401,6 +2441,33 @@ class ReleaseManifestTests(unittest.TestCase):
                     corpus_manifests=[corpus, render_corpus],
                 )
 
+    def test_enforced_public_release_policy_requires_validation_report_covering_public_corpus(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            artifact = root / "rdoc.tar.gz"
+            hygiene = root / "public-hygiene.json"
+            validation = root / "render-validation.json"
+            benchmark = root / "extract-benchmark.json"
+            artifact.write_bytes(b"release artifact")
+            write_passing_hygiene(hygiene)
+            write_passing_validation(validation, documents=("other.docx",))
+            write_passing_benchmark(benchmark)
+            corpus, render_corpus = write_matching_public_manifests(root)
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "public-release requires validation report covering public corpus",
+            ):
+                release_manifest.release_manifest(
+                    [artifact],
+                    release_policy="public-release",
+                    enforce_policy_inputs=True,
+                    hygiene_report=hygiene,
+                    validation_report=validation,
+                    benchmark_reports=[benchmark],
+                    corpus_manifests=[corpus, render_corpus],
+                )
+
     def test_cli_enforced_policy_rejects_failing_gate_report(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
@@ -2617,6 +2684,13 @@ class ReleaseManifestTests(unittest.TestCase):
                                 },
                             ],
                         },
+                        "rows": [
+                            {
+                                "document": "a.docx",
+                                "status": "pass",
+                                "recall": 0.97,
+                            }
+                        ],
                     }
                 ),
                 encoding="utf-8",
@@ -3195,6 +3269,13 @@ class ReleaseManifestTests(unittest.TestCase):
                                 },
                             ],
                         },
+                        "rows": [
+                            {
+                                "document": "a.docx",
+                                "status": "pass",
+                                "recall": 0.97,
+                            }
+                        ],
                     }
                 ),
                 encoding="utf-8",
