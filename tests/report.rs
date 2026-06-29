@@ -737,6 +737,24 @@ fn legacy_form_spaced_dropdown_index_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn legacy_form_alternate_content_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><mc:AlternateContent><mc:Choice Requires="wps"><w:p/></mc:Choice><mc:Fallback><w:p><w:r><w:fldChar w:fldCharType="begin"><w:ffData><w:checkBox><w:checked w:val="true"/></w:checkBox></w:ffData></w:fldChar></w:r><w:r><w:instrText> FORMCHECKBOX </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>fallback checked</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></mc:Fallback></mc:AlternateContent><w:p><w:fldSimple w:instr=" FORMDROPDOWN "><w:ffData><mc:AlternateContent><mc:Choice Requires="wps"><w:ddList><w:result w:val="0"/><w:listEntry w:val="Choice option"/></w:ddList></mc:Choice><mc:Fallback><w:ddList><w:result w:val="1"/><w:listEntry w:val="Fallback option"/></w:ddList></mc:Fallback></mc:AlternateContent></w:ffData><w:r><w:t>stale option</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn non_body_form_field_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -4064,6 +4082,47 @@ fn report_legacy_form_spaced_dropdown_index_is_supported() {
     assert!(
         main_text.contains("Chosen B") && !main_text.contains("stale spaced dropdown"),
         "whitespace-padded dropdown indexes should stay supported in report diagnostics: {main_text:?}"
+    );
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_legacy_form_alternate_content_uses_single_branch() {
+    let doc =
+        Document::open(&legacy_form_alternate_content_diagnostics_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(
+        fields[0].kind,
+        FieldKind::FormField("FORMDROPDOWN".to_string())
+    );
+    assert_eq!(fields[0].instruction, "FORMDROPDOWN");
+    assert_eq!(fields[0].result, "stale option");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("Choice option"));
+
+    let report = doc.report();
+    assert_eq!(report.features.fields, 1);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![field_kind_count(
+            FieldKind::FormField("FORMDROPDOWN".to_string()),
+            1
+        )]
+    );
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+    assert!(report
+        .warnings
+        .iter()
+        .all(|warning| !matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })));
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Choice option")
+            && !main_text.contains("Fallback option")
+            && !main_text.contains("fallback checked"),
+        "legacy form report diagnostics should use one AlternateContent branch: {main_text:?}"
     );
 }
 
