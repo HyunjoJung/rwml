@@ -2643,14 +2643,14 @@ fn apply_tcpr_child(t: &mut TcPr, e: &BytesStart<'_>) {
             }
         }
         b"vMerge" => {
-            t.vm = match attr_local(e, b"val").as_deref().map(str::trim) {
+            t.vm = match attr_local_trimmed(e, b"val").as_deref() {
                 Some("restart") => VMerge::Restart,
                 _ => VMerge::Continue, // present with "continue"/no val
             };
         }
         b"shd" => t.shading = attr_local(e, b"fill").and_then(|v| parse_rgb_hex_color(&v)),
         b"vAlign" => {
-            t.valign = match attr_local(e, b"val").as_deref().map(str::trim) {
+            t.valign = match attr_local_trimmed(e, b"val").as_deref() {
                 Some("center") => VCell::Center,
                 Some("bottom") => VCell::Bottom,
                 _ => VCell::Top,
