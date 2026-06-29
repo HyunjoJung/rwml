@@ -661,6 +661,15 @@ pub(crate) fn scan_note_ref_anchors(xml: &str, tag: &[u8]) -> HashMap<String, St
                     } else if name == b"t" {
                         current_block_text.push_str(&read_text(&mut r));
                         body_depth = body_depth.saturating_sub(1);
+                    } else if name == b"AlternateContent" {
+                        append_note_anchor_alternate_content(
+                            &mut r,
+                            tag,
+                            &mut current_block_text,
+                            &mut current_block_refs,
+                            0,
+                        );
+                        body_depth = body_depth.saturating_sub(1);
                     } else if is_note_anchor_embedded_body(name) {
                         skip_subtree(&mut r);
                         body_depth = body_depth.saturating_sub(1);
@@ -732,7 +741,7 @@ fn is_note_anchor_transparent_body_container(name: &[u8]) -> bool {
 }
 
 fn is_note_anchor_embedded_body(name: &[u8]) -> bool {
-    matches!(name, b"drawing" | b"pict" | b"object" | b"AlternateContent")
+    matches!(name, b"drawing" | b"pict" | b"object")
 }
 
 fn append_note_anchor_empty_marker(out: &mut String, name: &[u8]) {
@@ -742,6 +751,81 @@ fn append_note_anchor_empty_marker(out: &mut String, name: &[u8]) {
         b"noBreakHyphen" => out.push('-'),
         b"softHyphen" => out.push('\u{00ad}'),
         _ => {}
+    }
+}
+
+fn append_note_anchor_alternate_content(
+    r: &mut Xml<'_>,
+    tag: &[u8],
+    text: &mut String,
+    refs: &mut Vec<String>,
+    depth: u32,
+) {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return;
+    }
+    let mut took = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
+                b"Choice" | b"Fallback" if !took => {
+                    took = true;
+                    append_note_anchor_content(r, tag, text, refs, depth + 1);
+                }
+                _ => skip_subtree(r),
+            },
+            Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+}
+
+fn append_note_anchor_content(
+    r: &mut Xml<'_>,
+    tag: &[u8],
+    text: &mut String,
+    refs: &mut Vec<String>,
+    depth: u32,
+) {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return;
+    }
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if name == tag {
+                    if let Some(id) = attr_local_trimmed(&e, b"id") {
+                        refs.push(id);
+                    }
+                    skip_subtree(r);
+                } else if name == b"t" {
+                    text.push_str(&read_text(r));
+                } else if name == b"AlternateContent" {
+                    append_note_anchor_alternate_content(r, tag, text, refs, depth + 1);
+                } else if is_note_anchor_embedded_body(name) {
+                    skip_subtree(r);
+                } else {
+                    append_note_anchor_content(r, tag, text, refs, depth + 1);
+                }
+            }
+            Ok(Event::Empty(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if name == tag {
+                    if let Some(id) = attr_local_trimmed(&e, b"id") {
+                        refs.push(id);
+                    }
+                } else {
+                    append_note_anchor_empty_marker(text, name);
+                }
+            }
+            Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
     }
 }
 
