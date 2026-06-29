@@ -2382,7 +2382,7 @@ fn field_diagnostic_inventory_cases() -> Vec<FieldDiagnosticInventoryCase> {
             "NOTEREF PlainText",
             "cached plain note ref",
             FieldKind::NoteRef,
-            FieldEvaluationReason::UnsupportedSwitch,
+            FieldEvaluationReason::NoComputedResult,
         ),
         field_diagnostic_inventory_case(
             "D7",
@@ -8211,12 +8211,16 @@ fn report_note_ref_field_warning_tracks_unresolved_and_unsupported_cases() {
         report.features.unsupported_field_reasons,
         vec![
             FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::UnsupportedSwitch,
-                count: 2,
+                reason: FieldEvaluationReason::NoComputedResult,
+                count: 1,
             },
             FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::UnresolvedBookmark,
                 count: 3,
+            },
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::UnsupportedSwitch,
+                count: 1,
             },
         ]
     );
@@ -8243,7 +8247,7 @@ fn report_note_ref_field_warning_tracks_unresolved_and_unsupported_cases() {
         json.contains(r#""unsupported_field_kinds":[{"kind":"NOTEREF","count":5}]"#),
         "{json}"
     );
-    assert!(json.contains(r#""unsupported_field_reasons":[{"reason":"UnsupportedSwitch","count":2},{"reason":"UnresolvedBookmark","count":3}]"#), "{json}");
+    assert!(json.contains(r#""unsupported_field_reasons":[{"reason":"NoComputedResult","count":1},{"reason":"UnresolvedBookmark","count":3},{"reason":"UnsupportedSwitch","count":1}]"#), "{json}");
 }
 
 #[cfg(feature = "docx")]
@@ -8356,11 +8360,15 @@ fn report_note_ref_field_warning_reports_gap_cases() {
         report.features.unsupported_field_reasons,
         vec![
             FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::UnsupportedSwitch,
-                count: 2,
+                reason: FieldEvaluationReason::NoComputedResult,
+                count: 1,
             },
             FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::UnresolvedBookmark,
+                count: 1,
+            },
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::UnsupportedSwitch,
                 count: 1,
             },
         ]
@@ -8385,7 +8393,7 @@ fn report_note_ref_field_warning_reports_gap_cases() {
         "{json}"
     );
     assert!(
-        json.contains(r#""unsupported_field_reasons":[{"reason":"UnsupportedSwitch","count":2},{"reason":"UnresolvedBookmark","count":1}]"#),
+        json.contains(r#""unsupported_field_reasons":[{"reason":"NoComputedResult","count":1},{"reason":"UnresolvedBookmark","count":1},{"reason":"UnsupportedSwitch","count":1}]"#),
         "{json}"
     );
 }
@@ -8433,7 +8441,7 @@ fn report_field_diagnostic_inventory_tracks_active_gap_buckets() {
     );
 
     let json = report.to_json();
-    assert!(json.contains(r#""unsupported_field_reasons":[{"reason":"UnsupportedSwitch","count":4},{"reason":"NoComputedResult","count":2},{"reason":"UnresolvedBookmark","count":4},{"reason":"UnknownField","count":1}]"#), "{json}");
+    assert!(json.contains(r#""unsupported_field_reasons":[{"reason":"UnsupportedSwitch","count":3},{"reason":"NoComputedResult","count":3},{"reason":"UnresolvedBookmark","count":4},{"reason":"UnknownField","count":1}]"#), "{json}");
 }
 
 #[cfg(feature = "docx")]

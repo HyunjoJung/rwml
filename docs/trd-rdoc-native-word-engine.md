@@ -706,7 +706,7 @@ Implementation:
   bookmark-name `REF \d` supported syntax
   with no computed result, missing explicit or direct `REF \f` targets, existing
   explicit or direct non-note `REF \f` unsupported-switch cases, missing
-  `NOTEREF` targets, existing non-note `NOTEREF` targets, unsupported
+  `NOTEREF` targets, existing non-note `NOTEREF` no-computed-result targets, unsupported
   `NOTEREF` switches, missing `TOC \b` scopes, and truly unresolved
   bookmarks.
 

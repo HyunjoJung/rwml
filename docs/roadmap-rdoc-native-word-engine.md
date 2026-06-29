@@ -1013,7 +1013,7 @@ Initial status:
   explicit and direct bookmark-name `REF \d` supported syntax with no computed
   result, missing explicit or direct `REF \f` targets, and existing explicit or
   direct non-note `REF \f` unsupported-switch cases, missing `NOTEREF` targets,
-  existing non-note `NOTEREF` targets, missing `TOC \b` scopes, and
+  existing non-note `NOTEREF` no-computed-result targets, missing `TOC \b` scopes, and
   truly unresolved bookmarks.
 - The field evaluator and renderer map common Symbol/Wingdings legacy font code
   points to Unicode, including the Symbol `0xB7` bullet. The mapping is

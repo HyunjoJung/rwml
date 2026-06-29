@@ -3184,7 +3184,7 @@ fn note_ref_uncomputed_reason(
         return FieldEvaluationReason::NoComputedResult;
     }
     match bookmark_names {
-        Some(names) if names.contains(&target) => FieldEvaluationReason::UnsupportedSwitch,
+        Some(names) if names.contains(&target) => FieldEvaluationReason::NoComputedResult,
         Some(_) => FieldEvaluationReason::UnresolvedBookmark,
         None => FieldEvaluationReason::UnresolvedBookmark,
     }
