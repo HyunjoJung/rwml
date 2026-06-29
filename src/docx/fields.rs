@@ -9,17 +9,17 @@ use crate::annotation::{
     accept_field_number_format_switch,
     accept_field_text_format_switch as accept_field_format_switch, accept_general_format_switch,
     document_property_key, field_comparison_syntax, field_identifier_token,
-    field_level_range_token, field_level_token, field_literal_token, field_name_token,
-    field_non_empty_literal_token, field_non_empty_non_switch_literal_token,
-    field_non_empty_quoted_literal_token, field_points_token, field_positive_points_token,
-    field_quoted_literal_token, field_symbol_code_token, filename_field_syntax,
-    formula_field_syntax, instruction_parts, is_neutral_field_format_switch, is_note_ref_kind,
-    is_ref_value_neutral_switch, is_toc_value_neutral_switch, numbering_field_syntax,
-    page_field_format_syntax_tail, prompt_field_syntax, quote_field_syntax,
-    reference_index_category_token, reference_index_literal_token,
-    reference_index_plain_value_token, revision_number_field_text_format, sequence_field_syntax,
-    set_field_syntax, strip_ascii_switch_prefix, style_ref_field_syntax, toc_style_specs, Field,
-    FieldKind, FieldNumberFormat, FieldTextFormat, PromptFieldSyntax, StyleRefFieldSyntax,
+    field_level_range_token, field_literal_token, field_name_token, field_non_empty_literal_token,
+    field_non_empty_non_switch_literal_token, field_non_empty_quoted_literal_token,
+    field_points_token, field_positive_points_token, field_quoted_literal_token,
+    field_symbol_code_token, filename_field_syntax, formula_field_syntax, instruction_parts,
+    is_neutral_field_format_switch, is_note_ref_kind, is_ref_value_neutral_switch,
+    is_toc_value_neutral_switch, numbering_field_syntax, page_field_format_syntax_tail,
+    prompt_field_syntax, quote_field_syntax, reference_index_category_token,
+    reference_index_literal_token, reference_index_plain_value_token,
+    revision_number_field_text_format, sequence_field_syntax, set_field_syntax,
+    strip_ascii_switch_prefix, style_ref_field_syntax, toc_entry_field_syntax, toc_style_specs,
+    Field, FieldKind, FieldNumberFormat, FieldTextFormat, PromptFieldSyntax, StyleRefFieldSyntax,
     StyleRefResult,
 };
 use crate::{numfmt, CoreProperties};
@@ -4196,7 +4196,7 @@ fn read_toc_paragraph(
                         consumed_element = true;
                         let hidden_tc_result = current.iter().rev().any(|field| {
                             field.phase == FieldPhase::Result
-                                && tc_instruction(&field.instruction).is_some()
+                                && toc_entry_field_syntax(&field.instruction).is_some()
                         });
                         if !hidden_tc_result {
                             text.push_str(&run_text);
@@ -4369,7 +4369,7 @@ fn push_tc_entry_from_instruction(
 }
 
 fn push_tc_entry(instruction: &str, bookmarks: &[String], entries: &mut Vec<TocEntry>) -> bool {
-    if let Some(spec) = tc_instruction(instruction) {
+    if let Some(spec) = toc_entry_field_syntax(instruction) {
         entries.push(TocEntry {
             level: spec.level,
             text: spec.text,
@@ -4387,82 +4387,12 @@ fn push_tc_entry(instruction: &str, bookmarks: &[String], entries: &mut Vec<TocE
 }
 
 pub(crate) fn computed_toc_entry_result(instruction: &str) -> Option<String> {
-    tc_instruction(instruction)?;
+    toc_entry_field_syntax(instruction)?;
     Some(String::new())
 }
 
 pub(crate) fn supports_toc_entry_field_syntax(instruction: &str) -> bool {
-    tc_instruction(instruction).is_some()
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct TcInstruction {
-    text: String,
-    entry_type: Option<String>,
-    level: u8,
-}
-
-fn tc_instruction(instruction: &str) -> Option<TcInstruction> {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str).peekable();
-    let kind = parts.next()?;
-    if !kind.eq_ignore_ascii_case("TC") {
-        return None;
-    }
-    let text = field_name_token(parts.next()?)?.to_string();
-    if text.is_empty() {
-        return None;
-    }
-    let mut entry_type = None;
-    let mut level = 1u8;
-    let mut saw_level = false;
-    while let Some(part) = parts.next() {
-        if part.eq_ignore_ascii_case("\\f") {
-            let value = parts.next_if(|next| !next.starts_with('\\'))?;
-            set_tc_entry_type(&mut entry_type, value)?;
-            continue;
-        }
-        if let Some(value) = strip_ascii_switch_prefix(part, "\\f") {
-            if value.is_empty() || set_tc_entry_type(&mut entry_type, value).is_none() {
-                return None;
-            }
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\l") {
-            let value = parts.next_if(|next| !next.starts_with('\\'))?;
-            if saw_level {
-                return None;
-            }
-            level = field_level_token(value)?;
-            saw_level = true;
-            continue;
-        }
-        if let Some(value) = strip_ascii_switch_prefix(part, "\\l") {
-            if value.is_empty() || saw_level {
-                return None;
-            }
-            level = field_level_token(value)?;
-            saw_level = true;
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\n") {
-            continue;
-        }
-        return None;
-    }
-    Some(TcInstruction {
-        text,
-        entry_type,
-        level,
-    })
-}
-
-fn set_tc_entry_type(slot: &mut Option<String>, value: &str) -> Option<()> {
-    let value = tc_type_identifier(value)?;
-    if slot.replace(value).is_some() {
-        return None;
-    }
-    Some(())
+    toc_entry_field_syntax(instruction).is_some()
 }
 
 fn tc_type_identifier(value: &str) -> Option<String> {

@@ -5,8 +5,6 @@
 //! construct is fully modeled, editable, or renderable.
 
 #[cfg(not(feature = "docx"))]
-use crate::annotation::field_level_token as diagnostic_level_token;
-#[cfg(not(feature = "docx"))]
 use crate::annotation::field_name_token as diagnostic_name_token;
 use crate::annotation::{
     accept_field_number_format_switch, accept_field_text_format_switch,
@@ -27,7 +25,7 @@ use crate::annotation::{
     page_field_format_syntax_tail, prompt_field_syntax, quote_field_syntax,
     reference_index_category_token, reference_index_literal_token,
     reference_index_plain_value_token, revision_number_field_text_format, sequence_field_syntax,
-    set_field_syntax, style_ref_field_syntax,
+    set_field_syntax, style_ref_field_syntax, toc_entry_field_syntax,
 };
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{
@@ -3364,69 +3362,12 @@ fn toc_entry_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     }
     #[cfg(not(feature = "docx"))]
     {
-        if supported_toc_entry_syntax(instruction) {
+        if toc_entry_field_syntax(instruction).is_some() {
             FieldEvaluationReason::NoComputedResult
         } else {
             FieldEvaluationReason::UnsupportedSwitch
         }
     }
-}
-
-#[cfg(not(feature = "docx"))]
-fn supported_toc_entry_syntax(instruction: &str) -> bool {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str).peekable();
-    let Some(kind) = parts.next() else {
-        return false;
-    };
-    if !kind.eq_ignore_ascii_case("TC")
-        || diagnostic_name_token(parts.next().unwrap_or("")).is_none()
-    {
-        return false;
-    }
-    let mut entry_type = false;
-    let mut level = false;
-    while let Some(part) = parts.next() {
-        if part.eq_ignore_ascii_case("\\f") {
-            let Some(value) = parts.next_if(|next| !next.starts_with('\\')) else {
-                return false;
-            };
-            if entry_type || diagnostic_identifier_token(value).is_none() {
-                return false;
-            }
-            entry_type = true;
-            continue;
-        }
-        if let Some(value) = strip_ascii_switch_prefix(part, "\\f") {
-            if value.is_empty() || entry_type || diagnostic_identifier_token(value).is_none() {
-                return false;
-            }
-            entry_type = true;
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\l") {
-            let Some(value) = parts.next_if(|next| !next.starts_with('\\')) else {
-                return false;
-            };
-            if level || diagnostic_level_token(value).is_none() {
-                return false;
-            }
-            level = true;
-            continue;
-        }
-        if let Some(value) = strip_ascii_switch_prefix(part, "\\l") {
-            if value.is_empty() || level || diagnostic_level_token(value).is_none() {
-                return false;
-            }
-            level = true;
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\n") {
-            continue;
-        }
-        return false;
-    }
-    true
 }
 
 fn numbering_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {

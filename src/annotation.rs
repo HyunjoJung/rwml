@@ -993,6 +993,76 @@ fn accept_listnum_start_syntax(part: &str, reset_seen: &mut bool) -> bool {
     true
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TocEntryFieldSyntax {
+    pub(crate) text: String,
+    pub(crate) entry_type: Option<String>,
+    pub(crate) level: u8,
+}
+
+pub(crate) fn toc_entry_field_syntax(instruction: &str) -> Option<TocEntryFieldSyntax> {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str).peekable();
+    let kind = parts.next()?;
+    if !kind.eq_ignore_ascii_case("TC") {
+        return None;
+    }
+    let text = field_name_token(parts.next()?)?.to_string();
+    if text.is_empty() {
+        return None;
+    }
+    let mut entry_type = None;
+    let mut level = 1u8;
+    let mut saw_level = false;
+    while let Some(part) = parts.next() {
+        if part.eq_ignore_ascii_case("\\f") {
+            let value = parts.next_if(|next| !next.starts_with('\\'))?;
+            set_toc_entry_type(&mut entry_type, value)?;
+            continue;
+        }
+        if let Some(value) = strip_ascii_switch_prefix(part, "\\f") {
+            if value.is_empty() || set_toc_entry_type(&mut entry_type, value).is_none() {
+                return None;
+            }
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\l") {
+            let value = parts.next_if(|next| !next.starts_with('\\'))?;
+            if saw_level {
+                return None;
+            }
+            level = field_level_token(value)?;
+            saw_level = true;
+            continue;
+        }
+        if let Some(value) = strip_ascii_switch_prefix(part, "\\l") {
+            if value.is_empty() || saw_level {
+                return None;
+            }
+            level = field_level_token(value)?;
+            saw_level = true;
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\n") {
+            continue;
+        }
+        return None;
+    }
+    Some(TocEntryFieldSyntax {
+        text,
+        entry_type,
+        level,
+    })
+}
+
+fn set_toc_entry_type(slot: &mut Option<String>, value: &str) -> Option<()> {
+    let value = field_identifier_token(value)?.to_string();
+    if slot.replace(value).is_some() {
+        return None;
+    }
+    Some(())
+}
+
 pub(crate) fn filename_field_syntax(instruction: &str) -> bool {
     let tokens = instruction_parts(instruction);
     let mut parts = tokens.iter().map(String::as_str);
