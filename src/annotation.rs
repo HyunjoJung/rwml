@@ -606,6 +606,17 @@ fn hyperlink_tail_syntax(tail: &str) -> bool {
     true
 }
 
+pub(crate) fn merge_field_name(instruction: &str) -> Option<String> {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let kind = parts.next()?;
+    if !kind.eq_ignore_ascii_case("MERGEFIELD") {
+        return None;
+    }
+    let name = parts.next().and_then(field_name_token)?;
+    Some(name.to_string())
+}
+
 pub(crate) fn field_comparison_syntax<'a>(
     first: &str,
     parts: &mut impl Iterator<Item = &'a str>,
@@ -2834,7 +2845,7 @@ mod tests {
         direct_ref_field_syntax, eq_enclosed_operand, eq_fraction_operands, eq_list_operands,
         eq_numeric_prefix_option, eq_parenthesized_operand, eq_prefix_switch_tail,
         eq_radical_operands, hyperlink_field_target, if_field_syntax, legacy_form_field_syntax,
-        merge_control_field_syntax, note_ref_field_syntax, opaque_field_syntax,
+        merge_control_field_syntax, merge_field_name, note_ref_field_syntax, opaque_field_syntax,
         page_ref_field_syntax, ref_field_syntax, symbol_field_syntax, toc_field_syntax,
         FieldNumberFormat, FieldTextFormat, TocSequenceFilter, TocTcFilter,
     };
@@ -3078,6 +3089,21 @@ mod tests {
         assert!(hyperlink_field_target(r#"HYPERLINK "https://example.com" extra"#).is_none());
         assert!(hyperlink_field_target(r#"HYPERLINK \o "tip""#).is_none());
         assert!(hyperlink_field_target(r#"HYPERLINKBASE "https://example.com""#).is_none());
+    }
+
+    #[test]
+    fn merge_field_name_accepts_quoted_and_unquoted_names() {
+        assert_eq!(
+            merge_field_name(r#"MERGEFIELD ClientName \* MERGEFORMAT"#).as_deref(),
+            Some("ClientName")
+        );
+        assert_eq!(
+            merge_field_name(r#"MERGEFIELD "Client Name" \* MERGEFORMAT"#).as_deref(),
+            Some("Client Name")
+        );
+        assert!(merge_field_name(r#"MERGEFIELD \* MERGEFORMAT ClientName"#).is_none());
+        assert!(merge_field_name(r#"MERGEFIELD "Client Name"#).is_none());
+        assert!(merge_field_name(r#"MERGEFIELD "Client"Name""#).is_none());
     }
 }
 

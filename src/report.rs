@@ -12,7 +12,7 @@ use crate::annotation::field_name_token as diagnostic_name_token;
 use crate::annotation::{
     accept_field_text_format_switch, accept_general_format_switch,
     field_literal_token as diagnostic_literal_token, hyperlink_field_target, instruction_parts,
-    strip_ascii_switch_prefix, FieldTextFormat,
+    merge_field_name as diagnostic_merge_field_name, strip_ascii_switch_prefix, FieldTextFormat,
 };
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{
@@ -667,13 +667,7 @@ fn supports_merge_field_evaluation(field: &Field) -> bool {
 
 #[cfg(not(feature = "docx"))]
 fn supported_merge_field_syntax_for_report(instruction: &str) -> bool {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let Some(kind) = parts.next() else {
-        return false;
-    };
-    kind.eq_ignore_ascii_case("MERGEFIELD")
-        && parts.next().and_then(diagnostic_name_token).is_some()
+    diagnostic_merge_field_name(instruction).is_some()
 }
 
 fn supports_document_info_field_evaluation(field: &Field) -> bool {

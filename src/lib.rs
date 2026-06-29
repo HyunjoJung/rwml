@@ -3930,52 +3930,7 @@ impl DocState {
 
 #[cfg(feature = "docx")]
 fn merge_field_name(instruction: &str) -> Option<String> {
-    let mut parts = field_instruction_parts(instruction).into_iter();
-    let kind = parts.next()?;
-    if !kind.eq_ignore_ascii_case("MERGEFIELD") {
-        return None;
-    }
-    let part = parts.next()?;
-    let name = merge_field_name_token(&part)?;
-    Some(name.to_string())
-}
-
-#[cfg(feature = "docx")]
-fn merge_field_name_token(token: &str) -> Option<&str> {
-    let token = token.trim();
-    let name = match (token.starts_with('"'), token.ends_with('"')) {
-        (true, true) if token.len() >= 2 => &token[1..token.len() - 1],
-        (true, _) | (_, true) => return None,
-        (false, false) => token,
-    }
-    .trim();
-    if name.is_empty() || name.starts_with('\\') || name.contains('"') {
-        return None;
-    }
-    Some(name)
-}
-
-#[cfg(feature = "docx")]
-fn field_instruction_parts(instruction: &str) -> Vec<String> {
-    let mut parts = Vec::new();
-    let mut current = String::new();
-    let mut in_quotes = false;
-    for ch in instruction.chars() {
-        if ch == '"' {
-            in_quotes = !in_quotes;
-            current.push(ch);
-        } else if ch.is_whitespace() && !in_quotes {
-            if !current.is_empty() {
-                parts.push(std::mem::take(&mut current));
-            }
-        } else {
-            current.push(ch);
-        }
-    }
-    if !current.is_empty() {
-        parts.push(current);
-    }
-    parts
+    annotation::merge_field_name(instruction)
 }
 
 impl std::fmt::Debug for Document {
