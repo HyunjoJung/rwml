@@ -20,8 +20,8 @@ use super::parse_rgb_hex_color;
 use super::styles::Styles;
 use super::xml_text::{read_text, skip_subtree};
 use super::{
-    attr_local, attr_local_trimmed, attr_u32, attr_u8, field_char_type, is_page_break_type, local,
-    toggle_on,
+    attr_local, attr_local_trimmed, attr_u16, attr_u32, attr_u8, field_char_type,
+    is_page_break_type, local, toggle_on,
 };
 use crate::annotation::{normalized_field_instruction, FieldKind};
 use crate::model::{
@@ -33,12 +33,6 @@ use crate::model::{
 };
 use crate::text;
 use crate::CoreProperties;
-
-/// Half-points (`w:val` twentieths-of-a-point are NOT used here; `w:sz` is in
-/// half-points) → `Option<u16>`.
-fn parse_u16(s: &str) -> Option<u16> {
-    s.trim().parse().ok()
-}
 
 /// Twips (1/20 pt) string → points.
 fn twips_to_pt(s: &str) -> Option<f32> {
@@ -436,9 +430,7 @@ fn read_section_columns(r: &mut Xml<'_>) -> Option<u16> {
 }
 
 fn section_columns(e: &BytesStart<'_>) -> Option<u16> {
-    attr_local(e, b"num")
-        .and_then(|value| value.trim().parse::<u16>().ok())
-        .map(|value| value.max(1))
+    attr_u16(e, b"num").map(|value| value.max(1))
 }
 
 fn read_section_text_direction(r: &mut Xml<'_>) -> Option<TextDirection> {
@@ -1698,7 +1690,7 @@ fn read_rpr(r: &mut Xml<'_>) -> CharProps {
                     p.font = attr_local_trimmed(&e, b"eastAsia")
                         .or_else(|| attr_local_trimmed(&e, b"ascii"));
                 }
-                b"sz" => p.size_half_pt = attr_local(&e, b"val").and_then(|v| parse_u16(&v)),
+                b"sz" => p.size_half_pt = attr_u16(&e, b"val"),
                 b"color" => p.color = attr_local(&e, b"val").and_then(|v| parse_rgb_hex_color(&v)),
                 b"highlight" => p.highlight = attr_local_trimmed(&e, b"val"),
                 b"vertAlign" => {
@@ -2463,10 +2455,7 @@ fn read_tbl_borders(
                         _ => {}
                     }
                 }
-                if let Some(next) = attr_local(&e, b"sz")
-                    .and_then(|v| v.trim().parse::<u16>().ok())
-                    .filter(|v| *v > 0)
-                {
+                if let Some(next) = attr_u16(&e, b"sz").filter(|v| *v > 0) {
                     sizes.set(side, next);
                     size_seen = true;
                     match size {
@@ -2657,7 +2646,7 @@ fn read_tcpr(r: &mut Xml<'_>) -> TcPr {
 fn apply_tcpr_child(t: &mut TcPr, e: &BytesStart<'_>) {
     match local(e.name().as_ref()) {
         b"gridSpan" => {
-            if let Some(v) = attr_local(e, b"val").and_then(|v| parse_u16(&v)) {
+            if let Some(v) = attr_u16(e, b"val") {
                 t.gs = v.max(1);
             }
         }
