@@ -356,6 +356,25 @@ def check_required_policy_inputs(
         missing.append("corpus manifest")
     if missing:
         raise ValueError(f"{name} requires {', '.join(missing)}")
+
+    if not public_release_corpus_manifest_pair_matches(corpus_manifests or []):
+        required = " and ".join(PUBLIC_RELEASE_CORPUS_MANIFESTS)
+        raise ValueError(f"{name} requires corpus manifests exactly {required}")
+
+    if hygiene_report is not None and not hygiene_report.is_file():
+        missing.append("existing hygiene report")
+    if validation_report is not None and not validation_report.is_file():
+        missing.append("existing validation report")
+    if benchmark_reports is not None and not all(
+        path.is_file() for path in benchmark_reports
+    ):
+        missing.append("existing benchmark report")
+    if corpus_manifests is not None and not all(
+        path.is_file() for path in corpus_manifests
+    ):
+        missing.append("valid public corpus manifests")
+    if missing:
+        raise ValueError(f"{name} requires {', '.join(missing)}")
     require_public_release_corpus_manifest_pair(name, corpus_manifests or [])
 
 

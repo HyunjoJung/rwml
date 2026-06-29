@@ -2140,6 +2140,29 @@ class ReleaseManifestTests(unittest.TestCase):
                     enforce_policy_inputs=True,
                 )
 
+    def test_enforced_public_release_policy_rejects_missing_provided_evidence_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            artifact = root / "rdoc.tar.gz"
+            artifact.write_bytes(b"release artifact")
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "public-release requires existing hygiene report, existing validation report, existing benchmark report, valid public corpus manifests",
+            ):
+                release_manifest.release_manifest(
+                    [artifact],
+                    release_policy="public-release",
+                    enforce_policy_inputs=True,
+                    hygiene_report=root / "public-hygiene.json",
+                    validation_report=root / "render-validation.json",
+                    benchmark_reports=[root / "extract-benchmark.json"],
+                    corpus_manifests=[
+                        root / "MANIFEST.tsv",
+                        root / "RENDER_MANIFEST.tsv",
+                    ],
+                )
+
     def test_enforced_policy_inputs_requires_release_policy(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
@@ -2268,8 +2291,14 @@ class ReleaseManifestTests(unittest.TestCase):
     def test_enforced_public_release_policy_requires_matching_corpus_manifest_paths(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
+            hygiene = root / "public-hygiene.json"
+            validation = root / "render-validation.json"
+            benchmark = root / "extract-benchmark.json"
             corpus = root / "MANIFEST.tsv"
             render_corpus = root / "RENDER_MANIFEST.tsv"
+            write_passing_hygiene(hygiene)
+            write_passing_validation(validation)
+            write_passing_benchmark(benchmark)
             corpus.write_text(
                 "# path\tfields\twarnings\nsynthetic/a.docx\t0\t-\n",
                 encoding="utf-8",
@@ -2285,9 +2314,9 @@ class ReleaseManifestTests(unittest.TestCase):
             ):
                 release_manifest.check_required_policy_inputs(
                     "public-release",
-                    hygiene_report=pathlib.Path("public-hygiene.json"),
-                    validation_report=pathlib.Path("render-validation.json"),
-                    benchmark_reports=[pathlib.Path("extract-benchmark.json")],
+                    hygiene_report=hygiene,
+                    validation_report=validation,
+                    benchmark_reports=[benchmark],
                     corpus_manifests=[corpus, render_corpus],
                 )
 
