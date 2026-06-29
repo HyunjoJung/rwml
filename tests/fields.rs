@@ -1271,6 +1271,23 @@ fn action_compact_format_docx() -> Vec<u8> {
     ])
 }
 
+fn action_button_compact_format_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" GOTOBUTTON TargetBookmark Jump Now \*Upper "><w:r><w:t>stale compact jump</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" MACROBUTTON RunReport \*MERGEFORMAT "><w:r><w:t>cached compact target-only action</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn compatibility_field_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -7757,6 +7774,52 @@ fn docx_action_field_accepts_compact_neutral_format_switch() {
     assert!(
         !main_text.contains("cached compact print"),
         "validated compact PRINT output should replace stale cached text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_button_action_fields_accept_compact_format_switches() {
+    let doc = Document::open(&action_button_compact_format_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::Action("GOTOBUTTON".to_string()));
+    assert_eq!(
+        fields[0].instruction,
+        "GOTOBUTTON TargetBookmark Jump Now \\*Upper"
+    );
+    assert_eq!(fields[0].result, "stale compact jump");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("JUMP NOW"));
+    assert_eq!(fields[1].kind, FieldKind::Action("MACROBUTTON".to_string()));
+    assert_eq!(
+        fields[1].instruction,
+        "MACROBUTTON RunReport \\*MERGEFORMAT"
+    );
+    assert_eq!(fields[1].result, "cached compact target-only action");
+    assert_eq!(fields[1].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Action("MACROBUTTON".to_string()),
+            count: 1,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::NoComputedResult,
+            count: 1,
+        }]
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("JUMP NOW")
+            && main_text.contains("cached compact target-only action")
+            && !main_text.contains("stale compact jump"),
+        "compact button action output/cached text should be stable: {main_text:?}"
     );
 }
 

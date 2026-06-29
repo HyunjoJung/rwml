@@ -3935,6 +3935,14 @@ mod tests {
             super::FieldEvaluationReason::NoComputedResult
         );
         assert_eq!(
+            super::action_uncomputed_reason(r#"GOTOBUTTON TargetBookmark Jump Now \*Upper"#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::action_uncomputed_reason(r#"MACROBUTTON RunReport \*MERGEFORMAT"#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
             super::action_uncomputed_reason(r#"MACROBUTTON RunReport Run \* Upper Again"#),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
