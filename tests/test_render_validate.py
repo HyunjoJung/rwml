@@ -215,6 +215,18 @@ class RenderValidateReportTests(unittest.TestCase):
             ["Stable", "report.docx"],
         )
 
+    def test_reference_recall_tokens_drop_libreoffice_shape_fallback_only_when_warned(self):
+        tokens = ["Visible", "[shape]"]
+
+        self.assertEqual(render_validate.reference_recall_tokens(tokens), tokens)
+        self.assertEqual(
+            render_validate.reference_recall_tokens(
+                tokens,
+                render_warning_kinds=["FloatingShapePlaceholderOnly"],
+            ),
+            ["Visible"],
+        )
+
     def test_validation_report_rejects_measured_skip_rows(self):
         row = render_validate.ValidationRow(
             document="sample.docx",

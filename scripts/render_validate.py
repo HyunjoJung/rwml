@@ -11,7 +11,9 @@ and report three metrics per document:
   * text recall   — fraction of the reference's whitespace-normalized tokens that
                     also appear in rdoc's text layer, after dropping volatile
                     LibreOffice-only field text such as local file paths and
-                    missing-reference placeholders.
+                    missing-reference placeholders, plus known fallback shape
+                    placeholders when rdoc reports unsupported shape/object
+                    warnings.
   * page ratio    — rdoc page count / reference page count (≈ 1.0 is good).
   * visual aHash  — mean per-page average-hash Hamming similarity of page 1
                     (0..1; a coarse "does it look alike" signal, not exactness).
@@ -67,6 +69,12 @@ VALID_RENDER_WARNING_KINDS = {
     "UnsupportedMetafileImages",
     "MissingImageBytes",
     "UndecodableRasterImages",
+}
+UNSUPPORTED_OBJECT_WARNING_KINDS = {
+    "FloatingShapePlaceholderOnly",
+    "ChartsPreservedButNotModeled",
+    "OleObjectsPreservedButNotModeled",
+    "UnsupportedMetafileImages",
 }
 
 
@@ -491,7 +499,10 @@ def tokens(pdf: Path) -> list[str]:
     return text.split()
 
 
-def reference_recall_tokens(raw_tokens: list[str]) -> list[str]:
+def reference_recall_tokens(
+    raw_tokens: list[str],
+    render_warning_kinds: list[str] | None = None,
+) -> list[str]:
     tokens = []
     index = 0
     missing_reference = ["Error:", "Reference", "source", "not", "found"]
@@ -500,7 +511,11 @@ def reference_recall_tokens(raw_tokens: list[str]) -> list[str]:
             index += len(missing_reference)
             continue
         token = raw_tokens[index]
-        if not is_volatile_reference_path_token(token):
+        if not is_volatile_reference_path_token(
+            token
+        ) and not is_volatile_reference_shape_placeholder_token(
+            token, render_warning_kinds
+        ):
             tokens.append(token)
         index += 1
     return tokens
@@ -523,8 +538,21 @@ def is_volatile_reference_path_token(token: str) -> bool:
     return False
 
 
-def text_recall(ref: Path, got: Path) -> float:
-    ref_tokens = reference_recall_tokens(tokens(ref))
+def is_volatile_reference_shape_placeholder_token(
+    token: str,
+    render_warning_kinds: list[str] | None,
+) -> bool:
+    if token != "[shape]" or not render_warning_kinds:
+        return False
+    return any(kind in UNSUPPORTED_OBJECT_WARNING_KINDS for kind in render_warning_kinds)
+
+
+def text_recall(
+    ref: Path,
+    got: Path,
+    render_warning_kinds: list[str] | None = None,
+) -> float:
+    ref_tokens = reference_recall_tokens(tokens(ref), render_warning_kinds)
     if not ref_tokens:
         return 1.0
     got_set = set(tokens(got))
@@ -630,13 +658,6 @@ def main() -> int:
                         f"{'—':>8} {'—':>5}  SKIP (render failed)"
                     )
                 continue
-            rec = text_recall(ref, got)
-            got_pages = page_count(got)
-            ref_pages = page_count(ref)
-            pr = got_pages / max(1, ref_pages)
-            sim = hash_similarity(ref, got)
-            passed = rec >= args.recall_min
-            status = "pass" if passed else "fail"
             kinds = warning_kinds(render_report)
             if kinds is None:
                 rows.append(
@@ -652,6 +673,13 @@ def main() -> int:
                         f"{'--':>8} {'--':>5}  SKIP (render report invalid warnings)"
                     )
                 continue
+            rec = text_recall(ref, got, kinds)
+            got_pages = page_count(got)
+            ref_pages = page_count(ref)
+            pr = got_pages / max(1, ref_pages)
+            sim = hash_similarity(ref, got)
+            passed = rec >= args.recall_min
+            status = "pass" if passed else "fail"
             rows.append(
                 ValidationRow(
                     document=src.name,
