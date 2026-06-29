@@ -2382,7 +2382,7 @@ fn read_tblpr(r: &mut Xml<'_>) -> TableProps {
                 }
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"jc" => {
-                props.align = match attr_local(&e, b"val").as_deref().map(str::trim) {
+                props.align = match attr_local_trimmed(&e, b"val").as_deref() {
                     Some("center") => Some(Align::Center),
                     Some("right") => Some(Align::Right),
                     Some("both") => Some(Align::Justify),
