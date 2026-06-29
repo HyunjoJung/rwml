@@ -1678,6 +1678,9 @@ fn read_ppr(r: &mut Xml<'_>) -> PPr {
     let mut ilvl: u8 = 0;
     loop {
         match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"pPrChange" => {
+                skip_subtree(r);
+            }
             Ok(Event::Start(e)) => {
                 if local(e.name().as_ref()) == b"sectPr" {
                     pp.section = Some(read_sect_pr(r));
@@ -1746,6 +1749,9 @@ fn read_sect_pr(r: &mut Xml<'_>) -> SectionSetup {
     let mut section = SectionSetup::default();
     loop {
         match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"sectPrChange" => {
+                skip_subtree(r);
+            }
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
                 b"pgSz" => {
                     if let Some(size) = section_page_size(&e) {
@@ -2068,6 +2074,9 @@ fn read_rpr(r: &mut Xml<'_>) -> CharProps {
     let mut p = CharProps::default();
     loop {
         match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"rPrChange" => {
+                skip_subtree(r);
+            }
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
                 b"b" => p.bold = toggle_on(attr_local(&e, b"val")),
                 b"i" => p.italic = toggle_on(attr_local(&e, b"val")),
@@ -2782,6 +2791,9 @@ fn read_tblpr(r: &mut Xml<'_>) -> TableProps {
     let mut props = TableProps::default();
     loop {
         match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblPrChange" => {
+                skip_subtree(r);
+            }
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"tblW"
                     && attr_local_trimmed(&e, b"type").is_some_and(|value| value == "pct") =>
@@ -2948,6 +2960,9 @@ fn read_trpr(r: &mut Xml<'_>) -> bool {
     let mut header = false;
     loop {
         match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"trPrChange" => {
+                skip_subtree(r);
+            }
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"tblHeader" =>
             {
@@ -3041,6 +3056,9 @@ fn read_tcpr(r: &mut Xml<'_>) -> TcPr {
     };
     loop {
         match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tcPrChange" => {
+                skip_subtree(r);
+            }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tcMar" => {
                 t.margins = read_tc_mar(r);
             }
@@ -3986,5 +4004,60 @@ mod tests {
             panic!("para")
         };
         assert_eq!(p.text(), "kept");
+    }
+
+    #[test]
+    fn paragraph_property_change_keeps_visible_current_text() {
+        let xml = r#"<w:document><w:body><w:p>
+            <w:pPr>
+                <w:pPrChange><w:pPr><w:jc w:val="center"/></w:pPr></w:pPrChange>
+            </w:pPr>
+            <w:r><w:t>Property change</w:t></w:r>
+        </w:p></w:body></w:document>"#;
+        let Block::Paragraph(p) = &parse(xml)[0] else {
+            panic!("para")
+        };
+        assert_eq!(p.text(), "Property change");
+    }
+
+    #[test]
+    fn run_property_change_keeps_visible_current_text() {
+        let xml = r#"<w:document><w:body><w:p><w:r>
+            <w:rPr>
+                <w:rPrChange><w:rPr><w:b/></w:rPr></w:rPrChange>
+            </w:rPr>
+            <w:t>Run property change</w:t>
+        </w:r></w:p></w:body></w:document>"#;
+        let Block::Paragraph(p) = &parse(xml)[0] else {
+            panic!("para")
+        };
+        assert_eq!(p.text(), "Run property change");
+    }
+
+    #[test]
+    fn table_property_changes_keep_visible_current_cells() {
+        let xml = r#"<w:document><w:body><w:tbl>
+            <w:tblPr>
+                <w:tblPrChange><w:tblPr><w:tblW w:w="0"/></w:tblPr></w:tblPrChange>
+            </w:tblPr>
+            <w:tr>
+                <w:trPr>
+                    <w:trPrChange><w:trPr><w:tblHeader/></w:trPr></w:trPrChange>
+                </w:trPr>
+                <w:tc>
+                    <w:tcPr>
+                        <w:tcPrChange><w:tcPr><w:vAlign w:val="center"/></w:tcPr></w:tcPrChange>
+                    </w:tcPr>
+                    <w:p><w:r><w:t>Cell property change</w:t></w:r></w:p>
+                </w:tc>
+            </w:tr>
+        </w:tbl></w:body></w:document>"#;
+        let Block::Table(table) = &parse(xml)[0] else {
+            panic!("table")
+        };
+        let Block::Paragraph(p) = &table.rows[0].cells[0].blocks[0] else {
+            panic!("cell paragraph")
+        };
+        assert_eq!(p.text(), "Cell property change");
     }
 }
