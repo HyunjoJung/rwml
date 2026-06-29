@@ -377,6 +377,8 @@ def public_release_policy_input_gaps(
         missing.append("corpus manifest")
     elif not public_release_corpus_manifest_pair_matches(corpus_manifests):
         missing.append("exact public corpus manifest pair")
+    elif not all(path.is_file() for path in corpus_manifests):
+        missing.append("valid public corpus manifests")
     elif all(path.is_file() for path in corpus_manifests):
         try:
             if not public_release_corpus_manifest_documents_match(corpus_manifests):
@@ -400,26 +402,33 @@ def public_release_report_strength_gaps(
     benchmark_reports: list[Path] | None,
 ) -> list[str]:
     missing = []
-    if hygiene_report is not None and hygiene_report.is_file():
-        try:
-            hygiene = hygiene_summary(hygiene_report)
-            require_report_gate_passed("public-release", hygiene, "hygiene")
-        except (OSError, json.JSONDecodeError, ValueError):
+    if hygiene_report is not None:
+        if not hygiene_report.is_file():
             missing.append("passing hygiene report")
-    if validation_report is not None and validation_report.is_file():
-        try:
-            validation = validation_summary(validation_report)
-            require_report_gate_passed("public-release", validation, "validation")
-            require_public_release_report_thresholds(
-                "public-release",
-                validation,
-                "validation",
-            )
-        except (OSError, json.JSONDecodeError, ValueError):
+        else:
+            try:
+                hygiene = hygiene_summary(hygiene_report)
+                require_report_gate_passed("public-release", hygiene, "hygiene")
+            except (OSError, json.JSONDecodeError, ValueError):
+                missing.append("passing hygiene report")
+    if validation_report is not None:
+        if not validation_report.is_file():
             missing.append("policy-strength validation report")
+        else:
+            try:
+                validation = validation_summary(validation_report)
+                require_report_gate_passed("public-release", validation, "validation")
+                require_public_release_report_thresholds(
+                    "public-release",
+                    validation,
+                    "validation",
+                )
+            except (OSError, json.JSONDecodeError, ValueError):
+                missing.append("policy-strength validation report")
     benchmark_strength_missing = False
     for benchmark_report in benchmark_reports or []:
         if not benchmark_report.is_file():
+            benchmark_strength_missing = True
             continue
         try:
             benchmark = report_summary(benchmark_report)

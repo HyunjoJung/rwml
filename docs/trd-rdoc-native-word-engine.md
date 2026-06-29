@@ -1343,9 +1343,10 @@ named `public-release` policy, which records the public hygiene audit, required
 Rust gates, and optional local render/extraction threshold values. A compact
 `release_evidence` section records a strict-policy status, whether strict local
 evidence enforcement was enabled, which evidence paths were provided, whether
-the strict public-release input set is complete, and which strict inputs are
-still missing, including invalid public corpus manifests and manifest pairs
-whose document path lists do not match. Tagged release automation intentionally
+the strict public-release input set resolves to existing valid reports and
+manifests, and which strict inputs are still missing, including missing/invalid
+report files, invalid public corpus manifests, and manifest pairs whose document
+path lists do not match. Tagged release automation intentionally
 emits the non-strict policy manifest until local render and extraction reports
 are generated in the workflow.
 When invoked

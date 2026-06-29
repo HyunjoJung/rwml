@@ -16,6 +16,118 @@ sys.modules[SPEC.name] = release_manifest
 SPEC.loader.exec_module(release_manifest)
 
 
+def write_passing_hygiene(path: pathlib.Path) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "schema": "rdoc.public-hygiene-audit.v1",
+                "passed": True,
+                "findings": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def write_passing_validation(path: pathlib.Path) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "summary": {
+                    "documents": 1,
+                    "recall_min": 0.97,
+                    "below_recall_min": 0,
+                    "mean_recall": 0.9,
+                    "skipped": 0,
+                },
+                "gate": {
+                    "passed": True,
+                    "checks": [
+                        {
+                            "metric": "below_recall_min",
+                            "op": "<=",
+                            "threshold": 0,
+                            "actual": 0,
+                            "passed": True,
+                        },
+                        {
+                            "metric": "mean_recall",
+                            "op": ">=",
+                            "threshold": 0.9,
+                            "actual": 0.9,
+                            "passed": True,
+                        },
+                        {
+                            "metric": "skipped",
+                            "op": "<=",
+                            "threshold": 0,
+                            "actual": 0,
+                            "passed": True,
+                        },
+                    ],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def write_passing_benchmark(path: pathlib.Path) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "summary": {
+                    "files": 1,
+                    "poi_recall_mean": 0.95,
+                    "poi_f1_mean": 0.95,
+                    "errors": 0,
+                },
+                "gate": {
+                    "passed": True,
+                    "checks": [
+                        {
+                            "metric": "poi_recall_mean",
+                            "op": ">=",
+                            "threshold": 0.95,
+                            "actual": 0.95,
+                            "passed": True,
+                        },
+                        {
+                            "metric": "poi_f1_mean",
+                            "op": ">=",
+                            "threshold": 0.95,
+                            "actual": 0.95,
+                            "passed": True,
+                        },
+                        {
+                            "metric": "errors",
+                            "op": "<=",
+                            "threshold": 0,
+                            "actual": 0,
+                            "passed": True,
+                        },
+                    ],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def write_matching_public_manifests(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
+    corpus = root / "MANIFEST.tsv"
+    render_corpus = root / "RENDER_MANIFEST.tsv"
+    corpus.write_text(
+        "# path\tfields\twarnings\nsynthetic/a.docx\t0\t-\n",
+        encoding="utf-8",
+    )
+    render_corpus.write_text(
+        "# path\tpages\twarnings\nsynthetic/a.docx\t1\t-\n",
+        encoding="utf-8",
+    )
+    return corpus, render_corpus
+
+
 class ReleaseManifestTests(unittest.TestCase):
     def test_manifest_records_artifact_sizes_checksums_and_validation_summary(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1779,17 +1891,24 @@ class ReleaseManifestTests(unittest.TestCase):
         self.assertFalse(manifest["release_evidence"]["strict_policy_inputs_complete"])
 
     def test_release_evidence_status_names_complete_unenforced_inputs(self):
-        evidence = release_manifest.release_evidence_summary(
-            "public-release",
-            enforce_policy_inputs=False,
-            hygiene_report=pathlib.Path("public-hygiene.json"),
-            validation_report=pathlib.Path("render-validation.json"),
-            benchmark_reports=[pathlib.Path("extract-benchmark.json")],
-            corpus_manifests=[
-                pathlib.Path("MANIFEST.tsv"),
-                pathlib.Path("RENDER_MANIFEST.tsv"),
-            ],
-        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            hygiene = root / "public-hygiene.json"
+            validation = root / "render-validation.json"
+            benchmark = root / "extract-benchmark.json"
+            write_passing_hygiene(hygiene)
+            write_passing_validation(validation)
+            write_passing_benchmark(benchmark)
+            corpus, render_corpus = write_matching_public_manifests(root)
+
+            evidence = release_manifest.release_evidence_summary(
+                "public-release",
+                enforce_policy_inputs=False,
+                hygiene_report=hygiene,
+                validation_report=validation,
+                benchmark_reports=[benchmark],
+                corpus_manifests=[corpus, render_corpus],
+            )
 
         self.assertEqual(
             evidence["strict_policy_status"],
@@ -1799,11 +1918,44 @@ class ReleaseManifestTests(unittest.TestCase):
         self.assertTrue(evidence["strict_policy_inputs_complete"])
         self.assertEqual(evidence["strict_missing"], [])
 
+    def test_release_evidence_marks_missing_provided_policy_files_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            evidence = release_manifest.release_evidence_summary(
+                "public-release",
+                enforce_policy_inputs=False,
+                hygiene_report=root / "public-hygiene.json",
+                validation_report=root / "render-validation.json",
+                benchmark_reports=[root / "extract-benchmark.json"],
+                corpus_manifests=[
+                    root / "MANIFEST.tsv",
+                    root / "RENDER_MANIFEST.tsv",
+                ],
+            )
+
+        self.assertEqual(evidence["strict_policy_status"], "missing_inputs")
+        self.assertFalse(evidence["strict_policy_inputs_complete"])
+        self.assertEqual(
+            evidence["strict_missing"],
+            [
+                "valid public corpus manifests",
+                "passing hygiene report",
+                "policy-strength validation report",
+                "policy-strength benchmark report",
+            ],
+        )
+
     def test_release_evidence_marks_mismatched_corpus_manifest_paths_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
+            hygiene = root / "public-hygiene.json"
+            validation = root / "render-validation.json"
+            benchmark = root / "extract-benchmark.json"
             corpus = root / "MANIFEST.tsv"
             render_corpus = root / "RENDER_MANIFEST.tsv"
+            write_passing_hygiene(hygiene)
+            write_passing_validation(validation)
+            write_passing_benchmark(benchmark)
             corpus.write_text(
                 "# path\tfields\twarnings\nsynthetic/a.docx\t0\t-\n",
                 encoding="utf-8",
@@ -1816,9 +1968,9 @@ class ReleaseManifestTests(unittest.TestCase):
             evidence = release_manifest.release_evidence_summary(
                 "public-release",
                 enforce_policy_inputs=False,
-                hygiene_report=pathlib.Path("public-hygiene.json"),
-                validation_report=pathlib.Path("render-validation.json"),
-                benchmark_reports=[pathlib.Path("extract-benchmark.json")],
+                hygiene_report=hygiene,
+                validation_report=validation,
+                benchmark_reports=[benchmark],
                 corpus_manifests=[corpus, render_corpus],
             )
 
@@ -1832,8 +1984,14 @@ class ReleaseManifestTests(unittest.TestCase):
     def test_release_evidence_marks_invalid_corpus_manifests_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
+            hygiene = root / "public-hygiene.json"
+            validation = root / "render-validation.json"
+            benchmark = root / "extract-benchmark.json"
             corpus = root / "MANIFEST.tsv"
             render_corpus = root / "RENDER_MANIFEST.tsv"
+            write_passing_hygiene(hygiene)
+            write_passing_validation(validation)
+            write_passing_benchmark(benchmark)
             corpus.write_text(
                 "# fields\tpath\twarnings\n0\tsynthetic/a.docx\t-\n",
                 encoding="utf-8",
@@ -1846,9 +2004,9 @@ class ReleaseManifestTests(unittest.TestCase):
             evidence = release_manifest.release_evidence_summary(
                 "public-release",
                 enforce_policy_inputs=False,
-                hygiene_report=pathlib.Path("public-hygiene.json"),
-                validation_report=pathlib.Path("render-validation.json"),
-                benchmark_reports=[pathlib.Path("extract-benchmark.json")],
+                hygiene_report=hygiene,
+                validation_report=validation,
+                benchmark_reports=[benchmark],
                 corpus_manifests=[corpus, render_corpus],
             )
 
@@ -1860,6 +2018,11 @@ class ReleaseManifestTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
             hygiene = root / "public-hygiene.json"
+            validation = root / "render-validation.json"
+            benchmark = root / "extract-benchmark.json"
+            write_passing_validation(validation)
+            write_passing_benchmark(benchmark)
+            corpus, render_corpus = write_matching_public_manifests(root)
             hygiene.write_text(
                 json.dumps(
                     {
@@ -1881,12 +2044,9 @@ class ReleaseManifestTests(unittest.TestCase):
                 "public-release",
                 enforce_policy_inputs=False,
                 hygiene_report=hygiene,
-                validation_report=pathlib.Path("render-validation.json"),
-                benchmark_reports=[pathlib.Path("extract-benchmark.json")],
-                corpus_manifests=[
-                    pathlib.Path("MANIFEST.tsv"),
-                    pathlib.Path("RENDER_MANIFEST.tsv"),
-                ],
+                validation_report=validation,
+                benchmark_reports=[benchmark],
+                corpus_manifests=[corpus, render_corpus],
             )
 
         self.assertEqual(evidence["strict_policy_status"], "missing_inputs")
@@ -1898,8 +2058,10 @@ class ReleaseManifestTests(unittest.TestCase):
             root = pathlib.Path(tmp)
             validation = root / "render-validation.json"
             benchmark = root / "extract-benchmark.json"
+            hygiene = root / "public-hygiene.json"
             corpus = root / "MANIFEST.tsv"
             render_corpus = root / "RENDER_MANIFEST.tsv"
+            write_passing_hygiene(hygiene)
             validation.write_text(
                 json.dumps(
                     {
@@ -1946,7 +2108,7 @@ class ReleaseManifestTests(unittest.TestCase):
             evidence = release_manifest.release_evidence_summary(
                 "public-release",
                 enforce_policy_inputs=False,
-                hygiene_report=pathlib.Path("public-hygiene.json"),
+                hygiene_report=hygiene,
                 validation_report=validation,
                 benchmark_reports=[benchmark],
                 corpus_manifests=[corpus, render_corpus],

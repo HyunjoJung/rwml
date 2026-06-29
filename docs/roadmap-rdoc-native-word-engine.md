@@ -1094,9 +1094,10 @@ Initial status:
   summaries reject empty manifests, duplicate columns or paths, negative numeric
   counts, and duplicate warning tokens before embedding totals. Its
   `release_evidence` metadata distinguishes embedded policy,
-  complete-but-not-enforced inputs, enforced strict local evidence, and missing
-  strict public-release inputs, including invalid public corpus manifests and
-  manifest pairs whose document path lists do not match. It also provides
+  complete-but-not-enforced existing inputs, enforced strict local evidence, and
+  missing strict public-release inputs, including missing/invalid report files,
+  invalid public corpus manifests, and manifest pairs whose document path lists
+  do not match. It also provides
   `--enforce-policy-inputs` validation that requires a passing public hygiene
   report, render validation, extraction benchmark, and exactly the public
   `MANIFEST.tsv` plus `RENDER_MANIFEST.tsv` corpus manifest pair with matching
@@ -1199,8 +1200,9 @@ The active roadmap slices are:
    strict public manifests.
    Manifests now record `release_evidence.strict_policy_status`,
    `strict_policy_enforced`, `strict_policy_inputs_complete`, and missing
-   strict inputs so tagged automation that only embeds the policy remains
-   distinguishable from strict local release evidence. Tagged automation
+   strict inputs, including missing evidence files, so tagged automation that
+   only embeds the policy remains distinguishable from strict local release
+   evidence. Tagged automation
    intentionally emits the non-strict policy manifest until local render and
    extraction reports are generated in the workflow; strict public manifests
    remain an explicit local generation step.

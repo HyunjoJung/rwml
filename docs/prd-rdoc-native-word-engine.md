@@ -551,10 +551,10 @@ The first public maturity release should meet these requirements.
 - release manifests reject malformed corpus TSV evidence such as empty
   manifests, duplicate columns or paths, negative numeric counts, and duplicate
   warning tokens before embedding totals;
-- strict public manifest generation can require render-validation, extraction
-  benchmark, and the exact public `MANIFEST.tsv` plus `RENDER_MANIFEST.tsv`
-  corpus manifest pair with matching document paths, and reject failed local
-  report gates;
+- strict public manifest generation can require existing render-validation and
+  extraction benchmark reports plus the exact public `MANIFEST.tsv` and
+  `RENDER_MANIFEST.tsv` corpus manifest pair with matching document paths, and
+  reject failed or missing local report gates;
 - release workflows publish the generated manifest and packaged crate artifact
   for tagged releases;
 - no private data or domain-specific traces in committed examples or fixtures.
