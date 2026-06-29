@@ -1142,6 +1142,24 @@ fn note_ref_field_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn note_ref_gap_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="PlainText"/><w:r><w:t>Plain target</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" NOTEREF PlainText "><w:r><w:t>cached plain note ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NOTEREF MissingNote "><w:r><w:t>cached missing note ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NOTEREF PlainText \x "><w:r><w:t>cached bad note ref switch</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 struct FieldDiagnosticInventoryCase {
     row: &'static str,
     instruction: &'static str,
@@ -4498,6 +4516,78 @@ fn report_note_ref_field_warning_tracks_unresolved_and_unsupported_cases() {
         "{json}"
     );
     assert!(json.contains(r#""unsupported_field_reasons":[{"reason":"UnsupportedSwitch","count":2},{"reason":"UnresolvedBookmark","count":3}]"#), "{json}");
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_note_ref_field_warning_reports_gap_cases() {
+    let doc = Document::open(&note_ref_gap_diagnostics_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 3);
+    assert!(fields.iter().all(|field| field.kind == FieldKind::NoteRef));
+    assert_eq!(fields[0].instruction, "NOTEREF PlainText");
+    assert_eq!(fields[0].result, "cached plain note ref");
+    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(fields[1].instruction, "NOTEREF MissingNote");
+    assert_eq!(fields[1].result, "cached missing note ref");
+    assert_eq!(fields[1].computed_result, None);
+    assert_eq!(fields[2].instruction, "NOTEREF PlainText \\x");
+    assert_eq!(fields[2].result, "cached bad note ref switch");
+    assert_eq!(fields[2].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(report.features.fields, 3);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::NoteRef,
+            count: 3,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::NoteRef,
+            count: 3,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::UnsupportedSwitch,
+                count: 2,
+            },
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::UnresolvedBookmark,
+                count: 1,
+            },
+        ]
+    );
+    assert_eq!(
+        report
+            .warnings
+            .iter()
+            .find(|warning| matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })),
+        Some(&DocumentWarning::UnsupportedFieldEvaluation {
+            count: 3,
+            field_kinds: vec![FieldKindCount {
+                kind: FieldKind::NoteRef,
+                count: 3,
+            }],
+        })
+    );
+
+    let json = report.to_json();
+    assert!(
+        json.contains(r#""unsupported_field_kinds":[{"kind":"NOTEREF","count":3}]"#),
+        "{json}"
+    );
+    assert!(
+        json.contains(r#""unsupported_field_reasons":[{"reason":"UnsupportedSwitch","count":2},{"reason":"UnresolvedBookmark","count":1}]"#),
+        "{json}"
+    );
 }
 
 #[cfg(feature = "docx")]
