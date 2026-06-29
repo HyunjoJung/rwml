@@ -298,9 +298,9 @@ The first public maturity release should meet these requirements.
   separators, literal `DEFINED(expr)` checks for parser-local literal expressions,
   `+`, `-`, `*`, `/`, `^`, parentheses, unary signs, literal comparison
   operators (`=`, `<>`, `<`, `<=`, `>`, `>=`), simple non-spanning
-  table aggregate formulas over existing plain numeric positional
-  `LEFT`/`RIGHT`/`ABOVE`/`BELOW`, current `R`/`C`, A1 cell/range, and RnCn
-  cell/range references, skipping absent cells in ragged rows and including
+  table formulas over existing plain numeric direct A1/RnCn cells plus aggregate
+  formulas over positional `LEFT`/`RIGHT`/`ABOVE`/`BELOW`, current `R`/`C`, A1
+  cell/range, and RnCn cell/range references, skipping absent cells in ragged rows and including
   nested aggregate calls inside literal formula expressions,
   and simple separated or compact `\#` numeric pictures using `0`/`#`/`x` placeholders, decimal places,
   grouping commas, literal prefix/suffix characters such as `$` or `%`,

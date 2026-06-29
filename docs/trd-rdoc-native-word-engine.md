@@ -623,9 +623,9 @@ Implementation:
   document-info/date/stat display fields, dynamic/control fields beyond
   deterministic literal arithmetic/comparison/scalar-function formula fields with
   finite decimal/scientific numeric literals, finite literal exponentiation, and comma or semicolon function argument separators, simple non-spanning table
-  aggregate references over existing plain numeric positional
-  `LEFT`/`RIGHT`/`ABOVE`/`BELOW`, current `R`/`C`, A1 cell/range, and RnCn
-  cell/range references, skipping absent cells in ragged rows and including
+  direct A1/RnCn cell references plus aggregate references over existing plain
+  numeric positional `LEFT`/`RIGHT`/`ABOVE`/`BELOW`, current `R`/`C`, A1
+  cell/range, and RnCn cell/range references, skipping absent cells in ragged rows and including
   nested aggregate calls inside literal formula expressions, simple separated or compact `\#` numeric pictures,
   literal affixes, single-section leading `+`/`-` sign-control items, `x`
   digit-drop/rounding positions, and sectioned
@@ -653,9 +653,9 @@ Implementation:
   empty-current text-input default results;
   named dynamic/control fields beyond deterministic literal arithmetic/comparison/scalar-function formula
   fields with comma or semicolon function argument separators, simple non-spanning
-  table aggregate references over existing plain numeric positional
-  `LEFT`/`RIGHT`/`ABOVE`/`BELOW`, current `R`/`C`, A1 cell/range, and RnCn
-  cell/range references, skipping absent cells in ragged rows and including
+  table direct A1/RnCn cell references plus aggregate references over existing
+  plain numeric positional `LEFT`/`RIGHT`/`ABOVE`/`BELOW`, current `R`/`C`, A1
+  cell/range, and RnCn cell/range references, skipping absent cells in ragged rows and including
   nested aggregate calls inside literal formula expressions, simple separated or compact `\#`
   numeric pictures, literal affixes, single-section leading `+`/`-` sign-control items, `x`
   digit-drop/rounding positions, and sectioned positive/negative/zero pictures,
@@ -711,9 +711,9 @@ Acceptance:
   `NUMPAGES`, `NUMWORDS`, `NUMCHARS`, and `TEMPLATE`, dynamic/control fields
   including deterministic literal arithmetic/comparison/scalar-function formula fields with
   finite decimal/scientific numeric literals, finite literal exponentiation, and comma or semicolon function argument separators, simple non-spanning table
-  aggregate references over existing plain numeric positional
-  `LEFT`/`RIGHT`/`ABOVE`/`BELOW`, current `R`/`C`, A1 cell/range, and RnCn
-  cell/range references, skipping absent cells in ragged rows and including
+  direct A1/RnCn cell references plus aggregate references over existing plain
+  numeric positional `LEFT`/`RIGHT`/`ABOVE`/`BELOW`, current `R`/`C`, A1
+  cell/range, and RnCn cell/range references, skipping absent cells in ragged rows and including
   nested aggregate calls inside literal formula expressions, simple separated or compact `\#` numeric pictures,
   literal affixes, single-section leading `+`/`-`
   sign-control items, `x` digit-drop/rounding positions, and sectioned
@@ -1161,9 +1161,9 @@ open and edit the chart data.
   document-info/date/stat display fields, dynamic/control fields beyond
   deterministic literal arithmetic/comparison/scalar-function formula fields with
   finite decimal/scientific numeric literals, finite literal exponentiation, and comma or semicolon function argument separators, simple non-spanning table
-  aggregate references over existing plain numeric positional
-  `LEFT`/`RIGHT`/`ABOVE`/`BELOW`, current `R`/`C`, A1 cell/range, and RnCn
-  cell/range references, skipping absent cells in ragged rows and including
+  direct A1/RnCn cell references plus aggregate references over existing plain
+  numeric positional `LEFT`/`RIGHT`/`ABOVE`/`BELOW`, current `R`/`C`, A1
+  cell/range, and RnCn cell/range references, skipping absent cells in ragged rows and including
   nested aggregate calls inside literal formula expressions, simple separated or compact `\#` numeric pictures,
   literal affixes, single-section leading `+`/`-` sign-control items, `x`
   digit-drop/rounding positions, and sectioned
@@ -1191,9 +1191,9 @@ open and edit the chart data.
   empty-current text-input default results;
   named dynamic/control fields beyond deterministic literal arithmetic/comparison/scalar-function formula
   fields with comma or semicolon function argument separators, simple non-spanning
-  table aggregate references over existing plain numeric positional
-  `LEFT`/`RIGHT`/`ABOVE`/`BELOW`, current `R`/`C`, A1 cell/range, and RnCn
-  cell/range references, skipping absent cells in ragged rows and including
+  table direct A1/RnCn cell references plus aggregate references over existing
+  plain numeric positional `LEFT`/`RIGHT`/`ABOVE`/`BELOW`, current `R`/`C`, A1
+  cell/range, and RnCn cell/range references, skipping absent cells in ragged rows and including
   nested aggregate calls inside literal formula expressions, simple separated or compact `\#`
   numeric pictures, literal affixes, single-section leading `+`/`-` sign-control items, `x`
   digit-drop/rounding positions, and sectioned positive/negative/zero pictures,

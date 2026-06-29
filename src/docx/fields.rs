@@ -5704,6 +5704,13 @@ fn resolved_table_formula_expression(
     let mut pos = 0usize;
     let mut changed = false;
     while pos < chars.len() {
+        if let Some((end, target_row, target_col)) = table_formula_cell_reference_at(&chars, pos) {
+            let value = table_formula_direct_cell_value(rows, row, col, target_row, target_col)?;
+            output.push_str(&formula_number_text(value)?);
+            pos = end;
+            changed = true;
+            continue;
+        }
         if chars[pos].is_ascii_alphabetic() {
             let start = pos;
             while pos < chars.len() && chars[pos].is_ascii_alphabetic() {
@@ -5743,6 +5750,32 @@ fn resolved_table_formula_expression(
         pos += 1;
     }
     changed.then_some(output)
+}
+
+fn table_formula_cell_reference_at(chars: &[char], pos: usize) -> Option<(usize, usize, usize)> {
+    if pos > 0 && chars.get(pos - 1) == Some(&':') {
+        return None;
+    }
+    let mut end = pos;
+    while chars
+        .get(end)
+        .is_some_and(|ch| ch.is_ascii_alphanumeric() || *ch == '_')
+    {
+        end += 1;
+    }
+    if end == pos || chars.get(end) == Some(&':') {
+        return None;
+    }
+    let mut after = end;
+    while chars.get(after).is_some_and(|ch| ch.is_whitespace()) {
+        after += 1;
+    }
+    if chars.get(after) == Some(&'(') {
+        return None;
+    }
+    let token: String = chars[pos..end].iter().collect();
+    let (row, col) = table_formula_cell_reference(&token)?;
+    Some((end, row, col))
 }
 
 fn matching_formula_paren(chars: &[char], open: usize) -> Option<usize> {
@@ -5983,6 +6016,24 @@ fn push_table_formula_cell_number(cell: &TableFormulaCell, values: &mut Vec<f64>
     }
     values.push(text.parse::<f64>().ok()?);
     Some(())
+}
+
+fn table_formula_direct_cell_value(
+    rows: &[Vec<TableFormulaCell>],
+    row: usize,
+    col: usize,
+    target_row: usize,
+    target_col: usize,
+) -> Option<f64> {
+    if row == target_row && col == target_col {
+        return None;
+    }
+    let cell = rows.get(target_row)?.get(target_col)?;
+    if cell.contains_formula {
+        return None;
+    }
+    let value = cell.text.trim().parse::<f64>().ok()?;
+    value.is_finite().then_some(value)
 }
 
 #[derive(Debug, Clone)]

@@ -763,6 +763,23 @@ fn formula_table_cell_reference_docx() -> Vec<u8> {
     ])
 }
 
+fn formula_table_direct_cell_reference_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>3</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>n/a</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:fldSimple w:instr=" = A1 + R1C2 \# &quot;0&quot; "><w:r><w:t>stale direct expression</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = B1 "><w:r><w:t>stale direct cell</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = C1 "><w:r><w:t>cached nonnumeric direct cell</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn formula_table_nested_expression_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -5118,6 +5135,58 @@ fn docx_formula_fields_compute_table_cell_references() {
             && !main_text.contains("stale explicit row range")
             && !main_text.contains("stale explicit column range"),
         "computed table cell-reference formulas should replace stale cached text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_formula_fields_compute_direct_table_cell_references() {
+    let doc = Document::open(&formula_table_direct_cell_reference_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let expected = [
+        (
+            r#"= A1 + R1C2 \# "0""#,
+            "stale direct expression",
+            Some("5"),
+        ),
+        (r#"= B1"#, "stale direct cell", Some("3")),
+        (r#"= C1"#, "cached nonnumeric direct cell", None),
+    ];
+
+    assert_eq!(fields.len(), expected.len());
+    for (field, (instruction, stale, result)) in fields.iter().zip(expected) {
+        assert_eq!(field.kind, FieldKind::Dynamic("=".to_string()));
+        assert_eq!(field.instruction, instruction);
+        assert_eq!(field.result, stale);
+        assert_eq!(field.computed_result.as_deref(), result);
+    }
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Dynamic("=".to_string()),
+            count: 1
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::NoComputedResult,
+            count: 1
+        }]
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("5")
+            && main_text.contains("3")
+            && main_text.contains("cached nonnumeric direct cell"),
+        "direct table-cell formula results should materialize while unsafe cells stay cached: {main_text:?}"
+    );
+    assert!(
+        !main_text.contains("stale direct expression") && !main_text.contains("stale direct cell"),
+        "computed direct table-cell formulas should replace stale cached text: {main_text:?}"
     );
 }
 
