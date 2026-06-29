@@ -25,9 +25,10 @@ use super::{
 use crate::annotation::{normalized_field_instruction, FieldKind};
 use crate::model::{
     Align, AuthoredContentControl, Block, Cell, CellMargins, CharProps, Color, DocGrid,
-    DocGridType, FieldRole, Image, Indent, ListInfo, PageNumberFormat, ParaProps, Paragraph, Row,
-    Run, SectionBreakKind, SectionSetup, Spacing, Table, TableBorderColors, TableBorderSide,
-    TableBorderSizes, TableBorderStyle, TableBorderStyles, TextDirection, VCell, VertAlign,
+    DocGridType, FieldRole, Image, Indent, ListInfo, PageNumberFormat, PageSetup, ParaProps,
+    Paragraph, Row, Run, SectionBreakKind, SectionSetup, Spacing, Table, TableBorderColors,
+    TableBorderSide, TableBorderSizes, TableBorderStyle, TableBorderStyles, TextDirection, VCell,
+    VertAlign,
 };
 use crate::text;
 use crate::CoreProperties;
@@ -227,8 +228,7 @@ fn header_footer_ref(e: &BytesStart<'_>) -> Option<HeaderFooterRef> {
 /// orientation, `<w:pgMar>` left margin) → [`crate::model::PageSetup`]. Uses the
 /// last `sectPr` (the final/primary section). Falls back to the A4 default when
 /// absent. Twips (1/20 pt) → points.
-pub(crate) fn scan_page_setup(xml: &str) -> crate::model::PageSetup {
-    use crate::model::PageSetup;
+pub(crate) fn scan_page_setup(xml: &str) -> PageSetup {
     let mut r = Reader::from_str(xml);
     let mut page = PageSetup::default();
     let mut found = false;
@@ -236,31 +236,16 @@ pub(crate) fn scan_page_setup(xml: &str) -> crate::model::PageSetup {
         match r.read_event() {
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
                 b"pgSz" => {
-                    if let (Some(w), Some(h)) = (
-                        attr_local(&e, b"w").and_then(|v| twips_to_pt(&v)),
-                        attr_local(&e, b"h").and_then(|v| twips_to_pt(&v)),
-                    ) {
-                        page.width_pt = w;
-                        page.height_pt = h;
-                        page.landscape = attr_local(&e, b"orient")
-                            .is_some_and(|value| value.trim() == "landscape");
+                    if let Some(size) = section_page_size(&e) {
+                        apply_section_page_size(&mut page, size);
                         found = true;
                     }
                 }
                 b"pgMar" => {
-                    let l = attr_local(&e, b"left").and_then(|v| twips_to_pt(&v));
-                    let r = attr_local(&e, b"right").and_then(|v| twips_to_pt(&v));
-                    let t = attr_local(&e, b"top").and_then(|v| twips_to_pt(&v));
-                    let b = attr_local(&e, b"bottom").and_then(|v| twips_to_pt(&v));
-                    if l.or(r).or(t).or(b).is_some() {
+                    let margins = section_page_margins(&e);
+                    if section_page_margins_present(margins) {
+                        apply_section_page_margins(&mut page, margins);
                         found = true;
-                        if let Some(l) = l {
-                            page.margin_pt = l; // uniform fallback = left
-                        }
-                        page.margin_left_pt = l;
-                        page.margin_right_pt = r;
-                        page.margin_top_pt = t;
-                        page.margin_bottom_pt = b;
                     }
                 }
                 _ => {}
@@ -274,6 +259,49 @@ pub(crate) fn scan_page_setup(xml: &str) -> crate::model::PageSetup {
     } else {
         PageSetup::default()
     }
+}
+
+fn section_page_size(e: &BytesStart<'_>) -> Option<(f32, f32, bool)> {
+    let width = attr_local(e, b"w").and_then(|value| twips_to_pt(&value))?;
+    let height = attr_local(e, b"h").and_then(|value| twips_to_pt(&value))?;
+    let landscape = attr_local(e, b"orient").is_some_and(|value| value.trim() == "landscape");
+    Some((width, height, landscape))
+}
+
+fn apply_section_page_size(page: &mut PageSetup, (width, height, landscape): (f32, f32, bool)) {
+    page.width_pt = width;
+    page.height_pt = height;
+    page.landscape = landscape;
+}
+
+fn section_page_margins(
+    e: &BytesStart<'_>,
+) -> (Option<f32>, Option<f32>, Option<f32>, Option<f32>) {
+    (
+        attr_local(e, b"left").and_then(|value| twips_to_pt(&value)),
+        attr_local(e, b"right").and_then(|value| twips_to_pt(&value)),
+        attr_local(e, b"top").and_then(|value| twips_to_pt(&value)),
+        attr_local(e, b"bottom").and_then(|value| twips_to_pt(&value)),
+    )
+}
+
+fn section_page_margins_present(
+    (left, right, top, bottom): (Option<f32>, Option<f32>, Option<f32>, Option<f32>),
+) -> bool {
+    left.or(right).or(top).or(bottom).is_some()
+}
+
+fn apply_section_page_margins(
+    page: &mut PageSetup,
+    (left, right, top, bottom): (Option<f32>, Option<f32>, Option<f32>, Option<f32>),
+) {
+    if let Some(left) = left {
+        page.margin_pt = left;
+    }
+    page.margin_left_pt = left;
+    page.margin_right_pt = right;
+    page.margin_top_pt = top;
+    page.margin_bottom_pt = bottom;
 }
 
 /// Scan the final/body section properties for text column count.
@@ -1451,14 +1479,8 @@ fn read_sect_pr(r: &mut Xml<'_>) -> SectionSetup {
         match r.read_event() {
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
                 b"pgSz" => {
-                    if let (Some(w), Some(h)) = (
-                        attr_local(&e, b"w").and_then(|v| twips_to_pt(&v)),
-                        attr_local(&e, b"h").and_then(|v| twips_to_pt(&v)),
-                    ) {
-                        section.page.width_pt = w;
-                        section.page.height_pt = h;
-                        section.page.landscape = attr_local(&e, b"orient")
-                            .is_some_and(|value| value.trim() == "landscape");
+                    if let Some(size) = section_page_size(&e) {
+                        apply_section_page_size(&mut section.page, size);
                     }
                 }
                 b"type" => {
@@ -1466,17 +1488,7 @@ fn read_sect_pr(r: &mut Xml<'_>) -> SectionSetup {
                         .and_then(|value| SectionBreakKind::from_wml_value(&value));
                 }
                 b"pgMar" => {
-                    let l = attr_local(&e, b"left").and_then(|v| twips_to_pt(&v));
-                    let rr = attr_local(&e, b"right").and_then(|v| twips_to_pt(&v));
-                    let t = attr_local(&e, b"top").and_then(|v| twips_to_pt(&v));
-                    let b = attr_local(&e, b"bottom").and_then(|v| twips_to_pt(&v));
-                    if let Some(l) = l {
-                        section.page.margin_pt = l;
-                    }
-                    section.page.margin_left_pt = l;
-                    section.page.margin_right_pt = rr;
-                    section.page.margin_top_pt = t;
-                    section.page.margin_bottom_pt = b;
+                    apply_section_page_margins(&mut section.page, section_page_margins(&e));
                 }
                 b"pgNumType" => {
                     section.page_number_start = section_page_number_start(&e);
