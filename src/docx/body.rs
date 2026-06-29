@@ -1765,6 +1765,7 @@ fn append_run_alternate_content_branch(
                     let (img, txbx) = read_drawing(r, ctx, depth);
                     push_drawing_runs(images, img, txbx);
                 }
+                b"fldSimple" => images.extend(read_fldsimple(r, &e, ctx, depth)),
                 b"AlternateContent" => append_run_alternate_content(
                     r,
                     ctx,

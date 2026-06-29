@@ -3486,6 +3486,7 @@ fn docx_fields_use_single_alternate_content_branch() {
     assert_eq!(fields[0].instruction, "MERGEFIELD AltClient");
     assert_eq!(fields[0].result, "Choice Client");
     assert_eq!(doc.report().features.fields, 1);
+    assert_eq!(doc.main_text(), "Choice Client");
 }
 
 #[test]
