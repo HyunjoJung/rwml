@@ -1798,7 +1798,7 @@ struct DrawingAnchorOffset {
 
 fn read_page_position_offset(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Option<i64> {
     let page_relative =
-        attr_local(start, b"relativeFrom").is_some_and(|value| value.trim() == "page");
+        attr_local_trimmed(start, b"relativeFrom").is_some_and(|value| value == "page");
     let mut offset = None;
     loop {
         match r.read_event() {
