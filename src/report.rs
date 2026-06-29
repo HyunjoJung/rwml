@@ -1930,6 +1930,7 @@ fn ref_uncomputed_reason(
     else {
         return FieldEvaluationReason::UnsupportedSwitch;
     };
+    let target_exists = bookmark_names.is_some_and(|names| names.contains(&syntax.target));
     if bookmark_names.is_some_and(|names| !names.contains(&syntax.target)) {
         return FieldEvaluationReason::UnresolvedBookmark;
     }
@@ -1937,6 +1938,8 @@ fn ref_uncomputed_reason(
         FieldEvaluationReason::NoComputedResult
     } else if syntax.note_reference {
         FieldEvaluationReason::UnsupportedSwitch
+    } else if target_exists {
+        FieldEvaluationReason::NoComputedResult
     } else {
         FieldEvaluationReason::UnresolvedBookmark
     }
