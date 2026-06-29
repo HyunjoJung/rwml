@@ -262,6 +262,53 @@ class PublicHygieneAuditTests(unittest.TestCase):
                 self.assertTrue(public_hygiene_audit.should_skip(target_file))
                 self.assertFalse(public_hygiene_audit.should_skip(source_file))
 
+    def test_docx_audit_scans_package_member_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            docx = root / "corpus" / "public" / "synthetic" / "metadata.docx"
+            docx.parent.mkdir(parents=True)
+            workbook = BytesIO()
+            with zipfile.ZipFile(workbook, "w") as nested:
+                nested.writestr("[Content_Types].xml", "<Types/>")
+                nested.writestr("xl/" + "kr" + "-bid/sharedStrings.xml", "<sst/>")
+            with zipfile.ZipFile(docx, "w") as archive:
+                archive.writestr("[Content_Types].xml", "<Types/>")
+                archive.writestr("word/" + "kr" + "-bid-notes.xml", "<w:document/>")
+                archive.writestr(
+                    "/Users/" + "alice/Documents/private.xml",
+                    "<private/>",
+                )
+                archive.writestr("word/embeddings/workbook.xlsx", workbook.getvalue())
+
+            with audit_root(root):
+                findings = public_hygiene_audit.audit_docx_file(docx)
+
+        self.assertEqual(
+            [(finding.path, finding.line, finding.kind) for finding in findings],
+            [
+                (
+                    "corpus/public/synthetic/metadata.docx::word/"
+                    + "kr"
+                    + "-bid-notes.xml",
+                    None,
+                    "kr_bid_trace",
+                ),
+                (
+                    "corpus/public/synthetic/metadata.docx::/Users/"
+                    + "alice/Documents/private.xml",
+                    None,
+                    "mac_home_path",
+                ),
+                (
+                    "corpus/public/synthetic/metadata.docx::word/embeddings/workbook.xlsx::xl/"
+                    + "kr"
+                    + "-bid/sharedStrings.xml",
+                    None,
+                    "kr_bid_trace",
+                ),
+            ],
+        )
+
     def test_docx_audit_scans_textual_package_parts(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)

@@ -334,6 +334,9 @@ def audit_office_zip(
         if info.is_dir():
             continue
         display_path = f"{display_prefix}::{info.filename}"
+        findings.extend(
+            audit_text_blob(display_path, info.filename, "Office package member path")
+        )
         if is_office_text_part(info.filename):
             if info.file_size > MAX_OFFICE_TEXT_PART_BYTES:
                 findings.append(
