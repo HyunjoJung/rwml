@@ -1209,8 +1209,9 @@ and report diagnostics tests before public support wording moves.
 5. Release validation policy: keep tightening which external, locally configured
    render/extraction benchmark reports are required for public releases. The
    `public-release` manifest policy now fixes the required Rust gates and optional
-   threshold values (`0.95` POI recall/F1, `0.90` render mean recall, `0` errors
-   or skips), and `scripts/release_manifest.py --enforce-policy-inputs` can make
+   threshold values (`0.95` POI recall/F1, at least one scored benchmark file,
+   `0.90` render mean recall, `0` errors or skips), and
+   `scripts/release_manifest.py --enforce-policy-inputs` can make
    render validation, an `rdoc.benchmark-report.v1` / `extract-vs-mature`
    extraction benchmark, and the exact public `MANIFEST.tsv`/`RENDER_MANIFEST.tsv`
    corpus pair with matching document paths and existing listed documents

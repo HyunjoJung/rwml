@@ -84,6 +84,7 @@ def write_passing_benchmark(path: pathlib.Path) -> None:
             {
                 "summary": {
                     "files": 1,
+                    "scored": 1,
                     "poi_recall_mean": 0.95,
                     "poi_f1_mean": 0.95,
                     "errors": 0,
@@ -105,6 +106,13 @@ def write_passing_benchmark(path: pathlib.Path) -> None:
                             "op": ">=",
                             "threshold": 0.95,
                             "actual": 0.95,
+                            "passed": True,
+                        },
+                        {
+                            "metric": "scored",
+                            "op": ">=",
+                            "threshold": 1,
+                            "actual": 1,
                             "passed": True,
                         },
                         {
@@ -1848,6 +1856,7 @@ class ReleaseManifestTests(unittest.TestCase):
                         "min_poi_recall_mean": 0.95,
                         "min_poi_f1_mean": 0.95,
                         "max_errors": 0,
+                        "min_scored": 1,
                     },
                     "render_validation": {
                         "recall_min": 0.97,
@@ -2747,6 +2756,74 @@ class ReleaseManifestTests(unittest.TestCase):
                     corpus_manifests=[corpus, render_corpus],
                 )
 
+    def test_enforced_public_release_policy_rejects_missing_benchmark_scored_threshold(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            artifact = root / "rdoc.tar.gz"
+            hygiene = root / "public-hygiene.json"
+            validation = root / "render-validation.json"
+            benchmark = root / "extract-benchmark.json"
+            artifact.write_bytes(b"release artifact")
+            write_passing_hygiene(hygiene)
+            write_passing_validation(validation)
+            corpus, render_corpus = write_matching_public_manifests(root)
+            benchmark.write_text(
+                json.dumps(
+                    {
+                        "schema": "rdoc.benchmark-report.v1",
+                        "benchmark": "extract-vs-mature",
+                        "summary": {
+                            "files": 1,
+                            "scored": 1,
+                            "poi_recall_mean": 1.0,
+                            "poi_f1_mean": 1.0,
+                            "errors": 0,
+                        },
+                        "gate": {
+                            "passed": True,
+                            "checks": [
+                                {
+                                    "metric": "poi_recall_mean",
+                                    "op": ">=",
+                                    "threshold": 0.95,
+                                    "actual": 1.0,
+                                    "passed": True,
+                                },
+                                {
+                                    "metric": "poi_f1_mean",
+                                    "op": ">=",
+                                    "threshold": 0.95,
+                                    "actual": 1.0,
+                                    "passed": True,
+                                },
+                                {
+                                    "metric": "errors",
+                                    "op": "<=",
+                                    "threshold": 0,
+                                    "actual": 0,
+                                    "passed": True,
+                                },
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "public-release benchmark report gate must include scored >= 1",
+            ):
+                release_manifest.release_manifest(
+                    [artifact],
+                    release_policy="public-release",
+                    enforce_policy_inputs=True,
+                    hygiene_report=hygiene,
+                    validation_report=validation,
+                    benchmark_reports=[benchmark],
+                    corpus_manifests=[corpus, render_corpus],
+                )
+
     def test_enforced_public_release_policy_rejects_wrong_benchmark_identity(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
@@ -2816,7 +2893,7 @@ class ReleaseManifestTests(unittest.TestCase):
 
     def test_enforced_public_release_policy_rejects_weak_benchmark_summary(self):
         report = {
-            "summary": {"poi_recall_mean": 0.5, "poi_f1_mean": 1.0, "errors": 0},
+            "summary": {"poi_recall_mean": 0.5, "poi_f1_mean": 1.0, "errors": 0, "scored": 1},
             "gate": {
                 "passed": True,
                 "checks": [
@@ -2841,6 +2918,13 @@ class ReleaseManifestTests(unittest.TestCase):
                         "actual": 0,
                         "passed": True,
                     },
+                    {
+                        "metric": "scored",
+                        "op": ">=",
+                        "threshold": 1,
+                        "actual": 1,
+                        "passed": True,
+                    },
                 ],
             },
         }
@@ -2848,6 +2932,60 @@ class ReleaseManifestTests(unittest.TestCase):
         with self.assertRaisesRegex(
             ValueError,
             "public-release benchmark report summary poi_recall_mean must be at least 0.95",
+        ):
+            release_manifest.require_public_release_report_thresholds(
+                "public-release",
+                report,
+                "benchmark",
+            )
+
+    def test_enforced_public_release_policy_rejects_empty_benchmark_summary(self):
+        report = {
+            "summary": {
+                "files": 1,
+                "scored": 0,
+                "poi_recall_mean": 1.0,
+                "poi_f1_mean": 1.0,
+                "errors": 0,
+            },
+            "gate": {
+                "passed": True,
+                "checks": [
+                    {
+                        "metric": "poi_recall_mean",
+                        "op": ">=",
+                        "threshold": 0.95,
+                        "actual": 1.0,
+                        "passed": True,
+                    },
+                    {
+                        "metric": "poi_f1_mean",
+                        "op": ">=",
+                        "threshold": 0.95,
+                        "actual": 1.0,
+                        "passed": True,
+                    },
+                    {
+                        "metric": "errors",
+                        "op": "<=",
+                        "threshold": 0,
+                        "actual": 0,
+                        "passed": True,
+                    },
+                    {
+                        "metric": "scored",
+                        "op": ">=",
+                        "threshold": 1,
+                        "actual": 1,
+                        "passed": True,
+                    },
+                ],
+            },
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "public-release benchmark report summary scored must be at least 1",
         ):
             release_manifest.require_public_release_report_thresholds(
                 "public-release",
@@ -3287,6 +3425,7 @@ class ReleaseManifestTests(unittest.TestCase):
                         "benchmark": "extract-vs-mature",
                         "summary": {
                             "files": 1,
+                            "scored": 1,
                             "poi_recall_mean": 0.99,
                             "poi_f1_mean": 0.99,
                             "errors": 0,
@@ -3306,6 +3445,13 @@ class ReleaseManifestTests(unittest.TestCase):
                                     "op": ">=",
                                     "threshold": 0.95,
                                     "actual": 0.99,
+                                    "passed": True,
+                                },
+                                {
+                                    "metric": "scored",
+                                    "op": ">=",
+                                    "threshold": 1,
+                                    "actual": 1,
                                     "passed": True,
                                 },
                                 {

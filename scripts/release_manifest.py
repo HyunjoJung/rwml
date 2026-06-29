@@ -43,7 +43,7 @@ SCHEMA = "rdoc.release-manifest.v1"
 PUBLIC_RELEASE_CORPUS_MANIFESTS = ("MANIFEST.tsv", "RENDER_MANIFEST.tsv")
 PUBLIC_RELEASE_BENCHMARK_SCHEMA = "rdoc.benchmark-report.v1"
 PUBLIC_RELEASE_BENCHMARK_NAME = "extract-vs-mature"
-COUNT_POLICY_METRICS = {"below_recall_min", "skipped", "errors"}
+COUNT_POLICY_METRICS = {"below_recall_min", "skipped", "errors", "scored"}
 BOUNDED_SCORE_POLICY_METRICS = {"recall_min", "mean_recall", "poi_recall_mean", "poi_f1_mean"}
 KNOWN_WARNING_TOKENS = {
     "UnsupportedFieldEvaluation",
@@ -81,6 +81,7 @@ RELEASE_POLICIES: dict[str, dict[str, Any]] = {
                 "min_poi_recall_mean": 0.95,
                 "min_poi_f1_mean": 0.95,
                 "max_errors": 0,
+                "min_scored": 1,
             },
             "render_validation": {
                 "recall_min": 0.97,
@@ -730,6 +731,21 @@ def require_public_release_report_thresholds(
             label,
             "errors",
             thresholds["max_errors"],
+        )
+        require_gate_check_threshold(
+            policy,
+            report,
+            label,
+            "scored",
+            ">=",
+            thresholds["min_scored"],
+        )
+        require_summary_threshold_at_least(
+            policy,
+            report,
+            label,
+            "scored",
+            thresholds["min_scored"],
         )
 
 

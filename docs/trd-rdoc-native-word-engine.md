@@ -1447,7 +1447,7 @@ Optional local gates:
 
 ```text
 python scripts/bench_vs_mature.py --corpus <path> --json \
-  --min-poi-recall-mean 0.95 --min-poi-f1-mean 0.95 --max-errors 0 \
+  --min-poi-recall-mean 0.95 --min-poi-f1-mean 0.95 --max-errors 0 --min-scored 1 \
   --output dist/extract-benchmark.json
 python scripts/render_validate.py --json --min-mean-recall 0.90 --max-skipped 0 \
   corpus/public/**/*.docx > render.json

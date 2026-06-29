@@ -612,7 +612,8 @@ keeping unmodeled content alive.
 - machine-readable extraction benchmark gates for mean POI recall/F1, mean
   LibreOffice recall, scored-file counts, and extraction errors; the
   `public-release` policy fixes optional local extraction trend thresholds at
-  `0.95` POI recall/F1 and `0` extractor errors.
+  `0.95` POI recall/F1, at least one scored benchmark file, and `0` extractor
+  errors.
 
 ### Preservation
 

@@ -15,7 +15,8 @@ decide which extractor is "better".
   python scripts/bench_vs_mature.py --corpus DIR [--limit N] [--json]
   python scripts/bench_vs_mature.py --corpus DIR --json --version 0.1.0 \
     --git-rev "$(git rev-parse HEAD)" --min-poi-recall-mean 0.95 \
-    --min-poi-f1-mean 0.95 --max-errors 0 --output dist/extract-benchmark.json
+    --min-poi-f1-mean 0.95 --max-errors 0 --min-scored 1 \
+    --output dist/extract-benchmark.json
 
 The corpus directory must contain:
   sample-poi/*.poi.txt        Apache POI golden output

@@ -307,7 +307,7 @@ cargo run --features render --example to_pdf -- file.docx out.pdf --report-json 
 python scripts/render_validate.py --json --min-mean-recall 0.90 --max-skipped 0 corpus/public/**/*.docx > render.json
 python scripts/bench_vs_mature.py --corpus "$RDOC_BENCH_CORPUS" --json \
   --version 0.1.0 --git-rev "$(git rev-parse HEAD)" \
-  --min-poi-recall-mean 0.95 --min-poi-f1-mean 0.95 --max-errors 0 \
+  --min-poi-recall-mean 0.95 --min-poi-f1-mean 0.95 --max-errors 0 --min-scored 1 \
   --output dist/extract-benchmark.json
 python scripts/public_hygiene_audit.py --json > dist/public-hygiene.json
 python scripts/release_manifest.py --version 0.1.0 --git-rev "$(git rev-parse HEAD)" \
@@ -789,7 +789,8 @@ manifests embed public corpus manifest totals plus public hygiene,
 render-validation, and benchmark summaries/gates without copying row data, plus
 the named `public-release` policy: required public hygiene audit,
 fmt/clippy/default/no-default/render test gates, and selected optional local thresholds
-(`0.95` POI recall/F1, `0.90` render mean recall, `0` extractor errors/skips).
+(`0.95` POI recall/F1, at least one scored benchmark file, `0.90` render mean recall,
+`0` extractor errors/skips).
 Corpus TSV summaries reject empty manifests, duplicate columns or paths,
 negative numeric counts, and duplicate warning tokens before embedding totals.
 The same manifest records a compact `release_evidence` section so consumers can
