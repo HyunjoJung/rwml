@@ -775,7 +775,7 @@ mean recall, page-ratio, aHash, warning, and skipped-file thresholds. Release
 manifests embed public corpus manifest totals plus public hygiene,
 render-validation, and benchmark summaries/gates without copying row data, plus
 the named `public-release` policy: required public hygiene audit,
-fmt/clippy/default/render test gates, and selected optional local thresholds
+fmt/clippy/default/no-default/render test gates, and selected optional local thresholds
 (`0.95` POI recall/F1, `0.90` render mean recall, `0` extractor errors/skips).
 Corpus TSV summaries reject empty manifests, duplicate columns or paths,
 negative numeric counts, and duplicate warning tokens before embedding totals.
@@ -1049,8 +1049,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). The full local gate is
 `python3 scripts/public_hygiene_audit.py`, `cargo fmt --all -- --check`,
 `cargo clippy --all-targets -- -D warnings`,
 `cargo clippy --all-targets --all-features -- -D warnings`,
-`cargo test --all-targets`, `cargo test --all-targets --features render`,
-`cargo test --doc --all-features`, and `cargo doc --no-deps --all-features`.
+`cargo test --all-targets`, `cargo test --no-default-features`,
+`cargo test --all-targets --features render`, `cargo test --doc --all-features`,
+and `cargo doc --no-deps --all-features`.
 
 ## License
 

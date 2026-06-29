@@ -538,6 +538,7 @@ The first public maturity release should meet these requirements.
 - `cargo fmt --all -- --check`;
 - `cargo clippy --all-targets -- -D warnings`;
 - `cargo test --all-targets`;
+- `cargo test --no-default-features`;
 - `cargo test --doc`;
 - `cargo test --all-targets --features render`;
 - corpus scripts can run without private paths;

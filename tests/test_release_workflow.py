@@ -21,6 +21,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn(
             "cargo clippy --all-targets --all-features -- -D warnings", text
         )
+        self.assertIn("cargo test --no-default-features", text)
         self.assertIn("cargo test --doc --all-features", text)
         self.assertIn("cargo doc --no-deps --all-features", text)
         self.assertIn("scripts/release_manifest.py", text)

@@ -1116,7 +1116,7 @@ Initial status:
   existing per-document recall threshold and optional aggregate render thresholds
   for mean recall, page-ratio, aHash similarity, warning count, and skipped files.
 - `.github/workflows/release.yml` runs the public hygiene audit plus the required
-  fmt/clippy/default test/doc gates and the render-feature test gate on
+  fmt/clippy/default/no-default test/doc gates and the render-feature test gate on
   tag/manual release runs, packages the crate, generates
   `dist/rdoc-release-manifest.json` from the packaged `.crate` artifact plus
   public hygiene and public corpus manifest summaries plus `public-release`

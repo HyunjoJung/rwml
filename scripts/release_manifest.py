@@ -66,6 +66,7 @@ RELEASE_POLICIES: dict[str, dict[str, Any]] = {
                 "cargo clippy --all-targets -- -D warnings",
                 "cargo clippy --all-targets --all-features -- -D warnings",
                 "cargo test --all-targets",
+                "cargo test --no-default-features",
                 "cargo test --doc --all-features",
                 "cargo doc --no-deps --all-features",
             ],
