@@ -63,6 +63,10 @@ VALID_RENDER_WARNING_KINDS = {
 }
 
 
+class RenderDependencyError(RuntimeError):
+    """A selected render backend executable is unavailable."""
+
+
 @dataclass
 class ValidationRow:
     document: str
@@ -387,7 +391,18 @@ def render_libreoffice(src: Path, outdir: Path, mode: str) -> Path | None:
             "soffice", "--headless", "--convert-to", "pdf",
             "--outdir", str(outdir), str(src),
         ]
-    r = subprocess.run(cmd, capture_output=True)
+    try:
+        r = subprocess.run(cmd, capture_output=True)
+    except FileNotFoundError as exc:
+        if mode == "docker":
+            raise RenderDependencyError(
+                "LibreOffice validation dependency required: docker executable "
+                "not found; install Docker or pass --soffice local"
+            ) from exc
+        raise RenderDependencyError(
+            "LibreOffice validation dependency required: soffice executable "
+            "not found; install LibreOffice or pass --soffice docker"
+        ) from exc
     out = outdir / (src.stem + ".pdf")
     return out if (r.returncode == 0 and out.exists()) else None
 
@@ -466,7 +481,10 @@ def main() -> int:
     with tempfile.TemporaryDirectory(dir=Path.cwd()) as td:
         tmp = Path(td)
         for src in args.inputs:
-            ref = render_libreoffice(src, tmp, args.soffice)
+            try:
+                ref = render_libreoffice(src, tmp, args.soffice)
+            except RenderDependencyError as exc:
+                sys.exit(str(exc))
             got = tmp / (src.stem + ".rdoc.pdf")
             render_report = render_rdoc(src, got, tmp / (src.stem + ".rdoc.report.json"))
             if ref is None or render_report is None:

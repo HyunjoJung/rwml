@@ -1,7 +1,9 @@
 import importlib.util
 import pathlib
 import sys
+import tempfile
 import unittest
+from unittest import mock
 
 
 SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "render_validate.py"
@@ -284,6 +286,24 @@ class RenderValidateReportTests(unittest.TestCase):
         for report in cases:
             with self.subTest(report=report):
                 self.assertIsNone(render_validate.warning_kinds(report))
+
+    def test_render_libreoffice_reports_missing_docker_dependency(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            src = pathlib.Path(tmp) / "sample.docx"
+            src.write_bytes(b"placeholder")
+            with mock.patch.object(
+                render_validate.subprocess,
+                "run",
+                side_effect=FileNotFoundError(
+                    2, "No such file or directory", "docker"
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError, "docker executable not found"
+                ):
+                    render_validate.render_libreoffice(
+                        src, pathlib.Path(tmp), "docker"
+                    )
 
     def test_validation_gate_rejects_non_finite_thresholds(self):
         with self.assertRaisesRegex(ValueError, "non-finite threshold"):
