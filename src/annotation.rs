@@ -638,6 +638,29 @@ pub(crate) fn merge_control_field_syntax(instruction: &str) -> bool {
     false
 }
 
+pub(crate) fn opaque_field_syntax(instruction: &str, is_kind: fn(&str) -> bool) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if !is_kind(kind) {
+        return false;
+    }
+    while let Some(part) = parts.next() {
+        let Some(accepted) = accept_field_diagnostic_format_switch_syntax(part, &mut parts) else {
+            return false;
+        };
+        if accepted {
+            continue;
+        }
+        if !field_diagnostic_token_syntax(part) {
+            return false;
+        }
+    }
+    true
+}
+
 fn field_text_format_tail_syntax<'a, I>(parts: &mut I) -> bool
 where
     I: Iterator<Item = &'a str>,
@@ -680,6 +703,30 @@ fn if_result_text_syntax(token: &str) -> Option<&str> {
     (!token.starts_with('\\'))
         .then(|| field_literal_token(token))
         .flatten()
+}
+
+fn accept_field_diagnostic_format_switch_syntax<'a, I>(part: &'a str, parts: &mut I) -> Option<bool>
+where
+    I: Iterator<Item = &'a str>,
+{
+    accept_general_format_switch(part, parts, |format| {
+        field_diagnostic_format_switch_syntax(format)
+    })
+}
+
+fn field_diagnostic_format_switch_syntax(part: &str) -> bool {
+    let mut text_format = None;
+    let mut number_format = None;
+    accept_field_text_format_switch(part.trim(), &mut text_format)
+        || accept_field_number_format_switch(part.trim(), &mut number_format)
+}
+
+fn field_diagnostic_token_syntax(part: &str) -> bool {
+    if part.starts_with('\\') {
+        !part.contains('"')
+    } else {
+        field_literal_token(part).is_some()
+    }
 }
 
 fn compact_field_comparison_syntax(token: &str) -> Option<(&str, &str, &str)> {
@@ -1644,6 +1691,7 @@ where
 mod tests {
     use super::{
         action_field_syntax, compare_field_syntax, if_field_syntax, merge_control_field_syntax,
+        opaque_field_syntax,
     };
 
     #[test]
@@ -1667,6 +1715,34 @@ mod tests {
         assert!(!compare_field_syntax(r#"COMPARE \o = "Gold""#));
         assert!(!if_field_syntax(r#"IF 1 = 1 "ship" \* Upper Again"#));
         assert!(!merge_control_field_syntax(r#"NEXTIF 1e309 = 1"#));
+    }
+
+    #[test]
+    fn opaque_field_syntax_accepts_literal_payloads_and_format_tails() {
+        fn inserted_kind(kind: &str) -> bool {
+            kind.eq_ignore_ascii_case("INCLUDETEXT")
+        }
+
+        assert!(opaque_field_syntax(
+            r#"INCLUDETEXT "chapter.docx" \* Upper"#,
+            inserted_kind
+        ));
+        assert!(opaque_field_syntax(
+            r#"INCLUDETEXT "chapter.docx" \* MERGEFORMAT"#,
+            inserted_kind
+        ));
+        assert!(!opaque_field_syntax(
+            r#"INCLUDETEXT "chapter.docx" \* BadFormat"#,
+            inserted_kind
+        ));
+        assert!(!opaque_field_syntax(
+            r#"INCLUDETEXT "chapter.docx"#,
+            inserted_kind
+        ));
+        assert!(!opaque_field_syntax(
+            r#"LINK "chapter.docx""#,
+            inserted_kind
+        ));
     }
 }
 

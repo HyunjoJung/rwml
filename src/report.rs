@@ -13,8 +13,9 @@ use crate::annotation::{
     accept_general_format_switch, field_identifier_token as diagnostic_identifier_token,
     field_level_range_token as diagnostic_level_range_token,
     field_literal_token as diagnostic_literal_token, instruction_parts, is_note_ref_kind,
-    is_ref_value_neutral_switch, is_toc_value_neutral_switch, strip_ascii_switch_prefix,
-    toc_style_specs, Field, FieldKind, FieldNumberFormat, FieldTextFormat,
+    is_ref_value_neutral_switch, is_toc_value_neutral_switch, opaque_field_syntax,
+    strip_ascii_switch_prefix, toc_style_specs, Field, FieldKind, FieldNumberFormat,
+    FieldTextFormat,
 };
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{
@@ -2859,7 +2860,7 @@ fn inserted_content_uncomputed_reason(instruction: &str) -> FieldEvaluationReaso
 }
 
 fn supported_inserted_content_syntax(instruction: &str) -> bool {
-    supported_opaque_field_syntax(instruction, is_inserted_content_kind)
+    opaque_field_syntax(instruction, is_inserted_content_kind)
 }
 
 fn is_inserted_content_kind(kind: &str) -> bool {
@@ -2888,7 +2889,7 @@ fn mail_merge_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
 }
 
 fn supported_mail_merge_syntax(instruction: &str) -> bool {
-    supported_opaque_field_syntax(instruction, is_mail_merge_kind)
+    opaque_field_syntax(instruction, is_mail_merge_kind)
 }
 
 fn is_mail_merge_kind(kind: &str) -> bool {
@@ -2907,7 +2908,7 @@ fn reference_index_uncomputed_reason(instruction: &str) -> FieldEvaluationReason
 }
 
 fn supported_reference_index_syntax(instruction: &str) -> bool {
-    supported_opaque_field_syntax(instruction, is_generated_reference_index_kind)
+    opaque_field_syntax(instruction, is_generated_reference_index_kind)
 }
 
 fn is_generated_reference_index_kind(kind: &str) -> bool {
@@ -2926,7 +2927,7 @@ fn compatibility_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
 }
 
 fn supported_compatibility_syntax(instruction: &str) -> bool {
-    supported_opaque_field_syntax(instruction, is_compatibility_kind)
+    opaque_field_syntax(instruction, is_compatibility_kind)
 }
 
 fn is_compatibility_kind(kind: &str) -> bool {
@@ -3033,33 +3034,6 @@ fn is_form_field_kind(kind: &str) -> bool {
         kind.to_ascii_uppercase().as_str(),
         "FORMCHECKBOX" | "FORMDROPDOWN" | "FORMTEXT"
     )
-}
-
-fn supported_opaque_field_syntax(instruction: &str, is_kind: fn(&str) -> bool) -> bool {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let Some(kind) = parts.next() else {
-        return false;
-    };
-    if !is_kind(kind) {
-        return false;
-    }
-    while let Some(part) = parts.next() {
-        let Some(accepted) = accept_general_format_switch(
-            part,
-            &mut parts,
-            diagnostic_format_switch_token_well_formed,
-        ) else {
-            return false;
-        };
-        if accepted {
-            continue;
-        }
-        if !diagnostic_field_token_well_formed(part) {
-            return false;
-        }
-    }
-    true
 }
 
 fn diagnostic_format_switch_token_well_formed(part: &str) -> bool {
