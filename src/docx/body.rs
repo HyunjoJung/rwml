@@ -17,6 +17,7 @@ use quick_xml::Reader;
 use super::fields::TocEntry;
 use super::numbering::Numbering;
 use super::styles::Styles;
+use super::xml_text::read_text;
 use super::{
     attr_local, attr_local_trimmed, attr_u8, field_char_type, is_page_break_type, local, toggle_on,
 };
@@ -1709,31 +1710,6 @@ fn read_rpr(r: &mut Xml<'_>) -> CharProps {
         }
     }
     p
-}
-
-/// Read the text content of a `<w:t>` (preserving whitespace), through `</w:t>`.
-///
-/// `unescape` resolves the standard XML entities but errors on an unknown/custom
-/// entity (e.g. an XXE `SYSTEM` entity) — in that case we keep the raw text
-/// verbatim rather than dropping the whole node, which both preserves the
-/// readable words and never resolves (fetches) the external entity.
-fn read_text(r: &mut Xml<'_>) -> String {
-    let mut s = String::new();
-    loop {
-        match r.read_event() {
-            Ok(Event::Text(t)) => {
-                let unescaped = t.unescape().ok().map(|c| c.into_owned());
-                match unescaped {
-                    Some(c) => s.push_str(&c),
-                    None => s.push_str(&String::from_utf8_lossy(t.into_inner().as_ref())),
-                }
-            }
-            Ok(Event::CData(t)) => s.push_str(&String::from_utf8_lossy(t.into_inner().as_ref())),
-            Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
-            _ => {}
-        }
-    }
-    s
 }
 
 /// Scan a `<w:drawing>`/`<w:pict>` subtree for (a) the first image blip, resolved

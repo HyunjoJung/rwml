@@ -33,10 +33,10 @@ use crate::CoreProperties;
 mod body;
 mod comments;
 mod fields;
-mod inline_text;
 mod numbering;
 mod revisions;
 mod styles;
+mod xml_text;
 
 pub(crate) fn parse_fields(xml: &str) -> Vec<Field> {
     let core_properties = CoreProperties::default();

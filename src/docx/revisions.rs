@@ -6,7 +6,7 @@ use quick_xml::Reader;
 use crate::annotation::{Revision, RevisionKind, RevisionView};
 use crate::text;
 
-use super::inline_text::{
+use super::xml_text::{
     inline_marker_text, read_text, skip_alternate_content_branch, skip_subtree,
     AlternateContentBranchState,
 };

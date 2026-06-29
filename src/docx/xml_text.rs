@@ -1,4 +1,4 @@
-//! Shared inline text helpers for `.docx` side-channel parts.
+//! Shared XML text helpers for `.docx` parts.
 
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
@@ -45,6 +45,11 @@ pub(crate) fn skip_subtree(r: &mut Reader<&[u8]>) {
     }
 }
 
+/// Read text content through the current element's end.
+///
+/// `unescape` resolves standard XML entities but errors on unknown/custom
+/// entities. In that case keep the raw text verbatim rather than dropping the
+/// node or resolving external entities.
 pub(crate) fn read_text(r: &mut Reader<&[u8]>) -> String {
     let mut s = String::new();
     loop {
@@ -59,6 +64,21 @@ pub(crate) fn read_text(r: &mut Reader<&[u8]>) -> String {
         }
     }
     s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::read_text;
+    use quick_xml::events::Event;
+    use quick_xml::Reader;
+
+    #[test]
+    fn read_text_unescapes_cdata_and_keeps_unknown_entities_raw() {
+        let mut r = Reader::from_str("<w:t>A &amp; B<![CDATA[ <C> ]]>&unknown;</w:t>");
+        assert!(matches!(r.read_event(), Ok(Event::Start(_))));
+
+        assert_eq!(read_text(&mut r), "A & B <C> &unknown;");
+    }
 }
 
 pub(crate) fn inline_marker_text(e: &BytesStart<'_>) -> Option<&'static str> {

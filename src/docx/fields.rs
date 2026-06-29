@@ -31,6 +31,7 @@ use crate::{numfmt, CoreProperties};
 
 use super::numbering::Numbering;
 use super::styles::Styles;
+use super::xml_text::read_text;
 use super::{
     attr_local, attr_local_trimmed, attr_u8, attr_usize, field_char_type, is_page_break_type,
     local, toggle_on,
@@ -8681,22 +8682,6 @@ fn normalize_instruction(s: &str) -> String {
 
 fn field_kind(instruction: &str) -> FieldKind {
     FieldKind::from_instruction(instruction)
-}
-
-fn read_text(r: &mut Xml<'_>) -> String {
-    let mut s = String::new();
-    loop {
-        match r.read_event() {
-            Ok(Event::Text(t)) => match t.unescape().ok().map(|c| c.into_owned()) {
-                Some(c) => s.push_str(&c),
-                None => s.push_str(&String::from_utf8_lossy(t.into_inner().as_ref())),
-            },
-            Ok(Event::CData(t)) => s.push_str(&String::from_utf8_lossy(t.into_inner().as_ref())),
-            Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
-            _ => {}
-        }
-    }
-    s
 }
 
 #[cfg(test)]
