@@ -11566,24 +11566,19 @@ fn docx_page_ref_computes_restarted_section_display_page_after_visible_intro() {
     assert_eq!(fields[0].computed_result.as_deref(), Some("7"));
     assert_eq!(fields[1].kind, FieldKind::PageRef);
     assert_eq!(fields[1].instruction, "PAGEREF RestartedAfterIntro \\p");
-    assert_eq!(fields[1].computed_result, None);
+    assert_eq!(fields[1].computed_result.as_deref(), Some("above"));
 
     let main_text = doc.main_text();
     assert!(
         main_text.contains("7")
+            && main_text.contains("above")
             && !main_text.contains("stale restarted page")
-            && main_text.contains("stale restarted relative"),
-        "restarted section display page should compute while relative position stays cached: {main_text:?}"
+            && !main_text.contains("stale restarted relative"),
+        "restarted section display page and same-segment relative position should compute: {main_text:?}"
     );
 
     let report = doc.report();
-    assert_eq!(
-        report.features.unsupported_field_reasons,
-        vec![FieldEvaluationReasonCount {
-            reason: FieldEvaluationReason::NoComputedResult,
-            count: 1,
-        }]
-    );
+    assert!(report.features.unsupported_field_reasons.is_empty());
 }
 
 #[test]

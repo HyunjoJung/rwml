@@ -616,8 +616,9 @@ Implementation:
   `\* Hex`, integer-valued `\* DollarText`, and page-number-only `\* ArabicDash`
   number-format switches plus common field-result format switches, compute `\p`
   relative results (`above`, `below`, or `on page N`) when trusted leading
-  structural page context or source page markers provide both target and field
-  page/order, and preserve cached page-reference text for remaining layout-dependent cases while
+  structural page context, source page markers, or deterministic display-only
+  restart target/order context provide both target and field page/order, and
+  preserve cached page-reference text for remaining layout-dependent cases while
   leaving full layout-derived bookmark-to-page computation unsupported;
 - report unsupported evaluation only for unknown fields beyond named
   document-info/date/stat display fields, dynamic/control fields beyond
@@ -1153,7 +1154,7 @@ open and edit the chart data.
   advancement, honoring deterministic display-only `w:pgNumType w:start`
   page-number restart labels and trusted supported `w:pgNumType w:fmt` styles on structural section
   starts and single-section final `body/sectPr` page-number defaults, and trusted leading-structural or
-  source-marker `\p` relative-position results when target and field page/order are known,
+  source-marker plus deterministic display-only restart `\p` relative-position results when target and field page/order are known,
   while normalizing simple inline heading tabs, line breaks, and
   no-break/soft hyphens, keep cached field-result inline tabs, line breaks, and
   no-break/soft hyphens when computation is unsupported, and surface unresolved

@@ -254,7 +254,8 @@ Initial status:
   and page-number-only `\* ArabicDash`
   number-format switches plus common field-result format switches, computes `\p` relative results (`above`, `below`, or
   `on page N`) when trusted leading structural page context or source page
-  markers provide both target and field page/order, and preserves cached
+  markers, or deterministic display-only restart target/order context provide
+  both target and field page/order, and preserves cached
   page-reference text for remaining layout-dependent cases.
 - `Document::notes()` extracts `.docx` footnote/endnote side-table records from
   `word/footnotes.xml` and `word/endnotes.xml` with Word ids, note kind,
@@ -983,8 +984,8 @@ Initial status:
   single-section final `body/sectPr` page-number defaults,
   source-persisted `w:lastRenderedPageBreak` markers, or
   explicit hard breaks after a trusted leading/rendered page context, applies
-  deterministic page-number and field-result format switches, computes trusted leading-structural
-  and source-marker `\p` relative-position results, and preserves cached text for remaining
+  deterministic page-number and field-result format switches, computes trusted leading-structural,
+  source-marker, and deterministic display-only restart `\p` relative-position results, and preserves cached text for remaining
   layout-derived cases. Document and render
   diagnostics still report unknown, unresolved bookmark scope, unresolved or
   unsupported remaining value-changing REF cases such as
@@ -1161,7 +1162,8 @@ The active roadmap slices are:
    reports disagree with computation, or render-model reports can drift from the
    opened-document report.
 2. R2-b layout-derived `PAGE`/`PAGEREF`: contexts beyond trusted
-   leading/source-rendered, section-start, source-marker, and hard-break cases,
+   leading/source-rendered, section-start, source-marker, display-only restart
+   target/order, and hard-break cases,
    including exact pagination current-page/page-reference values,
    target-derived formatting where no trusted marker exists, and remaining
    layout-dependent `\p` results.

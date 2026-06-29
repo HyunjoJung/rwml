@@ -93,6 +93,7 @@ struct PageRefPageState {
     rendered_display_format: PageRefDisplayFormat,
     rendered_context_trusted: bool,
     display_only_restart_target: Option<PageRefTarget>,
+    display_only_restart_page_ref_target: Option<PageRefTarget>,
 }
 
 impl Default for PageRefPageState {
@@ -106,6 +107,7 @@ impl Default for PageRefPageState {
             rendered_display_format: PageRefDisplayFormat::default(),
             rendered_context_trusted: true,
             display_only_restart_target: None,
+            display_only_restart_page_ref_target: None,
         }
     }
 }
@@ -161,15 +163,18 @@ impl PageRefPageState {
             }
             self.rendered_context_trusted = true;
             self.display_only_restart_target = None;
+            self.display_only_restart_page_ref_target = None;
         } else {
             if let Some(format) = page_number_format {
                 self.rendered_display_format = format;
             }
             self.rendered_context_trusted = false;
-            self.display_only_restart_target = page_number_start.map(|_| PageRefTarget {
+            let display_only_target = page_number_start.map(|_| PageRefTarget {
                 display_page: self.leading_display_page_number,
                 display_format: self.leading_display_format,
             });
+            self.display_only_restart_target = display_only_target;
+            self.display_only_restart_page_ref_target = display_only_target;
         }
         *source_order += 1;
     }
@@ -190,6 +195,7 @@ impl PageRefPageState {
             self.rendered_context_trusted = false;
         }
         self.display_only_restart_target = None;
+        self.display_only_restart_page_ref_target = None;
         *source_order += 1;
     }
 
@@ -200,6 +206,7 @@ impl PageRefPageState {
         self.rendered_display_page_number += 1;
         self.rendered_context_trusted = true;
         self.display_only_restart_target = None;
+        self.display_only_restart_page_ref_target = None;
         *source_order += 1;
     }
 
@@ -208,6 +215,7 @@ impl PageRefPageState {
         self.rendered_display_page_number += 1;
         self.rendered_context_trusted = true;
         self.display_only_restart_target = None;
+        self.display_only_restart_page_ref_target = None;
         *source_order += 1;
     }
 
@@ -716,7 +724,10 @@ fn record_page_ref_bookmark_start(
             order: *source_order,
         });
     } else if let Some(target) = pages.display_only_restart_target {
-        targets.entry(name).or_insert(target);
+        targets.entry(name.clone()).or_insert(target);
+        if let Some(position) = display_only_restart_page_ref_position(pages, *source_order) {
+            target_positions_insert(target_positions, name, position);
+        }
     }
     *source_order += 1;
 }
@@ -725,12 +736,29 @@ fn current_page_ref_position(
     pages: &PageRefPageState,
     source_order: usize,
 ) -> Option<PageRefPosition> {
-    pages.rendered_context_trusted.then_some(PageRefPosition {
-        physical_page: pages.rendered_page_number,
-        display_page: pages.rendered_display_page_number,
-        display_format: pages.rendered_display_format,
-        order: source_order,
-    })
+    pages
+        .rendered_context_trusted
+        .then_some(PageRefPosition {
+            physical_page: pages.rendered_page_number,
+            display_page: pages.rendered_display_page_number,
+            display_format: pages.rendered_display_format,
+            order: source_order,
+        })
+        .or_else(|| display_only_restart_page_ref_position(pages, source_order))
+}
+
+fn display_only_restart_page_ref_position(
+    pages: &PageRefPageState,
+    source_order: usize,
+) -> Option<PageRefPosition> {
+    pages
+        .display_only_restart_page_ref_target
+        .map(|target| PageRefPosition {
+            physical_page: pages.leading_page_number,
+            display_page: target.display_page,
+            display_format: target.display_format,
+            order: source_order,
+        })
 }
 
 fn current_page_field_position(
