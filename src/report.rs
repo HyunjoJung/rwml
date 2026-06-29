@@ -819,6 +819,12 @@ fn render_model_unsupported_field_reason(
                 Some(&context.note_ref_target_names),
             ));
         }
+        if !supports_render_model_field_evaluation(field) && field.kind == FieldKind::Toc {
+            return Some(toc_uncomputed_reason(
+                &field.instruction,
+                Some(&context.bookmark_names),
+            ));
+        }
     }
     #[cfg(not(feature = "docx"))]
     let _ = context;
@@ -4748,6 +4754,59 @@ mod tests {
                 kind: FieldKind::Toc,
                 count: 1,
             }]
+        );
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn render_model_toc_scope_reasons_use_model_bookmarks() {
+        let blocks = vec![Block::Paragraph(Paragraph {
+            runs: vec![
+                Run {
+                    text: "Scoped target".to_string(),
+                    bookmark: Some("ExistingScope".to_string()),
+                    ..Run::default()
+                },
+                Run {
+                    text: "cached existing scope toc".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r"TOC \b ExistingScope".to_string(),
+                    },
+                    ..Run::default()
+                },
+                Run {
+                    text: "cached missing scope toc".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: r"TOC \b MissingScope".to_string(),
+                    },
+                    ..Run::default()
+                },
+            ],
+            ..Paragraph::default()
+        })];
+
+        let inventory = super::render_inventory_for_model(&blocks);
+
+        assert_eq!(inventory.fields, 2);
+        assert_eq!(
+            inventory.unsupported_field_kinds,
+            vec![super::FieldKindCount {
+                kind: FieldKind::Toc,
+                count: 2,
+            }]
+        );
+        assert_eq!(
+            inventory.unsupported_field_reasons,
+            vec![
+                super::FieldEvaluationReasonCount {
+                    reason: super::FieldEvaluationReason::NoComputedResult,
+                    count: 1,
+                },
+                super::FieldEvaluationReasonCount {
+                    reason: super::FieldEvaluationReason::UnresolvedBookmark,
+                    count: 1,
+                },
+            ]
         );
     }
 
