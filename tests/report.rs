@@ -1105,6 +1105,7 @@ fn note_ref_field_diagnostics_docx() -> Vec<u8> {
 
 #[cfg(feature = "docx")]
 struct FieldDiagnosticInventoryCase {
+    row: &'static str,
     instruction: &'static str,
     cached: &'static str,
     kind: FieldKind,
@@ -1113,12 +1114,14 @@ struct FieldDiagnosticInventoryCase {
 
 #[cfg(feature = "docx")]
 fn field_diagnostic_inventory_case(
+    row: &'static str,
     instruction: &'static str,
     cached: &'static str,
     kind: FieldKind,
     reason: FieldEvaluationReason,
 ) -> FieldDiagnosticInventoryCase {
     FieldDiagnosticInventoryCase {
+        row,
         instruction,
         cached,
         kind,
@@ -1130,72 +1133,84 @@ fn field_diagnostic_inventory_case(
 fn field_diagnostic_inventory_cases() -> Vec<FieldDiagnosticInventoryCase> {
     vec![
         field_diagnostic_inventory_case(
+            "D1",
             r"REF PlainText \f",
             "cached ref note mark",
             FieldKind::Ref,
             FieldEvaluationReason::UnsupportedSwitch,
         ),
         field_diagnostic_inventory_case(
+            "D2",
             r"REF PlainText \d-",
             "cached ref separator",
             FieldKind::Ref,
             FieldEvaluationReason::NoComputedResult,
         ),
         field_diagnostic_inventory_case(
+            "D3",
             "REF MissingRef",
             "cached missing ref",
             FieldKind::Ref,
             FieldEvaluationReason::UnresolvedBookmark,
         ),
         field_diagnostic_inventory_case(
+            "D4",
             r"PAGEREF PlainText \h",
             "cached page ref",
             FieldKind::PageRef,
             FieldEvaluationReason::NoComputedResult,
         ),
         field_diagnostic_inventory_case(
+            "D5",
             r"PAGEREF MissingPage \h",
             "cached missing page ref",
             FieldKind::PageRef,
             FieldEvaluationReason::UnresolvedBookmark,
         ),
         field_diagnostic_inventory_case(
+            "D6",
             "NOTEREF PlainText",
             "cached plain note ref",
             FieldKind::NoteRef,
             FieldEvaluationReason::UnsupportedSwitch,
         ),
         field_diagnostic_inventory_case(
+            "D7",
             "NOTEREF MissingNote",
             "cached missing note ref",
             FieldKind::NoteRef,
             FieldEvaluationReason::UnresolvedBookmark,
         ),
         field_diagnostic_inventory_case(
+            "D8",
             r"NOTEREF PlainText \x",
             "cached bad note ref switch",
             FieldKind::NoteRef,
             FieldEvaluationReason::UnsupportedSwitch,
         ),
         field_diagnostic_inventory_case(
+            "D9",
             r"TOC \b PlainText",
             "cached empty toc",
             FieldKind::Toc,
             FieldEvaluationReason::NoComputedResult,
         ),
         field_diagnostic_inventory_case(
+            "D10",
             r"TOC \b MissingScope",
             "cached missing toc scope",
             FieldKind::Toc,
             FieldEvaluationReason::UnresolvedBookmark,
         ),
         field_diagnostic_inventory_case(
+            "D11",
             r"TOC \q",
             "cached bad toc switch",
             FieldKind::Toc,
             FieldEvaluationReason::UnsupportedSwitch,
         ),
         field_diagnostic_inventory_case(
+            "D12",
             "CUSTOM Field",
             "cached unknown field",
             FieldKind::Unknown("CUSTOM".to_string()),
@@ -4309,6 +4324,11 @@ fn report_note_ref_field_warning_tracks_unresolved_and_unsupported_cases() {
 #[test]
 fn report_field_diagnostic_inventory_tracks_active_gap_buckets() {
     let cases = field_diagnostic_inventory_cases();
+    let expected_rows = [
+        "D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D9", "D10", "D11", "D12",
+    ];
+    let rows = cases.iter().map(|case| case.row).collect::<Vec<_>>();
+    assert_eq!(rows, expected_rows);
     let expected_field_kinds = field_kind_counts_from_inventory(&cases);
     let expected_reasons = field_reason_counts_from_inventory(&cases);
 
@@ -4316,10 +4336,10 @@ fn report_field_diagnostic_inventory_tracks_active_gap_buckets() {
     let fields = doc.fields();
     assert_eq!(fields.len(), cases.len());
     for (field, case) in fields.iter().zip(&cases) {
-        assert_eq!(field.instruction, case.instruction);
-        assert_eq!(field.kind, case.kind);
-        assert_eq!(field.result, case.cached);
-        assert_eq!(field.computed_result, None);
+        assert_eq!(field.instruction, case.instruction, "{}", case.row);
+        assert_eq!(field.kind, case.kind, "{}", case.row);
+        assert_eq!(field.result, case.cached, "{}", case.row);
+        assert_eq!(field.computed_result, None, "{}", case.row);
     }
 
     let report = doc.report();
