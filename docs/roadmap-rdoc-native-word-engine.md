@@ -404,8 +404,9 @@ Initial status:
   simple `EQ \l(...)` lists compute comma-joined operand plain text,
   simple `EQ \a(...)` arrays compute tab-separated columns and
   newline-separated rows for supported row-major operands,
-  simple `EQ \s` scripts compute `^`/`_` marker plain text while accepting
-  empty `\ai n()`/`\di n()` layout controls,
+  simple `EQ \s` scripts compute `^`/`_` marker plain text while preserving
+  non-empty `\ai n(...)`/`\di n(...)` operands and hiding empty layout-only
+  controls,
   simple `EQ \i(...)` integrals/summations/products compute symbol plus `_`/`^`
   limit marker plain text,
   simple `EQ \o(...)` overstrikes compute source-order overlay operand plain text,
@@ -887,8 +888,9 @@ Initial status:
   hidden validated `ADVANCE`, literal simple `EQ` fractions with supported
   operand separators/escapes and parenthesized nested simple operands, simple
   `EQ \r` radicals, default/custom `EQ \b` brackets, boxed `EQ \x` operands,
-  `EQ \l` lists, `EQ \a` arrays, `EQ \s` scripts including empty
-  `\ai n()`/`\di n()` layout controls, `EQ \i` integrals/sums/products,
+  `EQ \l` lists, `EQ \a` arrays, `EQ \s` scripts with non-empty
+  `\ai n(...)`/`\di n(...)` operand preservation and hidden empty layout-only
+  controls, `EQ \i` integrals/sums/products,
   `EQ \o` overstrikes, operand-preserving or hidden empty `EQ \d` displacement controls, and
   deterministic `SYMBOL` fields compute decimal/hex/default ANSI codepoints,
   Unicode `\u`, neutral `\h`, separated or compact font `\f` switches,

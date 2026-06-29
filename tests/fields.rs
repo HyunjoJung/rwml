@@ -7165,7 +7165,7 @@ fn docx_display_field_diagnostics_split_valid_broader_eq_from_malformed_eq() {
     assert_eq!(fields[0].kind, FieldKind::Display("EQ".to_string()));
     assert_eq!(fields[0].instruction, r#"EQ \s\up8(A)\ai4(B)"#);
     assert_eq!(fields[0].result, "cached broader script equation");
-    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(fields[0].computed_result.as_deref(), Some("^AB"));
     assert_eq!(fields[1].kind, FieldKind::Display("EQ".to_string()));
     assert_eq!(fields[1].instruction, r#"EQ \s\up8(A"#);
     assert_eq!(fields[1].result, "cached malformed script equation");
@@ -7184,25 +7184,20 @@ fn docx_display_field_diagnostics_split_valid_broader_eq_from_malformed_eq() {
         report.features.unsupported_field_kinds,
         vec![FieldKindCount {
             kind: FieldKind::Display("EQ".to_string()),
-            count: 3,
+            count: 2,
         }]
     );
     assert_eq!(
         report.features.unsupported_field_reasons,
-        vec![
-            FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::NoComputedResult,
-                count: 1,
-            },
-            FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::UnsupportedSwitch,
-                count: 2,
-            },
-        ]
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnsupportedSwitch,
+            count: 2,
+        }]
     );
 
     let main_text = doc.main_text();
-    assert!(main_text.contains("cached broader script equation"));
+    assert!(!main_text.contains("cached broader script equation"));
+    assert!(main_text.contains("^AB"));
     assert!(main_text.contains("cached malformed script equation"));
     assert!(!main_text.contains("cached broader displace equation"));
     assert!(main_text.contains("A"));

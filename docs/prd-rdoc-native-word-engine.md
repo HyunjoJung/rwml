@@ -392,10 +392,10 @@ The first public maturity release should meet these requirements.
   computed as enclosed operand plain text, `EQ \l(...)` lists computed as
   comma-joined operand plain text, simple `EQ \a(...)` arrays computed as
   tab-separated columns and newline-separated rows, simple `EQ \s` scripts
-  computed as `^`/`_` marker plain text while accepting empty
-  `\ai n()`/`\di n()` layout controls, simple `EQ \i(...)`
-  integrals/summations/products computed as symbol plus `_`/`^` limit marker
-  plain text, simple `EQ \o(...)` overstrikes computed as source-order overlay
+  computed as `^`/`_` marker plain text while preserving non-empty
+  `\ai n(...)`/`\di n(...)` operands and hiding empty layout-only controls,
+  simple `EQ \i(...)` integrals/summations/products computed as symbol plus
+  `_`/`^` limit marker plain text, simple `EQ \o(...)` overstrikes computed as source-order overlay
   operand plain text, plus deterministic `SYMBOL` character insertion computed
   for decimal/hex/default ANSI, Unicode `\u`, neutral `\h`, separated or compact
   font `\f` switches and quoted or unquoted separated/compact size `\s`

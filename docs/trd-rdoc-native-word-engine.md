@@ -558,9 +558,9 @@ Implementation:
   newline-separated rows over supported row-major operands; keep cached text for
   broader equation layout;
 - compute deterministic `.docx` `EQ \s` script fields with documented `\up n`
-  and `\do n` options as `^`/`_` marker plain text, while accepting layout-only
-  empty `\ai n()`/`\di n()` controls and preserving cached text for broader
-  stacked script layout;
+  and `\do n` options as `^`/`_` marker plain text, preserving non-empty
+  `\ai n(...)`/`\di n(...)` operands as plain text, hiding empty layout-only
+  controls, and preserving cached text for broader stacked script layout;
 - compute deterministic `.docx` `EQ \i(...)` integral fields, including
   documented `\su`, `\pr`, `\in`, `\fc\c`, and `\vc\c` options, as symbol plus
   `_`/`^` limit marker plain text over supported three-operand forms;

@@ -570,7 +570,8 @@ simple `EQ \l(...)` lists compute comma-joined operand plain text,
 simple `EQ \a(...)` arrays compute tab-separated columns and newline-separated
 rows for supported row-major operands,
 simple `EQ \s` superscript/subscript controls compute `^`/`_` marker plain text
-while accepting empty `\ai n()`/`\di n()` layout controls,
+while preserving non-empty `\ai n(...)`/`\di n(...)` operands and hiding empty
+layout-only controls,
 simple `EQ \i(...)` integrals/summations/products compute symbol plus `_`/`^`
 limit marker plain text,
 simple `EQ \o(...)` overstrike controls with documented alignment options compute

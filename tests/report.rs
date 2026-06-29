@@ -2477,7 +2477,7 @@ fn report_display_layout_fields_split_cached_and_malformed_diagnostics() {
         vec![
             FieldKindCount {
                 kind: FieldKind::Display("EQ".to_string()),
-                count: 3,
+                count: 2,
             },
             FieldKindCount {
                 kind: FieldKind::Display("SYMBOL".to_string()),
@@ -2487,16 +2487,10 @@ fn report_display_layout_fields_split_cached_and_malformed_diagnostics() {
     );
     assert_eq!(
         report.features.unsupported_field_reasons,
-        vec![
-            FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::NoComputedResult,
-                count: 1,
-            },
-            FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::UnsupportedSwitch,
-                count: 3,
-            },
-        ]
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnsupportedSwitch,
+            count: 3,
+        }]
     );
 }
 

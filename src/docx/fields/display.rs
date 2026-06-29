@@ -277,9 +277,12 @@ fn eq_script_segment(mut body: &str) -> Option<(String, &str)> {
             saw_option = true;
             continue;
         }
-        if let Some(rest) = consume_eq_script_empty_option(body, "\\ai")
-            .or_else(|| consume_eq_script_empty_option(body, "\\di"))
+        if let Some((segment, rest)) = consume_eq_script_layout_option(body, "\\ai")
+            .or_else(|| consume_eq_script_layout_option(body, "\\di"))
         {
+            if !segment.trim().is_empty() {
+                text.push_str(&eq_operand_text(segment)?);
+            }
             saw_option = true;
             body = rest.trim_start();
             continue;
@@ -298,10 +301,10 @@ fn consume_eq_script_visible_option<'a>(
     Some((marker, operand, rest))
 }
 
-fn consume_eq_script_empty_option<'a>(value: &'a str, option: &str) -> Option<&'a str> {
+fn consume_eq_script_layout_option<'a>(value: &'a str, option: &str) -> Option<(&'a str, &'a str)> {
     let (_points, rest) = consume_eq_numeric_prefix_option(value, option)?;
     let (operand, rest) = take_eq_parenthesized_operand(rest)?;
-    operand.trim().is_empty().then_some(rest)
+    Some((operand, rest))
 }
 
 fn eq_script_marker(marker: char, text: String) -> String {
