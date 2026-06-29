@@ -355,6 +355,23 @@ fn set_backed_comparison_docx() -> Vec<u8> {
     ])
 }
 
+fn set_backed_formula_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SET ClientTotal 42 "><w:r><w:t>cached numeric set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = ClientTotal + 8 "><w:r><w:t>stale set formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = SUM(ClientTotal; 8) "><w:r><w:t>stale set formula function</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = MissingTotal + 8 "><w:r><w:t>cached missing formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SET ClientTier &quot;Gold&quot; "><w:r><w:t>cached text set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = ClientTier + 1 "><w:r><w:t>cached text formula</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn if_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -4012,6 +4029,45 @@ fn docx_if_and_compare_resolve_prior_set_bookmark_operands() {
             && !main_text.contains("stale set if")
             && !main_text.contains("stale set compare"),
         "computed SET-backed comparison text should replace stale cached text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_formula_fields_resolve_prior_numeric_set_bookmark_operands() {
+    let doc = Document::open(&set_backed_formula_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 6);
+    assert_eq!(fields[0].kind, FieldKind::Dynamic("SET".to_string()));
+    assert_eq!(fields[0].instruction, "SET ClientTotal 42");
+    assert_eq!(fields[0].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[1].kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(fields[1].instruction, "= ClientTotal + 8");
+    assert_eq!(fields[1].result, "stale set formula");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("50"));
+    assert_eq!(fields[2].kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(fields[2].instruction, "= SUM(ClientTotal; 8)");
+    assert_eq!(fields[2].result, "stale set formula function");
+    assert_eq!(fields[2].computed_result.as_deref(), Some("50"));
+    assert_eq!(fields[3].kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(fields[3].instruction, "= MissingTotal + 8");
+    assert_eq!(fields[3].result, "cached missing formula");
+    assert_eq!(fields[3].computed_result, None);
+    assert_eq!(fields[4].kind, FieldKind::Dynamic("SET".to_string()));
+    assert_eq!(fields[4].instruction, "SET ClientTier \"Gold\"");
+    assert_eq!(fields[4].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[5].kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(fields[5].instruction, "= ClientTier + 1");
+    assert_eq!(fields[5].result, "cached text formula");
+    assert_eq!(fields[5].computed_result, None);
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("50\n50")
+            && main_text.contains("cached missing formula")
+            && main_text.contains("cached text formula")
+            && !main_text.contains("stale set formula"),
+        "computed SET-backed formula text should replace stale cached text: {main_text:?}"
     );
 }
 

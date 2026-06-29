@@ -4543,7 +4543,9 @@ fn apply_computed_results(fields: &mut [Field], ctx: ComputedResultContexts<'_>)
             FieldKind::Dynamic(kind) if kind == "=" => {
                 let result = ctx.table_formulas.field_result(formula_field_index);
                 formula_field_index += 1;
-                result.or_else(|| computed_dynamic_result(&field.instruction))
+                result.or_else(|| {
+                    computed_dynamic_result_with_bookmarks(&field.instruction, &field_bookmarks)
+                })
             }
             FieldKind::Dynamic(kind)
                 if kind == "QUOTE"
@@ -4933,6 +4935,7 @@ struct AskInstruction {
     default: Option<String>,
 }
 
+#[cfg(test)]
 pub(crate) fn computed_dynamic_result(instruction: &str) -> Option<String> {
     computed_formula_result(instruction)
         .or_else(|| computed_quote_result(instruction))
@@ -4946,7 +4949,7 @@ pub(crate) fn computed_dynamic_result_with_bookmarks(
     instruction: &str,
     field_bookmarks: &HashMap<String, String>,
 ) -> Option<String> {
-    computed_formula_result(instruction)
+    computed_formula_result_with_bookmarks(instruction, Some(field_bookmarks))
         .or_else(|| computed_quote_result(instruction))
         .or_else(|| computed_fill_in_result(instruction))
         .or_else(|| computed_if_result_with_bookmarks(instruction, field_bookmarks))
@@ -5527,12 +5530,20 @@ fn push_numeric(out: &mut String, value: u32, width: usize) -> Option<()> {
     Some(())
 }
 
+#[cfg(test)]
 fn computed_formula_result(instruction: &str) -> Option<String> {
+    computed_formula_result_with_bookmarks(instruction, None)
+}
+
+fn computed_formula_result_with_bookmarks(
+    instruction: &str,
+    field_bookmarks: Option<&HashMap<String, String>>,
+) -> Option<String> {
     let spec = formula_instruction(instruction)?;
     if spec.expression.is_empty() || spec.expression.contains(['\\', '"']) {
         return None;
     }
-    let mut parser = FormulaParser::new(&spec.expression);
+    let mut parser = FormulaParser::new(&spec.expression, field_bookmarks);
     let value = parser.parse()?;
     match spec.number_format {
         Some(format) => format_formula_number(value, &format),
@@ -5631,7 +5642,7 @@ fn computed_table_formula_result(
         return None;
     }
     let expression = resolved_table_formula_expression(&spec.expression, rows, row, col)?;
-    let mut parser = FormulaParser::new(&expression);
+    let mut parser = FormulaParser::new(&expression, None);
     let value = parser.parse()?;
     match spec.number_format {
         Some(format) => format_formula_number(value, &format),
@@ -5953,16 +5964,18 @@ fn push_table_formula_cell_number(cell: &TableFormulaCell, values: &mut Vec<f64>
 }
 
 #[derive(Debug, Clone)]
-struct FormulaParser {
+struct FormulaParser<'a> {
     chars: Vec<char>,
     pos: usize,
+    field_bookmarks: Option<&'a HashMap<String, String>>,
 }
 
-impl FormulaParser {
-    fn new(expression: &str) -> Self {
+impl<'a> FormulaParser<'a> {
+    fn new(expression: &str, field_bookmarks: Option<&'a HashMap<String, String>>) -> Self {
         Self {
             chars: expression.chars().collect(),
             pos: 0,
+            field_bookmarks,
         }
     }
 
@@ -6101,17 +6114,19 @@ impl FormulaParser {
     }
 
     fn parse_function(&mut self) -> Option<f64> {
-        let name = self.parse_identifier()?.to_ascii_uppercase();
+        let name = self.parse_identifier()?;
+        let upper_name = name.to_ascii_uppercase();
         self.skip_ws();
         if self.peek() != Some('(') {
-            return eval_formula_function(&name, &[]);
+            return eval_formula_function(&upper_name, &[])
+                .or_else(|| self.field_bookmark_formula_value(&name));
         }
         self.pos += 1;
-        if name == "DEFINED" {
+        if upper_name == "DEFINED" {
             return self.parse_defined_function();
         }
         let arguments = self.parse_function_arguments()?;
-        eval_formula_function(&name, &arguments)
+        eval_formula_function(&upper_name, &arguments)
     }
 
     fn parse_defined_function(&mut self) -> Option<f64> {
@@ -6133,7 +6148,7 @@ impl FormulaParser {
                         return None;
                     }
                     self.pos += 1;
-                    let mut parser = FormulaParser::new(&expression);
+                    let mut parser = FormulaParser::new(&expression, self.field_bookmarks);
                     return Some(parser.parse().is_some() as u8 as f64);
                 }
                 ')' => {
@@ -6225,6 +6240,15 @@ impl FormulaParser {
 
     fn peek(&self) -> Option<char> {
         self.chars.get(self.pos).copied()
+    }
+
+    fn field_bookmark_formula_value(&self, name: &str) -> Option<f64> {
+        self.field_bookmarks?
+            .get(name)?
+            .trim()
+            .parse::<f64>()
+            .ok()
+            .filter(|value| value.is_finite())
     }
 }
 
@@ -6676,6 +6700,7 @@ struct IfInstruction {
     text_format: Option<FieldTextFormat>,
 }
 
+#[cfg(test)]
 fn computed_if_result(instruction: &str) -> Option<String> {
     computed_if_result_with_bookmarks(instruction, &HashMap::new())
 }
@@ -6732,6 +6757,7 @@ pub(crate) fn supports_if_field_syntax(instruction: &str) -> bool {
     if_field_syntax(instruction)
 }
 
+#[cfg(test)]
 fn computed_compare_result(instruction: &str) -> Option<String> {
     computed_compare_result_with_bookmarks(instruction, &HashMap::new())
 }
