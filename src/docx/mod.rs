@@ -30,6 +30,7 @@ use crate::model::{Block, Color, CustomXmlItem, DocMeta, DocModel, Image};
 use crate::text;
 use crate::CoreProperties;
 
+pub(crate) use self::xml_text::skip_subtree as skip_xml_subtree;
 use self::xml_text::{read_text, skip_subtree};
 
 mod body;

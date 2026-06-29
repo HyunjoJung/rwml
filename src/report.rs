@@ -3124,7 +3124,7 @@ fn scan_docx_xml(xml: &str, features: &mut FeatureInventory) {
                     xml_depth,
                     name,
                 ) {
-                    skip_report_subtree(&mut reader);
+                    crate::docx::skip_xml_subtree(&mut reader);
                     continue;
                 }
                 match name {
@@ -3342,26 +3342,6 @@ fn mark_report_alternate_shape_marker_seen(stack: &mut [ReportAlternateContentSt
 }
 
 #[cfg(feature = "docx")]
-fn skip_report_subtree(reader: &mut quick_xml::Reader<&[u8]>) {
-    use quick_xml::events::Event;
-
-    let mut depth = 1usize;
-    loop {
-        match reader.read_event() {
-            Ok(Event::Start(_)) => depth = depth.saturating_add(1),
-            Ok(Event::End(_)) => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    break;
-                }
-            }
-            Ok(Event::Eof) | Err(_) => break,
-            _ => {}
-        }
-    }
-}
-
-#[cfg(feature = "docx")]
 fn is_revision_property_change(name: &[u8]) -> bool {
     matches!(
         name,
@@ -3424,12 +3404,12 @@ fn docx_bookmark_names(xml: &str) -> HashSet<String> {
                     xml_depth,
                     name,
                 ) {
-                    skip_report_subtree(&mut reader);
+                    crate::docx::skip_xml_subtree(&mut reader);
                     continue;
                 }
                 match name {
                     b"del" | b"moveFrom" => {
-                        skip_report_subtree(&mut reader);
+                        crate::docx::skip_xml_subtree(&mut reader);
                         continue;
                     }
                     b"AlternateContent" => {
@@ -3573,12 +3553,12 @@ fn docx_page_ref_unsupported_section_format_targets(xml: &str) -> HashSet<String
                     xml_depth,
                     name,
                 ) {
-                    skip_report_subtree(&mut reader);
+                    crate::docx::skip_xml_subtree(&mut reader);
                     continue;
                 }
                 match name {
                     b"del" | b"moveFrom" => {
-                        skip_report_subtree(&mut reader);
+                        crate::docx::skip_xml_subtree(&mut reader);
                         continue;
                     }
                     b"AlternateContent" => {
