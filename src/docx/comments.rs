@@ -7,6 +7,10 @@ use std::collections::HashMap;
 
 use crate::annotation::{Comment, TextAnchor};
 
+use super::inline_text::{
+    inline_marker_text, read_text, skip_alternate_content_branch, skip_subtree,
+    AlternateContentBranchState,
+};
 use super::{attr_local_trimmed, local};
 
 type Xml<'a> = Reader<&'a [u8]>;
@@ -259,69 +263,6 @@ fn read_comment(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Option<Comment> {
         }
     }
     c
-}
-
-#[derive(Default)]
-struct AlternateContentBranchState {
-    took_branch: bool,
-}
-
-fn skip_alternate_content_branch(stack: &mut [AlternateContentBranchState], name: &[u8]) -> bool {
-    if !matches!(name, b"Choice" | b"Fallback") {
-        return false;
-    }
-    let Some(state) = stack.last_mut() else {
-        return false;
-    };
-    if state.took_branch {
-        true
-    } else {
-        state.took_branch = true;
-        false
-    }
-}
-
-fn skip_subtree(r: &mut Xml<'_>) {
-    let mut depth = 1usize;
-    loop {
-        match r.read_event() {
-            Ok(Event::Start(_)) => depth += 1,
-            Ok(Event::End(_)) => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    break;
-                }
-            }
-            Ok(Event::Eof) | Err(_) => break,
-            _ => {}
-        }
-    }
-}
-
-fn read_text(r: &mut Xml<'_>) -> String {
-    let mut s = String::new();
-    loop {
-        match r.read_event() {
-            Ok(Event::Text(t)) => match t.unescape().ok().map(|c| c.into_owned()) {
-                Some(c) => s.push_str(&c),
-                None => s.push_str(&String::from_utf8_lossy(t.into_inner().as_ref())),
-            },
-            Ok(Event::CData(t)) => s.push_str(&String::from_utf8_lossy(t.into_inner().as_ref())),
-            Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
-            _ => {}
-        }
-    }
-    s
-}
-
-fn inline_marker_text(e: &BytesStart<'_>) -> Option<&'static str> {
-    match local(e.name().as_ref()) {
-        b"tab" => Some("\t"),
-        b"br" | b"cr" => Some("\n"),
-        b"noBreakHyphen" => Some("-"),
-        b"softHyphen" => Some("\u{00ad}"),
-        _ => None,
-    }
 }
 
 fn push_anchor_text(

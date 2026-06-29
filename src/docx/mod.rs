@@ -33,6 +33,7 @@ use crate::CoreProperties;
 mod body;
 mod comments;
 mod fields;
+mod inline_text;
 mod numbering;
 mod revisions;
 mod styles;
