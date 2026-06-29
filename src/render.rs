@@ -995,12 +995,15 @@ fn symbol_char(ch: char) -> Option<char> {
         'y' => 'ψ',
         'z' => 'ζ',
         '\u{00B7}' => '•',
+        '\u{00D3}' => '©',
         _ => return None,
     })
 }
 
 fn wingdings_char(ch: char) -> Option<char> {
     Some(match ch {
+        'A' => '✌',
+        'J' => '☺',
         '\u{00FC}' => '✓',
         '\u{00FB}' => '☑',
         '\u{00FE}' => '☒',
@@ -4214,13 +4217,13 @@ mod tests {
             font: Some("Symbol".to_string()),
             ..CharProps::default()
         };
-        assert_eq!(display_text(&symbol, "abg"), "αβγ");
+        assert_eq!(display_text(&symbol, "abg\u{00D3}"), "αβγ©");
 
         let wingdings = CharProps {
             font: Some("Wingdings".to_string()),
             ..CharProps::default()
         };
-        assert_eq!(display_text(&wingdings, "\u{00FC}"), "✓");
+        assert_eq!(display_text(&wingdings, "AJ\u{00FC}"), "✌☺✓");
     }
 
     #[test]
