@@ -14,8 +14,8 @@ use crate::annotation::{
     field_level_range_token as diagnostic_level_range_token,
     field_literal_token as diagnostic_literal_token, instruction_parts, is_note_ref_kind,
     is_ref_value_neutral_switch, is_toc_value_neutral_switch, legacy_form_field_syntax,
-    opaque_field_syntax, strip_ascii_switch_prefix, toc_style_specs, Field, FieldKind,
-    FieldNumberFormat, FieldTextFormat,
+    opaque_field_syntax, page_ref_field_syntax, strip_ascii_switch_prefix, toc_style_specs, Field,
+    FieldKind, FieldNumberFormat, FieldTextFormat,
 };
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{
@@ -3520,64 +3520,11 @@ struct PageRefDiagnosticSyntax {
 }
 
 fn supported_page_ref_syntax(instruction: &str) -> Option<PageRefDiagnosticSyntax> {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let kind = parts.next()?;
-    if !kind.eq_ignore_ascii_case("PAGEREF") {
-        return None;
-    }
-    let target = diagnostic_identifier_token(parts.next()?)?.to_string();
-    let mut number_format = false;
-    let mut text_format = false;
-    let mut relative = false;
-    while let Some(part) = parts.next() {
-        if accept_page_field_format_switch_for_report(
-            part,
-            &mut parts,
-            &mut number_format,
-            &mut text_format,
-        )? {
-            continue;
-        }
-        if part.starts_with('\\') {
-            if part.eq_ignore_ascii_case("\\h") {
-                continue;
-            }
-            if part.eq_ignore_ascii_case("\\p") {
-                if relative {
-                    return None;
-                }
-                relative = true;
-                continue;
-            }
-            return None;
-        }
-        return None;
-    }
+    let syntax = page_ref_field_syntax(instruction)?;
     Some(PageRefDiagnosticSyntax {
-        target,
+        target: syntax.target,
         #[cfg(feature = "docx")]
-        uses_target_section_number_format: !number_format,
-    })
-}
-
-fn accept_page_field_format_switch(
-    part: &str,
-    number_format: &mut bool,
-    text_format: &mut bool,
-) -> bool {
-    accept_page_number_format_switch(part, number_format)
-        || accept_field_format_switch(part, text_format)
-}
-
-fn accept_page_field_format_switch_for_report<'a>(
-    part: &'a str,
-    parts: &mut impl Iterator<Item = &'a str>,
-    number_format: &mut bool,
-    text_format: &mut bool,
-) -> Option<bool> {
-    accept_general_format_switch(part, parts, |format| {
-        accept_page_field_format_switch(format, number_format, text_format)
+        uses_target_section_number_format: syntax.number_format.is_none(),
     })
 }
 

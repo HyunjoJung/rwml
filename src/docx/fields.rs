@@ -15,7 +15,7 @@ use crate::annotation::{
     instruction_parts, is_neutral_field_format_switch, is_note_ref_kind,
     is_ref_value_neutral_switch, is_toc_value_neutral_switch, legacy_form_field_syntax,
     merge_control_field_syntax, numbering_field_syntax, page_field_format_syntax_tail,
-    prompt_field_syntax, quote_field_syntax, reference_index_category_token,
+    page_ref_field_syntax, prompt_field_syntax, quote_field_syntax, reference_index_category_token,
     reference_index_literal_token, reference_index_plain_value_token,
     revision_number_field_text_format, sequence_field_syntax, set_field_syntax,
     strip_ascii_switch_prefix, style_ref_field_syntax, toc_entry_field_syntax, toc_style_specs,
@@ -8408,45 +8408,14 @@ fn page_instruction(instruction: &str) -> Option<PageInstruction> {
 }
 
 fn page_ref_instruction(instruction: &str) -> Option<PageRefInstruction> {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let kind = parts.next()?;
-    if !kind.eq_ignore_ascii_case("PAGEREF") {
-        return None;
-    }
-    let target = bookmark_target_identifier(parts.next()?)?.to_string();
-    let mut number_format = None;
-    let mut text_format = None;
-    let mut relative = false;
-    while let Some(part) = parts.next() {
-        if accept_page_field_format_switch_for_tail(
-            part,
-            &mut parts,
-            &mut number_format,
-            &mut text_format,
-        )? {
-            continue;
-        }
-        if part.starts_with('\\') {
-            if part.eq_ignore_ascii_case("\\h") {
-                continue;
-            }
-            if part.eq_ignore_ascii_case("\\p") {
-                if relative {
-                    return None;
-                }
-                relative = true;
-                continue;
-            }
-            return None;
-        }
-        return None;
-    }
+    let syntax = page_ref_field_syntax(instruction)?;
     Some(PageRefInstruction {
-        target,
-        number_format,
-        text_format,
-        relative,
+        target: syntax.target,
+        number_format: syntax
+            .number_format
+            .map(page_number_format_from_field_format),
+        text_format: syntax.text_format,
+        relative: syntax.relative,
     })
 }
 

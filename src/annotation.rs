@@ -1408,6 +1408,54 @@ pub(crate) fn page_field_format_syntax_tail<'a>(
     })
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PageRefFieldSyntax {
+    pub(crate) target: String,
+    pub(crate) number_format: Option<FieldNumberFormat>,
+    pub(crate) text_format: Option<FieldTextFormat>,
+    pub(crate) relative: bool,
+}
+
+pub(crate) fn page_ref_field_syntax(instruction: &str) -> Option<PageRefFieldSyntax> {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let kind = parts.next()?;
+    if !kind.eq_ignore_ascii_case("PAGEREF") {
+        return None;
+    }
+    let target = field_identifier_token(parts.next()?)?.to_string();
+    let mut number_format = None;
+    let mut text_format = None;
+    let mut relative = false;
+    while let Some(part) = parts.next() {
+        if accept_general_format_switch(part, &mut parts, |format| {
+            accept_page_field_format_switch(format, &mut number_format, &mut text_format)
+        })? {
+            continue;
+        }
+        if part.starts_with('\\') {
+            if part.eq_ignore_ascii_case("\\h") {
+                continue;
+            }
+            if part.eq_ignore_ascii_case("\\p") {
+                if relative {
+                    return None;
+                }
+                relative = true;
+                continue;
+            }
+            return None;
+        }
+        return None;
+    }
+    Some(PageRefFieldSyntax {
+        target,
+        number_format,
+        text_format,
+        relative,
+    })
+}
+
 fn accept_page_field_format_switch(
     part: &str,
     number_format: &mut Option<FieldNumberFormat>,
@@ -1724,7 +1772,8 @@ where
 mod tests {
     use super::{
         action_field_syntax, compare_field_syntax, if_field_syntax, legacy_form_field_syntax,
-        merge_control_field_syntax, opaque_field_syntax, FieldTextFormat,
+        merge_control_field_syntax, opaque_field_syntax, page_ref_field_syntax, FieldNumberFormat,
+        FieldTextFormat,
     };
 
     #[test]
@@ -1788,6 +1837,21 @@ mod tests {
         assert!(legacy_form_field_syntax(r#"FORMTEXT \x"#).is_none());
         assert!(legacy_form_field_syntax(r#"FORMTEXT \* BadFormat"#).is_none());
         assert!(legacy_form_field_syntax("FORMFIELD").is_none());
+    }
+
+    #[test]
+    fn page_ref_field_syntax_accepts_target_relative_and_format_tail() {
+        let page_ref = page_ref_field_syntax(r#"PAGEREF Figure1 \h \p \* Arabic \* Upper"#)
+            .expect("valid page ref syntax");
+        assert_eq!(page_ref.target, "Figure1");
+        assert_eq!(page_ref.number_format, Some(FieldNumberFormat::Arabic));
+        assert_eq!(page_ref.text_format, Some(FieldTextFormat::Upper));
+        assert!(page_ref.relative);
+        assert!(page_ref_field_syntax(r#"PAGEREF Figure1 \* ArAbIc"#).is_some());
+        assert!(page_ref_field_syntax(r#"PAGEREF Figure1 \p \p"#).is_none());
+        assert!(page_ref_field_syntax(r#"PAGEREF \p Figure1"#).is_none());
+        assert!(page_ref_field_syntax(r#"PAGEREF "Figure List""#).is_none());
+        assert!(page_ref_field_syntax(r#"PAGEREF Figure1 \x"#).is_none());
     }
 }
 
