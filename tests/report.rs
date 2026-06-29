@@ -379,6 +379,24 @@ fn page_trusted_current_context_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn page_accepted_current_context_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:p><w:r><w:t>Page one text.</w:t></w:r></w:p><w:ins><w:p><w:r><w:lastRenderedPageBreak/><w:t>Inserted page two.</w:t></w:r></w:p></w:ins><w:ins><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> PAGE \* Arabic </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale inserted page</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:ins><w:p><w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:lastRenderedPageBreak/></mc:Choice><mc:Fallback><w:lastRenderedPageBreak/></mc:Fallback></mc:AlternateContent></w:r><w:r><w:t>Alternate page three.</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" PAGE \* Ordinal "><w:r><w:t>stale alternate page</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn unknown_field_gap_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -3472,6 +3490,50 @@ fn report_page_fields_split_trusted_and_ambiguous_current_contexts() {
             && !main_text.contains("stale restart card upper")
             && !main_text.contains("stale rendered roman page"),
         "computed PAGE fields should replace stale cached text in report fixtures: {main_text:?}"
+    );
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_page_fields_follow_accepted_wrappers_and_single_alternate_branch() {
+    let doc =
+        Document::open(&page_accepted_current_context_diagnostics_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let expected = [("PAGE \\* Arabic", "2"), ("PAGE \\* Ordinal", "3rd")];
+
+    assert_eq!(fields.len(), expected.len());
+    for (field, (instruction, computed)) in fields.iter().zip(expected) {
+        assert_eq!(field.kind, FieldKind::Page);
+        assert_eq!(field.instruction, instruction);
+        assert_eq!(field.computed_result.as_deref(), Some(computed));
+    }
+
+    let report = doc.report();
+    assert_eq!(report.features.fields, 2);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![field_kind_count(FieldKind::Page, 2)]
+    );
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+    assert!(
+        report
+            .warnings
+            .iter()
+            .all(|warning| !matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })),
+        "{:?}",
+        report.warnings
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("2") && main_text.contains("3rd"),
+        "accepted PAGE fields should be materialized in report fixtures: {main_text:?}"
+    );
+    assert!(
+        !main_text.contains("stale inserted page") && !main_text.contains("stale alternate page"),
+        "accepted PAGE report diagnostics should use computed text: {main_text:?}"
     );
 }
 
