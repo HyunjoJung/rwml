@@ -493,10 +493,11 @@ Initial status:
   field role.
 - `Document::report()` emits `LegacyDocFlattenedSubdocuments` for legacy `.doc`
   inputs whose FIB reports footnote, header/footer, annotation, endnote, or
-  text-box character ranges that are still kept in the flat block stream. The
-  first recovered header story is mirrored into `DocSetup.header` when
-  recoverable, but exact note/text-box body or shape anchors are not yet fully
-  promoted.
+  text-box character ranges that are still kept in the flat block stream.
+  Recovered legacy header/footer variants are mirrored into global `DocSetup`
+  default, even-page, and first-page running header/footer slots when `PlcfHdd`
+  story indexes identify them, but exact note/text-box body or shape anchors are
+  not yet fully promoted.
 - `Document::comments()` exposes non-empty legacy `.doc` annotation regions as
   recovered comments with stable synthetic ids, visible comment text, and
   best-effort source-region anchors. Legacy author metadata is not yet
@@ -517,9 +518,11 @@ Initial status:
   previous default when omitted, and the from-scratch writer emits authored
   first/even variant refs. The renderer selects section-aware
   first/even/default running variants, with first-page variants scoped to each
-  section and even variants based on emitted page parity. It also exposes non-empty legacy `.doc` header/footer regions as
-  recovered records with stable synthetic ids. When legacy `PlcfHdd` story
-  boundaries are present, it splits stories and classifies exact
+  section and even variants based on emitted page parity. It also exposes
+  non-empty legacy `.doc` header/footer regions as recovered records with stable
+  synthetic ids. When legacy `PlcfHdd` story boundaries are present, it splits
+  stories, mirrors the first matching variants into global `DocSetup` running
+  slots, and classifies exact
   `EvenPageHeader`, `OddPageHeader`, `EvenPageFooter`, `OddPageFooter`,
   `FirstPageHeader`, and `FirstPageFooter` records; otherwise it falls back to
   `Unknown` kind.
@@ -534,9 +537,10 @@ Initial status:
   block ranges, source CP ranges, visible-text spans, and `PlcfHdd` story indexes
   where available; the assembler now emits semantic blocks per FIB subdocument
   region or header/footer story.
-- `DocModel::setup.header` mirrors the first non-empty legacy header story, or
-  the first non-empty combined `HeaderFooter` source region when no `PlcfHdd`
-  story split is available, as a best-effort semantic running-header surface.
+- `DocModel::setup` mirrors the first non-empty legacy default, even-page, and
+  first-page header/footer variants when `PlcfHdd` story splits are available,
+  or the first non-empty combined `HeaderFooter` source region as a default
+  running header when no split is available.
 - `DocModel::source_regions()`, `source_region_blocks()`,
   `source_region_text()`, and `source_region_kind_text()` provide safe access to
   those spans without requiring callers to hand-slice `model.blocks`.
@@ -1185,8 +1189,8 @@ The active roadmap slices are:
    and protected legacy form behavior.
 5. R2-e legacy `.doc` anchors/header-footer: exact body/shape anchors beyond the
    current source-region anchors for comments, notes, and text boxes, plus
-   richer legacy section-level header/footer application semantics beyond
-   recovered/default running stories.
+   richer legacy multi-section header/footer application semantics beyond
+   recovered global default/first/even running stories.
 
 For each slice, preserve cached text until semantics are unambiguous,
 distinguish `UnsupportedSwitch` from `NoComputedResult`, and add focused `.docx`

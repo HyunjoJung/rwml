@@ -4457,6 +4457,31 @@ mod tests {
             ),
             "EH"
         );
+
+        let Block::Paragraph(default_header) = &model.setup.header[0] else {
+            panic!("expected default legacy header paragraph");
+        };
+        let Block::Paragraph(even_header) = &model.setup.even_header[0] else {
+            panic!("expected even legacy header paragraph");
+        };
+        let Block::Paragraph(first_header) = &model.setup.first_header[0] else {
+            panic!("expected first-page legacy header paragraph");
+        };
+        let Block::Paragraph(default_footer) = &model.setup.footer[0] else {
+            panic!("expected default legacy footer paragraph");
+        };
+        let Block::Paragraph(even_footer) = &model.setup.even_footer[0] else {
+            panic!("expected even legacy footer paragraph");
+        };
+        let Block::Paragraph(first_footer) = &model.setup.first_footer[0] else {
+            panic!("expected first-page legacy footer paragraph");
+        };
+        assert_eq!(default_header.text(), "OH");
+        assert_eq!(even_header.text(), "EH");
+        assert_eq!(first_header.text(), "FH");
+        assert_eq!(default_footer.text(), "OF");
+        assert_eq!(even_footer.text(), "EF");
+        assert_eq!(first_footer.text(), "FF");
     }
 
     #[cfg(feature = "docx")]

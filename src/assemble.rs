@@ -61,15 +61,16 @@ pub(crate) fn build_model(
 
 fn legacy_doc_setup_from_regions(blocks: &[Block], regions: &[SourceRegion]) -> DocSetup {
     let mut setup = DocSetup::default();
-    if let Some(region) = regions.iter().find(|region| {
-        region.kind == SourceRegionKind::HeaderFooter
-            && region.block_start < region.block_end
-            && legacy_header_footer_story_is_header(region.source_story_index).unwrap_or(true)
+    for region in regions.iter().filter(|region| {
+        region.kind == SourceRegionKind::HeaderFooter && region.block_start < region.block_end
     }) {
         let start = region.block_start.min(blocks.len());
         let end = region.block_end.min(blocks.len());
         if start < end {
-            setup.header = blocks[start..end].to_vec();
+            let slot = legacy_header_footer_setup_slot(&mut setup, region.source_story_index);
+            if slot.is_empty() {
+                *slot = blocks[start..end].to_vec();
+            }
         }
     }
     setup
@@ -210,12 +211,26 @@ struct HeaderStoryRange {
 
 const HEADER_FOOTER_STORY_BASE: usize = 6;
 
-fn legacy_header_footer_story_is_header(story_index: Option<usize>) -> Option<bool> {
-    let story_index = story_index?;
-    let position = story_index.checked_sub(HEADER_FOOTER_STORY_BASE)? % 6;
+fn legacy_header_footer_setup_slot(
+    setup: &mut DocSetup,
+    story_index: Option<usize>,
+) -> &mut Vec<Block> {
+    let Some(story_index) = story_index else {
+        return &mut setup.header;
+    };
+    let Some(position) = story_index
+        .checked_sub(HEADER_FOOTER_STORY_BASE)
+        .map(|index| index % 6)
+    else {
+        return &mut setup.header;
+    };
     match position {
-        0 | 1 | 4 => Some(true),
-        _ => Some(false),
+        0 => &mut setup.even_header,
+        1 => &mut setup.header,
+        2 => &mut setup.even_footer,
+        3 => &mut setup.footer,
+        4 => &mut setup.first_header,
+        _ => &mut setup.first_footer,
     }
 }
 

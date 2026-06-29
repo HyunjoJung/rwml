@@ -838,12 +838,14 @@ Acceptance:
 ### 4.6 `.doc` subdocuments
 
 Current `.doc` text and model assembly preserve subdocument source spans and
-mirror the first recovered header story into `DocSetup.header` when recoverable,
-and recovered header/footer subdocuments now surface through
-`Document::header_footers()` as best-effort records with synthetic ids and
-visible text. When legacy `PlcfHdd` story boundaries are available, rdoc splits
-stories and classifies exact even-page, odd-page, and first-page header/footer
-variants; otherwise it falls back to `Unknown` kind. `.docx` header/footer
+mirror the first recovered default, even-page, and first-page legacy
+header/footer variants into global `DocSetup` running slots when `PlcfHdd` story
+indexes identify them, and recovered header/footer subdocuments now surface
+through `Document::header_footers()` as best-effort records with synthetic ids
+and visible text. When legacy `PlcfHdd` story boundaries are available, rdoc
+splits stories and classifies exact even-page, odd-page, and first-page
+header/footer variants; otherwise it falls back to `Unknown` kind. `.docx`
+header/footer
 references surface through the same API as exact referenced part records with
 stable `part#type` ids and default, even-page, and first-page variants; the
 model stores default, first-page, and even-page `.docx` references for paragraph
@@ -897,10 +899,11 @@ Implementation:
   for section-aware first/even/default running variants, first-page variants
   scoped to each section, and even variants based on emitted page parity,
   exact legacy `.doc` even-page, odd-page, and first-page header/footer variants
-  when `PlcfHdd` story indexes identify the record, and legacy `.doc` `Unknown`
-  kind as the fallback;
-- map the first recovered legacy header story into `DocSetup.header`, then
-  deepen toward richer legacy section-level header/footer application semantics;
+  when `PlcfHdd` story indexes identify the record, mirrored into global
+  `DocSetup` running slots, and legacy `.doc` `Unknown` kind as the fallback;
+- map recovered legacy header/footer variants into `DocSetup` default, even, and
+  first running slots, then deepen toward richer legacy multi-section
+  header/footer application semantics;
 - add diagnostics for flattened regions until complete:
   `LegacyDocFlattenedSubdocuments` reports FIB footnote, header/footer,
   annotation, endnote, and text-box character counts while those ranges still
@@ -1492,9 +1495,9 @@ established infrastructure and promote only bounded compatibility slices:
 - R2-d: preserve cached field text and report `UnsupportedSwitch`,
   `NoComputedResult`, or `UnresolvedBookmark` for valid but unresolved
   compatibility cases and non-deterministic field families;
-- R2-e: defer legacy `.doc` exact anchors and richer section-level
-  header/footer semantics until public synthetic fixtures and expected contracts
-  exist;
+- R2-e: defer legacy `.doc` exact anchors and richer multi-section
+  header/footer semantics beyond recovered global running variants until public
+  synthetic fixtures and expected contracts exist;
 - defer floating-shape wrap/reflow, extension chart families, and metafile
   drawing until public synthetic fixtures and expected contracts exist;
 - keep release evidence machine-readable and separate from private corpus data.

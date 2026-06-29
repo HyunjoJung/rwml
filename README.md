@@ -849,7 +849,9 @@ code points.
   recovered records; when legacy `PlcfHdd` story boundaries are available, rdoc
   splits stories and classifies exact even-page, odd-page, and first-page
   header/footer variants, otherwise it falls back to `Unknown` kind.
-  `DocSetup.header` mirrors the first recovered header story when available.
+  `DocSetup` mirrors the first recovered default, even-page, and first-page
+  legacy header/footer variants when story indexes are available, and falls back
+  to a default running header for unsplit recovered header/footer text.
   Exact note reference markers and exact text-box shape anchors are not yet
   fully promoted, so non-body regions still remain in the flat block stream;
   `Document::report()` emits `LegacyDocFlattenedSubdocuments` when FIB
@@ -1028,8 +1030,8 @@ deterministic computation or precise cached-result diagnostics.
       that preserve cached text and stay reportable until deterministic
       semantics are proven
 - [ ] Reader R2-e: exact legacy `.doc` note/text-box/body anchors and richer
-      legacy section-level header/footer application semantics beyond
-      recovered/default running stories
+      legacy multi-section header/footer application semantics beyond
+      recovered global default/first/even running stories
 - [x] **Package-preserving edit layer** — `Document::open`→edit→`save` keeps every
       unmodeled part verbatim; element-tree edits (`replace_body_text`,
       `set_field_result`, `fill_content_control_by_tag`,

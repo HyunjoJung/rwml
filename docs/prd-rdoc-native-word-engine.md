@@ -209,7 +209,8 @@ The first public maturity release should meet these requirements.
   decoded.
 - Legacy `.doc` header/footer side-table records split recovered `PlcfHdd`
   stories when available and classify exact even-page, odd-page, and first-page
-  header/footer variants.
+  header/footer variants, and mirror the first recovered default, even-page,
+  and first-page variants into global `DocSetup` running header/footer slots.
 - Diagnostics include recovered note and text-box counts alongside other feature
   inventory counts.
 - Comments, revisions, fields, shapes, and unsupported constructs are detected
@@ -664,8 +665,8 @@ public-readable R2 sub-buckets:
   deterministic subsets already implemented, kept cached and reportable until
   deterministic semantics are proven;
 - R2-e legacy `.doc` anchors/header-footer, covering exact body, note, text-box,
-  and shape anchors plus richer section-level header/footer application
-  semantics beyond current recovered/default running stories.
+  and shape anchors plus richer multi-section header/footer application
+  semantics beyond current recovered global default/first/even running stories.
 
 The larger non-field maturity gaps are:
 
