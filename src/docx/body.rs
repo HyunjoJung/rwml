@@ -2364,7 +2364,7 @@ fn read_tblpr(r: &mut Xml<'_>) -> TableProps {
         match r.read_event() {
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"tblW"
-                    && attr_local(&e, b"type").is_some_and(|value| value.trim() == "pct") =>
+                    && attr_local_trimmed(&e, b"type").is_some_and(|value| value == "pct") =>
             {
                 props.width_pct = attr_local(&e, b"w")
                     .and_then(|v| v.trim().parse::<f32>().ok())
@@ -2374,7 +2374,7 @@ fn read_tblpr(r: &mut Xml<'_>) -> TableProps {
                 if local(e.name().as_ref()) == b"tblLayout" =>
             {
                 props.fixed_layout =
-                    attr_local(&e, b"type").is_some_and(|value| value.trim() == "fixed");
+                    attr_local_trimmed(&e, b"type").is_some_and(|value| value == "fixed");
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"tblInd" => {
                 if attr_local(&e, b"type").map_or(true, |value| value.trim() == "dxa") {
@@ -2658,7 +2658,7 @@ fn apply_tcpr_child(t: &mut TcPr, e: &BytesStart<'_>) {
         }
         // `type="pct"` w:w is in fiftieths of a percent (5000 = 100%);
         // `dxa` (twips) is absolute and left as auto here.
-        b"tcW" if attr_local(e, b"type").is_some_and(|value| value.trim() == "pct") => {
+        b"tcW" if attr_local_trimmed(e, b"type").is_some_and(|value| value == "pct") => {
             t.width_pct = attr_local(e, b"w")
                 .and_then(|v| v.trim().parse::<f32>().ok())
                 .map(|p| p / 5000.0);
