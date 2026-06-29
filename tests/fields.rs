@@ -288,6 +288,23 @@ fn user_info_field_docx() -> Vec<u8> {
     ])
 }
 
+fn user_info_compact_format_field_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" USERNAME &quot;Casey Reviewer&quot; \*Upper "><w:r><w:t>stale compact user</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn document_info_package_properties_field_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -3823,6 +3840,34 @@ fn docx_user_info_fields_compute_explicit_literal_overrides() {
             && !main_text.contains("stale override initials")
             && !main_text.contains("stale override address"),
         "computed user-info overrides should replace stale cached text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_document_info_user_override_accepts_compact_format_switch() {
+    let doc = Document::open(&user_info_compact_format_field_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(
+        fields[0].kind,
+        FieldKind::DocumentInfo("USERNAME".to_string())
+    );
+    assert_eq!(
+        fields[0].instruction,
+        "USERNAME \"Casey Reviewer\" \\*Upper"
+    );
+    assert_eq!(fields[0].result, "stale compact user");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("CASEY REVIEWER"));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("CASEY REVIEWER") && !main_text.contains("stale compact user"),
+        "compact user-info format should replace stale cached text: {main_text:?}"
     );
 }
 
