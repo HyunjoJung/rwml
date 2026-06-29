@@ -1668,6 +1668,331 @@ fn ref_field_syntax_parts<'a>(mut parts: impl Iterator<Item = &'a str>) -> Optio
     })
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TocFieldSyntax {
+    pub(crate) start: u8,
+    pub(crate) end: u8,
+    pub(crate) outline_only: bool,
+    pub(crate) include_standard: bool,
+    pub(crate) custom_styles: Vec<TocStyleSpec>,
+    pub(crate) tc_filter: Option<TocTcFilter>,
+    pub(crate) tc_level_range: Option<(u8, u8)>,
+    pub(crate) sequence_filter: Option<TocSequenceFilter>,
+    pub(crate) bookmark: Option<String>,
+    pub(crate) text_format: Option<FieldTextFormat>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TocStyleSpec {
+    pub(crate) name: String,
+    pub(crate) level: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum TocTcFilter {
+    All,
+    EntryType(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum TocSequenceFilter {
+    FullCaption(String),
+    CaptionText(String),
+}
+
+impl TocSequenceFilter {
+    #[cfg(feature = "docx")]
+    pub(crate) fn identifier(&self) -> &str {
+        match self {
+            Self::FullCaption(identifier) | Self::CaptionText(identifier) => identifier,
+        }
+    }
+}
+
+pub(crate) fn toc_field_syntax(instruction: &str) -> Option<TocFieldSyntax> {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str).peekable();
+    let kind = parts.next()?;
+    if !kind.eq_ignore_ascii_case("TOC") {
+        return None;
+    }
+    let mut saw_switch = false;
+    let mut outline_range = None;
+    let mut saw_outline_switch = false;
+    let mut bookmark = None;
+    let mut custom_styles = Vec::new();
+    let mut tc_filter = None;
+    let mut tc_level_range = None;
+    let mut sequence_filter = None;
+    let mut text_format = None;
+    let mut saw_page_number_sequence_prefix = false;
+    let mut saw_default_toc_neutral_switch = false;
+    while let Some(part) = parts.next() {
+        saw_switch = true;
+        if accept_general_format_switch(part, &mut parts, |format| {
+            accept_field_text_format_switch(format, &mut text_format)
+        })? {
+            saw_default_toc_neutral_switch = true;
+            continue;
+        }
+        if is_toc_value_neutral_switch(part) {
+            saw_default_toc_neutral_switch = true;
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\f") {
+            let filter = match parts.next_if(|next| !next.starts_with('\\')) {
+                Some(value) => TocTcFilter::EntryType(field_identifier_token(value)?.to_string()),
+                None => TocTcFilter::All,
+            };
+            if !accept_toc_tc_filter(&mut tc_filter, filter) {
+                return None;
+            }
+            continue;
+        }
+        if let Some(value) = strip_ascii_switch_prefix(part, "\\f") {
+            let filter = if value.is_empty() {
+                TocTcFilter::All
+            } else {
+                TocTcFilter::EntryType(field_identifier_token(value)?.to_string())
+            };
+            if !accept_toc_tc_filter(&mut tc_filter, filter) {
+                return None;
+            }
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\a") {
+            let value = parts.next_if(|next| !next.starts_with('\\'))?;
+            if !accept_toc_sequence_filter(
+                &mut sequence_filter,
+                value,
+                TocSequenceFilter::CaptionText,
+            ) {
+                return None;
+            }
+            continue;
+        }
+        if let Some(value) = strip_ascii_switch_prefix(part, "\\a") {
+            if value.is_empty()
+                || !accept_toc_sequence_filter(
+                    &mut sequence_filter,
+                    value,
+                    TocSequenceFilter::CaptionText,
+                )
+            {
+                return None;
+            }
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\c") {
+            let value = parts.next_if(|next| !next.starts_with('\\'))?;
+            if !accept_toc_sequence_filter(
+                &mut sequence_filter,
+                value,
+                TocSequenceFilter::FullCaption,
+            ) {
+                return None;
+            }
+            continue;
+        }
+        if let Some(value) = strip_ascii_switch_prefix(part, "\\c") {
+            if value.is_empty()
+                || !accept_toc_sequence_filter(
+                    &mut sequence_filter,
+                    value,
+                    TocSequenceFilter::FullCaption,
+                )
+            {
+                return None;
+            }
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\l") {
+            let range = parts.next_if(|next| !next.starts_with('\\'))?;
+            if tc_level_range
+                .replace(field_level_range_token(range)?)
+                .is_some()
+            {
+                return None;
+            }
+            continue;
+        }
+        if let Some(range) = strip_ascii_switch_prefix(part, "\\l") {
+            if range.is_empty()
+                || tc_level_range
+                    .replace(field_level_range_token(range)?)
+                    .is_some()
+            {
+                return None;
+            }
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\u") {
+            saw_outline_switch = true;
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\n") {
+            if let Some(range) = parts.next_if(|next| !next.starts_with('\\')) {
+                field_level_range_token(range)?;
+            }
+            saw_default_toc_neutral_switch = true;
+            continue;
+        }
+        if let Some(range) = strip_ascii_switch_prefix(part, "\\n") {
+            if range.is_empty() {
+                return None;
+            }
+            field_level_range_token(range)?;
+            saw_default_toc_neutral_switch = true;
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\p") {
+            field_literal_token(parts.next_if(|next| !next.starts_with('\\'))?)?;
+            saw_default_toc_neutral_switch = true;
+            continue;
+        }
+        if let Some(separator) = strip_ascii_switch_prefix(part, "\\p") {
+            field_literal_token(separator)?;
+            saw_default_toc_neutral_switch = true;
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\d") {
+            field_literal_token(parts.next_if(|next| !next.starts_with('\\'))?)?;
+            saw_default_toc_neutral_switch = true;
+            continue;
+        }
+        if let Some(separator) = strip_ascii_switch_prefix(part, "\\d") {
+            field_literal_token(separator)?;
+            saw_default_toc_neutral_switch = true;
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\s") {
+            let identifier = parts.next_if(|next| !next.starts_with('\\'))?;
+            if saw_page_number_sequence_prefix || toc_sequence_identifier(identifier).is_none() {
+                return None;
+            }
+            saw_page_number_sequence_prefix = true;
+            saw_default_toc_neutral_switch = true;
+            continue;
+        }
+        if let Some(identifier) = strip_ascii_switch_prefix(part, "\\s") {
+            if saw_page_number_sequence_prefix || toc_sequence_identifier(identifier).is_none() {
+                return None;
+            }
+            saw_page_number_sequence_prefix = true;
+            saw_default_toc_neutral_switch = true;
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\b") {
+            let target = parts.next_if(|next| !next.starts_with('\\'))?;
+            let target = field_identifier_token(target)?;
+            if bookmark.replace(target.to_string()).is_some() {
+                return None;
+            }
+            continue;
+        }
+        if let Some(target) = strip_ascii_switch_prefix(part, "\\b") {
+            let target = field_identifier_token(target)?;
+            if bookmark.replace(target.to_string()).is_some() {
+                return None;
+            }
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\t") {
+            custom_styles.extend(
+                toc_style_specs(parts.next_if(|next| !next.starts_with('\\'))?)?
+                    .into_iter()
+                    .map(|(name, level)| TocStyleSpec {
+                        name: name.to_string(),
+                        level,
+                    }),
+            );
+            continue;
+        }
+        if let Some(value) = strip_ascii_switch_prefix(part, "\\t") {
+            if value.is_empty() {
+                return None;
+            }
+            custom_styles.extend(toc_style_specs(value)?.into_iter().map(|(name, level)| {
+                TocStyleSpec {
+                    name: name.to_string(),
+                    level,
+                }
+            }));
+            continue;
+        }
+        let range = if part.eq_ignore_ascii_case("\\o") {
+            match parts.next_if(|next| !next.starts_with('\\')) {
+                Some(range) => range,
+                None => {
+                    if outline_range.replace((1, 9)).is_some() {
+                        return None;
+                    }
+                    continue;
+                }
+            }
+        } else {
+            strip_ascii_switch_prefix(part, "\\o")?
+        };
+        if outline_range
+            .replace(field_level_range_token(range)?)
+            .is_some()
+        {
+            return None;
+        }
+    }
+    let (start, end, outline_only, include_standard) = if saw_switch {
+        match outline_range {
+            Some((start, end)) => (start, end, false, true),
+            None if saw_outline_switch => (1, 9, true, true),
+            None if !custom_styles.is_empty() => (1, 9, false, false),
+            None if tc_filter.is_some() || tc_level_range.is_some() => {
+                let (start, end) = tc_level_range.unwrap_or((1, 9));
+                (start, end, false, false)
+            }
+            None if sequence_filter.is_some() => (1, 9, false, false),
+            None if bookmark.is_some() => (1, 3, false, true),
+            None if saw_default_toc_neutral_switch => (1, 3, false, true),
+            None => return None,
+        }
+    } else {
+        (1, 3, false, true)
+    };
+    Some(TocFieldSyntax {
+        start,
+        end,
+        outline_only,
+        include_standard,
+        custom_styles,
+        tc_filter,
+        tc_level_range,
+        sequence_filter,
+        bookmark,
+        text_format,
+    })
+}
+
+fn accept_toc_tc_filter(slot: &mut Option<TocTcFilter>, filter: TocTcFilter) -> bool {
+    slot.replace(filter).is_none()
+}
+
+fn accept_toc_sequence_filter(
+    slot: &mut Option<TocSequenceFilter>,
+    value: &str,
+    filter: fn(String) -> TocSequenceFilter,
+) -> bool {
+    let Some(value) = toc_sequence_identifier(value) else {
+        return false;
+    };
+    if slot.replace(filter(value.to_string())).is_some() {
+        return false;
+    }
+    true
+}
+
+fn toc_sequence_identifier(value: &str) -> Option<&str> {
+    field_identifier_token(value)
+}
+
 fn accept_page_field_format_switch(
     part: &str,
     number_format: &mut Option<FieldNumberFormat>,
@@ -1985,8 +2310,8 @@ mod tests {
     use super::{
         action_field_syntax, compare_field_syntax, direct_ref_field_syntax, if_field_syntax,
         legacy_form_field_syntax, merge_control_field_syntax, note_ref_field_syntax,
-        opaque_field_syntax, page_ref_field_syntax, ref_field_syntax, FieldNumberFormat,
-        FieldTextFormat,
+        opaque_field_syntax, page_ref_field_syntax, ref_field_syntax, toc_field_syntax,
+        FieldNumberFormat, FieldTextFormat, TocSequenceFilter, TocTcFilter,
     };
 
     #[test]
@@ -2119,6 +2444,34 @@ mod tests {
         assert!(ref_field_syntax(r#"REF \h Figure1"#).is_none());
         assert!(direct_ref_field_syntax(r#"\h Figure1"#).is_none());
         assert!(direct_ref_field_syntax(r#"Figure1 \d"-"#).is_none());
+    }
+
+    #[test]
+    fn toc_field_syntax_accepts_table_of_contents_forms() {
+        let scoped =
+            toc_field_syntax(r#"TOC \b ChapterList \o "1-2" \t "Custom Heading,3" \* Upper"#)
+                .expect("valid scoped TOC syntax");
+        assert_eq!(scoped.bookmark.as_deref(), Some("ChapterList"));
+        assert_eq!((scoped.start, scoped.end), (1, 2));
+        assert_eq!(scoped.custom_styles[0].name, "Custom Heading");
+        assert_eq!(scoped.custom_styles[0].level, 3);
+        assert_eq!(scoped.text_format, Some(FieldTextFormat::Upper));
+
+        let tc = toc_field_syntax(r#"TOC \f A \l 2-3"#).expect("valid TC TOC syntax");
+        assert_eq!(tc.tc_filter, Some(TocTcFilter::EntryType("A".to_string())));
+        assert_eq!(tc.tc_level_range, Some((2, 3)));
+        assert!(!tc.include_standard);
+
+        let sequence =
+            toc_field_syntax(r#"TOC \c Figure \p """#).expect("valid sequence TOC syntax");
+        assert_eq!(
+            sequence.sequence_filter,
+            Some(TocSequenceFilter::FullCaption("Figure".to_string()))
+        );
+
+        assert!(toc_field_syntax(r#"TOC \f A \f B"#).is_none());
+        assert!(toc_field_syntax(r#"TOC \o "1-2"#).is_none());
+        assert!(toc_field_syntax(r#"TOC \b "Chapter List""#).is_none());
     }
 }
 

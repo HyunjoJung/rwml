@@ -11,12 +11,10 @@ use crate::annotation::field_name_token as diagnostic_name_token;
 use crate::annotation::{
     accept_field_number_format_switch, accept_field_text_format_switch,
     accept_general_format_switch, direct_ref_field_syntax,
-    field_identifier_token as diagnostic_identifier_token,
-    field_level_range_token as diagnostic_level_range_token,
-    field_literal_token as diagnostic_literal_token, instruction_parts,
-    is_toc_value_neutral_switch, legacy_form_field_syntax, note_ref_field_syntax,
-    opaque_field_syntax, page_ref_field_syntax, ref_field_syntax, strip_ascii_switch_prefix,
-    toc_style_specs, Field, FieldKind, FieldNumberFormat, FieldTextFormat, RefFieldSyntax,
+    field_literal_token as diagnostic_literal_token, instruction_parts, legacy_form_field_syntax,
+    note_ref_field_syntax, opaque_field_syntax, page_ref_field_syntax, ref_field_syntax,
+    strip_ascii_switch_prefix, toc_field_syntax, Field, FieldKind, FieldNumberFormat,
+    FieldTextFormat, RefFieldSyntax,
 };
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{
@@ -3244,16 +3242,6 @@ fn compare_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     }
 }
 
-fn accept_field_format_for_report<'a>(
-    part: &'a str,
-    parts: &mut impl Iterator<Item = &'a str>,
-    text_format: &mut bool,
-) -> Option<bool> {
-    accept_general_format_switch(part, parts, |format| {
-        accept_field_format_switch(format, text_format)
-    })
-}
-
 fn formula_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     #[cfg(feature = "docx")]
     {
@@ -3470,223 +3458,19 @@ fn accept_field_format_switch(part: &str, text_format: &mut bool) -> bool {
     accepted
 }
 
+#[cfg(not(feature = "docx"))]
+fn accept_field_format_for_report<'a>(
+    part: &'a str,
+    parts: &mut impl Iterator<Item = &'a str>,
+    text_format: &mut bool,
+) -> Option<bool> {
+    accept_general_format_switch(part, parts, |format| {
+        accept_field_format_switch(format, text_format)
+    })
+}
+
 fn supported_toc_bookmark_scope(instruction: &str) -> Option<Option<String>> {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str).peekable();
-    let kind = parts.next()?;
-    if !kind.eq_ignore_ascii_case("TOC") {
-        return None;
-    }
-    let mut saw_switch = false;
-    let mut outline_range = None;
-    let mut saw_outline_switch = false;
-    let mut bookmark = None;
-    let mut saw_custom_style_switch = false;
-    let mut saw_tc_switch = false;
-    let mut saw_tc_level_switch = false;
-    let mut saw_sequence_switch = false;
-    let mut saw_page_number_sequence_prefix = false;
-    let mut saw_default_toc_neutral_switch = false;
-    let mut text_format = false;
-    while let Some(part) = parts.next() {
-        saw_switch = true;
-        if accept_field_format_for_report(part, &mut parts, &mut text_format)? {
-            saw_default_toc_neutral_switch = true;
-            continue;
-        }
-        if is_toc_value_neutral_switch(part) {
-            saw_default_toc_neutral_switch = true;
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\f") {
-            if saw_tc_switch {
-                return None;
-            }
-            if let Some(value) = parts.next_if(|next| !next.starts_with('\\')) {
-                diagnostic_identifier_token(value)?;
-            }
-            saw_tc_switch = true;
-            continue;
-        }
-        if let Some(value) = strip_ascii_switch_prefix(part, "\\f") {
-            if saw_tc_switch {
-                return None;
-            }
-            if !value.is_empty() {
-                diagnostic_identifier_token(value)?;
-            }
-            saw_tc_switch = true;
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\a") {
-            let value = parts.next_if(|next| !next.starts_with('\\'))?;
-            if saw_sequence_switch {
-                return None;
-            }
-            diagnostic_identifier_token(value)?;
-            saw_sequence_switch = true;
-            continue;
-        }
-        if let Some(value) = strip_ascii_switch_prefix(part, "\\a") {
-            if saw_sequence_switch {
-                return None;
-            }
-            diagnostic_identifier_token(value)?;
-            saw_sequence_switch = true;
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\c") {
-            let value = parts.next_if(|next| !next.starts_with('\\'))?;
-            if saw_sequence_switch {
-                return None;
-            }
-            diagnostic_identifier_token(value)?;
-            saw_sequence_switch = true;
-            continue;
-        }
-        if let Some(value) = strip_ascii_switch_prefix(part, "\\c") {
-            if saw_sequence_switch {
-                return None;
-            }
-            diagnostic_identifier_token(value)?;
-            saw_sequence_switch = true;
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\l") {
-            let range = parts.next_if(|next| !next.starts_with('\\'))?;
-            diagnostic_level_range_token(range)?;
-            if saw_tc_level_switch {
-                return None;
-            }
-            saw_tc_level_switch = true;
-            continue;
-        }
-        if let Some(range) = strip_ascii_switch_prefix(part, "\\l") {
-            if range.is_empty() || saw_tc_level_switch {
-                return None;
-            }
-            diagnostic_level_range_token(range)?;
-            saw_tc_level_switch = true;
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\u") {
-            saw_outline_switch = true;
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\n") {
-            if let Some(range) = parts.next_if(|next| !next.starts_with('\\')) {
-                diagnostic_level_range_token(range)?;
-            }
-            saw_default_toc_neutral_switch = true;
-            continue;
-        }
-        if let Some(range) = strip_ascii_switch_prefix(part, "\\n") {
-            if range.is_empty() {
-                return None;
-            }
-            diagnostic_level_range_token(range)?;
-            saw_default_toc_neutral_switch = true;
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\p") {
-            diagnostic_literal_token(parts.next_if(|next| !next.starts_with('\\'))?)?;
-            saw_default_toc_neutral_switch = true;
-            continue;
-        }
-        if let Some(separator) = strip_ascii_switch_prefix(part, "\\p") {
-            diagnostic_literal_token(separator)?;
-            saw_default_toc_neutral_switch = true;
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\d") {
-            diagnostic_literal_token(parts.next_if(|next| !next.starts_with('\\'))?)?;
-            saw_default_toc_neutral_switch = true;
-            continue;
-        }
-        if let Some(separator) = strip_ascii_switch_prefix(part, "\\d") {
-            diagnostic_literal_token(separator)?;
-            saw_default_toc_neutral_switch = true;
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\s") {
-            diagnostic_identifier_token(parts.next_if(|next| !next.starts_with('\\'))?)?;
-            if saw_page_number_sequence_prefix {
-                return None;
-            }
-            saw_page_number_sequence_prefix = true;
-            saw_default_toc_neutral_switch = true;
-            continue;
-        }
-        if let Some(identifier) = strip_ascii_switch_prefix(part, "\\s") {
-            diagnostic_identifier_token(identifier)?;
-            if saw_page_number_sequence_prefix {
-                return None;
-            }
-            saw_page_number_sequence_prefix = true;
-            saw_default_toc_neutral_switch = true;
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\b") {
-            let target =
-                diagnostic_identifier_token(parts.next_if(|next| !next.starts_with('\\'))?)?;
-            if bookmark.replace(target.to_string()).is_some() {
-                return None;
-            }
-            continue;
-        }
-        if let Some(target) = strip_ascii_switch_prefix(part, "\\b") {
-            let target = diagnostic_identifier_token(target)?;
-            if bookmark.replace(target.to_string()).is_some() {
-                return None;
-            }
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\t") {
-            toc_style_specs(parts.next_if(|next| !next.starts_with('\\'))?)?;
-            saw_custom_style_switch = true;
-            continue;
-        }
-        if let Some(value) = strip_ascii_switch_prefix(part, "\\t") {
-            if value.is_empty() {
-                return None;
-            }
-            toc_style_specs(value)?;
-            saw_custom_style_switch = true;
-            continue;
-        }
-        let range = if part.eq_ignore_ascii_case("\\o") {
-            match parts.next_if(|next| !next.starts_with('\\')) {
-                Some(range) => range,
-                None => {
-                    if outline_range.replace((1, 9)).is_some() {
-                        return None;
-                    }
-                    continue;
-                }
-            }
-        } else {
-            strip_ascii_switch_prefix(part, "\\o")?
-        };
-        if outline_range
-            .replace(diagnostic_level_range_token(range)?)
-            .is_some()
-        {
-            return None;
-        }
-    }
-    if saw_switch
-        && outline_range.is_none()
-        && !saw_outline_switch
-        && !saw_custom_style_switch
-        && !saw_tc_switch
-        && !saw_tc_level_switch
-        && !saw_sequence_switch
-        && !saw_default_toc_neutral_switch
-        && bookmark.is_none()
-    {
-        return None;
-    }
-    Some(bookmark)
+    toc_field_syntax(instruction).map(|syntax| syntax.bookmark)
 }
 
 fn toc_uncomputed_reason(
