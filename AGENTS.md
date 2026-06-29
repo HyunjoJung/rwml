@@ -42,9 +42,10 @@ rendering moving toward one coherent Rust-native document model.
 - For non-trivial codebase investigation, roadmap implementation, or independent
   fan-out/fan-in work, use Ultracode workers when the batch can benefit from
   parallel read-only lanes.
-- Prefer Spark for heavyweight lanes by pinning
-  `--model GPT-5.3-Codex-Spark --reasoning-effort high` when it is available
-  and cost-appropriate.
+- Prefer Spark for heavyweight lanes by pinning the lowercase canonical model id
+  `--model gpt-5.3-codex-spark --reasoning-effort high` when it is available
+  and cost-appropriate. Lowercase matters for Codex app and worker tool calls;
+  uppercase display names can be rejected.
 - If Spark is capped, unavailable, or unnecessarily expensive for the lane,
   choose the cheapest adequate fallback worker model without asking for
   approval. Capture exact Spark errors when they happen, and state any fallback
