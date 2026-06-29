@@ -5,11 +5,14 @@ use crate::annotation::FieldKind;
 
 use super::super::xml_text::{read_text, skip_subtree};
 use super::super::{attr_local, local};
+use super::formula::{
+    eval_formula_function, format_formula_number, formula_instruction, formula_number_text,
+    FormulaParser,
+};
 use super::{
-    apply_complex_field_scan_fld_char, eval_formula_function, format_formula_number,
-    formula_instruction, formula_number_text, inline_marker_text, normalize_instruction,
+    apply_complex_field_scan_fld_char, inline_marker_text, normalize_instruction,
     should_skip_alternate_branch, skip_element, AlternateContentBranchState, ComplexField,
-    FieldPhase, FormulaParser,
+    FieldPhase,
 };
 
 type Xml<'a> = Reader<&'a [u8]>;
