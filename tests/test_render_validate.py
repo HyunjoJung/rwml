@@ -66,6 +66,26 @@ class RenderValidateReportTests(unittest.TestCase):
         )
         self.assertEqual(report["rows"][2]["reason"], "render failed")
 
+    def test_resolve_input_paths_reads_manifest_documents(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            (root / "synthetic").mkdir()
+            first = root / "synthetic" / "first.docx"
+            second = root / "synthetic" / "second.docx"
+            first.write_bytes(b"first")
+            second.write_bytes(b"second")
+            manifest = root / "RENDER_MANIFEST.tsv"
+            manifest.write_text(
+                "# path\tpages\twarnings\n"
+                "synthetic/first.docx\t1\t-\n"
+                "synthetic/second.docx\t1\tUnsupportedFieldEvaluation\n",
+                encoding="utf-8",
+            )
+
+            inputs = render_validate.resolve_input_paths([], manifest)
+
+        self.assertEqual(inputs, [first, second])
+
     def test_validation_report_rejects_document_paths(self):
         row = render_validate.ValidationRow(
             document="private" + "/sample.docx",

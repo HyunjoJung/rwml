@@ -23,8 +23,10 @@ By default, `--soffice auto` prefers local `soffice` when present and falls back
 to Docker.
 
   python scripts/render_validate.py corpus/public/**/*.docx
+  python scripts/render_validate.py --manifest corpus/public/RENDER_MANIFEST.tsv
   python scripts/render_validate.py --soffice docker corpus/*.doc
   python scripts/render_validate.py --json corpus/public/**/*.docx > render-report.json
+  python scripts/render_validate.py --json --manifest corpus/public/RENDER_MANIFEST.tsv > render-report.json
   python scripts/render_validate.py --json --min-mean-recall 0.90 --max-skipped 0 corpus/public/**/*.docx > render-report.json
 """
 
@@ -425,6 +427,63 @@ def render_libreoffice(src: Path, outdir: Path, mode: str) -> Path | None:
     return out if (r.returncode == 0 and out.exists()) else None
 
 
+def resolve_input_paths(inputs: list[Path], manifest: Path | None) -> list[Path]:
+    if manifest is None:
+        return inputs
+    if inputs:
+        raise ValueError("--manifest cannot be combined with positional inputs")
+    return manifest_document_inputs(manifest)
+
+
+def manifest_document_inputs(manifest: Path) -> list[Path]:
+    header = None
+    documents = []
+    seen = set()
+    for line in manifest.read_text(encoding="utf-8").splitlines():
+        trimmed = line.strip()
+        if not trimmed:
+            continue
+        if header is None:
+            if not line.startswith("#"):
+                raise ValueError(f"{manifest} does not start with a TSV path header")
+            header = line[1:].lstrip(" ").split("\t")
+            if not header or header[0] != "path":
+                raise ValueError(f"{manifest} does not start with a TSV path header")
+            continue
+        if trimmed.startswith("#"):
+            continue
+        cols = line.split("\t")
+        if len(cols) != len(header):
+            raise ValueError(f"{manifest} row has {len(cols)} columns: {line}")
+        document_path = cols[0]
+        if unsafe_manifest_document_path(document_path):
+            raise ValueError(f"{manifest} has unsafe document path: {document_path}")
+        if document_path in seen:
+            raise ValueError(f"{manifest} has duplicate document path: {document_path}")
+        seen.add(document_path)
+        document = manifest.parent / document_path
+        if not document.is_file():
+            raise ValueError(f"{manifest} document does not exist: {document_path}")
+        documents.append(document)
+    if header is None:
+        raise ValueError(f"{manifest} is empty")
+    if not documents:
+        raise ValueError(f"{manifest} does not contain document rows")
+    return documents
+
+
+def unsafe_manifest_document_path(document_path: str) -> bool:
+    return (
+        not document_path
+        or document_path != document_path.strip()
+        or document_path.startswith(("/", "\\"))
+        or "\\" in document_path
+        or ":" in document_path
+        or any(part in {"", ".", ".."} for part in document_path.split("/"))
+        or any(char.isspace() for char in document_path)
+    )
+
+
 def tokens(pdf: Path) -> list[str]:
     require_pdf_deps()
     doc = fitz.open(pdf)
@@ -503,7 +562,12 @@ def hash_similarity(ref: Path, got: Path, size: int = 16) -> float:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("inputs", nargs="+", type=Path)
+    ap.add_argument("inputs", nargs="*", type=Path)
+    ap.add_argument(
+        "--manifest",
+        type=Path,
+        help="Read input document paths from a public corpus TSV manifest.",
+    )
     ap.add_argument(
         "--soffice",
         choices=["auto", "local", "docker"],
@@ -523,6 +587,12 @@ def main() -> int:
         help="Emit a machine-readable validation report instead of the table.",
     )
     args = ap.parse_args()
+    try:
+        inputs = resolve_input_paths(args.inputs, args.manifest)
+    except ValueError as exc:
+        ap.error(str(exc))
+    if not inputs:
+        ap.error("the following arguments are required: inputs or --manifest")
 
     if not args.json:
         print(
@@ -539,7 +609,7 @@ def main() -> int:
     # Windows) can bind-mount it for the LibreOffice reference render.
     with tempfile.TemporaryDirectory(dir=Path.cwd()) as td:
         tmp = Path(td)
-        for src in args.inputs:
+        for src in inputs:
             try:
                 ref = render_libreoffice(src, tmp, soffice_mode)
             except RenderDependencyError as exc:
