@@ -3043,6 +3043,23 @@ fn unsupported_toc_switch_docx() -> Vec<u8> {
     ])
 }
 
+fn unknown_field_gap_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" CUSTOM Field "><w:r><w:t>cached unknown field</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 #[test]
 fn docx_fields_are_extracted() {
     let doc = Document::open(&field_docx()).expect("fixture opens");
@@ -3060,6 +3077,40 @@ fn docx_fields_are_extracted() {
     assert_eq!(fields[5].kind, FieldKind::Filename);
     assert_eq!(fields[5].instruction, "FILENAME \\p");
     assert_eq!(fields[5].result, "report.docx");
+}
+
+#[test]
+fn docx_unknown_field_gap_case_keeps_cached_text() {
+    let doc = Document::open(&unknown_field_gap_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::Unknown("CUSTOM".to_string()));
+    assert_eq!(fields[0].instruction, "CUSTOM Field");
+    assert_eq!(fields[0].result, "cached unknown field");
+    assert_eq!(fields[0].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Unknown("CUSTOM".to_string()),
+            count: 1,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnknownField,
+            count: 1,
+        }]
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("cached unknown field"),
+        "unknown field gap case should preserve cached result text: {main_text:?}"
+    );
 }
 
 #[test]
