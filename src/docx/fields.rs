@@ -8,18 +8,18 @@ use quick_xml::Reader;
 use crate::annotation::{
     accept_field_number_format_switch,
     accept_field_text_format_switch as accept_field_format_switch, accept_general_format_switch,
-    action_field_syntax, document_property_key, field_comparison_syntax, field_identifier_token,
+    action_field_syntax, compare_field_syntax, document_property_key, field_identifier_token,
     field_level_range_token, field_literal_token, field_name_token, field_non_empty_literal_token,
     field_points_token, field_positive_points_token, field_quoted_literal_token,
-    field_symbol_code_token, filename_field_syntax, formula_field_syntax, instruction_parts,
-    is_neutral_field_format_switch, is_note_ref_kind, is_ref_value_neutral_switch,
-    is_toc_value_neutral_switch, numbering_field_syntax, page_field_format_syntax_tail,
-    prompt_field_syntax, quote_field_syntax, reference_index_category_token,
-    reference_index_literal_token, reference_index_plain_value_token,
-    revision_number_field_text_format, sequence_field_syntax, set_field_syntax,
-    strip_ascii_switch_prefix, style_ref_field_syntax, toc_entry_field_syntax, toc_style_specs,
-    Field, FieldKind, FieldNumberFormat, FieldTextFormat, PromptFieldSyntax, StyleRefFieldSyntax,
-    StyleRefResult,
+    field_symbol_code_token, filename_field_syntax, formula_field_syntax, if_field_syntax,
+    instruction_parts, is_neutral_field_format_switch, is_note_ref_kind,
+    is_ref_value_neutral_switch, is_toc_value_neutral_switch, merge_control_field_syntax,
+    numbering_field_syntax, page_field_format_syntax_tail, prompt_field_syntax, quote_field_syntax,
+    reference_index_category_token, reference_index_literal_token,
+    reference_index_plain_value_token, revision_number_field_text_format, sequence_field_syntax,
+    set_field_syntax, strip_ascii_switch_prefix, style_ref_field_syntax, toc_entry_field_syntax,
+    toc_style_specs, Field, FieldKind, FieldNumberFormat, FieldTextFormat, PromptFieldSyntax,
+    StyleRefFieldSyntax, StyleRefResult,
 };
 use crate::{numfmt, CoreProperties};
 
@@ -5026,22 +5026,7 @@ fn merge_control_instruction(instruction: &str) -> Option<()> {
 }
 
 pub(crate) fn supports_merge_control_field_syntax(instruction: &str) -> bool {
-    merge_control_field_syntax(instruction).is_some()
-}
-
-fn merge_control_field_syntax(instruction: &str) -> Option<()> {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let kind = parts.next()?;
-    if kind.eq_ignore_ascii_case("NEXT") {
-        return accept_field_format_tail(&mut parts);
-    }
-    if kind.eq_ignore_ascii_case("NEXTIF") || kind.eq_ignore_ascii_case("SKIPIF") {
-        let first = parts.next()?;
-        field_comparison_syntax(first, &mut parts).then_some(())?;
-        return accept_field_format_tail(&mut parts);
-    }
-    None
+    merge_control_field_syntax(instruction)
 }
 
 fn field_format_tail<'a, I>(parts: &mut I) -> Option<Option<FieldTextFormat>>
@@ -6778,31 +6763,7 @@ fn if_instruction(instruction: &str) -> Option<IfInstruction> {
 }
 
 pub(crate) fn supports_if_field_syntax(instruction: &str) -> bool {
-    if_field_syntax(instruction).is_some()
-}
-
-fn if_field_syntax(instruction: &str) -> Option<()> {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let kind = parts.next()?;
-    if !kind.eq_ignore_ascii_case("IF") {
-        return None;
-    }
-    let first = parts.next()?;
-    field_comparison_syntax(first, &mut parts).then_some(())?;
-    if_result_text(parts.next()?)?;
-    let mut text_format = None;
-    if let Some(part) = parts.next() {
-        if !accept_if_format_switch(part, &mut parts, &mut text_format)? {
-            if_result_text(part)?;
-        }
-    }
-    while let Some(part) = parts.next() {
-        if !accept_if_format_switch(part, &mut parts, &mut text_format)? {
-            return None;
-        }
-    }
-    Some(())
+    if_field_syntax(instruction)
 }
 
 fn computed_compare_result(instruction: &str) -> Option<String> {
@@ -6819,7 +6780,7 @@ fn computed_compare_result(instruction: &str) -> Option<String> {
 }
 
 pub(crate) fn supports_compare_field_syntax(instruction: &str) -> bool {
-    compare_field_syntax(instruction).is_some()
+    compare_field_syntax(instruction)
 }
 
 fn compare_instruction(instruction: &str) -> Option<IfInstruction> {
@@ -6845,24 +6806,6 @@ fn compare_instruction(instruction: &str) -> Option<IfInstruction> {
         false_text: "0".to_string(),
         text_format,
     })
-}
-
-fn compare_field_syntax(instruction: &str) -> Option<()> {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let kind = parts.next()?;
-    if !kind.eq_ignore_ascii_case("COMPARE") {
-        return None;
-    }
-    let first = parts.next()?;
-    field_comparison_syntax(first, &mut parts).then_some(())?;
-    let mut text_format = None;
-    while let Some(part) = parts.next() {
-        if !accept_if_format_switch(part, &mut parts, &mut text_format)? {
-            return None;
-        }
-    }
-    Some(())
 }
 
 fn comparison_operands<'a, I>(

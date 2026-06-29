@@ -570,6 +570,118 @@ pub(crate) fn field_comparison_syntax<'a>(
         && field_comparison_operand_syntax(right)
 }
 
+pub(crate) fn compare_field_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if !kind.eq_ignore_ascii_case("COMPARE") {
+        return false;
+    }
+    let Some(first) = parts.next() else {
+        return false;
+    };
+    field_comparison_syntax(first, &mut parts) && field_text_format_tail_syntax(&mut parts)
+}
+
+pub(crate) fn if_field_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if !kind.eq_ignore_ascii_case("IF") {
+        return false;
+    }
+    let Some(first) = parts.next() else {
+        return false;
+    };
+    if !field_comparison_syntax(first, &mut parts) {
+        return false;
+    }
+    let Some(true_text) = parts.next() else {
+        return false;
+    };
+    if if_result_text_syntax(true_text).is_none() {
+        return false;
+    }
+    let mut text_format = None;
+    if let Some(part) = parts.next() {
+        let Some(accepted) = accept_field_text_format_syntax(part, &mut parts, &mut text_format)
+        else {
+            return false;
+        };
+        if !accepted && if_result_text_syntax(part).is_none() {
+            return false;
+        }
+    }
+    field_text_format_tail_with(&mut parts, text_format)
+}
+
+pub(crate) fn merge_control_field_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if kind.eq_ignore_ascii_case("NEXT") {
+        return field_text_format_tail_syntax(&mut parts);
+    }
+    if kind.eq_ignore_ascii_case("NEXTIF") || kind.eq_ignore_ascii_case("SKIPIF") {
+        let Some(first) = parts.next() else {
+            return false;
+        };
+        return field_comparison_syntax(first, &mut parts)
+            && field_text_format_tail_syntax(&mut parts);
+    }
+    false
+}
+
+fn field_text_format_tail_syntax<'a, I>(parts: &mut I) -> bool
+where
+    I: Iterator<Item = &'a str>,
+{
+    field_text_format_tail_with(parts, None)
+}
+
+fn field_text_format_tail_with<'a, I>(
+    parts: &mut I,
+    mut text_format: Option<FieldTextFormat>,
+) -> bool
+where
+    I: Iterator<Item = &'a str>,
+{
+    while let Some(part) = parts.next() {
+        let Some(accepted) = accept_field_text_format_syntax(part, parts, &mut text_format) else {
+            return false;
+        };
+        if !accepted {
+            return false;
+        }
+    }
+    true
+}
+
+fn accept_field_text_format_syntax<'a, I>(
+    part: &'a str,
+    parts: &mut I,
+    text_format: &mut Option<FieldTextFormat>,
+) -> Option<bool>
+where
+    I: Iterator<Item = &'a str>,
+{
+    accept_general_format_switch(part, parts, |format| {
+        accept_field_text_format_switch(format, text_format)
+    })
+}
+
+fn if_result_text_syntax(token: &str) -> Option<&str> {
+    (!token.starts_with('\\'))
+        .then(|| field_literal_token(token))
+        .flatten()
+}
+
 fn compact_field_comparison_syntax(token: &str) -> Option<(&str, &str, &str)> {
     for operator in [">=", "<=", "<>", "=", ">", "<"] {
         let Some(index) = find_unquoted_field_operator(token, operator) else {
@@ -1530,7 +1642,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::action_field_syntax;
+    use super::{
+        action_field_syntax, compare_field_syntax, if_field_syntax, merge_control_field_syntax,
+    };
 
     #[test]
     fn action_field_syntax_accepts_computed_and_target_only_forms() {
@@ -1538,6 +1652,21 @@ mod tests {
         assert!(action_field_syntax(r#"PRINT \p ReportBox "0 0 moveto""#).is_some());
         assert!(action_field_syntax(r#"MACROBUTTON RunReport \* MERGEFORMAT"#).is_some());
         assert!(action_field_syntax(r#"MACROBUTTON RunReport Run \* Upper Again"#).is_none());
+    }
+
+    #[test]
+    fn dynamic_control_wrapper_syntax_accepts_shared_comparison_forms() {
+        assert!(compare_field_syntax(
+            r#"COMPARE CustomerTier="Gold" \* MERGEFORMAT"#
+        ));
+        assert!(if_field_syntax(r#"IF 1 = 1 "ship" "hold" \* Upper"#));
+        assert!(merge_control_field_syntax(
+            r#"NEXTIF City = "Tokyo" \* CHARFORMAT"#
+        ));
+        assert!(merge_control_field_syntax(r#"NEXT \* MERGEFORMAT"#));
+        assert!(!compare_field_syntax(r#"COMPARE \o = "Gold""#));
+        assert!(!if_field_syntax(r#"IF 1 = 1 "ship" \* Upper Again"#));
+        assert!(!merge_control_field_syntax(r#"NEXTIF 1e309 = 1"#));
     }
 }
 

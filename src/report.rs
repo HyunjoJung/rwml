@@ -18,16 +18,16 @@ use crate::annotation::{
 };
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{
-    document_property_key, field_non_empty_literal_token, field_quoted_literal_token,
-    filename_field_syntax,
-};
-#[cfg(not(feature = "docx"))]
-use crate::annotation::{
-    field_comparison_syntax, formula_field_syntax, numbering_field_syntax,
-    page_field_format_syntax_tail, prompt_field_syntax, quote_field_syntax,
+    compare_field_syntax, formula_field_syntax, if_field_syntax, merge_control_field_syntax,
+    numbering_field_syntax, page_field_format_syntax_tail, prompt_field_syntax, quote_field_syntax,
     reference_index_category_token, reference_index_literal_token,
     reference_index_plain_value_token, revision_number_field_text_format, sequence_field_syntax,
     set_field_syntax, style_ref_field_syntax, toc_entry_field_syntax,
+};
+#[cfg(not(feature = "docx"))]
+use crate::annotation::{
+    document_property_key, field_non_empty_literal_token, field_quoted_literal_token,
+    filename_field_syntax,
 };
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{field_points_token, field_positive_points_token, field_symbol_code_token};
@@ -3304,48 +3304,12 @@ fn compare_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     }
     #[cfg(not(feature = "docx"))]
     {
-        if supported_compare_syntax(instruction) {
+        if compare_field_syntax(instruction) {
             FieldEvaluationReason::NoComputedResult
         } else {
             FieldEvaluationReason::UnsupportedSwitch
         }
     }
-}
-
-#[cfg(not(feature = "docx"))]
-fn supported_compare_syntax(instruction: &str) -> bool {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let Some(kind) = parts.next() else {
-        return false;
-    };
-    if !kind.eq_ignore_ascii_case("COMPARE") {
-        return false;
-    }
-    let Some(first) = parts.next() else {
-        return false;
-    };
-    if !field_comparison_syntax(first, &mut parts) {
-        return false;
-    }
-    let mut text_format = false;
-    supported_field_format_tail_for_report(&mut parts, &mut text_format)
-}
-
-#[cfg(not(feature = "docx"))]
-fn supported_field_format_tail_for_report<'a>(
-    parts: &mut impl Iterator<Item = &'a str>,
-    text_format: &mut bool,
-) -> bool {
-    while let Some(part) = parts.next() {
-        let Some(accepted) = accept_field_format_for_report(part, parts, text_format) else {
-            return false;
-        };
-        if !accepted {
-            return false;
-        }
-    }
-    true
 }
 
 fn accept_field_format_for_report<'a>(
@@ -3404,54 +3368,12 @@ fn if_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     }
     #[cfg(not(feature = "docx"))]
     {
-        if supported_if_syntax(instruction) {
+        if if_field_syntax(instruction) {
             FieldEvaluationReason::NoComputedResult
         } else {
             FieldEvaluationReason::UnsupportedSwitch
         }
     }
-}
-
-#[cfg(not(feature = "docx"))]
-fn supported_if_syntax(instruction: &str) -> bool {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let Some(kind) = parts.next() else {
-        return false;
-    };
-    if !kind.eq_ignore_ascii_case("IF") {
-        return false;
-    }
-    let Some(first) = parts.next() else {
-        return false;
-    };
-    if !field_comparison_syntax(first, &mut parts) {
-        return false;
-    }
-    let Some(true_text) = parts.next() else {
-        return false;
-    };
-    if if_result_text_for_report(true_text).is_none() {
-        return false;
-    }
-    let mut text_format = false;
-    if let Some(part) = parts.next() {
-        let Some(accepted) = accept_field_format_for_report(part, &mut parts, &mut text_format)
-        else {
-            return false;
-        };
-        if !accepted && if_result_text_for_report(part).is_none() {
-            return false;
-        }
-    }
-    supported_field_format_tail_for_report(&mut parts, &mut text_format)
-}
-
-#[cfg(not(feature = "docx"))]
-fn if_result_text_for_report(token: &str) -> Option<&str> {
-    (!token.starts_with('\\'))
-        .then(|| diagnostic_literal_token(token))
-        .flatten()
 }
 
 fn quote_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -3518,33 +3440,12 @@ fn merge_control_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     }
     #[cfg(not(feature = "docx"))]
     {
-        if supported_merge_control_syntax(instruction) {
+        if merge_control_field_syntax(instruction) {
             FieldEvaluationReason::NoComputedResult
         } else {
             FieldEvaluationReason::UnsupportedSwitch
         }
     }
-}
-
-#[cfg(not(feature = "docx"))]
-fn supported_merge_control_syntax(instruction: &str) -> bool {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let Some(kind) = parts.next() else {
-        return false;
-    };
-    let mut text_format = false;
-    if kind.eq_ignore_ascii_case("NEXT") {
-        return supported_field_format_tail_for_report(&mut parts, &mut text_format);
-    }
-    if kind.eq_ignore_ascii_case("NEXTIF") || kind.eq_ignore_ascii_case("SKIPIF") {
-        let Some(first) = parts.next() else {
-            return false;
-        };
-        return field_comparison_syntax(first, &mut parts)
-            && supported_field_format_tail_for_report(&mut parts, &mut text_format);
-    }
-    false
 }
 
 fn supported_ref_syntax_parts<'a>(
