@@ -2766,6 +2766,27 @@ fn toc_heading_docx() -> Vec<u8> {
     ])
 }
 
+fn complex_toc_heading_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Executive Summary</w:t></w:r></w:p><w:p><w:pPr><w:outlineLvl w:val="1"/></w:pPr><w:r><w:t>Risks</w:t></w:r></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> TOC \o &quot;1-2&quot; \* Upper </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale complex toc</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn toc_heading_inline_break_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -9192,6 +9213,29 @@ fn docx_toc_field_computes_unambiguous_heading_outline_range() {
     assert_eq!(main_text.matches("Executive Summary").count(), 2);
     assert_eq!(main_text.matches("Risks").count(), 2);
     assert_eq!(main_text.matches("Excluded Detail").count(), 1);
+}
+
+#[test]
+fn docx_complex_toc_field_computes_heading_outline_range() {
+    let doc = Document::open(&complex_toc_heading_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::Toc);
+    assert_eq!(fields[0].instruction, "TOC \\o \"1-2\" \\* Upper");
+    assert_eq!(fields[0].result, "stale complex toc");
+    assert_eq!(
+        fields[0].computed_result.as_deref(),
+        Some("EXECUTIVE SUMMARY\n  RISKS")
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        !main_text.contains("stale complex toc"),
+        "resolved complex TOC fields should display computed heading text: {main_text:?}"
+    );
+    assert_eq!(main_text.matches("EXECUTIVE SUMMARY").count(), 1);
+    assert_eq!(main_text.matches("RISKS").count(), 1);
 }
 
 #[test]

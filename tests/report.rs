@@ -1980,6 +1980,28 @@ fn toc_field_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn complex_toc_field_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Executive Summary</w:t></w:r></w:p><w:p><w:pPr><w:outlineLvl w:val="1"/></w:pPr><w:r><w:t>Risks</w:t></w:r></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> TOC \o &quot;1-2&quot; \* Upper </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale complex toc</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn toc_bad_switch_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -6067,6 +6089,34 @@ fn report_toc_field_warning_ignores_computed_heading_tocs() {
         "{json}"
     );
     assert!(json.contains(r#""kind":"UnsupportedFieldEvaluation","count":1,"field_kinds":[{"kind":"CUSTOM","count":1}]"#), "{json}");
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_complex_toc_field_counts_as_supported() {
+    let doc = Document::open(&complex_toc_field_diagnostics_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::Toc);
+    assert_eq!(fields[0].instruction, "TOC \\o \"1-2\" \\* Upper");
+    assert_eq!(
+        fields[0].computed_result.as_deref(),
+        Some("EXECUTIVE SUMMARY\n  RISKS")
+    );
+
+    let report = doc.report();
+    assert_eq!(report.features.fields, 1);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![field_kind_count(FieldKind::Toc, 1)]
+    );
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+    assert!(report
+        .warnings
+        .iter()
+        .all(|warning| !matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })));
 }
 
 #[cfg(feature = "docx")]
