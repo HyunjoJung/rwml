@@ -234,8 +234,8 @@ The first public maturity release should meet these requirements.
   unambiguous numbering context, and
   `REF \w` full-context numbered labels with `\w \p` relative suffixes and
   `\w \t` numeric-text suppression, `REF \f` visible body footnote/endnote
-  reference marks, body comment-reference markers, and exact matching
-  bookmarked comment ranges, with prior generated REF note marks counted in
+  reference marks, body comment-reference markers, exact matching bookmarked
+  comment ranges, and bookmarks wholly inside body comment ranges, with prior generated REF note marks counted in
   source order, `REF \d "separator"`
   sequence/page separator syntax recognized while preserving cached text until
   sequence/page separator semantics are modeled, bookmarked `NOTEREF`/legacy `FTNREF`
@@ -462,8 +462,9 @@ The first public maturity release should meet these requirements.
   preserve simple inline tabs, line breaks, and no-break hyphens for simple and
   common complex body fields;
   unresolved bookmark scopes, unsupported remaining value-changing REF/NOTEREF cases such as
-  comment/annotation insertion beyond bookmarked comment-reference markers or
-  exact matching bookmarked comment ranges, and broader field semantics, existing `NOTEREF`
+  comment/annotation insertion beyond bookmarked comment-reference markers,
+  exact matching bookmarked comment ranges, or bookmarks wholly inside body
+  comment ranges, and broader field semantics, existing `NOTEREF`
   bookmark targets without body note-reference marks,
   stay visible through diagnostics with unsupported field-kind counts and
   machine-readable reason counts for unknown fields, unresolved bookmarks,

@@ -186,8 +186,16 @@ pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
                         }
                     }
                     b"bookmarkEnd" => {
+                        let id = bookmark_end_id(&e);
+                        record_note_ref_contained_comment_range_target(
+                            id.as_deref(),
+                            source_order,
+                            &active_bookmarks,
+                            &active_comment_ranges,
+                            &mut comment_range_targets,
+                        );
                         close_note_ref_bookmark(
-                            bookmark_end_id(&e).as_deref(),
+                            id.as_deref(),
                             source_order,
                             &mut active_bookmarks,
                             &mut targets,
@@ -315,8 +323,16 @@ pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
                         }
                     }
                     b"bookmarkEnd" => {
+                        let id = bookmark_end_id(&e);
+                        record_note_ref_contained_comment_range_target(
+                            id.as_deref(),
+                            source_order,
+                            &active_bookmarks,
+                            &active_comment_ranges,
+                            &mut comment_range_targets,
+                        );
                         close_note_ref_bookmark(
-                            bookmark_end_id(&e).as_deref(),
+                            id.as_deref(),
                             source_order,
                             &mut active_bookmarks,
                             &mut targets,
@@ -457,9 +473,6 @@ fn record_note_ref_comment_range_start(
         .iter()
         .map(|bookmark| bookmark.name.clone())
         .collect::<Vec<_>>();
-    if bookmark_names.is_empty() {
-        return;
-    }
     active_comment_ranges.push(NoteRefActiveCommentRange {
         id,
         bookmark_names,
@@ -519,6 +532,34 @@ fn record_note_ref_comment_range_targets(
             start: range.start,
             end: range.end,
         });
+    }
+}
+
+fn record_note_ref_contained_comment_range_target(
+    id: Option<&str>,
+    end: usize,
+    active_bookmarks: &[NoteRefActiveBookmark],
+    active_comment_ranges: &[NoteRefActiveCommentRange],
+    comment_range_targets: &mut HashMap<String, Vec<NoteRefCommentRangeTarget>>,
+) {
+    let Some(id) = id else {
+        return;
+    };
+    let Some(bookmark) = active_bookmarks.iter().find(|bookmark| bookmark.id == id) else {
+        return;
+    };
+    for range in active_comment_ranges
+        .iter()
+        .filter(|range| bookmark.start >= range.start)
+    {
+        comment_range_targets
+            .entry(range.id.clone())
+            .or_default()
+            .push(NoteRefCommentRangeTarget {
+                name: bookmark.name.clone(),
+                start: bookmark.start,
+                end,
+            });
     }
 }
 

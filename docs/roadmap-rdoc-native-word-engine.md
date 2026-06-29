@@ -163,8 +163,8 @@ Initial status:
   unambiguous numbering context, and
   `REF \w` full-context numbered labels with `\w \p` relative suffixes and
   `\w \t` numeric-text suppression, `REF \f` visible body footnote/endnote
-  reference marks, body comment-reference markers, and exact matching
-  bookmarked comment ranges, counting prior generated REF note marks in
+  reference marks, body comment-reference markers, exact matching bookmarked
+  comment ranges, and bookmarks wholly inside body comment ranges, counting prior generated REF note marks in
   source order plus common field-result
   number/text format switches, `REF \d "separator"`
   sequence/page separator syntax recognized while preserving cached text until
@@ -283,8 +283,9 @@ Initial status:
 - `Document::report()` includes field-kind counts, and unsupported-field
   warnings now report only missing `PAGEREF` targets, remaining layout-dependent `PAGEREF`, unknown, unresolved bookmark scope, unresolved or
   unsupported remaining value-changing REF cases such as
-  comment/annotation insertion beyond bookmarked comment-reference markers or
-  exact matching bookmarked comment ranges, and broader REF semantics, missing explicit or
+  comment/annotation insertion beyond bookmarked comment-reference markers,
+  exact matching bookmarked comment ranges, or bookmarks wholly inside body
+  comment ranges, and broader REF semantics, missing explicit or
   direct `REF \f` bookmark targets, existing non-note `REF \f` targets,
   missing `NOTEREF` bookmark targets, existing `NOTEREF` bookmark targets without body
   note-reference marks, unsupported `NOTEREF` switches, missing `TOC \b`
@@ -939,7 +940,8 @@ Initial status:
   and `REF \w` full-context labels
   including `\w \p` relative suffixes and `\w \t` numeric-text suppression,
   `REF \f` visible body footnote/endnote reference marks, body
-  comment-reference markers, and exact matching bookmarked comment ranges with
+  comment-reference markers, exact matching bookmarked comment ranges, and
+  bookmarks wholly inside body comment ranges with
   prior generated REF note marks counted in source order plus common
   field-result number/text format switches,
   `REF \d "separator"` sequence/page separator syntax recognized while
@@ -996,8 +998,9 @@ Initial status:
   layout-derived cases. Document and render
   diagnostics still report unknown, unresolved bookmark scope, unresolved or
   unsupported remaining value-changing REF cases such as
-  comment/annotation insertion beyond bookmarked comment-reference markers or
-  exact matching bookmarked comment ranges, and broader REF semantics, missing explicit or
+  comment/annotation insertion beyond bookmarked comment-reference markers,
+  exact matching bookmarked comment ranges, or bookmarks wholly inside body
+  comment ranges, and broader REF semantics, missing explicit or
   direct `REF \f` bookmark targets, existing non-note `REF \f` targets,
   missing `NOTEREF` bookmark targets, existing `NOTEREF` bookmark targets without body
   note-reference marks, unsupported `NOTEREF` switches, remaining layout-dependent `PAGEREF`,
@@ -1174,8 +1177,9 @@ The active roadmap slices are:
    target-derived formatting where no trusted marker exists, and remaining
    layout-dependent `\p` results.
 3. R2-c remaining `REF`/`NOTEREF`/`FTNREF`/TOC policy: comment/annotation
-   insertion beyond bookmarked comment-reference markers or exact matching
-   bookmarked comment ranges, broader `REF` semantics, unresolved or
+   insertion beyond bookmarked comment-reference markers, exact matching
+   bookmarked comment ranges, or bookmarks wholly inside body comment ranges,
+   broader `REF` semantics, unresolved or
    unsupported `NOTEREF` switches beyond body
    note-reference marks, and broader TOC/REF body evaluation.
 4. R2-d non-deterministic field families kept cached/reportable: remaining

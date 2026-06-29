@@ -483,7 +483,8 @@ Implementation:
   and `REF \w` full-context numbered labels with `\w \p` relative suffixes
   and `\w \t` numeric-text suppression,
   plus `REF \f` visible body footnote/endnote reference marks, body
-  comment-reference markers, and exact matching bookmarked comment ranges,
+  comment-reference markers, exact matching bookmarked comment ranges, and
+  bookmarks wholly inside body comment ranges,
   counting prior generated REF note marks in source order plus common
   field-result number/text format switches, and
   `REF \d "separator"` sequence/page separator syntax
@@ -686,8 +687,9 @@ Implementation:
   default values with no computed result;
   unresolved bookmark scope,
   unresolved or unsupported remaining value-changing REF cases such as
-  comment/annotation insertion beyond bookmarked comment-reference markers or
-  exact matching bookmarked comment ranges, and broader REF semantics, remaining missing
+  comment/annotation insertion beyond bookmarked comment-reference markers,
+  exact matching bookmarked comment ranges, or bookmarks wholly inside body
+  comment ranges, and broader REF semantics, remaining missing
   explicit or direct `REF \f` bookmark targets, existing non-note `REF \f`
   targets, missing `NOTEREF` bookmark targets, existing `NOTEREF` bookmark targets without
   body note-reference marks, unsupported `NOTEREF` switches,
@@ -1120,7 +1122,8 @@ open and edit the chart data.
   and `REF \w` full-context labels
   including `\w \p` relative suffixes and `\w \t` numeric-text suppression,
   `REF \f` visible body footnote/endnote reference marks, body
-  comment-reference markers, and exact matching bookmarked comment ranges,
+  comment-reference markers, exact matching bookmarked comment ranges, and
+  bookmarks wholly inside body comment ranges,
   including prior generated REF note marks in source order plus common
   field-result number/text format switches,
   `REF \d "separator"` sequence/page separator syntax recognized while
@@ -1165,8 +1168,9 @@ open and edit the chart data.
   no-break/soft hyphens, keep cached field-result inline tabs, line breaks, and
   no-break/soft hyphens when computation is unsupported, and surface unresolved
   bookmark scope, unsupported remaining value-changing REF cases such as
-  comment/annotation insertion beyond bookmarked comment-reference markers or
-  exact matching bookmarked comment ranges, and broader REF semantics, unresolved or
+  comment/annotation insertion beyond bookmarked comment-reference markers,
+  exact matching bookmarked comment ranges, or bookmarks wholly inside body
+  comment ranges, and broader REF semantics, unresolved or
   unsupported NOTEREF switches, remaining layout-dependent `PAGEREF`, or
   broader TOC/REF cases separately in diagnostics;
 - expose unsupported field evaluation warnings for unknown fields beyond named
@@ -1235,8 +1239,9 @@ open and edit the chart data.
   default values with no computed result,
   unresolved bookmark
   scope, unresolved or unsupported remaining value-changing REF cases such as
-  comment/annotation insertion beyond bookmarked comment-reference markers or
-  exact matching bookmarked comment ranges, and broader REF semantics,
+  comment/annotation insertion beyond bookmarked comment-reference markers,
+  exact matching bookmarked comment ranges, or bookmarks wholly inside body
+  comment ranges, and broader REF semantics,
   unresolved or unsupported NOTEREF switches, remaining layout-dependent
   `PAGEREF`, and broader TOC fields, with
   `unsupported_field_reasons` reason counts in the feature inventory JSON.

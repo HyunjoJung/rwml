@@ -248,8 +248,9 @@ the `render` feature.
 > layout engine. It is faithful to the *model* and selectable, but it does **not**
 > match LibreOffice fidelity — exact pagination, exact floating-object layout,
 > unknown fields, unresolved or unsupported remaining value-changing REF cases such as
-> comment/annotation insertion beyond bookmarked comment-reference markers or
-> exact matching bookmarked comment ranges,
+> comment/annotation insertion beyond bookmarked comment-reference markers,
+> exact matching bookmarked comment ranges, or bookmarks wholly inside body
+> comment ranges,
 > remaining advanced
 > TOC/REF computed field evaluation, and pixel layout differ. Opened-document
 > renders draw bounded approximate overlay boxes for recovered `.docx`
@@ -626,7 +627,8 @@ relative suffixes and `\r \t` numeric-text suppression when the REF field paragr
 also has unambiguous numbering context, and `REF \w` full-context labels including `\w \p`
 relative suffixes and `\w \t` numeric-text suppression, and `REF \f`
 note-reference marks for bookmarks around body footnote/endnote references,
-body comment-reference markers, or exact matching bookmarked comment ranges,
+body comment-reference markers, exact matching bookmarked comment ranges, or
+bookmarks wholly inside body comment ranges,
 with generated REF note marks counted in source order plus common field-result
 number/text format switches, and `REF \d "separator"`
 sequence/page separator syntax recognized while preserving cached text until
@@ -716,8 +718,9 @@ barcode fields, and legacy form fields beyond deterministic `w:ffData`
 checkbox checked/default states, dropdown result/default selections, explicit
 non-empty text-input current results, and empty-current text-input default
 results, plus unresolved bookmark, unsupported remaining value-changing REF cases such as
-comment/annotation insertion beyond bookmarked comment-reference markers or
-exact matching bookmarked comment ranges, and broader REF semantics,
+comment/annotation insertion beyond bookmarked comment-reference markers,
+exact matching bookmarked comment ranges, or bookmarks wholly inside body
+comment ranges, and broader REF semantics,
 unresolved or unsupported NOTEREF switches, existing `NOTEREF` bookmark targets
 without a body note-reference mark, or remaining advanced TOC/REF cases
 still render cached text, including inline tabs, line breaks, and no-break/soft
