@@ -647,21 +647,27 @@ than new top-level APIs.
 
 Before support wording moves from diagnostics/cached-result preservation to
 computed behavior, each field or layout slice needs deterministic semantics and
-focused reader/report coverage. The active field backlog is:
+focused reader/report coverage. The active native engine backlog is tracked as
+public-readable R2 sub-buckets:
 
-- layout-derived `PAGE` and `PAGEREF` outside trusted structural,
+- R2-a field report/evaluator parity for value-changing fields whose
+  computation, document-report diagnostics, or render-model diagnostics can
+  drift;
+- R2-b layout-derived `PAGE` and `PAGEREF` outside trusted structural,
   source-rendered, section-start, source-marker, and hard-break contexts;
-- remaining value-changing `REF`, direct bookmark reference,
+- R2-c remaining value-changing `REF`, direct bookmark reference,
   `NOTEREF`/`FTNREF`, and TOC/REF body policies where source order, note marks,
   numbering context, or scope membership are not yet unambiguous;
-- broader data, source, layout, generated, action/automation, barcode,
+- R2-d broader data, source, layout, generated, action/automation, barcode,
   compatibility/private, and protected legacy-form field families beyond the
-  deterministic subsets already implemented.
+  deterministic subsets already implemented, kept cached and reportable until
+  deterministic semantics are proven;
+- R2-e legacy `.doc` anchors/header-footer, covering exact body, note, text-box,
+  and shape anchors plus richer section-level header/footer application
+  semantics beyond current recovered/default running stories.
 
 The larger non-field maturity gaps are:
 
-- exact legacy `.doc` body, note, text-box, and shape anchors beyond current
-  source-region anchors;
 - floating-shape exact page/range anchoring, text-wrap reflow, deeper z-order,
   and non-text Office-Art drawing contents;
 - newer extension chart families and actual metafile drawing beyond bounded

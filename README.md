@@ -904,11 +904,12 @@ The long-term native Word engine plan is split into the
 [maturity roadmap](docs/roadmap-rdoc-native-word-engine.md).
 
 Current maturity work is concentrated in deeper compatibility rather than new
-top-level APIs: keeping field evaluator/report syntax aligned, promoting only
-deterministic `PAGE`/`PAGEREF`/`REF`/`NOTEREF`/TOC subcases from cached text to
-computed results, tightening legacy `.doc` anchors, modeling floating-shape
-layout beyond recovered geometry, and adding public release evidence for
-render/extraction benchmarks.
+top-level APIs. The remaining native Word-engine work is tracked as bounded R2
+sub-buckets: field report/evaluator parity, layout-derived `PAGE`/`PAGEREF`,
+remaining `REF`/`NOTEREF`/`FTNREF`/TOC policy, non-deterministic field families
+that stay cached/reportable, and legacy `.doc` anchors/header-footer behavior.
+Each slice should move only after focused reader/report evidence proves either
+deterministic computation or precise cached-result diagnostics.
 
 - [x] Codepage-aware `.doc` text; encryption / Word 6/95 detection gates
 - [x] Full read model: runs (CHPX incl. font/size/color), headings (STSH), tables
@@ -1010,14 +1011,21 @@ render/extraction benchmarks.
       default selection/inheritance, first/even-page variant modeling and
       authoring, plus section-aware first/even-page render selection, and
       Symbol/Wingdings glyph mapping
-- [ ] Reader: remaining field/layout backlog: full layout-derived `PAGE`
-      current-page and `PAGEREF` page-number/relative-position computation
-      beyond trusted leading/source-rendered, section-start, source-marker, and
-      hard-break contexts; remaining value-changing `REF`, `NOTEREF`/`FTNREF`,
-      and broader TOC/REF policy where semantics are not yet deterministic;
-      data-, source-, layout-, action-, generated-, barcode-, compatibility-,
-      and protected-form behavior beyond the deterministic field subsets
-      listed above; exact legacy `.doc` note/text-box/body anchors and richer
+- [ ] Reader R2-a: field report/evaluator parity for value-changing fields
+      where duplicated syntax checks or document-report/render-report
+      diagnostics can drift from computed-result behavior
+- [ ] Reader R2-b: layout-derived `PAGE`/`PAGEREF` current-page,
+      page-number, and relative-position computation beyond trusted
+      leading/source-rendered, section-start, source-marker, and hard-break
+      contexts
+- [ ] Reader R2-c: remaining value-changing `REF`, `NOTEREF`/`FTNREF`, and
+      broader TOC/REF policy where source order, note marks, numbering context,
+      or scope membership are not yet deterministic
+- [ ] Reader R2-d: non-deterministic data-, source-, layout-, action-,
+      generated-, barcode-, compatibility-, and protected-form field families
+      that preserve cached text and stay reportable until deterministic
+      semantics are proven
+- [ ] Reader R2-e: exact legacy `.doc` note/text-box/body anchors and richer
       legacy section-level header/footer application semantics beyond
       recovered/default running stories
 - [x] **Package-preserving edit layer** — `Document::open`→edit→`save` keeps every

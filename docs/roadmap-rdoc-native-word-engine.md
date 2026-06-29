@@ -1156,33 +1156,36 @@ the semantics are deterministic.
 
 The active roadmap slices are:
 
-1. Field evaluation backlog, ordered for focused slices:
-   - parser/evaluator/report parity for value-changing fields where exact
-     duplicate syntax logic remains or diagnostics disagree with computation;
-   - layout-derived `PAGE`/`PAGEREF` beyond trusted leading/source-rendered,
-     section-start, source-marker, and hard-break contexts: exact pagination
-     current-page/page-reference values, target-derived formatting where no
-     trusted marker exists, and remaining layout-dependent `\p` results;
-   - remaining value-changing reference policy: comment/annotation insertion
-     beyond bookmarked comment-reference markers,
-     broader `REF` semantics, unresolved or unsupported `NOTEREF` switches
-     beyond body note-reference marks, and broader TOC/REF body evaluation;
-   - remaining data-, source-, layout-, action-, and generated-field families
-     beyond the deterministic subsets already listed above, including
-     unknown fields, dynamic/control fields that need external state or side
-     effects, generated reference/index output beyond hidden literal
-     `RD`/`TA`/`XE` markers, richer numbering/list semantics, display/layout
-     fields beyond the deterministic `ADVANCE`/`EQ`/`SYMBOL` subset,
-     action/automation beyond display text and validated hidden `PRINT`,
-     compatibility/private payloads, barcode rendering, and protected legacy
-     form behavior.
-   - For each slice, preserve cached text until semantics are unambiguous,
-     distinguish `UnsupportedSwitch` from `NoComputedResult`, and add focused
-     `.docx` and report diagnostics tests before public support wording moves.
-2. Continue legacy `.doc` exact body/shape anchors beyond the current
-   source-region anchors for comments, notes, and text boxes, plus richer legacy
-   section-level header/footer application semantics beyond recovered/default
-   running stories.
+1. R2-a field report/evaluator parity: parser/evaluator/report parity for
+   value-changing fields where exact duplicated syntax logic remains, document
+   reports disagree with computation, or render-model reports can drift from the
+   opened-document report.
+2. R2-b layout-derived `PAGE`/`PAGEREF`: contexts beyond trusted
+   leading/source-rendered, section-start, source-marker, and hard-break cases,
+   including exact pagination current-page/page-reference values,
+   target-derived formatting where no trusted marker exists, and remaining
+   layout-dependent `\p` results.
+3. R2-c remaining `REF`/`NOTEREF`/`FTNREF`/TOC policy: comment/annotation
+   insertion beyond bookmarked comment-reference markers, broader `REF`
+   semantics, unresolved or unsupported `NOTEREF` switches beyond body
+   note-reference marks, and broader TOC/REF body evaluation.
+4. R2-d non-deterministic field families kept cached/reportable: remaining
+   data-, source-, layout-, action-, and generated-field families beyond the
+   deterministic subsets already listed above, including unknown fields,
+   dynamic/control fields that need external state or side effects, generated
+   reference/index output beyond hidden literal `RD`/`TA`/`XE` markers, richer
+   numbering/list semantics, display/layout fields beyond the deterministic
+   `ADVANCE`/`EQ`/`SYMBOL` subset, action/automation beyond display text and
+   validated hidden `PRINT`, compatibility/private payloads, barcode rendering,
+   and protected legacy form behavior.
+5. R2-e legacy `.doc` anchors/header-footer: exact body/shape anchors beyond the
+   current source-region anchors for comments, notes, and text boxes, plus
+   richer legacy section-level header/footer application semantics beyond
+   recovered/default running stories.
+
+For each slice, preserve cached text until semantics are unambiguous,
+distinguish `UnsupportedSwitch` from `NoComputedResult`, and add focused `.docx`
+and report diagnostics tests before public support wording moves.
 3. Floating-shape placement beyond geometry overlays: exact body anchor
    range/page resolution beyond best-effort top-level block pages, real
    text-wrap reflow, deeper z-order semantics beyond recovered

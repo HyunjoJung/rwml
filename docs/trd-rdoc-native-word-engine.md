@@ -1478,15 +1478,20 @@ editing or rendering promise.
 Current implementation focus should treat the broad sequence above as mostly
 established infrastructure and promote only bounded compatibility slices:
 
-- first keep shared field parsers aligned across evaluator and diagnostics when
-  exact duplicated logic or report/evaluator drift is proven;
-- promote `PAGE`, `PAGEREF`, `REF`, direct bookmark references,
-  `NOTEREF`/`FTNREF`, and TOC semantics only for deterministic contexts already
-  represented by the reader;
-- preserve cached field text and report `UnsupportedSwitch`,
+- R2-a: keep shared field parsers aligned across evaluator, document-report
+  diagnostics, and render-model diagnostics when exact duplicated logic or
+  report/evaluator drift is proven;
+- R2-b: promote `PAGE` and `PAGEREF` semantics only for deterministic layout
+  contexts already represented by the reader or renderer evidence;
+- R2-c: promote `REF`, direct bookmark references, `NOTEREF`/`FTNREF`, and TOC
+  semantics only for deterministic source-order, note-mark, numbering, and
+  scope contexts;
+- R2-d: preserve cached field text and report `UnsupportedSwitch`,
   `NoComputedResult`, or `UnresolvedBookmark` for valid but unresolved
-  compatibility cases;
-- defer legacy `.doc` exact anchors, floating-shape wrap/reflow, extension chart
-  families, and metafile drawing until public synthetic fixtures and expected
-  contracts exist;
+  compatibility cases and non-deterministic field families;
+- R2-e: defer legacy `.doc` exact anchors and richer section-level
+  header/footer semantics until public synthetic fixtures and expected contracts
+  exist;
+- defer floating-shape wrap/reflow, extension chart families, and metafile
+  drawing until public synthetic fixtures and expected contracts exist;
 - keep release evidence machine-readable and separate from private corpus data.
