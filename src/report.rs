@@ -38,6 +38,8 @@ use crate::annotation::{
     document_property_key, field_non_empty_literal_token, field_quoted_literal_token,
     filename_field_syntax,
 };
+#[cfg(feature = "docx")]
+use crate::docx::local;
 use crate::model::{Block, FieldRole, Stats, Table};
 use crate::CoreProperties;
 #[cfg(feature = "docx")]
@@ -3687,14 +3689,6 @@ fn docx_page_ref_unsupported_section_format_targets(xml: &str) -> HashSet<String
         }
     }
     unsupported_targets
-}
-
-#[cfg(feature = "docx")]
-fn local(name: &[u8]) -> &[u8] {
-    match name.iter().rposition(|&b| b == b':') {
-        Some(i) => &name[i + 1..],
-        None => name,
-    }
 }
 
 #[cfg(test)]
