@@ -714,6 +714,7 @@ pub(crate) fn feature_inventory_for_model(blocks: &[Block]) -> FeatureInventory 
 pub(crate) fn render_inventory_for_model(blocks: &[Block]) -> FeatureInventory {
     let mut inventory = FeatureInventory::default();
     let fields = fields_for_model(blocks);
+    let reason_context = render_model_field_reason_context(blocks);
     inventory.fields = fields.len();
     inventory.field_kinds = count_field_kinds(&fields);
     inventory.hyperlinks = fields
@@ -736,7 +737,7 @@ pub(crate) fn render_inventory_for_model(blocks: &[Block]) -> FeatureInventory {
                 count: 1,
             });
         }
-        if let Some(reason) = unsupported_field_reason(field) {
+        if let Some(reason) = render_model_unsupported_field_reason(field, &reason_context) {
             increment_field_evaluation_reason_count(
                 &mut inventory.unsupported_field_reasons,
                 reason,
@@ -745,6 +746,69 @@ pub(crate) fn render_inventory_for_model(blocks: &[Block]) -> FeatureInventory {
     }
     count_nested_model_tables(blocks, 0, &mut inventory, false);
     inventory
+}
+
+#[cfg(feature = "render")]
+#[derive(Default)]
+struct RenderModelFieldReasonContext {
+    bookmark_names: HashSet<String>,
+    note_ref_target_names: HashSet<String>,
+}
+
+#[cfg(feature = "render")]
+fn render_model_field_reason_context(blocks: &[Block]) -> RenderModelFieldReasonContext {
+    let mut context = RenderModelFieldReasonContext::default();
+    collect_render_model_field_reason_context(blocks, &mut context);
+    context
+}
+
+#[cfg(feature = "render")]
+fn collect_render_model_field_reason_context(
+    blocks: &[Block],
+    context: &mut RenderModelFieldReasonContext,
+) {
+    for block in blocks {
+        match block {
+            Block::Paragraph(paragraph) => {
+                for run in &paragraph.runs {
+                    if let Some(name) = &run.bookmark {
+                        context.bookmark_names.insert(name.clone());
+                        if run.note.is_some() {
+                            context.note_ref_target_names.insert(name.clone());
+                        }
+                    }
+                }
+            }
+            Block::Table(table) => {
+                for row in &table.rows {
+                    for cell in &row.cells {
+                        collect_render_model_field_reason_context(&cell.blocks, context);
+                    }
+                }
+            }
+            Block::Image(_) | Block::Chart(_) | Block::PageBreak | Block::SectionBreak(_) => {}
+        }
+    }
+}
+
+#[cfg(feature = "render")]
+fn render_model_unsupported_field_reason(
+    field: &Field,
+    context: &RenderModelFieldReasonContext,
+) -> Option<FieldEvaluationReason> {
+    #[cfg(feature = "docx")]
+    {
+        if !supports_render_model_field_evaluation(field) && field.kind == FieldKind::NoteRef {
+            return Some(note_ref_uncomputed_reason(
+                &field.instruction,
+                Some(&context.bookmark_names),
+                Some(&context.note_ref_target_names),
+            ));
+        }
+    }
+    #[cfg(not(feature = "docx"))]
+    let _ = context;
+    unsupported_field_reason(field)
 }
 
 fn count_nested_model_tables(

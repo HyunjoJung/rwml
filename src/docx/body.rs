@@ -1057,11 +1057,13 @@ fn read_paragraph(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Paragraph, Opt
     let mut runs: Vec<Run> = Vec::new();
     let mut pp = PPr::default();
     let mut complex_field = ComplexFieldTracker::default();
+    let mut bookmarks = Vec::new();
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
                 b"pPr" => pp = read_ppr(r),
                 b"r" => {
+                    let start = runs.len();
                     let next = read_run(
                         r,
                         ctx,
@@ -1072,18 +1074,32 @@ fn read_paragraph(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Paragraph, Opt
                     );
                     runs.extend(next);
                     complex_field.apply_pending(&mut runs);
+                    apply_active_bookmark(&mut runs, start, &bookmarks);
                 }
-                b"hyperlink" => runs.extend(read_hyperlink(r, &e, ctx, depth)),
-                b"fldSimple" => runs.extend(read_fldsimple(r, &e, ctx, depth)),
-                b"sdt" => append_content_control_runs_with_complex(
-                    r,
-                    ctx,
-                    None,
-                    depth + 1,
-                    &mut runs,
-                    &mut complex_field,
-                ),
+                b"hyperlink" => {
+                    let start = runs.len();
+                    runs.extend(read_hyperlink(r, &e, ctx, depth));
+                    apply_active_bookmark(&mut runs, start, &bookmarks);
+                }
+                b"fldSimple" => {
+                    let start = runs.len();
+                    runs.extend(read_fldsimple(r, &e, ctx, depth));
+                    apply_active_bookmark(&mut runs, start, &bookmarks);
+                }
+                b"sdt" => {
+                    let start = runs.len();
+                    append_content_control_runs_with_complex(
+                        r,
+                        ctx,
+                        None,
+                        depth + 1,
+                        &mut runs,
+                        &mut complex_field,
+                    );
+                    apply_active_bookmark(&mut runs, start, &bookmarks);
+                }
                 b"ins" | b"moveTo" | b"smartTag" | b"sdtContent" | b"bdo" | b"dir" => {
+                    let start = runs.len();
                     append_runs_container_with_complex(
                         r,
                         ctx,
@@ -1091,18 +1107,36 @@ fn read_paragraph(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Paragraph, Opt
                         depth + 1,
                         &mut runs,
                         &mut complex_field,
-                    )
+                    );
+                    apply_active_bookmark(&mut runs, start, &bookmarks);
                 }
-                b"AlternateContent" => append_alternate_content_runs_with_complex(
-                    r,
-                    ctx,
-                    None,
-                    depth + 1,
-                    &mut runs,
-                    &mut complex_field,
-                ),
+                b"AlternateContent" => {
+                    let start = runs.len();
+                    append_alternate_content_runs_with_complex(
+                        r,
+                        ctx,
+                        None,
+                        depth + 1,
+                        &mut runs,
+                        &mut complex_field,
+                    );
+                    apply_active_bookmark(&mut runs, start, &bookmarks);
+                }
+                b"bookmarkStart" => {
+                    push_active_bookmark(&mut bookmarks, &e);
+                    skip_subtree(r);
+                }
+                b"bookmarkEnd" => {
+                    remove_active_bookmark(&mut bookmarks, &e);
+                    skip_subtree(r);
+                }
                 // `w:del` = tracked deletion (removed text) → drop.
                 _ => skip_subtree(r),
+            },
+            Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
+                b"bookmarkStart" => push_active_bookmark(&mut bookmarks, &e),
+                b"bookmarkEnd" => remove_active_bookmark(&mut bookmarks, &e),
+                _ => {}
             },
             Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
             _ => {}
@@ -1110,6 +1144,39 @@ fn read_paragraph(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Paragraph, Opt
     }
     let section = pp.section.take();
     (finalize_paragraph(runs, pp, ctx), section)
+}
+
+fn push_active_bookmark(bookmarks: &mut Vec<(String, String)>, e: &BytesStart<'_>) {
+    let Some(id) = attr_local_trimmed(e, b"id") else {
+        return;
+    };
+    let Some(name) = attr_local_trimmed(e, b"name") else {
+        return;
+    };
+    bookmarks.push((id, name));
+}
+
+fn remove_active_bookmark(bookmarks: &mut Vec<(String, String)>, e: &BytesStart<'_>) {
+    let Some(id) = attr_local_trimmed(e, b"id") else {
+        return;
+    };
+    if let Some(index) = bookmarks
+        .iter()
+        .rposition(|(active_id, _)| active_id == &id)
+    {
+        bookmarks.remove(index);
+    }
+}
+
+fn apply_active_bookmark(runs: &mut [Run], start: usize, bookmarks: &[(String, String)]) {
+    let Some((_, name)) = bookmarks.last() else {
+        return;
+    };
+    for run in runs.iter_mut().skip(start) {
+        if run.bookmark.is_none() {
+            run.bookmark = Some(name.clone());
+        }
+    }
 }
 
 fn read_paragraph_blocks(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Vec<Block> {

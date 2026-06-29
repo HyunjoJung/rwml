@@ -12288,6 +12288,52 @@ fn docx_page_ref_no_cached_result_fields_are_not_model_render_warnings() {
     assert!(rendered.report.unsupported.field_kinds.is_empty());
 }
 
+#[cfg(feature = "render")]
+#[test]
+fn docx_ref_gap_model_render_report_matches_document_reason_buckets() {
+    let doc = Document::open(&ref_gap_docx()).expect("fixture opens");
+    let expected_reasons = doc.report().features.unsupported_field_reasons;
+    let model = doc.model();
+
+    let rendered = rdoc::render_pdf_with_report(&model);
+
+    assert_eq!(rendered.report.unsupported.fields, 3);
+    assert_eq!(
+        rendered.report.unsupported.field_kinds,
+        vec![rdoc::FieldKindCount {
+            kind: FieldKind::Ref,
+            count: 3,
+        }]
+    );
+    assert_eq!(
+        rendered.report.unsupported.unsupported_field_reasons,
+        expected_reasons
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn docx_note_ref_gap_model_render_report_matches_document_reason_buckets() {
+    let doc = Document::open(&note_ref_gap_docx()).expect("fixture opens");
+    let expected_reasons = doc.report().features.unsupported_field_reasons;
+    let model = doc.model();
+
+    let rendered = rdoc::render_pdf_with_report(&model);
+
+    assert_eq!(rendered.report.unsupported.fields, 3);
+    assert_eq!(
+        rendered.report.unsupported.field_kinds,
+        vec![rdoc::FieldKindCount {
+            kind: FieldKind::NoteRef,
+            count: 3,
+        }]
+    );
+    assert_eq!(
+        rendered.report.unsupported.unsupported_field_reasons,
+        expected_reasons
+    );
+}
+
 #[test]
 fn field_kind_reports_canonical_names() {
     assert_eq!(FieldKind::Hyperlink.as_str(), "HYPERLINK");
