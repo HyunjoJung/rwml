@@ -1613,6 +1613,28 @@ fn toc_general_format_switch_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn toc_custom_style_match_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style><w:style w:type="paragraph" w:styleId="CustomCallout"><w:name w:val="CustomHeading"/></w:style><w:style w:type="paragraph" w:styleId="CustomSpaced"><w:name w:val="Custom Heading"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Executive Summary</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="CustomCallout"/></w:pPr><w:r><w:t>Custom Finding</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="CustomSpaced"/></w:pPr><w:r><w:t>Spaced Custom Finding</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" TOC \o &quot;1-1&quot; \t &quot;CustomHeading,2&quot; "><w:r><w:t>stale custom toc</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TOC \o &quot;1-1&quot; \t &quot;Custom Heading,2&quot; "><w:r><w:t>stale spaced custom toc</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn toc_quoted_custom_style_no_result_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -4617,6 +4639,32 @@ fn report_toc_field_with_quoted_custom_style_switch_reports_no_computed_result()
         json.contains(r#""unsupported_field_reasons":[{"reason":"NoComputedResult","count":2},{"reason":"UnsupportedSwitch","count":2}]"#),
         "{json}"
     );
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_toc_field_warning_ignores_matched_custom_style_tocs() {
+    let doc = Document::open(&toc_custom_style_match_diagnostics_docx()).expect("fixture opens");
+    let report = doc.report();
+
+    assert_eq!(report.features.fields, 2);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Toc,
+            count: 2,
+        }]
+    );
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+    assert!(report
+        .warnings
+        .iter()
+        .all(|warning| !matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })));
+
+    let json = report.to_json();
+    assert!(json.contains(r#""unsupported_field_kinds":[]"#), "{json}");
+    assert!(json.contains(r#""unsupported_field_reasons":[]"#), "{json}");
 }
 
 #[cfg(feature = "docx")]
