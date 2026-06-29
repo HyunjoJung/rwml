@@ -1,0 +1,476 @@
+use super::*;
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct NoteRefContext {
+    pub(crate) targets: HashMap<String, NoteRefTarget>,
+    field_positions: Vec<NoteRefFieldPosition>,
+    ref_field_positions: Vec<NoteRefFieldPosition>,
+    markers: Vec<NoteRefMarker>,
+    generated_ref_note_fields: Vec<NoteRefGeneratedField>,
+}
+
+impl NoteRefContext {
+    pub(crate) fn empty() -> Self {
+        Self::default()
+    }
+
+    pub(super) fn target(&self, name: &str) -> Option<NoteRefTarget> {
+        self.targets.get(name).copied()
+    }
+
+    pub(crate) fn field_position(&self, index: usize) -> Option<NoteRefFieldPosition> {
+        self.field_positions.get(index).copied()
+    }
+
+    pub(crate) fn ref_field_position(&self, index: usize) -> Option<NoteRefFieldPosition> {
+        self.ref_field_positions.get(index).copied()
+    }
+
+    pub(super) fn ref_note_number(
+        &self,
+        name: &str,
+        field_position: Option<NoteRefFieldPosition>,
+    ) -> Option<usize> {
+        let target = self.target(name)?;
+        let field = field_position?;
+        let actual_before = self
+            .markers
+            .iter()
+            .filter(|marker| marker.kind == target.kind && marker.order < field.order)
+            .count();
+        let generated_before = self
+            .generated_ref_note_fields
+            .iter()
+            .filter(|generated| generated.order < field.order)
+            .filter_map(|generated| self.target(&generated.target))
+            .filter(|generated_target| generated_target.kind == target.kind)
+            .count();
+        Some(actual_before + generated_before + 1)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct NoteRefTarget {
+    kind: NoteRefKind,
+    number: usize,
+    start: usize,
+    end: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NoteRefKind {
+    Footnote,
+    Endnote,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct NoteRefMarker {
+    kind: NoteRefKind,
+    order: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct NoteRefGeneratedField {
+    target: String,
+    order: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct NoteRefFieldPosition {
+    order: usize,
+}
+
+#[derive(Debug, Clone)]
+struct NoteRefScanField {
+    instruction: String,
+    phase: FieldPhase,
+}
+
+#[derive(Debug, Clone)]
+struct NoteRefActiveBookmark {
+    id: String,
+    name: String,
+    start: usize,
+}
+
+pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
+    let mut r = Reader::from_str(xml);
+    let mut targets = HashMap::new();
+    let mut field_positions = Vec::new();
+    let mut ref_field_positions = Vec::new();
+    let mut markers = Vec::new();
+    let mut generated_ref_note_fields = Vec::new();
+    let mut active_bookmarks: Vec<NoteRefActiveBookmark> = Vec::new();
+    let mut source_order = 0usize;
+    let mut footnote_number = 0usize;
+    let mut endnote_number = 0usize;
+    let mut current: Option<NoteRefScanField> = None;
+    let mut xml_depth = 0usize;
+    let mut alternate_content_stack = Vec::new();
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    skip_subtree(&mut r);
+                    continue;
+                }
+                match name {
+                    b"del" | b"moveFrom" => {
+                        skip_subtree(&mut r);
+                        continue;
+                    }
+                    b"AlternateContent" => {
+                        alternate_content_stack.push(AlternateContentBranchState {
+                            branch_depth: xml_depth + 1,
+                            took_branch: false,
+                        });
+                    }
+                    b"fldSimple" => record_note_ref_scan_field_position(
+                        attr_local(&e, b"instr").as_deref(),
+                        &mut source_order,
+                        &mut field_positions,
+                        &mut ref_field_positions,
+                        &mut generated_ref_note_fields,
+                    ),
+                    b"fldChar" => apply_note_ref_scan_fld_char(
+                        &e,
+                        &mut source_order,
+                        &mut current,
+                        &mut field_positions,
+                        &mut ref_field_positions,
+                        &mut generated_ref_note_fields,
+                    ),
+                    b"instrText" => {
+                        let text = read_text(&mut r);
+                        if let Some(field) = current.as_mut() {
+                            if field.phase == FieldPhase::Instruction {
+                                field.instruction.push_str(&text);
+                            }
+                        }
+                        continue;
+                    }
+                    b"bookmarkStart" => {
+                        if let Some((id, name)) = bookmark_start(&e) {
+                            active_bookmarks.push(NoteRefActiveBookmark {
+                                id,
+                                name,
+                                start: source_order,
+                            });
+                            source_order += 1;
+                        }
+                    }
+                    b"bookmarkEnd" => {
+                        close_note_ref_bookmark(
+                            bookmark_end_id(&e).as_deref(),
+                            source_order,
+                            &mut active_bookmarks,
+                            &mut targets,
+                        );
+                        source_order += 1;
+                    }
+                    b"footnoteReference" => {
+                        footnote_number += 1;
+                        markers.push(NoteRefMarker {
+                            kind: NoteRefKind::Footnote,
+                            order: source_order,
+                        });
+                        record_note_ref_target(
+                            &active_bookmarks,
+                            NoteRefKind::Footnote,
+                            footnote_number,
+                            source_order,
+                            &mut targets,
+                        );
+                        source_order += 1;
+                        skip_subtree(&mut r);
+                        continue;
+                    }
+                    b"endnoteReference" => {
+                        endnote_number += 1;
+                        markers.push(NoteRefMarker {
+                            kind: NoteRefKind::Endnote,
+                            order: source_order,
+                        });
+                        record_note_ref_target(
+                            &active_bookmarks,
+                            NoteRefKind::Endnote,
+                            endnote_number,
+                            source_order,
+                            &mut targets,
+                        );
+                        source_order += 1;
+                        skip_subtree(&mut r);
+                        continue;
+                    }
+                    b"t" => {
+                        if !read_text(&mut r).is_empty() {
+                            source_order += 1;
+                        }
+                        continue;
+                    }
+                    b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"softHyphen" | b"drawing"
+                    | b"pict" | b"object" => {
+                        source_order += 1;
+                    }
+                    _ => {}
+                }
+                xml_depth = xml_depth.saturating_add(1);
+            }
+            Ok(Event::Empty(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    continue;
+                }
+                match name {
+                    b"fldSimple" => record_note_ref_scan_field_position(
+                        attr_local(&e, b"instr").as_deref(),
+                        &mut source_order,
+                        &mut field_positions,
+                        &mut ref_field_positions,
+                        &mut generated_ref_note_fields,
+                    ),
+                    b"fldChar" => apply_note_ref_scan_fld_char(
+                        &e,
+                        &mut source_order,
+                        &mut current,
+                        &mut field_positions,
+                        &mut ref_field_positions,
+                        &mut generated_ref_note_fields,
+                    ),
+                    b"bookmarkStart" => {
+                        if let Some((id, name)) = bookmark_start(&e) {
+                            active_bookmarks.push(NoteRefActiveBookmark {
+                                id,
+                                name,
+                                start: source_order,
+                            });
+                            source_order += 1;
+                        }
+                    }
+                    b"bookmarkEnd" => {
+                        close_note_ref_bookmark(
+                            bookmark_end_id(&e).as_deref(),
+                            source_order,
+                            &mut active_bookmarks,
+                            &mut targets,
+                        );
+                        source_order += 1;
+                    }
+                    b"footnoteReference" => {
+                        footnote_number += 1;
+                        markers.push(NoteRefMarker {
+                            kind: NoteRefKind::Footnote,
+                            order: source_order,
+                        });
+                        record_note_ref_target(
+                            &active_bookmarks,
+                            NoteRefKind::Footnote,
+                            footnote_number,
+                            source_order,
+                            &mut targets,
+                        );
+                        source_order += 1;
+                    }
+                    b"endnoteReference" => {
+                        endnote_number += 1;
+                        markers.push(NoteRefMarker {
+                            kind: NoteRefKind::Endnote,
+                            order: source_order,
+                        });
+                        record_note_ref_target(
+                            &active_bookmarks,
+                            NoteRefKind::Endnote,
+                            endnote_number,
+                            source_order,
+                            &mut targets,
+                        );
+                        source_order += 1;
+                    }
+                    b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"softHyphen" | b"drawing"
+                    | b"pict" | b"object" => {
+                        source_order += 1;
+                    }
+                    _ => {}
+                }
+            }
+            Ok(Event::End(e)) => {
+                if local(e.name().as_ref()) == b"AlternateContent" {
+                    alternate_content_stack.pop();
+                }
+                xml_depth = xml_depth.saturating_sub(1);
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    NoteRefContext {
+        targets,
+        field_positions,
+        ref_field_positions,
+        markers,
+        generated_ref_note_fields,
+    }
+}
+
+pub(crate) fn note_ref_target_names(xml: &str) -> HashSet<String> {
+    note_ref_context(xml).targets.into_keys().collect()
+}
+
+fn record_note_ref_target(
+    active_bookmarks: &[NoteRefActiveBookmark],
+    kind: NoteRefKind,
+    number: usize,
+    order: usize,
+    targets: &mut HashMap<String, NoteRefTarget>,
+) {
+    for bookmark in active_bookmarks {
+        targets
+            .entry(bookmark.name.clone())
+            .or_insert(NoteRefTarget {
+                kind,
+                number,
+                start: bookmark.start,
+                end: order,
+            });
+    }
+}
+
+fn close_note_ref_bookmark(
+    id: Option<&str>,
+    end: usize,
+    active_bookmarks: &mut Vec<NoteRefActiveBookmark>,
+    targets: &mut HashMap<String, NoteRefTarget>,
+) {
+    let Some(id) = id else {
+        return;
+    };
+    if let Some(index) = active_bookmarks
+        .iter()
+        .position(|bookmark| bookmark.id == id)
+    {
+        let bookmark = active_bookmarks.remove(index);
+        if let Some(target) = targets.get_mut(&bookmark.name) {
+            if target.start == bookmark.start {
+                target.end = end;
+            }
+        }
+    }
+}
+
+fn record_note_ref_scan_field_position(
+    instruction: Option<&str>,
+    source_order: &mut usize,
+    field_positions: &mut Vec<NoteRefFieldPosition>,
+    ref_field_positions: &mut Vec<NoteRefFieldPosition>,
+    generated_ref_note_fields: &mut Vec<NoteRefGeneratedField>,
+) {
+    let Some(instruction) = instruction.map(normalize_instruction) else {
+        return;
+    };
+    let mut recorded = false;
+    if field_kind(&instruction) == FieldKind::NoteRef {
+        field_positions.push(NoteRefFieldPosition {
+            order: *source_order,
+        });
+        recorded = true;
+    }
+    if is_ref_position_field_instruction(&instruction) {
+        ref_field_positions.push(NoteRefFieldPosition {
+            order: *source_order,
+        });
+        if let Some(target) = ref_note_field_target(&instruction) {
+            generated_ref_note_fields.push(NoteRefGeneratedField {
+                target,
+                order: *source_order,
+            });
+        }
+        recorded = true;
+    }
+    if recorded {
+        *source_order += 1;
+    }
+}
+
+fn apply_note_ref_scan_fld_char(
+    e: &BytesStart<'_>,
+    source_order: &mut usize,
+    current: &mut Option<NoteRefScanField>,
+    field_positions: &mut Vec<NoteRefFieldPosition>,
+    ref_field_positions: &mut Vec<NoteRefFieldPosition>,
+    generated_ref_note_fields: &mut Vec<NoteRefGeneratedField>,
+) {
+    match field_char_type(e).as_deref() {
+        Some("begin") => {
+            *current = Some(NoteRefScanField {
+                instruction: String::new(),
+                phase: FieldPhase::Instruction,
+            });
+        }
+        Some("separate") => {
+            if let Some(field) = current.as_mut() {
+                field.phase = FieldPhase::Result;
+            }
+        }
+        Some("end") => {
+            if let Some(field) = current.take() {
+                record_note_ref_scan_field_position(
+                    Some(&field.instruction),
+                    source_order,
+                    field_positions,
+                    ref_field_positions,
+                    generated_ref_note_fields,
+                );
+            }
+        }
+        _ => {}
+    }
+}
+
+pub(crate) fn computed_note_ref_result(
+    instruction: &str,
+    note_refs: &NoteRefContext,
+    field_position: Option<NoteRefFieldPosition>,
+) -> Option<String> {
+    let spec = note_ref_instruction(instruction)?;
+    let target = note_refs.target(&spec.target)?;
+    let text = if spec.relative {
+        computed_relative_note_ref_result(target, field_position)?
+    } else {
+        format_page_number(target.number, spec.number_format)?
+    };
+    Some(apply_field_text_format(text, spec.text_format))
+}
+
+fn computed_relative_note_ref_result(
+    target: NoteRefTarget,
+    field_position: Option<NoteRefFieldPosition>,
+) -> Option<String> {
+    let field = field_position?;
+    if field.order < target.start {
+        return Some("below".to_string());
+    }
+    (field.order > target.end).then(|| "above".to_string())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct NoteRefInstruction {
+    target: String,
+    number_format: Option<PageNumberFormat>,
+    text_format: Option<FieldTextFormat>,
+    relative: bool,
+}
+
+pub(super) fn note_ref_instruction(instruction: &str) -> Option<NoteRefInstruction> {
+    let syntax = note_ref_field_syntax(instruction)?;
+    Some(NoteRefInstruction {
+        target: syntax.target,
+        number_format: syntax
+            .number_format
+            .map(page_number_format_from_field_format),
+        text_format: syntax.text_format,
+        relative: syntax.relative,
+    })
+}
