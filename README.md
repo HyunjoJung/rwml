@@ -301,7 +301,7 @@ cargo run --features render --bin rdoc -- to-pdf file.docx out.pdf --report-json
 cargo run --example report   -- report.docx            # author a styled report
 cargo run --features render --example to_pdf -- file.docx out.pdf
 cargo run --features render --example to_pdf -- file.docx out.pdf --report-json render.json
-python scripts/render_validate.py --json --min-mean-recall 0.90 --max-skipped 0 corpus/*.docx
+python scripts/render_validate.py --json --min-mean-recall 0.90 --max-skipped 0 corpus/*.docx > render.json
 python scripts/bench_vs_mature.py --corpus "$RDOC_BENCH_CORPUS" --json \
   --version 0.1.0 --git-rev "$(git rev-parse HEAD)" \
   --min-poi-recall-mean 0.95 --min-poi-f1-mean 0.95 --max-errors 0 \

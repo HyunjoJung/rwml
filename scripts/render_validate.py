@@ -21,7 +21,7 @@ pymupdf`), Pillow, and either a local `soffice` or the `lo-cli` Docker image.
   python scripts/render_validate.py corpus/*.docx
   python scripts/render_validate.py --soffice docker corpus/*.doc
   python scripts/render_validate.py --json corpus/*.docx > render-report.json
-  python scripts/render_validate.py --json --min-mean-recall 0.90 --max-skipped 0 corpus/*.docx
+  python scripts/render_validate.py --json --min-mean-recall 0.90 --max-skipped 0 corpus/*.docx > render-report.json
 """
 
 from __future__ import annotations
