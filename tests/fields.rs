@@ -12499,6 +12499,42 @@ fn docx_ref_existing_target_numeric_gap_model_render_report_matches_document_rea
 
 #[cfg(feature = "render")]
 #[test]
+fn docx_direct_bookmark_ref_gap_model_render_report_matches_document_reason_buckets() {
+    let doc = Document::open(&direct_bookmark_ref_switch_field_docx()).expect("fixture opens");
+    let expected_reasons = doc.report().features.unsupported_field_reasons;
+    assert_eq!(
+        expected_reasons,
+        vec![
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::NoComputedResult,
+                count: 1,
+            },
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::UnsupportedSwitch,
+                count: 1,
+            },
+        ]
+    );
+    let model = doc.model();
+
+    let rendered = rdoc::render_pdf_with_report(&model);
+
+    assert_eq!(rendered.report.unsupported.fields, 2);
+    assert_eq!(
+        rendered.report.unsupported.field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Ref,
+            count: 2,
+        }]
+    );
+    assert_eq!(
+        rendered.report.unsupported.unsupported_field_reasons,
+        expected_reasons
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
 fn docx_note_ref_gap_model_render_report_matches_document_reason_buckets() {
     let doc = Document::open(&note_ref_gap_docx()).expect("fixture opens");
     let expected_reasons = doc.report().features.unsupported_field_reasons;

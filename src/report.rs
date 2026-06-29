@@ -692,7 +692,8 @@ fn supports_render_model_field_evaluation(field: &Field) -> bool {
 
 pub(crate) fn fields_for_model(blocks: &[Block]) -> Vec<Field> {
     let mut fields = Vec::new();
-    collect_model_fields(blocks, &mut fields);
+    let bookmark_names = model_bookmark_names(blocks);
+    collect_model_fields(blocks, &bookmark_names, &mut fields);
     fields
 }
 
@@ -849,13 +850,13 @@ fn count_nested_model_tables(
     }
 }
 
-fn collect_model_fields(blocks: &[Block], out: &mut Vec<Field>) {
+fn collect_model_fields(blocks: &[Block], bookmark_names: &HashSet<String>, out: &mut Vec<Field>) {
     for block in blocks {
         match block {
             Block::Paragraph(paragraph) => {
                 let mut current: Option<Field> = None;
                 for run in &paragraph.runs {
-                    let field = field_from_role(&run.field, &run.text);
+                    let field = field_from_role(&run.field, &run.text, bookmark_names);
                     match field {
                         Some(field) => {
                             if let Some(active) = &mut current {
@@ -880,29 +881,38 @@ fn collect_model_fields(blocks: &[Block], out: &mut Vec<Field>) {
                     out.push(done);
                 }
             }
-            Block::Table(table) => collect_model_table_fields(table, out),
+            Block::Table(table) => collect_model_table_fields(table, bookmark_names, out),
             Block::Image(_) | Block::Chart(_) | Block::PageBreak | Block::SectionBreak(_) => {}
         }
     }
 }
 
-fn collect_model_table_fields(table: &Table, out: &mut Vec<Field>) {
+fn collect_model_table_fields(
+    table: &Table,
+    bookmark_names: &HashSet<String>,
+    out: &mut Vec<Field>,
+) {
     for row in &table.rows {
         for cell in &row.cells {
-            collect_model_fields(&cell.blocks, out);
+            collect_model_fields(&cell.blocks, bookmark_names, out);
         }
     }
 }
 
-fn field_from_role(role: &FieldRole, result: &str) -> Option<Field> {
+fn field_from_role(
+    role: &FieldRole,
+    result: &str,
+    bookmark_names: &HashSet<String>,
+) -> Option<Field> {
     match role {
         FieldRole::Simple { instruction } => {
             let instruction = normalize_model_field_instruction(instruction);
             if instruction.is_empty() {
                 None
             } else {
+                let kind = model_field_kind(&instruction, bookmark_names);
                 Some(Field {
-                    kind: FieldKind::from_instruction(&instruction),
+                    kind,
                     instruction,
                     result: result.to_string(),
                     computed_result: None,
@@ -916,6 +926,46 @@ fn field_from_role(role: &FieldRole, result: &str) -> Option<Field> {
             computed_result: None,
         }),
         FieldRole::None | FieldRole::Other => None,
+    }
+}
+
+fn model_field_kind(instruction: &str, bookmark_names: &HashSet<String>) -> FieldKind {
+    let kind = FieldKind::from_instruction(instruction);
+    if matches!(kind, FieldKind::Unknown(_))
+        && direct_ref_field_syntax(instruction)
+            .is_some_and(|syntax| bookmark_names.contains(&syntax.target))
+    {
+        FieldKind::Ref
+    } else {
+        kind
+    }
+}
+
+fn model_bookmark_names(blocks: &[Block]) -> HashSet<String> {
+    let mut names = HashSet::new();
+    collect_model_bookmark_names(blocks, &mut names);
+    names
+}
+
+fn collect_model_bookmark_names(blocks: &[Block], names: &mut HashSet<String>) {
+    for block in blocks {
+        match block {
+            Block::Paragraph(paragraph) => {
+                for run in &paragraph.runs {
+                    if let Some(name) = &run.bookmark {
+                        names.insert(name.clone());
+                    }
+                }
+            }
+            Block::Table(table) => {
+                for row in &table.rows {
+                    for cell in &row.cells {
+                        collect_model_bookmark_names(&cell.blocks, names);
+                    }
+                }
+            }
+            Block::Image(_) | Block::Chart(_) | Block::PageBreak | Block::SectionBreak(_) => {}
+        }
     }
 }
 
