@@ -1407,7 +1407,7 @@ fn read_ppr_item(pp: &mut PPr, e: &BytesStart<'_>, num_id: &mut Option<String>, 
             pp.spacing.after_pt = attr_local(e, b"after").and_then(|v| twips_to_pt(&v));
             // `w:line` is 240ths of a line when lineRule is auto/absent.
             let exact = matches!(
-                attr_local(e, b"lineRule").as_deref().map(str::trim),
+                attr_local_trimmed(e, b"lineRule").as_deref(),
                 Some("exact") | Some("atLeast")
             );
             if !exact {
