@@ -2020,6 +2020,32 @@ fn note_ref_number_format_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn note_ref_alternate_content_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="wps"><w:body><mc:AlternateContent><mc:Choice Requires="wps"><w:p/></mc:Choice><mc:Fallback><w:p><w:r><w:bookmarkStart w:id="50" w:name="FallbackNote"/><w:footnoteReference w:id="50"/><w:bookmarkEnd w:id="50"/></w:r></w:p></mc:Fallback></mc:AlternateContent><w:p><w:r><w:t>Target note</w:t></w:r><w:bookmarkStart w:id="7" w:name="FootOne"/><w:r><w:footnoteReference w:id="1"/></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" NOTEREF FootOne "><w:r><w:t>stale alternate note</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NOTEREF FootOne \p "><w:r><w:t>stale alternate relative</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:footnote><w:footnote w:id="1"><w:p><w:r><w:t>First footnote.</w:t></w:r></w:p></w:footnote><w:footnote w:id="50"><w:p><w:r><w:t>Fallback footnote.</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn note_ref_gap_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -7448,6 +7474,48 @@ fn report_note_ref_number_format_switches_are_supported() {
         .warnings
         .iter()
         .all(|warning| !matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })));
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_note_ref_alternate_content_uses_single_branch() {
+    let doc =
+        Document::open(&note_ref_alternate_content_diagnostics_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert!(fields.iter().all(|field| field.kind == FieldKind::NoteRef));
+    assert_eq!(fields[0].instruction, "NOTEREF FootOne");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("1"));
+    assert_eq!(fields[1].instruction, "NOTEREF FootOne \\p");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("above"));
+
+    let report = doc.report();
+    assert_eq!(report.features.fields, 2);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![field_kind_count(FieldKind::NoteRef, 2)]
+    );
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+    assert!(
+        report
+            .warnings
+            .iter()
+            .all(|warning| !matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })),
+        "{:?}",
+        report.warnings
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("1") && main_text.contains("above"),
+        "accepted NOTEREF fields should be materialized in report fixtures: {main_text:?}"
+    );
+    assert!(
+        !main_text.contains("stale alternate"),
+        "NOTEREF AlternateContent diagnostics should use computed text: {main_text:?}"
+    );
 }
 
 #[cfg(feature = "docx")]
