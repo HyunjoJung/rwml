@@ -6069,7 +6069,7 @@ impl<'a> FormulaParser<'a> {
                 Some(value)
             }
             ch if ch.is_ascii_digit() || ch == '.' => self.parse_number(),
-            ch if ch.is_ascii_alphabetic() => self.parse_function(),
+            ch if is_formula_identifier_start(ch) => self.parse_function(),
             _ => None,
         }
     }
@@ -6194,10 +6194,14 @@ impl<'a> FormulaParser<'a> {
 
     fn parse_identifier(&mut self) -> Option<String> {
         let start = self.pos;
-        while self.peek().is_some_and(|ch| ch.is_ascii_alphabetic()) {
+        if !self.peek().is_some_and(is_formula_identifier_start) {
+            return None;
+        }
+        self.pos += 1;
+        while self.peek().is_some_and(is_formula_identifier_continue) {
             self.pos += 1;
         }
-        (self.pos > start).then(|| self.chars[start..self.pos].iter().collect())
+        Some(self.chars[start..self.pos].iter().collect())
     }
 
     fn parse_function_arguments(&mut self) -> Option<Vec<f64>> {
@@ -6250,6 +6254,14 @@ impl<'a> FormulaParser<'a> {
             .ok()
             .filter(|value| value.is_finite())
     }
+}
+
+fn is_formula_identifier_start(ch: char) -> bool {
+    ch.is_ascii_alphabetic() || ch == '_'
+}
+
+fn is_formula_identifier_continue(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || ch == '_'
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

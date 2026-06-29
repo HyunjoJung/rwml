@@ -372,6 +372,23 @@ fn set_backed_formula_docx() -> Vec<u8> {
     ])
 }
 
+fn set_backed_formula_identifier_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SET Client_Total_2026 42 "><w:r><w:t>cached named set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = Client_Total_2026 + 8 "><w:r><w:t>stale named formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SET _HiddenTotal9 7 "><w:r><w:t>cached hidden set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = _HiddenTotal9 * 2 "><w:r><w:t>stale hidden formula</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn if_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -4068,6 +4085,37 @@ fn docx_formula_fields_resolve_prior_numeric_set_bookmark_operands() {
             && main_text.contains("cached text formula")
             && !main_text.contains("stale set formula"),
         "computed SET-backed formula text should replace stale cached text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_formula_fields_resolve_bookmark_style_identifier_operands() {
+    let doc = Document::open(&set_backed_formula_identifier_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 4);
+    assert_eq!(fields[0].kind, FieldKind::Dynamic("SET".to_string()));
+    assert_eq!(fields[0].instruction, "SET Client_Total_2026 42");
+    assert_eq!(fields[0].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[1].kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(fields[1].instruction, "= Client_Total_2026 + 8");
+    assert_eq!(fields[1].result, "stale named formula");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("50"));
+    assert_eq!(fields[2].kind, FieldKind::Dynamic("SET".to_string()));
+    assert_eq!(fields[2].instruction, "SET _HiddenTotal9 7");
+    assert_eq!(fields[2].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[3].kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(fields[3].instruction, "= _HiddenTotal9 * 2");
+    assert_eq!(fields[3].result, "stale hidden formula");
+    assert_eq!(fields[3].computed_result.as_deref(), Some("14"));
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("50")
+            && main_text.contains("14")
+            && !main_text.contains("stale named formula")
+            && !main_text.contains("stale hidden formula"),
+        "computed bookmark-style formula identifiers should replace stale cached text: {main_text:?}"
     );
 }
 
