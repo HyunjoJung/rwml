@@ -733,6 +733,24 @@ fn inserted_content_field_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn mail_merge_helper_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" ADDRESSBLOCK "><w:r><w:t>Acme Corp</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" GREETINGLINE &quot;Dear "><w:r><w:t>cached malformed greeting</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn compatibility_field_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -4196,6 +4214,59 @@ fn report_inserted_content_fields_split_cached_and_malformed_diagnostics() {
     );
     assert!(
         main_text.contains("cached bad include format"),
+        "{main_text:?}"
+    );
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_mail_merge_helpers_split_cached_and_malformed_diagnostics() {
+    let doc = Document::open(&mail_merge_helper_diagnostics_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(
+        fields[0].kind,
+        FieldKind::MailMerge("ADDRESSBLOCK".to_string())
+    );
+    assert_eq!(fields[0].instruction, "ADDRESSBLOCK");
+    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(
+        fields[1].kind,
+        FieldKind::MailMerge("GREETINGLINE".to_string())
+    );
+    assert_eq!(fields[1].instruction, r#"GREETINGLINE "Dear "#);
+    assert_eq!(fields[1].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(report.features.fields, 2);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![
+            field_kind_count(FieldKind::MailMerge("ADDRESSBLOCK".to_string()), 1),
+            field_kind_count(FieldKind::MailMerge("GREETINGLINE".to_string()), 1),
+        ]
+    );
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        report.features.field_kinds
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![
+            field_reason_count(FieldEvaluationReason::NoComputedResult, 1),
+            field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 1),
+        ]
+    );
+    assert!(report
+        .warnings
+        .iter()
+        .any(|warning| matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })));
+
+    let main_text = doc.main_text();
+    assert!(main_text.contains("Acme Corp"), "{main_text:?}");
+    assert!(
+        main_text.contains("cached malformed greeting"),
         "{main_text:?}"
     );
 }
