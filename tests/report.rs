@@ -893,6 +893,24 @@ fn formula_table_general_number_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn formula_table_cell_reference_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>3</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>4</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>5</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>6</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>7</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:fldSimple w:instr=" = SUM(A1:B2) "><w:r><w:t>stale a1 range</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = PRODUCT(R1C2:R2C3) "><w:r><w:t>stale rncn range</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(A1,C2) "><w:r><w:t>stale a1 list</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl><w:tbl><w:tr><w:tc><w:p><w:r><w:t>1</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>3</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>4</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(R) "><w:r><w:t>stale current row</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:r><w:t>6</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>7</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>8</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>9</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:tbl><w:tr><w:tc><w:p><w:r><w:t>1</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>3</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>4</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(C) "><w:r><w:t>stale current column</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:r><w:t>6</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>7</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>8</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>9</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:tbl><w:tr><w:tc><w:p><w:r><w:t>1</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>3</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>4</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>5</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>6</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>7</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(R2C1:R2C3) "><w:r><w:t>stale explicit row range</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(R1C1:R3C1) "><w:r><w:t>stale explicit column range</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl><w:tbl><w:tr><w:tc><w:p><w:r><w:t>1</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>3</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:fldSimple w:instr=" = SUM(A1,B1;C1) "><w:r><w:t>cached mixed cell separators</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn formula_table_direct_cell_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -4192,6 +4210,55 @@ fn report_formula_table_general_number_fields_are_supported() {
             .warnings
             .iter()
             .all(|warning| !matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })),
+        "{:?}",
+        report.warnings
+    );
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_formula_table_cell_reference_fields_split_supported_and_malformed_diagnostics() {
+    let doc =
+        Document::open(&formula_table_cell_reference_diagnostics_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 8);
+    assert!(fields
+        .iter()
+        .all(|field| field.kind == FieldKind::Dynamic("=".to_string())));
+    assert_eq!(fields[0].computed_result.as_deref(), Some("16"));
+    assert_eq!(fields[1].computed_result.as_deref(), Some("504"));
+    assert_eq!(fields[2].computed_result.as_deref(), Some("9"));
+    assert_eq!(fields[3].computed_result.as_deref(), Some("10"));
+    assert_eq!(fields[4].computed_result.as_deref(), Some("10"));
+    assert_eq!(fields[5].computed_result.as_deref(), Some("15"));
+    assert_eq!(fields[6].computed_result.as_deref(), Some("12"));
+    assert_eq!(fields[7].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(report.features.fields, 8);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![field_kind_count(FieldKind::Dynamic("=".to_string()), 8)]
+    );
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![field_kind_count(FieldKind::Dynamic("=".to_string()), 1)]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![field_reason_count(
+            FieldEvaluationReason::NoComputedResult,
+            1
+        )]
+    );
+    assert_eq!(
+        report
+            .warnings
+            .iter()
+            .filter(|warning| matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. }))
+            .count(),
+        1,
         "{:?}",
         report.warnings
     );
