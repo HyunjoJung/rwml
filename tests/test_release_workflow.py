@@ -18,6 +18,11 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("python3 scripts/public_hygiene_audit.py --json", text)
         self.assertIn("cargo fmt --all -- --check", text)
         self.assertIn("cargo clippy --all-targets -- -D warnings", text)
+        self.assertIn(
+            "cargo clippy --all-targets --all-features -- -D warnings", text
+        )
+        self.assertIn("cargo test --doc --all-features", text)
+        self.assertIn("cargo doc --no-deps --all-features", text)
         self.assertIn("scripts/release_manifest.py", text)
         self.assertIn("--git-rev \"$GITHUB_SHA\"", text)
         self.assertIn("--release-policy public-release", text)
