@@ -1685,6 +1685,10 @@ pub(crate) fn attr_u16(e: &BytesStart<'_>, key: &[u8]) -> Option<u16> {
     attr_local(e, key)?.trim().parse().ok()
 }
 
+pub(crate) fn attr_f32(e: &BytesStart<'_>, key: &[u8]) -> Option<f32> {
+    attr_local(e, key)?.trim().parse().ok()
+}
+
 pub(crate) fn attr_u32(e: &BytesStart<'_>, key: &[u8]) -> Option<u32> {
     attr_local(e, key)?.trim().parse().ok()
 }

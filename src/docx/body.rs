@@ -20,7 +20,7 @@ use super::parse_rgb_hex_color;
 use super::styles::Styles;
 use super::xml_text::{read_text, skip_subtree};
 use super::{
-    attr_local, attr_local_trimmed, attr_u16, attr_u32, attr_u8, field_char_type,
+    attr_f32, attr_local, attr_local_trimmed, attr_u16, attr_u32, attr_u8, field_char_type,
     is_page_break_type, local, toggle_on,
 };
 use crate::annotation::{normalized_field_instruction, FieldKind};
@@ -1444,9 +1444,7 @@ fn read_ppr_item(pp: &mut PPr, e: &BytesStart<'_>, num_id: &mut Option<String>, 
                 Some("exact") | Some("atLeast")
             );
             if !exact {
-                pp.spacing.line_pct = attr_local(e, b"line")
-                    .and_then(|v| v.trim().parse::<f32>().ok())
-                    .map(|l| l / 240.0);
+                pp.spacing.line_pct = attr_f32(e, b"line").map(|l| l / 240.0);
             }
         }
         b"ind" => {
@@ -2377,9 +2375,7 @@ fn read_tblpr(r: &mut Xml<'_>) -> TableProps {
                 if local(e.name().as_ref()) == b"tblW"
                     && attr_local_trimmed(&e, b"type").is_some_and(|value| value == "pct") =>
             {
-                props.width_pct = attr_local(&e, b"w")
-                    .and_then(|v| v.trim().parse::<f32>().ok())
-                    .map(|p| p / 5000.0);
+                props.width_pct = attr_f32(&e, b"w").map(|p| p / 5000.0);
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"tblLayout" =>
@@ -2667,9 +2663,7 @@ fn apply_tcpr_child(t: &mut TcPr, e: &BytesStart<'_>) {
         // `type="pct"` w:w is in fiftieths of a percent (5000 = 100%);
         // `dxa` (twips) is absolute and left as auto here.
         b"tcW" if attr_local_trimmed(e, b"type").is_some_and(|value| value == "pct") => {
-            t.width_pct = attr_local(e, b"w")
-                .and_then(|v| v.trim().parse::<f32>().ok())
-                .map(|p| p / 5000.0);
+            t.width_pct = attr_f32(e, b"w").map(|p| p / 5000.0);
         }
         _ => {}
     }
