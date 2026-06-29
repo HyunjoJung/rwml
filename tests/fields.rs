@@ -12314,6 +12314,29 @@ fn docx_page_ref_no_cached_result_fields_are_not_model_render_warnings() {
 
 #[cfg(feature = "render")]
 #[test]
+fn docx_page_ref_gap_model_render_report_matches_document_reason_buckets() {
+    let doc = Document::open(&page_ref_gap_docx()).expect("fixture opens");
+    let expected_reasons = doc.report().features.unsupported_field_reasons;
+    let model = doc.model();
+
+    let rendered = rdoc::render_pdf_with_report(&model);
+
+    assert_eq!(rendered.report.unsupported.fields, 2);
+    assert_eq!(
+        rendered.report.unsupported.field_kinds,
+        vec![rdoc::FieldKindCount {
+            kind: FieldKind::PageRef,
+            count: 2,
+        }]
+    );
+    assert_eq!(
+        rendered.report.unsupported.unsupported_field_reasons,
+        expected_reasons
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
 fn docx_ref_gap_model_render_report_matches_document_reason_buckets() {
     let doc = Document::open(&ref_gap_docx()).expect("fixture opens");
     let expected_reasons = doc.report().features.unsupported_field_reasons;

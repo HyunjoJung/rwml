@@ -798,6 +798,12 @@ fn render_model_unsupported_field_reason(
 ) -> Option<FieldEvaluationReason> {
     #[cfg(feature = "docx")]
     {
+        if !supports_render_model_field_evaluation(field) && field.kind == FieldKind::PageRef {
+            return Some(page_ref_uncomputed_reason(
+                &field.instruction,
+                Some(&context.bookmark_names),
+            ));
+        }
         if !supports_render_model_field_evaluation(field) && field.kind == FieldKind::NoteRef {
             return Some(note_ref_uncomputed_reason(
                 &field.instruction,
