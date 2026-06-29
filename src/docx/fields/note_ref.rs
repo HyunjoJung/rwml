@@ -100,6 +100,20 @@ struct NoteRefActiveBookmark {
     start: usize,
 }
 
+#[derive(Debug, Clone)]
+struct NoteRefActiveCommentRange {
+    id: String,
+    bookmark_names: Vec<String>,
+    start: usize,
+}
+
+#[derive(Debug, Clone)]
+struct NoteRefCommentRangeTarget {
+    name: String,
+    start: usize,
+    end: usize,
+}
+
 pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
     let mut r = Reader::from_str(xml);
     let mut targets = HashMap::new();
@@ -108,6 +122,8 @@ pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
     let mut markers = Vec::new();
     let mut generated_ref_note_fields = Vec::new();
     let mut active_bookmarks: Vec<NoteRefActiveBookmark> = Vec::new();
+    let mut active_comment_ranges = Vec::new();
+    let mut comment_range_targets: HashMap<String, Vec<NoteRefCommentRangeTarget>> = HashMap::new();
     let mut source_order = 0usize;
     let mut footnote_number = 0usize;
     let mut endnote_number = 0usize;
@@ -178,6 +194,23 @@ pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
                         );
                         source_order += 1;
                     }
+                    b"commentRangeStart" => {
+                        record_note_ref_comment_range_start(
+                            &e,
+                            &active_bookmarks,
+                            source_order,
+                            &mut active_comment_ranges,
+                        );
+                    }
+                    b"commentRangeEnd" => {
+                        close_note_ref_comment_range(
+                            &e,
+                            source_order,
+                            &active_bookmarks,
+                            &mut active_comment_ranges,
+                            &mut comment_range_targets,
+                        );
+                    }
                     b"footnoteReference" => {
                         footnote_number += 1;
                         markers.push(NoteRefMarker {
@@ -223,6 +256,12 @@ pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
                             NoteRefKind::Comment,
                             comment_number,
                             source_order,
+                            &mut targets,
+                        );
+                        record_note_ref_comment_range_targets(
+                            &e,
+                            comment_number,
+                            &comment_range_targets,
                             &mut targets,
                         );
                         source_order += 1;
@@ -284,6 +323,23 @@ pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
                         );
                         source_order += 1;
                     }
+                    b"commentRangeStart" => {
+                        record_note_ref_comment_range_start(
+                            &e,
+                            &active_bookmarks,
+                            source_order,
+                            &mut active_comment_ranges,
+                        );
+                    }
+                    b"commentRangeEnd" => {
+                        close_note_ref_comment_range(
+                            &e,
+                            source_order,
+                            &active_bookmarks,
+                            &mut active_comment_ranges,
+                            &mut comment_range_targets,
+                        );
+                    }
                     b"footnoteReference" => {
                         footnote_number += 1;
                         markers.push(NoteRefMarker {
@@ -325,6 +381,12 @@ pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
                             NoteRefKind::Comment,
                             comment_number,
                             source_order,
+                            &mut targets,
+                        );
+                        record_note_ref_comment_range_targets(
+                            &e,
+                            comment_number,
+                            &comment_range_targets,
                             &mut targets,
                         );
                         source_order += 1;
@@ -379,6 +441,84 @@ fn record_note_ref_target(
                 start: bookmark.start,
                 end: order,
             });
+    }
+}
+
+fn record_note_ref_comment_range_start(
+    e: &BytesStart<'_>,
+    active_bookmarks: &[NoteRefActiveBookmark],
+    source_order: usize,
+    active_comment_ranges: &mut Vec<NoteRefActiveCommentRange>,
+) {
+    let Some(id) = attr_local_trimmed(e, b"id") else {
+        return;
+    };
+    let bookmark_names = active_bookmarks
+        .iter()
+        .map(|bookmark| bookmark.name.clone())
+        .collect::<Vec<_>>();
+    if bookmark_names.is_empty() {
+        return;
+    }
+    active_comment_ranges.push(NoteRefActiveCommentRange {
+        id,
+        bookmark_names,
+        start: source_order,
+    });
+}
+
+fn close_note_ref_comment_range(
+    e: &BytesStart<'_>,
+    end: usize,
+    active_bookmarks: &[NoteRefActiveBookmark],
+    active_comment_ranges: &mut Vec<NoteRefActiveCommentRange>,
+    comment_range_targets: &mut HashMap<String, Vec<NoteRefCommentRangeTarget>>,
+) {
+    let Some(id) = attr_local_trimmed(e, b"id") else {
+        return;
+    };
+    let Some(index) = active_comment_ranges
+        .iter()
+        .rposition(|range| range.id == id)
+    else {
+        return;
+    };
+    let range = active_comment_ranges.remove(index);
+    let active_names = active_bookmarks
+        .iter()
+        .map(|bookmark| bookmark.name.as_str())
+        .collect::<Vec<_>>();
+    let range_targets = comment_range_targets.entry(id).or_default();
+    for name in range.bookmark_names {
+        if active_names.iter().any(|active| *active == name) {
+            range_targets.push(NoteRefCommentRangeTarget {
+                name,
+                start: range.start,
+                end,
+            });
+        }
+    }
+}
+
+fn record_note_ref_comment_range_targets(
+    e: &BytesStart<'_>,
+    number: usize,
+    comment_range_targets: &HashMap<String, Vec<NoteRefCommentRangeTarget>>,
+    targets: &mut HashMap<String, NoteRefTarget>,
+) {
+    let Some(id) = attr_local_trimmed(e, b"id") else {
+        return;
+    };
+    let Some(range_targets) = comment_range_targets.get(&id) else {
+        return;
+    };
+    for range in range_targets {
+        targets.entry(range.name.clone()).or_insert(NoteRefTarget {
+            kind: NoteRefKind::Comment,
+            number,
+            start: range.start,
+            end: range.end,
+        });
     }
 }
 

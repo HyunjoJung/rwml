@@ -2144,6 +2144,24 @@ fn ref_comment_reference_mark_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn ref_comment_range_reference_mark_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="CommentedRange"/><w:commentRangeStart w:id="0"/><w:r><w:t>Commented text</w:t></w:r><w:commentRangeEnd w:id="0"/><w:bookmarkEnd w:id="7"/><w:r><w:commentReference w:id="0"/></w:r></w:p><w:p><w:fldSimple w:instr=" REF CommentedRange \f "><w:r><w:t>stale range comment</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn ref_non_current_bookmark_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -7987,6 +8005,34 @@ fn report_ref_f_comment_reference_marks_count_as_supported_refs() {
     assert_eq!(
         report.features.field_kinds,
         vec![field_kind_count(FieldKind::Ref, 2)]
+    );
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+    assert_eq!(
+        report
+            .warnings
+            .iter()
+            .find(|warning| matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })),
+        None
+    );
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_ref_f_comment_range_reference_marks_count_as_supported_refs() {
+    let doc = Document::open(&ref_comment_range_reference_mark_diagnostics_docx())
+        .expect("fixture opens");
+    let fields = doc.fields();
+    let report = doc.report();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::Ref);
+    assert_eq!(fields[0].instruction, "REF CommentedRange \\f");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("2"));
+    assert_eq!(report.features.fields, 1);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![field_kind_count(FieldKind::Ref, 1)]
     );
     assert!(report.features.unsupported_field_kinds.is_empty());
     assert!(report.features.unsupported_field_reasons.is_empty());
