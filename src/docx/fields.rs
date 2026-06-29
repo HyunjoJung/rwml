@@ -33,8 +33,8 @@ use super::numbering::Numbering;
 use super::styles::Styles;
 use super::xml_text::{read_text, skip_subtree};
 use super::{
-    attr_local, attr_local_trimmed, attr_u8, attr_usize, field_char_type, is_page_break_type,
-    local, toggle_on,
+    attr_local, attr_local_trimmed, attr_local_trimmed_preserve_empty, attr_u8, attr_usize,
+    field_char_type, is_page_break_type, local, toggle_on,
 };
 
 type Xml<'a> = Reader<&'a [u8]>;
@@ -3763,7 +3763,7 @@ fn page_ref_on_off_enabled(e: &BytesStart<'_>) -> bool {
 }
 
 fn page_ref_section_break(e: &BytesStart<'_>) -> Option<PageRefSectionBreak> {
-    match attr_local(e, b"val").as_deref().map(str::trim) {
+    match attr_local_trimmed_preserve_empty(e, b"val").as_deref() {
         None | Some("") | Some("nextPage") => Some(PageRefSectionBreak::Next),
         Some("evenPage") => Some(PageRefSectionBreak::Even),
         Some("oddPage") => Some(PageRefSectionBreak::Odd),
@@ -3776,7 +3776,7 @@ fn page_ref_section_page_number_start(e: &BytesStart<'_>) -> Option<usize> {
 }
 
 fn page_ref_section_page_number_format(e: &BytesStart<'_>) -> Option<PageRefDisplayFormat> {
-    let format = match attr_local(e, b"fmt").as_deref().map(str::trim)? {
+    let format = match attr_local_trimmed_preserve_empty(e, b"fmt").as_deref()? {
         "" => return Some(PageRefDisplayFormat::default()),
         "decimal" => PageNumberFormat::Arabic,
         "decimalZero" => PageNumberFormat::DecimalZero,

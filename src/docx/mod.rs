@@ -2262,6 +2262,10 @@ pub(crate) fn attr_local(e: &BytesStart<'_>, key: &[u8]) -> Option<String> {
     })
 }
 
+pub(crate) fn attr_local_trimmed_preserve_empty(e: &BytesStart<'_>, key: &[u8]) -> Option<String> {
+    attr_local(e, key).map(|value| value.trim().to_owned())
+}
+
 pub(crate) fn attr_local_trimmed(e: &BytesStart<'_>, key: &[u8]) -> Option<String> {
     attr_local(e, key)
         .map(|value| value.trim().to_owned())
