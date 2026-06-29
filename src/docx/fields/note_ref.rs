@@ -57,10 +57,17 @@ pub(crate) struct NoteRefTarget {
     end: usize,
 }
 
+impl NoteRefTarget {
+    fn is_note_marker(self) -> bool {
+        matches!(self.kind, NoteRefKind::Footnote | NoteRefKind::Endnote)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum NoteRefKind {
     Footnote,
     Endnote,
+    Comment,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -104,6 +111,7 @@ pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
     let mut source_order = 0usize;
     let mut footnote_number = 0usize;
     let mut endnote_number = 0usize;
+    let mut comment_number = 0usize;
     let mut current: Option<NoteRefScanField> = None;
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
@@ -204,6 +212,23 @@ pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
                         skip_subtree(&mut r);
                         continue;
                     }
+                    b"commentReference" => {
+                        comment_number += 1;
+                        markers.push(NoteRefMarker {
+                            kind: NoteRefKind::Comment,
+                            order: source_order,
+                        });
+                        record_note_ref_target(
+                            &active_bookmarks,
+                            NoteRefKind::Comment,
+                            comment_number,
+                            source_order,
+                            &mut targets,
+                        );
+                        source_order += 1;
+                        skip_subtree(&mut r);
+                        continue;
+                    }
                     b"t" => {
                         if !read_text(&mut r).is_empty() {
                             source_order += 1;
@@ -289,6 +314,21 @@ pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
                         );
                         source_order += 1;
                     }
+                    b"commentReference" => {
+                        comment_number += 1;
+                        markers.push(NoteRefMarker {
+                            kind: NoteRefKind::Comment,
+                            order: source_order,
+                        });
+                        record_note_ref_target(
+                            &active_bookmarks,
+                            NoteRefKind::Comment,
+                            comment_number,
+                            source_order,
+                            &mut targets,
+                        );
+                        source_order += 1;
+                    }
                     b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"softHyphen" | b"drawing"
                     | b"pict" | b"object" => {
                         source_order += 1;
@@ -316,7 +356,11 @@ pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
 }
 
 pub(crate) fn note_ref_target_names(xml: &str) -> HashSet<String> {
-    note_ref_context(xml).targets.into_keys().collect()
+    note_ref_context(xml)
+        .targets
+        .into_iter()
+        .filter_map(|(name, target)| target.is_note_marker().then_some(name))
+        .collect()
 }
 
 fn record_note_ref_target(
@@ -436,6 +480,9 @@ pub(crate) fn computed_note_ref_result(
 ) -> Option<String> {
     let spec = note_ref_instruction(instruction)?;
     let target = note_refs.target(&spec.target)?;
+    if !target.is_note_marker() {
+        return None;
+    }
     let text = if spec.relative {
         computed_relative_note_ref_result(target, field_position)?
     } else {

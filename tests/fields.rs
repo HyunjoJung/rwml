@@ -1974,6 +1974,23 @@ fn ref_note_switch_docx() -> Vec<u8> {
     ])
 }
 
+fn ref_comment_reference_mark_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="CommentOne"/><w:r><w:commentReference w:id="0"/></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:bookmarkStart w:id="8" w:name="CommentTwo"/><w:r><w:commentReference w:id="1"/></w:r><w:bookmarkEnd w:id="8"/></w:p><w:p><w:fldSimple w:instr=" REF CommentOne \f "><w:r><w:t>stale comment one</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" CommentTwo \f \* ROMAN "><w:r><w:t>stale comment two</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn numbered_ref_switch_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -10825,6 +10842,27 @@ fn docx_ref_f_field_computes_bookmarked_note_reference_marks() {
             && !main_text.contains("stale complex foot ref mark")
             && !main_text.contains("stale roman foot ref mark"),
         "resolved REF \\f fields should display computed note reference marks: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_ref_f_field_computes_bookmarked_comment_reference_marks() {
+    let doc = Document::open(&ref_comment_reference_mark_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert!(fields.iter().all(|field| field.kind == FieldKind::Ref));
+    assert_eq!(fields[0].instruction, "REF CommentOne \\f");
+    assert_eq!(fields[0].result, "stale comment one");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("3"));
+    assert_eq!(fields[1].instruction, "CommentTwo \\f \\* ROMAN");
+    assert_eq!(fields[1].result, "stale comment two");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("IV"));
+
+    let main_text = doc.main_text();
+    assert!(
+        !main_text.contains("stale comment one") && !main_text.contains("stale comment two"),
+        "resolved REF \\f comment markers should replace stale cached text: {main_text:?}"
     );
 }
 
