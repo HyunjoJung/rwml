@@ -683,7 +683,8 @@ Implementation:
   default values with no computed result;
   unresolved bookmark scope,
   unresolved or unsupported remaining value-changing REF cases such as
-  comment/annotation insertion and broader REF semantics, remaining missing
+  comment/annotation insertion beyond bookmarked comment-reference markers and
+  broader REF semantics, remaining missing
   explicit or direct `REF \f` bookmark targets, existing non-note `REF \f`
   targets, missing `NOTEREF` bookmark targets, existing `NOTEREF` bookmark targets without
   body note-reference marks, unsupported `NOTEREF` switches,
@@ -1157,7 +1158,8 @@ open and edit the chart data.
   no-break/soft hyphens, keep cached field-result inline tabs, line breaks, and
   no-break/soft hyphens when computation is unsupported, and surface unresolved
   bookmark scope, unsupported remaining value-changing REF cases such as
-  comment/annotation insertion and broader REF semantics, unresolved or
+  comment/annotation insertion beyond bookmarked comment-reference markers and
+  broader REF semantics, unresolved or
   unsupported NOTEREF switches, remaining layout-dependent `PAGEREF`, or
   broader TOC/REF cases separately in diagnostics;
 - expose unsupported field evaluation warnings for unknown fields beyond named
@@ -1226,7 +1228,8 @@ open and edit the chart data.
   default values with no computed result,
   unresolved bookmark
   scope, unresolved or unsupported remaining value-changing REF cases such as
-  comment/annotation insertion and broader REF semantics,
+  comment/annotation insertion beyond bookmarked comment-reference markers and
+  broader REF semantics,
   unresolved or unsupported NOTEREF switches, remaining layout-dependent
   `PAGEREF`, and broader TOC fields, with
   `unsupported_field_reasons` reason counts in the feature inventory JSON.

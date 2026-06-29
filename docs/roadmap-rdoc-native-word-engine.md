@@ -281,7 +281,8 @@ Initial status:
 - `Document::report()` includes field-kind counts, and unsupported-field
   warnings now report only missing `PAGEREF` targets, remaining layout-dependent `PAGEREF`, unknown, unresolved bookmark scope, unresolved or
   unsupported remaining value-changing REF cases such as
-  comment/annotation insertion and broader REF semantics, missing explicit or
+  comment/annotation insertion beyond bookmarked comment-reference markers and
+  broader REF semantics, missing explicit or
   direct `REF \f` bookmark targets, existing non-note `REF \f` targets,
   missing `NOTEREF` bookmark targets, existing `NOTEREF` bookmark targets without body
   note-reference marks, unsupported `NOTEREF` switches, missing `TOC \b`
@@ -987,7 +988,8 @@ Initial status:
   layout-derived cases. Document and render
   diagnostics still report unknown, unresolved bookmark scope, unresolved or
   unsupported remaining value-changing REF cases such as
-  comment/annotation insertion and broader REF semantics, missing explicit or
+  comment/annotation insertion beyond bookmarked comment-reference markers and
+  broader REF semantics, missing explicit or
   direct `REF \f` bookmark targets, existing non-note `REF \f` targets,
   missing `NOTEREF` bookmark targets, existing `NOTEREF` bookmark targets without body
   note-reference marks, unsupported `NOTEREF` switches, remaining layout-dependent `PAGEREF`,
@@ -1160,7 +1162,8 @@ The active roadmap slices are:
      section-start, source-marker, and hard-break contexts: exact pagination
      current-page/page-reference values, target-derived formatting where no
      trusted marker exists, and remaining layout-dependent `\p` results;
-   - remaining value-changing reference policy: comment/annotation insertion,
+   - remaining value-changing reference policy: comment/annotation insertion
+     beyond bookmarked comment-reference markers,
      broader `REF` semantics, unresolved or unsupported `NOTEREF` switches
      beyond body note-reference marks, and broader TOC/REF body evaluation;
    - remaining data-, source-, layout-, action-, and generated-field families

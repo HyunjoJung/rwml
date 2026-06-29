@@ -248,7 +248,8 @@ the `render` feature.
 > layout engine. It is faithful to the *model* and selectable, but it does **not**
 > match LibreOffice fidelity — exact pagination, exact floating-object layout,
 > unknown fields, unresolved or unsupported remaining value-changing REF cases such as
-> comment/annotation insertion, remaining advanced
+> comment/annotation insertion beyond bookmarked comment-reference markers,
+> remaining advanced
 > TOC/REF computed field evaluation, and pixel layout differ. Opened-document
 > renders draw bounded approximate overlay boxes for recovered `.docx`
 > floating-shape geometry on the recovered top-level body block page when
@@ -713,7 +714,8 @@ barcode fields, and legacy form fields beyond deterministic `w:ffData`
 checkbox checked/default states, dropdown result/default selections, explicit
 non-empty text-input current results, and empty-current text-input default
 results, plus unresolved bookmark, unsupported remaining value-changing REF cases such as
-comment/annotation insertion and broader REF semantics,
+comment/annotation insertion beyond bookmarked comment-reference markers and
+broader REF semantics,
 unresolved or unsupported NOTEREF switches, existing `NOTEREF` bookmark targets
 without a body note-reference mark, or remaining advanced TOC/REF cases
 still render cached text, including inline tabs, line breaks, and no-break/soft

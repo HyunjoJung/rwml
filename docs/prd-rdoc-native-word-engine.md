@@ -459,7 +459,8 @@ The first public maturity release should meet these requirements.
   preserve simple inline tabs, line breaks, and no-break hyphens for simple and
   common complex body fields;
   unresolved bookmark scopes, unsupported remaining value-changing REF/NOTEREF cases such as
-  comment/annotation insertion and broader field semantics, existing `NOTEREF`
+  comment/annotation insertion beyond bookmarked comment-reference markers and
+  broader field semantics, existing `NOTEREF`
   bookmark targets without body note-reference marks,
   stay visible through diagnostics with unsupported field-kind counts and
   machine-readable reason counts for unknown fields, unresolved bookmarks,
