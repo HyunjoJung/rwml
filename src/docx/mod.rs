@@ -2273,7 +2273,7 @@ pub(crate) fn is_page_break_type(e: &BytesStart<'_>) -> bool {
 }
 
 pub(crate) fn field_char_type(e: &BytesStart<'_>) -> Option<String> {
-    attr_local(e, b"fldCharType").map(|value| value.trim().to_owned())
+    attr_local_trimmed(e, b"fldCharType")
 }
 
 /// Resolve an OOXML on/off toggle: a present element with no `w:val` means *on*;
