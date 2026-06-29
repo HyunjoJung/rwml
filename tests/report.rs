@@ -553,6 +553,24 @@ fn display_layout_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn deterministic_eq_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" EQ \f(1,\f(2,3)) "><w:r><w:t>stale nested fraction</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" EQ \r(\f(1,4)) "><w:r><w:t>stale nested radical</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" EQ \b \lc\[ \rc\] (&quot;Range&quot;) "><w:r><w:t>stale explicit bracket</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" EQ \x \to \bo(\f(5,8)) \* Upper "><w:r><w:t>stale box</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" EQ \l(A,&quot;B, C&quot;,\r(4,16)) "><w:r><w:t>stale list</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" EQ \a \al \co2 \vs3 \hs3(Axy,Bxy,A,B) "><w:r><w:t>stale array</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" EQ \i \su \fcS(0,1,\f(3,4)) "><w:r><w:t>stale integral</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" EQ \o \ac(&quot;A&quot;,/) "><w:r><w:t>stale overstrike</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn advance_compact_quoted_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -3039,6 +3057,18 @@ fn report_display_layout_fields_split_cached_and_malformed_diagnostics() {
             reason: FieldEvaluationReason::UnsupportedSwitch,
             count: 3,
         }]
+    );
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_eq_fields_accept_deterministic_display_subset() {
+    assert_report_field_diagnostics(
+        deterministic_eq_diagnostics_docx(),
+        8,
+        vec![field_kind_count(FieldKind::Display("EQ".to_string()), 8)],
+        vec![],
+        vec![],
     );
 }
 
