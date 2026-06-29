@@ -16,8 +16,8 @@ use crate::clx::Piece;
 use crate::fib::Fib;
 use crate::list::Numberer;
 use crate::model::{
-    Align, Block, CharProps, DocMeta, DocModel, DocSetup, FieldRole, Image, ListInfo, ParaProps,
-    Paragraph, SourceRegion, SourceRegionKind, Stats,
+    normalize_field_instruction, Align, Block, CharProps, DocMeta, DocModel, DocSetup, FieldRole,
+    Image, ListInfo, ParaProps, Paragraph, SourceRegion, SourceRegionKind, Stats,
 };
 use crate::papx::PapxTable;
 use crate::stsh::StyleSheet;
@@ -740,10 +740,6 @@ impl<'a, 'l> Asm<'a, 'l> {
 /// `HYPERLINK "https://example.com" \o "tooltip"` → `https://example.com`.
 fn parse_hyperlink(instr: &str) -> Option<String> {
     crate::annotation::hyperlink_field_target(instr)
-}
-
-fn normalize_field_instruction(instr: &str) -> String {
-    instr.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn field_role_from_instruction(instr: &str) -> FieldRole {
