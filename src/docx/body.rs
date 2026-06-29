@@ -17,7 +17,7 @@ use quick_xml::Reader;
 use super::fields::TocEntry;
 use super::numbering::Numbering;
 use super::styles::Styles;
-use super::xml_text::read_text;
+use super::xml_text::{read_text, skip_subtree};
 use super::{
     attr_local, attr_local_trimmed, attr_u8, field_char_type, is_page_break_type, local, toggle_on,
 };
@@ -2820,25 +2820,6 @@ fn build_table(raw_rows: Vec<(Vec<CellRaw>, bool)>, props: TableProps) -> Table 
         border_style: props.border_style,
         border_styles: props.border_styles,
         ..Default::default()
-    }
-}
-
-/// Consume the current element's subtree (we just read its `Start`), through the
-/// matching `End`, depth-tracked so nested same-named elements are handled.
-fn skip_subtree(r: &mut Xml<'_>) {
-    let mut depth = 1usize;
-    loop {
-        match r.read_event() {
-            Ok(Event::Start(_)) => depth += 1,
-            Ok(Event::End(_)) => {
-                depth -= 1;
-                if depth == 0 {
-                    break;
-                }
-            }
-            Ok(Event::Eof) | Err(_) => break,
-            _ => {}
-        }
     }
 }
 

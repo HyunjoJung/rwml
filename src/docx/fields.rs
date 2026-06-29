@@ -31,7 +31,7 @@ use crate::{numfmt, CoreProperties};
 
 use super::numbering::Numbering;
 use super::styles::Styles;
-use super::xml_text::read_text;
+use super::xml_text::{read_text, skip_subtree};
 use super::{
     attr_local, attr_local_trimmed, attr_u8, attr_usize, field_char_type, is_page_break_type,
     local, toggle_on,
@@ -3960,23 +3960,6 @@ fn apply_page_ref_scan_fld_char(
             }
         }
         _ => {}
-    }
-}
-
-fn skip_subtree(r: &mut Xml<'_>) {
-    let mut depth = 1usize;
-    loop {
-        match r.read_event() {
-            Ok(Event::Start(_)) => depth += 1,
-            Ok(Event::End(_)) => {
-                depth -= 1;
-                if depth == 0 {
-                    break;
-                }
-            }
-            Ok(Event::Eof) | Err(_) => break,
-            _ => {}
-        }
     }
 }
 
