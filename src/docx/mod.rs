@@ -1766,7 +1766,7 @@ fn parse_custom_properties(xml: &str) -> BTreeMap<String, String> {
                         props.insert(name, value);
                     }
                 } else {
-                    skip_custom_property(&mut r);
+                    skip_subtree(&mut r);
                 }
             }
             Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"property" => {
@@ -1959,23 +1959,6 @@ fn read_custom_property_value(r: &mut Reader<&[u8]>) -> Option<String> {
         }
     }
     value
-}
-
-fn skip_custom_property(r: &mut Reader<&[u8]>) {
-    let mut depth = 1usize;
-    loop {
-        match r.read_event() {
-            Ok(Event::Start(_)) => depth += 1,
-            Ok(Event::End(e)) => {
-                if depth == 1 && local(e.name().as_ref()) == b"property" {
-                    break;
-                }
-                depth = depth.saturating_sub(1);
-            }
-            Ok(Event::Eof) | Err(_) => break,
-            _ => {}
-        }
-    }
 }
 
 /// `word/header1.xml` → `word/_rels/header1.xml.rels`.
