@@ -21,6 +21,8 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      - name: Public hygiene audit
+        run: python3 scripts/public_hygiene_audit.py
       - name: Format
         run: cargo fmt --all -- --check
       - name: Clippy (default)

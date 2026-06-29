@@ -8,6 +8,11 @@ WORKFLOW = (
 
 
 class CiWorkflowTests(unittest.TestCase):
+    def test_ci_workflow_runs_public_hygiene_audit(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertIn("python3 scripts/public_hygiene_audit.py", text)
+
     def test_ci_workflow_runs_no_default_gate(self):
         text = WORKFLOW.read_text(encoding="utf-8")
 
