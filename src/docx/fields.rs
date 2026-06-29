@@ -14,12 +14,13 @@ use crate::annotation::{
     field_non_empty_quoted_literal_token, field_points_token, field_positive_points_token,
     field_quoted_literal_token, field_symbol_code_token, filename_field_syntax,
     formula_field_syntax, instruction_parts, is_neutral_field_format_switch, is_note_ref_kind,
-    is_ref_value_neutral_switch, is_toc_value_neutral_switch, page_field_format_syntax_tail,
-    prompt_field_syntax, quote_field_syntax, reference_index_category_token,
-    reference_index_literal_token, reference_index_plain_value_token,
-    revision_number_field_text_format, sequence_field_syntax, set_field_syntax,
-    strip_ascii_switch_prefix, style_ref_field_syntax, toc_style_specs, Field, FieldKind,
-    FieldNumberFormat, FieldTextFormat, PromptFieldSyntax, StyleRefFieldSyntax, StyleRefResult,
+    is_ref_value_neutral_switch, is_toc_value_neutral_switch, numbering_field_syntax,
+    page_field_format_syntax_tail, prompt_field_syntax, quote_field_syntax,
+    reference_index_category_token, reference_index_literal_token,
+    reference_index_plain_value_token, revision_number_field_text_format, sequence_field_syntax,
+    set_field_syntax, strip_ascii_switch_prefix, style_ref_field_syntax, toc_style_specs, Field,
+    FieldKind, FieldNumberFormat, FieldTextFormat, PromptFieldSyntax, StyleRefFieldSyntax,
+    StyleRefResult,
 };
 use crate::{numfmt, CoreProperties};
 
@@ -8533,44 +8534,7 @@ pub(crate) fn computed_numbering_result(
 }
 
 pub(crate) fn supports_numbering_field_syntax(instruction: &str) -> bool {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let Some(kind) = parts.next() else {
-        return false;
-    };
-    if kind.eq_ignore_ascii_case("AUTONUM")
-        || kind.eq_ignore_ascii_case("AUTONUMLGL")
-        || kind.eq_ignore_ascii_case("AUTONUMOUT")
-    {
-        let mut counter = 0;
-        return computed_numbering_result(instruction, &mut counter).is_some();
-    }
-    if kind.eq_ignore_ascii_case("LISTNUM") {
-        let mut counter = 0;
-        if computed_listnum_result(instruction, &mut counter).is_some() {
-            return true;
-        }
-        return supports_listnum_field_syntax(parts);
-    }
-    if kind.eq_ignore_ascii_case("BIDIOUTLINE") {
-        let mut number_format = None;
-        let mut text_format = None;
-        while let Some(part) = parts.next() {
-            let Some(accepted) = accept_page_field_format_switch_for_tail(
-                part,
-                &mut parts,
-                &mut number_format,
-                &mut text_format,
-            ) else {
-                return false;
-            };
-            if !accepted {
-                return false;
-            }
-        }
-        return true;
-    }
-    false
+    numbering_field_syntax(instruction)
 }
 
 pub(crate) fn computed_listnum_result(
@@ -8636,62 +8600,6 @@ pub(crate) fn computed_listnum_result(
     Some(apply_field_text_format(text, text_format))
 }
 
-fn supports_listnum_field_syntax<'a>(mut parts: impl Iterator<Item = &'a str>) -> bool {
-    let mut list_name_seen = false;
-    let mut level_seen = false;
-    let mut reset_start = None;
-    let mut number_format = None;
-    let mut text_format = None;
-    while let Some(part) = parts.next() {
-        let Some(accepted) = accept_page_field_format_switch_for_tail(
-            part,
-            &mut parts,
-            &mut number_format,
-            &mut text_format,
-        ) else {
-            return false;
-        };
-        if accepted {
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\l") {
-            let Some(level) = parts.next() else {
-                return false;
-            };
-            if !accept_listnum_syntax_level_switch(level, &mut level_seen) {
-                return false;
-            }
-            continue;
-        }
-        if let Some(level) = strip_ascii_switch_prefix(part, "\\l") {
-            if level.is_empty() || !accept_listnum_syntax_level_switch(level, &mut level_seen) {
-                return false;
-            }
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\s") {
-            let Some(start) = parts.next() else {
-                return false;
-            };
-            if accept_listnum_start_switch(start, &mut reset_start).is_none() {
-                return false;
-            }
-            continue;
-        }
-        if let Some(start) = strip_ascii_switch_prefix(part, "\\s") {
-            if start.is_empty() || accept_listnum_start_switch(start, &mut reset_start).is_none() {
-                return false;
-            }
-            continue;
-        }
-        if part.starts_with('\\') || list_name_seen || field_name_token(part).is_none() {
-            return false;
-        }
-        list_name_seen = true;
-    }
-    true
-}
-
 fn accept_listnum_level_switch(part: &str, level_seen: &mut bool) -> Option<()> {
     if *level_seen {
         return None;
@@ -8702,20 +8610,6 @@ fn accept_listnum_level_switch(part: &str, level_seen: &mut bool) -> Option<()> 
     }
     *level_seen = true;
     Some(())
-}
-
-fn accept_listnum_syntax_level_switch(part: &str, level_seen: &mut bool) -> bool {
-    if *level_seen {
-        return false;
-    }
-    let Some(level) = field_name_token(part).and_then(|part| part.parse::<u8>().ok()) else {
-        return false;
-    };
-    if level == 0 {
-        return false;
-    }
-    *level_seen = true;
-    true
 }
 
 fn accept_listnum_start_switch(part: &str, reset_start: &mut Option<i64>) -> Option<()> {

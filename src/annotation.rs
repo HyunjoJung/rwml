@@ -800,6 +800,199 @@ fn accept_sequence_reset_syntax(part: &str, action_seen: &mut bool) -> bool {
     true
 }
 
+pub(crate) fn numbering_field_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if kind.eq_ignore_ascii_case("AUTONUM")
+        || kind.eq_ignore_ascii_case("AUTONUMLGL")
+        || kind.eq_ignore_ascii_case("AUTONUMOUT")
+    {
+        return autonum_field_syntax(kind, parts);
+    }
+    if kind.eq_ignore_ascii_case("LISTNUM") {
+        return listnum_field_syntax(parts);
+    }
+    if kind.eq_ignore_ascii_case("BIDIOUTLINE") {
+        return bidi_outline_field_syntax(parts);
+    }
+    false
+}
+
+fn autonum_field_syntax<'a>(kind: &str, mut parts: impl Iterator<Item = &'a str>) -> bool {
+    let accepts_separator = kind.eq_ignore_ascii_case("AUTONUM");
+    let mut number_format = None;
+    let mut text_format = None;
+    let mut separator = false;
+    while let Some(part) = parts.next() {
+        let Some(accepted) = accept_page_number_text_format_syntax(
+            part,
+            &mut parts,
+            &mut number_format,
+            &mut text_format,
+        ) else {
+            return false;
+        };
+        if accepted {
+            continue;
+        }
+        if accepts_separator && part.eq_ignore_ascii_case("\\s") {
+            let Some(value) = parts.next() else {
+                return false;
+            };
+            if !accept_autonum_separator_syntax(value, &mut separator) {
+                return false;
+            }
+            continue;
+        }
+        if accepts_separator {
+            if let Some(value) = strip_ascii_switch_prefix(part, "\\s") {
+                if !accept_autonum_separator_syntax(value, &mut separator) {
+                    return false;
+                }
+                continue;
+            }
+        }
+        return false;
+    }
+    true
+}
+
+fn listnum_field_syntax<'a>(mut parts: impl Iterator<Item = &'a str>) -> bool {
+    let mut list_name_seen = false;
+    let mut level_seen = false;
+    let mut reset_seen = false;
+    let mut number_format = None;
+    let mut text_format = None;
+    while let Some(part) = parts.next() {
+        let Some(accepted) = accept_page_number_text_format_syntax(
+            part,
+            &mut parts,
+            &mut number_format,
+            &mut text_format,
+        ) else {
+            return false;
+        };
+        if accepted {
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\l") {
+            let Some(level) = parts.next() else {
+                return false;
+            };
+            if !accept_listnum_level_syntax(level, &mut level_seen) {
+                return false;
+            }
+            continue;
+        }
+        if let Some(level) = strip_ascii_switch_prefix(part, "\\l") {
+            if level.is_empty() || !accept_listnum_level_syntax(level, &mut level_seen) {
+                return false;
+            }
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\s") {
+            let Some(start) = parts.next() else {
+                return false;
+            };
+            if !accept_listnum_start_syntax(start, &mut reset_seen) {
+                return false;
+            }
+            continue;
+        }
+        if let Some(start) = strip_ascii_switch_prefix(part, "\\s") {
+            if start.is_empty() || !accept_listnum_start_syntax(start, &mut reset_seen) {
+                return false;
+            }
+            continue;
+        }
+        if part.starts_with('\\') || list_name_seen || field_name_token(part).is_none() {
+            return false;
+        }
+        list_name_seen = true;
+    }
+    true
+}
+
+fn bidi_outline_field_syntax<'a>(mut parts: impl Iterator<Item = &'a str>) -> bool {
+    let mut number_format = None;
+    let mut text_format = None;
+    while let Some(part) = parts.next() {
+        let Some(accepted) = accept_page_number_text_format_syntax(
+            part,
+            &mut parts,
+            &mut number_format,
+            &mut text_format,
+        ) else {
+            return false;
+        };
+        if !accepted {
+            return false;
+        }
+    }
+    true
+}
+
+fn accept_page_number_text_format_syntax<'a>(
+    part: &'a str,
+    parts: &mut impl Iterator<Item = &'a str>,
+    number_format: &mut Option<FieldNumberFormat>,
+    text_format: &mut Option<FieldTextFormat>,
+) -> Option<bool> {
+    accept_general_format_switch(part, parts, |format| {
+        accept_field_number_format_switch(format, number_format)
+            || accept_field_text_format_switch(format, text_format)
+    })
+}
+
+fn accept_autonum_separator_syntax(part: &str, separator: &mut bool) -> bool {
+    if *separator {
+        return false;
+    }
+    let Some(value) = field_literal_token(part) else {
+        return false;
+    };
+    let mut chars = value.chars();
+    let Some(_) = chars.next() else {
+        return false;
+    };
+    if chars.next().is_some() {
+        return false;
+    }
+    *separator = true;
+    true
+}
+
+fn accept_listnum_level_syntax(part: &str, level_seen: &mut bool) -> bool {
+    if *level_seen {
+        return false;
+    }
+    let Some(level) = field_name_token(part).and_then(|part| part.parse::<u8>().ok()) else {
+        return false;
+    };
+    if level == 0 {
+        return false;
+    }
+    *level_seen = true;
+    true
+}
+
+fn accept_listnum_start_syntax(part: &str, reset_seen: &mut bool) -> bool {
+    if *reset_seen {
+        return false;
+    }
+    let Some(start) = field_name_token(part).and_then(|part| part.parse::<i64>().ok()) else {
+        return false;
+    };
+    if start < 0 {
+        return false;
+    }
+    *reset_seen = true;
+    true
+}
+
 pub(crate) fn filename_field_syntax(instruction: &str) -> bool {
     let tokens = instruction_parts(instruction);
     let mut parts = tokens.iter().map(String::as_str);

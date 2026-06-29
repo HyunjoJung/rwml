@@ -23,11 +23,11 @@ use crate::annotation::{
 };
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{
-    field_comparison_syntax, formula_field_syntax, page_field_format_syntax_tail,
-    prompt_field_syntax, quote_field_syntax, reference_index_category_token,
-    reference_index_literal_token, reference_index_plain_value_token,
-    revision_number_field_text_format, sequence_field_syntax, set_field_syntax,
-    style_ref_field_syntax,
+    field_comparison_syntax, formula_field_syntax, numbering_field_syntax,
+    page_field_format_syntax_tail, prompt_field_syntax, quote_field_syntax,
+    reference_index_category_token, reference_index_literal_token,
+    reference_index_plain_value_token, revision_number_field_text_format, sequence_field_syntax,
+    set_field_syntax, style_ref_field_syntax,
 };
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{
@@ -3439,193 +3439,12 @@ fn numbering_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     }
     #[cfg(not(feature = "docx"))]
     {
-        if supported_numbering_syntax(instruction) {
+        if numbering_field_syntax(instruction) {
             FieldEvaluationReason::NoComputedResult
         } else {
             FieldEvaluationReason::UnsupportedSwitch
         }
     }
-}
-
-#[cfg(not(feature = "docx"))]
-fn supported_numbering_syntax(instruction: &str) -> bool {
-    let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
-    let Some(kind) = parts.next() else {
-        return false;
-    };
-    if kind.eq_ignore_ascii_case("AUTONUM")
-        || kind.eq_ignore_ascii_case("AUTONUMLGL")
-        || kind.eq_ignore_ascii_case("AUTONUMOUT")
-    {
-        return supported_autonum_syntax(kind, parts);
-    }
-    if kind.eq_ignore_ascii_case("LISTNUM") {
-        return supported_listnum_syntax(parts);
-    }
-    if kind.eq_ignore_ascii_case("BIDIOUTLINE") {
-        let mut number_format = false;
-        let mut text_format = false;
-        while let Some(part) = parts.next() {
-            let Some(accepted) = accept_general_format_switch(part, &mut parts, |format| {
-                accept_page_number_format_switch(format, &mut number_format)
-                    || accept_field_format_switch(format, &mut text_format)
-            }) else {
-                return false;
-            };
-            if !accepted {
-                return false;
-            }
-        }
-        return true;
-    }
-    false
-}
-
-#[cfg(not(feature = "docx"))]
-fn supported_autonum_syntax<'a>(kind: &str, mut parts: impl Iterator<Item = &'a str>) -> bool {
-    let accepts_separator = kind.eq_ignore_ascii_case("AUTONUM");
-    let mut number_format = false;
-    let mut text_format = false;
-    let mut separator = false;
-    while let Some(part) = parts.next() {
-        let Some(accepted) = accept_page_field_format_switch_for_report(
-            part,
-            &mut parts,
-            &mut number_format,
-            &mut text_format,
-        ) else {
-            return false;
-        };
-        if accepted {
-            continue;
-        }
-        if accepts_separator && part.eq_ignore_ascii_case("\\s") {
-            let Some(value) = parts.next() else {
-                return false;
-            };
-            if !accept_autonum_separator_for_report(value, &mut separator) {
-                return false;
-            }
-            continue;
-        }
-        if accepts_separator {
-            if let Some(value) = strip_ascii_switch_prefix(part, "\\s") {
-                if !accept_autonum_separator_for_report(value, &mut separator) {
-                    return false;
-                }
-                continue;
-            }
-        }
-        return false;
-    }
-    true
-}
-
-#[cfg(not(feature = "docx"))]
-fn supported_listnum_syntax<'a>(mut parts: impl Iterator<Item = &'a str>) -> bool {
-    let mut list_name_seen = false;
-    let mut level_seen = false;
-    let mut reset_seen = false;
-    let mut number_format = false;
-    let mut text_format = false;
-    while let Some(part) = parts.next() {
-        let Some(accepted) = accept_page_field_format_switch_for_report(
-            part,
-            &mut parts,
-            &mut number_format,
-            &mut text_format,
-        ) else {
-            return false;
-        };
-        if accepted {
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\l") {
-            let Some(level) = parts.next() else {
-                return false;
-            };
-            if !accept_listnum_level_for_report(level, &mut level_seen) {
-                return false;
-            }
-            continue;
-        }
-        if let Some(level) = strip_ascii_switch_prefix(part, "\\l") {
-            if level.is_empty() || !accept_listnum_level_for_report(level, &mut level_seen) {
-                return false;
-            }
-            continue;
-        }
-        if part.eq_ignore_ascii_case("\\s") {
-            let Some(start) = parts.next() else {
-                return false;
-            };
-            if !accept_listnum_start_for_report(start, &mut reset_seen) {
-                return false;
-            }
-            continue;
-        }
-        if let Some(start) = strip_ascii_switch_prefix(part, "\\s") {
-            if start.is_empty() || !accept_listnum_start_for_report(start, &mut reset_seen) {
-                return false;
-            }
-            continue;
-        }
-        if part.starts_with('\\') || list_name_seen || diagnostic_name_token(part).is_none() {
-            return false;
-        }
-        list_name_seen = true;
-    }
-    true
-}
-
-#[cfg(not(feature = "docx"))]
-fn accept_listnum_level_for_report(part: &str, level_seen: &mut bool) -> bool {
-    if *level_seen {
-        return false;
-    }
-    let Some(level) = diagnostic_name_token(part).and_then(|part| part.parse::<u8>().ok()) else {
-        return false;
-    };
-    if level == 0 {
-        return false;
-    }
-    *level_seen = true;
-    true
-}
-
-#[cfg(not(feature = "docx"))]
-fn accept_listnum_start_for_report(part: &str, reset_seen: &mut bool) -> bool {
-    if *reset_seen {
-        return false;
-    }
-    let Some(start) = diagnostic_name_token(part).and_then(|part| part.parse::<i64>().ok()) else {
-        return false;
-    };
-    if start < 0 {
-        return false;
-    }
-    *reset_seen = true;
-    true
-}
-
-#[cfg(not(feature = "docx"))]
-fn accept_autonum_separator_for_report(part: &str, separator: &mut bool) -> bool {
-    if *separator {
-        return false;
-    }
-    let Some(value) = diagnostic_literal_token(part) else {
-        return false;
-    };
-    let mut chars = value.chars();
-    let Some(_) = chars.next() else {
-        return false;
-    };
-    if chars.next().is_some() {
-        return false;
-    }
-    *separator = true;
-    true
 }
 
 fn compare_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
