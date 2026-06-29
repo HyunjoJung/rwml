@@ -215,7 +215,7 @@ fn sequence_field_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SEQ Figure "><w:r><w:t>stale figure one</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SEQ Figure "><w:r><w:t>stale figure two</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SEQ Figure \r 7 "><w:r><w:t>stale figure reset</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SEQ Figure \c "><w:r><w:t>stale figure current</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SEQ Figure \h "><w:r><w:t>stale hidden figure</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SEQ Figure "><w:r><w:t>stale figure after hidden</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SEQ Figure \r -1 "><w:r><w:t>cached invalid reset</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SEQ Figure "><w:r><w:t>stale figure after invalid reset</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SEQ Appendix \* roman "><w:r><w:t>stale appendix roman</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SEQ Figure "><w:r><w:t>stale figure one</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SEQ Figure "><w:r><w:t>stale figure two</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SEQ Figure \r 7 "><w:r><w:t>stale figure reset</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SEQ Figure \c "><w:r><w:t>stale figure current</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SEQ Figure \h "><w:r><w:t>stale hidden figure</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SEQ Figure "><w:r><w:t>stale figure after hidden</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SEQ Figure \r -1 "><w:r><w:t>cached invalid reset</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SEQ Figure "><w:r><w:t>stale figure after invalid reset</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SEQ Appendix \* roman "><w:r><w:t>stale appendix roman</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SEQ Appendix \r 31 \* Hex "><w:r><w:t>stale appendix hex</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -3246,7 +3246,7 @@ fn docx_sequence_fields_compute_source_order_numbers() {
     let doc = Document::open(&sequence_field_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 9);
+    assert_eq!(fields.len(), 10);
     assert_eq!(fields[0].kind, FieldKind::Sequence);
     assert_eq!(fields[0].instruction, "SEQ Figure");
     assert_eq!(fields[0].result, "stale figure one");
@@ -3276,6 +3276,9 @@ fn docx_sequence_fields_compute_source_order_numbers() {
     assert_eq!(fields[8].kind, FieldKind::Sequence);
     assert_eq!(fields[8].instruction, "SEQ Appendix \\* roman");
     assert_eq!(fields[8].computed_result.as_deref(), Some("i"));
+    assert_eq!(fields[9].kind, FieldKind::Sequence);
+    assert_eq!(fields[9].instruction, "SEQ Appendix \\r 31 \\* Hex");
+    assert_eq!(fields[9].computed_result.as_deref(), Some("1F"));
 
     let report = doc.report();
     assert_eq!(
@@ -3299,12 +3302,23 @@ fn docx_sequence_fields_compute_source_order_numbers() {
             .lines()
             .filter(|line| !line.is_empty())
             .collect::<Vec<_>>(),
-        vec!["1", "2", "7", "7", "9", "cached invalid reset", "10", "i"]
+        vec![
+            "1",
+            "2",
+            "7",
+            "7",
+            "9",
+            "cached invalid reset",
+            "10",
+            "i",
+            "1F",
+        ]
     );
     assert!(
         !main_text.contains("stale figure")
             && !main_text.contains("stale hidden figure")
-            && !main_text.contains("stale appendix roman"),
+            && !main_text.contains("stale appendix roman")
+            && !main_text.contains("stale appendix hex"),
         "computed SEQ field text should replace stale cached text: {main_text:?}"
     );
 }
