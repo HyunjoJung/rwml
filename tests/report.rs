@@ -1750,6 +1750,24 @@ fn page_ref_rendered_break_no_cached_result_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn page_ref_wrapped_complex_rendered_break_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Page one text.</w:t></w:r></w:p><w:p><w:r><w:lastRenderedPageBreak/><w:t>Page two lead.</w:t></w:r></w:p><w:p><w:bookmarkStart w:id="7" w:name="FigureTwo"/><w:r><w:t>Figure 2</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:ins><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> PAGEREF &quot;FigureTwo&quot; \* MERGEFORMAT </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>old wrapped page</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:ins></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn page_ref_alternate_content_rendered_break_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -6192,6 +6210,49 @@ fn report_page_ref_no_cached_rendered_break_fields_are_supported() {
     assert!(
         main_text.contains("2\n2"),
         "computed PAGEREF report diagnostics should not depend on cached result runs: {main_text:?}"
+    );
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_page_ref_wrapped_complex_rendered_break_field_is_supported() {
+    let doc = Document::open(&page_ref_wrapped_complex_rendered_break_diagnostics_docx())
+        .expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::PageRef);
+    assert_eq!(
+        fields[0].instruction,
+        "PAGEREF \"FigureTwo\" \\* MERGEFORMAT"
+    );
+    assert_eq!(fields[0].result, "old wrapped page");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("2"));
+
+    let report = doc.report();
+    assert_eq!(report.features.fields, 1);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::PageRef,
+            count: 1,
+        }]
+    );
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+    assert!(
+        report
+            .warnings
+            .iter()
+            .all(|warning| !matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })),
+        "{:?}",
+        report.warnings
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("2") && !main_text.contains("old wrapped page"),
+        "wrapped complex PAGEREF report diagnostics should use computed visible text: {main_text:?}"
     );
 }
 
