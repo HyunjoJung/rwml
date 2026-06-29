@@ -1484,7 +1484,15 @@ fn is_body_block(name: &[u8]) -> bool {
 fn is_transparent_body_block_container(name: &[u8]) -> bool {
     matches!(
         name,
-        b"sdt" | b"sdtContent" | b"customXml" | b"smartTag" | b"ins" | b"moveTo"
+        b"sdt"
+            | b"sdtContent"
+            | b"customXml"
+            | b"smartTag"
+            | b"ins"
+            | b"moveTo"
+            | b"AlternateContent"
+            | b"Choice"
+            | b"Fallback"
     )
 }
 

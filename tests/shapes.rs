@@ -174,6 +174,23 @@ fn alternate_content_floating_shape_docx() -> Vec<u8> {
     ])
 }
 
+fn block_alternate_content_floating_shape_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:body><mc:AlternateContent><mc:Choice Requires="wps"><w:p><w:r><w:t>Choice before </w:t></w:r><w:r><w:drawing><wp:anchor relativeHeight="71"><wp:extent cx="914400" cy="457200"/><wp:docPr id="71" name="Choice block float"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>Choice block body</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:t>Choice after</w:t></w:r></w:p></mc:Choice><mc:Fallback><w:p><w:r><w:t>Fallback before </w:t></w:r><w:r><w:drawing><wp:anchor relativeHeight="72"><wp:extent cx="914400" cy="457200"/><wp:docPr id="72" name="Fallback block float"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>Fallback block body</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:t>Fallback after</w:t></w:r></w:p></mc:Fallback></mc:AlternateContent></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn preset_geometry_floating_shape_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -491,6 +508,31 @@ fn docx_floating_shape_alternate_content_uses_single_branch() {
     assert_eq!(
         shapes[0].anchor_char_offset,
         Some("Before alternate ".chars().count())
+    );
+}
+
+#[test]
+fn docx_block_alternate_content_floating_shape_keeps_anchor() {
+    let doc =
+        Document::open(&block_alternate_content_floating_shape_docx()).expect("fixture opens");
+    let shapes = doc.floating_shapes();
+
+    assert_eq!(
+        doc.main_text(),
+        "Choice before Choice block bodyChoice after"
+    );
+    assert_eq!(shapes.len(), 1);
+    assert_eq!(shapes[0].id, "71");
+    assert_eq!(shapes[0].name.as_deref(), Some("Choice block float"));
+    assert_eq!(shapes[0].text.as_deref(), Some("Choice block body"));
+    assert_eq!(shapes[0].anchor_block_index, Some(0));
+    assert_eq!(
+        shapes[0].anchor_text.as_deref(),
+        Some("Choice before Choice after")
+    );
+    assert_eq!(
+        shapes[0].anchor_char_offset,
+        Some("Choice before ".chars().count())
     );
 }
 
