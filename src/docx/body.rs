@@ -479,9 +479,7 @@ fn read_section_page_number_start(r: &mut Xml<'_>) -> Option<u32> {
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"pgNumType" =>
             {
-                page_number_start = attr_local(&e, b"start")
-                    .and_then(|v| v.trim().parse::<u32>().ok())
-                    .map(|value| value.max(1));
+                page_number_start = section_page_number_start(&e);
             }
             Ok(Event::Start(_)) => skip_subtree(r),
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"sectPr" => break,
@@ -499,8 +497,7 @@ fn read_section_page_number_format(r: &mut Xml<'_>) -> Option<PageNumberFormat> 
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"pgNumType" =>
             {
-                page_number_format = attr_local(&e, b"fmt")
-                    .and_then(|value| PageNumberFormat::from_wml_value(&value));
+                page_number_format = section_page_number_format(&e);
             }
             Ok(Event::Start(_)) => skip_subtree(r),
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"sectPr" => break,
@@ -509,6 +506,16 @@ fn read_section_page_number_format(r: &mut Xml<'_>) -> Option<PageNumberFormat> 
         }
     }
     page_number_format
+}
+
+fn section_page_number_start(e: &BytesStart<'_>) -> Option<u32> {
+    attr_local(e, b"start")
+        .and_then(|value| value.trim().parse::<u32>().ok())
+        .map(|value| value.max(1))
+}
+
+fn section_page_number_format(e: &BytesStart<'_>) -> Option<PageNumberFormat> {
+    attr_local(e, b"fmt").and_then(|value| PageNumberFormat::from_wml_value(&value))
 }
 
 /// Parse a `word/headerN.xml` / `footerN.xml` part (root `<w:hdr>` / `<w:ftr>`)
@@ -1465,11 +1472,8 @@ fn read_sect_pr(r: &mut Xml<'_>) -> SectionSetup {
                     section.page.margin_bottom_pt = b;
                 }
                 b"pgNumType" => {
-                    section.page_number_start = attr_local(&e, b"start")
-                        .and_then(|v| v.trim().parse::<u32>().ok())
-                        .map(|value| value.max(1));
-                    section.page_number_format = attr_local(&e, b"fmt")
-                        .and_then(|value| PageNumberFormat::from_wml_value(&value));
+                    section.page_number_start = section_page_number_start(&e);
+                    section.page_number_format = section_page_number_format(&e);
                 }
                 b"cols" => {
                     section.columns = attr_local(&e, b"num")
