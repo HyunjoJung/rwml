@@ -686,7 +686,8 @@ fn supports_document_info_field_evaluation(field: &Field) -> bool {
 
 #[cfg(feature = "render")]
 fn supports_render_model_field_evaluation(field: &Field) -> bool {
-    matches!(field.kind, FieldKind::Page) || supports_field_evaluation(field)
+    (field.kind == FieldKind::Page && supported_page_syntax(&field.instruction))
+        || supports_field_evaluation(field)
 }
 
 pub(crate) fn fields_for_model(blocks: &[Block]) -> Vec<Field> {

@@ -102,6 +102,24 @@ fn page_field_docx() -> Vec<u8> {
     ])
 }
 
+#[cfg(feature = "render")]
+fn page_unsupported_switch_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" PAGE \* Unknown "><w:r><w:t>cached bad page</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn page_field_visible_intro_section_page_number_restart_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -12328,6 +12346,36 @@ fn docx_page_ref_no_cached_result_fields_are_not_model_render_warnings() {
 
     assert_eq!(rendered.report.unsupported.fields, 0);
     assert!(rendered.report.unsupported.field_kinds.is_empty());
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn docx_page_unsupported_switch_model_render_report_matches_document_reason_bucket() {
+    let doc = Document::open(&page_unsupported_switch_docx()).expect("fixture opens");
+    let expected_reasons = doc.report().features.unsupported_field_reasons;
+    assert_eq!(
+        expected_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnsupportedSwitch,
+            count: 1,
+        }]
+    );
+    let model = doc.model();
+
+    let rendered = rdoc::render_pdf_with_report(&model);
+
+    assert_eq!(rendered.report.unsupported.fields, 1);
+    assert_eq!(
+        rendered.report.unsupported.field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Page,
+            count: 1,
+        }]
+    );
+    assert_eq!(
+        rendered.report.unsupported.unsupported_field_reasons,
+        expected_reasons
+    );
 }
 
 #[cfg(feature = "render")]
