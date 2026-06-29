@@ -1081,7 +1081,7 @@ pub(crate) fn formula_field_syntax(instruction: &str) -> bool {
                 return false;
             }
             let mut tail = tokens[tail_index..].iter().map(String::as_str);
-            return formula_field_format_tail(&mut tail);
+            return formula_field_general_format_tail(&mut tail);
         }
         return true;
     };
@@ -1136,6 +1136,23 @@ fn formula_field_format_tail<'a>(parts: &mut impl Iterator<Item = &'a str>) -> b
     while let Some(part) = parts.next() {
         let Some(accepted) = accept_general_format_switch(part, parts, |format| {
             accept_field_text_format_switch(format, &mut text_format)
+        }) else {
+            return false;
+        };
+        if !accepted {
+            return false;
+        }
+    }
+    true
+}
+
+fn formula_field_general_format_tail<'a>(parts: &mut impl Iterator<Item = &'a str>) -> bool {
+    let mut number_format = None;
+    let mut text_format = None;
+    while let Some(part) = parts.next() {
+        let Some(accepted) = accept_general_format_switch(part, parts, |format| {
+            accept_field_number_format_switch(format, &mut number_format)
+                || accept_field_text_format_switch(format, &mut text_format)
         }) else {
             return false;
         };

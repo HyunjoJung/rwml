@@ -630,7 +630,8 @@ Implementation:
   literal affixes, single-section leading `+`/`-` sign-control items, `x`
   digit-drop/rounding positions, and sectioned
   positive/negative/zero pictures, plus neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT`
-  formula tails, malformed formula switch syntax reporting `UnsupportedSwitch`,
+  formula tails and non-table literal formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
+  malformed formula switch syntax reporting `UnsupportedSwitch`,
   and literal `DEFINED(expr)` checks for parser-local literal expressions, literal
   quoted/unquoted literal `QUOTE`, literal `IF` finite numeric/text comparisons, literal `COMPARE`
   finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields, and literal quoted or single-token
@@ -659,7 +660,8 @@ Implementation:
   nested aggregate calls inside literal formula expressions, simple separated or compact `\#`
   numeric pictures, literal affixes, single-section leading `+`/`-` sign-control items, `x`
   digit-drop/rounding positions, and sectioned positive/negative/zero pictures,
-  plus neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT` formula tails,
+  plus neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT` formula tails and
+  non-table literal formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
   malformed formula switch syntax reporting `UnsupportedSwitch`,
   quoted/unquoted literal `QUOTE`, literal `IF` finite numeric/text comparisons, literal
   `COMPARE` finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields, and
@@ -718,7 +720,8 @@ Acceptance:
   literal affixes, single-section leading `+`/`-`
   sign-control items, `x` digit-drop/rounding positions, and sectioned
   positive/negative/zero pictures, plus neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT`
-  formula tails, malformed formula switch syntax reporting `UnsupportedSwitch`,
+  formula tails and non-table literal formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
+  malformed formula switch syntax reporting `UnsupportedSwitch`,
   and literal `DEFINED(expr)` checks for parser-local literal expressions,
   quoted/unquoted literal `QUOTE`, malformed literal `QUOTE` syntax reporting
   `UnsupportedSwitch`, literal `IF` comparisons, malformed literal `IF`
@@ -1168,7 +1171,8 @@ open and edit the chart data.
   literal affixes, single-section leading `+`/`-` sign-control items, `x`
   digit-drop/rounding positions, and sectioned
   positive/negative/zero pictures, plus neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT`
-  formula tails, malformed formula switch syntax reporting `UnsupportedSwitch`,
+  formula tails and non-table literal formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
+  malformed formula switch syntax reporting `UnsupportedSwitch`,
   and literal `DEFINED(expr)` checks for parser-local literal expressions, literal
   quoted/unquoted literal `QUOTE`, literal `IF` finite numeric/text comparisons, literal `COMPARE`
   finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields, and literal quoted or single-token
@@ -1197,7 +1201,8 @@ open and edit the chart data.
   nested aggregate calls inside literal formula expressions, simple separated or compact `\#`
   numeric pictures, literal affixes, single-section leading `+`/`-` sign-control items, `x`
   digit-drop/rounding positions, and sectioned positive/negative/zero pictures,
-  plus neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT` formula tails,
+  plus neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT` formula tails and
+  non-table literal formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
   malformed formula switch syntax reporting `UnsupportedSwitch`,
   literal `DEFINED(expr)` checks for parser-local literal expressions,
   quoted/unquoted literal `QUOTE`, literal `IF` comparisons, literal `COMPARE` results,

@@ -1,8 +1,14 @@
 use std::collections::HashMap;
 
-use crate::annotation::{formula_field_syntax, instruction_parts, strip_ascii_switch_prefix};
+use crate::annotation::{
+    accept_field_number_format_switch, accept_general_format_switch, formula_field_syntax,
+    instruction_parts, strip_ascii_switch_prefix, FieldNumberFormat,
+};
 
-use super::{accept_neutral_field_format_tail, is_field_format_start, quoted_literal_text};
+use super::{
+    accept_neutral_field_format_tail, format_page_number, is_field_format_start,
+    page_number_format_from_field_format, quoted_literal_text, PageNumberFormat,
+};
 
 #[cfg(test)]
 pub(super) fn computed_formula_result(instruction: &str) -> Option<String> {
@@ -20,7 +26,8 @@ pub(super) fn computed_formula_result_with_bookmarks(
     let mut parser = FormulaParser::new(&spec.expression, field_bookmarks);
     let value = parser.parse()?;
     match spec.number_format {
-        Some(format) => format_formula_number(value, &format),
+        Some(FormulaNumberFormat::Picture(format)) => format_formula_number(value, &format),
+        Some(FormulaNumberFormat::General(format)) => format_formula_general_number(value, format),
         None => formula_number_text(value),
     }
 }
@@ -28,12 +35,18 @@ pub(super) fn computed_formula_result_with_bookmarks(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct FormulaInstruction {
     pub(super) expression: String,
-    pub(super) number_format: Option<String>,
+    pub(super) number_format: Option<FormulaNumberFormat>,
 }
 
 enum FormulaNumberFormatSwitch {
     Separate(usize),
     Compact { index: usize, picture: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum FormulaNumberFormat {
+    Picture(String),
+    General(FieldNumberFormat),
 }
 
 pub(super) fn formula_instruction(instruction: &str) -> Option<FormulaInstruction> {
@@ -49,10 +62,10 @@ pub(super) fn formula_instruction(instruction: &str) -> Option<FormulaInstructio
                 return None;
             }
             let mut tail = tokens[tail_index..].iter().map(String::as_str);
-            accept_neutral_field_format_tail(&mut tail)?;
+            let general_format = accept_formula_general_format_tail(&mut tail)?;
             return Some(FormulaInstruction {
                 expression: tokens[..tail_index].join(" "),
-                number_format: None,
+                number_format: general_format.map(FormulaNumberFormat::General),
             });
         }
         return Some(FormulaInstruction {
@@ -77,7 +90,7 @@ pub(super) fn formula_instruction(instruction: &str) -> Option<FormulaInstructio
     accept_neutral_field_format_tail(&mut tail)?;
     Some(FormulaInstruction {
         expression: tokens[..format_index].join(" "),
-        number_format: Some(picture),
+        number_format: Some(FormulaNumberFormat::Picture(picture)),
     })
 }
 
@@ -103,6 +116,21 @@ fn formula_number_format_picture(token: &str) -> Option<String> {
         return Some(text);
     }
     (!token.contains('"') && !token.starts_with('\\')).then(|| token.to_string())
+}
+
+fn accept_formula_general_format_tail<'a>(
+    parts: &mut impl Iterator<Item = &'a str>,
+) -> Option<Option<FieldNumberFormat>> {
+    let mut number_format = None;
+    while let Some(part) = parts.next() {
+        if accept_general_format_switch(part, parts, |format| {
+            accept_field_number_format_switch(format, &mut number_format)
+        })? {
+            continue;
+        }
+        return None;
+    }
+    Some(number_format)
 }
 
 #[derive(Debug, Clone)]
@@ -526,6 +554,43 @@ pub(super) fn format_formula_number(value: f64, picture: &str) -> Option<String>
         return format_formula_number_section(value, selected, false);
     }
     format_formula_number_section(value, picture, true)
+}
+
+fn format_formula_general_number(value: f64, format: FieldNumberFormat) -> Option<String> {
+    match format {
+        FieldNumberFormat::DollarText => format_formula_dollar_text(value),
+        _ => {
+            let integer = formula_integer_value(value)?;
+            let page_format = page_number_format_from_field_format(format);
+            format_page_number(integer, Some(page_format))
+        }
+    }
+}
+
+fn formula_integer_value(value: f64) -> Option<usize> {
+    if !value.is_finite() {
+        return None;
+    }
+    let rounded = value.round();
+    if (value - rounded).abs() >= 1e-12 || rounded < 0.0 || rounded > usize::MAX as f64 {
+        return None;
+    }
+    Some(rounded as usize)
+}
+
+fn format_formula_dollar_text(value: f64) -> Option<String> {
+    if !value.is_finite() || value < 0.0 {
+        return None;
+    }
+    let cents_total = (value * 100.0).round();
+    if cents_total < 0.0 || cents_total > usize::MAX as f64 {
+        return None;
+    }
+    let cents_total = cents_total as usize;
+    let whole = cents_total / 100;
+    let cents = cents_total % 100;
+    let whole_text = format_page_number(whole, Some(PageNumberFormat::CardText))?;
+    Some(format!("{whole_text} and {cents:02}/100"))
 }
 
 fn format_formula_number_section(

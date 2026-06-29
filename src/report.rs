@@ -4162,6 +4162,10 @@ mod tests {
             super::FieldEvaluationReason::NoComputedResult
         );
         assert_eq!(
+            super::formula_uncomputed_reason(r#"= 10.25 \* DollarText"#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
             super::formula_uncomputed_reason(r#"= 1 \# "0.00"#),
             super::FieldEvaluationReason::UnsupportedSwitch
         );

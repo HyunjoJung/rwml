@@ -656,7 +656,7 @@ fn formula_neutral_switch_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" = 2 + 3 \* MERGEFORMAT "><w:r><w:t>stale neutral formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = SUM(1; 2; 3) \*CHARFORMAT "><w:r><w:t>stale compact neutral formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = 2 + 3 \* Upper "><w:r><w:t>cached unsupported formula format</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" = 2 + 3 \* MERGEFORMAT "><w:r><w:t>stale neutral formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = SUM(1; 2; 3) \*CHARFORMAT "><w:r><w:t>stale compact neutral formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = 10.25 \* DollarText "><w:r><w:t>stale dollar formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = 31 \* Hex "><w:r><w:t>stale hex formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = 2 + 3 \* Upper "><w:r><w:t>cached unsupported formula format</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -4822,7 +4822,7 @@ fn docx_formula_fields_accept_neutral_format_switches() {
     let doc = Document::open(&formula_neutral_switch_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 3);
+    assert_eq!(fields.len(), 5);
     assert_eq!(fields[0].kind, FieldKind::Dynamic("=".to_string()));
     assert_eq!(fields[0].instruction, r#"= 2 + 3 \* MERGEFORMAT"#);
     assert_eq!(fields[0].result, "stale neutral formula");
@@ -4832,9 +4832,17 @@ fn docx_formula_fields_accept_neutral_format_switches() {
     assert_eq!(fields[1].result, "stale compact neutral formula");
     assert_eq!(fields[1].computed_result.as_deref(), Some("6"));
     assert_eq!(fields[2].kind, FieldKind::Dynamic("=".to_string()));
-    assert_eq!(fields[2].instruction, r#"= 2 + 3 \* Upper"#);
-    assert_eq!(fields[2].result, "cached unsupported formula format");
-    assert_eq!(fields[2].computed_result, None);
+    assert_eq!(fields[2].instruction, r#"= 10.25 \* DollarText"#);
+    assert_eq!(fields[2].result, "stale dollar formula");
+    assert_eq!(fields[2].computed_result.as_deref(), Some("ten and 25/100"));
+    assert_eq!(fields[3].kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(fields[3].instruction, r#"= 31 \* Hex"#);
+    assert_eq!(fields[3].result, "stale hex formula");
+    assert_eq!(fields[3].computed_result.as_deref(), Some("1F"));
+    assert_eq!(fields[4].kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(fields[4].instruction, r#"= 2 + 3 \* Upper"#);
+    assert_eq!(fields[4].result, "cached unsupported formula format");
+    assert_eq!(fields[4].computed_result, None);
 
     let report = doc.report();
     assert_eq!(
@@ -4856,12 +4864,16 @@ fn docx_formula_fields_accept_neutral_format_switches() {
     assert!(
         main_text.contains("5")
             && main_text.contains("6")
+            && main_text.contains("ten and 25/100")
+            && main_text.contains("1F")
             && main_text.contains("cached unsupported formula format"),
         "neutral formula switches should compute while non-neutral switches stay cached: {main_text:?}"
     );
     assert!(
         !main_text.contains("stale neutral formula")
-            && !main_text.contains("stale compact neutral formula"),
+            && !main_text.contains("stale compact neutral formula")
+            && !main_text.contains("stale dollar formula")
+            && !main_text.contains("stale hex formula"),
         "computed neutral formula switches should replace stale cached text: {main_text:?}"
     );
 }

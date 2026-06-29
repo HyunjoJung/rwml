@@ -1720,6 +1720,23 @@ mod tests {
     }
 
     #[test]
+    fn formula_general_number_switches_format_literal_results() {
+        assert_eq!(
+            computed_dynamic_result(r#"= 10.25 \* DollarText"#).as_deref(),
+            Some("ten and 25/100")
+        );
+        assert_eq!(
+            computed_dynamic_result(r#"= 31 \* Hex"#).as_deref(),
+            Some("1F")
+        );
+        assert_eq!(
+            computed_dynamic_result(r#"= 21 \* OrdText"#).as_deref(),
+            Some("twenty-first")
+        );
+        assert_eq!(computed_dynamic_result(r#"= 10.25 \* Hex"#), None);
+    }
+
+    #[test]
     fn ask_default_result_populates_field_bookmark() {
         let mut field_bookmarks = HashMap::new();
 
