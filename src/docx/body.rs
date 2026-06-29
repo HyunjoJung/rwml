@@ -20,7 +20,8 @@ use super::parse_rgb_hex_color;
 use super::styles::Styles;
 use super::xml_text::{read_text, skip_subtree};
 use super::{
-    attr_local, attr_local_trimmed, attr_u8, field_char_type, is_page_break_type, local, toggle_on,
+    attr_local, attr_local_trimmed, attr_u32, attr_u8, field_char_type, is_page_break_type, local,
+    toggle_on,
 };
 use crate::annotation::{normalized_field_instruction, FieldKind};
 use crate::model::{
@@ -466,8 +467,8 @@ fn doc_grid_from_attrs(e: &BytesStart<'_>) -> Option<DocGrid> {
     let grid_type = attr_local(e, b"type")
         .and_then(|value| DocGridType::from_wml_value(&value))
         .unwrap_or(DocGridType::Default);
-    let line_pitch = attr_local(e, b"linePitch").and_then(|v| v.trim().parse::<u32>().ok());
-    let character_space = attr_local(e, b"charSpace").and_then(|v| v.trim().parse::<u32>().ok());
+    let line_pitch = attr_u32(e, b"linePitch");
+    let character_space = attr_u32(e, b"charSpace");
     Some(DocGrid {
         grid_type,
         line_pitch,
@@ -544,9 +545,7 @@ fn read_section_page_number_format(r: &mut Xml<'_>) -> Option<PageNumberFormat> 
 }
 
 fn section_page_number_start(e: &BytesStart<'_>) -> Option<u32> {
-    attr_local(e, b"start")
-        .and_then(|value| value.trim().parse::<u32>().ok())
-        .map(|value| value.max(1))
+    attr_u32(e, b"start").map(|value| value.max(1))
 }
 
 fn section_page_number_format(e: &BytesStart<'_>) -> Option<PageNumberFormat> {
