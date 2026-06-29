@@ -29,6 +29,8 @@ jobs:
         run: cargo clippy --all-targets --all-features -- -D warnings
       - name: Test (default)
         run: cargo test --all-targets
+      - name: Test (no default features)
+        run: cargo test --no-default-features
       - name: Test (render)
         run: cargo test --all-targets --features render
       - name: Doctests
