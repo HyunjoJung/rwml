@@ -4001,21 +4001,18 @@ fn append_ref_paragraph_breaks(active: &[(String, String)], out: &mut HashMap<St
 }
 
 fn bookmark_start(e: &BytesStart<'_>) -> Option<(String, String)> {
-    Some((bookmark_attr(e, b"id")?, bookmark_attr(e, b"name")?))
+    Some((
+        attr_local_trimmed(e, b"id")?,
+        attr_local_trimmed(e, b"name")?,
+    ))
 }
 
 fn bookmark_end_id(e: &BytesStart<'_>) -> Option<String> {
-    bookmark_attr(e, b"id")
+    attr_local_trimmed(e, b"id")
 }
 
 fn bookmark_name(e: &BytesStart<'_>) -> Option<String> {
-    bookmark_attr(e, b"name")
-}
-
-fn bookmark_attr(e: &BytesStart<'_>, key: &[u8]) -> Option<String> {
-    attr_local(e, key)
-        .map(|value| value.trim().to_owned())
-        .filter(|value| !value.is_empty())
+    attr_local_trimmed(e, b"name")
 }
 
 pub(crate) fn toc_entries(xml: &str, styles: &Styles) -> Vec<TocEntry> {
