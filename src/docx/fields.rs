@@ -4717,13 +4717,24 @@ fn computed_ref_instruction_result(
     if spec.relative {
         computed_relative_ref_result(spec, ctx.ref_positions, field_position)
     } else if let Some(text) = ctx.field_bookmarks.get(&spec.target) {
-        Some(text.clone())
+        computed_ref_bookmark_text_result(text, spec.number_format)
     } else {
         ctx.bookmarks
             .get(&spec.target)
             .filter(|text| !text.is_empty())
-            .cloned()
+            .and_then(|text| computed_ref_bookmark_text_result(text, spec.number_format))
     }
+}
+
+fn computed_ref_bookmark_text_result(
+    text: &str,
+    number_format: Option<PageNumberFormat>,
+) -> Option<String> {
+    if let Some(format) = number_format {
+        let number = text.trim().parse::<usize>().ok()?;
+        return format_page_number(number, Some(format));
+    }
+    Some(text.to_string())
 }
 
 fn ref_instruction_target_known(spec: &RefInstruction, ctx: &RefResultContext<'_>) -> bool {

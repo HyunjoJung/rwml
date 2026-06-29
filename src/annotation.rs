@@ -1908,7 +1908,15 @@ fn ref_field_syntax_parts<'a>(mut parts: impl Iterator<Item = &'a str>) -> Optio
     {
         return None;
     }
-    if number_format.is_some() && !note_reference {
+    if number_format.is_some()
+        && !note_reference
+        && (relative
+            || paragraph_number
+            || full_context_number
+            || relative_context_number
+            || suppress_non_numeric
+            || sequence_separator)
+    {
         return None;
     }
     Some(RefFieldSyntax {
@@ -2975,7 +2983,10 @@ mod tests {
         assert!(sequence.sequence_separator);
 
         assert!(direct_ref_field_syntax("REF Figure1").is_none());
-        assert!(ref_field_syntax(r#"REF Figure1 \* roman"#).is_none());
+        let numeric =
+            ref_field_syntax(r#"REF Figure1 \* roman"#).expect("valid numeric REF format syntax");
+        assert_eq!(numeric.number_format, Some(FieldNumberFormat::RomanLower));
+        assert!(ref_field_syntax(r#"REF Figure1 \p \* roman"#).is_none());
         assert!(ref_field_syntax(r#"REF FootOne \f \p"#).is_none());
         assert!(ref_field_syntax(r#"REF Figure1 \t"#).is_none());
         assert!(ref_field_syntax(r#"REF \h Figure1"#).is_none());

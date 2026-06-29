@@ -389,6 +389,23 @@ fn set_backed_formula_identifier_docx() -> Vec<u8> {
     ])
 }
 
+fn set_backed_ref_number_format_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SET ClientTotal 21 "><w:r><w:t>cached numeric set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF ClientTotal \* CardText "><w:r><w:t>stale cardtext ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF ClientTotal \* Ordinal "><w:r><w:t>stale ordinal ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF ClientTotal \* CardText \* Upper "><w:r><w:t>stale uppercase cardtext ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SET ClientTier &quot;Gold&quot; "><w:r><w:t>cached text set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF ClientTier \* CardText "><w:r><w:t>cached text ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF MissingTotal \* CardText "><w:r><w:t>cached missing ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn if_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -4116,6 +4133,56 @@ fn docx_formula_fields_resolve_bookmark_style_identifier_operands() {
             && !main_text.contains("stale named formula")
             && !main_text.contains("stale hidden formula"),
         "computed bookmark-style formula identifiers should replace stale cached text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_ref_fields_apply_number_formats_to_prior_numeric_set_bookmarks() {
+    let doc = Document::open(&set_backed_ref_number_format_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 7);
+    assert_eq!(fields[0].kind, FieldKind::Dynamic("SET".to_string()));
+    assert_eq!(fields[0].instruction, "SET ClientTotal 21");
+    assert_eq!(fields[0].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[1].kind, FieldKind::Ref);
+    assert_eq!(fields[1].instruction, "REF ClientTotal \\* CardText");
+    assert_eq!(fields[1].result, "stale cardtext ref");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("twenty-one"));
+    assert_eq!(fields[2].kind, FieldKind::Ref);
+    assert_eq!(fields[2].instruction, "REF ClientTotal \\* Ordinal");
+    assert_eq!(fields[2].result, "stale ordinal ref");
+    assert_eq!(fields[2].computed_result.as_deref(), Some("21st"));
+    assert_eq!(fields[3].kind, FieldKind::Ref);
+    assert_eq!(
+        fields[3].instruction,
+        "REF ClientTotal \\* CardText \\* Upper"
+    );
+    assert_eq!(fields[3].result, "stale uppercase cardtext ref");
+    assert_eq!(fields[3].computed_result.as_deref(), Some("TWENTY-ONE"));
+    assert_eq!(fields[4].kind, FieldKind::Dynamic("SET".to_string()));
+    assert_eq!(fields[4].instruction, "SET ClientTier \"Gold\"");
+    assert_eq!(fields[4].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[5].kind, FieldKind::Ref);
+    assert_eq!(fields[5].instruction, "REF ClientTier \\* CardText");
+    assert_eq!(fields[5].result, "cached text ref");
+    assert_eq!(fields[5].computed_result, None);
+    assert_eq!(fields[6].kind, FieldKind::Ref);
+    assert_eq!(fields[6].instruction, "REF MissingTotal \\* CardText");
+    assert_eq!(fields[6].result, "cached missing ref");
+    assert_eq!(fields[6].computed_result, None);
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("twenty-one")
+            && main_text.contains("21st")
+            && main_text.contains("TWENTY-ONE")
+            && main_text.contains("cached text ref")
+            && main_text.contains("cached missing ref")
+            && !main_text.contains("stale cardtext ref")
+            && !main_text.contains("stale ordinal ref")
+            && !main_text.contains("stale uppercase cardtext ref"),
+        "computed SET-backed REF number formats should replace stale cached text: {main_text:?}"
     );
 }
 
