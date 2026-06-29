@@ -1107,11 +1107,11 @@ Initial status:
   complete-but-not-enforced existing inputs, enforced strict local evidence, and
   missing strict public-release inputs, including missing/invalid report files,
   invalid public corpus manifests, and manifest pairs whose document path lists
-  do not match. It also provides
+  do not match or whose listed documents are absent. It also provides
   `--enforce-policy-inputs` validation that requires a passing public hygiene
   report, render validation, extraction benchmark, and exactly the public
   `MANIFEST.tsv` plus `RENDER_MANIFEST.tsv` corpus manifest pair with matching
-  document paths and rejects failed hygiene/validation/benchmark gates or
+  document paths whose listed documents exist and rejects failed hygiene/validation/benchmark gates or
   validation/benchmark reports generated with weaker thresholds than the named
   `public-release` policy.
 - `scripts/public_hygiene_audit.py` statically scans committed plus untracked,
@@ -1212,7 +1212,8 @@ and report diagnostics tests before public support wording moves.
    or skips), and `scripts/release_manifest.py --enforce-policy-inputs` can make
    render validation, an `rdoc.benchmark-report.v1` / `extract-vs-mature`
    extraction benchmark, and the exact public `MANIFEST.tsv`/`RENDER_MANIFEST.tsv`
-   corpus pair with matching document paths mandatory with passing compact gates
+   corpus pair with matching document paths and existing listed documents
+   mandatory with passing compact gates
    and policy-strength thresholds for strict public manifests.
    Manifests now record `release_evidence.strict_policy_status`,
    `strict_policy_enforced`, `strict_policy_inputs_complete`, and missing

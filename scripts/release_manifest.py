@@ -420,6 +420,10 @@ def public_release_policy_input_gaps(
         try:
             if not public_release_corpus_manifest_documents_match(corpus_manifests):
                 missing.append("matching public corpus manifest documents")
+            elif not public_release_corpus_manifest_document_files_exist(
+                corpus_manifests
+            ):
+                missing.append("existing public corpus documents")
         except (OSError, UnicodeDecodeError, ValueError):
             missing.append("valid public corpus manifests")
     missing.extend(
@@ -499,12 +503,24 @@ def public_release_corpus_manifest_documents_match(corpus_manifests: list[Path])
     return manifest_paths == render_manifest_paths
 
 
+def public_release_corpus_manifest_document_files_exist(
+    corpus_manifests: list[Path],
+) -> bool:
+    for manifest in corpus_manifests:
+        for document_path in corpus_manifest_document_paths(manifest):
+            if not (manifest.parent / document_path).is_file():
+                return False
+    return True
+
+
 def require_public_release_corpus_manifest_pair(name: str, corpus_manifests: list[Path]) -> None:
     required = " and ".join(PUBLIC_RELEASE_CORPUS_MANIFESTS)
     if not public_release_corpus_manifest_pair_matches(corpus_manifests):
         raise ValueError(f"{name} requires corpus manifests exactly {required}")
     if not public_release_corpus_manifest_documents_match(corpus_manifests):
         raise ValueError(f"{name} requires matching corpus manifest document paths")
+    if not public_release_corpus_manifest_document_files_exist(corpus_manifests):
+        raise ValueError(f"{name} requires existing public corpus documents")
 
 
 def require_report_gate_passed(policy: str, report: dict[str, Any], label: str) -> None:

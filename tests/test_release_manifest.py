@@ -116,9 +116,19 @@ def write_passing_benchmark(path: pathlib.Path) -> None:
     )
 
 
+def write_public_corpus_document(
+    root: pathlib.Path, relative: str = "synthetic/a.docx"
+) -> pathlib.Path:
+    document = root / relative
+    document.parent.mkdir(parents=True, exist_ok=True)
+    document.write_bytes(b"public corpus fixture")
+    return document
+
+
 def write_matching_public_manifests(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path]:
     corpus = root / "MANIFEST.tsv"
     render_corpus = root / "RENDER_MANIFEST.tsv"
+    write_public_corpus_document(root)
     corpus.write_text(
         "# path\tfields\twarnings\nsynthetic/a.docx\t0\t-\n",
         encoding="utf-8",
@@ -1983,6 +1993,42 @@ class ReleaseManifestTests(unittest.TestCase):
             ["matching public corpus manifest documents"],
         )
 
+    def test_release_evidence_marks_missing_public_corpus_documents_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            hygiene = root / "public-hygiene.json"
+            validation = root / "render-validation.json"
+            benchmark = root / "extract-benchmark.json"
+            corpus = root / "MANIFEST.tsv"
+            render_corpus = root / "RENDER_MANIFEST.tsv"
+            write_passing_hygiene(hygiene)
+            write_passing_validation(validation)
+            write_passing_benchmark(benchmark)
+            corpus.write_text(
+                "# path\tfields\twarnings\nsynthetic/missing.docx\t0\t-\n",
+                encoding="utf-8",
+            )
+            render_corpus.write_text(
+                "# path\tpages\twarnings\nsynthetic/missing.docx\t1\t-\n",
+                encoding="utf-8",
+            )
+
+            evidence = release_manifest.release_evidence_summary(
+                "public-release",
+                enforce_policy_inputs=False,
+                hygiene_report=hygiene,
+                validation_report=validation,
+                benchmark_reports=[benchmark],
+                corpus_manifests=[corpus, render_corpus],
+            )
+
+        self.assertEqual(evidence["strict_policy_status"], "missing_inputs")
+        self.assertFalse(evidence["strict_policy_inputs_complete"])
+        self.assertEqual(
+            evidence["strict_missing"],
+            ["existing public corpus documents"],
+        )
+
     def test_release_evidence_marks_invalid_corpus_manifests_missing(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
@@ -2064,6 +2110,7 @@ class ReleaseManifestTests(unittest.TestCase):
             corpus = root / "MANIFEST.tsv"
             render_corpus = root / "RENDER_MANIFEST.tsv"
             write_passing_hygiene(hygiene)
+            write_public_corpus_document(root)
             validation.write_text(
                 json.dumps(
                     {
@@ -2322,6 +2369,38 @@ class ReleaseManifestTests(unittest.TestCase):
                     corpus_manifests=[corpus, render_corpus],
                 )
 
+    def test_enforced_public_release_policy_requires_existing_corpus_documents(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            hygiene = root / "public-hygiene.json"
+            validation = root / "render-validation.json"
+            benchmark = root / "extract-benchmark.json"
+            corpus = root / "MANIFEST.tsv"
+            render_corpus = root / "RENDER_MANIFEST.tsv"
+            write_passing_hygiene(hygiene)
+            write_passing_validation(validation)
+            write_passing_benchmark(benchmark)
+            corpus.write_text(
+                "# path\tfields\twarnings\nsynthetic/missing.docx\t0\t-\n",
+                encoding="utf-8",
+            )
+            render_corpus.write_text(
+                "# path\tpages\twarnings\nsynthetic/missing.docx\t1\t-\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValueError,
+                "public-release requires existing public corpus documents",
+            ):
+                release_manifest.check_required_policy_inputs(
+                    "public-release",
+                    hygiene_report=hygiene,
+                    validation_report=validation,
+                    benchmark_reports=[benchmark],
+                    corpus_manifests=[corpus, render_corpus],
+                )
+
     def test_cli_enforced_policy_rejects_failing_gate_report(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
@@ -2354,6 +2433,7 @@ class ReleaseManifestTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            write_public_corpus_document(root)
             corpus.write_text("# path\tfields\twarnings\nsynthetic/a.docx\t0\t-\n", encoding="utf-8")
             render_corpus.write_text("# path\tpages\twarnings\nsynthetic/a.docx\t1\t-\n", encoding="utf-8")
 
@@ -2469,6 +2549,7 @@ class ReleaseManifestTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            write_public_corpus_document(root)
             corpus.write_text("# path\tfields\twarnings\nsynthetic/a.docx\t0\t-\n", encoding="utf-8")
             render_corpus.write_text("# path\tpages\twarnings\nsynthetic/a.docx\t1\t-\n", encoding="utf-8")
 
@@ -2574,6 +2655,7 @@ class ReleaseManifestTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            write_public_corpus_document(root)
             corpus.write_text("# path\tfields\twarnings\nsynthetic/a.docx\t0\t-\n", encoding="utf-8")
             render_corpus.write_text("# path\tpages\twarnings\nsynthetic/a.docx\t1\t-\n", encoding="utf-8")
 
@@ -3158,6 +3240,7 @@ class ReleaseManifestTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            write_public_corpus_document(root)
             corpus.write_text("# path\tfields\twarnings\nsynthetic/a.docx\t0\t-\n", encoding="utf-8")
             render_corpus.write_text("# path\tpages\twarnings\nsynthetic/a.docx\t1\t-\n", encoding="utf-8")
 
