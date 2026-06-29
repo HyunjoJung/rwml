@@ -550,6 +550,62 @@ pub(crate) fn field_non_empty_non_switch_literal_token(value: &str) -> Option<&s
     (!value.is_empty()).then_some(value)
 }
 
+pub(crate) fn hyperlink_field_target(instruction: &str) -> Option<String> {
+    let text = instruction.trim_start();
+    let field_name_len = "HYPERLINK".len();
+    let field_name = text.get(..field_name_len)?;
+    if !field_name.eq_ignore_ascii_case("HYPERLINK") {
+        return None;
+    }
+    let after_name = text.get(field_name_len..)?;
+    if matches!(after_name.chars().next(), Some(ch) if !ch.is_whitespace()) {
+        return None;
+    }
+    let after_name = after_name.trim_start();
+    if after_name.starts_with('\\')
+        && !after_name
+            .get(..2)
+            .is_some_and(|switch| switch.eq_ignore_ascii_case("\\l"))
+    {
+        return None;
+    }
+    let target_start = after_name.find('"')?;
+    let rest = &after_name[target_start + 1..];
+    let target_end = rest.find('"')?;
+    let tail = &rest[target_end + 1..];
+    if !hyperlink_tail_syntax(tail) {
+        return None;
+    }
+    let target = rest[..target_end].trim();
+    (!target.is_empty()).then(|| target.to_string())
+}
+
+fn hyperlink_tail_syntax(tail: &str) -> bool {
+    let tokens = instruction_parts(tail);
+    let mut parts = tokens.iter().map(String::as_str);
+    while let Some(part) = parts.next() {
+        if !part.starts_with('\\') || part.contains('"') {
+            return false;
+        }
+        let lower = part.to_ascii_lowercase();
+        if part.len() > 2 && matches!(lower.get(..2), Some("\\l") | Some("\\o") | Some("\\t")) {
+            if field_non_empty_non_switch_literal_token(&part[2..]).is_none() {
+                return false;
+            }
+            continue;
+        }
+        if matches!(lower.as_str(), "\\l" | "\\o" | "\\t") {
+            let Some(value) = parts.next() else {
+                return false;
+            };
+            if field_non_empty_non_switch_literal_token(value).is_none() {
+                return false;
+            }
+        }
+    }
+    true
+}
+
 pub(crate) fn field_comparison_syntax<'a>(
     first: &str,
     parts: &mut impl Iterator<Item = &'a str>,
@@ -2777,10 +2833,10 @@ mod tests {
         action_field_syntax, advance_field_syntax, barcode_field_syntax, compare_field_syntax,
         direct_ref_field_syntax, eq_enclosed_operand, eq_fraction_operands, eq_list_operands,
         eq_numeric_prefix_option, eq_parenthesized_operand, eq_prefix_switch_tail,
-        eq_radical_operands, if_field_syntax, legacy_form_field_syntax, merge_control_field_syntax,
-        note_ref_field_syntax, opaque_field_syntax, page_ref_field_syntax, ref_field_syntax,
-        symbol_field_syntax, toc_field_syntax, FieldNumberFormat, FieldTextFormat,
-        TocSequenceFilter, TocTcFilter,
+        eq_radical_operands, hyperlink_field_target, if_field_syntax, legacy_form_field_syntax,
+        merge_control_field_syntax, note_ref_field_syntax, opaque_field_syntax,
+        page_ref_field_syntax, ref_field_syntax, symbol_field_syntax, toc_field_syntax,
+        FieldNumberFormat, FieldTextFormat, TocSequenceFilter, TocTcFilter,
     };
 
     #[test]
@@ -3007,6 +3063,21 @@ mod tests {
         assert!(!barcode_field_syntax(r#"DISPLAYBARCODE "12345" QR \z"#));
         assert!(!barcode_field_syntax(r#"DISPLAYBARCODE "12345" BADTYPE"#));
         assert!(!barcode_field_syntax(r#"DISPLAYBARCODE "12345" QR \s 1"#));
+    }
+
+    #[test]
+    fn hyperlink_field_target_accepts_target_and_anchor_forms() {
+        assert_eq!(
+            hyperlink_field_target(r#" HYPERLINK "https://example.com" \o "tip" "#).as_deref(),
+            Some("https://example.com")
+        );
+        assert_eq!(
+            hyperlink_field_target(r#"HYPERLINK \l "AnchorName""#).as_deref(),
+            Some("AnchorName")
+        );
+        assert!(hyperlink_field_target(r#"HYPERLINK "https://example.com" extra"#).is_none());
+        assert!(hyperlink_field_target(r#"HYPERLINK \o "tip""#).is_none());
+        assert!(hyperlink_field_target(r#"HYPERLINKBASE "https://example.com""#).is_none());
     }
 }
 

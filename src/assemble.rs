@@ -739,37 +739,7 @@ impl<'a, 'l> Asm<'a, 'l> {
 /// Extract the target URL from a `HYPERLINK` field instruction, e.g.
 /// `HYPERLINK "https://example.com" \o "tooltip"` → `https://example.com`.
 fn parse_hyperlink(instr: &str) -> Option<String> {
-    let s = instr.trim_start();
-    let field_name_len = "HYPERLINK".len();
-    let field_name = s.get(..field_name_len)?;
-    if !field_name.eq_ignore_ascii_case("HYPERLINK") {
-        return None;
-    }
-    let after = s.get(field_name_len..)?;
-    if matches!(after.chars().next(), Some(ch) if !ch.is_whitespace()) {
-        return None;
-    }
-    let after = after.trim_start();
-    if after.starts_with('\\')
-        && !after
-            .get(..2)
-            .is_some_and(|switch| switch.eq_ignore_ascii_case("\\l"))
-    {
-        return None;
-    }
-    let start = after.find('"')?;
-    let rest = &after[start + 1..];
-    let end = rest.find('"')?;
-    let tail = &rest[end + 1..];
-    if !crate::hyperlink_tail_is_well_formed(tail) {
-        return None;
-    }
-    let url = rest[..end].trim();
-    if url.is_empty() {
-        None
-    } else {
-        Some(url.to_string())
-    }
+    crate::annotation::hyperlink_field_target(instr)
 }
 
 fn normalize_field_instruction(instr: &str) -> String {

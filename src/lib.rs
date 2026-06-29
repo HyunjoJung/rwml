@@ -3955,6 +3955,7 @@ fn merge_field_name_token(token: &str) -> Option<&str> {
     Some(name)
 }
 
+#[cfg(feature = "docx")]
 fn field_instruction_parts(instruction: &str) -> Vec<String> {
     let mut parts = Vec::new();
     let mut current = String::new();
@@ -3975,41 +3976,6 @@ fn field_instruction_parts(instruction: &str) -> Vec<String> {
         parts.push(current);
     }
     parts
-}
-
-fn hyperlink_tail_is_well_formed(tail: &str) -> bool {
-    let mut parts = field_instruction_parts(tail).into_iter();
-    while let Some(part) = parts.next() {
-        if !part.starts_with('\\') || part.contains('"') {
-            return false;
-        }
-        let lower = part.to_ascii_lowercase();
-        if part.len() > 2 && matches!(lower.get(..2), Some("\\l") | Some("\\o") | Some("\\t")) {
-            if hyperlink_tail_literal(&part[2..]).is_none() {
-                return false;
-            }
-            continue;
-        }
-        if matches!(lower.as_str(), "\\l" | "\\o" | "\\t") {
-            let Some(value) = parts.next() else {
-                return false;
-            };
-            if hyperlink_tail_literal(&value).is_none() {
-                return false;
-            }
-        }
-    }
-    true
-}
-
-fn hyperlink_tail_literal(value: &str) -> Option<&str> {
-    let value = value.trim();
-    let value = match (value.starts_with('"'), value.ends_with('"')) {
-        (true, true) if value.len() >= 2 => &value[1..value.len() - 1],
-        (true, _) | (_, true) => return None,
-        (false, false) => value,
-    };
-    (!value.is_empty() && !value.starts_with('\\') && !value.contains('"')).then_some(value)
 }
 
 impl std::fmt::Debug for Document {
