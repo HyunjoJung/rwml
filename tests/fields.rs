@@ -3132,6 +3132,23 @@ fn toc_bookmark_scope_docx() -> Vec<u8> {
     ])
 }
 
+fn toc_bookmark_scoped_tc_field_switch_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" TC &quot;Outside Manual&quot; \f m \l 1 "><w:r><w:t>stale outside tc</w:t></w:r></w:fldSimple></w:p><w:p><w:bookmarkStart w:id="7" w:name="ScopedToc"/><w:fldSimple w:instr=" TC &quot;Scoped Manual&quot; \f m \l 2 "><w:r><w:t>stale scoped tc</w:t></w:r></w:fldSimple><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" TOC \b ScopedToc \f m "><w:r><w:t>stale scoped tc toc</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn toc_bookmark_only_scope_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -9454,6 +9471,49 @@ fn docx_toc_b_field_limits_computation_to_bookmark_scope() {
     assert_eq!(main_text.matches("Scoped Heading").count(), 2);
     assert_eq!(main_text.matches("Scoped Detail").count(), 2);
     assert_eq!(main_text.matches("Trailing Heading").count(), 1);
+}
+
+#[test]
+fn docx_toc_b_field_limits_tc_entries_to_bookmark_scope() {
+    let doc = Document::open(&toc_bookmark_scoped_tc_field_switch_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 3);
+    assert_eq!(fields[0].kind, FieldKind::TocEntry);
+    assert_eq!(fields[0].instruction, "TC \"Outside Manual\" \\f m \\l 1");
+    assert_eq!(fields[0].result, "stale outside tc");
+    assert_eq!(fields[0].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[1].kind, FieldKind::TocEntry);
+    assert_eq!(fields[1].instruction, "TC \"Scoped Manual\" \\f m \\l 2");
+    assert_eq!(fields[1].result, "stale scoped tc");
+    assert_eq!(fields[1].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[2].kind, FieldKind::Toc);
+    assert_eq!(fields[2].instruction, "TOC \\b ScopedToc \\f m");
+    assert_eq!(fields[2].result, "stale scoped tc toc");
+    assert_eq!(
+        fields[2].computed_result.as_deref(),
+        Some("  Scoped Manual")
+    );
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        !main_text.contains("stale outside tc")
+            && !main_text.contains("stale scoped tc")
+            && !main_text.contains("stale scoped tc toc"),
+        "scoped TC marker fields and TOC should display computed text: {main_text:?}"
+    );
+    assert!(
+        main_text.contains("Scoped Manual"),
+        "scoped TC entry should materialize through TOC \\b plus \\f: {main_text:?}"
+    );
+    assert!(
+        !main_text.contains("Outside Manual"),
+        "TOC \\b should exclude out-of-scope matching TC entries: {main_text:?}"
+    );
 }
 
 #[test]

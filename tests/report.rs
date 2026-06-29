@@ -2124,6 +2124,24 @@ fn toc_bookmark_scope_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn toc_bookmark_scoped_tc_field_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" TC &quot;Outside Manual&quot; \f m \l 1 "><w:r><w:t>stale outside tc</w:t></w:r></w:fldSimple></w:p><w:p><w:bookmarkStart w:id="7" w:name="ScopedToc"/><w:fldSimple w:instr=" TC &quot;Scoped Manual&quot; \f m \l 2 "><w:r><w:t>stale scoped tc</w:t></w:r></w:fldSimple><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" TOC \b ScopedToc \f m "><w:r><w:t>stale scoped tc toc</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn toc_scope_gap_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -6013,6 +6031,39 @@ fn report_toc_field_warning_ignores_resolved_bookmark_scope_tocs() {
         json.contains(r#""unsupported_field_reasons":[{"reason":"NoComputedResult","count":1},{"reason":"UnresolvedBookmark","count":1}]"#),
         "{json}"
     );
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_toc_field_warning_ignores_bookmark_scoped_tc_entry_tocs() {
+    let doc =
+        Document::open(&toc_bookmark_scoped_tc_field_diagnostics_docx()).expect("fixture opens");
+    let report = doc.report();
+
+    assert_eq!(report.features.fields, 3);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![
+            FieldKindCount {
+                kind: FieldKind::TocEntry,
+                count: 2,
+            },
+            FieldKindCount {
+                kind: FieldKind::Toc,
+                count: 1,
+            },
+        ]
+    );
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+    assert!(report
+        .warnings
+        .iter()
+        .all(|warning| !matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })));
+
+    let json = report.to_json();
+    assert!(json.contains(r#""unsupported_field_kinds":[]"#), "{json}");
+    assert!(json.contains(r#""unsupported_field_reasons":[]"#), "{json}");
 }
 
 #[cfg(feature = "docx")]
