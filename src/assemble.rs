@@ -94,9 +94,12 @@ fn build_legacy_region_blocks(
     let mut source_start_cp = 0usize;
     let mut text_start = 0usize;
     let header_stories = header_footer_story_ranges(fib, table);
+    let has_header_footer_setup_stories = header_stories
+        .iter()
+        .any(|story| story.story_index >= HEADER_FOOTER_STORY_BASE);
 
     for (kind, source_len_cp) in legacy_region_specs(fib) {
-        if kind == SourceRegionKind::HeaderFooter && !header_stories.is_empty() {
+        if kind == SourceRegionKind::HeaderFooter && has_header_footer_setup_stories {
             for story in header_stories
                 .iter()
                 .filter(|story| story.story_index >= HEADER_FOOTER_STORY_BASE)
@@ -838,6 +841,39 @@ mod tests {
         s.encode_utf16().collect()
     }
 
+    fn minimal_fib_for_header_footer(ccp_hdd: u32, lcb_plcf_hdd: usize) -> Fib {
+        Fib {
+            nfib: 0x00D9,
+            lid: 0x0409,
+            encrypted: false,
+            obfuscated: false,
+            complex: false,
+            which_table_stream_one: false,
+            fc_clx: 0,
+            lcb_clx: 0,
+            fc_plcf_bte_papx: 0,
+            lcb_plcf_bte_papx: 0,
+            fc_plcf_bte_chpx: 0,
+            lcb_plcf_bte_chpx: 0,
+            fc_stshf: 0,
+            lcb_stshf: 0,
+            fc_sttbf_ffn: 0,
+            lcb_sttbf_ffn: 0,
+            fc_plf_lst: 0,
+            lcb_plf_lst: 0,
+            fc_plf_lfo: 0,
+            lcb_plf_lfo: 0,
+            fc_plcf_hdd: 0,
+            lcb_plcf_hdd,
+            ccp_text: 0,
+            ccp_ftn: 0,
+            ccp_hdd,
+            ccp_atn: 0,
+            ccp_edn: 0,
+            ccp_txbx: 0,
+        }
+    }
+
     #[test]
     fn field_without_separator_does_not_swallow_following_text() {
         // 0x13 "AB" 0x15 (field begin, instruction, end — NO 0x14 separator),
@@ -849,6 +885,49 @@ mod tests {
         units.extend(us("CD"));
         units.push(PARA_MARK);
         assert_eq!(all_text(&run_units(&units)), "CD");
+    }
+
+    #[test]
+    fn legacy_header_footer_falls_back_when_plcf_hdd_has_no_setup_stories() {
+        let mut units = us("HDR");
+        units.push(PARA_MARK);
+        let fcs: Vec<u32> = (0..units.len() as u32).collect();
+        let mut plcf_hdd = Vec::new();
+        for cp in [0u32, units.len() as u32, units.len() as u32] {
+            plcf_hdd.extend_from_slice(&cp.to_le_bytes());
+        }
+        let papx = PapxTable::default();
+        let chpx = ChpxTable::default();
+        let stsh = StyleSheet::default();
+        let lists = Lists::default();
+        let mut numberer = Numberer::new(&lists);
+        let fib = minimal_fib_for_header_footer(units.len() as u32, plcf_hdd.len());
+
+        let (blocks, regions) = build_legacy_region_blocks(
+            &units,
+            &fcs,
+            &plcf_hdd,
+            &papx,
+            &chpx,
+            &stsh,
+            &[],
+            &[],
+            &mut numberer,
+            &fib,
+        );
+
+        let header_region = regions
+            .iter()
+            .find(|region| region.kind == SourceRegionKind::HeaderFooter)
+            .expect("header/footer region should fall back to flat preservation");
+        assert_eq!(header_region.source_story_index, None);
+        assert_eq!(header_region.source_start_cp, 0);
+        assert_eq!(header_region.source_len_cp, units.len());
+        assert_eq!(header_region.text_len, 3);
+        assert_eq!(
+            all_text(&blocks[header_region.block_start..header_region.block_end]),
+            "HDR"
+        );
     }
 
     #[test]
