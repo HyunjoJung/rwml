@@ -1662,6 +1662,27 @@ fn style_ref_alternate_content_heading_docx() -> Vec<u8> {
     ])
 }
 
+fn style_ref_simple_field_source_text_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Chapter </w:t></w:r><w:fldSimple w:instr=" SEQ Chapter "><w:r><w:t>1</w:t></w:r></w:fldSimple><w:r><w:t>: Scope</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;heading 1&quot; "><w:r><w:t>stale simple-field source</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;heading 1&quot; \* Upper "><w:r><w:t>stale upper simple-field source</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn numbered_style_ref_switch_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -9607,6 +9628,40 @@ fn docx_style_ref_context_uses_single_alternate_content_branch() {
             && !main_text.contains("Fallback Heading")
             && !main_text.contains("Fallback Inline"),
         "STYLEREF should use one AlternateContent branch: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_style_ref_source_text_includes_visible_simple_field_results() {
+    let doc = Document::open(&style_ref_simple_field_source_text_docx()).expect("fixture opens");
+    let fields = doc.fields();
+    let style_ref_fields = fields
+        .iter()
+        .filter(|field| field.kind == FieldKind::DocumentStructure("STYLEREF".to_string()))
+        .collect::<Vec<_>>();
+
+    assert_eq!(style_ref_fields.len(), 2);
+    assert_eq!(style_ref_fields[0].instruction, "STYLEREF \"heading 1\"");
+    assert_eq!(
+        style_ref_fields[0].computed_result.as_deref(),
+        Some("Chapter 1: Scope")
+    );
+    assert_eq!(
+        style_ref_fields[1].instruction,
+        "STYLEREF \"heading 1\" \\* Upper"
+    );
+    assert_eq!(
+        style_ref_fields[1].computed_result.as_deref(),
+        Some("CHAPTER 1: SCOPE")
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Chapter 1: Scope")
+            && main_text.contains("CHAPTER 1: SCOPE")
+            && !main_text.contains("stale simple-field source")
+            && !main_text.contains("stale upper simple-field source"),
+        "STYLEREF source context should include visible simple-field result text: {main_text:?}"
     );
 }
 

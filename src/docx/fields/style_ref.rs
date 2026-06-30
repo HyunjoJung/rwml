@@ -212,13 +212,21 @@ fn read_style_ref_paragraph(
                             num_id.as_deref(),
                             ilvl,
                         );
+                        let instruction = attr_local(&e, b"instr");
+                        let is_style_ref = instruction
+                            .as_deref()
+                            .is_some_and(is_style_ref_field_instruction);
                         record_style_ref_field(
-                            attr_local(&e, b"instr").as_deref(),
+                            instruction.as_deref(),
                             field_positions,
                             next_order,
                             &number,
                         );
-                        skip_element(r, b"fldSimple");
+                        if is_style_ref {
+                            skip_element(r, b"fldSimple");
+                        } else {
+                            text.push_str(&read_style_ref_simple_field_result(r));
+                        }
                         consumed_element = true;
                     }
                     b"t" => {
@@ -452,6 +460,96 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
             order: take_style_ref_order(next_order),
         });
     }
+}
+
+fn read_style_ref_simple_field_result(r: &mut Xml<'_>) -> String {
+    let mut text = String::new();
+    let mut depth = 1usize;
+    let mut xml_depth = 0usize;
+    let mut alternate_content_stack = Vec::new();
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    skip_subtree(r);
+                    continue;
+                }
+                if matches!(name, b"del" | b"moveFrom") {
+                    skip_subtree(r);
+                    continue;
+                }
+                let mut consumed_element = false;
+                match name {
+                    b"AlternateContent" => {
+                        alternate_content_stack.push(AlternateContentBranchState {
+                            branch_depth: xml_depth + 1,
+                            took_branch: false,
+                        });
+                    }
+                    b"fldSimple"
+                        if attr_local(&e, b"instr")
+                            .as_deref()
+                            .is_some_and(is_style_ref_field_instruction) =>
+                    {
+                        skip_element(r, b"fldSimple");
+                        consumed_element = true;
+                    }
+                    b"instrText" => {
+                        read_text(r);
+                        consumed_element = true;
+                    }
+                    b"t" => {
+                        text.push_str(&read_text(r));
+                        consumed_element = true;
+                    }
+                    _ => {
+                        if let Some(marker) = inline_marker_text(&e) {
+                            text.push_str(marker);
+                        }
+                    }
+                }
+                if !consumed_element {
+                    depth += 1;
+                    xml_depth = xml_depth.saturating_add(1);
+                }
+            }
+            Ok(Event::Empty(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    continue;
+                }
+                match name {
+                    b"fldSimple"
+                        if attr_local(&e, b"instr")
+                            .as_deref()
+                            .is_some_and(is_style_ref_field_instruction) => {}
+                    _ => {
+                        if let Some(marker) = inline_marker_text(&e) {
+                            text.push_str(marker);
+                        }
+                    }
+                }
+            }
+            Ok(Event::End(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if name == b"fldSimple" && depth == 1 {
+                    break;
+                }
+                if name == b"AlternateContent" {
+                    alternate_content_stack.pop();
+                }
+                depth = depth.saturating_sub(1);
+                xml_depth = xml_depth.saturating_sub(1);
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    text
 }
 
 fn ensure_style_ref_paragraph_number(
