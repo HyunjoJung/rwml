@@ -3683,6 +3683,27 @@ fn toc_alternate_content_heading_docx() -> Vec<u8> {
     ])
 }
 
+fn toc_styles_alternate_content_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:AlternateContent><mc:Choice Requires="w14"><w:style w:type="paragraph" w:styleId="ChoiceHeading"><w:name w:val="heading 1"/></w:style></mc:Choice><mc:Fallback><w:style w:type="paragraph" w:styleId="FallbackHeading"><w:name w:val="heading 1"/></w:style></mc:Fallback></mc:AlternateContent></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="ChoiceHeading"/></w:pPr><w:r><w:t>Choice Heading</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="FallbackHeading"/></w:pPr><w:r><w:t>Fallback Ghost</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" TOC \o &quot;1-1&quot; "><w:r><w:t>stale styles toc</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn invalid_toc_entry_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -12062,6 +12083,26 @@ fn docx_toc_entries_use_single_alternate_content_branch() {
             && !main_text.contains("Fallback Heading")
             && !main_text.contains("Fallback Inline"),
         "TOC entries must use one AlternateContent branch: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_toc_heading_styles_use_single_styles_alternate_content_branch() {
+    let doc = Document::open(&toc_styles_alternate_content_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::Toc);
+    assert_eq!(fields[0].instruction, "TOC \\o \"1-1\"");
+    assert_eq!(fields[0].result, "stale styles toc");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("Choice Heading"));
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Choice Heading")
+            && main_text.contains("Fallback Ghost")
+            && !main_text.contains("stale styles toc"),
+        "TOC must use only selected-branch styles while preserving body text: {main_text:?}"
     );
 }
 

@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use quick_xml::events::Event;
 use quick_xml::Reader;
 
+use super::xml_text::{skip_alternate_content_branch, skip_subtree, AlternateContentBranchState};
 use super::{attr_local_trimmed, attr_u8, local};
 use crate::stsh::heading_from_name;
 
@@ -44,8 +45,25 @@ pub(crate) fn parse(xml: &str) -> Styles {
     let mut cur_id: Option<String> = None;
     let mut cur_name = String::new();
     let mut cur_outline: Option<u8> = None;
+    let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
+            Ok(Event::Start(e))
+                if skip_alternate_content_branch(
+                    &mut alternate_content_stack,
+                    local(e.name().as_ref()),
+                ) =>
+            {
+                skip_subtree(&mut r);
+            }
+            Ok(Event::Empty(e))
+                if skip_alternate_content_branch(
+                    &mut alternate_content_stack,
+                    local(e.name().as_ref()),
+                ) => {}
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                alternate_content_stack.push(AlternateContentBranchState::default());
+            }
             // A new <w:style> opens; capture its id and reset per-style state.
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"style" => {
                 cur_id = attr_local_trimmed(&e, b"styleId");
@@ -77,6 +95,9 @@ pub(crate) fn parse(xml: &str) -> Styles {
                     }
                 }
             }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                alternate_content_stack.pop();
+            }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
@@ -103,5 +124,25 @@ mod tests {
         assert_eq!(s.heading_level("CustomH"), Some(3)); // outlineLvl 2 → h3
         assert_eq!(s.heading_level("Normal"), None);
         assert_eq!(s.name("KrTitle"), Some("제목 2"));
+    }
+
+    #[test]
+    fn uses_single_alternate_content_branch() {
+        let xml = r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+            <mc:AlternateContent>
+                <mc:Choice Requires="w14">
+                    <w:style w:type="paragraph" w:styleId="ChoiceHeading"><w:name w:val="heading 1"/></w:style>
+                </mc:Choice>
+                <mc:Fallback>
+                    <w:style w:type="paragraph" w:styleId="FallbackHeading"><w:name w:val="heading 1"/></w:style>
+                </mc:Fallback>
+            </mc:AlternateContent>
+        </w:styles>"#;
+        let s = parse(xml);
+
+        assert_eq!(s.heading_level("ChoiceHeading"), Some(1));
+        assert_eq!(s.name("ChoiceHeading"), Some("heading 1"));
+        assert_eq!(s.heading_level("FallbackHeading"), None);
+        assert_eq!(s.name("FallbackHeading"), None);
     }
 }
