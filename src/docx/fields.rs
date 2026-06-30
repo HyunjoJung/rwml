@@ -204,11 +204,9 @@ pub(crate) fn parse(
                         }
                     }
                     _ => {
-                        if let Some(text) = inline_marker_text(&e) {
-                            if let Some(field) = current.last_mut() {
-                                if field.phase == FieldPhase::Result {
-                                    field.result.push_str(text);
-                                }
+                        if let Some(field) = current.last_mut() {
+                            if field.phase == FieldPhase::Result {
+                                append_field_result_inline(&mut field.result, &e);
                             }
                         }
                     }
@@ -235,11 +233,9 @@ pub(crate) fn parse(
                         apply_fld_char(&e, &mut current, &mut fields);
                     }
                     _ => {
-                        if let Some(text) = inline_marker_text(&e) {
-                            if let Some(field) = current.last_mut() {
-                                if field.phase == FieldPhase::Result {
-                                    field.result.push_str(text);
-                                }
+                        if let Some(field) = current.last_mut() {
+                            if field.phase == FieldPhase::Result {
+                                append_field_result_inline(&mut field.result, &e);
                             }
                         }
                     }
@@ -312,9 +308,7 @@ fn read_simple_field(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Field {
                 result.push_str(&read_text(r));
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
-                if let Some(text) = inline_marker_text(&e) {
-                    result.push_str(text);
-                }
+                append_field_result_inline(&mut result, &e);
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"fldSimple" => break,
             Ok(Event::Eof) | Err(_) => break,
@@ -516,6 +510,20 @@ fn push_unique(names: &mut Vec<String>, name: String) {
 
 fn normalize_toc_text(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn append_field_result_inline(result: &mut String, e: &BytesStart<'_>) {
+    if let Some(text) = inline_marker_text(e) {
+        result.push_str(text);
+    } else if let Some(ch) = field_result_symbol_char(e) {
+        result.push(ch);
+    }
+}
+
+fn field_result_symbol_char(e: &BytesStart<'_>) -> Option<char> {
+    let value = attr_local_trimmed(e, b"char")?;
+    let font = attr_local_trimmed(e, b"font");
+    computed_run_symbol_char(font.as_deref(), &value)
 }
 
 fn inline_marker_text(e: &BytesStart<'_>) -> Option<&'static str> {

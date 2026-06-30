@@ -2085,6 +2085,23 @@ fn complex_cached_result_inline_marker_docx() -> Vec<u8> {
     ])
 }
 
+fn cached_field_result_symbol_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" CUSTOM simple "><w:r><w:t>Simple </w:t><w:sym w:font="Symbol" w:char="F0B7"/><w:t> result</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> CUSTOM complex </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Complex </w:t><w:sym w:font="Symbol" w:char="F0B7"/><w:t> result</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn complex_split_cached_result_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -11758,6 +11775,28 @@ fn docx_complex_field_result_preserves_cached_inline_markers() {
     assert!(
         doc.main_text().contains("One\tTwo\nThree-Hard\u{00ad}Soft")
             && doc.main_text().contains("\t\n-\u{00ad}"),
+        "{:?}",
+        doc.main_text()
+    );
+}
+
+#[test]
+fn docx_field_results_preserve_supported_symbols() {
+    let doc = Document::open(&cached_field_result_symbol_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::Unknown("CUSTOM".to_string()));
+    assert_eq!(fields[0].instruction, "CUSTOM simple");
+    assert_eq!(fields[0].result, "Simple \u{2022} result");
+    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(fields[1].kind, FieldKind::Unknown("CUSTOM".to_string()));
+    assert_eq!(fields[1].instruction, "CUSTOM complex");
+    assert_eq!(fields[1].result, "Complex \u{2022} result");
+    assert_eq!(fields[1].computed_result, None);
+    assert!(
+        doc.main_text().contains("Simple \u{2022} result")
+            && doc.main_text().contains("Complex \u{2022} result"),
         "{:?}",
         doc.main_text()
     );
