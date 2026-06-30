@@ -2422,7 +2422,13 @@ fn unsupported_simple_field_reason_hint(
     if let Some(reason) = unsupported_toc_reason_hint(instruction, ctx) {
         return Some(reason);
     }
+    if let Some(reason) = unsupported_page_reason_hint(instruction) {
+        return Some(reason);
+    }
     if let Some(reason) = unsupported_reference_index_reason_hint(instruction) {
+        return Some(reason);
+    }
+    if let Some(reason) = unsupported_document_structure_reason_hint(instruction) {
         return Some(reason);
     }
     if let Some(reason) = unsupported_compatibility_reason_hint(instruction) {
@@ -2545,6 +2551,15 @@ fn unsupported_toc_reason_hint(instruction: &str, ctx: &Ctx<'_>) -> Option<Field
     }
 }
 
+fn unsupported_page_reason_hint(instruction: &str) -> Option<FieldUnsupportedReason> {
+    if FieldKind::from_instruction(instruction) != FieldKind::Page {
+        return None;
+    }
+    Some(unsupported_syntax_field_reason_hint(
+        super::fields::supports_page_field_syntax(instruction),
+    ))
+}
+
 fn unsupported_reference_index_reason_hint(instruction: &str) -> Option<FieldUnsupportedReason> {
     let FieldKind::ReferenceIndex(kind) = FieldKind::from_instruction(instruction) else {
         return None;
@@ -2570,6 +2585,28 @@ fn is_generated_reference_index_kind(kind: &str) -> bool {
 
 fn is_reference_index_marker_kind(kind: &str) -> bool {
     matches!(kind.to_ascii_uppercase().as_str(), "RD" | "TA" | "XE")
+}
+
+fn unsupported_document_structure_reason_hint(instruction: &str) -> Option<FieldUnsupportedReason> {
+    let FieldKind::DocumentStructure(kind) = FieldKind::from_instruction(instruction) else {
+        return None;
+    };
+    if kind.eq_ignore_ascii_case("REVNUM") {
+        return Some(unsupported_syntax_field_reason_hint(
+            super::fields::supports_revision_number_field_syntax(instruction),
+        ));
+    }
+    if kind.eq_ignore_ascii_case("SECTION") || kind.eq_ignore_ascii_case("SECTIONPAGES") {
+        return Some(unsupported_syntax_field_reason_hint(
+            super::fields::is_section_field_instruction(instruction),
+        ));
+    }
+    if kind.eq_ignore_ascii_case("STYLEREF") {
+        return Some(unsupported_syntax_field_reason_hint(
+            super::fields::supports_style_ref_field_syntax(instruction),
+        ));
+    }
+    Some(FieldUnsupportedReason::NoComputedResult)
 }
 
 fn unsupported_compatibility_reason_hint(instruction: &str) -> Option<FieldUnsupportedReason> {

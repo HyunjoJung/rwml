@@ -3835,6 +3835,13 @@ fn docx_page_fields_compute_trusted_current_page_numbers() {
             count: 1,
         }]
     );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| instruction == "PAGE"),
+        vec![(
+            "PAGE".to_string(),
+            Some(FieldUnsupportedReason::NoComputedResult),
+        )]
+    );
 }
 
 #[test]
@@ -7676,6 +7683,29 @@ fn docx_document_structure_fields_are_named_and_section_is_computed() {
             },
         ]
     );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| {
+            instruction.starts_with("SECTIONPAGES") || instruction.starts_with("STYLEREF")
+        }),
+        vec![
+            (
+                "SECTIONPAGES".to_string(),
+                Some(FieldUnsupportedReason::NoComputedResult),
+            ),
+            (
+                "STYLEREF \"Heading 1\" \\n".to_string(),
+                Some(FieldUnsupportedReason::NoComputedResult),
+            ),
+            (
+                "STYLEREF \"Heading 1 ".to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+            (
+                "STYLEREF \\p \"Heading 1\"".to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+        ]
+    );
 
     let main_text = doc.main_text();
     assert!(
@@ -7690,6 +7720,77 @@ fn docx_document_structure_fields_are_named_and_section_is_computed() {
     assert!(
         !main_text.contains("4"),
         "computed REVNUM should replace stale cached revision text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_document_structure_diagnostics_reject_unknown_switches() {
+    let doc = Document::open(&docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" REVNUM \x "><w:r><w:t>cached bad revision</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SECTIONPAGES \x "><w:r><w:t>cached bad section pages</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ]))
+    .expect("fixture opens");
+
+    let fields = doc.fields();
+    assert_eq!(fields.len(), 2);
+    assert_eq!(
+        fields[0].kind,
+        FieldKind::DocumentStructure("REVNUM".to_string())
+    );
+    assert_eq!(fields[0].instruction, "REVNUM \\x");
+    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(
+        fields[1].kind,
+        FieldKind::DocumentStructure("SECTIONPAGES".to_string())
+    );
+    assert_eq!(fields[1].instruction, "SECTIONPAGES \\x");
+    assert_eq!(fields[1].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![
+            FieldKindCount {
+                kind: FieldKind::DocumentStructure("REVNUM".to_string()),
+                count: 1,
+            },
+            FieldKindCount {
+                kind: FieldKind::DocumentStructure("SECTIONPAGES".to_string()),
+                count: 1,
+            },
+        ]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnsupportedSwitch,
+            count: 2,
+        }]
+    );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| {
+            instruction.starts_with("REVNUM") || instruction.starts_with("SECTIONPAGES")
+        }),
+        vec![
+            (
+                "REVNUM \\x".to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+            (
+                "SECTIONPAGES \\x".to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+        ]
     );
 }
 
@@ -13057,6 +13158,13 @@ fn docx_page_unsupported_switch_model_render_report_matches_document_reason_buck
             reason: FieldEvaluationReason::UnsupportedSwitch,
             count: 1,
         }]
+    );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| instruction.starts_with("PAGE")),
+        vec![(
+            "PAGE \\* Unknown".to_string(),
+            Some(FieldUnsupportedReason::UnsupportedSwitch),
+        )]
     );
     let model = doc.model();
 
