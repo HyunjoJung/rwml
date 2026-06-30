@@ -8559,7 +8559,7 @@ fn report_ref_field_warning_reports_gap_cases() {
     assert_eq!(fields[0].computed_result, None);
     assert_eq!(fields[1].instruction, "REF PlainText \\d-");
     assert_eq!(fields[1].result, "cached ref separator");
-    assert_eq!(fields[1].computed_result, None);
+    assert_eq!(fields[1].computed_result.as_deref(), Some("Plain target"));
     assert_eq!(fields[2].instruction, "REF MissingRef");
     assert_eq!(fields[2].result, "cached missing ref");
     assert_eq!(fields[2].computed_result, None);
@@ -8577,7 +8577,7 @@ fn report_ref_field_warning_reports_gap_cases() {
         report.features.unsupported_field_kinds,
         vec![FieldKindCount {
             kind: FieldKind::Ref,
-            count: 3,
+            count: 2,
         }]
     );
     assert_eq!(
@@ -8585,7 +8585,7 @@ fn report_ref_field_warning_reports_gap_cases() {
         vec![
             FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::NoComputedResult,
-                count: 2,
+                count: 1,
             },
             FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::UnresolvedBookmark,
@@ -8599,21 +8599,21 @@ fn report_ref_field_warning_reports_gap_cases() {
             .iter()
             .find(|warning| matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })),
         Some(&DocumentWarning::UnsupportedFieldEvaluation {
-            count: 3,
+            count: 2,
             field_kinds: vec![FieldKindCount {
                 kind: FieldKind::Ref,
-                count: 3,
+                count: 2,
             }],
         })
     );
 
     let json = report.to_json();
     assert!(
-        json.contains(r#""unsupported_field_kinds":[{"kind":"REF","count":3}]"#),
+        json.contains(r#""unsupported_field_kinds":[{"kind":"REF","count":2}]"#),
         "{json}"
     );
     assert!(
-        json.contains(r#""unsupported_field_reasons":[{"reason":"NoComputedResult","count":2},{"reason":"UnresolvedBookmark","count":1}]"#),
+        json.contains(r#""unsupported_field_reasons":[{"reason":"NoComputedResult","count":1},{"reason":"UnresolvedBookmark","count":1}]"#),
         "{json}"
     );
 }
