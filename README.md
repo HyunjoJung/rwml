@@ -647,7 +647,8 @@ heading-outline fields including omitted all-level ranges and common `\o`/`\u` c
 value-neutral TOC `\h`/`\z` switches, text-preserving `\w`/`\x` switches
 normalized to plain text, and text-neutral `\n` no-page-number,
 `\p` entry/page separator, `\s` sequence-number page prefix, and `\d`
-sequence/page separator switches, quoted `TOC \t` custom-style entries,
+sequence/page separator switches, quoted or switch-delimited unquoted `TOC \t`
+custom-style entries,
 `TOC \f` entries from matching `TC "Text"` markers with optional `\f` type
 identifiers and `\l` levels, with supported `TC` marker fields themselves
 rendering as hidden output and unsupported `TC` marker syntax preserving cached
@@ -1005,7 +1006,7 @@ deterministic computation or precise cached-result diagnostics.
       deterministic TOC `\* Upper`/`\* Lower`/
       `\* Caps`/`\* FirstCap` field-result format switches, neutral TOC
       `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT`, plus
-      quoted `TOC \t` custom-style entries, `TOC \f` entries from matching
+      quoted or switch-delimited unquoted `TOC \t` custom-style entries, `TOC \f` entries from matching
       `TC "Text"` markers with optional `\f` type identifiers and `\l` levels,
       `TOC \c` full-caption entries and `TOC \a` label/number-omitted
       caption-text entries from paragraphs containing matching

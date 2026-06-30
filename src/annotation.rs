@@ -2360,12 +2360,15 @@ pub(crate) fn toc_field_syntax(instruction: &str) -> Option<TocFieldSyntax> {
         }
         if part.eq_ignore_ascii_case("\\t") {
             custom_styles.extend(
-                toc_style_specs(parts.next_if(|next| !next.starts_with('\\'))?)?
-                    .into_iter()
-                    .map(|(name, level)| TocStyleSpec {
-                        name: name.to_string(),
-                        level,
-                    }),
+                toc_style_specs(&toc_style_specs_operand(
+                    parts.next_if(|next| !next.starts_with('\\'))?,
+                    &mut parts,
+                )?)?
+                .into_iter()
+                .map(|(name, level)| TocStyleSpec {
+                    name: name.to_string(),
+                    level,
+                }),
             );
             continue;
         }
@@ -3515,6 +3518,23 @@ pub(crate) fn toc_style_specs(value: &str) -> Option<Vec<(&str, u8)>> {
         specs.push((name, level));
     }
     Some(specs)
+}
+
+fn toc_style_specs_operand<'a>(
+    first: &'a str,
+    parts: &mut std::iter::Peekable<impl Iterator<Item = &'a str>>,
+) -> Option<String> {
+    if first.starts_with('"') {
+        return Some(first.to_string());
+    }
+    let mut values = vec![first];
+    while let Some(part) = parts.peek().copied() {
+        if part.starts_with('\\') {
+            break;
+        }
+        values.push(parts.next()?);
+    }
+    Some(values.join(" "))
 }
 
 pub(crate) fn instruction_parts(s: &str) -> Vec<String> {

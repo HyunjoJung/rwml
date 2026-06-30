@@ -4820,6 +4820,15 @@ mod tests {
         assert!(super::supported_toc_bookmark_scope(r#"TOC \o "1-2" \l "2-3"#).is_none());
     }
 
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn supported_toc_bookmark_scope_accepts_unquoted_multi_token_custom_style_switch() {
+        assert_eq!(
+            super::toc_uncomputed_reason(r#"TOC \o "1-1" \t Custom Heading,2 \* Upper"#, None),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+    }
+
     #[test]
     fn model_fields_coalesce_contiguous_result_runs() {
         let blocks = vec![Block::Paragraph(Paragraph {
