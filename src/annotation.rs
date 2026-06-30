@@ -136,6 +136,8 @@ pub struct ShapeWrapping {
     pub text: Option<String>,
     /// Text-distance margins declared on the `wp:wrap*` element.
     pub distance: ShapeDistance,
+    /// Optional `wp:wrapPolygon` points in document order.
+    pub polygon: Vec<ShapePoint>,
 }
 
 /// Floating shape geometry recovered from a Word document.

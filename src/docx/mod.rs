@@ -1390,9 +1390,8 @@ fn read_floating_shape(
                     b"prstGeom" => apply_shape_preset_geometry(&mut shape, &e),
                     b"srgbClr" => apply_shape_srgb_color(&mut shape, &e, solid_fill),
                     b"txbxContent" => text_box_depth = 1,
-                    b"wrapNone" | b"wrapSquare" | b"wrapTight" | b"wrapThrough"
-                    | b"wrapTopAndBottom" => {
-                        shape.wrapping = Some(shape_wrapping(&e));
+                    name if is_shape_wrapping_name(name) => {
+                        shape.wrapping = Some(read_shape_wrapping(r, &e));
                     }
                     _ => {}
                 }
@@ -1421,8 +1420,7 @@ fn read_floating_shape(
                     b"effectExtent" => shape.effect_extent = shape_effect_extent(&e),
                     b"docPr" => apply_shape_doc_pr(&mut shape, &e),
                     b"prstGeom" => apply_shape_preset_geometry(&mut shape, &e),
-                    b"wrapNone" | b"wrapSquare" | b"wrapTight" | b"wrapThrough"
-                    | b"wrapTopAndBottom" => {
+                    name if is_shape_wrapping_name(name) => {
                         shape.wrapping = Some(shape_wrapping(&e));
                     }
                     _ => {}
@@ -1580,6 +1578,13 @@ fn shape_effect_extent(e: &BytesStart<'_>) -> Option<ShapeEffectExtent> {
     })
 }
 
+fn is_shape_wrapping_name(name: &[u8]) -> bool {
+    matches!(
+        name,
+        b"wrapNone" | b"wrapSquare" | b"wrapTight" | b"wrapThrough" | b"wrapTopAndBottom"
+    )
+}
+
 fn shape_wrapping(e: &BytesStart<'_>) -> ShapeWrapping {
     let kind = match local(e.name().as_ref()) {
         b"wrapNone" => "none",
@@ -1598,7 +1603,39 @@ fn shape_wrapping(e: &BytesStart<'_>) -> ShapeWrapping {
             left_emu: attr_i64(e, b"distL"),
             right_emu: attr_i64(e, b"distR"),
         },
+        polygon: Vec::new(),
     }
+}
+
+fn read_shape_wrapping(r: &mut Reader<&[u8]>, start: &BytesStart<'_>) -> ShapeWrapping {
+    let mut wrapping = shape_wrapping(start);
+    let qname = start.name();
+    let wrap_name = local(qname.as_ref()).to_vec();
+    loop {
+        match r.read_event() {
+            Ok(Event::Empty(e)) if is_wrap_polygon_point(local(e.name().as_ref())) => {
+                if let Some(point) = shape_point(&e) {
+                    wrapping.polygon.push(point);
+                }
+            }
+            Ok(Event::Start(e)) if is_wrap_polygon_point(local(e.name().as_ref())) => {
+                if let Some(point) = shape_point(&e) {
+                    wrapping.polygon.push(point);
+                }
+                skip_subtree(r);
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"wrapPolygon" => {}
+            Ok(Event::Start(_)) => skip_subtree(r),
+            Ok(Event::End(e)) if local(e.name().as_ref()) == wrap_name.as_slice() => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    wrapping
+}
+
+fn is_wrap_polygon_point(name: &[u8]) -> bool {
+    matches!(name, b"start" | b"lineTo")
 }
 
 fn apply_shape_doc_pr(shape: &mut FloatingShape, e: &BytesStart<'_>) {

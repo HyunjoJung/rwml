@@ -4377,6 +4377,7 @@ mod tests {
                         left_emu: Some(27_432),
                         right_emu: Some(36_576),
                     },
+                    polygon: Vec::new(),
                 }),
             }],
             geom,

@@ -225,6 +225,23 @@ fn preset_geometry_floating_shape_docx() -> Vec<u8> {
     ])
 }
 
+fn wrap_polygon_floating_shape_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:body><w:p><w:r><w:t>Polygon before </w:t></w:r><w:r><w:drawing><wp:anchor relativeHeight="88" behindDoc="0"><wp:extent cx="914400" cy="457200"/><wp:wrapTight wrapText=" largest " distT="100" distB="200" distL="300" distR="400"><wp:wrapPolygon edited="0"><wp:start x="0" y="0"/><wp:lineTo x="914400" y="0"/><wp:lineTo x="914400" y="457200"/><wp:lineTo x="0" y="457200"/></wp:wrapPolygon></wp:wrapTight><wp:docPr id="88" name="Polygon float"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>Polygon body</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:t>Polygon after</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 #[test]
 fn docx_floating_shape_geometry_is_extracted() {
     let doc = Document::open(&floating_shape_docx()).expect("fixture opens");
@@ -292,7 +309,52 @@ fn docx_floating_shape_geometry_is_extracted() {
                 left_emu: Some(27_432),
                 right_emu: Some(36_576),
             },
+            polygon: Vec::new(),
         })
+    );
+    assert_eq!(doc.report().features.floating_shapes, 1);
+}
+
+#[test]
+fn docx_floating_shape_recovers_wrap_polygon_points() {
+    let doc = Document::open(&wrap_polygon_floating_shape_docx()).expect("fixture opens");
+    let shape = doc
+        .floating_shapes()
+        .into_iter()
+        .next()
+        .expect("floating shape extracted");
+    let wrapping = shape.wrapping.as_ref().expect("wrap metadata");
+
+    assert_eq!(shape.name.as_deref(), Some("Polygon float"));
+    assert_eq!(shape.text.as_deref(), Some("Polygon body"));
+    assert_eq!(wrapping.kind, "tight");
+    assert_eq!(wrapping.text.as_deref(), Some("largest"));
+    assert_eq!(
+        wrapping.distance,
+        ShapeDistance {
+            top_emu: Some(100),
+            bottom_emu: Some(200),
+            left_emu: Some(300),
+            right_emu: Some(400),
+        }
+    );
+    assert_eq!(
+        wrapping.polygon,
+        vec![
+            ShapePoint { x_emu: 0, y_emu: 0 },
+            ShapePoint {
+                x_emu: 914_400,
+                y_emu: 0,
+            },
+            ShapePoint {
+                x_emu: 914_400,
+                y_emu: 457_200,
+            },
+            ShapePoint {
+                x_emu: 0,
+                y_emu: 457_200,
+            },
+        ]
     );
     assert_eq!(doc.report().features.floating_shapes, 1);
 }
