@@ -7,6 +7,7 @@ use std::collections::HashMap;
 
 use crate::annotation::{Comment, TextAnchor};
 
+use super::fields::computed_run_symbol_char;
 use super::xml_text::{
     inline_marker_text, read_text, skip_alternate_content_branch, skip_subtree,
     AlternateContentBranchState,
@@ -256,6 +257,9 @@ pub(crate) fn parse_anchors(xml: &str) -> HashMap<String, TextAnchor> {
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) if old_content_depth == 0 => {
                 if let Some(text) = inline_marker_text(&e) {
                     push_anchor_text(&active, &mut anchors, text);
+                } else if let Some(ch) = comment_symbol_char(&e) {
+                    let text = ch.to_string();
+                    push_anchor_text(&active, &mut anchors, &text);
                 }
             }
             Ok(Event::End(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
@@ -306,8 +310,12 @@ fn read_comment(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Option<Comment> {
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
                 if old_content_depth == 0 {
-                    if let (Some(c), Some(text)) = (c.as_mut(), inline_marker_text(&e)) {
-                        c.text.push_str(text);
+                    if let Some(c) = c.as_mut() {
+                        if let Some(text) = inline_marker_text(&e) {
+                            c.text.push_str(text);
+                        } else if let Some(ch) = comment_symbol_char(&e) {
+                            c.text.push(ch);
+                        }
                     }
                 }
             }
@@ -323,6 +331,12 @@ fn read_comment(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Option<Comment> {
         }
     }
     c
+}
+
+fn comment_symbol_char(e: &BytesStart<'_>) -> Option<char> {
+    let value = attr_local_trimmed(e, b"char")?;
+    let font = attr_local_trimmed(e, b"font");
+    computed_run_symbol_char(font.as_deref(), &value)
 }
 
 fn push_anchor_text(
