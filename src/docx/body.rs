@@ -3762,12 +3762,66 @@ fn read_trpr(r: &mut Xml<'_>) -> bool {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"trPrChange" => {
                 skip_subtree(r);
             }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                if let Some(value) = read_trpr_alternate_content(r) {
+                    header = value;
+                }
+            }
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"tblHeader" =>
             {
                 header = toggle_on(attr_local(&e, b"val"));
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"trPr" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    header
+}
+
+fn read_trpr_alternate_content(r: &mut Xml<'_>) -> Option<bool> {
+    let mut took = false;
+    let mut header = None;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                match name {
+                    b"Choice" | b"Fallback" if !took => {
+                        took = true;
+                        header = read_trpr_alternate_content_branch(r, name);
+                    }
+                    _ => skip_subtree(r),
+                }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    header
+}
+
+fn read_trpr_alternate_content_branch(r: &mut Xml<'_>, branch: &[u8]) -> Option<bool> {
+    let mut header = None;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"trPrChange" => {
+                skip_subtree(r);
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                if let Some(value) = read_trpr_alternate_content(r) {
+                    header = Some(value);
+                }
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if local(e.name().as_ref()) == b"tblHeader" =>
+            {
+                header = Some(toggle_on(attr_local(&e, b"val")));
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
@@ -4996,5 +5050,45 @@ mod tests {
             panic!("cell paragraph")
         };
         assert_eq!(p.text(), "Cell property change");
+    }
+
+    #[test]
+    fn table_row_props_use_single_alternate_content_branch() {
+        let xml = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+            <w:tbl>
+                <w:tr>
+                    <w:trPr>
+                        <mc:AlternateContent>
+                            <mc:Choice Requires="w14"><w:cantSplit/></mc:Choice>
+                            <mc:Fallback><w:tblHeader/></mc:Fallback>
+                        </mc:AlternateContent>
+                    </w:trPr>
+                    <w:tc><w:p><w:r><w:t>Body row</w:t></w:r></w:p></w:tc>
+                </w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tr>
+                    <w:trPr>
+                        <mc:AlternateContent>
+                            <mc:Choice Requires="w14"><w:tblHeader/></mc:Choice>
+                            <mc:Fallback><w:cantSplit/></mc:Fallback>
+                        </mc:AlternateContent>
+                    </w:trPr>
+                    <w:tc><w:p><w:r><w:t>Header row</w:t></w:r></w:p></w:tc>
+                </w:tr>
+            </w:tbl>
+        </w:body></w:document>"#;
+        let blocks = parse(xml);
+        let Block::Table(body_table) = &blocks[0] else {
+            panic!("first table")
+        };
+        let Block::Table(header_table) = &blocks[1] else {
+            panic!("second table")
+        };
+
+        assert_eq!(body_table.header_rows, 0);
+        assert!(!body_table.rows[0].cells[0].is_header);
+        assert_eq!(header_table.header_rows, 1);
+        assert!(header_table.rows[0].cells[0].is_header);
     }
 }
