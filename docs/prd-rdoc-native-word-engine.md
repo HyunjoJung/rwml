@@ -481,8 +481,8 @@ The first public maturity release should meet these requirements.
   stay visible through diagnostics with unsupported field-kind counts and
   machine-readable reason counts for unknown fields, unresolved bookmarks,
   unsupported switches, and supported syntax with no computed value, including
-  separate missing `PAGEREF` bookmark targets, explicit and direct bookmark-name
-  `REF \d` no-computed-result, missing explicit or direct `REF \f` targets, and
+  separate missing `PAGEREF` bookmark targets, value-changing `REF \d`
+  no-computed-result cases, missing explicit or direct `REF \f` targets, and
   existing explicit or direct non-note `REF \f` no-computed-result reasons, plus
   separate missing `NOTEREF` targets, existing non-note `NOTEREF`
   no-computed-result targets, and
