@@ -1087,7 +1087,7 @@ pub(crate) fn scan_note_ref_anchors(xml: &str, tag: &[u8]) -> HashMap<String, St
                             current_block_refs.push(id);
                         }
                     } else {
-                        append_note_anchor_empty_marker(&mut current_block_text, name);
+                        append_note_anchor_empty(&mut current_block_text, &e, name);
                     }
                 }
             }
@@ -1153,6 +1153,14 @@ fn append_note_anchor_empty_marker(out: &mut String, name: &[u8]) {
         b"noBreakHyphen" => out.push('-'),
         b"softHyphen" => out.push('\u{00ad}'),
         _ => {}
+    }
+}
+
+fn append_note_anchor_empty(out: &mut String, e: &BytesStart<'_>, name: &[u8]) {
+    if name == b"sym" {
+        append_run_symbol(out, e);
+    } else {
+        append_note_anchor_empty_marker(out, name);
     }
 }
 
@@ -1222,7 +1230,7 @@ fn append_note_anchor_content(
                         refs.push(id);
                     }
                 } else {
-                    append_note_anchor_empty_marker(text, name);
+                    append_note_anchor_empty(text, &e, name);
                 }
             }
             Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
