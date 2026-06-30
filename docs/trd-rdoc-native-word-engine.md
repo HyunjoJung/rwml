@@ -1164,7 +1164,8 @@ open and edit the chart data.
   advancement, honoring deterministic display-only `w:pgNumType w:start`
   page-number restart labels and trusted supported `w:pgNumType w:fmt` styles on structural section
   starts and single-section final `body/sectPr` page-number defaults, and trusted leading-structural or
-  source-marker plus deterministic display-only restart `\p` relative-position results when target and field page/order are known,
+  source-marker plus deterministic display-only restart and hard-break-after-target `\p`
+  relative-position results when target and field page/order are known,
   while normalizing simple inline heading tabs, line breaks, and
   no-break/soft hyphens, keep cached field-result inline tabs, line breaks, and
   no-break/soft hyphens when computation is unsupported, and surface unresolved

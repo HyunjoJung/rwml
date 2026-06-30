@@ -11400,15 +11400,15 @@ fn docx_page_ref_computes_explicit_manual_break_page_targets() {
     assert_eq!(fields[2].kind, FieldKind::PageRef);
     assert_eq!(fields[2].instruction, "PAGEREF Figure1 \\p");
     assert_eq!(fields[2].result, "above");
-    assert_eq!(fields[2].computed_result, None);
+    assert_eq!(fields[2].computed_result.as_deref(), Some("on page 2"));
 
     let main_text = doc.main_text();
     assert!(
-        main_text.contains("2\n2") && main_text.contains("above"),
-        "manual-break PAGEREF fields should replace only unambiguous page numbers: {main_text:?}"
+        main_text.contains("2\n2\non page 2"),
+        "manual-break PAGEREF fields should replace unambiguous page numbers and relative page labels: {main_text:?}"
     );
     assert!(
-        !main_text.contains("99") && !main_text.contains("old page"),
+        !main_text.contains("99") && !main_text.contains("old page") && !main_text.contains("above"),
         "computed manual-break PAGEREF fields should not display stale cached page text: {main_text:?}"
     );
 }
@@ -12527,14 +12527,8 @@ fn docx_page_ref_computed_manual_break_fields_are_not_model_render_warnings() {
 
     let rendered = rdoc::render_pdf_with_report(&model);
 
-    assert_eq!(rendered.report.unsupported.fields, 1);
-    assert_eq!(
-        rendered.report.unsupported.field_kinds,
-        vec![rdoc::FieldKindCount {
-            kind: FieldKind::PageRef,
-            count: 1,
-        }]
-    );
+    assert_eq!(rendered.report.unsupported.fields, 0);
+    assert!(rendered.report.unsupported.field_kinds.is_empty());
 }
 
 #[cfg(feature = "render")]

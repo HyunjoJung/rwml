@@ -6617,32 +6617,14 @@ fn report_page_ref_manual_break_targets_are_supported_when_unambiguous() {
             count: 5,
         }]
     );
-    assert_eq!(
-        report.features.unsupported_field_kinds,
-        vec![FieldKindCount {
-            kind: FieldKind::PageRef,
-            count: 1,
-        }]
-    );
-    assert_eq!(
-        report.features.unsupported_field_reasons,
-        vec![FieldEvaluationReasonCount {
-            reason: FieldEvaluationReason::NoComputedResult,
-            count: 1,
-        }]
-    );
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
     assert_eq!(
         report
             .warnings
             .iter()
             .find(|warning| matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })),
-        Some(&DocumentWarning::UnsupportedFieldEvaluation {
-            count: 1,
-            field_kinds: vec![FieldKindCount {
-                kind: FieldKind::PageRef,
-                count: 1,
-            }],
-        })
+        None
     );
 
     let json = report.to_json();
@@ -6650,14 +6632,8 @@ fn report_page_ref_manual_break_targets_are_supported_when_unambiguous() {
         json.contains(r#""field_kinds":[{"kind":"PAGEREF","count":5}]"#),
         "{json}"
     );
-    assert!(
-        json.contains(r#""unsupported_field_kinds":[{"kind":"PAGEREF","count":1}]"#),
-        "{json}"
-    );
-    assert!(
-        json.contains(r#""unsupported_field_reasons":[{"reason":"NoComputedResult","count":1}]"#),
-        "{json}"
-    );
+    assert!(json.contains(r#""unsupported_field_kinds":[]"#), "{json}");
+    assert!(json.contains(r#""unsupported_field_reasons":[]"#), "{json}");
 }
 
 #[cfg(feature = "docx")]

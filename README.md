@@ -694,8 +694,9 @@ target bookmark page structural, apply deterministic `\* Arabic`,
 number-format switches plus common field-result format switches, compute `\p`
 relative results (`above`, `below`, or `on page N`) when trusted leading
 structural page context, source page markers, deterministic display-only
-restart target/order context, or a paragraph-end section break after the target
-provide deterministic target/field ordering, and keep
+restart target/order context, an explicit hard break after a recoverable target,
+or a paragraph-end section break after the target provide deterministic
+target/field ordering, and keep
 cached page-reference text for remaining layout-dependent cases;
 remaining unknown fields beyond named document-info/date/stat fields,
 dynamic/control fields beyond deterministic literal arithmetic/comparison/scalar-function
@@ -1018,8 +1019,9 @@ deterministic computation or precise cached-result diagnostics.
       supported section page-number format styles, source rendered page-break, and trusted
       rendered-context hard-break target computation,
       deterministic page-number and field-result format switches, trusted
-      leading-structural and source-marker `\p` relative-position computation,
-      plus cached page-reference result preservation for remaining
+      leading-structural, source-marker, hard-break-after-target, and
+      paragraph-end section-break `\p` relative-position computation, plus
+      cached page-reference result preservation for remaining
       layout-dependent cases, cached field result preservation for inline tabs, line
       breaks, and no-break/soft hyphens in simple and common complex body
       fields, `.docx` running header/footer

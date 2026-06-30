@@ -993,9 +993,10 @@ Initial status:
   single-section final `body/sectPr` page-number defaults,
   source-persisted `w:lastRenderedPageBreak` markers, or
   explicit hard breaks after a trusted leading/rendered page context, applies
-  deterministic page-number and field-result format switches, computes trusted leading-structural,
-  source-marker, deterministic display-only restart, and paragraph-end
-  section-break `\p` relative-position results, and preserves cached text for remaining
+  deterministic page-number and field-result format switches, computes trusted
+  leading-structural, source-marker, deterministic display-only restart,
+  hard-break-after-target, and paragraph-end section-break `\p`
+  relative-position results, and preserves cached text for remaining
   layout-derived cases. Document and render
   diagnostics still report unknown, unresolved bookmark scope, unresolved or
   unsupported remaining value-changing REF cases such as

@@ -271,6 +271,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
     let mut section_break_pending = None;
     let mut paragraph_section_break_pending = None;
     let mut paragraph_section_break_targets = Vec::new();
+    let mut paragraph_forced_break_after_targets = Vec::new();
     let mut section_page_number_start = None;
     let mut section_page_number_format = None;
     let mut xml_depth = 0usize;
@@ -299,6 +300,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                     b"p" => {
                         if paragraph_depth == 0 {
                             paragraph_section_break_targets.clear();
+                            paragraph_forced_break_after_targets.clear();
                         }
                         paragraph_depth += 1;
                     }
@@ -369,6 +371,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                         &mut target_positions,
                         &mut unsupported_section_format_targets,
                         &mut paragraph_section_break_targets,
+                        &mut paragraph_forced_break_after_targets,
                     ),
                     b"t" => {
                         let visible_text = !read_text(&mut r).is_empty();
@@ -380,6 +383,11 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                         }
                     }
                     b"br" if is_page_break_type(&e) => {
+                        record_page_ref_forced_break_after_targets(
+                            source_order,
+                            &paragraph_forced_break_after_targets,
+                            &mut target_forced_break_after_orders,
+                        );
                         pages.advance_explicit_break(
                             saw_visible_content,
                             saw_rendered_page_break,
@@ -465,8 +473,14 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                         &mut target_positions,
                         &mut unsupported_section_format_targets,
                         &mut paragraph_section_break_targets,
+                        &mut paragraph_forced_break_after_targets,
                     ),
                     b"br" if is_page_break_type(&e) => {
+                        record_page_ref_forced_break_after_targets(
+                            source_order,
+                            &paragraph_forced_break_after_targets,
+                            &mut target_forced_break_after_orders,
+                        );
                         pages.advance_explicit_break(
                             saw_visible_content,
                             saw_rendered_page_break,
@@ -541,6 +555,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                         paragraph_depth = paragraph_depth.saturating_sub(1);
                         if paragraph_depth == 0 {
                             paragraph_section_break_targets.clear();
+                            paragraph_forced_break_after_targets.clear();
                         }
                     }
                     b"pPr" => {
@@ -749,10 +764,12 @@ fn record_page_ref_bookmark_start(
     target_positions: &mut HashMap<String, PageRefPosition>,
     unsupported_section_format_targets: &mut HashSet<String>,
     paragraph_section_break_targets: &mut Vec<String>,
+    paragraph_forced_break_after_targets: &mut Vec<String>,
 ) {
     let Some(name) = bookmark_name(e) else {
         return;
     };
+    let mut has_recoverable_page_position = false;
     if pages.leading_display_format == PageRefDisplayFormat::Unsupported {
         unsupported_section_format_targets.insert(name.clone());
     }
@@ -771,6 +788,7 @@ fn record_page_ref_bookmark_start(
                 order: *source_order,
             },
         );
+        has_recoverable_page_position = true;
     } else if paragraph_section_break_pending && pages.rendered_context_trusted {
         targets.entry(name.clone()).or_insert(PageRefTarget {
             display_page: pages.rendered_display_page_number,
@@ -787,21 +805,41 @@ fn record_page_ref_bookmark_start(
             },
         );
         paragraph_section_break_targets.push(name.clone());
+        has_recoverable_page_position = true;
     }
     if pages.rendered_context_trusted {
-        rendered_targets.entry(name).or_insert(PageRefPosition {
-            physical_page: pages.rendered_page_number,
-            display_page: pages.rendered_display_page_number,
-            display_format: pages.rendered_display_format,
-            order: *source_order,
-        });
+        rendered_targets
+            .entry(name.clone())
+            .or_insert(PageRefPosition {
+                physical_page: pages.rendered_page_number,
+                display_page: pages.rendered_display_page_number,
+                display_format: pages.rendered_display_format,
+                order: *source_order,
+            });
+        has_recoverable_page_position = true;
     } else if let Some(target) = pages.display_only_restart_target {
         targets.entry(name.clone()).or_insert(target);
         if let Some(position) = display_only_restart_page_ref_position(pages, *source_order) {
-            target_positions_insert(target_positions, name, position);
+            target_positions_insert(target_positions, name.clone(), position);
+            has_recoverable_page_position = true;
         }
     }
+    if has_recoverable_page_position {
+        push_unique(paragraph_forced_break_after_targets, name);
+    }
     *source_order += 1;
+}
+
+fn record_page_ref_forced_break_after_targets(
+    break_order: usize,
+    paragraph_forced_break_after_targets: &[String],
+    target_forced_break_after_orders: &mut HashMap<String, usize>,
+) {
+    for name in paragraph_forced_break_after_targets {
+        target_forced_break_after_orders
+            .entry(name.clone())
+            .or_insert(break_order);
+    }
 }
 
 fn current_page_ref_position(
