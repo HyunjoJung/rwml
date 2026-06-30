@@ -1912,43 +1912,93 @@ fn read_sect_pr(r: &mut Xml<'_>) -> SectionSetup {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"sectPrChange" => {
                 skip_subtree(r);
             }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
-                b"pgSz" => {
-                    if let Some(size) = section_page_size(&e) {
-                        apply_section_page_size(&mut section.page, size);
-                    }
-                }
-                b"type" => {
-                    section.section_break = attr_local(&e, b"val")
-                        .and_then(|value| SectionBreakKind::from_wml_value(&value));
-                }
-                b"pgMar" => {
-                    apply_section_page_margins(&mut section.page, section_page_margins(&e));
-                }
-                b"pgNumType" => {
-                    section.page_number_start = section_page_number_start(&e);
-                    section.page_number_format = section_page_number_format(&e);
-                }
-                b"cols" => {
-                    section.columns = section_columns(&e);
-                }
-                b"textDirection" => {
-                    section.text_direction = section_text_direction(&e);
-                }
-                b"docGrid" => {
-                    section.doc_grid = doc_grid_from_attrs(&e);
-                }
-                b"titlePg" => {
-                    section.title_page = true;
-                }
-                _ => {}
-            },
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                read_sect_pr_alternate_content(r, &mut section);
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => apply_sect_pr_child(&mut section, &e),
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"sectPr" => break,
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
     }
     section
+}
+
+fn read_sect_pr_alternate_content(r: &mut Xml<'_>, section: &mut SectionSetup) {
+    let mut took = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                match name {
+                    b"Choice" | b"Fallback" if !took => {
+                        took = true;
+                        read_sect_pr_alternate_content_branch(r, section, name);
+                    }
+                    _ => skip_subtree(r),
+                }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+}
+
+fn read_sect_pr_alternate_content_branch(
+    r: &mut Xml<'_>,
+    section: &mut SectionSetup,
+    branch: &[u8],
+) {
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"sectPrChange" => {
+                skip_subtree(r);
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                read_sect_pr_alternate_content(r, section);
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => apply_sect_pr_child(section, &e),
+            Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+}
+
+fn apply_sect_pr_child(section: &mut SectionSetup, e: &BytesStart<'_>) {
+    match local(e.name().as_ref()) {
+        b"pgSz" => {
+            if let Some(size) = section_page_size(e) {
+                apply_section_page_size(&mut section.page, size);
+            }
+        }
+        b"type" => {
+            section.section_break =
+                attr_local(e, b"val").and_then(|value| SectionBreakKind::from_wml_value(&value));
+        }
+        b"pgMar" => {
+            apply_section_page_margins(&mut section.page, section_page_margins(e));
+        }
+        b"pgNumType" => {
+            section.page_number_start = section_page_number_start(e);
+            section.page_number_format = section_page_number_format(e);
+        }
+        b"cols" => {
+            section.columns = section_columns(e);
+        }
+        b"textDirection" => {
+            section.text_direction = section_text_direction(e);
+        }
+        b"docGrid" => {
+            section.doc_grid = doc_grid_from_attrs(e);
+        }
+        b"titlePg" => {
+            section.title_page = true;
+        }
+        _ => {}
+    }
 }
 
 /// Read a `<w:r>`: its `w:rPr` formatting plus text / breaks / drawings. Returns
@@ -4825,6 +4875,62 @@ mod tests {
             })
             .expect("section break");
         assert!(section.page.landscape);
+    }
+
+    #[test]
+    fn section_props_use_single_alternate_content_branch() {
+        let xml = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+            <w:p><w:pPr><w:sectPr>
+                <mc:AlternateContent>
+                    <mc:Choice Requires="w14">
+                        <w:type w:val="nextPage"/>
+                        <w:pgSz w:w="15840" w:h="12240" w:orient="landscape"/>
+                        <w:pgNumType w:start="3" w:fmt="upperRoman"/>
+                        <w:cols w:num="2"/>
+                        <w:textDirection w:val="tbRl"/>
+                        <w:docGrid w:type="lines" w:linePitch="360" w:charSpace="120"/>
+                    </mc:Choice>
+                    <mc:Fallback>
+                        <w:type w:val="continuous"/>
+                        <w:pgSz w:w="12240" w:h="15840"/>
+                        <w:pgNumType w:start="9" w:fmt="decimalZero"/>
+                        <w:cols w:num="5"/>
+                        <w:textDirection w:val="lrTb"/>
+                        <w:docGrid w:type="snapToChars" w:linePitch="720" w:charSpace="240"/>
+                        <w:titlePg/>
+                    </mc:Fallback>
+                </mc:AlternateContent>
+            </w:sectPr></w:pPr></w:p>
+        </w:body></w:document>"#;
+        let section = parse(xml)
+            .into_iter()
+            .find_map(|block| match block {
+                Block::SectionBreak(section) => Some(section),
+                _ => None,
+            })
+            .expect("section break");
+
+        assert_eq!(section.section_break, Some(SectionBreakKind::NextPage));
+        assert!(section.page.landscape);
+        assert_eq!(section.page_number_start, Some(3));
+        assert_eq!(
+            section.page_number_format,
+            Some(PageNumberFormat::UpperRoman)
+        );
+        assert_eq!(section.columns, Some(2));
+        assert_eq!(
+            section.text_direction,
+            Some(TextDirection::TopToBottomRightToLeft)
+        );
+        assert_eq!(
+            section.doc_grid,
+            Some(DocGrid {
+                grid_type: DocGridType::Lines,
+                line_pitch: Some(360),
+                character_space: Some(120),
+            })
+        );
+        assert!(!section.title_page);
     }
 
     #[test]
