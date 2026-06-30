@@ -10,9 +10,9 @@ use super::formula::{
     formula_instruction, formula_number_text, FormulaNumberFormat, FormulaParser,
 };
 use super::{
-    apply_complex_field_scan_fld_char, inline_marker_text, normalize_instruction,
-    should_skip_alternate_branch, skip_element, AlternateContentBranchState, ComplexField,
-    FieldPhase,
+    apply_complex_field_scan_fld_char, computed_run_symbol_char, inline_marker_text,
+    normalize_instruction, should_skip_alternate_branch, skip_element, AlternateContentBranchState,
+    ComplexField, FieldPhase,
 };
 
 type Xml<'a> = Reader<&'a [u8]>;
@@ -539,9 +539,7 @@ fn read_field_result_text(r: &mut Xml<'_>) -> String {
                         consumed_element = true;
                     }
                     _ => {
-                        if let Some(marker) = inline_marker_text(&e) {
-                            text.push_str(marker);
-                        }
+                        append_table_formula_result_inline(&mut text, &e);
                     }
                 }
                 if !consumed_element {
@@ -554,9 +552,7 @@ fn read_field_result_text(r: &mut Xml<'_>) -> String {
                 if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
                     continue;
                 }
-                if let Some(marker) = inline_marker_text(&e) {
-                    text.push_str(marker);
-                }
+                append_table_formula_result_inline(&mut text, &e);
             }
             Ok(Event::End(e)) => {
                 let qname = e.name();
@@ -574,6 +570,27 @@ fn read_field_result_text(r: &mut Xml<'_>) -> String {
         }
     }
     text
+}
+
+fn append_table_formula_result_inline(text: &mut String, e: &BytesStart<'_>) {
+    if let Some(marker) = inline_marker_text(e) {
+        text.push_str(marker);
+    } else if let Some(ch) = table_formula_symbol_char(e) {
+        text.push(ch);
+    }
+}
+
+fn table_formula_symbol_char(e: &BytesStart<'_>) -> Option<char> {
+    if local(e.name().as_ref()) != b"sym" {
+        return None;
+    }
+    let value = attr_local(e, b"char")?;
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    let font = attr_local(e, b"font");
+    computed_run_symbol_char(font.as_deref(), value)
 }
 
 fn apply_table_formula_scan_fld_char(
