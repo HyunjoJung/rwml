@@ -10921,6 +10921,13 @@ fn docx_invalid_toc_entry_reports_unsupported_switch() {
             count: 1,
         }]
     );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| instruction.starts_with("TC")),
+        vec![(
+            "TC \\l 2".to_string(),
+            Some(FieldUnsupportedReason::UnsupportedSwitch),
+        )]
+    );
 
     let main_text = doc.main_text();
     assert!(

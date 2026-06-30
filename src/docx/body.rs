@@ -2422,6 +2422,9 @@ fn unsupported_simple_field_reason_hint(
     if let Some(reason) = unsupported_toc_reason_hint(instruction, ctx) {
         return Some(reason);
     }
+    if let Some(reason) = unsupported_toc_entry_reason_hint(instruction) {
+        return Some(reason);
+    }
     if let Some(reason) = unsupported_page_reason_hint(instruction) {
         return Some(reason);
     }
@@ -2552,6 +2555,15 @@ fn unsupported_toc_reason_hint(instruction: &str, ctx: &Ctx<'_>) -> Option<Field
         Some(_) => Some(FieldUnsupportedReason::UnresolvedBookmark),
         None => Some(FieldUnsupportedReason::NoComputedResult),
     }
+}
+
+fn unsupported_toc_entry_reason_hint(instruction: &str) -> Option<FieldUnsupportedReason> {
+    if FieldKind::from_instruction(instruction) != FieldKind::TocEntry {
+        return None;
+    }
+    Some(unsupported_syntax_field_reason_hint(
+        super::fields::supports_toc_entry_field_syntax(instruction),
+    ))
 }
 
 fn unsupported_page_reason_hint(instruction: &str) -> Option<FieldUnsupportedReason> {
