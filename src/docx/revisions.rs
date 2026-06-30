@@ -162,6 +162,12 @@ fn read_revision_text(r: &mut Xml<'_>, end_name: &[u8]) -> String {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"delText" => {
                 text.push_str(&read_text(r));
             }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"sym" => {
+                if let Some(ch) = revision_symbol_char(&e) {
+                    text.push(ch);
+                }
+                skip_subtree(r);
+            }
             Ok(Event::Start(e)) => {
                 if let Some(marker) = inline_marker_text(&e) {
                     text.push_str(marker);

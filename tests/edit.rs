@@ -462,6 +462,35 @@ fn notes_with_symbol_anchor_text_docx() -> Vec<u8> {
     ])
 }
 
+fn notes_with_expanded_symbol_anchor_text_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rIdEnd" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:p><w:r><w:t>Foot </w:t><w:sym w:font="Symbol" w:char="F0B7"></w:sym><w:t> before </w:t></w:r><w:r><w:footnoteReference w:id="7"/></w:r><w:r><w:t>foot after</w:t></w:r></w:p><w:p><w:r><w:t>End </w:t><mc:AlternateContent><mc:Choice Requires="wps"><w:sym w:font="Symbol" w:char="F0B7"></w:sym></mc:Choice><mc:Fallback><w:t>fallback</w:t></mc:Fallback></mc:AlternateContent><w:t> before </w:t></w:r><w:r><w:endnoteReference w:id="8"/></w:r><w:r><w:t>end after</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="7"><w:p><w:r><w:t>Foot body</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+        (
+            "word/endnotes.xml",
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="8"><w:p><w:r><w:t>End body</w:t></w:r></w:p></w:endnote></w:endnotes>"#,
+        ),
+    ])
+}
+
 fn notes_with_revision_wrapped_anchor_text_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -1001,6 +1030,23 @@ fn symbol_tracked_revisions_docx() -> Vec<u8> {
         (
             "word/document.xml",
             r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:p><w:r><w:t>Before</w:t><w:sym w:font="Symbol" w:char="F0B7"/><w:t>base</w:t></w:r><w:ins w:id="1" w:author="Alice"><w:r><w:t>Insert </w:t><w:sym w:font="Symbol" w:char="F0B7"/><w:t> keep</w:t></w:r></w:ins><w:del w:id="2" w:author="Bob"><w:r><w:delText>Delete </w:delText><w:sym w:font="Symbol" w:char="F0B7"/><w:delText> drop</w:delText></w:r></w:del><w:moveFrom w:id="3"><w:r><w:delText>From </w:delText><w:sym w:font="Symbol" w:char="F0B7"/><w:delText> old</w:delText></w:r></w:moveFrom><w:moveTo w:id="4"><w:r><w:t>To </w:t><mc:AlternateContent><mc:Choice Requires="wps"><w:sym w:font="Symbol" w:char="F0B7"/></mc:Choice><mc:Fallback><w:t>fallback</w:t></mc:Fallback></mc:AlternateContent><w:t> new</w:t></w:r></w:moveTo><w:r><w:t>After</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn expanded_symbol_tracked_revisions_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:ins w:id="1" w:author="Alice"><w:r><w:t>Insert </w:t><w:sym w:font="Symbol" w:char="F0B7"></w:sym><w:t> keep</w:t></w:r></w:ins><w:del w:id="2" w:author="Bob"><w:r><w:delText>Delete </w:delText><w:sym w:font="Symbol" w:char="F0B7"></w:sym><w:delText> drop</w:delText></w:r></w:del><w:moveFrom w:id="3"><w:r><w:delText>From </w:delText><w:sym w:font="Symbol" w:char="F0B7"></w:sym><w:delText> old</w:delText></w:r></w:moveFrom><w:moveTo w:id="4"><w:r><w:t>To </w:t><w:sym w:font="Symbol" w:char="F0B7"></w:sym><w:t> new</w:t></w:r></w:moveTo></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -1630,6 +1676,22 @@ fn docx_revision_text_preserves_supported_symbols() {
         doc.main_text_with_revision_view(RevisionView::Annotated),
         "Before • base [+Insert • keep] [-Delete • drop] [~From • old->] [~->To • new] After"
     );
+}
+
+#[test]
+fn docx_revision_text_preserves_expanded_supported_symbols() {
+    let doc = Document::open(&expanded_symbol_tracked_revisions_docx()).expect("fixture opens");
+    let revisions = doc.revisions();
+
+    assert_eq!(revisions.len(), 4);
+    assert_eq!(revisions[0].kind, RevisionKind::Insertion);
+    assert_eq!(revisions[0].text, "Insert • keep");
+    assert_eq!(revisions[1].kind, RevisionKind::Deletion);
+    assert_eq!(revisions[1].text, "Delete • drop");
+    assert_eq!(revisions[2].kind, RevisionKind::MoveFrom);
+    assert_eq!(revisions[2].text, "From • old");
+    assert_eq!(revisions[3].kind, RevisionKind::MoveTo);
+    assert_eq!(revisions[3].text, "To • new");
 }
 
 #[test]
@@ -2631,6 +2693,27 @@ fn docx_note_reference_anchors_include_containing_body_text() {
 #[test]
 fn docx_note_reference_anchors_preserve_supported_symbols() {
     let doc = Document::open(&notes_with_symbol_anchor_text_docx()).expect("fixture opens");
+
+    let notes = doc.notes();
+    assert_eq!(notes.len(), 2);
+    assert_eq!(notes[0].id, "7");
+    assert_eq!(notes[0].kind, NoteKind::Footnote);
+    assert_eq!(
+        notes[0].anchor.as_ref().map(|a| a.text.as_str()),
+        Some("Foot • before foot after")
+    );
+    assert_eq!(notes[1].id, "8");
+    assert_eq!(notes[1].kind, NoteKind::Endnote);
+    assert_eq!(
+        notes[1].anchor.as_ref().map(|a| a.text.as_str()),
+        Some("End • before end after")
+    );
+}
+
+#[test]
+fn docx_note_reference_anchors_preserve_expanded_supported_symbols() {
+    let doc =
+        Document::open(&notes_with_expanded_symbol_anchor_text_docx()).expect("fixture opens");
 
     let notes = doc.notes();
     assert_eq!(notes.len(), 2);

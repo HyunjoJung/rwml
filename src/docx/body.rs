@@ -1063,6 +1063,10 @@ pub(crate) fn scan_note_ref_anchors(xml: &str, tag: &[u8]) -> HashMap<String, St
                     } else if name == b"t" {
                         current_block_text.push_str(&read_text(&mut r));
                         body_depth = body_depth.saturating_sub(1);
+                    } else if name == b"sym" {
+                        append_run_symbol(&mut current_block_text, &e);
+                        skip_subtree(&mut r);
+                        body_depth = body_depth.saturating_sub(1);
                     } else if name == b"AlternateContent" {
                         append_note_anchor_alternate_content(
                             &mut r,
@@ -1214,6 +1218,9 @@ fn append_note_anchor_content(
                     skip_subtree(r);
                 } else if name == b"t" {
                     text.push_str(&read_text(r));
+                } else if name == b"sym" {
+                    append_run_symbol(text, &e);
+                    skip_subtree(r);
                 } else if name == b"AlternateContent" {
                     append_note_anchor_alternate_content(r, tag, text, refs, depth + 1);
                 } else if is_note_anchor_embedded_body(name) {
