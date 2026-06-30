@@ -4,7 +4,7 @@ use std::io::{Read, Write};
 
 use rdoc::{
     Block, Document, FieldEvaluationReason, FieldEvaluationReasonCount, FieldKind, FieldKindCount,
-    FieldRole,
+    FieldRole, FieldUnsupportedReason,
 };
 
 fn docx_fixture(parts: &[(&str, &str)]) -> Vec<u8> {
@@ -11008,6 +11008,40 @@ fn docx_note_ref_gap_cases_keep_cached_text() {
                 reason: FieldEvaluationReason::UnsupportedSwitch,
                 count: 1,
             },
+        ]
+    );
+
+    let model = doc.model();
+    let model_reason_hints = model
+        .blocks
+        .iter()
+        .filter_map(|block| match block {
+            Block::Paragraph(paragraph) => Some(paragraph),
+            _ => None,
+        })
+        .flat_map(|paragraph| paragraph.runs.iter())
+        .filter_map(|run| match &run.field {
+            FieldRole::Simple { instruction } if instruction.starts_with("NOTEREF") => {
+                Some((instruction.as_str(), run.field_unsupported_reason))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        model_reason_hints,
+        vec![
+            (
+                "NOTEREF PlainText",
+                Some(FieldUnsupportedReason::NoComputedResult),
+            ),
+            (
+                "NOTEREF MissingNote",
+                Some(FieldUnsupportedReason::UnresolvedBookmark),
+            ),
+            (
+                "NOTEREF PlainText \\x",
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
         ]
     );
 

@@ -26,6 +26,10 @@ impl NoteRefContext {
         self.ref_field_positions.get(index).copied()
     }
 
+    pub(crate) fn target_is_note_marker(&self, name: &str) -> bool {
+        self.target(name).is_some_and(NoteRefTarget::is_note_marker)
+    }
+
     pub(super) fn ref_note_number(
         &self,
         name: &str,
