@@ -3642,82 +3642,168 @@ fn read_tbl_borders(
     Option<TableBorderStyle>,
     TableBorderStyles,
 ) {
-    let mut color = None;
-    let mut colors = TableBorderColors::default();
-    let mut sizes = TableBorderSizes::default();
-    let mut styles = TableBorderStyles::default();
-    let mut color_seen = false;
-    let mut color_consistent = true;
-    let mut size = None;
-    let mut size_seen = false;
-    let mut size_consistent = true;
-    let mut style = None;
-    let mut style_seen = false;
-    let mut style_consistent = true;
+    let mut borders = TableBorderProps::default();
     loop {
         match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                read_tbl_borders_alternate_content(r, &mut borders);
+            }
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
-                let Some(side) = table_border_side(&e) else {
-                    continue;
-                };
-                if let Some(next) = attr_local(&e, b"color").and_then(|v| parse_rgb_hex_color(&v)) {
-                    colors.set(side, next);
-                    color_seen = true;
-                    match color {
-                        Some(current) if current != next => color_consistent = false,
-                        None => color = Some(next),
-                        _ => {}
-                    }
-                }
-                if let Some(next) = attr_u16(&e, b"sz").filter(|v| *v > 0) {
-                    sizes.set(side, next);
-                    size_seen = true;
-                    match size {
-                        Some(current) if current != next => size_consistent = false,
-                        None => size = Some(next),
-                        _ => {}
-                    }
-                }
-                if let Some(next) =
-                    attr_local(&e, b"val").and_then(|v| TableBorderStyle::from_wml_value(&v))
-                {
-                    styles.set(side, next);
-                    style_seen = true;
-                    match style {
-                        Some(current) if current != next => style_consistent = false,
-                        None => style = Some(next),
-                        _ => {}
-                    }
-                }
+                borders.record(&e);
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"tblBorders" => break,
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
     }
-    let uniform_color = if color_seen && color_consistent {
-        color
-    } else {
-        None
-    };
-    let uniform_size = if size_seen && size_consistent {
-        size
-    } else {
-        None
-    };
-    let uniform_style = if style_seen && style_consistent {
-        style
-    } else {
-        None
-    };
-    (
-        uniform_color,
-        colors,
-        uniform_size,
-        sizes,
-        uniform_style,
-        styles,
-    )
+    borders.finish()
+}
+
+struct TableBorderProps {
+    color: Option<Color>,
+    colors: TableBorderColors,
+    color_seen: bool,
+    color_consistent: bool,
+    size: Option<u16>,
+    sizes: TableBorderSizes,
+    size_seen: bool,
+    size_consistent: bool,
+    style: Option<TableBorderStyle>,
+    styles: TableBorderStyles,
+    style_seen: bool,
+    style_consistent: bool,
+}
+
+impl Default for TableBorderProps {
+    fn default() -> Self {
+        Self {
+            color: None,
+            colors: TableBorderColors::default(),
+            color_seen: false,
+            color_consistent: true,
+            size: None,
+            sizes: TableBorderSizes::default(),
+            size_seen: false,
+            size_consistent: true,
+            style: None,
+            styles: TableBorderStyles::default(),
+            style_seen: false,
+            style_consistent: true,
+        }
+    }
+}
+
+impl TableBorderProps {
+    fn record(&mut self, e: &BytesStart<'_>) {
+        let Some(side) = table_border_side(e) else {
+            return;
+        };
+        if let Some(next) = attr_local(e, b"color").and_then(|v| parse_rgb_hex_color(&v)) {
+            self.colors.set(side, next);
+            self.color_seen = true;
+            match self.color {
+                Some(current) if current != next => self.color_consistent = false,
+                None => self.color = Some(next),
+                _ => {}
+            }
+        }
+        if let Some(next) = attr_u16(e, b"sz").filter(|v| *v > 0) {
+            self.sizes.set(side, next);
+            self.size_seen = true;
+            match self.size {
+                Some(current) if current != next => self.size_consistent = false,
+                None => self.size = Some(next),
+                _ => {}
+            }
+        }
+        if let Some(next) = attr_local(e, b"val").and_then(|v| TableBorderStyle::from_wml_value(&v))
+        {
+            self.styles.set(side, next);
+            self.style_seen = true;
+            match self.style {
+                Some(current) if current != next => self.style_consistent = false,
+                None => self.style = Some(next),
+                _ => {}
+            }
+        }
+    }
+
+    fn finish(
+        self,
+    ) -> (
+        Option<Color>,
+        TableBorderColors,
+        Option<u16>,
+        TableBorderSizes,
+        Option<TableBorderStyle>,
+        TableBorderStyles,
+    ) {
+        let uniform_color = if self.color_seen && self.color_consistent {
+            self.color
+        } else {
+            None
+        };
+        let uniform_size = if self.size_seen && self.size_consistent {
+            self.size
+        } else {
+            None
+        };
+        let uniform_style = if self.style_seen && self.style_consistent {
+            self.style
+        } else {
+            None
+        };
+        (
+            uniform_color,
+            self.colors,
+            uniform_size,
+            self.sizes,
+            uniform_style,
+            self.styles,
+        )
+    }
+}
+
+fn read_tbl_borders_alternate_content(r: &mut Xml<'_>, borders: &mut TableBorderProps) {
+    let mut took = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                match name {
+                    b"Choice" | b"Fallback" if !took => {
+                        took = true;
+                        read_tbl_borders_alternate_content_branch(r, borders, name);
+                    }
+                    _ => skip_subtree(r),
+                }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+}
+
+fn read_tbl_borders_alternate_content_branch(
+    r: &mut Xml<'_>,
+    borders: &mut TableBorderProps,
+    branch: &[u8],
+) {
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                read_tbl_borders_alternate_content(r, borders);
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
+                borders.record(&e);
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
 }
 
 fn table_border_side(e: &BytesStart<'_>) -> Option<TableBorderSide> {
@@ -5156,6 +5242,52 @@ mod tests {
         assert_eq!(table.width_pct, Some(0.8));
         assert!(table.fixed_layout);
         assert_eq!(table.align, Some(Align::Center));
+    }
+
+    #[test]
+    fn table_border_props_use_single_alternate_content_branch() {
+        let xml = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+            <w:tbl>
+                <w:tblPr>
+                    <w:tblBorders>
+                        <mc:AlternateContent>
+                            <mc:Choice Requires="w14">
+                                <w:top w:val="double" w:sz="8" w:color="112233"/>
+                                <w:left w:val="double" w:sz="8" w:color="112233"/>
+                                <w:bottom w:val="double" w:sz="8" w:color="112233"/>
+                                <w:right w:val="double" w:sz="8" w:color="112233"/>
+                                <w:insideH w:val="double" w:sz="8" w:color="112233"/>
+                                <w:insideV w:val="double" w:sz="8" w:color="112233"/>
+                            </mc:Choice>
+                            <mc:Fallback>
+                                <w:top w:val="dotted" w:sz="12" w:color="445566"/>
+                                <w:left w:val="dotted" w:sz="12" w:color="445566"/>
+                                <w:bottom w:val="dotted" w:sz="12" w:color="445566"/>
+                                <w:right w:val="dotted" w:sz="12" w:color="445566"/>
+                                <w:insideH w:val="dotted" w:sz="12" w:color="445566"/>
+                                <w:insideV w:val="dotted" w:sz="12" w:color="445566"/>
+                            </mc:Fallback>
+                        </mc:AlternateContent>
+                    </w:tblBorders>
+                </w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>Table borders</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+        </w:body></w:document>"#;
+        let Block::Table(table) = &parse(xml)[0] else {
+            panic!("table")
+        };
+
+        let choice_color = Color {
+            r: 0x11,
+            g: 0x22,
+            b: 0x33,
+        };
+        assert_eq!(table.border_color, Some(choice_color));
+        assert_eq!(table.border_colors.top, Some(choice_color));
+        assert_eq!(table.border_size_eighths, Some(8));
+        assert_eq!(table.border_sizes.top, Some(8));
+        assert_eq!(table.border_style, Some(TableBorderStyle::Double));
+        assert_eq!(table.border_styles.top, Some(TableBorderStyle::Double));
     }
 
     #[test]
