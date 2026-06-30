@@ -511,20 +511,62 @@ fn grid_span_exceeds_one(e: &BytesStart<'_>) -> bool {
 
 fn read_field_result_text(r: &mut Xml<'_>) -> String {
     let mut text = String::new();
+    let mut xml_depth = 0usize;
+    let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
-                skip_subtree(r);
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    skip_subtree(r);
+                    continue;
+                }
+                if matches!(name, b"del" | b"moveFrom") {
+                    skip_subtree(r);
+                    continue;
+                }
+                let mut consumed_element = false;
+                match name {
+                    b"AlternateContent" => {
+                        alternate_content_stack.push(AlternateContentBranchState {
+                            branch_depth: xml_depth + 1,
+                            took_branch: false,
+                        });
+                    }
+                    b"t" => {
+                        text.push_str(&read_text(r));
+                        consumed_element = true;
+                    }
+                    _ => {
+                        if let Some(marker) = inline_marker_text(&e) {
+                            text.push_str(marker);
+                        }
+                    }
+                }
+                if !consumed_element {
+                    xml_depth = xml_depth.saturating_add(1);
+                }
             }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"t" => {
-                text.push_str(&read_text(r));
-            }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
+            Ok(Event::Empty(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    continue;
+                }
                 if let Some(marker) = inline_marker_text(&e) {
                     text.push_str(marker);
                 }
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"fldSimple" => break,
+            Ok(Event::End(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if name == b"AlternateContent" {
+                    alternate_content_stack.pop();
+                }
+                xml_depth = xml_depth.saturating_sub(1);
+            }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
