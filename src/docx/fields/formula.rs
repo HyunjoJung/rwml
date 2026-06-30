@@ -347,11 +347,36 @@ impl<'a> FormulaParser<'a> {
                 .or_else(|| self.field_bookmark_formula_value(&name));
         }
         self.pos += 1;
+        if upper_name == "IF" {
+            return self.parse_if_function();
+        }
         if upper_name == "DEFINED" {
             return self.parse_defined_function();
         }
         let arguments = self.parse_function_arguments()?;
         eval_formula_function(&upper_name, &arguments)
+    }
+
+    fn parse_if_function(&mut self) -> Option<f64> {
+        let condition = self.parse_comparison()?;
+        self.skip_ws();
+        let separator = self.consume_argument_separator(None)?;
+        if formula_truthy(condition) {
+            let value = self.parse_comparison()?;
+            self.skip_ws();
+            self.consume_argument_separator(Some(separator))?;
+            self.skip_unselected_argument_to_closing()?;
+            Some(value)
+        } else {
+            self.skip_unselected_argument_to_separator(separator)?;
+            let value = self.parse_comparison()?;
+            self.skip_ws();
+            if self.peek()? != ')' {
+                return None;
+            }
+            self.pos += 1;
+            Some(value)
+        }
     }
 
     fn parse_defined_function(&mut self) -> Option<f64> {
@@ -464,6 +489,83 @@ impl<'a> FormulaParser<'a> {
                 _ => return None,
             }
         }
+    }
+
+    fn consume_argument_separator(&mut self, expected: Option<char>) -> Option<char> {
+        let separator = self.peek()?;
+        if !matches!(separator, ',' | ';') {
+            return None;
+        }
+        if expected.is_some_and(|expected| expected != separator) {
+            return None;
+        }
+        self.pos += 1;
+        self.skip_ws();
+        Some(separator)
+    }
+
+    fn skip_unselected_argument_to_separator(&mut self, separator: char) -> Option<()> {
+        let start = self.unselected_argument_start();
+        let mut depth = 0usize;
+        while let Some(ch) = self.peek() {
+            match ch {
+                '(' => {
+                    depth += 1;
+                    self.pos += 1;
+                }
+                ')' if depth == 0 => return None,
+                ')' => {
+                    depth = depth.checked_sub(1)?;
+                    self.pos += 1;
+                }
+                ',' | ';' if depth == 0 => {
+                    if ch != separator || self.unselected_argument_is_empty(start, self.pos) {
+                        return None;
+                    }
+                    self.pos += 1;
+                    self.skip_ws();
+                    return Some(());
+                }
+                _ => self.pos += 1,
+            }
+        }
+        None
+    }
+
+    fn skip_unselected_argument_to_closing(&mut self) -> Option<()> {
+        let start = self.unselected_argument_start();
+        let mut depth = 0usize;
+        while let Some(ch) = self.peek() {
+            match ch {
+                '(' => {
+                    depth += 1;
+                    self.pos += 1;
+                }
+                ')' if depth == 0 => {
+                    if self.unselected_argument_is_empty(start, self.pos) {
+                        return None;
+                    }
+                    self.pos += 1;
+                    return Some(());
+                }
+                ')' => {
+                    depth = depth.checked_sub(1)?;
+                    self.pos += 1;
+                }
+                ',' | ';' if depth == 0 => return None,
+                _ => self.pos += 1,
+            }
+        }
+        None
+    }
+
+    fn unselected_argument_start(&mut self) -> usize {
+        self.skip_ws();
+        self.pos
+    }
+
+    fn unselected_argument_is_empty(&self, start: usize, end: usize) -> bool {
+        self.chars[start..end].iter().all(|ch| ch.is_whitespace())
     }
 
     fn skip_ws(&mut self) {

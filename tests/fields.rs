@@ -954,6 +954,23 @@ fn formula_additional_function_docx() -> Vec<u8> {
     ])
 }
 
+fn formula_if_short_circuit_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" = IF(1, 7, MissingTotal + 1) "><w:r><w:t>stale guarded true</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = IF(0, MissingTotal + 1, 9) "><w:r><w:t>stale guarded false</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = IF(DEFINED(MissingTotal), MissingTotal + 1, 3) "><w:r><w:t>stale defined guard</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = IF(1; 4; 1 / 0) "><w:r><w:t>stale semicolon guard</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = IF(1, MissingTotal + 1, 9) "><w:r><w:t>cached selected unsupported</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn formula_semicolon_function_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -7180,6 +7197,71 @@ fn docx_formula_fields_compute_additional_literal_functions() {
             "computed literal function result should replace stale cached text: {main_text:?}"
         );
     }
+}
+
+#[test]
+fn docx_formula_if_short_circuits_unselected_branches() {
+    let doc = Document::open(&formula_if_short_circuit_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let expected = [
+        (
+            r#"= IF(1, 7, MissingTotal + 1)"#,
+            "stale guarded true",
+            Some("7"),
+        ),
+        (
+            r#"= IF(0, MissingTotal + 1, 9)"#,
+            "stale guarded false",
+            Some("9"),
+        ),
+        (
+            r#"= IF(DEFINED(MissingTotal), MissingTotal + 1, 3)"#,
+            "stale defined guard",
+            Some("3"),
+        ),
+        (r#"= IF(1; 4; 1 / 0)"#, "stale semicolon guard", Some("4")),
+        (
+            r#"= IF(1, MissingTotal + 1, 9)"#,
+            "cached selected unsupported",
+            None,
+        ),
+    ];
+
+    assert_eq!(fields.len(), expected.len());
+    for (field, (instruction, stale, result)) in fields.iter().zip(expected) {
+        assert_eq!(field.kind, FieldKind::Dynamic("=".to_string()));
+        assert_eq!(field.instruction, instruction);
+        assert_eq!(field.result, stale);
+        assert_eq!(field.computed_result.as_deref(), result);
+    }
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Dynamic("=".to_string()),
+            count: 1
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::NoComputedResult,
+            count: 1
+        }]
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("7\n9\n3\n4")
+            && main_text.contains("cached selected unsupported")
+            && !main_text.contains("stale guarded true")
+            && !main_text.contains("stale guarded false")
+            && !main_text.contains("stale defined guard")
+            && !main_text.contains("stale semicolon guard"),
+        "IF should compute only the selected branch while unsupported selected branches stay cached: {main_text:?}"
+    );
 }
 
 #[test]
