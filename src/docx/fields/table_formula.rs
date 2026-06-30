@@ -1342,6 +1342,9 @@ fn push_table_formula_argument_values(
         }
         TableFormulaArgument::Direction(TableFormulaDirection::Below) => {
             for table_row in rows.get(row + 1..)? {
+                if table_formula_row_is_header(table_row) {
+                    continue;
+                }
                 if table_row.iter().any(|cell| cell.contains_formula) {
                     break;
                 }

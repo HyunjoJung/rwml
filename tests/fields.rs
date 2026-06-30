@@ -1073,6 +1073,23 @@ fn formula_table_header_row_span_reference_docx() -> Vec<u8> {
     ])
 }
 
+fn formula_table_header_formula_row_reference_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:p><w:fldSimple w:instr=" = SUM(BELOW) "><w:r><w:t>stale header below formula row</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:r><w:t>heading peer</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:p><w:fldSimple w:instr=" = SUM(RIGHT) "><w:r><w:t>cached skipped header formula</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:r><w:t>99</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>4</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>3</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>6</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn formula_table_prior_computed_formula_source_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -7624,6 +7641,38 @@ fn docx_table_formula_positional_span_safety_skips_header_rows() {
             && !main_text.contains("stale header below span sum")
             && !main_text.contains("stale body above span sum"),
         "span-bearing header rows should not block directional table formulas: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_table_formula_below_skips_header_formula_rows() {
+    let doc =
+        Document::open(&formula_table_header_formula_row_reference_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let expected = [
+        (
+            r#"= SUM(BELOW)"#,
+            "stale header below formula row",
+            Some("5"),
+        ),
+        (r#"= SUM(RIGHT)"#, "cached skipped header formula", None),
+    ];
+
+    assert_eq!(fields.len(), expected.len());
+    for (field, (instruction, stale, result)) in fields.iter().zip(expected) {
+        assert_eq!(field.kind, FieldKind::Dynamic("=".to_string()));
+        assert_eq!(field.instruction, instruction);
+        assert_eq!(field.result, stale);
+        assert_eq!(field.computed_result.as_deref(), result);
+    }
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("5")
+            && main_text.contains("cached skipped header formula")
+            && !main_text.contains("stale header below formula row"),
+        "header formula rows should not stop BELOW traversal: {main_text:?}"
     );
 }
 
