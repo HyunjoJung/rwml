@@ -342,10 +342,12 @@ fn read_simple_field(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Field {
                 }
                 append_field_result_inline(&mut result, &e);
             }
-            Ok(Event::End(e)) if local(e.name().as_ref()) == b"fldSimple" => break,
             Ok(Event::End(e)) => {
                 let qname = e.name();
                 let name = local(qname.as_ref());
+                if name == b"fldSimple" && xml_depth == 0 {
+                    break;
+                }
                 if name == b"AlternateContent" {
                     alternate_content_stack.pop();
                 }

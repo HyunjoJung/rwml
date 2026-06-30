@@ -558,10 +558,12 @@ fn read_field_result_text(r: &mut Xml<'_>) -> String {
                     text.push_str(marker);
                 }
             }
-            Ok(Event::End(e)) if local(e.name().as_ref()) == b"fldSimple" => break,
             Ok(Event::End(e)) => {
                 let qname = e.name();
                 let name = local(qname.as_ref());
+                if name == b"fldSimple" && xml_depth == 0 {
+                    break;
+                }
                 if name == b"AlternateContent" {
                     alternate_content_stack.pop();
                 }

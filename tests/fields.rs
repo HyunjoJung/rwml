@@ -1005,6 +1005,23 @@ fn formula_table_source_field_alternate_content_docx() -> Vec<u8> {
     ])
 }
 
+fn formula_table_source_field_nested_simple_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:tc><w:p><w:fldSimple w:instr=" QUOTE &quot;123&quot; "><w:r><w:t>1</w:t></w:r><w:fldSimple w:instr=" CUSTOM inner "><w:r><w:t>2</w:t></w:r></w:fldSimple><w:fldSimple w:instr=" = 1 + 2 "><w:r><w:t>3</w:t></w:r></w:fldSimple></w:fldSimple></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(LEFT) "><w:r><w:t>stale nested source sum</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn formula_table_cell_property_revision_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -2098,6 +2115,23 @@ fn simple_cached_result_alternate_content_docx() -> Vec<u8> {
         (
             "word/document.xml",
             r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:p><w:fldSimple w:instr=" CUSTOM value "><w:r><w:t>Before </w:t></w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:r><w:t>Choice</w:t></w:r></mc:Choice><mc:Fallback><w:r><w:t>Fallback</w:t></w:r></mc:Fallback></mc:AlternateContent><w:r><w:t> After</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn simple_cached_result_nested_simple_field_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" CUSTOM outer "><w:r><w:t>Outer </w:t></w:r><w:fldSimple w:instr=" CUSTOM inner "><w:r><w:t>Inner</w:t></w:r></w:fldSimple><w:r><w:t> Tail</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -7130,6 +7164,33 @@ fn docx_table_formula_source_simple_field_uses_single_alternate_content_branch()
 }
 
 #[test]
+fn docx_table_formula_source_simple_field_preserves_nested_simple_field_text() {
+    let doc =
+        Document::open(&formula_table_source_field_nested_simple_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let source = fields
+        .iter()
+        .find(|field| field.instruction == r#"QUOTE "123""#)
+        .expect("source field is recorded");
+    assert_eq!(source.kind, FieldKind::Dynamic("QUOTE".to_string()));
+    assert_eq!(source.result, "123");
+    assert_eq!(source.computed_result.as_deref(), Some("123"));
+
+    let formula = fields
+        .iter()
+        .find(|field| field.instruction == r#"= SUM(LEFT)"#)
+        .expect("formula field is recorded");
+    assert_eq!(formula.kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(formula.result, "stale nested source sum");
+    assert_eq!(formula.computed_result.as_deref(), Some("123"));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+}
+
+#[test]
 fn docx_table_formula_ignores_old_cell_property_revisions() {
     let doc = Document::open(&formula_table_cell_property_revision_docx()).expect("fixture opens");
     let fields = doc.fields();
@@ -11837,6 +11898,21 @@ fn docx_simple_field_result_uses_single_alternate_content_branch() {
     let main_text = doc.main_text();
     assert!(main_text.contains("Before Choice After"), "{main_text:?}");
     assert!(!main_text.contains("Fallback"), "{main_text:?}");
+}
+
+#[test]
+fn docx_simple_field_result_preserves_nested_simple_field_text() {
+    let doc =
+        Document::open(&simple_cached_result_nested_simple_field_docx()).expect("fixture opens");
+    let fields = doc.fields();
+    let field = fields
+        .iter()
+        .find(|field| field.instruction == "CUSTOM outer")
+        .expect("outer field is recorded");
+
+    assert_eq!(field.kind, FieldKind::Unknown("CUSTOM".to_string()));
+    assert_eq!(field.result, "Outer Inner Tail");
+    assert_eq!(field.computed_result, None);
 }
 
 #[test]
