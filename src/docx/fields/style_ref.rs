@@ -225,7 +225,14 @@ fn read_style_ref_paragraph(
                         if is_style_ref {
                             skip_element(r, b"fldSimple");
                         } else {
-                            text.push_str(&read_style_ref_simple_field_result(r));
+                            text.push_str(&read_style_ref_simple_field_result(
+                                r,
+                                styles,
+                                entries,
+                                field_positions,
+                                next_order,
+                                &number,
+                            ));
                         }
                         consumed_element = true;
                     }
@@ -462,8 +469,16 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
     }
 }
 
-fn read_style_ref_simple_field_result(r: &mut Xml<'_>) -> String {
+fn read_style_ref_simple_field_result(
+    r: &mut Xml<'_>,
+    styles: &Styles,
+    entries: &mut Vec<StyleRefEntry>,
+    field_positions: &mut Vec<StyleRefFieldPosition>,
+    next_order: &mut usize,
+    paragraph_number: &Option<StyleRefParagraphNumber>,
+) -> String {
     let mut text = String::new();
+    let mut current: Option<StyleRefScanField> = None;
     let mut depth = 1usize;
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
@@ -487,6 +502,21 @@ fn read_style_ref_simple_field_result(r: &mut Xml<'_>) -> String {
                             branch_depth: xml_depth + 1,
                             took_branch: false,
                         });
+                    }
+                    b"r" => {
+                        read_style_ref_run(
+                            r,
+                            StyleRefRunScan {
+                                styles,
+                                entries,
+                                field_positions,
+                                next_order,
+                                paragraph_number,
+                                current: &mut current,
+                                paragraph_text: &mut text,
+                            },
+                        );
+                        consumed_element = true;
                     }
                     b"fldSimple"
                         if attr_local(&e, b"instr")

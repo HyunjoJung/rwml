@@ -1750,6 +1750,27 @@ fn character_style_ref_field_docx() -> Vec<u8> {
     ])
 }
 
+fn character_style_ref_simple_field_source_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="character" w:styleId="LastName"><w:name w:val="Last Name"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" QUOTE &quot;Curie&quot; "><w:r><w:rPr><w:rStyle w:val="LastName"/></w:rPr><w:t>Curie</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;Last Name&quot; "><w:r><w:t>stale simple field character source</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" STYLEREF LastName \* Upper "><w:r><w:t>stale upper simple field character source</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn character_style_ref_property_revision_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -9795,6 +9816,41 @@ fn docx_style_ref_field_computes_character_style_text_by_source_order() {
     );
     assert!(main_text.contains("Ackerman"), "{main_text:?}");
     assert!(main_text.contains("BERG"), "{main_text:?}");
+}
+
+#[test]
+fn docx_style_ref_character_style_source_includes_simple_field_result_runs() {
+    let doc =
+        Document::open(&character_style_ref_simple_field_source_docx()).expect("fixture opens");
+    let fields = doc.fields();
+    let style_ref_fields = fields
+        .iter()
+        .filter(|field| field.kind == FieldKind::DocumentStructure("STYLEREF".to_string()))
+        .collect::<Vec<_>>();
+
+    assert_eq!(style_ref_fields.len(), 2);
+    assert_eq!(style_ref_fields[0].instruction, "STYLEREF \"Last Name\"");
+    assert_eq!(
+        style_ref_fields[0].computed_result.as_deref(),
+        Some("Curie")
+    );
+    assert_eq!(
+        style_ref_fields[1].instruction,
+        "STYLEREF LastName \\* Upper"
+    );
+    assert_eq!(
+        style_ref_fields[1].computed_result.as_deref(),
+        Some("CURIE")
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Curie")
+            && main_text.contains("CURIE")
+            && !main_text.contains("stale simple field character source")
+            && !main_text.contains("stale upper simple field character source"),
+        "character-style STYLEREF should index visible simple-field result runs: {main_text:?}"
+    );
 }
 
 #[test]
