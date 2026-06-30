@@ -519,9 +519,10 @@ Implementation:
   and standalone `TOC \u` fields over explicit paragraph outline levels, plus
   `TOC \b` bookmark-scoped variants when the bookmark range is recoverable, as
   `Field::computed_result`, including empty computed results for existing
-  scopes with no matching entries, normalizing simple inline heading
-  tabs, line breaks, and no-break/soft hyphens, and use that text in the read/render
-  model instead of stale cached text for simple and common complex fields;
+  scopes with no matching entries, normalizing simple inline heading/caption
+  tabs, line breaks, no-break/soft hyphens, and supported literal symbols, and
+  use that text in the read/render model instead of stale cached text for simple
+  and common complex fields;
 - compute deterministic body paragraph- and character-style `.docx`
   `STYLEREF` fields by matching style id or quoted/switch-bounded unquoted
   style name, searching backward from the field and falling forward when no
@@ -1182,8 +1183,9 @@ open and edit the chart data.
   starts and single-section final `body/sectPr` page-number defaults, and trusted leading-structural or
   source-marker plus deterministic display-only restart and hard-break-after-target `\p`
   relative-position results when target and field page/order are known,
-  while normalizing simple inline heading tabs, line breaks, and
-  no-break/soft hyphens, keep cached field-result inline tabs, line breaks, and
+  while normalizing simple inline heading/caption tabs, line breaks,
+  no-break/soft hyphens, and supported literal symbols, keep cached
+  field-result inline tabs, line breaks, and
   no-break/soft hyphens when computation is unsupported, and surface unresolved
   bookmark scope, unsupported remaining value-changing REF cases beyond the
   deterministic note/comment-reference mark subset, broader REF semantics,

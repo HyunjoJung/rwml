@@ -665,7 +665,8 @@ source order,
 deterministic TOC `\* Upper`/`\* Lower`/`\* Caps`/`\* FirstCap` field-result
 format switches, neutral TOC `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT`, and standalone `TOC \u` fields over explicit paragraph outline levels, plus
 `TOC \b` bookmark-scoped variants when the bookmark range is recoverable,
-normalize simple inline heading tabs, line breaks, and no-break/soft hyphens and
+normalize simple inline heading/caption tabs, line breaks, no-break/soft
+hyphens, and supported literal symbols, and
 expose computed results for simple and common complex begin/separate/end fields
 and render/read as computed text; deterministic body paragraph- and
 character-style `STYLEREF` fields compute nearest styled paragraph/run text by
@@ -1022,8 +1023,9 @@ deterministic computation or precise cached-result diagnostics.
       standalone `TOC \u` explicit paragraph
       outline-level computation and `TOC \b` bookmark-scoped computation when
       the bookmark range is recoverable, including empty computed results for
-      existing scopes with no matching entries, with normalized simple inline heading
-      tabs, line breaks, and no-break/soft hyphens for simple and common complex
+      existing scopes with no matching entries, with normalized simple inline
+      heading/caption tabs, line breaks, no-break/soft hyphens, and supported
+      literal symbols for simple and common complex
       fields, body `PAGE` trusted current-page computation with page-number and
       field-result format switches, named `PAGEREF` classification with leading
       hard-break,

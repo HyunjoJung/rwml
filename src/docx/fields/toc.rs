@@ -191,6 +191,13 @@ fn read_toc_paragraph(
                             text.push_str(&run_text);
                         }
                     }
+                    b"sym" => {
+                        if !toc_source_hidden_field_result(&current) {
+                            if let Some(ch) = toc_symbol_char(&e) {
+                                text.push(ch);
+                            }
+                        }
+                    }
                     b"tab" | b"br" | b"cr" => text.push(' '),
                     b"noBreakHyphen" => text.push('-'),
                     b"softHyphen" => text.push('\u{00ad}'),

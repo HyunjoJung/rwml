@@ -262,8 +262,9 @@ The first public maturity release should meet these requirements.
   paragraph outline levels, plus
   `TOC \b` bookmark-scoped variants when the bookmark range is recoverable,
   including empty computed results for existing scopes with no matching entries,
-  normalize simple inline heading tabs, line breaks, and no-break
-  hyphens and expose computed results for simple and common complex field forms;
+  normalize simple inline heading/caption tabs, line breaks, no-break
+  hyphens, and supported literal symbols, and expose computed results for simple
+  and common complex field forms;
   cached `MERGEFIELD` results, deterministic simple source-order `SEQ` fields
   with `\n`/`\r`/`\c`, heading-reset `\s` from resolved body heading scopes,
   hidden `\h`, and common number-format switches,

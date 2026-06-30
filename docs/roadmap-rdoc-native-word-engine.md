@@ -191,8 +191,9 @@ Initial status:
   containing matching `SEQ Identifier` fields, with simple or common complex
   dirty/stale `SEQ` caption numbers recomputed from source order, and standalone
   `TOC \u` fields over explicit paragraph
-  outline levels with normalized simple inline heading tabs, line
-  breaks, and no-break/soft hyphens, including common complex begin/separate/end
+  outline levels with normalized simple inline heading/caption tabs, line
+  breaks, no-break/soft hyphens, and supported literal symbols, including common
+  complex begin/separate/end
   fields, deterministic literal arithmetic formula fields with finite
   decimal/scientific numeric constants, literal scalar numeric/logical functions (`ABS`, `AND`, `AVERAGE`,
   `COUNT`, `DEFINED`, `FALSE`, `IF`, `INT`, `MAX`, `MIN`, `MOD`, `NOT`, `OR`, `PRODUCT`,
@@ -996,8 +997,9 @@ Initial status:
   `TOC \u` fields over explicit paragraph
   outline levels plus `TOC \b` bookmark-scoped variants when the bookmark range
   is recoverable, including empty computed results for existing scopes with no
-  matching entries, normalize simple inline heading tabs, line breaks,
-  and no-break/soft hyphens, expose computed results, and display the computed text
+  matching entries, normalize simple inline heading/caption tabs, line breaks,
+  no-break/soft hyphens, and supported literal symbols, expose computed results,
+  and display the computed text
   for simple and common complex fields. `PAGE` computes current page numbers
   from trusted leading structural and source-rendered current-page contexts,
   including accepted/current wrappers, single-branch `mc:AlternateContent`
