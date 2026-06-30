@@ -2440,6 +2440,12 @@ fn unsupported_simple_field_reason_hint(
     if let Some(reason) = unsupported_form_field_reason_hint(instruction) {
         return Some(reason);
     }
+    if let Some(reason) = unsupported_display_reason_hint(instruction) {
+        return Some(reason);
+    }
+    if let Some(reason) = unsupported_action_reason_hint(instruction) {
+        return Some(reason);
+    }
     None
 }
 
@@ -2659,6 +2665,30 @@ fn unsupported_syntax_field_reason_hint(valid_syntax: bool) -> FieldUnsupportedR
     } else {
         FieldUnsupportedReason::UnsupportedSwitch
     }
+}
+
+fn unsupported_display_reason_hint(instruction: &str) -> Option<FieldUnsupportedReason> {
+    if !matches!(
+        FieldKind::from_instruction(instruction),
+        FieldKind::Display(_)
+    ) {
+        return None;
+    }
+    Some(unsupported_syntax_field_reason_hint(
+        super::fields::supports_display_field_syntax(instruction),
+    ))
+}
+
+fn unsupported_action_reason_hint(instruction: &str) -> Option<FieldUnsupportedReason> {
+    if !matches!(
+        FieldKind::from_instruction(instruction),
+        FieldKind::Action(_)
+    ) {
+        return None;
+    }
+    Some(unsupported_syntax_field_reason_hint(
+        super::fields::supports_action_field_syntax(instruction),
+    ))
 }
 
 fn computed_simple_field_result(

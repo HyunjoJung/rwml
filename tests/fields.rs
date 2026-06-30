@@ -8275,6 +8275,19 @@ fn docx_display_field_diagnostics_split_valid_broader_eq_from_malformed_eq() {
             count: 2,
         }]
     );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| instruction.starts_with("EQ")),
+        vec![
+            (
+                r#"EQ \s\up8(A"#.to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+            (
+                r#"EQ \d \fo10(A"#.to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+        ]
+    );
 
     let main_text = doc.main_text();
     assert!(!main_text.contains("cached broader script equation"));
@@ -8380,6 +8393,13 @@ fn docx_symbol_field_diagnostics_split_mapped_wingdings_from_malformed_symbol() 
             count: 1,
         }]
     );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| instruction.starts_with("SYMBOL")),
+        vec![(
+            r#"SYMBOL 65 \f "Wingdings "#.to_string(),
+            Some(FieldUnsupportedReason::UnsupportedSwitch),
+        )]
+    );
 
     let main_text = doc.main_text();
     assert!(main_text.contains("\u{270C}"));
@@ -8476,6 +8496,25 @@ fn docx_action_fields_compute_display_text_without_running_actions() {
                 reason: FieldEvaluationReason::NoComputedResult,
                 count: 1,
             },
+        ]
+    );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| {
+            instruction.starts_with("MACROBUTTON") || instruction.starts_with("PRINT")
+        }),
+        vec![
+            (
+                "MACROBUTTON RunReport Run \\* Upper Again".to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+            (
+                "MACROBUTTON RunReport \\* MERGEFORMAT".to_string(),
+                Some(FieldUnsupportedReason::NoComputedResult),
+            ),
+            (
+                "PRINT \\z \"bad\"".to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
         ]
     );
 
