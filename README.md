@@ -476,7 +476,8 @@ literal scalar numeric/logical functions (`ABS`, `AND`, `AVERAGE`, `COUNT`,
 `ROUND`, `SIGN`, `SUM`, `TRUE`) with comma or semicolon argument separators,
 literal `DEFINED(expr)` checks for parser-local literal expressions, `+`, `-`, `*`, `/`, `^`, parentheses, unary signs,
 literal comparison operators (`=`, `<>`, `<`, `<=`, `>`, `>=`), simple
-non-spanning table formulas over existing plain numeric direct A1/RnCn cells
+non-spanning table formulas over existing plain numeric cells and source-order
+prior computed formula-only cells, including direct A1/RnCn cell references
 plus aggregate formulas over positional `LEFT`/`RIGHT`/`ABOVE`/`BELOW`,
 current `R`/`C`, A1 cell/range, and RnCn cell/range references, skipping absent
 cells in ragged rows and including nested

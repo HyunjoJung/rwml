@@ -128,6 +128,7 @@ enum TableFormulaRecord {
         row: usize,
         col: usize,
         instruction: String,
+        cached_result: String,
     },
 }
 
@@ -198,20 +199,55 @@ fn read_table_formula_table(r: &mut Xml<'_>) -> Vec<Option<String>> {
         }
     }
     let has_spans = rows.iter().flatten().any(|cell| cell.has_span);
-    records
-        .into_iter()
-        .map(|record| match record {
+    let mut results = Vec::with_capacity(records.len());
+    for record in records {
+        let result = match record {
             TableFormulaRecord::Nested(result) => result,
             TableFormulaRecord::Local {
                 row,
                 col,
                 instruction,
-            } if !has_spans || span_safe_formula(&instruction, &rows, row, col) => {
-                computed_table_formula_result(&instruction, &rows, row, col)
+                cached_result,
+            } => {
+                let result = if !has_spans || span_safe_formula(&instruction, &rows, row, col) {
+                    computed_table_formula_result(&instruction, &rows, row, col)
+                } else {
+                    None
+                };
+                if let Some(text) = result.as_deref() {
+                    promote_table_formula_cell_source_value(
+                        &mut rows,
+                        row,
+                        col,
+                        &cached_result,
+                        text,
+                    );
+                }
+                result
             }
-            TableFormulaRecord::Local { .. } => None,
-        })
-        .collect()
+        };
+        results.push(result);
+    }
+    results
+}
+
+fn promote_table_formula_cell_source_value(
+    rows: &mut [Vec<TableFormulaCell>],
+    row: usize,
+    col: usize,
+    cached_result: &str,
+    computed_result: &str,
+) {
+    let Some(cell) = rows
+        .get_mut(row)
+        .and_then(|table_row| table_row.get_mut(col))
+    else {
+        return;
+    };
+    if !cached_result.is_empty() && cell.contains_formula && cell.text == cached_result {
+        cell.text = computed_result.to_string();
+        cell.contains_formula = false;
+    }
 }
 
 fn read_table_formula_row(r: &mut Xml<'_>, row_index: usize) -> Vec<TableFormulaCell> {
@@ -322,6 +358,7 @@ fn read_table_formula_cell(r: &mut Xml<'_>, row: usize, col: usize) -> TableForm
                     b"fldSimple" => {
                         let instruction =
                             attr_local(&e, b"instr").map(|value| normalize_instruction(&value));
+                        let result_text = read_field_result_text(r);
                         if instruction.as_deref().is_some_and(|value| {
                             FieldKind::from_instruction(value)
                                 == FieldKind::Dynamic("=".to_string())
@@ -331,24 +368,30 @@ fn read_table_formula_cell(r: &mut Xml<'_>, row: usize, col: usize) -> TableForm
                                 row,
                                 col,
                                 instruction: instruction.unwrap_or_default(),
+                                cached_result: result_text.clone(),
                             });
                         }
-                        cell.text.push_str(&read_field_result_text(r));
+                        cell.text.push_str(&result_text);
                         consumed_element = true;
                     }
                     b"fldChar" => {
-                        apply_table_formula_scan_fld_char(&e, &mut current, |instruction, _| {
-                            if FieldKind::from_instruction(instruction)
-                                == FieldKind::Dynamic("=".to_string())
-                            {
-                                cell.contains_formula = true;
-                                cell.records.push(TableFormulaRecord::Local {
-                                    row,
-                                    col,
-                                    instruction: instruction.to_string(),
-                                });
-                            }
-                        });
+                        apply_table_formula_scan_fld_char(
+                            &e,
+                            &mut current,
+                            |instruction, result| {
+                                if FieldKind::from_instruction(instruction)
+                                    == FieldKind::Dynamic("=".to_string())
+                                {
+                                    cell.contains_formula = true;
+                                    cell.records.push(TableFormulaRecord::Local {
+                                        row,
+                                        col,
+                                        instruction: instruction.to_string(),
+                                        cached_result: result.to_string(),
+                                    });
+                                }
+                            },
+                        );
                     }
                     b"instrText" => {
                         let text = read_text(r);
@@ -390,22 +433,28 @@ fn read_table_formula_cell(r: &mut Xml<'_>, row: usize, col: usize) -> TableForm
                                 row,
                                 col,
                                 instruction: instruction.unwrap_or_default(),
+                                cached_result: String::new(),
                             });
                         }
                     }
                     b"fldChar" => {
-                        apply_table_formula_scan_fld_char(&e, &mut current, |instruction, _| {
-                            if FieldKind::from_instruction(instruction)
-                                == FieldKind::Dynamic("=".to_string())
-                            {
-                                cell.contains_formula = true;
-                                cell.records.push(TableFormulaRecord::Local {
-                                    row,
-                                    col,
-                                    instruction: instruction.to_string(),
-                                });
-                            }
-                        });
+                        apply_table_formula_scan_fld_char(
+                            &e,
+                            &mut current,
+                            |instruction, result| {
+                                if FieldKind::from_instruction(instruction)
+                                    == FieldKind::Dynamic("=".to_string())
+                                {
+                                    cell.contains_formula = true;
+                                    cell.records.push(TableFormulaRecord::Local {
+                                        row,
+                                        col,
+                                        instruction: instruction.to_string(),
+                                        cached_result: result.to_string(),
+                                    });
+                                }
+                            },
+                        );
                     }
                     _ => {
                         append_table_formula_result_inline(&mut cell.text, &e);

@@ -633,8 +633,9 @@ Implementation:
   document-info/date/stat display fields, dynamic/control fields beyond
   deterministic literal arithmetic/comparison/scalar-function formula fields with
   finite decimal/scientific numeric literals, finite literal exponentiation, and comma or semicolon function argument separators, simple non-spanning table
-  direct A1/RnCn cell references plus aggregate references over existing plain
-  numeric positional `LEFT`/`RIGHT`/`ABOVE`/`BELOW`, current `R`/`C`, A1
+  references over existing plain numeric cells and source-order prior computed
+  formula-only cells, including direct A1/RnCn cell references plus aggregate
+  references over positional `LEFT`/`RIGHT`/`ABOVE`/`BELOW`, current `R`/`C`, A1
   cell/range, and RnCn cell/range references, skipping absent cells in ragged rows and including
   nested aggregate calls inside literal formula expressions, simple separated `\#`
   numeric pictures with quoted or switch-delimited unquoted operands plus compact single-token `\#` numeric pictures,
@@ -729,8 +730,9 @@ Acceptance:
   `NUMPAGES`, `NUMWORDS`, `NUMCHARS`, and `TEMPLATE`, dynamic/control fields
   including deterministic literal arithmetic/comparison/scalar-function formula fields with
   finite decimal/scientific numeric literals, finite literal exponentiation, and comma or semicolon function argument separators, simple non-spanning table
-  direct A1/RnCn cell references plus aggregate references over existing plain
-  numeric positional `LEFT`/`RIGHT`/`ABOVE`/`BELOW`, current `R`/`C`, A1
+  references over existing plain numeric cells and source-order prior computed
+  formula-only cells, including direct A1/RnCn cell references plus aggregate
+  references over positional `LEFT`/`RIGHT`/`ABOVE`/`BELOW`, current `R`/`C`, A1
   cell/range, and RnCn cell/range references, skipping absent cells in ragged rows and including
   nested aggregate calls inside literal formula expressions, simple separated `\#`
   numeric pictures with quoted or switch-delimited unquoted operands plus compact single-token `\#` numeric pictures,
@@ -1196,8 +1198,9 @@ open and edit the chart data.
   document-info/date/stat display fields, dynamic/control fields beyond
   deterministic literal arithmetic/comparison/scalar-function formula fields with
   finite decimal/scientific numeric literals, finite literal exponentiation, and comma or semicolon function argument separators, simple non-spanning table
-  direct A1/RnCn cell references plus aggregate references over existing plain
-  numeric positional `LEFT`/`RIGHT`/`ABOVE`/`BELOW`, current `R`/`C`, A1
+  references over existing plain numeric cells and source-order prior computed
+  formula-only cells, including direct A1/RnCn cell references plus aggregate
+  references over positional `LEFT`/`RIGHT`/`ABOVE`/`BELOW`, current `R`/`C`, A1
   cell/range, and RnCn cell/range references, skipping absent cells in ragged rows and including
   nested aggregate calls inside literal formula expressions, simple separated `\#`
   numeric pictures with quoted or switch-delimited unquoted operands plus compact single-token `\#` numeric pictures,

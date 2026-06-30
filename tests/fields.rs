@@ -1005,6 +1005,40 @@ fn formula_table_reference_docx() -> Vec<u8> {
     ])
 }
 
+fn formula_table_prior_computed_formula_source_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>3</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(LEFT) "><w:r><w:t>stale row total</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>1</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>1</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(ABOVE) "><w:r><w:t>stale dependent above</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:fldSimple w:instr=" = SUM(A1:C1) "><w:r><w:t>cached mixed formula range</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:r><w:t>0</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>0</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn formula_table_empty_prior_formula_source_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:tc><w:p><w:fldSimple w:instr=" = SUM(RIGHT) "></w:fldSimple></w:p></w:tc><w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>3</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:fldSimple w:instr=" = SUM(ABOVE) "><w:r><w:t>dependent cached</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:r><w:t>0</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>0</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn formula_table_source_field_alternate_content_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -7300,6 +7334,62 @@ fn docx_formula_fields_compute_simple_table_references() {
             && !main_text.contains("stale right sum")
             && !main_text.contains("stale above sum"),
         "computed table-reference formulas should replace stale cached text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_table_formula_uses_prior_computed_formula_cells_as_source_values() {
+    let doc =
+        Document::open(&formula_table_prior_computed_formula_source_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let expected = [
+        (r#"= SUM(LEFT)"#, "stale row total", Some("5")),
+        (r#"= SUM(ABOVE)"#, "stale dependent above", Some("5")),
+        (r#"= SUM(A1:C1)"#, "cached mixed formula range", Some("10")),
+    ];
+
+    assert_eq!(fields.len(), expected.len());
+    for (field, (instruction, stale, result)) in fields.iter().zip(expected) {
+        assert_eq!(field.kind, FieldKind::Dynamic("=".to_string()));
+        assert_eq!(field.instruction, instruction);
+        assert_eq!(field.result, stale);
+        assert_eq!(field.computed_result.as_deref(), result);
+    }
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("5")
+            && main_text.contains("10")
+            && !main_text.contains("stale row total")
+            && !main_text.contains("stale dependent above")
+            && !main_text.contains("cached mixed formula range"),
+        "source-order table formulas should feed later table formulas: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_table_formula_does_not_use_prior_formula_cells_without_cached_results_as_source_values() {
+    let doc =
+        Document::open(&formula_table_empty_prior_formula_source_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].instruction, r#"= SUM(RIGHT)"#);
+    assert_eq!(fields[0].result, "");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("5"));
+    assert_eq!(fields[1].instruction, r#"= SUM(ABOVE)"#);
+    assert_eq!(fields[1].result, "dependent cached");
+    assert_eq!(fields[1].computed_result, None);
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("5") && main_text.contains("dependent cached"),
+        "empty cached formula cells should render themselves without feeding later formulas: {main_text:?}"
     );
 }
 
