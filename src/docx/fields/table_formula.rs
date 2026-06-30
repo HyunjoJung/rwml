@@ -457,6 +457,9 @@ fn read_table_formula_cell_props(r: &mut Xml<'_>) -> bool {
                         });
                         xml_depth = xml_depth.saturating_add(1);
                     }
+                    b"Choice" | b"Fallback" => {
+                        xml_depth = xml_depth.saturating_add(1);
+                    }
                     b"gridSpan" => {
                         has_span |= grid_span_exceeds_one(&e);
                         skip_subtree(r);

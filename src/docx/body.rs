@@ -3858,6 +3858,9 @@ fn read_tcpr(r: &mut Xml<'_>) -> TcPr {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tcPrChange" => {
                 skip_subtree(r);
             }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                read_tcpr_alternate_content(r, &mut t);
+            }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tcMar" => {
                 t.margins = read_tc_mar(r);
             }
@@ -3868,6 +3871,48 @@ fn read_tcpr(r: &mut Xml<'_>) -> TcPr {
         }
     }
     t
+}
+
+fn read_tcpr_alternate_content(r: &mut Xml<'_>, t: &mut TcPr) {
+    let mut took = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                match name {
+                    b"Choice" | b"Fallback" if !took => {
+                        took = true;
+                        read_tcpr_alternate_content_branch(r, t, name);
+                    }
+                    _ => skip_subtree(r),
+                }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+}
+
+fn read_tcpr_alternate_content_branch(r: &mut Xml<'_>, t: &mut TcPr, branch: &[u8]) {
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tcPrChange" => {
+                skip_subtree(r);
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tcMar" => {
+                t.margins = read_tc_mar(r);
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                read_tcpr_alternate_content(r, t);
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => apply_tcpr_child(t, &e),
+            Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
 }
 
 fn apply_tcpr_child(t: &mut TcPr, e: &BytesStart<'_>) {
