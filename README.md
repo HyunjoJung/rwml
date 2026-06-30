@@ -487,7 +487,8 @@ grouping commas, literal
 prefix/suffix characters such as `$` or `%`, single-section leading `+`/`-`
 sign-control items, and `x` digit-drop/rounding positions, plus two- and
 three-section positive/negative/zero numeric pictures separated by semicolons,
-with optional neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT` formula tails and
+with optional neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT` formula tails,
+formula result text-format tails such as `\* Upper`/`\* Lower`/`\* Caps`/`\* FirstCap`, and
 literal and table formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
 malformed formula switch syntax reports `UnsupportedSwitch`,
 deterministic literal `QUOTE` fields render quoted or unquoted computed text

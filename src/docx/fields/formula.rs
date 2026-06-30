@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 
 use crate::annotation::{
-    accept_field_number_format_switch, accept_general_format_switch, formula_field_syntax,
-    instruction_parts, strip_ascii_switch_prefix, FieldNumberFormat,
+    accept_field_number_format_switch, accept_field_text_format_switch,
+    accept_general_format_switch, formula_field_syntax, instruction_parts,
+    strip_ascii_switch_prefix, FieldNumberFormat, FieldTextFormat,
 };
 
 use super::{
-    accept_neutral_field_format_tail, format_page_number, is_field_format_start,
+    apply_field_text_format, format_page_number, is_field_format_start,
     page_number_format_from_field_format, quoted_literal_text, PageNumberFormat,
 };
 
@@ -25,17 +26,19 @@ pub(super) fn computed_formula_result_with_bookmarks(
     }
     let mut parser = FormulaParser::new(&spec.expression, field_bookmarks);
     let value = parser.parse()?;
-    match spec.number_format {
+    let text = match spec.number_format {
         Some(FormulaNumberFormat::Picture(format)) => format_formula_number(value, &format),
         Some(FormulaNumberFormat::General(format)) => format_formula_general_number(value, format),
         None => formula_number_text(value),
-    }
+    }?;
+    Some(apply_field_text_format(text, spec.text_format))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct FormulaInstruction {
     pub(super) expression: String,
     pub(super) number_format: Option<FormulaNumberFormat>,
+    pub(super) text_format: Option<FieldTextFormat>,
 }
 
 enum FormulaNumberFormatSwitch {
@@ -47,6 +50,12 @@ enum FormulaNumberFormatSwitch {
 pub(super) enum FormulaNumberFormat {
     Picture(String),
     General(FieldNumberFormat),
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct FormulaFormatTail {
+    number_format: Option<FieldNumberFormat>,
+    text_format: Option<FieldTextFormat>,
 }
 
 pub(super) fn formula_instruction(instruction: &str) -> Option<FormulaInstruction> {
@@ -62,15 +71,17 @@ pub(super) fn formula_instruction(instruction: &str) -> Option<FormulaInstructio
                 return None;
             }
             let mut tail = tokens[tail_index..].iter().map(String::as_str);
-            let general_format = accept_formula_general_format_tail(&mut tail)?;
+            let formats = accept_formula_general_format_tail(&mut tail)?;
             return Some(FormulaInstruction {
                 expression: tokens[..tail_index].join(" "),
-                number_format: general_format.map(FormulaNumberFormat::General),
+                number_format: formats.number_format.map(FormulaNumberFormat::General),
+                text_format: formats.text_format,
             });
         }
         return Some(FormulaInstruction {
             expression: body.to_string(),
             number_format: None,
+            text_format: None,
         });
     };
     let (format_index, picture, tail_start) = match format_switch {
@@ -87,10 +98,11 @@ pub(super) fn formula_instruction(instruction: &str) -> Option<FormulaInstructio
         return None;
     }
     let mut tail = tokens[tail_start..].iter().map(String::as_str);
-    accept_neutral_field_format_tail(&mut tail)?;
+    let text_format = accept_formula_text_format_tail(&mut tail)?;
     Some(FormulaInstruction {
         expression: tokens[..format_index].join(" "),
         number_format: Some(FormulaNumberFormat::Picture(picture)),
+        text_format,
     })
 }
 
@@ -144,17 +156,33 @@ fn formula_unquoted_number_picture_token(token: &str) -> Option<&str> {
 
 fn accept_formula_general_format_tail<'a>(
     parts: &mut impl Iterator<Item = &'a str>,
-) -> Option<Option<FieldNumberFormat>> {
-    let mut number_format = None;
+) -> Option<FormulaFormatTail> {
+    let mut formats = FormulaFormatTail::default();
     while let Some(part) = parts.next() {
         if accept_general_format_switch(part, parts, |format| {
-            accept_field_number_format_switch(format, &mut number_format)
+            accept_field_number_format_switch(format, &mut formats.number_format)
+                || accept_field_text_format_switch(format, &mut formats.text_format)
         })? {
             continue;
         }
         return None;
     }
-    Some(number_format)
+    Some(formats)
+}
+
+fn accept_formula_text_format_tail<'a>(
+    parts: &mut impl Iterator<Item = &'a str>,
+) -> Option<Option<FieldTextFormat>> {
+    let mut text_format = None;
+    while let Some(part) = parts.next() {
+        if accept_general_format_switch(part, parts, |format| {
+            accept_field_text_format_switch(format, &mut text_format)
+        })? {
+            continue;
+        }
+        return None;
+    }
+    Some(text_format)
 }
 
 #[derive(Debug, Clone)]

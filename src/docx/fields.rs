@@ -17,10 +17,10 @@ use crate::annotation::{
     eq_radical_operands as split_eq_radical_operands, field_identifier_token, field_literal_token,
     field_name_operand, field_name_token, field_non_empty_non_switch_literal_token,
     field_quoted_literal_token, filename_field_syntax, if_field_syntax, instruction_parts,
-    is_neutral_field_format_switch, legacy_form_field_syntax, merge_control_field_syntax,
-    note_ref_field_syntax, numbering_field_syntax, page_field_format_syntax_tail,
-    page_ref_field_syntax, prompt_field_syntax, quote_field_syntax, ref_field_syntax,
-    reference_index_category_token, reference_index_literal_operand, reference_index_literal_token,
+    legacy_form_field_syntax, merge_control_field_syntax, note_ref_field_syntax,
+    numbering_field_syntax, page_field_format_syntax_tail, page_ref_field_syntax,
+    prompt_field_syntax, quote_field_syntax, ref_field_syntax, reference_index_category_token,
+    reference_index_literal_operand, reference_index_literal_token,
     reference_index_plain_value_token, revision_number_field_text_format, sequence_field_syntax,
     set_field_syntax, strip_ascii_switch_prefix, style_ref_field_syntax, symbol_field_syntax,
     toc_entry_field_syntax, toc_field_syntax, Field, FieldKind, FieldNumberFormat, FieldTextFormat,
@@ -1131,19 +1131,6 @@ fn accept_field_format_switch_for_tail<'a>(
     accept_general_format_switch(part, parts, |format| {
         accept_field_format_switch(format, text_format)
     })
-}
-
-pub(super) fn accept_neutral_field_format_tail<'a, I>(parts: &mut I) -> Option<()>
-where
-    I: Iterator<Item = &'a str>,
-{
-    while let Some(part) = parts.next() {
-        if accept_general_format_switch(part, parts, is_neutral_field_format_switch)? {
-            continue;
-        }
-        return None;
-    }
-    Some(())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -313,7 +313,8 @@ The first public maturity release should meet these requirements.
   single-section leading `+`/`-` sign-control items, and `x`
   digit-drop/rounding positions, plus two- and three-section
   positive/negative/zero numeric pictures separated by semicolons,
-  with optional neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT` formula tails and
+  with optional neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT` formula tails,
+  formula result text-format tails such as `\* Upper`/`\* Lower`/`\* Caps`/`\* FirstCap`, and
   literal and table formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
   malformed formula switch syntax reporting `UnsupportedSwitch`,
   deterministic literal `QUOTE` fields computed from quoted or unquoted text
