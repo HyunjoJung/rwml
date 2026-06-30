@@ -582,8 +582,9 @@ limit marker plain text,
 simple `EQ \o(...)` overstrike controls with documented alignment options compute
 source-order overlay operand plain text,
 deterministic `SYMBOL` fields compute decimal/hex/default ANSI, Unicode
-`\u`, neutral `\h`, separated or compact font `\f` switches and quoted or
-unquoted separated/compact size `\s` switches, and common Symbol/Wingdings character
+`\u`, neutral `\h`, separated font `\f` switches with quoted or
+switch-delimited unquoted operands, compact single-token font `\f` switches,
+quoted or unquoted separated/compact size `\s` switches, and common Symbol/Wingdings character
 insertions including Symbol `0xB7` bullet, with field-result format switches; invalid display/layout syntax reports
 `UnsupportedSwitch`, while valid broader display/layout cases preserve cached result text with `NoComputedResult` diagnostics;
 action/automation fields (`GOTOBUTTON`, `MACROBUTTON`, `PRINT`) are named

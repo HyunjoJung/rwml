@@ -4272,6 +4272,10 @@ mod tests {
             super::FieldEvaluationReason::NoComputedResult
         );
         assert_eq!(
+            super::display_uncomputed_reason(r"SYMBOL 0x03BB \u \f Times New Roman \* Upper"),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
             super::display_uncomputed_reason(r#"SYMBOL 65 \f "Wingdings"#),
             super::FieldEvaluationReason::UnsupportedSwitch
         );

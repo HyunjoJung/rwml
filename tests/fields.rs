@@ -1430,6 +1430,23 @@ fn symbol_field_docx() -> Vec<u8> {
     ])
 }
 
+fn symbol_multi_token_font_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SYMBOL 0x03BB \u \f Times New Roman \* Upper "><w:r><w:t>stale multi-token font</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn action_field_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -8874,6 +8891,31 @@ fn docx_symbol_field_diagnostics_split_mapped_wingdings_from_malformed_symbol() 
     assert!(main_text.contains("\u{270C}"));
     assert!(main_text.contains("\u{263A}"));
     assert!(main_text.contains("cached malformed symbol"));
+}
+
+#[test]
+fn docx_symbol_field_accepts_unquoted_multi_token_font_switch() {
+    let doc = Document::open(&symbol_multi_token_font_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::Display("SYMBOL".to_string()));
+    assert_eq!(
+        fields[0].instruction,
+        "SYMBOL 0x03BB \\u \\f Times New Roman \\* Upper"
+    );
+    assert_eq!(fields[0].result, "stale multi-token font");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("\u{039B}"));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("\u{039B}") && !main_text.contains("stale multi-token font"),
+        "multi-token SYMBOL font operand should keep Unicode computation deterministic: {main_text:?}"
+    );
 }
 
 #[test]

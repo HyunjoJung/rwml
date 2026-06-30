@@ -403,8 +403,9 @@ The first public maturity release should meet these requirements.
   simple `EQ \i(...)` integrals/summations/products computed as symbol plus
   `_`/`^` limit marker plain text, simple `EQ \o(...)` overstrikes computed as source-order overlay
   operand plain text, plus deterministic `SYMBOL` character insertion computed
-  for decimal/hex/default ANSI, Unicode `\u`, neutral `\h`, separated or compact
-  font `\f` switches and quoted or unquoted separated/compact size `\s`
+  for decimal/hex/default ANSI, Unicode `\u`, neutral `\h`, separated font `\f`
+  switches with quoted or switch-delimited unquoted operands, compact
+  single-token font `\f` switches, and quoted or unquoted separated/compact size `\s`
   switches, and common
   Symbol/Wingdings font mappings including Symbol `0xB7` bullet; invalid display/layout syntax reports
   `UnsupportedSwitch`, while valid broader display/layout cases preserve

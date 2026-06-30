@@ -2709,7 +2709,7 @@ pub(crate) struct SymbolFieldSyntax {
 
 pub(crate) fn symbol_field_syntax(instruction: &str) -> Option<SymbolFieldSyntax> {
     let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
+    let mut parts = tokens.iter().map(String::as_str).peekable();
     let kind = parts.next()?;
     if !kind.eq_ignore_ascii_case("SYMBOL") {
         return None;
@@ -2730,14 +2730,14 @@ pub(crate) fn symbol_field_syntax(instruction: &str) -> Option<SymbolFieldSyntax
             return None;
         }
         if part.eq_ignore_ascii_case("\\f") {
-            font = Some(field_name_token(parts.next()?)?.to_string());
+            font = Some(symbol_font_operand(parts.next()?, &mut parts)?);
             continue;
         }
         if let Some(value) = strip_ascii_switch_prefix(part, "\\f") {
             if value.is_empty() {
                 return None;
             }
-            font = Some(field_name_token(value)?.to_string());
+            font = Some(symbol_font_operand(value, &mut parts)?);
             continue;
         }
         if part.eq_ignore_ascii_case("\\s") {
@@ -2764,6 +2764,23 @@ pub(crate) fn symbol_field_syntax(instruction: &str) -> Option<SymbolFieldSyntax
         font,
         text_format,
     })
+}
+
+fn symbol_font_operand<'a>(
+    first: &'a str,
+    parts: &mut std::iter::Peekable<impl Iterator<Item = &'a str>>,
+) -> Option<String> {
+    if let Some(font) = field_quoted_literal_token(first) {
+        return (!font.is_empty()).then(|| font.to_string());
+    }
+    let mut values = vec![field_name_token(first)?];
+    while let Some(part) = parts.peek().copied() {
+        if part.starts_with('\\') {
+            break;
+        }
+        values.push(field_name_token(parts.next()?)?);
+    }
+    Some(values.join(" "))
 }
 
 pub(crate) fn eq_prefix_switch_tail<'a>(value: &'a str, switch: &str) -> Option<&'a str> {

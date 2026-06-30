@@ -416,7 +416,8 @@ Initial status:
   limit marker plain text,
   simple `EQ \o(...)` overstrikes compute source-order overlay operand plain text,
   deterministic `SYMBOL` fields compute decimal/hex/default ANSI,
-  Unicode `\u`, neutral `\h`, separated or compact font `\f` switches and
+  Unicode `\u`, neutral `\h`, separated font `\f` switches with quoted or
+  switch-delimited unquoted operands, compact single-token font `\f` switches,
   quoted or unquoted separated/compact size `\s` switches, and common Symbol/Wingdings character
   insertions including Symbol `0xB7` bullet, with field-result format switches; invalid display/layout syntax reports
   `UnsupportedSwitch`, while valid broader display/layout cases report
@@ -905,7 +906,8 @@ Initial status:
   controls, `EQ \i` integrals/sums/products,
   `EQ \o` overstrikes, operand-preserving or hidden empty `EQ \d` displacement controls, and
   deterministic `SYMBOL` fields compute decimal/hex/default ANSI codepoints,
-  Unicode `\u`, neutral `\h`, separated or compact font `\f` switches,
+  Unicode `\u`, neutral `\h`, separated font `\f` switches with quoted or
+  switch-delimited unquoted operands, compact single-token font `\f` switches,
   quoted or unquoted separated/compact size `\s` switches, common
   Symbol/Wingdings mappings including Symbol `0xB7` bullet, and field-result
   format switches; invalid display/layout syntax reports `UnsupportedSwitch`,

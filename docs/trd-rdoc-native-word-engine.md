@@ -579,7 +579,8 @@ Implementation:
   `Field::computed_result`, accepting field-result format switches without applying
   the layout offsets to surrounding text;
 - compute deterministic `.docx` `SYMBOL` fields for decimal/hex/default ANSI
-  codepoints, Unicode `\u`, neutral `\h`, separated or compact font `\f`
+  codepoints, Unicode `\u`, neutral `\h`, separated font `\f` switches with
+  quoted or switch-delimited unquoted operands, compact single-token font `\f`
   switches, quoted or unquoted separated/compact size `\s` switches, and common Symbol/Wingdings
   font mappings including Symbol `0xB7` bullet, plus field-result format switches, exposing the inserted character as `Field::computed_result` and
   using that text in the read/render model for simple and common complex fields;
