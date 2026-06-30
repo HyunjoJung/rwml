@@ -1497,7 +1497,7 @@ pub(crate) fn toc_entry_field_syntax(instruction: &str) -> Option<TocEntryFieldS
     if !kind.eq_ignore_ascii_case("TC") {
         return None;
     }
-    let text = field_name_token(parts.next()?)?.to_string();
+    let text = toc_entry_text_operand(parts.next()?, &mut parts)?;
     if text.is_empty() {
         return None;
     }
@@ -1543,6 +1543,27 @@ pub(crate) fn toc_entry_field_syntax(instruction: &str) -> Option<TocEntryFieldS
         entry_type,
         level,
     })
+}
+
+fn toc_entry_text_operand<'a>(
+    first: &'a str,
+    parts: &mut std::iter::Peekable<impl Iterator<Item = &'a str>>,
+) -> Option<String> {
+    let quoted = first.trim().starts_with('"');
+    let mut values = vec![field_name_token(first)?];
+    if quoted {
+        return Some(values.join(" "));
+    }
+    while let Some(part) = parts.peek().copied() {
+        if part.starts_with('\\') {
+            break;
+        }
+        if part.trim().starts_with('"') || part.trim().ends_with('"') {
+            return None;
+        }
+        values.push(field_name_token(parts.next()?)?);
+    }
+    Some(values.join(" "))
 }
 
 fn set_toc_entry_type(slot: &mut Option<String>, value: &str) -> Option<()> {

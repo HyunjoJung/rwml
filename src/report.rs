@@ -4164,6 +4164,15 @@ mod tests {
 
     #[cfg(not(feature = "docx"))]
     #[test]
+    fn no_default_toc_entry_diagnostics_accept_unquoted_multi_token_marker_text() {
+        assert_eq!(
+            super::toc_entry_uncomputed_reason(r#"TC Manual Appendix Entry \f m \l 2"#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
     fn no_default_reference_index_marker_diagnostics_reject_malformed_syntax() {
         assert_eq!(
             super::reference_index_marker_uncomputed_reason(r#"RD "chapter2.docx" \* Upper"#),
