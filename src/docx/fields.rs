@@ -2130,7 +2130,7 @@ mod tests {
     }
 
     #[test]
-    fn formula_numeric_pictures_use_common_neutral_format_tail() {
+    fn formula_numeric_pictures_use_common_format_tail() {
         assert_eq!(
             computed_dynamic_result(r#"= 10 / 4 \# "0.00" \* MERGEFORMAT"#).as_deref(),
             Some("2.50")
@@ -2144,8 +2144,12 @@ mod tests {
             Some("2.50")
         );
         assert_eq!(
-            computed_dynamic_result(r#"= 10 / 4 \# "0.00" \* Upper"#),
-            None
+            computed_dynamic_result(r#"= 10 / 4 \# "0.00" \* Upper"#).as_deref(),
+            Some("2.50")
+        );
+        assert_eq!(
+            computed_dynamic_result(r#"= 5 \# "0 units" \* Upper"#).as_deref(),
+            Some("5 UNITS")
         );
     }
 
