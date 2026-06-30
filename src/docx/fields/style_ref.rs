@@ -336,7 +336,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
                     skip_subtree(r);
                     continue;
                 }
-                if matches!(name, b"del" | b"moveFrom") {
+                if matches!(name, b"del" | b"moveFrom" | b"rPrChange") {
                     skip_subtree(r);
                     continue;
                 }

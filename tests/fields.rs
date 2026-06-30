@@ -1555,6 +1555,27 @@ fn character_style_ref_field_docx() -> Vec<u8> {
     ])
 }
 
+fn character_style_ref_property_revision_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="character" w:styleId="LastName"><w:name w:val="Last Name"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" STYLEREF &quot;Last Name&quot; "><w:r><w:t>stale before old run</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:rPr><w:rPrChange w:id="9" w:author="Reviewer"><w:rPr><w:rStyle w:val="LastName"/></w:rPr></w:rPrChange></w:rPr><w:t>Former Styled</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;Last Name&quot; "><w:r><w:t>stale after old run</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:rPr><w:rStyle w:val="LastName"/></w:rPr><w:t>Current Last</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;Last Name&quot; \* Upper "><w:r><w:t>stale after current run</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn display_field_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -9005,6 +9026,34 @@ fn docx_style_ref_field_computes_character_style_text_by_source_order() {
     );
     assert!(main_text.contains("Ackerman"), "{main_text:?}");
     assert!(main_text.contains("BERG"), "{main_text:?}");
+}
+
+#[test]
+fn docx_style_ref_ignores_old_run_property_revisions() {
+    let doc = Document::open(&character_style_ref_property_revision_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 3);
+    assert!(fields
+        .iter()
+        .all(|field| field.kind == FieldKind::DocumentStructure("STYLEREF".to_string())));
+    assert_eq!(fields[0].instruction, "STYLEREF \"Last Name\"");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("Current Last"));
+    assert_eq!(fields[1].instruction, "STYLEREF \"Last Name\"");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("Current Last"));
+    assert_eq!(fields[2].instruction, "STYLEREF \"Last Name\" \\* Upper");
+    assert_eq!(fields[2].computed_result.as_deref(), Some("CURRENT LAST"));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(main_text.contains("Former Styled"));
+    assert!(main_text.contains("Current Last"));
+    assert!(!main_text.contains("stale before old run"));
+    assert!(!main_text.contains("stale after old run"));
+    assert!(!main_text.contains("stale after current run"));
 }
 
 #[test]
