@@ -620,7 +620,7 @@ fn single_section_initial_page_numbering(
                     skip_subtree(&mut r);
                     continue;
                 }
-                if matches!(name, b"del" | b"moveFrom") {
+                if matches!(name, b"del" | b"moveFrom" | b"pPrChange") {
                     skip_subtree(&mut r);
                     continue;
                 }
