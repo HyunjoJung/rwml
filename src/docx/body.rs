@@ -1721,6 +1721,9 @@ fn read_content_control_pr(r: &mut Xml<'_>) -> Option<AuthoredContentControl> {
     let mut control = AuthoredContentControl::default();
     loop {
         match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                read_content_control_pr_alternate_content(r, &mut control);
+            }
             Ok(Event::Start(e)) => {
                 read_content_control_pr_item(&mut control, &e);
                 skip_subtree(r);
@@ -1732,6 +1735,53 @@ fn read_content_control_pr(r: &mut Xml<'_>) -> Option<AuthoredContentControl> {
         }
     }
     content_control_if_present(control)
+}
+
+fn read_content_control_pr_alternate_content(
+    r: &mut Xml<'_>,
+    control: &mut AuthoredContentControl,
+) {
+    let mut took = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                match name {
+                    b"Choice" | b"Fallback" if !took => {
+                        took = true;
+                        read_content_control_pr_alternate_content_branch(r, control, name);
+                    }
+                    _ => skip_subtree(r),
+                }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+}
+
+fn read_content_control_pr_alternate_content_branch(
+    r: &mut Xml<'_>,
+    control: &mut AuthoredContentControl,
+    branch: &[u8],
+) {
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                read_content_control_pr_alternate_content(r, control);
+            }
+            Ok(Event::Start(e)) => {
+                read_content_control_pr_item(control, &e);
+                skip_subtree(r);
+            }
+            Ok(Event::Empty(e)) => read_content_control_pr_item(control, &e),
+            Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
 }
 
 fn read_content_control_pr_item(control: &mut AuthoredContentControl, e: &BytesStart<'_>) {
@@ -5452,6 +5502,44 @@ mod tests {
         assert_eq!(control.alias.as_deref(), Some("Bound alias"));
         assert_eq!(control.tag.as_deref(), Some("bound-tag"));
         assert_eq!(control.data_binding_xpath.as_deref(), Some("/root/client"));
+        assert_eq!(
+            control.data_binding_store_item_id.as_deref(),
+            Some("{11111111-2222-3333-4444-555555555555}")
+        );
+    }
+
+    #[test]
+    fn content_control_metadata_uses_single_alternate_content_branch() {
+        let xml = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+            <w:sdt><w:sdtPr>
+                <mc:AlternateContent>
+                    <mc:Choice Requires="w14">
+                        <w:alias w:val=" Choice alias "/>
+                        <w:tag w:val=" choice-tag "/>
+                        <w:dataBinding w:xpath=" /root/choice " w:storeItemID=" {11111111-2222-3333-4444-555555555555} "/>
+                    </mc:Choice>
+                    <mc:Fallback>
+                        <w:alias w:val=" Fallback alias "/>
+                        <w:tag w:val=" fallback-tag "/>
+                        <w:dataBinding w:xpath=" /root/fallback " w:storeItemID=" {66666666-7777-8888-9999-AAAAAAAAAAAA} "/>
+                    </mc:Fallback>
+                </mc:AlternateContent>
+            </w:sdtPr><w:sdtContent>
+                <w:p><w:r><w:t>Controlled value</w:t></w:r></w:p>
+            </w:sdtContent></w:sdt>
+        </w:body></w:document>"#;
+        let blocks = parse(xml);
+        let Block::Paragraph(paragraph) = &blocks[0] else {
+            panic!("paragraph")
+        };
+        let control = paragraph.runs[0]
+            .content_control
+            .as_ref()
+            .expect("content control metadata");
+
+        assert_eq!(control.alias.as_deref(), Some("Choice alias"));
+        assert_eq!(control.tag.as_deref(), Some("choice-tag"));
+        assert_eq!(control.data_binding_xpath.as_deref(), Some("/root/choice"));
         assert_eq!(
             control.data_binding_store_item_id.as_deref(),
             Some("{11111111-2222-3333-4444-555555555555}")
