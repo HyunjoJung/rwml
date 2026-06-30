@@ -50,6 +50,7 @@ pub(crate) fn section_context(xml: &str) -> SectionContext {
     let mut section_type_seen = false;
     let mut section_properties_depth = 0usize;
     let mut current: Option<SectionScanField> = None;
+    let mut simple_section_field_result_depth: Option<usize> = None;
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
     loop {
@@ -89,11 +90,15 @@ pub(crate) fn section_context(xml: &str) -> SectionContext {
                     {
                         current_page += 1;
                     }
-                    b"fldSimple" => record_section_field(
-                        attr_local(&e, b"instr").as_deref(),
-                        current_section,
-                        &mut field_sections,
-                    ),
+                    b"fldSimple" => {
+                        if record_section_field(
+                            attr_local(&e, b"instr").as_deref(),
+                            current_section,
+                            &mut field_sections,
+                        ) {
+                            simple_section_field_result_depth = Some(xml_depth + 1);
+                        }
+                    }
                     b"fldChar" => {
                         apply_section_scan_fld_char(
                             &e,
@@ -114,7 +119,11 @@ pub(crate) fn section_context(xml: &str) -> SectionContext {
                     b"t" => {
                         consumed_element = true;
                         if !read_text(&mut r).is_empty() {
-                            section_has_visible_content = true;
+                            mark_visible_section_content(
+                                &mut section_has_visible_content,
+                                &current,
+                                simple_section_field_result_depth,
+                            );
                         }
                     }
                     b"br" if is_page_break_type(&e) => {
@@ -124,14 +133,26 @@ pub(crate) fn section_context(xml: &str) -> SectionContext {
                         current_page += 1;
                     }
                     b"sym" if is_supported_run_symbol(&e) => {
-                        section_has_visible_content = true;
+                        mark_visible_section_content(
+                            &mut section_has_visible_content,
+                            &current,
+                            simple_section_field_result_depth,
+                        );
                     }
                     b"tab" | b"cr" | b"noBreakHyphen" | b"softHyphen" | b"drawing" | b"pict"
                     | b"object" => {
-                        section_has_visible_content = true;
+                        mark_visible_section_content(
+                            &mut section_has_visible_content,
+                            &current,
+                            simple_section_field_result_depth,
+                        );
                     }
                     b"br" => {
-                        section_has_visible_content = true;
+                        mark_visible_section_content(
+                            &mut section_has_visible_content,
+                            &current,
+                            simple_section_field_result_depth,
+                        );
                     }
                     _ => {}
                 }
@@ -160,11 +181,13 @@ pub(crate) fn section_context(xml: &str) -> SectionContext {
                     {
                         current_page += 1;
                     }
-                    b"fldSimple" => record_section_field(
-                        attr_local(&e, b"instr").as_deref(),
-                        current_section,
-                        &mut field_sections,
-                    ),
+                    b"fldSimple" => {
+                        record_section_field(
+                            attr_local(&e, b"instr").as_deref(),
+                            current_section,
+                            &mut field_sections,
+                        );
+                    }
                     b"fldChar" => {
                         apply_section_scan_fld_char(
                             &e,
@@ -180,11 +203,19 @@ pub(crate) fn section_context(xml: &str) -> SectionContext {
                         current_page += 1;
                     }
                     b"sym" if is_supported_run_symbol(&e) => {
-                        section_has_visible_content = true;
+                        mark_visible_section_content(
+                            &mut section_has_visible_content,
+                            &current,
+                            simple_section_field_result_depth,
+                        );
                     }
                     b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"softHyphen" | b"drawing"
                     | b"pict" | b"object" => {
-                        section_has_visible_content = true;
+                        mark_visible_section_content(
+                            &mut section_has_visible_content,
+                            &current,
+                            simple_section_field_result_depth,
+                        );
                     }
                     _ => {}
                 }
@@ -200,6 +231,9 @@ pub(crate) fn section_context(xml: &str) -> SectionContext {
                 }
                 if name == b"pPr" {
                     paragraph_properties_depth = paragraph_properties_depth.saturating_sub(1);
+                }
+                if name == b"fldSimple" && simple_section_field_result_depth == Some(xml_depth) {
+                    simple_section_field_result_depth = None;
                 }
                 if name == b"p" && section_break_pending {
                     push_section_page_count(
@@ -252,15 +286,41 @@ fn record_section_field(
     instruction: Option<&str>,
     current_section: usize,
     field_sections: &mut Vec<usize>,
-) {
-    if instruction
+) -> bool {
+    let is_section_field = instruction
         .map(normalize_instruction)
         .as_deref()
         .and_then(section_instruction)
-        .is_some()
-    {
+        .is_some();
+    if is_section_field {
         field_sections.push(current_section);
     }
+    is_section_field
+}
+
+fn section_field_result_content_is_hidden(
+    current: &Option<SectionScanField>,
+    simple_section_field_result_depth: Option<usize>,
+) -> bool {
+    simple_section_field_result_depth.is_some()
+        || current.as_ref().is_some_and(|field| {
+            field.phase == FieldPhase::Result && is_section_scan_instruction(&field.instruction)
+        })
+}
+
+fn mark_visible_section_content(
+    section_has_visible_content: &mut bool,
+    current: &Option<SectionScanField>,
+    simple_section_field_result_depth: Option<usize>,
+) {
+    if !section_field_result_content_is_hidden(current, simple_section_field_result_depth) {
+        *section_has_visible_content = true;
+    }
+}
+
+fn is_section_scan_instruction(instruction: &str) -> bool {
+    let instruction = normalize_instruction(instruction);
+    section_instruction(&instruction).is_some()
 }
 
 fn apply_section_scan_fld_char(

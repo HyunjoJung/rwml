@@ -1846,6 +1846,23 @@ fn section_pages_field_docx() -> Vec<u8> {
     ])
 }
 
+fn section_pages_cached_result_text_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SECTIONPAGES "><w:r><w:t>stale pages</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:br w:type="page"/></w:r></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> SECTIONPAGES \* ROMAN </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale roman pages</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:sectPr/></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn section_pages_symbol_content_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -10850,6 +10867,40 @@ fn docx_section_pages_field_computes_structural_section_page_count() {
     assert!(main_text.contains("III"), "{main_text:?}");
     assert!(main_text.contains("THREE"), "{main_text:?}");
     assert!(main_text.contains("1st"), "{main_text:?}");
+}
+
+#[test]
+fn docx_section_pages_cached_result_text_does_not_block_structural_count() {
+    let doc = Document::open(&section_pages_cached_result_text_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(
+        fields[0].kind,
+        FieldKind::DocumentStructure("SECTIONPAGES".to_string())
+    );
+    assert_eq!(fields[0].instruction, "SECTIONPAGES");
+    assert_eq!(fields[0].result, "stale pages");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("2"));
+    assert_eq!(
+        fields[1].kind,
+        FieldKind::DocumentStructure("SECTIONPAGES".to_string())
+    );
+    assert_eq!(fields[1].instruction, "SECTIONPAGES \\* ROMAN");
+    assert_eq!(fields[1].result, "stale roman pages");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("II"));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(main_text.contains("2"), "{main_text:?}");
+    assert!(main_text.contains("II"), "{main_text:?}");
+    assert!(
+        !main_text.contains("stale pages") && !main_text.contains("stale roman pages"),
+        "computed SECTIONPAGES should replace stale cached result text: {main_text:?}"
+    );
 }
 
 #[test]
