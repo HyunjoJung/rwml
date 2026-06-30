@@ -390,8 +390,9 @@ Initial status:
   layout inference is needed, with page-number and general field-result format
   switches, and deterministic body
   paragraph- and character-style `STYLEREF` computes nearest styled paragraph/run
-  text by style id/name plus source-order `\p` above/below and deterministic
-  numbered source paragraphs with `\n`, `\r`, `\w`, and numeric-text `\t`
+  text by style id or quoted/switch-bounded unquoted style name plus
+  source-order `\p` above/below and deterministic numbered source paragraphs
+  with `\n`, `\r`, `\w`, and numeric-text `\t`
   switches; malformed `REVNUM`/`STYLEREF` syntax reports `UnsupportedSwitch`, while
   page-aware/header-footer,
   layout-derived `SECTIONPAGES`, and remaining document-structure/style lookup
@@ -895,8 +896,9 @@ Initial status:
   `pageBreakBefore`, and section starts, with page-number and general
   field-result format switches, deterministic body paragraph- and
   character-style `STYLEREF` computes nearest
-  styled paragraph/run text by style id/name plus source-order `\p`
-  above/below and numbered paragraph `\n`, `\r`, `\w`, and numeric-text `\t`
+  styled paragraph/run text by style id or quoted/switch-bounded unquoted style
+  name plus source-order `\p` above/below and numbered paragraph `\n`, `\r`,
+  `\w`, and numeric-text `\t`
   switch results where numbering context is
   deterministic; malformed `REVNUM`/`STYLEREF` syntax reports `UnsupportedSwitch`, and
   remaining document-structure cases preserve cached text with

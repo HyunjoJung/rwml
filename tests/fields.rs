@@ -1308,6 +1308,27 @@ fn style_ref_field_docx() -> Vec<u8> {
     ])
 }
 
+fn style_ref_unquoted_multi_token_style_name_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="Heading 1"/></w:style><w:style w:type="paragraph" w:styleId="CustomCallout"><w:name w:val="Custom Heading"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Executive Summary</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" STYLEREF Heading 1 \* Upper "><w:r><w:t>stale unquoted heading</w:t></w:r></w:fldSimple></w:p><w:p><w:pPr><w:pStyle w:val="CustomCallout"/></w:pPr><w:r><w:t>Forward Finding</w:t></w:r></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> STYLEREF Custom Heading \* MERGEFORMAT </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale unquoted custom style</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn style_ref_deleted_heading_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -8410,6 +8431,49 @@ fn docx_style_ref_field_computes_nearest_paragraph_style_text() {
             "Forward Finding".to_string(),
         ]
     );
+}
+
+#[test]
+fn docx_style_ref_accepts_unquoted_multi_token_style_names() {
+    let doc =
+        Document::open(&style_ref_unquoted_multi_token_style_name_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    for field in &fields {
+        assert_eq!(
+            field.kind,
+            FieldKind::DocumentStructure("STYLEREF".to_string())
+        );
+    }
+    assert_eq!(fields[0].instruction, "STYLEREF Heading 1 \\* Upper");
+    assert_eq!(fields[0].result, "stale unquoted heading");
+    assert_eq!(
+        fields[0].computed_result.as_deref(),
+        Some("EXECUTIVE SUMMARY")
+    );
+    assert_eq!(
+        fields[1].instruction,
+        "STYLEREF Custom Heading \\* MERGEFORMAT"
+    );
+    assert_eq!(fields[1].result, "stale unquoted custom style");
+    assert_eq!(
+        fields[1].computed_result.as_deref(),
+        Some("Forward Finding")
+    );
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        !main_text.contains("stale unquoted heading")
+            && !main_text.contains("stale unquoted custom style"),
+        "unquoted multi-token STYLEREF style names should compute: {main_text:?}"
+    );
+    assert!(main_text.contains("EXECUTIVE SUMMARY"), "{main_text:?}");
+    assert!(main_text.contains("Forward Finding"), "{main_text:?}");
 }
 
 #[test]

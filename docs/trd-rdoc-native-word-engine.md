@@ -522,11 +522,12 @@ Implementation:
   tabs, line breaks, and no-break/soft hyphens, and use that text in the read/render
   model instead of stale cached text for simple and common complex fields;
 - compute deterministic body paragraph- and character-style `.docx`
-  `STYLEREF` fields by matching style id or style name, searching backward from
-  the field and falling forward when no earlier match exists, exposing the
-  result as `Field::computed_result`, and using that text in the read/render
-  model for simple and common complex fields with neutral/general text format
-  switches; compute source-order `\p` above/below results and deterministic
+  `STYLEREF` fields by matching style id or quoted/switch-bounded unquoted
+  style name, searching backward from the field and falling forward when no
+  earlier match exists, exposing the result as `Field::computed_result`, and
+  using that text in the read/render model for simple and common complex fields
+  with neutral/general text format switches; compute source-order `\p`
+  above/below results and deterministic
   numbered source paragraphs with `\n`, `\r`, `\w`, and numeric-text `\t`
   switches from the existing numbering context; keep
   cached text for page-aware/header-footer lookup and other unsupported

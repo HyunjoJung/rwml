@@ -1623,12 +1623,12 @@ pub(crate) enum StyleRefResult {
 
 pub(crate) fn style_ref_field_syntax(instruction: &str) -> Option<StyleRefFieldSyntax> {
     let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
+    let mut parts = tokens.iter().map(String::as_str).peekable();
     let kind = parts.next()?;
     if !kind.eq_ignore_ascii_case("STYLEREF") {
         return None;
     }
-    let style_identifier = field_name_token(parts.next()?)?.to_string();
+    let style_identifier = style_ref_identifier_operand(parts.next()?, &mut parts)?;
     let mut text_format = None;
     let mut result = StyleRefResult::Text;
     let mut suppress_non_numeric = false;
@@ -1686,6 +1686,24 @@ pub(crate) fn style_ref_field_syntax(instruction: &str) -> Option<StyleRefFieldS
         result,
         suppress_non_numeric,
     })
+}
+
+fn style_ref_identifier_operand<'a>(
+    first: &'a str,
+    parts: &mut std::iter::Peekable<impl Iterator<Item = &'a str>>,
+) -> Option<String> {
+    let quoted = first.trim().starts_with('"');
+    let mut values = vec![field_name_token(first)?];
+    if quoted {
+        return Some(values.join(" "));
+    }
+    while let Some(part) = parts.peek().copied() {
+        if part.starts_with('\\') {
+            break;
+        }
+        values.push(field_name_token(parts.next()?)?);
+    }
+    Some(values.join(" "))
 }
 
 fn compact_style_ref_flag_switches(part: &str) -> Option<Vec<char>> {

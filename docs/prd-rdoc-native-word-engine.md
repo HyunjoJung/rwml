@@ -377,9 +377,10 @@ The first public maturity release should meet these requirements.
   explicit hard breaks, enabled `pageBreakBefore`, and section starts when they
   do not require layout inference, with page-number and general field-result
   format switches, and deterministic body paragraph-
-  and character-style `STYLEREF` computed by style id/name nearest paragraph/run
-  lookup, including source-order `\p` above/below and deterministic numbered
-  source paragraphs with `\n`, `\r`, `\w`, and numeric-text `\t` switches;
+  and character-style `STYLEREF` computed by style id or
+  quoted/switch-bounded unquoted style name nearest paragraph/run lookup,
+  including source-order `\p` above/below and deterministic numbered source
+  paragraphs with `\n`, `\r`, `\w`, and numeric-text `\t` switches;
   malformed `REVNUM`/`STYLEREF` syntax reports `UnsupportedSwitch`;
   page-aware/header-footer lookup,
   layout-derived `SECTIONPAGES`, and remaining document-structure cases preserve

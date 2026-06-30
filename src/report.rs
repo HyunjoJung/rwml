@@ -4028,6 +4028,15 @@ mod tests {
 
     #[cfg(not(feature = "docx"))]
     #[test]
+    fn supported_doc_structure_accepts_unquoted_multi_token_style_ref_name() {
+        assert_eq!(
+            super::style_ref_uncomputed_reason(r"STYLEREF Heading 1 \* Upper"),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
     fn no_default_page_section_diagnostics_reject_malformed_tails() {
         assert_eq!(
             super::page_uncomputed_reason(r"PAGE \* ROMAN \* Upper"),

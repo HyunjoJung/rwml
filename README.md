@@ -554,9 +554,10 @@ enabled `pageBreakBefore`, and section starts when no layout inference is
 needed, with page-number and general field-result format switches,
 deterministic body paragraph- and
 character-style `STYLEREF` computes nearest styled paragraph/run text by style id
-or style name with backward-then-forward source-order search, source-order `\p`
-above/below results, and numbered paragraph `\n`, `\r`, `\w`, and numeric-text
-`\t` switches; malformed `REVNUM`/`STYLEREF` syntax reports `UnsupportedSwitch`, and
+or quoted/switch-bounded unquoted style name with backward-then-forward
+source-order search, source-order `\p` above/below results, and numbered
+paragraph `\n`, `\r`, `\w`, and numeric-text `\t` switches; malformed
+`REVNUM`/`STYLEREF` syntax reports `UnsupportedSwitch`, and
 remaining document-structure cases preserve cached result text with
 `NoComputedResult` diagnostics;
 display/layout fields (`ADVANCE`, `EQ`, `SYMBOL`) are named separately from
@@ -664,10 +665,10 @@ normalize simple inline heading tabs, line breaks, and no-break/soft hyphens and
 expose computed results for simple and common complex begin/separate/end fields
 and render/read as computed text; deterministic body paragraph- and
 character-style `STYLEREF` fields compute nearest styled paragraph/run text by
-style id or style name for simple and common complex fields with neutral/general
-text format switches, plus source-order `\p` above/below and deterministic
-numbered source paragraphs with `\n`, `\r`, `\w`, and numeric-text `\t`
-switches, while page-aware/header-footer
+style id or quoted/switch-bounded unquoted style name for simple and common
+complex fields with neutral/general text format switches, plus source-order
+`\p` above/below and deterministic numbered source paragraphs with `\n`,
+`\r`, `\w`, and numeric-text `\t` switches, while page-aware/header-footer
 lookup and layout-dependent variants preserve cached text; body `PAGE` fields
 compute current page numbers from trusted leading structural or source-rendered
 current-page context, including accepted/current wrappers, single-branch
