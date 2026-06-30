@@ -705,7 +705,7 @@ Implementation:
   bookmark targets, malformed document-info syntax, explicit and direct
   bookmark-name `REF \d` supported syntax
   with no computed result, missing explicit or direct `REF \f` targets, existing
-  explicit or direct non-note `REF \f` unsupported-switch cases, missing
+  explicit or direct non-note `REF \f` no-computed-result cases, missing
   `NOTEREF` targets, existing non-note `NOTEREF` no-computed-result targets, unsupported
   `NOTEREF` switches, missing `TOC \b` scopes, and truly unresolved
   bookmarks.

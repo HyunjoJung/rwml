@@ -734,7 +734,7 @@ with both field-kind counts and reason counts (`UnknownField`,
 separate missing `PAGEREF` bookmark targets, explicit and direct bookmark-name
 `REF \d` supported-syntax/no-computed-result, missing explicit or direct
 `REF \f` bookmark targets, and existing explicit or direct non-note `REF \f`
-unsupported-switch reasons, plus separate missing `NOTEREF`
+no-computed-result reasons, plus separate missing `NOTEREF`
 bookmark targets, existing non-note `NOTEREF` no-computed-result targets, and unsupported
 `NOTEREF` switch reasons, plus missing `TOC \b` scopes. Existing `TOC \b`
 scopes with no matching entries compute as empty results. On a real
