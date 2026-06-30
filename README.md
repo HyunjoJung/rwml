@@ -247,10 +247,8 @@ the `render` feature.
 > **Scope:** this is a fast, in-process **preview / report** renderer, not a Word
 > layout engine. It is faithful to the *model* and selectable, but it does **not**
 > match LibreOffice fidelity — exact pagination, exact floating-object layout,
-> unknown fields, unresolved or unsupported remaining value-changing REF cases such as
-> comment/annotation insertion beyond bookmarked comment-reference markers,
-> exact matching bookmarked comment ranges, or bookmarks wholly inside body
-> comment ranges,
+> unknown fields, unresolved or unsupported remaining value-changing REF cases
+> beyond the deterministic note/comment-reference mark subset,
 > remaining advanced
 > TOC/REF computed field evaluation, and pixel layout differ. Opened-document
 > renders draw bounded approximate overlay boxes for recovered `.docx`
@@ -722,10 +720,9 @@ compatibility/private fields,
 barcode fields, and legacy form fields beyond deterministic `w:ffData`
 checkbox checked/default states, dropdown result/default selections, explicit
 non-empty text-input current results, and empty-current text-input default
-results, plus unresolved bookmark, unsupported remaining value-changing REF cases such as
-comment/annotation insertion beyond bookmarked comment-reference markers,
-exact matching bookmarked comment ranges, or bookmarks wholly inside body
-comment ranges, and broader REF semantics,
+results, plus unresolved bookmark, unsupported remaining value-changing REF
+cases beyond the deterministic note/comment-reference mark subset, broader REF
+semantics,
 unresolved or unsupported NOTEREF switches, existing `NOTEREF` bookmark targets
 without a body note-reference mark, or remaining advanced TOC/REF cases
 still render cached text, including inline tabs, line breaks, and no-break/soft

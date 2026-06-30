@@ -463,10 +463,9 @@ The first public maturity release should meet these requirements.
   remaining layout-dependent cases until layout can map bookmarks to emitted pages; cached field results
   preserve simple inline tabs, line breaks, and no-break hyphens for simple and
   common complex body fields;
-  unresolved bookmark scopes, unsupported remaining value-changing REF/NOTEREF cases such as
-  comment/annotation insertion beyond bookmarked comment-reference markers,
-  exact matching bookmarked comment ranges, or bookmarks wholly inside body
-  comment ranges, and broader field semantics, existing `NOTEREF`
+  unresolved bookmark scopes, unsupported remaining value-changing REF/NOTEREF
+  cases beyond the deterministic note/comment-reference mark subset, broader
+  field semantics, existing `NOTEREF`
   bookmark targets without body note-reference marks,
   stay visible through diagnostics with unsupported field-kind counts and
   machine-readable reason counts for unknown fields, unresolved bookmarks,

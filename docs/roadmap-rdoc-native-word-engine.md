@@ -281,11 +281,10 @@ Initial status:
   `contentStatus`, `lastModifiedBy`, `created`, `modified`, `lastPrinted`,
   `revision`, and `version`.
 - `Document::report()` includes field-kind counts, and unsupported-field
-  warnings now report only missing `PAGEREF` targets, remaining layout-dependent `PAGEREF`, unknown, unresolved bookmark scope, unresolved or
-  unsupported remaining value-changing REF cases such as
-  comment/annotation insertion beyond bookmarked comment-reference markers,
-  exact matching bookmarked comment ranges, or bookmarks wholly inside body
-  comment ranges, and broader REF semantics, missing explicit or
+  warnings now report only missing `PAGEREF` targets, remaining layout-dependent
+  `PAGEREF`, unknown, unresolved bookmark scope, unresolved or unsupported
+  remaining value-changing REF cases beyond the deterministic
+  note/comment-reference mark subset, broader REF semantics, missing explicit or
   direct `REF \f` bookmark targets, existing non-note `REF \f` targets,
   missing `NOTEREF` bookmark targets, existing `NOTEREF` bookmark targets without body
   note-reference marks, unsupported `NOTEREF` switches, missing `TOC \b`
@@ -999,10 +998,8 @@ Initial status:
   relative-position results, and preserves cached text for remaining
   layout-derived cases. Document and render
   diagnostics still report unknown, unresolved bookmark scope, unresolved or
-  unsupported remaining value-changing REF cases such as
-  comment/annotation insertion beyond bookmarked comment-reference markers,
-  exact matching bookmarked comment ranges, or bookmarks wholly inside body
-  comment ranges, and broader REF semantics, missing explicit or
+  unsupported remaining value-changing REF cases beyond the deterministic
+  note/comment-reference mark subset, broader REF semantics, missing explicit or
   direct `REF \f` bookmark targets, existing non-note `REF \f` targets,
   missing `NOTEREF` bookmark targets, existing `NOTEREF` bookmark targets without body
   note-reference marks, unsupported `NOTEREF` switches, remaining layout-dependent `PAGEREF`,
@@ -1189,10 +1186,9 @@ The active roadmap slices are:
    including exact pagination current-page/page-reference values,
    target-derived formatting where no trusted marker exists, and remaining
    layout-dependent `\p` results.
-3. R2-c remaining `REF`/`NOTEREF`/`FTNREF`/TOC policy: comment/annotation
-   insertion beyond bookmarked comment-reference markers, exact matching
-   bookmarked comment ranges, or bookmarks wholly inside body comment ranges,
-   broader `REF` semantics, unresolved or
+3. R2-c remaining `REF`/`NOTEREF`/`FTNREF`/TOC policy: broader `REF`
+   semantics beyond deterministic bookmark text, source-order, numbering, and
+   note/comment-reference mark subsets, unresolved or
    unsupported `NOTEREF` switches beyond body
    note-reference marks, and broader TOC/REF body evaluation.
 4. R2-d non-deterministic field families kept cached/reportable: remaining
