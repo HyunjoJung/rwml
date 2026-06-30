@@ -5011,6 +5011,40 @@ fn docx_dynamic_fields_compute_formula_quote_if_compare_and_literal_set_ref() {
             },
         ]
     );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| {
+            instruction.starts_with("FILLIN")
+                || instruction.starts_with("ASK")
+                || instruction.starts_with("COMPARE 1e309")
+                || instruction.starts_with("NEXTIF")
+        }),
+        vec![
+            (
+                r#"FILLIN "Client?""#.to_string(),
+                Some(FieldUnsupportedReason::NoComputedResult),
+            ),
+            (
+                r#"ASK ClientCode "Client code?""#.to_string(),
+                Some(FieldUnsupportedReason::NoComputedResult),
+            ),
+            (
+                "COMPARE 1e309 > 0".to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+            (
+                r#"NEXTIF City = "Tokyo""#.to_string(),
+                Some(FieldUnsupportedReason::NoComputedResult),
+            ),
+            (
+                r#"FILLIN "broken prompt "#.to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+            (
+                "NEXTIF 1 =".to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+        ]
+    );
 
     let main_text = doc.main_text();
     assert!(
@@ -5252,6 +5286,19 @@ fn docx_malformed_if_reports_unsupported_switch_without_flagging_data_dependent_
             },
         ]
     );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| instruction.starts_with("IF")),
+        vec![
+            (
+                r#"IF CustomerTier = "Gold" "ship" "hold""#.to_string(),
+                Some(FieldUnsupportedReason::NoComputedResult),
+            ),
+            (
+                "IF 1 =".to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+        ]
+    );
 
     let main_text = doc.main_text();
     assert!(
@@ -5295,6 +5342,23 @@ fn docx_malformed_compare_reports_unsupported_switch_without_flagging_data_compa
                 reason: FieldEvaluationReason::UnsupportedSwitch,
                 count: 2,
             },
+        ]
+    );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| instruction.starts_with("COMPARE")),
+        vec![
+            (
+                r#"COMPARE CustomerTier = "Gold""#.to_string(),
+                Some(FieldUnsupportedReason::NoComputedResult),
+            ),
+            (
+                "COMPARE 1e309 > 0".to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+            (
+                r#"COMPARE \o = "Gold""#.to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
         ]
     );
 
@@ -5341,6 +5405,19 @@ fn docx_malformed_formula_picture_reports_unsupported_switch_without_flagging_da
             },
         ]
     );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| instruction.starts_with('=')),
+        vec![
+            (
+                r#"= CustomerTotal \# "0.00""#.to_string(),
+                Some(FieldUnsupportedReason::NoComputedResult),
+            ),
+            (
+                r#"= 1 \# "0.00 "#.to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+        ]
+    );
 
     let main_text = doc.main_text();
     assert!(
@@ -5381,6 +5458,19 @@ fn docx_malformed_set_reports_unsupported_switch_without_flagging_ambiguous_set(
                 reason: FieldEvaluationReason::UnsupportedSwitch,
                 count: 1,
             },
+        ]
+    );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| instruction.starts_with("SET")),
+        vec![
+            (
+                "SET ClientName Client 42".to_string(),
+                Some(FieldUnsupportedReason::NoComputedResult),
+            ),
+            (
+                r#"SET ClientName "Acme "#.to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
         ]
     );
 
@@ -6592,6 +6682,13 @@ fn docx_quote_field_computes_literal_text_and_general_text_formats() {
             reason: FieldEvaluationReason::UnsupportedSwitch,
             count: 1,
         }]
+    );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| instruction.starts_with("QUOTE")),
+        vec![(
+            r#"QUOTE "broken literal "#.to_string(),
+            Some(FieldUnsupportedReason::UnsupportedSwitch),
+        )]
     );
 
     let main_text = doc.main_text();

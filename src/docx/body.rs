@@ -2431,6 +2431,9 @@ fn unsupported_simple_field_reason_hint(
     if let Some(reason) = unsupported_document_structure_reason_hint(instruction) {
         return Some(reason);
     }
+    if let Some(reason) = unsupported_dynamic_reason_hint(instruction) {
+        return Some(reason);
+    }
     if let Some(reason) = unsupported_compatibility_reason_hint(instruction) {
         return Some(reason);
     }
@@ -2604,6 +2607,51 @@ fn unsupported_document_structure_reason_hint(instruction: &str) -> Option<Field
     if kind.eq_ignore_ascii_case("STYLEREF") {
         return Some(unsupported_syntax_field_reason_hint(
             super::fields::supports_style_ref_field_syntax(instruction),
+        ));
+    }
+    Some(FieldUnsupportedReason::NoComputedResult)
+}
+
+fn unsupported_dynamic_reason_hint(instruction: &str) -> Option<FieldUnsupportedReason> {
+    let FieldKind::Dynamic(kind) = FieldKind::from_instruction(instruction) else {
+        return None;
+    };
+    if kind == "=" {
+        return Some(unsupported_syntax_field_reason_hint(
+            super::fields::supports_formula_field_syntax(instruction),
+        ));
+    }
+    if kind.eq_ignore_ascii_case("COMPARE") {
+        return Some(unsupported_syntax_field_reason_hint(
+            super::fields::supports_compare_field_syntax(instruction),
+        ));
+    }
+    if kind.eq_ignore_ascii_case("IF") {
+        return Some(unsupported_syntax_field_reason_hint(
+            super::fields::supports_if_field_syntax(instruction),
+        ));
+    }
+    if kind.eq_ignore_ascii_case("QUOTE") {
+        return Some(unsupported_syntax_field_reason_hint(
+            super::fields::supports_quote_field_syntax(instruction),
+        ));
+    }
+    if kind.eq_ignore_ascii_case("FILLIN") || kind.eq_ignore_ascii_case("ASK") {
+        return Some(unsupported_syntax_field_reason_hint(
+            super::fields::supports_prompt_field_syntax(instruction),
+        ));
+    }
+    if kind.eq_ignore_ascii_case("SET") {
+        return Some(unsupported_syntax_field_reason_hint(
+            super::fields::supports_set_field_syntax(instruction),
+        ));
+    }
+    if kind.eq_ignore_ascii_case("NEXT")
+        || kind.eq_ignore_ascii_case("NEXTIF")
+        || kind.eq_ignore_ascii_case("SKIPIF")
+    {
+        return Some(unsupported_syntax_field_reason_hint(
+            super::fields::supports_merge_control_field_syntax(instruction),
         ));
     }
     Some(FieldUnsupportedReason::NoComputedResult)
