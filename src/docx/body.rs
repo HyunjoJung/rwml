@@ -1775,6 +1775,9 @@ fn read_ppr(r: &mut Xml<'_>) -> PPr {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"pPrChange" => {
                 skip_subtree(r);
             }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                read_ppr_alternate_content(r, &mut pp, &mut num_id, &mut ilvl);
+            }
             Ok(Event::Start(e)) => {
                 if local(e.name().as_ref()) == b"sectPr" {
                     pp.section = Some(read_sect_pr(r));
@@ -1798,6 +1801,69 @@ fn read_ppr(r: &mut Xml<'_>) -> PPr {
         pp.num = Some((id, ilvl));
     }
     pp
+}
+
+fn read_ppr_alternate_content(
+    r: &mut Xml<'_>,
+    pp: &mut PPr,
+    num_id: &mut Option<String>,
+    ilvl: &mut u8,
+) {
+    let mut took = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                match name {
+                    b"Choice" | b"Fallback" if !took => {
+                        took = true;
+                        read_ppr_alternate_content_branch(r, pp, num_id, ilvl, name);
+                    }
+                    _ => skip_subtree(r),
+                }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+}
+
+fn read_ppr_alternate_content_branch(
+    r: &mut Xml<'_>,
+    pp: &mut PPr,
+    num_id: &mut Option<String>,
+    ilvl: &mut u8,
+    branch: &[u8],
+) {
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"pPrChange" => {
+                skip_subtree(r);
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                read_ppr_alternate_content(r, pp, num_id, ilvl);
+            }
+            Ok(Event::Start(e)) => {
+                if local(e.name().as_ref()) == b"sectPr" {
+                    pp.section = Some(read_sect_pr(r));
+                } else {
+                    read_ppr_item(pp, &e, num_id, ilvl);
+                }
+            }
+            Ok(Event::Empty(e)) => {
+                if local(e.name().as_ref()) == b"sectPr" {
+                    pp.section = Some(SectionSetup::default());
+                } else {
+                    read_ppr_item(pp, &e, num_id, ilvl);
+                }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
 }
 
 fn read_ppr_item(pp: &mut PPr, e: &BytesStart<'_>, num_id: &mut Option<String>, ilvl: &mut u8) {
@@ -5015,6 +5081,50 @@ mod tests {
         };
 
         assert_eq!(p.props.spacing.line_pct, None);
+    }
+
+    #[test]
+    fn paragraph_props_use_single_alternate_content_branch() {
+        let xml = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:p>
+            <w:pPr>
+                <mc:AlternateContent>
+                    <mc:Choice Requires="w14">
+                        <w:jc w:val="center"/>
+                        <w:spacing w:before="240" w:after="120" w:line="360"/>
+                        <w:ind w:left="720" w:firstLine="240"/>
+                        <w:shd w:fill="EEEEEE"/>
+                        <w:pageBreakBefore w:val="true"/>
+                    </mc:Choice>
+                    <mc:Fallback>
+                        <w:jc w:val="right"/>
+                        <w:spacing w:before="480" w:after="360" w:line="480"/>
+                        <w:ind w:left="1440" w:firstLine="480"/>
+                        <w:shd w:fill="111111"/>
+                        <w:pageBreakBefore w:val="false"/>
+                    </mc:Fallback>
+                </mc:AlternateContent>
+            </w:pPr>
+            <w:r><w:t>Paragraph properties</w:t></w:r>
+        </w:p></w:body></w:document>"#;
+        let Block::Paragraph(p) = &parse(xml)[0] else {
+            panic!("paragraph");
+        };
+
+        assert_eq!(p.props.align, Align::Center);
+        assert_eq!(p.props.spacing.before_pt, Some(12.0));
+        assert_eq!(p.props.spacing.after_pt, Some(6.0));
+        assert_eq!(p.props.spacing.line_pct, Some(1.5));
+        assert_eq!(p.props.indent.left_pt, Some(36.0));
+        assert_eq!(p.props.indent.first_line_pt, Some(12.0));
+        assert_eq!(
+            p.props.shading,
+            Some(Color {
+                r: 0xEE,
+                g: 0xEE,
+                b: 0xEE
+            })
+        );
+        assert!(p.props.page_break_before);
     }
 
     #[test]
