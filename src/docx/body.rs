@@ -2446,6 +2446,12 @@ fn unsupported_simple_field_reason_hint(
     if let Some(reason) = unsupported_action_reason_hint(instruction) {
         return Some(reason);
     }
+    if let Some(reason) = unsupported_sequence_reason_hint(instruction) {
+        return Some(reason);
+    }
+    if let Some(reason) = unsupported_numbering_reason_hint(instruction) {
+        return Some(reason);
+    }
     None
 }
 
@@ -2688,6 +2694,27 @@ fn unsupported_action_reason_hint(instruction: &str) -> Option<FieldUnsupportedR
     }
     Some(unsupported_syntax_field_reason_hint(
         super::fields::supports_action_field_syntax(instruction),
+    ))
+}
+
+fn unsupported_sequence_reason_hint(instruction: &str) -> Option<FieldUnsupportedReason> {
+    if FieldKind::from_instruction(instruction) != FieldKind::Sequence {
+        return None;
+    }
+    Some(unsupported_syntax_field_reason_hint(
+        super::fields::supports_sequence_field_syntax(instruction),
+    ))
+}
+
+fn unsupported_numbering_reason_hint(instruction: &str) -> Option<FieldUnsupportedReason> {
+    if !matches!(
+        FieldKind::from_instruction(instruction),
+        FieldKind::Numbering(_)
+    ) {
+        return None;
+    }
+    Some(unsupported_syntax_field_reason_hint(
+        super::fields::supports_numbering_field_syntax(instruction),
     ))
 }
 

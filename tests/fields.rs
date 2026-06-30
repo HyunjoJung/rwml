@@ -4066,6 +4066,15 @@ fn docx_sequence_fields_compute_source_order_numbers() {
             count: 1,
         }]
     );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| {
+            instruction.starts_with("SEQ Figure \\r -1")
+        }),
+        vec![(
+            "SEQ Figure \\r -1".to_string(),
+            Some(FieldUnsupportedReason::UnsupportedSwitch),
+        )]
+    );
 
     let main_text = doc.main_text();
     assert_eq!(
@@ -4125,6 +4134,15 @@ fn docx_sequence_heading_reset_is_known_uncomputed_syntax() {
             reason: FieldEvaluationReason::NoComputedResult,
             count: 1,
         }]
+    );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| {
+            instruction.starts_with("SEQ Figure \\s 1")
+        }),
+        vec![(
+            "SEQ Figure \\s 1".to_string(),
+            Some(FieldUnsupportedReason::NoComputedResult),
+        )]
     );
 
     assert_eq!(
@@ -7249,6 +7267,31 @@ fn docx_numbering_fields_compute_formatted_autonum_subset() {
             },
         ]
     );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| {
+            instruction.starts_with("AUTONUM \\* Unknown")
+                || instruction.starts_with("LISTNUM LegalDefault")
+                || instruction.starts_with("BIDIOUTLINE")
+        }),
+        vec![
+            (
+                "AUTONUM \\* Unknown".to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+            (
+                "LISTNUM LegalDefault \\l 2".to_string(),
+                Some(FieldUnsupportedReason::NoComputedResult),
+            ),
+            (
+                "BIDIOUTLINE".to_string(),
+                Some(FieldUnsupportedReason::NoComputedResult),
+            ),
+            (
+                "BIDIOUTLINE \\x".to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+        ]
+    );
 
     let main_text = doc.main_text();
     assert!(
@@ -7392,6 +7435,15 @@ fn docx_listnum_number_default_computes_level_one_subset() {
             reason: FieldEvaluationReason::NoComputedResult,
             count: 1,
         }]
+    );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| {
+            instruction.starts_with("LISTNUM NumberDefault \\l 2")
+        }),
+        vec![(
+            "LISTNUM NumberDefault \\l 2".to_string(),
+            Some(FieldUnsupportedReason::NoComputedResult),
+        )]
     );
 
     let main_text = doc.main_text();
