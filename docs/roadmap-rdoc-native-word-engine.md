@@ -184,9 +184,9 @@ Initial status:
   `\* Lower`/`\* Caps`/`\* FirstCap` field-result format switches, neutral TOC
   `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT`, quoted or
   switch-delimited unquoted `TOC \t` custom-style entries, `TOC \f` entries from matching `TC "Text"` markers with
-  optional `\f` type identifiers and `\l` levels, with supported `TC` marker
-  fields themselves rendering as hidden output and unsupported `TC` marker
-  syntax preserving cached text with `UnsupportedSwitch` diagnostics, `TOC \c` full-caption entries
+  optional `\f` type identifiers, `\l` levels, and common marker
+  text-format tails, with supported `TC` marker fields themselves rendering as
+  hidden output and unsupported `TC` marker syntax preserving cached text with `UnsupportedSwitch` diagnostics, `TOC \c` full-caption entries
   and `TOC \a` label/number-omitted caption-text entries from paragraphs
   containing matching cached `SEQ Identifier` fields, and standalone
   `TOC \u` fields over explicit paragraph
@@ -986,9 +986,9 @@ Initial status:
   `\* Lower`/`\* Caps`/`\* FirstCap` field-result format switches, neutral TOC
   `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT`, quoted or
   switch-delimited unquoted `TOC \t` custom-style entries, `TOC \f` entries from matching `TC "Text"` markers with
-  optional `\f` type identifiers and `\l` levels, with supported `TC` marker
-  fields themselves rendering as hidden output and unsupported `TC` marker
-  syntax preserving cached text with `UnsupportedSwitch` diagnostics, `TOC \c` full-caption entries
+  optional `\f` type identifiers, `\l` levels, and common marker
+  text-format tails, with supported `TC` marker fields themselves rendering as
+  hidden output and unsupported `TC` marker syntax preserving cached text with `UnsupportedSwitch` diagnostics, `TOC \c` full-caption entries
   and `TOC \a` label/number-omitted caption-text entries from paragraphs
   containing matching cached `SEQ Identifier` fields, and standalone
   `TOC \u` fields over explicit paragraph

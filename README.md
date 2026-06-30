@@ -655,9 +655,9 @@ normalized to plain text, and text-neutral `\n` no-page-number,
 sequence/page separator switches, quoted or switch-delimited unquoted `TOC \t`
 custom-style entries,
 `TOC \f` entries from matching `TC "Text"` markers with optional `\f` type
-identifiers and `\l` levels, with supported `TC` marker fields themselves
-rendering as hidden output and unsupported `TC` marker syntax preserving cached
-text with `UnsupportedSwitch` diagnostics,
+identifiers, `\l` levels, and common marker text-format tails, with supported
+`TC` marker fields themselves rendering as hidden output and unsupported `TC`
+marker syntax preserving cached text with `UnsupportedSwitch` diagnostics,
 `TOC \c` full-caption entries and `TOC \a` label/number-omitted caption-text
 entries from paragraphs containing matching `SEQ Identifier` fields, with
 simple or common complex dirty/stale `SEQ` caption numbers recomputed from
@@ -1013,7 +1013,8 @@ deterministic computation or precise cached-result diagnostics.
       `\* Caps`/`\* FirstCap` field-result format switches, neutral TOC
       `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT`, plus
       quoted or switch-delimited unquoted `TOC \t` custom-style entries, `TOC \f` entries from matching
-      `TC "Text"` markers with optional `\f` type identifiers and `\l` levels,
+      `TC "Text"` markers with optional `\f` type identifiers, `\l` levels,
+      and common marker text-format tails,
       `TOC \c` full-caption entries and `TOC \a` label/number-omitted
       caption-text entries from paragraphs containing matching
       `SEQ Identifier` fields, with simple or common complex dirty/stale `SEQ`
