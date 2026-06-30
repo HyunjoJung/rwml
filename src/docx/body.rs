@@ -3513,6 +3513,9 @@ fn read_tblpr(r: &mut Xml<'_>) -> TableProps {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblPrChange" => {
                 skip_subtree(r);
             }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                read_tblpr_alternate_content(r, &mut props);
+            }
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"tblW"
                     && attr_local_trimmed(&e, b"type").is_some_and(|value| value == "pct") =>
@@ -3554,6 +3557,79 @@ fn read_tblpr(r: &mut Xml<'_>) -> TableProps {
         }
     }
     props
+}
+
+fn read_tblpr_alternate_content(r: &mut Xml<'_>, props: &mut TableProps) {
+    let mut took = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                match name {
+                    b"Choice" | b"Fallback" if !took => {
+                        took = true;
+                        read_tblpr_alternate_content_branch(r, props, name);
+                    }
+                    _ => skip_subtree(r),
+                }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+}
+
+fn read_tblpr_alternate_content_branch(r: &mut Xml<'_>, props: &mut TableProps, branch: &[u8]) {
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblPrChange" => {
+                skip_subtree(r);
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                read_tblpr_alternate_content(r, props);
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if local(e.name().as_ref()) == b"tblW"
+                    && attr_local_trimmed(&e, b"type").is_some_and(|value| value == "pct") =>
+            {
+                props.width_pct = attr_f32(&e, b"w").map(|p| p / 5000.0);
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if local(e.name().as_ref()) == b"tblLayout" =>
+            {
+                props.fixed_layout =
+                    attr_local_trimmed(&e, b"type").is_some_and(|value| value == "fixed");
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"tblInd" => {
+                if type_defaults_to_dxa(&e) {
+                    props.indent_twips = attr_i32(&e, b"w");
+                }
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"jc" => {
+                props.align = match attr_local_trimmed(&e, b"val").as_deref() {
+                    Some("center") => Some(Align::Center),
+                    Some("right") => Some(Align::Right),
+                    Some("both") => Some(Align::Justify),
+                    Some("left") | Some("start") => Some(Align::Left),
+                    _ => None,
+                };
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblBorders" => {
+                let borders = read_tbl_borders(r);
+                props.border_color = borders.0;
+                props.border_colors = borders.1;
+                props.border_size_eighths = borders.2;
+                props.border_sizes = borders.3;
+                props.border_style = borders.4;
+                props.border_styles = borders.5;
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
 }
 
 fn read_tbl_borders(
@@ -5050,6 +5126,36 @@ mod tests {
             panic!("cell paragraph")
         };
         assert_eq!(p.text(), "Cell property change");
+    }
+
+    #[test]
+    fn table_props_use_single_alternate_content_branch() {
+        let xml = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+            <w:tbl>
+                <w:tblPr>
+                    <mc:AlternateContent>
+                        <mc:Choice Requires="w14">
+                            <w:tblW w:type="pct" w:w="4000"/>
+                            <w:tblLayout w:type="fixed"/>
+                            <w:jc w:val="center"/>
+                        </mc:Choice>
+                        <mc:Fallback>
+                            <w:tblW w:type="pct" w:w="7000"/>
+                            <w:tblLayout w:type="autofit"/>
+                            <w:jc w:val="right"/>
+                        </mc:Fallback>
+                    </mc:AlternateContent>
+                </w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>Table properties</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+        </w:body></w:document>"#;
+        let Block::Table(table) = &parse(xml)[0] else {
+            panic!("table")
+        };
+
+        assert_eq!(table.width_pct, Some(0.8));
+        assert!(table.fixed_layout);
+        assert_eq!(table.align, Some(Align::Center));
     }
 
     #[test]
