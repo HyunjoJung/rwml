@@ -2575,7 +2575,7 @@ fn page_ref_section_page_number_restart_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:br w:type="page"/></w:r></w:p><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgNumType w:start=" 7 "/></w:sectPr></w:pPr></w:p><w:p><w:bookmarkStart w:id="7" w:name="Restarted"/><w:r><w:t>Restarted target</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:r><w:lastRenderedPageBreak/><w:t>Restarted next page lead.</w:t></w:r></w:p><w:p><w:bookmarkStart w:id="8" w:name="RestartedNext"/><w:r><w:t>Restarted next target</w:t></w:r><w:bookmarkEnd w:id="8"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF Restarted \h "><w:r><w:t>stale restart</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF RestartedNext \* ROMAN "><w:r><w:t>stale restart roman</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF RestartedNext \p "><w:r><w:t>stale restart relative</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:br w:type="page"/></w:r></w:p><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgNumType w:start=" 7 "/></w:sectPr></w:pPr></w:p><w:p><w:bookmarkStart w:id="7" w:name="Restarted"/><w:r><w:t>Restarted target</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:r><w:lastRenderedPageBreak/><w:t>Restarted next page lead.</w:t></w:r></w:p><w:p><w:bookmarkStart w:id="8" w:name="RestartedNext"/><w:r><w:t>Restarted next target</w:t></w:r><w:bookmarkEnd w:id="8"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF Restarted \h "><w:r><w:t>stale restart</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF RestartedNext \* ROMAN "><w:r><w:t>stale restart roman</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGEREF RestartedNext \h\p "><w:r><w:t>stale compact restart relative</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -11873,7 +11873,7 @@ fn docx_page_ref_applies_structural_section_page_number_restart() {
     assert_eq!(fields[1].instruction, "PAGEREF RestartedNext \\* ROMAN");
     assert_eq!(fields[1].computed_result.as_deref(), Some("VIII"));
     assert_eq!(fields[2].kind, FieldKind::PageRef);
-    assert_eq!(fields[2].instruction, "PAGEREF RestartedNext \\p");
+    assert_eq!(fields[2].instruction, "PAGEREF RestartedNext \\h\\p");
     assert_eq!(fields[2].computed_result.as_deref(), Some("above"));
 
     let main_text = doc.main_text();

@@ -1710,6 +1710,12 @@ pub(crate) fn page_ref_field_syntax(instruction: &str) -> Option<PageRefFieldSyn
             continue;
         }
         if part.starts_with('\\') {
+            if let Some(switches) = compact_page_ref_flag_switches(part) {
+                for switch in switches {
+                    apply_page_ref_flag_switch(switch, &mut relative)?;
+                }
+                continue;
+            }
             if part.eq_ignore_ascii_case("\\h") {
                 continue;
             }
@@ -1730,6 +1736,24 @@ pub(crate) fn page_ref_field_syntax(instruction: &str) -> Option<PageRefFieldSyn
         text_format,
         relative,
     })
+}
+
+fn compact_page_ref_flag_switches(part: &str) -> Option<Vec<char>> {
+    compact_flag_switches(part, |switch| matches!(switch, 'h' | 'p'))
+}
+
+fn apply_page_ref_flag_switch(switch: char, relative: &mut bool) -> Option<()> {
+    match switch {
+        'h' => Some(()),
+        'p' => {
+            if *relative {
+                return None;
+            }
+            *relative = true;
+            Some(())
+        }
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3037,8 +3061,13 @@ mod tests {
         assert_eq!(page_ref.number_format, Some(FieldNumberFormat::Arabic));
         assert_eq!(page_ref.text_format, Some(FieldTextFormat::Upper));
         assert!(page_ref.relative);
+        let compact = page_ref_field_syntax(r#"PAGEREF Figure1 \h\p"#)
+            .expect("valid compact page ref syntax");
+        assert_eq!(compact.target, "Figure1");
+        assert!(compact.relative);
         assert!(page_ref_field_syntax(r#"PAGEREF Figure1 \* ArAbIc"#).is_some());
         assert!(page_ref_field_syntax(r#"PAGEREF Figure1 \p \p"#).is_none());
+        assert!(page_ref_field_syntax(r#"PAGEREF Figure1 \p\p"#).is_none());
         assert!(page_ref_field_syntax(r#"PAGEREF \p Figure1"#).is_none());
         assert!(page_ref_field_syntax(r#"PAGEREF "Figure List""#).is_none());
         assert!(page_ref_field_syntax(r#"PAGEREF Figure1 \x"#).is_none());
