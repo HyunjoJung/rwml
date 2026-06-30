@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 
+use super::xml_text::{skip_alternate_content_branch, skip_subtree, AlternateContentBranchState};
 use super::{attr_local, attr_local_trimmed, attr_u32, attr_u8, local};
 
 /// One numbering level's resolved formatting.
@@ -200,8 +201,25 @@ pub(crate) fn parse(xml: &str) -> Numbering {
     let mut cur_abstract: Option<String> = None;
     let mut cur_ilvl: Option<u8> = None;
     let mut cur_num: Option<String> = None;
+    let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
+            Ok(Event::Start(e))
+                if skip_alternate_content_branch(
+                    &mut alternate_content_stack,
+                    local(e.name().as_ref()),
+                ) =>
+            {
+                skip_subtree(&mut r);
+            }
+            Ok(Event::Empty(e))
+                if skip_alternate_content_branch(
+                    &mut alternate_content_stack,
+                    local(e.name().as_ref()),
+                ) => {}
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                alternate_content_stack.push(AlternateContentBranchState::default());
+            }
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
                 b"abstractNum" => {
                     cur_abstract = attr_local_trimmed(&e, b"abstractNumId");
@@ -242,6 +260,9 @@ pub(crate) fn parse(xml: &str) -> Numbering {
                 b"abstractNum" => cur_abstract = None,
                 b"num" => cur_num = None,
                 b"lvl" => cur_ilvl = None,
+                b"AlternateContent" => {
+                    alternate_content_stack.pop();
+                }
                 _ => {}
             },
             Ok(Event::Eof) | Err(_) => break,
@@ -320,5 +341,29 @@ mod tests {
         assert_eq!(nb.label("1", 2, &mut c).as_deref(), Some("2.b.i"));
         assert_eq!(nb.label("1", 0, &mut c).as_deref(), Some("3."));
         assert_eq!(nb.label("2", 0, &mut c), None);
+    }
+
+    #[test]
+    fn uses_single_alternate_content_branch() {
+        let xml = r#"<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+            <mc:AlternateContent>
+                <mc:Choice Requires="w14">
+                    <w:abstractNum w:abstractNumId="1">
+                        <w:lvl w:ilvl="0"><w:start w:val="5"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl>
+                    </w:abstractNum>
+                    <w:num w:numId="10"><w:abstractNumId w:val="1"/></w:num>
+                </mc:Choice>
+                <mc:Fallback>
+                    <w:abstractNum w:abstractNumId="9">
+                        <w:lvl w:ilvl="0"><w:start w:val="9"/><w:numFmt w:val="upperRoman"/><w:lvlText w:val="%1."/></w:lvl>
+                    </w:abstractNum>
+                    <w:num w:numId="10"><w:abstractNumId w:val="9"/></w:num>
+                </mc:Fallback>
+            </mc:AlternateContent>
+        </w:numbering>"#;
+        let nb = parse(xml);
+        let mut counters = [0u32; 9];
+
+        assert_eq!(nb.label("10", 0, &mut counters).as_deref(), Some("5."));
     }
 }
