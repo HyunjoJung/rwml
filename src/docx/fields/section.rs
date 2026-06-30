@@ -61,7 +61,7 @@ pub(crate) fn section_context(xml: &str) -> SectionContext {
                     skip_subtree(&mut r);
                     continue;
                 }
-                if matches!(name, b"del" | b"moveFrom") {
+                if matches!(name, b"del" | b"moveFrom" | b"pPrChange") {
                     skip_subtree(&mut r);
                     continue;
                 }

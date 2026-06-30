@@ -285,7 +285,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                     skip_subtree(&mut r);
                     continue;
                 }
-                if matches!(name, b"del" | b"moveFrom") {
+                if matches!(name, b"del" | b"moveFrom" | b"pPrChange") {
                     skip_subtree(&mut r);
                     continue;
                 }
