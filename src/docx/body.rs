@@ -923,17 +923,12 @@ pub(crate) fn parse_note_entries(
     let mut entries = Vec::new();
     loop {
         match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                read_note_entries_alternate_content(&mut r, ctx, tag, &mut entries);
+            }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == tag => {
-                let boilerplate = matches!(
-                    attr_local_trimmed(&e, b"type").as_deref(),
-                    Some("separator") | Some("continuationSeparator") | Some("continuationNotice")
-                );
-                if boilerplate {
-                    skip_subtree(&mut r);
-                } else if let Some(id) = attr_local_trimmed(&e, b"id") {
-                    entries.push((id, read_blocks(&mut r, ctx, 0)));
-                } else {
-                    skip_subtree(&mut r);
+                if let Some(entry) = read_note_entry(&mut r, ctx, &e) {
+                    entries.push(entry);
                 }
             }
             Ok(Event::Eof) | Err(_) => break,
@@ -941,6 +936,78 @@ pub(crate) fn parse_note_entries(
         }
     }
     entries
+}
+
+fn read_note_entries_alternate_content(
+    r: &mut Xml<'_>,
+    ctx: &Ctx<'_>,
+    tag: &[u8],
+    entries: &mut Vec<(String, Vec<Block>)>,
+) {
+    let mut took = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                match name {
+                    b"Choice" | b"Fallback" if !took => {
+                        took = true;
+                        read_note_entries_alternate_content_branch(r, ctx, tag, entries, name);
+                    }
+                    _ => skip_subtree(r),
+                }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+}
+
+fn read_note_entries_alternate_content_branch(
+    r: &mut Xml<'_>,
+    ctx: &Ctx<'_>,
+    tag: &[u8],
+    entries: &mut Vec<(String, Vec<Block>)>,
+    branch: &[u8],
+) {
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                read_note_entries_alternate_content(r, ctx, tag, entries);
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == tag => {
+                if let Some(entry) = read_note_entry(r, ctx, &e) {
+                    entries.push(entry);
+                }
+            }
+            Ok(Event::Start(_)) => skip_subtree(r),
+            Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+}
+
+fn read_note_entry(
+    r: &mut Xml<'_>,
+    ctx: &Ctx<'_>,
+    e: &BytesStart<'_>,
+) -> Option<(String, Vec<Block>)> {
+    let boilerplate = matches!(
+        attr_local_trimmed(e, b"type").as_deref(),
+        Some("separator") | Some("continuationSeparator") | Some("continuationNotice")
+    );
+    if boilerplate {
+        skip_subtree(r);
+        return None;
+    }
+    let Some(id) = attr_local_trimmed(e, b"id") else {
+        skip_subtree(r);
+        return None;
+    };
+    Some((id, read_blocks(r, ctx, 0)))
 }
 
 /// Scan `word/document.xml` for note reference ids and the containing top-level
@@ -5828,6 +5895,94 @@ mod tests {
             .collect::<Vec<_>>()
             .join("|");
         assert_eq!(text, "실제 각주 내용", "got: {text:?}");
+    }
+
+    #[test]
+    fn note_entries_use_single_alternate_content_branch() {
+        let styles = Styles::default();
+        let numbering = Numbering::default();
+        let rels = HashMap::new();
+        let media = HashMap::new();
+        let ref_targets = HashMap::new();
+        let ref_position_context = super::super::fields::RefPositionContext::default();
+        let ref_number_context = super::super::fields::RefNumberContext::empty();
+        let page_ref_context = super::super::fields::PageRefContext::empty();
+        let note_ref_context = super::super::fields::NoteRefContext::empty();
+        let section_context = super::super::fields::SectionContext::empty();
+        let style_ref_context = super::super::fields::StyleRefContext::empty();
+        let legacy_form_context = super::super::fields::LegacyFormContext::default();
+        let table_formula_context = super::super::fields::TableFormulaContext::empty();
+        let toc_entries = Vec::new();
+        let bookmark_names = HashSet::new();
+        let core_properties = crate::CoreProperties::default();
+        let custom_properties = HashMap::new();
+        let document_variables = HashMap::new();
+        let extended_properties = HashMap::new();
+        let ctx = Ctx {
+            styles: &styles,
+            numbering: &numbering,
+            rels: &rels,
+            media: &media,
+            ref_targets: &ref_targets,
+            ref_position_context: &ref_position_context,
+            ref_number_context: &ref_number_context,
+            page_ref_context: &page_ref_context,
+            note_ref_context: &note_ref_context,
+            section_context: &section_context,
+            style_ref_context: &style_ref_context,
+            legacy_form_context: &legacy_form_context,
+            table_formula_context: &table_formula_context,
+            toc_entries: &toc_entries,
+            bookmark_names: &bookmark_names,
+            core_properties: &core_properties,
+            custom_properties: &custom_properties,
+            document_variables: &document_variables,
+            extended_properties: &extended_properties,
+            file_size_bytes: None,
+            ref_field_cursor: Default::default(),
+            page_field_cursor: Default::default(),
+            page_ref_field_cursor: Default::default(),
+            note_ref_field_cursor: Default::default(),
+            section_field_cursor: Default::default(),
+            style_ref_field_cursor: Default::default(),
+            form_field_cursor: Default::default(),
+            formula_field_cursor: Default::default(),
+            sequence_counters: Default::default(),
+            sequence_heading_counts: Default::default(),
+            sequence_heading_scopes: Default::default(),
+            autonum_counter: Default::default(),
+            listnum_counter: Default::default(),
+            field_bookmarks: Default::default(),
+            counters: Default::default(),
+        };
+        let xml = r#"<w:footnotes xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+            <mc:AlternateContent>
+                <mc:Choice Requires="w14">
+                    <w:footnote w:id="1"><w:p><w:r><w:t>Choice note</w:t></w:r></w:p></w:footnote>
+                </mc:Choice>
+                <mc:Fallback>
+                    <w:footnote w:id="9"><w:p><w:r><w:t>Fallback note</w:t></w:r></w:p></w:footnote>
+                </mc:Fallback>
+            </mc:AlternateContent>
+        </w:footnotes>"#;
+
+        let entries = parse_note_entries(xml, &ctx, b"footnote");
+        let notes: Vec<_> = entries
+            .iter()
+            .map(|(id, blocks)| {
+                let text = blocks
+                    .iter()
+                    .filter_map(|block| match block {
+                        Block::Paragraph(paragraph) => Some(paragraph.text()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("|");
+                (id.as_str(), text)
+            })
+            .collect();
+
+        assert_eq!(notes, vec![("1", "Choice note".to_string())]);
     }
 
     #[test]

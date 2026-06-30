@@ -320,6 +320,35 @@ fn notes_docx() -> Vec<u8> {
     ])
 }
 
+fn alternate_content_note_entries_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rIdEnd" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Body</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r><w:r><w:endnoteReference w:id="2"/></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:AlternateContent><mc:Choice Requires="w14"><w:footnote w:id="1"><w:p><w:r><w:t>Choice footnote</w:t></w:r></w:p></w:footnote></mc:Choice><mc:Fallback><w:footnote w:id="9"><w:p><w:r><w:t>Fallback footnote</w:t></w:r></w:p></w:footnote></mc:Fallback></mc:AlternateContent></w:footnotes>"#,
+        ),
+        (
+            "word/endnotes.xml",
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:AlternateContent><mc:Choice Requires="w14"><w:endnote w:id="2"><w:p><w:r><w:t>Choice endnote</w:t></w:r></w:p></w:endnote></mc:Choice><mc:Fallback><w:endnote w:id="8"><w:p><w:r><w:t>Fallback endnote</w:t></w:r></w:p></w:endnote></mc:Fallback></mc:AlternateContent></w:endnotes>"#,
+        ),
+    ])
+}
+
 fn notes_with_blank_ids_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -2406,6 +2435,30 @@ fn docx_notes_are_exposed_as_note_side_table() {
     assert_eq!(
         notes[1].anchor.as_ref().map(|a| a.text.as_str()),
         Some("BODY")
+    );
+}
+
+#[test]
+fn docx_note_entries_use_single_alternate_content_branch() {
+    let doc = Document::open(&alternate_content_note_entries_docx()).expect("fixture opens");
+
+    assert_eq!(doc.footnote_text(), "Choice footnote");
+    assert_eq!(doc.endnote_text(), "Choice endnote");
+    let notes = doc.notes();
+    assert_eq!(notes.len(), 2);
+    assert_eq!(notes[0].id, "1");
+    assert_eq!(notes[0].kind, NoteKind::Footnote);
+    assert_eq!(notes[0].text, "Choice footnote");
+    assert_eq!(
+        notes[0].anchor.as_ref().map(|anchor| anchor.text.as_str()),
+        Some("Body")
+    );
+    assert_eq!(notes[1].id, "2");
+    assert_eq!(notes[1].kind, NoteKind::Endnote);
+    assert_eq!(notes[1].text, "Choice endnote");
+    assert_eq!(
+        notes[1].anchor.as_ref().map(|anchor| anchor.text.as_str()),
+        Some("Body")
     );
 }
 
