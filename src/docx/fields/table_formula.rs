@@ -173,6 +173,9 @@ fn read_table_formula_table(r: &mut Xml<'_>) -> Vec<Option<String>> {
                         }
                         rows.push(row);
                     }
+                    name if is_current_table_formula_structural_wrapper(name) => {
+                        xml_depth = xml_depth.saturating_add(1);
+                    }
                     _ => skip_subtree(r),
                 }
             }
@@ -235,6 +238,9 @@ fn read_table_formula_row(r: &mut Xml<'_>, row_index: usize) -> Vec<TableFormula
                         let col_index = row.len();
                         row.push(read_table_formula_cell(r, row_index, col_index));
                     }
+                    name if is_current_table_formula_structural_wrapper(name) => {
+                        xml_depth = xml_depth.saturating_add(1);
+                    }
                     _ => skip_subtree(r),
                 }
             }
@@ -257,6 +263,13 @@ fn read_table_formula_row(r: &mut Xml<'_>, row_index: usize) -> Vec<TableFormula
         }
     }
     row
+}
+
+fn is_current_table_formula_structural_wrapper(name: &[u8]) -> bool {
+    matches!(
+        name,
+        b"sdt" | b"sdtContent" | b"customXml" | b"smartTag" | b"ins" | b"moveTo"
+    )
 }
 
 fn read_table_formula_cell(r: &mut Xml<'_>, row: usize, col: usize) -> TableFormulaCell {

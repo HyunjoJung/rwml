@@ -1005,6 +1005,23 @@ fn formula_table_cell_property_revision_docx() -> Vec<u8> {
     ])
 }
 
+fn formula_table_structural_wrapper_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:sdt><w:sdtPr/><w:sdtContent><w:tr><w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>3</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(LEFT) "><w:r><w:t>cached row wrapper sum</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:sdtContent></w:sdt></w:tbl><w:tbl><w:tr><w:sdt><w:sdtPr/><w:sdtContent><w:tc><w:p><w:r><w:t>4</w:t></w:r></w:p></w:tc></w:sdtContent></w:sdt><w:sdt><w:sdtPr/><w:sdtContent><w:tc><w:p><w:r><w:t>6</w:t></w:r></w:p></w:tc></w:sdtContent></w:sdt><w:sdt><w:sdtPr/><w:sdtContent><w:tc><w:p><w:fldSimple w:instr=" = SUM(LEFT) "><w:r><w:t>cached cell wrapper sum</w:t></w:r></w:fldSimple></w:p></w:tc></w:sdtContent></w:sdt></w:tr></w:tbl></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn formula_table_general_number_format_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -6716,6 +6733,38 @@ fn docx_table_formula_ignores_old_cell_property_revisions() {
     assert!(
         main_text.contains("5") && !main_text.contains("cached old span sum"),
         "old table-cell property revisions must not suppress table formula computation: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_table_formula_context_uses_current_structural_wrappers() {
+    let doc = Document::open(&formula_table_structural_wrapper_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let expected = [
+        (r#"= SUM(LEFT)"#, "cached row wrapper sum", "5"),
+        (r#"= SUM(LEFT)"#, "cached cell wrapper sum", "10"),
+    ];
+
+    assert_eq!(fields.len(), expected.len());
+    for (field, (instruction, stale, result)) in fields.iter().zip(expected) {
+        assert_eq!(field.kind, FieldKind::Dynamic("=".to_string()));
+        assert_eq!(field.instruction, instruction);
+        assert_eq!(field.result, stale);
+        assert_eq!(field.computed_result.as_deref(), Some(result));
+    }
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("5")
+            && main_text.contains("10")
+            && !main_text.contains("cached row wrapper sum")
+            && !main_text.contains("cached cell wrapper sum"),
+        "current structural table wrappers should stay visible and computable: {main_text:?}"
     );
 }
 

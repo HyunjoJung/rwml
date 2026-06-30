@@ -3408,13 +3408,22 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Table {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
                 b"tblPr" => props = read_tblpr(r),
                 b"tr" => rows.push(read_row(r, ctx, depth)),
+                name if is_current_table_structural_wrapper(name) => {}
                 _ => skip_subtree(r), // tblGrid, …
             },
-            Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"tbl" => break,
+            Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
     }
     build_table(rows, props)
+}
+
+fn is_current_table_structural_wrapper(name: &[u8]) -> bool {
+    matches!(
+        name,
+        b"sdt" | b"sdtContent" | b"customXml" | b"smartTag" | b"ins" | b"moveTo"
+    )
 }
 
 #[derive(Default)]
@@ -3591,9 +3600,11 @@ fn read_row(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Vec<CellRaw>, bool) 
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
                 b"trPr" => header = read_trpr(r),
                 b"tc" => cells.push(read_cell(r, ctx, depth + 1)),
+                name if is_current_table_structural_wrapper(name) => {}
                 _ => skip_subtree(r),
             },
-            Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"tr" => break,
+            Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
     }
