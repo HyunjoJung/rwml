@@ -1085,13 +1085,12 @@ pub(crate) fn formula_field_syntax(instruction: &str) -> bool {
     };
     let (format_index, tail_start) = match format_switch {
         FormulaFieldNumberFormatSwitch::Separate(format_index) => {
-            if !tokens
-                .get(format_index + 1)
-                .is_some_and(|picture| formula_field_number_format_picture(picture))
-            {
+            let Some(tail_start) =
+                formula_field_number_format_picture_operand(&tokens, format_index + 1)
+            else {
                 return false;
-            }
-            (format_index, format_index + 2)
+            };
+            (format_index, tail_start)
         }
         FormulaFieldNumberFormatSwitch::Compact { index, picture } => {
             if !formula_field_number_format_picture(&picture) {
@@ -1127,6 +1126,26 @@ fn formula_field_number_format_switch(tokens: &[String]) -> Option<FormulaFieldN
 
 fn formula_field_number_format_picture(token: &str) -> bool {
     field_quoted_literal_token(token).is_some() || field_non_switch_literal_token(token).is_some()
+}
+
+fn formula_field_number_format_picture_operand(
+    tokens: &[String],
+    picture_index: usize,
+) -> Option<usize> {
+    let first = tokens.get(picture_index)?;
+    if field_quoted_literal_token(first).is_some() {
+        return Some(picture_index + 1);
+    }
+    field_non_switch_literal_token(first)?;
+    let mut index = picture_index + 1;
+    while let Some(part) = tokens.get(index) {
+        if part.starts_with('\\') {
+            break;
+        }
+        field_non_switch_literal_token(part)?;
+        index += 1;
+    }
+    Some(index)
 }
 
 fn formula_field_format_tail<'a>(parts: &mut impl Iterator<Item = &'a str>) -> bool {

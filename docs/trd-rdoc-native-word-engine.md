@@ -632,7 +632,8 @@ Implementation:
   direct A1/RnCn cell references plus aggregate references over existing plain
   numeric positional `LEFT`/`RIGHT`/`ABOVE`/`BELOW`, current `R`/`C`, A1
   cell/range, and RnCn cell/range references, skipping absent cells in ragged rows and including
-  nested aggregate calls inside literal formula expressions, simple separated or compact `\#` numeric pictures,
+  nested aggregate calls inside literal formula expressions, simple separated `\#`
+  numeric pictures with quoted or switch-delimited unquoted operands plus compact single-token `\#` numeric pictures,
   literal affixes, single-section leading `+`/`-` sign-control items, `x`
   digit-drop/rounding positions, and sectioned
   positive/negative/zero pictures, plus neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT`
@@ -663,7 +664,8 @@ Implementation:
   table direct A1/RnCn cell references plus aggregate references over existing
   plain numeric positional `LEFT`/`RIGHT`/`ABOVE`/`BELOW`, current `R`/`C`, A1
   cell/range, and RnCn cell/range references, skipping absent cells in ragged rows and including
-  nested aggregate calls inside literal formula expressions, simple separated or compact `\#`
+  nested aggregate calls inside literal formula expressions, simple separated `\#`
+  numeric pictures with quoted or switch-delimited unquoted operands plus compact single-token `\#`
   numeric pictures, literal affixes, single-section leading `+`/`-` sign-control items, `x`
   digit-drop/rounding positions, and sectioned positive/negative/zero pictures,
   plus neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT` formula tails and
@@ -722,7 +724,8 @@ Acceptance:
   direct A1/RnCn cell references plus aggregate references over existing plain
   numeric positional `LEFT`/`RIGHT`/`ABOVE`/`BELOW`, current `R`/`C`, A1
   cell/range, and RnCn cell/range references, skipping absent cells in ragged rows and including
-  nested aggregate calls inside literal formula expressions, simple separated or compact `\#` numeric pictures,
+  nested aggregate calls inside literal formula expressions, simple separated `\#`
+  numeric pictures with quoted or switch-delimited unquoted operands plus compact single-token `\#` numeric pictures,
   literal affixes, single-section leading `+`/`-`
   sign-control items, `x` digit-drop/rounding positions, and sectioned
   positive/negative/zero pictures, plus neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT`
@@ -1181,7 +1184,8 @@ open and edit the chart data.
   direct A1/RnCn cell references plus aggregate references over existing plain
   numeric positional `LEFT`/`RIGHT`/`ABOVE`/`BELOW`, current `R`/`C`, A1
   cell/range, and RnCn cell/range references, skipping absent cells in ragged rows and including
-  nested aggregate calls inside literal formula expressions, simple separated or compact `\#` numeric pictures,
+  nested aggregate calls inside literal formula expressions, simple separated `\#`
+  numeric pictures with quoted or switch-delimited unquoted operands plus compact single-token `\#` numeric pictures,
   literal affixes, single-section leading `+`/`-` sign-control items, `x`
   digit-drop/rounding positions, and sectioned
   positive/negative/zero pictures, plus neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT`
@@ -1212,7 +1216,8 @@ open and edit the chart data.
   table direct A1/RnCn cell references plus aggregate references over existing
   plain numeric positional `LEFT`/`RIGHT`/`ABOVE`/`BELOW`, current `R`/`C`, A1
   cell/range, and RnCn cell/range references, skipping absent cells in ragged rows and including
-  nested aggregate calls inside literal formula expressions, simple separated or compact `\#`
+  nested aggregate calls inside literal formula expressions, simple separated `\#`
+  numeric pictures with quoted or switch-delimited unquoted operands plus compact single-token `\#`
   numeric pictures, literal affixes, single-section leading `+`/`-` sign-control items, `x`
   digit-drop/rounding positions, and sectioned positive/negative/zero pictures,
   plus neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT` formula tails and

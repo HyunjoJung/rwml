@@ -74,11 +74,11 @@ pub(super) fn formula_instruction(instruction: &str) -> Option<FormulaInstructio
         });
     };
     let (format_index, picture, tail_start) = match format_switch {
-        FormulaNumberFormatSwitch::Separate(format_index) => (
-            format_index,
-            formula_number_format_picture(tokens.get(format_index + 1)?)?,
-            format_index + 2,
-        ),
+        FormulaNumberFormatSwitch::Separate(format_index) => {
+            let (picture, tail_start) =
+                formula_number_format_picture_operand(&tokens, format_index + 1)?;
+            (format_index, picture, tail_start)
+        }
         FormulaNumberFormatSwitch::Compact { index, picture } => {
             (index, formula_number_format_picture(&picture)?, index + 1)
         }
@@ -116,6 +116,30 @@ fn formula_number_format_picture(token: &str) -> Option<String> {
         return Some(text);
     }
     (!token.contains('"') && !token.starts_with('\\')).then(|| token.to_string())
+}
+
+fn formula_number_format_picture_operand(
+    tokens: &[String],
+    picture_index: usize,
+) -> Option<(String, usize)> {
+    let first = tokens.get(picture_index)?;
+    if let Some(text) = quoted_literal_text(first) {
+        return Some((text, picture_index + 1));
+    }
+    let mut values = vec![formula_unquoted_number_picture_token(first)?];
+    let mut index = picture_index + 1;
+    while let Some(part) = tokens.get(index) {
+        if part.starts_with('\\') {
+            break;
+        }
+        values.push(formula_unquoted_number_picture_token(part)?);
+        index += 1;
+    }
+    Some((values.join(" "), index))
+}
+
+fn formula_unquoted_number_picture_token(token: &str) -> Option<&str> {
+    (!token.contains('"') && !token.starts_with('\\')).then_some(token)
 }
 
 fn accept_formula_general_format_tail<'a>(

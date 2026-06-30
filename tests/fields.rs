@@ -718,6 +718,23 @@ fn formula_numeric_picture_docx() -> Vec<u8> {
     ])
 }
 
+fn formula_unquoted_multi_token_numeric_picture_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" = 5 \# 0 units \* MERGEFORMAT "><w:r><w:t>stale unquoted units formula</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn formula_compact_numeric_picture_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -6635,6 +6652,29 @@ fn docx_formula_fields_compute_literal_comparison_expressions() {
             "computed literal comparison result should replace stale cached text: {main_text:?}"
         );
     }
+}
+
+#[test]
+fn docx_formula_fields_accept_unquoted_multi_token_numeric_pictures() {
+    let doc = Document::open(&formula_unquoted_multi_token_numeric_picture_docx())
+        .expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(fields[0].instruction, r#"= 5 \# 0 units \* MERGEFORMAT"#);
+    assert_eq!(fields[0].result, "stale unquoted units formula");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("5 units"));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("5 units") && !main_text.contains("stale unquoted units formula"),
+        "unquoted multi-token numeric pictures should replace stale cached text: {main_text:?}"
+    );
 }
 
 #[test]

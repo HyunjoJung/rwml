@@ -480,7 +480,8 @@ plus aggregate formulas over positional `LEFT`/`RIGHT`/`ABOVE`/`BELOW`,
 current `R`/`C`, A1 cell/range, and RnCn cell/range references, skipping absent
 cells in ragged rows and including nested
 aggregate calls inside literal formula expressions, and simple
-separated or compact `\#` numeric pictures using `0`/`#`/`x` placeholders, decimal places,
+separated `\#` numeric pictures with quoted or switch-delimited unquoted
+operands plus compact single-token `\#` numeric pictures using `0`/`#`/`x` placeholders, decimal places,
 grouping commas, literal
 prefix/suffix characters such as `$` or `%`, single-section leading `+`/`-`
 sign-control items, and `x` digit-drop/rounding positions, plus two- and
