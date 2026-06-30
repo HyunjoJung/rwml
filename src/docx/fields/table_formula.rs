@@ -7,7 +7,7 @@ use super::super::xml_text::{read_text, skip_subtree};
 use super::super::{attr_local, local};
 use super::formula::{
     eval_formula_function, format_formula_general_number, format_formula_number,
-    formula_instruction, formula_number_text, FormulaNumberFormat, FormulaParser,
+    formula_instruction, formula_number_text, formula_truthy, FormulaNumberFormat, FormulaParser,
 };
 use super::{
     apply_complex_field_scan_fld_char, apply_field_text_format, computed_run_symbol_char,
@@ -878,6 +878,15 @@ fn resolved_table_formula_expression(
             if after_name < chars.len() && chars[after_name] == '(' {
                 if let Some(close) = matching_formula_paren(&chars, after_name) {
                     let inner: String = chars[after_name + 1..close].iter().collect();
+                    if name.eq_ignore_ascii_case("IF") {
+                        if let Some(value) = computed_table_formula_if_value(&inner, rows, row, col)
+                        {
+                            output.push_str(&formula_number_text(value)?);
+                            pos = close + 1;
+                            changed = true;
+                            continue;
+                        }
+                    }
                     if let Some(value) =
                         computed_table_formula_call_value(&name, &inner, rows, row, col)
                     {
@@ -904,6 +913,81 @@ fn resolved_table_formula_expression(
         pos += 1;
     }
     changed.then_some(output)
+}
+
+fn computed_table_formula_if_value(
+    expression: &str,
+    rows: &[Vec<TableFormulaCell>],
+    row: usize,
+    col: usize,
+) -> Option<f64> {
+    let arguments = table_formula_top_level_argument_expressions(expression)?;
+    if arguments.len() != 3 {
+        return None;
+    }
+    let condition = table_formula_expression_value(arguments[0], rows, row, col)?;
+    let selected = if formula_truthy(condition) {
+        arguments[1]
+    } else {
+        arguments[2]
+    };
+    table_formula_expression_value(selected, rows, row, col)
+}
+
+fn table_formula_expression_value(
+    expression: &str,
+    rows: &[Vec<TableFormulaCell>],
+    row: usize,
+    col: usize,
+) -> Option<f64> {
+    let expression = resolved_table_formula_expression_or_original(expression, rows, row, col);
+    let mut parser = FormulaParser::new(&expression, None);
+    parser.parse()
+}
+
+fn resolved_table_formula_expression_or_original(
+    expression: &str,
+    rows: &[Vec<TableFormulaCell>],
+    row: usize,
+    col: usize,
+) -> String {
+    resolved_table_formula_expression(expression, rows, row, col)
+        .unwrap_or_else(|| expression.trim().to_string())
+}
+
+fn table_formula_top_level_argument_expressions(expression: &str) -> Option<Vec<&str>> {
+    let mut arguments = Vec::new();
+    let mut separator = None;
+    let mut depth = 0usize;
+    let mut start = 0usize;
+    for (index, ch) in expression.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' if depth == 0 => return None,
+            ')' => depth = depth.checked_sub(1)?,
+            ',' | ';' if depth == 0 => {
+                if separator.replace(ch).is_some_and(|seen| seen != ch) {
+                    return None;
+                }
+                let argument = expression[start..index].trim();
+                if argument.is_empty() {
+                    return None;
+                }
+                arguments.push(argument);
+                start = index + ch.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    if depth != 0 {
+        return None;
+    }
+    let argument = expression[start..].trim();
+    if argument.is_empty() {
+        return None;
+    }
+    arguments.push(argument);
+    Some(arguments)
 }
 
 fn table_formula_cell_reference_at(chars: &[char], pos: usize) -> Option<(usize, usize, usize)> {

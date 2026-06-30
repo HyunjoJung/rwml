@@ -198,7 +198,7 @@ Initial status:
   decimal/scientific numeric constants, literal scalar numeric/logical functions (`ABS`, `AND`, `AVERAGE`,
   `COUNT`, `DEFINED`, `FALSE`, `IF`, `INT`, `MAX`, `MIN`, `MOD`, `NOT`, `OR`, `PRODUCT`,
   `ROUND`, `SIGN`, `SUM`, `TRUE`) with comma or semicolon argument separators,
-  literal `DEFINED(expr)` checks for parser-local literal expressions and source-order prior bookmark names, guarded numeric `IF` branch selection skips unsupported unselected branches, `+`, `-`, `*`, `/`, `^`, parentheses, unary signs, literal comparison operators (`=`, `<>`, `<`, `<=`, `>`, `>=`),
+  literal `DEFINED(expr)` checks for parser-local literal expressions and source-order prior bookmark names, guarded scalar/table numeric `IF` branch selection skips unsupported unselected branches, `+`, `-`, `*`, `/`, `^`, parentheses, unary signs, literal comparison operators (`=`, `<>`, `<`, `<=`, `>`, `>=`),
   simple non-spanning table formulas over existing plain numeric cells and
   source-order prior computed formula-only cells, including direct A1/RnCn cell
   references plus aggregate formulas over positional `LEFT`/`RIGHT`/`ABOVE`/`BELOW`,
@@ -316,7 +316,7 @@ Initial status:
   literal scalar numeric/logical functions (`ABS`, `AND`, `AVERAGE`, `COUNT`,
   `DEFINED`, `FALSE`, `IF`, `INT`, `MAX`, `MIN`, `MOD`, `NOT`, `OR`, `PRODUCT`, `ROUND`,
   `SIGN`, `SUM`, `TRUE`) with comma or semicolon argument separators,
-  literal `DEFINED(expr)` checks for parser-local literal expressions and source-order prior bookmark names, guarded numeric `IF` branch selection skips unsupported unselected branches, `+`, `-`,
+  literal `DEFINED(expr)` checks for parser-local literal expressions and source-order prior bookmark names, guarded scalar/table numeric `IF` branch selection skips unsupported unselected branches, `+`, `-`,
   `*`, `/`, parentheses, unary signs,
   literal comparison operators (`=`, `<>`, `<`, `<=`, `>`, `>=`), simple
   non-spanning table formulas over existing plain numeric cells and source-order
@@ -840,7 +840,7 @@ Initial status:
   `AND`, `AVERAGE`, `COUNT`, `DEFINED`, `FALSE`, `IF`, `INT`, `MAX`, `MIN`, `MOD`, `NOT`,
   `OR`, `PRODUCT`, `ROUND`, `SIGN`, `SUM`, `TRUE`) with comma or semicolon
   argument separators, literal `DEFINED(expr)` checks for parser-local literal expressions and source-order prior bookmark names,
-  guarded numeric `IF` branch selection skips unsupported unselected branches,
+  guarded scalar/table numeric `IF` branch selection skips unsupported unselected branches,
   `+`, `-`, `*`, `/`, `^`, parentheses, unary signs, literal comparison operators (`=`, `<>`, `<`,
   `<=`, `>`, `>=`), simple non-spanning table formulas over existing plain
   numeric cells and source-order prior computed formula-only cells, including direct

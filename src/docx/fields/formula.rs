@@ -692,7 +692,7 @@ pub(super) fn eval_formula_function(name: &str, arguments: &[f64]) -> Option<f64
     }
 }
 
-fn formula_truthy(value: f64) -> bool {
+pub(super) fn formula_truthy(value: f64) -> bool {
     value.abs() >= 1e-12
 }
 
