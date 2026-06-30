@@ -1506,8 +1506,9 @@ established infrastructure and promote only bounded compatibility slices:
   diagnostics, and render-model diagnostics when exact duplicated logic or
   report/evaluator drift is proven. `PAGEREF`, `REF`, `NOTEREF`/`FTNREF`, and
   TOC now have focused document-report/render-model parity tests for computed
-  and cached-gap buckets, so new R2-a work should start from concrete uncovered
-  drift;
+  and cached-gap buckets, and empty unsupported simple/complex field
+  instructions remain reportable in model/render inventories. New R2-a work
+  should start from concrete uncovered drift;
 - R2-b: promote `PAGE` and `PAGEREF` semantics only for deterministic layout
   contexts already represented by reader or renderer evidence, including
   paragraph-end section-break targets;
