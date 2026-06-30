@@ -18,8 +18,25 @@ type Xml<'a> = Reader<&'a [u8]>;
 pub(crate) fn parse(xml: &str) -> Vec<Comment> {
     let mut r = Reader::from_str(xml);
     let mut comments = Vec::new();
+    let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
+            Ok(Event::Start(e))
+                if skip_alternate_content_branch(
+                    &mut alternate_content_stack,
+                    local(e.name().as_ref()),
+                ) =>
+            {
+                skip_subtree(&mut r);
+            }
+            Ok(Event::Empty(e))
+                if skip_alternate_content_branch(
+                    &mut alternate_content_stack,
+                    local(e.name().as_ref()),
+                ) => {}
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                alternate_content_stack.push(AlternateContentBranchState::default());
+            }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"comment" => {
                 if let Some(comment) = read_comment(&mut r, &e) {
                     comments.push(comment);
@@ -29,6 +46,9 @@ pub(crate) fn parse(xml: &str) -> Vec<Comment> {
                 if let Some(comment) = comment_shell(&e) {
                     comments.push(comment);
                 }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                alternate_content_stack.pop();
             }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
@@ -83,8 +103,25 @@ fn comment_para_ids(xml: &str) -> HashMap<String, String> {
     let mut r = Reader::from_str(xml);
     let mut current_comment_id: Option<String> = None;
     let mut ids = HashMap::new();
+    let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
+            Ok(Event::Start(e))
+                if skip_alternate_content_branch(
+                    &mut alternate_content_stack,
+                    local(e.name().as_ref()),
+                ) =>
+            {
+                skip_subtree(&mut r);
+            }
+            Ok(Event::Empty(e))
+                if skip_alternate_content_branch(
+                    &mut alternate_content_stack,
+                    local(e.name().as_ref()),
+                ) => {}
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                alternate_content_stack.push(AlternateContentBranchState::default());
+            }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"comment" => {
                 current_comment_id = attr_local_trimmed(&e, b"id");
             }
@@ -101,6 +138,9 @@ fn comment_para_ids(xml: &str) -> HashMap<String, String> {
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"comment" => {
                 current_comment_id = None;
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                alternate_content_stack.pop();
             }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}

@@ -116,6 +116,31 @@ fn alternate_content_commented_docx() -> Vec<u8> {
     ])
 }
 
+fn alternate_content_comment_entries_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="comments.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:commentRangeStart w:id="1"/><w:r><w:t>Selected anchor</w:t></w:r><w:commentRangeEnd w:id="1"/><w:r><w:commentReference w:id="1"/></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/comments.xml",
+            r#"<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:AlternateContent><mc:Choice Requires="w14"><w:comment w:id="1" w:author="Reviewer"><w:p><w:r><w:t>Choice comment</w:t></w:r></w:p></w:comment></mc:Choice><mc:Fallback><w:comment w:id="9" w:author="Fallback"><w:p><w:r><w:t>Fallback comment</w:t></w:r></w:p></w:comment></mc:Fallback></mc:AlternateContent></w:comments>"#,
+        ),
+    ])
+}
+
 fn comments_with_blank_ids_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -133,6 +158,35 @@ fn comments_with_blank_ids_docx() -> Vec<u8> {
         (
             "word/comments.xml",
             r#"<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:comment w:id="1" w:author="Reviewer"><w:p><w:r><w:t>Valid comment</w:t></w:r></w:p></w:comment><w:comment w:id=" " w:author="Reviewer"><w:p><w:r><w:t>Blank comment</w:t></w:r></w:p></w:comment></w:comments>"#,
+        ),
+    ])
+}
+
+fn alternate_content_threaded_comments_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/><Override PartName="/word/commentsExtended.xml" ContentType="application/vnd.ms-word.commentsExt+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="comments.xml"/><Relationship Id="rId2" Type="http://schemas.microsoft.com/office/2011/relationships/commentsExtended" Target="commentsExtended.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:commentRangeStart w:id="1"/><w:r><w:t>Threaded anchor</w:t></w:r><w:commentRangeEnd w:id="1"/><w:r><w:commentReference w:id="1"/></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/comments.xml",
+            r#"<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:AlternateContent><mc:Choice Requires="w14"><w:comment w:id="1" w:author="Reviewer"><w:p w14:paraId="11111111"><w:r><w:t>Choice parent</w:t></w:r></w:p></w:comment><w:comment w:id="2" w:author="Approver"><w:p w14:paraId="22222222"><w:r><w:t>Choice reply</w:t></w:r></w:p></w:comment></mc:Choice><mc:Fallback><w:comment w:id="1" w:author="Fallback"><w:p w14:paraId="aaaaaaaa"><w:r><w:t>Fallback parent</w:t></w:r></w:p></w:comment><w:comment w:id="2" w:author="Fallback"><w:p w14:paraId="bbbbbbbb"><w:r><w:t>Fallback reply</w:t></w:r></w:p></w:comment></mc:Fallback></mc:AlternateContent></w:comments>"#,
+        ),
+        (
+            "word/commentsExtended.xml",
+            r#"<w15:commentsEx xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml"><w15:commentEx w15:paraId="11111111" w15:done="0"/><w15:commentEx w15:paraId="22222222" w15:paraIdParent="11111111" w15:done="0"/></w15:commentsEx>"#,
         ),
     ])
 }
@@ -286,6 +340,38 @@ fn docx_comments_ignore_alternate_content_duplicate_branch_text() {
     let anchor = comments[0].anchor.as_ref().expect("comment anchor");
     assert_eq!(anchor.text, "Hello Box Tail");
     assert_eq!(anchor.text.matches("Box").count(), 1);
+}
+
+#[test]
+fn docx_comment_entries_use_single_alternate_content_branch() {
+    let doc = Document::open(&alternate_content_comment_entries_docx()).expect("fixture opens");
+    let comments = doc.comments();
+
+    assert_eq!(comments.len(), 1);
+    assert_eq!(comments[0].id, "1");
+    assert_eq!(comments[0].author.as_deref(), Some("Reviewer"));
+    assert_eq!(comments[0].text, "Choice comment");
+    assert_eq!(
+        comments[0]
+            .anchor
+            .as_ref()
+            .map(|anchor| anchor.text.as_str()),
+        Some("Selected anchor")
+    );
+}
+
+#[test]
+fn docx_comment_reply_threading_uses_selected_alternate_content_branch() {
+    let doc = Document::open(&alternate_content_threaded_comments_docx()).expect("fixture opens");
+    let comments = doc.comments();
+
+    assert_eq!(comments.len(), 2);
+    assert_eq!(comments[0].id, "1");
+    assert_eq!(comments[0].parent_comment_id, None);
+    assert_eq!(comments[0].text, "Choice parent");
+    assert_eq!(comments[1].id, "2");
+    assert_eq!(comments[1].parent_comment_id.as_deref(), Some("1"));
+    assert_eq!(comments[1].text, "Choice reply");
 }
 
 #[test]
