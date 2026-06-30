@@ -167,8 +167,8 @@ Initial status:
   reference marks, body comment-reference markers, exact matching bookmarked
   comment ranges, and bookmarks wholly inside body comment ranges, counting prior generated REF note marks in
   source order plus common field-result
-  number/text format switches, `REF \d "separator"`
-  sequence/page separator syntax recognized while preserving cached text until
+  number/text format switches, text-neutral `REF \d "separator"` bookmark text,
+  and value-changing sequence/page separator cases preserving cached text until
   sequence/page separator semantics are modeled, bookmarked `NOTEREF`/legacy `FTNREF`
   footnote/endnote reference marks with neutral `\h`, note-reference-style
   `\f`, source-order `\p` above/below results, and common field-result
@@ -960,8 +960,8 @@ Initial status:
   bookmarks wholly inside body comment ranges with
   prior generated REF note marks counted in source order plus common
   field-result number/text format switches,
-  `REF \d "separator"` sequence/page separator syntax recognized while
-  preserving cached text,
+  text-neutral `REF \d "separator"` bookmark text while value-changing
+  sequence/page separator cases preserve cached text,
   bookmarked `NOTEREF`/legacy `FTNREF` footnote/endnote reference marks with
   neutral `\h`, note-reference-style `\f`, source-order `\p`
   above/below results, and common field-result number/text format switches,
@@ -1025,9 +1025,9 @@ Initial status:
   evaluation while preserving cached field-result inline tabs, line breaks, and
   no-break/soft hyphens, and they expose reason counts alongside unsupported field
   kind counts, distinguishing missing `PAGEREF` targets,
-  explicit and direct bookmark-name `REF \d` supported syntax with no computed
-  result, missing explicit or direct `REF \f` targets, and existing explicit or
-  direct non-note `REF \f` no-computed-result cases, missing `NOTEREF` targets,
+  value-changing `REF \d` no-computed-result cases, missing explicit or direct
+  `REF \f` targets, and existing explicit or direct non-note `REF \f`
+  no-computed-result cases, missing `NOTEREF` targets,
   existing non-note `NOTEREF` no-computed-result targets, missing `TOC \b` scopes, and
   truly unresolved bookmarks.
 - The field evaluator and renderer map common Symbol/Wingdings legacy font code

@@ -729,7 +729,14 @@ pub(super) fn computed_ref_instruction_result(
 ) -> Option<String> {
     if spec.sequence_separator {
         let _separator = spec.sequence_separator_value.as_deref()?;
-        return None;
+        if spec.note_reference
+            || spec.relative
+            || spec.paragraph_number
+            || spec.full_context_number
+            || spec.relative_context_number
+        {
+            return None;
+        }
     }
     if spec.note_reference {
         let number = ctx

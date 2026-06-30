@@ -637,8 +637,8 @@ note-reference marks for bookmarks around body footnote/endnote references,
 body comment-reference markers, exact matching bookmarked comment ranges, or
 bookmarks wholly inside body comment ranges,
 with generated REF note marks counted in source order plus common field-result
-number/text format switches, and `REF \d "separator"`
-sequence/page separator syntax recognized while preserving cached text until
+number/text format switches, text-neutral `REF \d "separator"` bookmark text,
+and value-changing sequence/page separator cases preserving cached text until
 sequence/page separator semantics are modeled, plus direct bookmark-name fields when the bookmark
 exists using the same supported text-format switches, neutral `\h`,
 explicit-number `\n`, `\n \t`, `\r`, `\r \t`, `\w`, `\w \t`, note-reference `\f`, sequence-separator `\d`, and source-order `\p`,
@@ -740,10 +740,10 @@ still render cached text, including inline tabs, line breaks, and no-break/soft
 hyphens for simple and common complex body fields, and remain reported as unsupported in diagnostics
 with both field-kind counts and reason counts (`UnknownField`,
 `UnresolvedBookmark`, `UnsupportedSwitch`, `NoComputedResult`), including
-separate missing `PAGEREF` bookmark targets, explicit and direct bookmark-name
-`REF \d` supported-syntax/no-computed-result, missing explicit or direct
-`REF \f` bookmark targets, and existing explicit or direct non-note `REF \f`
-no-computed-result reasons, plus separate missing `NOTEREF`
+separate missing `PAGEREF` bookmark targets, value-changing `REF \d`
+no-computed-result cases, missing explicit or direct `REF \f` bookmark targets,
+and existing explicit or direct non-note `REF \f` no-computed-result reasons,
+plus separate missing `NOTEREF`
 bookmark targets, existing non-note `NOTEREF` no-computed-result targets, and unsupported
 `NOTEREF` switch reasons, plus missing `TOC \b` scopes. Existing `TOC \b`
 scopes with no matching entries compute as empty results. On a real
@@ -993,8 +993,8 @@ deterministic computation or precise cached-result diagnostics.
       suffixes and `\w \t` numeric-text suppression, `REF \f` note-reference
       marks for bookmarks around body footnote/endnote references with
       generated REF note marks counted in source order plus common field-result
-      number/text format switches, `REF \d "separator"`
-      sequence/page separator syntax recognized while preserving cached text,
+      number/text format switches, text-neutral `REF \d "separator"` bookmark
+      text while value-changing sequence/page separator cases preserve cached text,
       direct bookmark-name field computation with
       supported text-format switches, neutral `\h`, explicit-number `\n`, `\n \t`, `\r`, `\r \t`, `\w`, `\w \t`, note-reference `\f`, sequence-separator `\d`, and source-order `\p`,
       bookmarked `NOTEREF`/legacy `FTNREF` footnote/endnote reference marks with

@@ -13515,7 +13515,7 @@ fn docx_direct_bookmark_field_applies_supported_ref_switches() {
     assert_eq!(fields[3].kind, FieldKind::Ref);
     assert_eq!(fields[3].instruction, "Figure1 \\d \"-\"");
     assert_eq!(fields[3].result, "direct sequence separator");
-    assert_eq!(fields[3].computed_result, None);
+    assert_eq!(fields[3].computed_result.as_deref(), Some("figure one"));
     assert_eq!(fields[4].kind, FieldKind::Ref);
     assert_eq!(fields[4].instruction, "Figure1 \\f");
     assert_eq!(fields[4].result, "direct note mark");
@@ -13523,16 +13523,10 @@ fn docx_direct_bookmark_field_applies_supported_ref_switches() {
 
     assert_eq!(
         model_simple_field_reason_hints(&doc, |instruction| instruction.starts_with("Figure1 \\")),
-        vec![
-            (
-                "Figure1 \\d \"-\"".to_string(),
-                Some(FieldUnsupportedReason::NoComputedResult),
-            ),
-            (
-                "Figure1 \\f".to_string(),
-                Some(FieldUnsupportedReason::NoComputedResult),
-            ),
-        ]
+        vec![(
+            "Figure1 \\f".to_string(),
+            Some(FieldUnsupportedReason::NoComputedResult),
+        )]
     );
 
     let main_text = doc.main_text();
@@ -13540,7 +13534,7 @@ fn docx_direct_bookmark_field_applies_supported_ref_switches() {
         !main_text.contains("stale direct upper")
             && !main_text.contains("stale direct first-cap")
             && !main_text.contains("stale direct hyperlink")
-            && main_text.contains("direct sequence separator")
+            && !main_text.contains("direct sequence separator")
             && main_text.contains("direct note mark"),
         "direct bookmark fields with supported REF switches should display computed bookmark text: {main_text:?}"
     );
@@ -13667,7 +13661,7 @@ fn docx_ref_field_with_broader_switch_keeps_cached_text() {
 }
 
 #[test]
-fn docx_ref_gap_cases_keep_cached_text() {
+fn docx_ref_gap_cases_compute_text_neutral_separator_and_keep_other_cached_text() {
     let doc = Document::open(&ref_gap_docx()).expect("fixture opens");
     let fields = doc.fields();
 
@@ -13678,7 +13672,7 @@ fn docx_ref_gap_cases_keep_cached_text() {
     assert_eq!(fields[0].computed_result, None);
     assert_eq!(fields[1].instruction, "REF PlainText \\d-");
     assert_eq!(fields[1].result, "cached ref separator");
-    assert_eq!(fields[1].computed_result, None);
+    assert_eq!(fields[1].computed_result.as_deref(), Some("Plain target"));
     assert_eq!(fields[2].instruction, "REF MissingRef");
     assert_eq!(fields[2].result, "cached missing ref");
     assert_eq!(fields[2].computed_result, None);
@@ -13688,7 +13682,7 @@ fn docx_ref_gap_cases_keep_cached_text() {
         report.features.unsupported_field_kinds,
         vec![FieldKindCount {
             kind: FieldKind::Ref,
-            count: 3,
+            count: 2,
         }]
     );
     assert_eq!(
@@ -13696,7 +13690,7 @@ fn docx_ref_gap_cases_keep_cached_text() {
         vec![
             FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::NoComputedResult,
-                count: 2,
+                count: 1,
             },
             FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::UnresolvedBookmark,
@@ -13713,10 +13707,6 @@ fn docx_ref_gap_cases_keep_cached_text() {
                 Some(FieldUnsupportedReason::NoComputedResult),
             ),
             (
-                "REF PlainText \\d-".to_string(),
-                Some(FieldUnsupportedReason::NoComputedResult),
-            ),
-            (
                 "REF MissingRef".to_string(),
                 Some(FieldUnsupportedReason::UnresolvedBookmark),
             ),
@@ -13726,9 +13716,10 @@ fn docx_ref_gap_cases_keep_cached_text() {
     let main_text = doc.main_text();
     assert!(
         main_text.contains("cached non-note ref mark")
-            && main_text.contains("cached ref separator")
+            && !main_text.contains("cached ref separator")
+            && main_text.contains("Plain target")
             && main_text.contains("cached missing ref"),
-        "REF gap cases should preserve cached result text: {main_text:?}"
+        "text-neutral REF \\d should compute while remaining REF gaps preserve cached text: {main_text:?}"
     );
 }
 
