@@ -639,8 +639,8 @@ Implementation:
   malformed formula switch syntax reporting `UnsupportedSwitch`,
   and literal `DEFINED(expr)` checks for parser-local literal expressions, literal
   quoted/unquoted literal `QUOTE`, literal `IF` finite numeric/text comparisons, literal `COMPARE`
-  finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields, and literal quoted or single-token
-  `SET` bookmark assignments with field-result format switches feeding later
+  finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields, and literal quoted or unquoted
+  `SET` bookmark assignments, including multi-token unquoted payloads, with field-result format switches feeding later
   plain `REF`/direct bookmark references and source-order bookmark-backed
   `NEXTIF`/`SKIPIF` comparisons, plus literal `NEXT` and literal or source-order
   bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with field-result format
@@ -670,7 +670,7 @@ Implementation:
   malformed formula switch syntax reporting `UnsupportedSwitch`,
   quoted/unquoted literal `QUOTE`, literal `IF` finite numeric/text comparisons, literal
   `COMPARE` finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields, and
-  literal quoted or single-token `SET` bookmark assignments with field-result
+  literal quoted or unquoted `SET` bookmark assignments, including multi-token unquoted payloads, with field-result
   format switches feeding later plain `REF`/direct bookmark references and
   source-order bookmark-backed `NEXTIF`/`SKIPIF` comparisons, with malformed
   `SET` syntax reporting `UnsupportedSwitch`, plus literal `NEXT` and literal
@@ -734,8 +734,8 @@ Acceptance:
   invalid literal `COMPARE` syntax reporting `UnsupportedSwitch`,
   explicit-default `FILLIN`/`ASK`
   prompt fields with field-result format switches, malformed prompt field syntax
-  reporting `UnsupportedSwitch`, and literal quoted or single-token `SET` bookmark
-  assignments feeding later plain `REF`/direct bookmark references and
+  reporting `UnsupportedSwitch`, and literal quoted or unquoted `SET` bookmark
+  assignments, including multi-token unquoted payloads, feeding later plain `REF`/direct bookmark references and
   source-order bookmark-backed `NEXTIF`/`SKIPIF` comparisons, malformed
   `SET` syntax reporting `UnsupportedSwitch`,
   malformed merge-control syntax reporting `UnsupportedSwitch`,
@@ -1188,8 +1188,8 @@ open and edit the chart data.
   malformed formula switch syntax reporting `UnsupportedSwitch`,
   and literal `DEFINED(expr)` checks for parser-local literal expressions, literal
   quoted/unquoted literal `QUOTE`, literal `IF` finite numeric/text comparisons, literal `COMPARE`
-  finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields, and literal quoted or single-token
-  `SET` bookmark assignments with field-result format switches feeding later
+  finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields, and literal quoted or unquoted
+  `SET` bookmark assignments, including multi-token unquoted payloads, with field-result format switches feeding later
   plain `REF`/direct bookmark references and source-order bookmark-backed
   `NEXTIF`/`SKIPIF` comparisons, plus literal `NEXT` and literal or source-order
   bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with field-result format
@@ -1220,7 +1220,7 @@ open and edit the chart data.
   literal `DEFINED(expr)` checks for parser-local literal expressions,
   quoted/unquoted literal `QUOTE`, literal `IF` comparisons, literal `COMPARE` results,
   explicit-default `FILLIN`/`ASK` prompt fields, and
-  literal quoted or single-token `SET` bookmark assignments with field-result
+  literal quoted or unquoted `SET` bookmark assignments, including multi-token unquoted payloads, with field-result
   format switches feeding later plain `REF`/direct bookmark references and
   source-order bookmark-backed `NEXTIF`/`SKIPIF` comparisons, with malformed
   `SET` syntax reporting `UnsupportedSwitch`, plus literal `NEXT` and literal

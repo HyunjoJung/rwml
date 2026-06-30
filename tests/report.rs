@@ -1229,7 +1229,7 @@ fn compact_prompt_default_diagnostics_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" FILLIN &quot;Client?&quot; \d&quot;Acme&quot; "><w:r><w:t>stale compact fillin</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FILLIN &quot;Department?&quot; \dops \* Upper "><w:r><w:t>stale compact unquoted fillin</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" ASK ClientCode &quot;Client code?&quot; \d&quot;ac-42&quot; "><w:r><w:t>cached compact ask</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF ClientCode \* Upper "><w:r><w:t>stale compact ask ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" FILLIN &quot;Client?&quot; \d&quot;Acme&quot; "><w:r><w:t>stale compact fillin</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FILLIN &quot;Department?&quot; \dops \* Upper "><w:r><w:t>stale compact unquoted fillin</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" ASK ClientCode &quot;Client code?&quot; \d&quot;ac-42&quot; "><w:r><w:t>cached compact ask</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF ClientCode \* Upper "><w:r><w:t>stale compact ask ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FILLIN &quot;Project?&quot; \d Client 42 \* Upper "><w:r><w:t>stale multi-token fillin</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" ASK ClientName &quot;Client name?&quot; \d Client 42 "><w:r><w:t>cached multi-token ask</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF ClientName \* Upper "><w:r><w:t>stale multi-token ask ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -5726,7 +5726,7 @@ fn report_compact_prompt_defaults_are_supported() {
     let doc = Document::open(&compact_prompt_default_diagnostics_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 4);
+    assert_eq!(fields.len(), 7);
     assert_eq!(fields[0].kind, FieldKind::Dynamic("FILLIN".to_string()));
     assert_eq!(fields[0].instruction, r#"FILLIN "Client?" \d"Acme""#);
     assert_eq!(fields[0].computed_result.as_deref(), Some("Acme"));
@@ -5745,15 +5745,30 @@ fn report_compact_prompt_defaults_are_supported() {
     assert_eq!(fields[3].kind, FieldKind::Ref);
     assert_eq!(fields[3].instruction, r#"REF ClientCode \* Upper"#);
     assert_eq!(fields[3].computed_result.as_deref(), Some("AC-42"));
+    assert_eq!(fields[4].kind, FieldKind::Dynamic("FILLIN".to_string()));
+    assert_eq!(
+        fields[4].instruction,
+        r#"FILLIN "Project?" \d Client 42 \* Upper"#
+    );
+    assert_eq!(fields[4].computed_result.as_deref(), Some("CLIENT 42"));
+    assert_eq!(fields[5].kind, FieldKind::Dynamic("ASK".to_string()));
+    assert_eq!(
+        fields[5].instruction,
+        r#"ASK ClientName "Client name?" \d Client 42"#
+    );
+    assert_eq!(fields[5].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[6].kind, FieldKind::Ref);
+    assert_eq!(fields[6].instruction, r#"REF ClientName \* Upper"#);
+    assert_eq!(fields[6].computed_result.as_deref(), Some("CLIENT 42"));
 
     let report = doc.report();
-    assert_eq!(report.features.fields, 4);
+    assert_eq!(report.features.fields, 7);
     assert_eq!(
         report.features.field_kinds,
         vec![
-            field_kind_count(FieldKind::Dynamic("FILLIN".to_string()), 2),
-            field_kind_count(FieldKind::Dynamic("ASK".to_string()), 1),
-            field_kind_count(FieldKind::Ref, 1),
+            field_kind_count(FieldKind::Dynamic("FILLIN".to_string()), 3),
+            field_kind_count(FieldKind::Dynamic("ASK".to_string()), 2),
+            field_kind_count(FieldKind::Ref, 2),
         ]
     );
     assert!(report.features.unsupported_field_kinds.is_empty());

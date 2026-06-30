@@ -322,13 +322,16 @@ The first public maturity release should meet these requirements.
   deterministic literal `COMPARE` fields computed as `1`/`0` for finite
   decimal/scientific numeric operands and quoted
   `?`/`*` wildcard equality/inequality, deterministic `FILLIN` fields with
-  quoted or single-token prompts and explicit `\d` default responses rendered
-  without simulating prompts, deterministic `ASK name prompt \d default` fields
-  with quoted or single-token prompt/default literals rendered as hidden output
+  quoted or single-token prompts and quoted or unquoted explicit `\d` default
+  responses, including multi-token unquoted defaults, rendered without
+  simulating prompts, deterministic `ASK name prompt \d default` fields
+  with quoted or single-token prompts and quoted or unquoted default literals
+  rendered as hidden output
   while feeding later plain `REF`/direct bookmark references and source-order
   bookmark-backed `NEXTIF`/`SKIPIF` comparisons, malformed
   prompt field syntax reports `UnsupportedSwitch`, and deterministic literal
-  `SET name "value"` or single-token `SET name value` fields with
+  quoted or unquoted `SET name value` fields, including multi-token unquoted
+  payloads, with
   field-result format switches rendered as hidden output while feeding later
   plain `REF`/direct bookmark references and source-order bookmark-backed
   `NEXTIF`/`SKIPIF` comparisons, malformed `SET` syntax reports

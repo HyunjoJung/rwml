@@ -138,7 +138,8 @@ Initial status:
   `REF`, `PAGEREF`, `NOTEREF`, `TC`, `SEQ`, document-info/date/stat fields,
   dynamic/control fields including deterministic literal arithmetic formula
   fields, literal `QUOTE`, literal `IF` comparisons, literal `COMPARE` results,
-  explicit-default `FILLIN`/`ASK` prompt fields, and literal quoted or single-token `SET` bookmark assignments feeding later plain `REF`/direct
+  explicit-default `FILLIN`/`ASK` prompt fields, and literal quoted or unquoted `SET` bookmark assignments, including multi-token
+  unquoted payloads, feeding later plain `REF`/direct
   bookmark references,
   malformed `SET` syntax reporting `UnsupportedSwitch`,
   inserted-content fields, mail-merge helper fields, reference/index fields,
@@ -212,7 +213,7 @@ Initial status:
   deterministic literal `IF` fields for numeric comparisons and quoted string
   equality/inequality, deterministic literal `COMPARE` fields returning `1`/`0`
   including quoted `?`/`*` wildcard equality/inequality,
-  deterministic literal `SET name "value"` or single-token `SET name value` fields with
+  deterministic literal quoted or unquoted `SET name value` fields, including multi-token unquoted payloads, with
   field-result format switches rendered as hidden output while
   feeding later plain `REF`/direct bookmark references and source-order
   bookmark-backed `NEXTIF`/`SKIPIF` comparisons,
@@ -329,15 +330,16 @@ Initial status:
   `UnsupportedSwitch`, deterministic literal `COMPARE` fields compute
   `1`/`0` results for finite decimal/scientific numeric operands and either-side
   quoted `?`/`*` wildcard equality/inequality, deterministic `FILLIN` fields
-  with quoted or single-token prompts and explicit `\d` default responses
-  rendered without simulating prompts, deterministic
-  `ASK name prompt \d default` fields with quoted or single-token
-  prompt/default literals and field-result format switches rendered as hidden
+  with quoted or single-token prompts and quoted or unquoted explicit `\d`
+  default responses, including multi-token unquoted defaults, rendered without
+  simulating prompts, deterministic
+  `ASK name prompt \d default` fields with quoted or single-token prompts,
+  quoted or unquoted default literals, and field-result format switches rendered as hidden
   output while feeding later plain `REF`/direct bookmark references and
   source-order bookmark-backed `NEXTIF`/`SKIPIF` comparisons, malformed
   prompt field syntax reports
   `UnsupportedSwitch`, and
-  deterministic literal `SET name "value"` or single-token `SET name value` fields with
+  deterministic literal quoted or unquoted `SET name value` fields, including multi-token unquoted payloads, with
   field-result format switches render as hidden output while
   feeding later plain `REF`/direct bookmark references and source-order
   bookmark-backed `NEXTIF`/`SKIPIF` comparisons,
@@ -839,12 +841,12 @@ Initial status:
   malformed literal `IF` syntax reports `UnsupportedSwitch`,
   and deterministic literal
   `COMPARE` fields compute `1`/`0` results for finite decimal/scientific numeric operands and either-side quoted `?`/`*` wildcard equality/inequality,
-  deterministic `FILLIN` fields with quoted or single-token prompts and explicit `\d` default responses render without simulating prompts,
-  deterministic `ASK name prompt \d default` fields with quoted or single-token prompt/default literals and field-result format
+  deterministic `FILLIN` fields with quoted or single-token prompts and quoted or unquoted explicit `\d` default responses, including multi-token unquoted defaults, render without simulating prompts,
+  deterministic `ASK name prompt \d default` fields with quoted or single-token prompts, quoted or unquoted default literals, and field-result format
   switches render as hidden output while feeding later plain `REF`/direct bookmark references
   and source-order bookmark-backed `NEXTIF`/`SKIPIF` comparisons,
   malformed prompt field syntax reports `UnsupportedSwitch`,
-  and deterministic literal `SET name "value"` or single-token `SET name value` fields with
+  and deterministic literal quoted or unquoted `SET name value` fields, including multi-token unquoted payloads, with
   field-result format switches render as hidden output while
   feeding later plain `REF`/direct bookmark references and source-order
   bookmark-backed `NEXTIF`/`SKIPIF` comparisons,

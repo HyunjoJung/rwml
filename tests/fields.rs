@@ -624,7 +624,7 @@ fn prompt_default_field_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" FILLIN &quot;Client?&quot; \d &quot;Acme&quot; "><w:r><w:t>stale fillin</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FILLIN &quot;Department?&quot; \d &quot;ops&quot; \* Upper "><w:r><w:t>stale formatted fillin</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" ASK ClientCode &quot;Client code?&quot; \d &quot;ac-42&quot; \o "><w:r><w:t>cached ask default</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF ClientCode \* Upper "><w:r><w:t>stale ask ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" FILLIN &quot;Client?&quot; \d &quot;Acme&quot; "><w:r><w:t>stale fillin</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FILLIN &quot;Department?&quot; \d &quot;ops&quot; \* Upper "><w:r><w:t>stale formatted fillin</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" ASK ClientCode &quot;Client code?&quot; \d &quot;ac-42&quot; \o "><w:r><w:t>cached ask default</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF ClientCode \* Upper "><w:r><w:t>stale ask ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FILLIN &quot;Project?&quot; \d Client 42 \* Upper "><w:r><w:t>stale multi-token fillin</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" ASK ClientName &quot;Client name?&quot; \d Client 42 \o "><w:r><w:t>cached multi-token ask default</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF ClientName \* Upper "><w:r><w:t>stale multi-token ask ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -5508,7 +5508,7 @@ fn docx_prompt_fields_compute_explicit_defaults() {
     let doc = Document::open(&prompt_default_field_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 4);
+    assert_eq!(fields.len(), 7);
     assert_eq!(fields[0].kind, FieldKind::Dynamic("FILLIN".to_string()));
     assert_eq!(fields[0].instruction, r#"FILLIN "Client?" \d "Acme""#);
     assert_eq!(fields[0].result, "stale fillin");
@@ -5531,6 +5531,24 @@ fn docx_prompt_fields_compute_explicit_defaults() {
     assert_eq!(fields[3].instruction, r#"REF ClientCode \* Upper"#);
     assert_eq!(fields[3].result, "stale ask ref");
     assert_eq!(fields[3].computed_result.as_deref(), Some("AC-42"));
+    assert_eq!(fields[4].kind, FieldKind::Dynamic("FILLIN".to_string()));
+    assert_eq!(
+        fields[4].instruction,
+        r#"FILLIN "Project?" \d Client 42 \* Upper"#
+    );
+    assert_eq!(fields[4].result, "stale multi-token fillin");
+    assert_eq!(fields[4].computed_result.as_deref(), Some("CLIENT 42"));
+    assert_eq!(fields[5].kind, FieldKind::Dynamic("ASK".to_string()));
+    assert_eq!(
+        fields[5].instruction,
+        r#"ASK ClientName "Client name?" \d Client 42 \o"#
+    );
+    assert_eq!(fields[5].result, "cached multi-token ask default");
+    assert_eq!(fields[5].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[6].kind, FieldKind::Ref);
+    assert_eq!(fields[6].instruction, r#"REF ClientName \* Upper"#);
+    assert_eq!(fields[6].result, "stale multi-token ask ref");
+    assert_eq!(fields[6].computed_result.as_deref(), Some("CLIENT 42"));
 
     let report = doc.report();
     assert!(report.features.unsupported_field_kinds.is_empty());
@@ -5538,14 +5556,20 @@ fn docx_prompt_fields_compute_explicit_defaults() {
 
     let main_text = doc.main_text();
     assert!(
-        main_text.contains("Acme") && main_text.contains("OPS") && main_text.contains("AC-42"),
+        main_text.contains("Acme")
+            && main_text.contains("OPS")
+            && main_text.contains("AC-42")
+            && main_text.contains("CLIENT 42"),
         "computed prompt defaults should appear in main text: {main_text:?}"
     );
     assert!(
         !main_text.contains("stale fillin")
             && !main_text.contains("stale formatted fillin")
             && !main_text.contains("cached ask default")
-            && !main_text.contains("stale ask ref"),
+            && !main_text.contains("stale ask ref")
+            && !main_text.contains("stale multi-token fillin")
+            && !main_text.contains("cached multi-token ask default")
+            && !main_text.contains("stale multi-token ask ref"),
         "computed prompt defaults should replace stale cached text: {main_text:?}"
     );
 }

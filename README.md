@@ -496,9 +496,10 @@ malformed literal `IF` syntax reports `UnsupportedSwitch`,
 deterministic literal `COMPARE` fields compute `1`/`0` results for finite
 decimal/scientific numeric operands and either-side quoted `?`/`*` wildcard
 equality/inequality, deterministic `FILLIN` fields with quoted or single-token
-prompts and explicit `\d` default responses render those defaults without
-simulating prompts, deterministic `ASK name prompt \d default` fields with
-quoted or single-token prompt/default literals and field-result format switches
+prompts and quoted or unquoted explicit `\d` default responses, including
+multi-token unquoted defaults, render those defaults without simulating prompts,
+deterministic `ASK name prompt \d default` fields with quoted or single-token
+prompts, quoted or unquoted default literals, and field-result format switches
 render as hidden output while seeding later plain `REF`/direct bookmark
 references and source-order bookmark-backed `NEXTIF`/`SKIPIF` comparisons,
 malformed prompt field syntax reports `UnsupportedSwitch`, and deterministic literal
@@ -704,7 +705,8 @@ dynamic/control fields beyond deterministic literal arithmetic/comparison/scalar
 formula fields,
 literal `QUOTE`, literal `IF` comparisons, literal `COMPARE` results,
 explicit-default `FILLIN`/`ASK` prompt fields, and
-literal quoted or single-token `SET` bookmark assignments feeding later plain
+literal quoted or unquoted `SET` bookmark assignments, including multi-token
+unquoted payloads, feeding later plain
 `REF`/direct bookmark references and source-order bookmark-backed
 `NEXTIF`/`SKIPIF` comparisons,
 malformed `SET` syntax reporting `UnsupportedSwitch`, inserted-content

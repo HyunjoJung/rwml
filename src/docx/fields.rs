@@ -1857,7 +1857,7 @@ mod tests {
     }
 
     #[test]
-    fn prompt_defaults_accept_unquoted_single_tokens() {
+    fn prompt_defaults_accept_unquoted_literal_tokens() {
         assert_eq!(
             computed_dynamic_result(r#"FILLIN "Client?" \d Acme"#).as_deref(),
             Some("Acme")
@@ -1879,6 +1879,23 @@ mod tests {
         assert_eq!(
             field_bookmarks.get("ClientCode").map(String::as_str),
             Some("ac-42")
+        );
+
+        assert_eq!(
+            computed_dynamic_result(r#"FILLIN "Project?" \d Client 42 \* Upper"#).as_deref(),
+            Some("CLIENT 42")
+        );
+        assert_eq!(
+            computed_ask_result(
+                r#"ASK ClientName "Client name?" \d Client 42"#,
+                &mut field_bookmarks,
+            )
+            .as_deref(),
+            Some("")
+        );
+        assert_eq!(
+            field_bookmarks.get("ClientName").map(String::as_str),
+            Some("Client 42")
         );
     }
 

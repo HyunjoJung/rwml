@@ -2518,7 +2518,8 @@ pub(crate) fn prompt_field_syntax(instruction: &str) -> Option<PromptFieldSyntax
     None
 }
 
-fn fill_in_field_syntax<'a>(mut parts: impl Iterator<Item = &'a str>) -> Option<PromptFieldSyntax> {
+fn fill_in_field_syntax<'a>(parts: impl Iterator<Item = &'a str>) -> Option<PromptFieldSyntax> {
+    let mut parts = parts.peekable();
     let mut default = None;
     let mut text_format = None;
     let mut ask_once = false;
@@ -2552,7 +2553,8 @@ fn fill_in_field_syntax<'a>(mut parts: impl Iterator<Item = &'a str>) -> Option<
     })
 }
 
-fn ask_field_syntax<'a>(mut parts: impl Iterator<Item = &'a str>) -> Option<PromptFieldSyntax> {
+fn ask_field_syntax<'a>(parts: impl Iterator<Item = &'a str>) -> Option<PromptFieldSyntax> {
+    let mut parts = parts.peekable();
     let bookmark = field_identifier_token(parts.next()?)?.to_string();
     field_non_empty_non_switch_literal_token(parts.next()?)?;
     let mut default = None;
@@ -2581,18 +2583,37 @@ fn ask_field_syntax<'a>(mut parts: impl Iterator<Item = &'a str>) -> Option<Prom
 
 fn prompt_default_switch<'a>(
     part: &str,
-    parts: &mut impl Iterator<Item = &'a str>,
+    parts: &mut std::iter::Peekable<impl Iterator<Item = &'a str>>,
     default: &mut Option<String>,
 ) -> bool {
     let value = if part.eq_ignore_ascii_case("\\d") {
-        parts.next().and_then(field_non_switch_literal_token)
+        prompt_default_literal(parts)
     } else {
-        strip_ascii_switch_prefix(part, "\\d").and_then(field_non_switch_literal_token)
+        strip_ascii_switch_prefix(part, "\\d")
+            .and_then(field_non_switch_literal_token)
+            .map(str::to_string)
     };
     let Some(value) = value else {
         return false;
     };
-    default.replace(value.to_string()).is_none()
+    default.replace(value).is_none()
+}
+
+fn prompt_default_literal<'a>(
+    parts: &mut std::iter::Peekable<impl Iterator<Item = &'a str>>,
+) -> Option<String> {
+    let first = parts.next()?;
+    if let Some(value) = field_quoted_literal_token(first) {
+        return Some(value.to_string());
+    }
+    let mut values = vec![field_non_switch_literal_token(first)?];
+    while let Some(part) = parts.peek().copied() {
+        if part.starts_with('\\') {
+            break;
+        }
+        values.push(field_non_switch_literal_token(parts.next()?)?);
+    }
+    Some(values.join(" "))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
