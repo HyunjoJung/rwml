@@ -1493,7 +1493,7 @@ fn formula_table_nested_expression_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:tc><w:p><w:r><w:t>4</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>6</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = IF(SUM(LEFT)&gt;=10,10,0) "><w:r><w:t>stale nested if</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl><w:tbl><w:tr><w:tc><w:p><w:r><w:t>1</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>3</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>3</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = AND(SUM(LEFT)&lt;10,SUM(ABOVE)&gt;=2) "><w:r><w:t>stale nested and</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:r><w:t>6</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:tbl><w:tr><w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>4</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>6</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>8</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:fldSimple w:instr=" = ROUND(AVERAGE(A1:B2),1) "><w:r><w:t>stale nested round</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p/></w:tc></w:tr></w:tbl><w:tbl><w:tr><w:tc><w:p><w:r><w:t>1</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = IF(SUM(LEFT,RIGHT;ABOVE)&gt;0,1,0) "><w:r><w:t>cached mixed nested table expression</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:tc><w:p><w:r><w:t>4</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>6</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = IF(SUM(LEFT)&gt;=10,10,0) "><w:r><w:t>stale nested if</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl><w:tbl><w:tr><w:tc><w:p><w:r><w:t>1</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>3</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>3</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = AND(SUM(LEFT)&lt;10,SUM(ABOVE)&gt;=2) "><w:r><w:t>stale nested and</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:r><w:t>6</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:tbl><w:tr><w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>4</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>6</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>8</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:fldSimple w:instr=" = ROUND(AVERAGE(A1:B2),1) "><w:r><w:t>stale nested round</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p/></w:tc></w:tr></w:tbl><w:tbl><w:tr><w:tc><w:p><w:r><w:t>1</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = IF(SUM(LEFT,RIGHT;ABOVE)&gt;0,1,0) "><w:r><w:t>cached mixed nested table expression</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:tbl><w:tr><w:tc><w:p><w:r><w:t>4</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>6</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(LEFT,1) "><w:r><w:t>stale table literal sum</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl><w:tbl><w:tr><w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>3</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = ROUND(SUM(LEFT,1),0) "><w:r><w:t>stale nested literal round</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl><w:tbl><w:tr><w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>4</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(A1:B1,10) "><w:r><w:t>stale table range literal sum</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
         ),
     ])
 }
@@ -8614,6 +8614,17 @@ fn docx_formula_fields_compute_nested_table_reference_expressions() {
             "cached mixed nested table expression",
             None,
         ),
+        (r#"= SUM(LEFT,1)"#, "stale table literal sum", Some("11")),
+        (
+            r#"= ROUND(SUM(LEFT,1),0)"#,
+            "stale nested literal round",
+            Some("6"),
+        ),
+        (
+            r#"= SUM(A1:B1,10)"#,
+            "stale table range literal sum",
+            Some("16"),
+        ),
     ];
 
     assert_eq!(fields.len(), expected.len());
@@ -8651,7 +8662,10 @@ fn docx_formula_fields_compute_nested_table_reference_expressions() {
     assert!(
         !main_text.contains("stale nested if")
             && !main_text.contains("stale nested and")
-            && !main_text.contains("stale nested round"),
+            && !main_text.contains("stale nested round")
+            && !main_text.contains("stale table literal sum")
+            && !main_text.contains("stale nested literal round")
+            && !main_text.contains("stale table range literal sum"),
         "computed nested table-reference formulas should replace stale cached text: {main_text:?}"
     );
 }

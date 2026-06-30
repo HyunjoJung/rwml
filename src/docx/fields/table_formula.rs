@@ -831,11 +831,10 @@ fn table_formula_expression_is_span_safe(
                         continue;
                     }
                 }
-                if let Some(arguments) = table_formula_arguments(&inner) {
-                    if !arguments
-                        .iter()
-                        .all(|argument| table_formula_argument_is_span_safe(*argument, rows, row))
-                    {
+                if let Some(safe) =
+                    table_formula_call_arguments_are_span_safe(&inner, rows, row, col)
+                {
+                    if !safe {
                         return false;
                     }
                 } else if !table_formula_expression_is_span_safe(&inner, rows, row, col) {
@@ -1183,40 +1182,60 @@ fn computed_table_formula_call_value(
     row: usize,
     col: usize,
 ) -> Option<f64> {
-    let arguments = table_formula_arguments(expression)?;
-    let values = table_formula_values(rows, row, col, &arguments)?;
+    let values = table_formula_call_argument_values(expression, rows, row, col)?;
     if values.is_empty() {
         return None;
     }
     eval_formula_function(&function.to_ascii_uppercase(), &values)
 }
 
-fn table_formula_arguments(expression: &str) -> Option<Vec<TableFormulaArgument>> {
-    if expression.trim().ends_with([',', ';']) {
-        return None;
-    }
-    let mut arguments = Vec::new();
-    let mut separator = None;
-    for raw in expression.split_inclusive([',', ';']) {
-        let (part, current_separator) = match raw.chars().last() {
-            Some(ch @ (',' | ';')) => (&raw[..raw.len() - ch.len_utf8()], Some(ch)),
-            _ => (raw, None),
-        };
-        let argument = table_formula_argument(part.trim())?;
-        if arguments.contains(&argument) {
-            return None;
-        }
-        arguments.push(argument);
-        if let Some(current_separator) = current_separator {
-            if separator
-                .replace(current_separator)
-                .is_some_and(|seen| seen != current_separator)
-            {
+fn table_formula_call_arguments_are_span_safe(
+    expression: &str,
+    rows: &[Vec<TableFormulaCell>],
+    row: usize,
+    col: usize,
+) -> Option<bool> {
+    let mut table_arguments = Vec::new();
+    for raw_argument in table_formula_top_level_argument_expressions(expression)? {
+        if let Some(argument) = table_formula_argument(raw_argument) {
+            if table_arguments.contains(&argument) {
                 return None;
             }
+            table_arguments.push(argument);
+            if !table_formula_argument_is_span_safe(argument, rows, row) {
+                return Some(false);
+            }
+        } else if !table_formula_expression_is_span_safe(raw_argument, rows, row, col) {
+            return Some(false);
         }
     }
-    (!arguments.is_empty()).then_some(arguments)
+    Some(true)
+}
+
+fn table_formula_call_argument_values(
+    expression: &str,
+    rows: &[Vec<TableFormulaCell>],
+    row: usize,
+    col: usize,
+) -> Option<Vec<f64>> {
+    let mut values = Vec::new();
+    let mut table_arguments = Vec::new();
+    for raw_argument in table_formula_top_level_argument_expressions(expression)? {
+        if let Some(argument) = table_formula_argument(raw_argument) {
+            if table_arguments.contains(&argument) {
+                return None;
+            }
+            table_arguments.push(argument);
+            push_table_formula_argument_values(rows, row, col, argument, &mut values)?;
+        } else {
+            let value = table_formula_expression_value(raw_argument, rows, row, col)?;
+            if !value.is_finite() {
+                return None;
+            }
+            values.push(value);
+        }
+    }
+    Some(values)
 }
 
 fn table_formula_argument(value: &str) -> Option<TableFormulaArgument> {
@@ -1300,19 +1319,6 @@ fn parse_a1_cell_reference(value: &str) -> Option<(usize, usize)> {
     }
     let row_index = row.parse::<usize>().ok()?.checked_sub(1)?;
     Some((row_index, col_index.checked_sub(1)?))
-}
-
-fn table_formula_values(
-    rows: &[Vec<TableFormulaCell>],
-    row: usize,
-    col: usize,
-    arguments: &[TableFormulaArgument],
-) -> Option<Vec<f64>> {
-    let mut values = Vec::new();
-    for argument in arguments {
-        push_table_formula_argument_values(rows, row, col, *argument, &mut values)?;
-    }
-    Some(values)
 }
 
 fn push_table_formula_argument_values(
