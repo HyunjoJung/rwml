@@ -645,7 +645,7 @@ Implementation:
   formula tails, formula result text-format tails such as `\* Upper`/`\* Lower`/`\* Caps`/`\* FirstCap`,
   and literal/table formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
   malformed formula switch syntax reporting `UnsupportedSwitch`,
-  and literal `DEFINED(expr)` checks for parser-local literal expressions, literal
+  and literal `DEFINED(expr)` checks for parser-local literal expressions and source-order prior bookmark names, literal
   quoted/unquoted literal `QUOTE`, literal `IF` finite numeric/text comparisons, literal `COMPARE`
   finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields, and literal quoted or unquoted
   `SET` bookmark assignments, including multi-token unquoted payloads, with field-result format switches feeding later
@@ -742,7 +742,7 @@ Acceptance:
   formula tails, formula result text-format tails such as `\* Upper`/`\* Lower`/`\* Caps`/`\* FirstCap`,
   and literal/table formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
   malformed formula switch syntax reporting `UnsupportedSwitch`,
-  and literal `DEFINED(expr)` checks for parser-local literal expressions,
+  and literal `DEFINED(expr)` checks for parser-local literal expressions and source-order prior bookmark names,
   quoted/unquoted literal `QUOTE`, malformed literal `QUOTE` syntax reporting
   `UnsupportedSwitch`, literal `IF` comparisons, malformed literal `IF`
   syntax reporting `UnsupportedSwitch`, literal `COMPARE` results,
@@ -1210,7 +1210,7 @@ open and edit the chart data.
   formula tails, formula result text-format tails such as `\* Upper`/`\* Lower`/`\* Caps`/`\* FirstCap`,
   and literal/table formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
   malformed formula switch syntax reporting `UnsupportedSwitch`,
-  and literal `DEFINED(expr)` checks for parser-local literal expressions, literal
+  and literal `DEFINED(expr)` checks for parser-local literal expressions and source-order prior bookmark names, literal
   quoted/unquoted literal `QUOTE`, literal `IF` finite numeric/text comparisons, literal `COMPARE`
   finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields, and literal quoted or unquoted
   `SET` bookmark assignments, including multi-token unquoted payloads, with field-result format switches feeding later
@@ -1244,7 +1244,7 @@ open and edit the chart data.
   formula result text-format tails such as `\* Upper`/`\* Lower`/`\* Caps`/`\* FirstCap`, and
   literal/table formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
   malformed formula switch syntax reporting `UnsupportedSwitch`,
-  literal `DEFINED(expr)` checks for parser-local literal expressions,
+  literal `DEFINED(expr)` checks for parser-local literal expressions and source-order prior bookmark names,
   quoted/unquoted literal `QUOTE`, literal `IF` comparisons, literal `COMPARE` results,
   explicit-default `FILLIN`/`ASK` prompt fields, and
   literal quoted or unquoted `SET` bookmark assignments, including multi-token unquoted payloads, with field-result

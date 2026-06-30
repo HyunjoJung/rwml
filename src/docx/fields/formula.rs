@@ -373,6 +373,11 @@ impl<'a> FormulaParser<'a> {
                         return None;
                     }
                     self.pos += 1;
+                    if formula_expression_is_single_identifier(&expression)
+                        && self.field_bookmark_exists(&expression)
+                    {
+                        return Some(1.0);
+                    }
                     let mut parser = FormulaParser::new(&expression, self.field_bookmarks);
                     return Some(parser.parse().is_some() as u8 as f64);
                 }
@@ -479,6 +484,11 @@ impl<'a> FormulaParser<'a> {
             .ok()
             .filter(|value| value.is_finite())
     }
+
+    fn field_bookmark_exists(&self, name: &str) -> bool {
+        self.field_bookmarks
+            .is_some_and(|field_bookmarks| field_bookmarks.contains_key(name))
+    }
 }
 
 fn is_formula_identifier_start(ch: char) -> bool {
@@ -487,6 +497,14 @@ fn is_formula_identifier_start(ch: char) -> bool {
 
 fn is_formula_identifier_continue(ch: char) -> bool {
     ch.is_ascii_alphanumeric() || ch == '_'
+}
+
+fn formula_expression_is_single_identifier(expression: &str) -> bool {
+    let mut chars = expression.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    is_formula_identifier_start(first) && chars.all(is_formula_identifier_continue)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

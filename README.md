@@ -474,7 +474,7 @@ deterministic literal arithmetic formula fields compute finite decimal/scientifi
 literal scalar numeric/logical functions (`ABS`, `AND`, `AVERAGE`, `COUNT`,
 `DEFINED`, `FALSE`, `IF`, `INT`, `MAX`, `MIN`, `MOD`, `NOT`, `OR`, `PRODUCT`,
 `ROUND`, `SIGN`, `SUM`, `TRUE`) with comma or semicolon argument separators,
-literal `DEFINED(expr)` checks for parser-local literal expressions, `+`, `-`, `*`, `/`, `^`, parentheses, unary signs,
+literal `DEFINED(expr)` checks for parser-local literal expressions and source-order prior bookmark names, `+`, `-`, `*`, `/`, `^`, parentheses, unary signs,
 literal comparison operators (`=`, `<>`, `<`, `<=`, `>`, `>=`), simple
 non-spanning table formulas over existing plain numeric cells and source-order
 prior computed formula-only cells, including direct A1/RnCn cell references

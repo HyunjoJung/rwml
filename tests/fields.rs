@@ -631,6 +631,23 @@ fn set_backed_formula_docx() -> Vec<u8> {
     ])
 }
 
+fn set_backed_defined_formula_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SET ClientTier &quot;Gold&quot; "><w:r><w:t>cached text set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = DEFINED(ClientTier) "><w:r><w:t>stale defined text set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = IF(DEFINED(ClientTier), 7, 9) "><w:r><w:t>stale defined branch</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = DEFINED(MissingTier) "><w:r><w:t>stale missing defined</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = ClientTier + 1 "><w:r><w:t>cached text arithmetic</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn set_backed_formula_identifier_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -6354,6 +6371,60 @@ fn docx_formula_fields_resolve_prior_numeric_set_bookmark_operands() {
             && main_text.contains("cached text formula")
             && !main_text.contains("stale set formula"),
         "computed SET-backed formula text should replace stale cached text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_formula_defined_resolves_prior_set_bookmark_names() {
+    let doc = Document::open(&set_backed_defined_formula_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 5);
+    assert_eq!(fields[0].kind, FieldKind::Dynamic("SET".to_string()));
+    assert_eq!(fields[0].instruction, r#"SET ClientTier "Gold""#);
+    assert_eq!(fields[0].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[1].kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(fields[1].instruction, r#"= DEFINED(ClientTier)"#);
+    assert_eq!(fields[1].result, "stale defined text set");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("1"));
+    assert_eq!(fields[2].kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(fields[2].instruction, r#"= IF(DEFINED(ClientTier), 7, 9)"#);
+    assert_eq!(fields[2].result, "stale defined branch");
+    assert_eq!(fields[2].computed_result.as_deref(), Some("7"));
+    assert_eq!(fields[3].kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(fields[3].instruction, r#"= DEFINED(MissingTier)"#);
+    assert_eq!(fields[3].result, "stale missing defined");
+    assert_eq!(fields[3].computed_result.as_deref(), Some("0"));
+    assert_eq!(fields[4].kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(fields[4].instruction, r#"= ClientTier + 1"#);
+    assert_eq!(fields[4].result, "cached text arithmetic");
+    assert_eq!(fields[4].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Dynamic("=".to_string()),
+            count: 1
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::NoComputedResult,
+            count: 1
+        }]
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("1\n7\n0")
+            && main_text.contains("cached text arithmetic")
+            && !main_text.contains("stale defined text set")
+            && !main_text.contains("stale defined branch")
+            && !main_text.contains("stale missing defined")
+            && !main_text.contains("cached text set"),
+        "DEFINED should detect prior bookmark names while text arithmetic stays cached: {main_text:?}"
     );
 }
 
