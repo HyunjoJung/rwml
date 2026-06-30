@@ -988,6 +988,23 @@ fn formula_table_reference_docx() -> Vec<u8> {
     ])
 }
 
+fn formula_table_cell_property_revision_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:tcPrChange w:id="1" w:author="rdoc" w:date="2026-06-30T00:00:00Z"><w:tcPr><w:gridSpan w:val="2"/></w:tcPr></w:tcPrChange></w:tcPr><w:p><w:r><w:t>3</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(LEFT) "><w:r><w:t>cached old span sum</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn formula_table_general_number_format_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -6677,6 +6694,28 @@ fn docx_formula_fields_compute_simple_table_references() {
             && !main_text.contains("stale right sum")
             && !main_text.contains("stale above sum"),
         "computed table-reference formulas should replace stale cached text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_table_formula_ignores_old_cell_property_revisions() {
+    let doc = Document::open(&formula_table_cell_property_revision_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(fields[0].instruction, r#"= SUM(LEFT)"#);
+    assert_eq!(fields[0].result, "cached old span sum");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("5"));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("5") && !main_text.contains("cached old span sum"),
+        "old table-cell property revisions must not suppress table formula computation: {main_text:?}"
     );
 }
 

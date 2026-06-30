@@ -426,6 +426,10 @@ fn read_table_formula_cell_props(r: &mut Xml<'_>) -> bool {
                     skip_subtree(r);
                     continue;
                 }
+                if name == b"tcPrChange" {
+                    skip_subtree(r);
+                    continue;
+                }
                 match name {
                     b"AlternateContent" => {
                         alternate_content_stack.push(AlternateContentBranchState {
