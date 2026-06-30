@@ -232,13 +232,13 @@ fn read_style_ref_paragraph(
                     b"t" => {
                         let run_text = read_text(r);
                         consumed_element = true;
-                        if !style_ref_in_field_result(&current) {
+                        if !style_ref_suppresses_source_text(&current) {
                             text.push_str(&run_text);
                         }
                     }
                     _ => {
                         if let Some(marker) = inline_marker_text(&e) {
-                            if !style_ref_in_field_result(&current) {
+                            if !style_ref_suppresses_source_text(&current) {
                                 text.push_str(marker);
                             }
                         }
@@ -272,7 +272,7 @@ fn read_style_ref_paragraph(
                     }
                     _ => {
                         if let Some(marker) = inline_marker_text(&e) {
-                            if !style_ref_in_field_result(&current) {
+                            if !style_ref_suppresses_source_text(&current) {
                                 text.push_str(marker);
                             }
                         }
@@ -380,14 +380,14 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
                     b"t" => {
                         let text = read_text(r);
                         consumed_element = true;
-                        if !style_ref_in_field_result(current) {
+                        if !style_ref_suppresses_source_text(current) {
                             paragraph_text.push_str(&text);
                             run_text.push_str(&text);
                         }
                     }
                     _ => {
                         if let Some(marker) = inline_marker_text(&e) {
-                            if !style_ref_in_field_result(current) {
+                            if !style_ref_suppresses_source_text(current) {
                                 paragraph_text.push_str(marker);
                                 run_text.push_str(marker);
                             }
@@ -419,7 +419,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
                     }
                     _ => {
                         if let Some(marker) = inline_marker_text(&e) {
-                            if !style_ref_in_field_result(current) {
+                            if !style_ref_suppresses_source_text(current) {
                                 paragraph_text.push_str(marker);
                                 run_text.push_str(marker);
                             }
@@ -626,10 +626,10 @@ fn style_ref_paragraph_number(
     })
 }
 
-fn style_ref_in_field_result(current: &Option<StyleRefScanField>) -> bool {
-    current
-        .as_ref()
-        .is_some_and(|field| field.phase == FieldPhase::Result)
+fn style_ref_suppresses_source_text(current: &Option<StyleRefScanField>) -> bool {
+    current.as_ref().is_some_and(|field| {
+        field.phase == FieldPhase::Result && is_style_ref_field_instruction(&field.instruction)
+    })
 }
 
 fn record_style_ref_field(
