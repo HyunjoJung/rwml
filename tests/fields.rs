@@ -12553,16 +12553,10 @@ fn docx_direct_bookmark_ref_gap_model_render_report_matches_document_reason_buck
     let expected_reasons = doc.report().features.unsupported_field_reasons;
     assert_eq!(
         expected_reasons,
-        vec![
-            FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::NoComputedResult,
-                count: 1,
-            },
-            FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::UnsupportedSwitch,
-                count: 1,
-            },
-        ]
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::NoComputedResult,
+            count: 2,
+        }]
     );
     let model = doc.model();
 
@@ -12597,6 +12591,62 @@ fn docx_note_ref_gap_model_render_report_matches_document_reason_buckets() {
         vec![rdoc::FieldKindCount {
             kind: FieldKind::NoteRef,
             count: 3,
+        }]
+    );
+    assert_eq!(
+        rendered.report.unsupported.unsupported_field_reasons,
+        expected_reasons
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn docx_toc_computed_fields_are_not_model_render_warnings() {
+    let doc = Document::open(&complex_toc_heading_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::Toc);
+    assert_eq!(
+        fields[0].computed_result.as_deref(),
+        Some("EXECUTIVE SUMMARY\n  RISKS")
+    );
+    assert!(doc.report().features.unsupported_field_kinds.is_empty());
+
+    let model = doc.model();
+    let rendered = rdoc::render_pdf_with_report(&model);
+
+    assert_eq!(rendered.report.unsupported.fields, 0);
+    assert!(rendered.report.unsupported.field_kinds.is_empty());
+    assert!(rendered
+        .report
+        .unsupported
+        .unsupported_field_reasons
+        .is_empty());
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn docx_toc_unsupported_switch_model_render_report_matches_document_reason_bucket() {
+    let doc = Document::open(&unsupported_toc_switch_docx()).expect("fixture opens");
+    let expected_reasons = doc.report().features.unsupported_field_reasons;
+    assert_eq!(
+        expected_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnsupportedSwitch,
+            count: 1,
+        }]
+    );
+    let model = doc.model();
+
+    let rendered = rdoc::render_pdf_with_report(&model);
+
+    assert_eq!(rendered.report.unsupported.fields, 1);
+    assert_eq!(
+        rendered.report.unsupported.field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Toc,
+            count: 1,
         }]
     );
     assert_eq!(

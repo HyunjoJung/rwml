@@ -8788,6 +8788,43 @@ fn report_toc_field_with_quoted_custom_style_switch_reports_no_computed_result()
     );
 }
 
+#[cfg(feature = "render")]
+#[test]
+fn report_toc_gap_model_render_report_matches_document_reason_buckets() {
+    let doc = Document::open(&toc_quoted_custom_style_no_result_diagnostics_docx())
+        .expect("fixture opens");
+    let expected_reasons = doc.report().features.unsupported_field_reasons;
+    assert_eq!(
+        expected_reasons,
+        vec![
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::NoComputedResult,
+                count: 2,
+            },
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::UnsupportedSwitch,
+                count: 2,
+            },
+        ]
+    );
+    let model = doc.model();
+
+    let rendered = rdoc::render_pdf_with_report(&model);
+
+    assert_eq!(rendered.report.unsupported.fields, 4);
+    assert_eq!(
+        rendered.report.unsupported.field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Toc,
+            count: 4,
+        }]
+    );
+    assert_eq!(
+        rendered.report.unsupported.unsupported_field_reasons,
+        expected_reasons
+    );
+}
+
 #[cfg(feature = "docx")]
 #[test]
 fn report_toc_field_warning_ignores_matched_custom_style_tocs() {
