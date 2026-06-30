@@ -2877,6 +2877,9 @@ mod tests {
     #[test]
     fn toc_entry_syntax_support_matches_tc_forms() {
         assert!(supports_toc_entry_field_syntax(r#"TC "Entry" \f A \l 2"#));
+        assert!(supports_toc_entry_field_syntax(
+            r#"TC "Entry" \f A \l 2 \* Upper"#
+        ));
         assert!(supports_toc_entry_field_syntax(r#"TC Entry \n"#));
         assert!(!supports_toc_entry_field_syntax(r#"TC "Entry" \l "2"#));
     }

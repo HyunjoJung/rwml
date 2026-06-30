@@ -1543,6 +1543,7 @@ pub(crate) struct TocEntryFieldSyntax {
     pub(crate) text: String,
     pub(crate) entry_type: Option<String>,
     pub(crate) level: u8,
+    pub(crate) text_format: Option<FieldTextFormat>,
 }
 
 pub(crate) fn toc_entry_field_syntax(instruction: &str) -> Option<TocEntryFieldSyntax> {
@@ -1559,6 +1560,7 @@ pub(crate) fn toc_entry_field_syntax(instruction: &str) -> Option<TocEntryFieldS
     let mut entry_type = None;
     let mut level = 1u8;
     let mut saw_level = false;
+    let mut text_format = None;
     while let Some(part) = parts.next() {
         if part.eq_ignore_ascii_case("\\f") {
             let value = parts.next_if(|next| !next.starts_with('\\'))?;
@@ -1591,12 +1593,16 @@ pub(crate) fn toc_entry_field_syntax(instruction: &str) -> Option<TocEntryFieldS
         if part.eq_ignore_ascii_case("\\n") {
             continue;
         }
+        if accept_field_text_format_syntax(part, &mut parts, &mut text_format)? {
+            continue;
+        }
         return None;
     }
     Some(TocEntryFieldSyntax {
         text,
         entry_type,
         level,
+        text_format,
     })
 }
 

@@ -4026,6 +4026,23 @@ fn toc_tc_field_switch_docx() -> Vec<u8> {
     ])
 }
 
+fn toc_tc_format_tail_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" TC &quot;manual entry&quot; \f m \l 2 \* Upper "><w:r><w:t>stale formatted tc</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TC &quot;other entry&quot; \f x \l 1 \* Caps "><w:r><w:t>stale other formatted tc</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TOC \f m "><w:r><w:t>stale formatted tc toc</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn toc_tc_unquoted_multi_token_text_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -13038,6 +13055,52 @@ fn docx_toc_field_with_tc_switch_computes_matching_tc_entries() {
     assert!(
         !main_text.contains("Other Entry"),
         "TOC \\f identifier should filter non-matching TC entries: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_toc_entry_applies_text_format_tail_to_marker_text() {
+    let doc = Document::open(&toc_tc_format_tail_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 3);
+    assert_eq!(fields[0].kind, FieldKind::TocEntry);
+    assert_eq!(
+        fields[0].instruction,
+        "TC \"manual entry\" \\f m \\l 2 \\* Upper"
+    );
+    assert_eq!(fields[0].result, "stale formatted tc");
+    assert_eq!(fields[0].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[1].kind, FieldKind::TocEntry);
+    assert_eq!(
+        fields[1].instruction,
+        "TC \"other entry\" \\f x \\l 1 \\* Caps"
+    );
+    assert_eq!(fields[1].computed_result.as_deref(), Some(""));
+
+    let toc = fields
+        .iter()
+        .find(|field| field.kind == FieldKind::Toc)
+        .expect("TOC field is parsed");
+    assert_eq!(toc.instruction, "TOC \\f m");
+    assert_eq!(toc.result, "stale formatted tc toc");
+    assert_eq!(toc.computed_result.as_deref(), Some("  MANUAL ENTRY"));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("MANUAL ENTRY")
+            && !main_text.contains("stale formatted tc")
+            && !main_text.contains("stale other formatted tc")
+            && !main_text.contains("stale formatted tc toc"),
+        "formatted TC marker fields should stay hidden and feed formatted TOC text: {main_text:?}"
+    );
+    assert!(
+        !main_text.contains("Other Entry") && !main_text.contains("Other entry"),
+        "TOC \\f should still filter non-matching formatted TC entries: {main_text:?}"
     );
 }
 

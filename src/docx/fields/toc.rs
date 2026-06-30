@@ -380,7 +380,7 @@ fn push_tc_entry(instruction: &str, bookmarks: &[String], entries: &mut Vec<TocE
     if let Some(spec) = toc_entry_field_syntax(instruction) {
         entries.push(TocEntry {
             level: spec.level,
-            text: spec.text,
+            text: apply_field_text_format(spec.text, spec.text_format),
             source: TocEntrySource::TcField,
             tc_type: spec.entry_type,
             sequence_identifier: None,
