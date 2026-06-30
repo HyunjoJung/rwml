@@ -1807,13 +1807,29 @@ fn count_docx_unsupported_field_reasons(
     let unsupported_page_ref_section_format_targets = document_xml
         .as_deref()
         .map(docx_page_ref_unsupported_section_format_targets);
+    let page_field_unsupported_display_formats = document_xml
+        .as_deref()
+        .map(crate::docx::page_field_unsupported_display_formats);
     let mut counts: Vec<FieldEvaluationReasonCount> = Vec::new();
+    let mut page_field_index = 0usize;
     for field in fields {
+        let page_field_unsupported_display_format = if field.kind == FieldKind::Page {
+            let unsupported = page_field_unsupported_display_formats
+                .as_ref()
+                .and_then(|formats| formats.get(page_field_index))
+                .copied()
+                .unwrap_or(false);
+            page_field_index += 1;
+            unsupported
+        } else {
+            false
+        };
         if let Some(reason) = unsupported_docx_field_reason(
             field,
             bookmark_names.as_ref(),
             note_ref_target_names.as_ref(),
             unsupported_page_ref_section_format_targets.as_ref(),
+            page_field_unsupported_display_format,
         ) {
             increment_field_evaluation_reason_count(&mut counts, reason);
         }
@@ -1838,9 +1854,13 @@ fn unsupported_docx_field_reason(
     bookmark_names: Option<&HashSet<String>>,
     note_ref_target_names: Option<&HashSet<String>>,
     unsupported_page_ref_section_format_targets: Option<&HashSet<String>>,
+    page_field_unsupported_display_format: bool,
 ) -> Option<FieldEvaluationReason> {
     if supports_field_evaluation(field) {
         return None;
+    }
+    if field.kind == FieldKind::Page && page_field_unsupported_display_format {
+        return Some(FieldEvaluationReason::UnsupportedSwitch);
     }
     if field.kind == FieldKind::PageRef {
         return Some(docx_page_ref_uncomputed_reason(

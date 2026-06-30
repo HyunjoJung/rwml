@@ -50,6 +50,19 @@ impl PageRefContext {
     pub(crate) fn page_field_position(&self, index: usize) -> Option<PageRefPosition> {
         self.page_field_positions.get(index).copied().flatten()
     }
+
+    pub(crate) fn page_field_uses_unsupported_display_format(&self, index: usize) -> bool {
+        self.page_field_position(index)
+            .is_some_and(|position| position.display_format == PageRefDisplayFormat::Unsupported)
+    }
+
+    pub(crate) fn page_field_unsupported_display_formats(&self) -> Vec<bool> {
+        self.page_field_positions
+            .iter()
+            .enumerate()
+            .map(|(index, _)| self.page_field_uses_unsupported_display_format(index))
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

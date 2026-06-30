@@ -99,6 +99,10 @@ pub(crate) fn supports_page_field_syntax(instruction: &str) -> bool {
     fields::supports_page_field_syntax(instruction)
 }
 
+pub(crate) fn page_field_unsupported_display_formats(xml: &str) -> Vec<bool> {
+    fields::page_ref_context(xml).page_field_unsupported_display_formats()
+}
+
 pub(crate) fn supports_section_field_syntax(instruction: &str) -> bool {
     fields::is_section_field_instruction(instruction)
 }
@@ -298,6 +302,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         file_size_bytes: Some(bytes.len()),
         ref_field_cursor: Default::default(),
         page_field_cursor: Default::default(),
+        last_page_field_unsupported_display_format: Default::default(),
         page_ref_field_cursor: Default::default(),
         note_ref_field_cursor: Default::default(),
         section_field_cursor: Default::default(),
@@ -810,6 +815,7 @@ fn read_hf_parts(
             file_size_bytes: properties.file_size_bytes,
             ref_field_cursor: Default::default(),
             page_field_cursor: Default::default(),
+            last_page_field_unsupported_display_format: Default::default(),
             page_ref_field_cursor: Default::default(),
             note_ref_field_cursor: Default::default(),
             section_field_cursor: Default::default(),
@@ -979,6 +985,7 @@ fn read_notes(
         file_size_bytes: properties.file_size_bytes,
         ref_field_cursor: Default::default(),
         page_field_cursor: Default::default(),
+        last_page_field_unsupported_display_format: Default::default(),
         page_ref_field_cursor: Default::default(),
         note_ref_field_cursor: Default::default(),
         section_field_cursor: Default::default(),

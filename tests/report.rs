@@ -361,6 +361,24 @@ fn page_unsupported_switch_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn page_unsupported_section_format_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/><w:pgNumType w:start="2" w:fmt="chicago"/></w:sectPr></w:pPr></w:p><w:p><w:fldSimple w:instr=" PAGE "><w:r><w:t>stale unsupported current page</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PAGE \* Arabic "><w:r><w:t>stale explicit current page</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn page_trusted_current_context_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -3924,6 +3942,65 @@ fn report_page_field_warning_distinguishes_unsupported_switches() {
             reason: FieldEvaluationReason::UnsupportedSwitch,
             count: 1,
         }]
+    );
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_page_field_warning_distinguishes_unsupported_section_format() {
+    let doc =
+        Document::open(&page_unsupported_section_format_diagnostics_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::Page);
+    assert_eq!(fields[0].instruction, "PAGE");
+    assert_eq!(fields[0].result, "stale unsupported current page");
+    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(fields[1].kind, FieldKind::Page);
+    assert_eq!(fields[1].instruction, "PAGE \\* Arabic");
+    assert_eq!(fields[1].result, "stale explicit current page");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("2"));
+
+    let report = doc.report();
+    assert_eq!(report.features.fields, 2);
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![field_kind_count(FieldKind::Page, 1)]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![field_reason_count(
+            FieldEvaluationReason::UnsupportedSwitch,
+            1
+        )]
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn report_page_unsupported_section_format_model_render_report_matches_document_reason_bucket() {
+    let doc =
+        Document::open(&page_unsupported_section_format_diagnostics_docx()).expect("fixture opens");
+    let expected_kinds = doc.report().features.unsupported_field_kinds;
+    let expected_reasons = doc.report().features.unsupported_field_reasons;
+
+    assert_eq!(expected_kinds, vec![field_kind_count(FieldKind::Page, 1)]);
+    assert_eq!(
+        expected_reasons,
+        vec![field_reason_count(
+            FieldEvaluationReason::UnsupportedSwitch,
+            1
+        )]
+    );
+
+    let rendered = rdoc::render_pdf_with_report(&doc.model());
+
+    assert_eq!(rendered.report.unsupported.fields, 1);
+    assert_eq!(rendered.report.unsupported.field_kinds, expected_kinds);
+    assert_eq!(
+        rendered.report.unsupported.unsupported_field_reasons,
+        expected_reasons
     );
 }
 

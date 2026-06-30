@@ -84,6 +84,7 @@ pub(crate) struct Ctx<'a> {
     pub file_size_bytes: Option<usize>,
     pub ref_field_cursor: std::cell::RefCell<usize>,
     pub page_field_cursor: std::cell::RefCell<usize>,
+    pub last_page_field_unsupported_display_format: std::cell::RefCell<Option<bool>>,
     pub page_ref_field_cursor: std::cell::RefCell<usize>,
     pub note_ref_field_cursor: std::cell::RefCell<usize>,
     pub section_field_cursor: std::cell::RefCell<usize>,
@@ -3503,7 +3504,7 @@ fn unsupported_simple_field_reason_hint(
     if let Some(reason) = unsupported_toc_entry_reason_hint(instruction) {
         return Some(reason);
     }
-    if let Some(reason) = unsupported_page_reason_hint(instruction) {
+    if let Some(reason) = unsupported_page_reason_hint(instruction, ctx) {
         return Some(reason);
     }
     if let Some(reason) = unsupported_reference_index_reason_hint(instruction) {
@@ -3644,13 +3645,25 @@ fn unsupported_toc_entry_reason_hint(instruction: &str) -> Option<FieldUnsupport
     ))
 }
 
-fn unsupported_page_reason_hint(instruction: &str) -> Option<FieldUnsupportedReason> {
+fn unsupported_page_reason_hint(
+    instruction: &str,
+    ctx: &Ctx<'_>,
+) -> Option<FieldUnsupportedReason> {
     if FieldKind::from_instruction(instruction) != FieldKind::Page {
         return None;
     }
-    Some(unsupported_syntax_field_reason_hint(
-        super::fields::supports_page_field_syntax(instruction),
-    ))
+    if !super::fields::supports_page_field_syntax(instruction) {
+        return Some(FieldUnsupportedReason::UnsupportedSwitch);
+    }
+    if ctx
+        .last_page_field_unsupported_display_format
+        .borrow()
+        .unwrap_or(false)
+    {
+        Some(FieldUnsupportedReason::UnsupportedSwitch)
+    } else {
+        Some(FieldUnsupportedReason::NoComputedResult)
+    }
 }
 
 fn unsupported_reference_index_reason_hint(instruction: &str) -> Option<FieldUnsupportedReason> {
@@ -3968,6 +3981,10 @@ fn computed_simple_field_result(
                     *cursor += 1;
                     index
                 };
+                ctx.last_page_field_unsupported_display_format.replace(Some(
+                    ctx.page_ref_context
+                        .page_field_uses_unsupported_display_format(index),
+                ));
                 ctx.page_ref_context.page_field_position(index)
             } else {
                 None
@@ -5364,6 +5381,7 @@ mod tests {
             file_size_bytes: None,
             ref_field_cursor: Default::default(),
             page_field_cursor: Default::default(),
+            last_page_field_unsupported_display_format: Default::default(),
             page_ref_field_cursor: Default::default(),
             note_ref_field_cursor: Default::default(),
             section_field_cursor: Default::default(),
@@ -5942,6 +5960,7 @@ mod tests {
             file_size_bytes: None,
             ref_field_cursor: Default::default(),
             page_field_cursor: Default::default(),
+            last_page_field_unsupported_display_format: Default::default(),
             page_ref_field_cursor: Default::default(),
             note_ref_field_cursor: Default::default(),
             section_field_cursor: Default::default(),
@@ -6017,6 +6036,7 @@ mod tests {
             file_size_bytes: None,
             ref_field_cursor: Default::default(),
             page_field_cursor: Default::default(),
+            last_page_field_unsupported_display_format: Default::default(),
             page_ref_field_cursor: Default::default(),
             note_ref_field_cursor: Default::default(),
             section_field_cursor: Default::default(),
@@ -6105,6 +6125,7 @@ mod tests {
             file_size_bytes: None,
             ref_field_cursor: Default::default(),
             page_field_cursor: Default::default(),
+            last_page_field_unsupported_display_format: Default::default(),
             page_ref_field_cursor: Default::default(),
             note_ref_field_cursor: Default::default(),
             section_field_cursor: Default::default(),
