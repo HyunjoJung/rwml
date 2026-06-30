@@ -622,7 +622,7 @@ fn table_formula_expression_is_row_local_span_safe(expression: &str) -> bool {
                             argument,
                             TableFormulaArgument::Direction(
                                 TableFormulaDirection::Left | TableFormulaDirection::Right
-                            )
+                            ) | TableFormulaArgument::CurrentRow
                         )
                     }) {
                         return false;
