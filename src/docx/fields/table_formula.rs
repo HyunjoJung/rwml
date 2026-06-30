@@ -1407,7 +1407,7 @@ fn push_table_formula_cell_number(cell: &TableFormulaCell, values: &mut Vec<f64>
     }
     let text = cell.text.trim();
     if text.is_empty() {
-        return Some(());
+        return None;
     }
     values.push(text.parse::<f64>().ok()?);
     Some(())

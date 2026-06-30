@@ -1090,6 +1090,23 @@ fn formula_table_header_formula_row_reference_docx() -> Vec<u8> {
     ])
 }
 
+fn formula_table_empty_included_cell_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:p/></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(LEFT) "><w:r><w:t>cached empty left</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>3</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>4</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(LEFT) "><w:r><w:t>stale numeric left</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>5</w:t></w:r></w:p></w:tc><w:tc><w:p/></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(ABOVE) "><w:r><w:t>cached empty above</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn formula_table_prior_computed_formula_source_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -7673,6 +7690,51 @@ fn docx_table_formula_below_skips_header_formula_rows() {
             && main_text.contains("cached skipped header formula")
             && !main_text.contains("stale header below formula row"),
         "header formula rows should not stop BELOW traversal: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_table_formula_empty_included_cells_stay_cached() {
+    let doc = Document::open(&formula_table_empty_included_cell_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let expected = [
+        (r#"= SUM(LEFT)"#, "cached empty left", None),
+        (r#"= SUM(LEFT)"#, "stale numeric left", Some("7")),
+        (r#"= SUM(ABOVE)"#, "cached empty above", None),
+    ];
+
+    assert_eq!(fields.len(), expected.len());
+    for (field, (instruction, stale, result)) in fields.iter().zip(expected) {
+        assert_eq!(field.kind, FieldKind::Dynamic("=".to_string()));
+        assert_eq!(field.instruction, instruction);
+        assert_eq!(field.result, stale);
+        assert_eq!(field.computed_result.as_deref(), result);
+    }
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Dynamic("=".to_string()),
+            count: 2
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::NoComputedResult,
+            count: 2
+        }]
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("cached empty left")
+            && main_text.contains("7")
+            && main_text.contains("cached empty above")
+            && !main_text.contains("stale numeric left"),
+        "present empty cells should keep positional formulas cached while numeric rows still compute: {main_text:?}"
     );
 }
 
