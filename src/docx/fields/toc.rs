@@ -168,7 +168,9 @@ fn read_toc_paragraph(
                             &e,
                             &mut current,
                             &bookmarks,
+                            sequence_counters,
                             &mut sequence_identifiers,
+                            &mut text,
                             entries,
                         );
                     }
@@ -184,11 +186,13 @@ fn read_toc_paragraph(
                     b"t" => {
                         let run_text = read_text(r);
                         consumed_element = true;
-                        let hidden_tc_result = current.iter().rev().any(|field| {
+                        let hidden_result = current.iter().rev().any(|field| {
                             field.phase == FieldPhase::Result
-                                && toc_entry_field_syntax(&field.instruction).is_some()
+                                && (toc_entry_field_syntax(&field.instruction).is_some()
+                                    || seq_identifier_from_instruction(Some(&field.instruction))
+                                        .is_some())
                         });
-                        if !hidden_tc_result {
+                        if !hidden_result {
                             text.push_str(&run_text);
                         }
                     }
@@ -236,7 +240,9 @@ fn read_toc_paragraph(
                             &e,
                             &mut current,
                             &bookmarks,
+                            sequence_counters,
                             &mut sequence_identifiers,
+                            &mut text,
                             entries,
                         );
                     }
@@ -318,11 +324,20 @@ fn apply_toc_fld_char(
     e: &BytesStart<'_>,
     current: &mut Vec<ComplexField>,
     bookmarks: &[String],
+    sequence_counters: &mut HashMap<String, i64>,
     sequence_identifiers: &mut Vec<String>,
+    text: &mut String,
     entries: &mut Vec<TocEntry>,
 ) {
     apply_complex_field_scan_fld_char(e, current, |field| {
-        if !push_tc_entry(&field.instruction, bookmarks, entries) {
+        if !push_tc_entry(&field.instruction, bookmarks, entries)
+            && !push_computed_toc_sequence_result(
+                Some(&field.instruction),
+                sequence_counters,
+                sequence_identifiers,
+                text,
+            )
+        {
             if let Some(identifier) = seq_identifier_from_instruction(Some(&field.instruction)) {
                 push_unique(sequence_identifiers, identifier);
             }

@@ -650,7 +650,8 @@ rendering as hidden output and unsupported `TC` marker syntax preserving cached
 text with `UnsupportedSwitch` diagnostics,
 `TOC \c` full-caption entries and `TOC \a` label/number-omitted caption-text
 entries from paragraphs containing matching `SEQ Identifier` fields, with
-simple dirty/stale `SEQ` caption numbers recomputed from source order,
+simple or common complex dirty/stale `SEQ` caption numbers recomputed from
+source order,
 deterministic TOC `\* Upper`/`\* Lower`/`\* Caps`/`\* FirstCap` field-result
 format switches, neutral TOC `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT`, and standalone `TOC \u` fields over explicit paragraph outline levels, plus
 `TOC \b` bookmark-scoped variants when the bookmark range is recoverable,
@@ -1003,8 +1004,8 @@ deterministic computation or precise cached-result diagnostics.
       `TC "Text"` markers with optional `\f` type identifiers and `\l` levels,
       `TOC \c` full-caption entries and `TOC \a` label/number-omitted
       caption-text entries from paragraphs containing matching
-      `SEQ Identifier` fields, with simple dirty/stale `SEQ` caption numbers
-      recomputed from source order,
+      `SEQ Identifier` fields, with simple or common complex dirty/stale `SEQ`
+      caption numbers recomputed from source order,
       standalone `TOC \u` explicit paragraph
       outline-level computation and `TOC \b` bookmark-scoped computation when
       the bookmark range is recoverable, including empty computed results for
