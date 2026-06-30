@@ -6,6 +6,7 @@ use quick_xml::Reader;
 use crate::annotation::{Revision, RevisionKind, RevisionView};
 use crate::text;
 
+use super::fields::computed_run_symbol_char;
 use super::xml_text::{
     inline_marker_text, read_text, skip_alternate_content_branch, skip_subtree,
     AlternateContentBranchState,
@@ -89,6 +90,9 @@ pub(crate) fn main_text_with_view(xml: &str, view: RevisionView) -> String {
             Ok(Event::Empty(e)) => {
                 if let Some(kind) = revision_kind(local(e.name().as_ref())) {
                     push_revision_text(&mut out, view, kind, "");
+                } else if let Some(ch) = revision_symbol_char(&e) {
+                    let text = ch.to_string();
+                    push_segment(&mut out, &text);
                 }
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
@@ -167,6 +171,8 @@ fn read_revision_text(r: &mut Xml<'_>, end_name: &[u8]) -> String {
             Ok(Event::Empty(e)) => {
                 if let Some(marker) = inline_marker_text(&e) {
                     text.push_str(marker);
+                } else if let Some(ch) = revision_symbol_char(&e) {
+                    text.push(ch);
                 }
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == end_name => {
@@ -183,6 +189,12 @@ fn read_revision_text(r: &mut Xml<'_>, end_name: &[u8]) -> String {
         }
     }
     text
+}
+
+fn revision_symbol_char(e: &BytesStart<'_>) -> Option<char> {
+    let value = attr_local_trimmed(e, b"char")?;
+    let font = attr_local_trimmed(e, b"font");
+    computed_run_symbol_char(font.as_deref(), &value)
 }
 
 fn push_revision_text(out: &mut String, view: RevisionView, kind: RevisionKind, value: &str) {

@@ -2,7 +2,7 @@
 
 use std::io::{Read, Write};
 
-use rdoc::{Block, CoreProperty, Document, NoteKind};
+use rdoc::{Block, CoreProperty, Document, NoteKind, RevisionKind, RevisionView};
 
 fn docx_fixture(parts: &[(&str, &str)]) -> Vec<u8> {
     let mut out = Vec::new();
@@ -988,6 +988,23 @@ fn tracked_revisions_docx() -> Vec<u8> {
     ])
 }
 
+fn symbol_tracked_revisions_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:p><w:r><w:t>Before</w:t><w:sym w:font="Symbol" w:char="F0B7"/><w:t>base</w:t></w:r><w:ins w:id="1" w:author="Alice"><w:r><w:t>Insert </w:t><w:sym w:font="Symbol" w:char="F0B7"/><w:t> keep</w:t></w:r></w:ins><w:del w:id="2" w:author="Bob"><w:r><w:delText>Delete </w:delText><w:sym w:font="Symbol" w:char="F0B7"/><w:delText> drop</w:delText></w:r></w:del><w:moveFrom w:id="3"><w:r><w:delText>From </w:delText><w:sym w:font="Symbol" w:char="F0B7"/><w:delText> old</w:delText></w:r></w:moveFrom><w:moveTo w:id="4"><w:r><w:t>To </w:t><mc:AlternateContent><mc:Choice Requires="wps"><w:sym w:font="Symbol" w:char="F0B7"/></mc:Choice><mc:Fallback><w:t>fallback</w:t></mc:Fallback></mc:AlternateContent><w:t> new</w:t></w:r></w:moveTo><w:r><w:t>After</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn tracked_note_revisions_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -1584,6 +1601,35 @@ fn fill_template_fields_rejects_duplicate_name() {
 
     assert!(err.to_string().contains("duplicate field name"), "{err}");
     assert!(doc.edited_parts().is_empty());
+}
+
+#[test]
+fn docx_revision_text_preserves_supported_symbols() {
+    let doc = Document::open(&symbol_tracked_revisions_docx()).expect("fixture opens");
+    let revisions = doc.revisions();
+
+    assert_eq!(revisions.len(), 4);
+    assert_eq!(revisions[0].kind, RevisionKind::Insertion);
+    assert_eq!(revisions[0].text, "Insert • keep");
+    assert_eq!(revisions[1].kind, RevisionKind::Deletion);
+    assert_eq!(revisions[1].text, "Delete • drop");
+    assert_eq!(revisions[2].kind, RevisionKind::MoveFrom);
+    assert_eq!(revisions[2].text, "From • old");
+    assert_eq!(revisions[3].kind, RevisionKind::MoveTo);
+    assert_eq!(revisions[3].text, "To • new");
+
+    assert_eq!(
+        doc.main_text_with_revision_view(RevisionView::Accepted),
+        "Before • base Insert • keep To • new After"
+    );
+    assert_eq!(
+        doc.main_text_with_revision_view(RevisionView::Original),
+        "Before • base Delete • drop From • old After"
+    );
+    assert_eq!(
+        doc.main_text_with_revision_view(RevisionView::Annotated),
+        "Before • base [+Insert • keep] [-Delete • drop] [~From • old->] [~->To • new] After"
+    );
 }
 
 #[test]
