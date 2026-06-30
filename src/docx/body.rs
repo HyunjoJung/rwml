@@ -564,6 +564,9 @@ fn read_section_page_number_start(r: &mut Xml<'_>) -> Option<u32> {
     let mut page_number_start = None;
     loop {
         match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                page_number_start = read_section_page_number_start_alternate_content(r);
+            }
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"pgNumType" =>
             {
@@ -578,10 +581,62 @@ fn read_section_page_number_start(r: &mut Xml<'_>) -> Option<u32> {
     page_number_start
 }
 
+fn read_section_page_number_start_alternate_content(r: &mut Xml<'_>) -> Option<u32> {
+    let mut page_number_start = None;
+    let mut took = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                match name {
+                    b"Choice" | b"Fallback" if !took => {
+                        took = true;
+                        page_number_start =
+                            read_section_page_number_start_alternate_content_branch(r, name);
+                    }
+                    _ => skip_subtree(r),
+                }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    page_number_start
+}
+
+fn read_section_page_number_start_alternate_content_branch(
+    r: &mut Xml<'_>,
+    branch: &[u8],
+) -> Option<u32> {
+    let mut page_number_start = None;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                page_number_start = read_section_page_number_start_alternate_content(r);
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if local(e.name().as_ref()) == b"pgNumType" =>
+            {
+                page_number_start = section_page_number_start(&e);
+            }
+            Ok(Event::Start(_)) => skip_subtree(r),
+            Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    page_number_start
+}
+
 fn read_section_page_number_format(r: &mut Xml<'_>) -> Option<PageNumberFormat> {
     let mut page_number_format = None;
     loop {
         match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                page_number_format = read_section_page_number_format_alternate_content(r);
+            }
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"pgNumType" =>
             {
@@ -589,6 +644,55 @@ fn read_section_page_number_format(r: &mut Xml<'_>) -> Option<PageNumberFormat> 
             }
             Ok(Event::Start(_)) => skip_subtree(r),
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"sectPr" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    page_number_format
+}
+
+fn read_section_page_number_format_alternate_content(r: &mut Xml<'_>) -> Option<PageNumberFormat> {
+    let mut page_number_format = None;
+    let mut took = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                match name {
+                    b"Choice" | b"Fallback" if !took => {
+                        took = true;
+                        page_number_format =
+                            read_section_page_number_format_alternate_content_branch(r, name);
+                    }
+                    _ => skip_subtree(r),
+                }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    page_number_format
+}
+
+fn read_section_page_number_format_alternate_content_branch(
+    r: &mut Xml<'_>,
+    branch: &[u8],
+) -> Option<PageNumberFormat> {
+    let mut page_number_format = None;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                page_number_format = read_section_page_number_format_alternate_content(r);
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if local(e.name().as_ref()) == b"pgNumType" =>
+            {
+                page_number_format = section_page_number_format(&e);
+            }
+            Ok(Event::Start(_)) => skip_subtree(r),
+            Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
@@ -5312,6 +5416,27 @@ mod tests {
         assert_eq!(scan_page_number_start(final_restart), Some(7));
         assert_eq!(
             scan_page_number_format(final_restart),
+            Some(PageNumberFormat::DecimalZero)
+        );
+    }
+
+    #[test]
+    fn scans_final_section_page_number_uses_single_alternate_content_branch() {
+        let xml = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+            <w:sectPr>
+                <mc:AlternateContent>
+                    <mc:Choice Requires="w14">
+                        <w:pgNumType w:start="7" w:fmt="decimalZero"/>
+                    </mc:Choice>
+                    <mc:Fallback>
+                        <w:pgNumType w:start="12" w:fmt="upperRoman"/>
+                    </mc:Fallback>
+                </mc:AlternateContent>
+            </w:sectPr>
+        </w:body></w:document>"#;
+        assert_eq!(scan_page_number_start(xml), Some(7));
+        assert_eq!(
+            scan_page_number_format(xml),
             Some(PageNumberFormat::DecimalZero)
         );
     }
