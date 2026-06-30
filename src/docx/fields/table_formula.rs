@@ -730,6 +730,17 @@ fn table_formula_expression_is_span_safe(
                     return false;
                 };
                 let inner: String = chars[after_name + 1..close].iter().collect();
+                if name.eq_ignore_ascii_case("IF") {
+                    if let Some(safe) =
+                        table_formula_if_expression_is_span_safe(&inner, rows, row, col)
+                    {
+                        if !safe {
+                            return false;
+                        }
+                        pos = close + 1;
+                        continue;
+                    }
+                }
                 if let Some(arguments) = table_formula_arguments(&inner) {
                     if !arguments
                         .iter()
@@ -747,6 +758,30 @@ fn table_formula_expression_is_span_safe(
         pos += 1;
     }
     true
+}
+
+fn table_formula_if_expression_is_span_safe(
+    expression: &str,
+    rows: &[Vec<TableFormulaCell>],
+    row: usize,
+    col: usize,
+) -> Option<bool> {
+    let arguments = table_formula_top_level_argument_expressions(expression)?;
+    if arguments.len() != 3 {
+        return None;
+    }
+    if !table_formula_expression_is_span_safe(arguments[0], rows, row, col) {
+        return Some(false);
+    }
+    let condition = table_formula_expression_value(arguments[0], rows, row, col)?;
+    let selected = if formula_truthy(condition) {
+        arguments[1]
+    } else {
+        arguments[2]
+    };
+    Some(table_formula_expression_is_span_safe(
+        selected, rows, row, col,
+    ))
 }
 
 fn table_formula_cell_reference_is_span_safe(

@@ -1243,6 +1243,23 @@ fn formula_table_span_cross_row_cell_reference_docx() -> Vec<u8> {
     ])
 }
 
+fn formula_table_span_if_short_circuit_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr><w:p><w:r><w:t>spanned heading</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>tail heading</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>3</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = IF(SUM(LEFT)&gt;0,SUM(LEFT),SUM(A1:B2)) "><w:r><w:t>cached guarded row-local</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>0</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = IF(SUM(LEFT)&gt;0,SUM(A1:B2),9) "><w:r><w:t>cached guarded literal</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>4</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = IF(SUM(LEFT)&gt;0;7;SUM(A1:B2)) "><w:r><w:t>cached semicolon guarded</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>5</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = IF(SUM(LEFT)&gt;0,SUM(A1:B2),9) "><w:r><w:t>cached selected span branch</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn formula_table_span_directional_reference_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -7904,6 +7921,71 @@ fn docx_table_formula_computes_cross_row_cell_references_when_referenced_rows_ha
         !main_text.contains("cached cross-row direct")
             && !main_text.contains("cached unspanned-row range"),
         "computed cross-row cell-reference formulas should replace stale cached text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_table_formula_if_short_circuits_span_unsafe_unselected_branches() {
+    let doc = Document::open(&formula_table_span_if_short_circuit_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let expected = [
+        (
+            r#"= IF(SUM(LEFT)>0,SUM(LEFT),SUM(A1:B2))"#,
+            "cached guarded row-local",
+            Some("5"),
+        ),
+        (
+            r#"= IF(SUM(LEFT)>0,SUM(A1:B2),9)"#,
+            "cached guarded literal",
+            Some("9"),
+        ),
+        (
+            r#"= IF(SUM(LEFT)>0;7;SUM(A1:B2))"#,
+            "cached semicolon guarded",
+            Some("7"),
+        ),
+        (
+            r#"= IF(SUM(LEFT)>0,SUM(A1:B2),9)"#,
+            "cached selected span branch",
+            None,
+        ),
+    ];
+
+    assert_eq!(fields.len(), expected.len());
+    for (field, (instruction, stale, result)) in fields.iter().zip(expected) {
+        assert_eq!(field.kind, FieldKind::Dynamic("=".to_string()));
+        assert_eq!(field.instruction, instruction);
+        assert_eq!(field.result, stale);
+        assert_eq!(field.computed_result.as_deref(), result);
+    }
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Dynamic("=".to_string()),
+            count: 1
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::NoComputedResult,
+            count: 1
+        }]
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("2\t3\t5")
+            && main_text.contains("0\t9")
+            && main_text.contains("4\t7")
+            && main_text.contains("cached selected span branch")
+            && !main_text.contains("cached guarded row-local")
+            && !main_text.contains("cached guarded literal")
+            && !main_text.contains("cached semicolon guarded"),
+        "span-safe table IF should ignore span-unsafe unselected branches: {main_text:?}"
     );
 }
 
