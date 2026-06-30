@@ -64,6 +64,43 @@ fn header_footer_variants_docx() -> Vec<u8> {
     ])
 }
 
+fn header_footer_alternate_content_refs_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/><Override PartName="/word/header2.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footer2.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdDoc" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdChoiceHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rIdChoiceFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/><Relationship Id="rIdFallbackHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header2.xml"/><Relationship Id="rIdFallbackFooter" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer2.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:p><w:r><w:t>BODY</w:t></w:r></w:p><w:sectPr><mc:AlternateContent><mc:Choice Requires="w14"><w:headerReference w:type="default" r:id="rIdChoiceHeader"/><w:footerReference w:type="first" r:id="rIdChoiceFooter"/></mc:Choice><mc:Fallback><w:headerReference w:type="default" r:id="rIdFallbackHeader"/><w:footerReference w:type="first" r:id="rIdFallbackFooter"/></mc:Fallback></mc:AlternateContent></w:sectPr></w:body></w:document>"#,
+        ),
+        (
+            "word/header1.xml",
+            r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>CHOICE HEAD</w:t></w:r></w:p></w:hdr>"#,
+        ),
+        (
+            "word/footer1.xml",
+            r#"<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>CHOICE FOOT</w:t></w:r></w:p></w:ftr>"#,
+        ),
+        (
+            "word/header2.xml",
+            r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>FALLBACK HEAD</w:t></w:r></w:p></w:hdr>"#,
+        ),
+        (
+            "word/footer2.xml",
+            r#"<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>FALLBACK FOOT</w:t></w:r></w:p></w:ftr>"#,
+        ),
+    ])
+}
+
 fn multi_section_header_footer_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -272,6 +309,34 @@ fn docx_header_footer_side_table_preserves_reference_variants() {
     assert_eq!(footer.text(), "DEFAULT FOOT");
     assert_eq!(first_footer.text(), "FIRST FOOT");
     assert_eq!(even_footer.text(), "EVEN FOOT");
+}
+
+#[test]
+fn docx_header_footer_refs_use_single_alternate_content_branch() {
+    let doc = Document::open(&header_footer_alternate_content_refs_docx()).expect("fixture opens");
+
+    let records = doc.header_footers();
+    let actual = records
+        .iter()
+        .map(|record| (record.id.as_str(), record.kind, record.text.as_str()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        actual,
+        vec![
+            (
+                "word/header1.xml#default",
+                HeaderFooterKind::Header,
+                "CHOICE HEAD"
+            ),
+            (
+                "word/footer1.xml#first",
+                HeaderFooterKind::FirstPageFooter,
+                "CHOICE FOOT"
+            ),
+        ]
+    );
+
+    assert_eq!(doc.header_text(), "CHOICE HEAD\nCHOICE FOOT");
 }
 
 #[test]

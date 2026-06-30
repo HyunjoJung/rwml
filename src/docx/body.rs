@@ -189,32 +189,18 @@ fn read_hf_ref_section(r: &mut Xml<'_>) -> HeaderFooterRefs {
     let mut refs = HeaderFooterRefs::default();
     loop {
         match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                read_hf_ref_alternate_content(r, &mut refs);
+            }
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
-                b"headerReference" => {
-                    if let Some(reference) = header_footer_ref(&e) {
-                        refs.headers.push(reference);
-                    }
-                    skip_subtree(r);
-                }
-                b"footerReference" => {
-                    if let Some(reference) = header_footer_ref(&e) {
-                        refs.footers.push(reference);
-                    }
+                b"headerReference" | b"footerReference" => {
+                    record_header_footer_ref(&mut refs, &e);
                     skip_subtree(r);
                 }
                 _ => skip_subtree(r),
             },
             Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
-                b"headerReference" => {
-                    if let Some(reference) = header_footer_ref(&e) {
-                        refs.headers.push(reference);
-                    }
-                }
-                b"footerReference" => {
-                    if let Some(reference) = header_footer_ref(&e) {
-                        refs.footers.push(reference);
-                    }
-                }
+                b"headerReference" | b"footerReference" => record_header_footer_ref(&mut refs, &e),
                 _ => {}
             },
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"sectPr" => break,
@@ -223,6 +209,67 @@ fn read_hf_ref_section(r: &mut Xml<'_>) -> HeaderFooterRefs {
         }
     }
     refs
+}
+
+fn read_hf_ref_alternate_content(r: &mut Xml<'_>, refs: &mut HeaderFooterRefs) {
+    let mut took = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                match name {
+                    b"Choice" | b"Fallback" if !took => {
+                        took = true;
+                        read_hf_ref_alternate_content_branch(r, refs, name);
+                    }
+                    _ => skip_subtree(r),
+                }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+}
+
+fn read_hf_ref_alternate_content_branch(
+    r: &mut Xml<'_>,
+    refs: &mut HeaderFooterRefs,
+    branch: &[u8],
+) {
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                read_hf_ref_alternate_content(r, refs);
+            }
+            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
+                b"headerReference" | b"footerReference" => {
+                    record_header_footer_ref(refs, &e);
+                    skip_subtree(r);
+                }
+                _ => skip_subtree(r),
+            },
+            Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
+                b"headerReference" | b"footerReference" => record_header_footer_ref(refs, &e),
+                _ => {}
+            },
+            Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+}
+
+fn record_header_footer_ref(refs: &mut HeaderFooterRefs, e: &BytesStart<'_>) {
+    let Some(reference) = header_footer_ref(e) else {
+        return;
+    };
+    match local(e.name().as_ref()) {
+        b"headerReference" => refs.headers.push(reference),
+        b"footerReference" => refs.footers.push(reference),
+        _ => {}
+    }
 }
 
 fn header_footer_ref(e: &BytesStart<'_>) -> Option<HeaderFooterRef> {
@@ -5212,6 +5259,39 @@ mod tests {
             vec![HeaderFooterRef {
                 rel_id: "rIdF".to_string(),
                 type_name: "default".to_string()
+            }]
+        );
+    }
+
+    #[test]
+    fn scans_header_footer_references_use_single_alternate_content_branch() {
+        let xml = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+            <w:sectPr>
+                <mc:AlternateContent>
+                    <mc:Choice Requires="w14">
+                        <w:headerReference w:type="default" r:id="rIdChoiceHeader"/>
+                        <w:footerReference w:type="first" r:id="rIdChoiceFooter"/>
+                    </mc:Choice>
+                    <mc:Fallback>
+                        <w:headerReference w:type="default" r:id="rIdFallbackHeader"/>
+                        <w:footerReference w:type="first" r:id="rIdFallbackFooter"/>
+                    </mc:Fallback>
+                </mc:AlternateContent>
+            </w:sectPr>
+        </w:body></w:document>"#;
+        let (headers, footers) = scan_hf_refs(xml);
+        assert_eq!(
+            headers,
+            vec![HeaderFooterRef {
+                rel_id: "rIdChoiceHeader".to_string(),
+                type_name: "default".to_string()
+            }]
+        );
+        assert_eq!(
+            footers,
+            vec![HeaderFooterRef {
+                rel_id: "rIdChoiceFooter".to_string(),
+                type_name: "first".to_string()
             }]
         );
     }
