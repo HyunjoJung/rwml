@@ -1202,6 +1202,12 @@ fn read_floating_shapes(doc_xml: &str) -> Vec<FloatingShape> {
                     body_depth = body_depth.saturating_sub(1);
                     continue;
                 }
+                if in_body && current_body_block_index.is_some() && name == b"sym" {
+                    append_floating_anchor_symbol(&mut current_body_block_text, &e);
+                    skip_subtree(&mut r);
+                    body_depth = body_depth.saturating_sub(1);
+                    continue;
+                }
                 scan_depth += 1;
             }
             Ok(Event::Empty(e)) => {
@@ -1224,7 +1230,7 @@ fn read_floating_shapes(doc_xml: &str) -> Vec<FloatingShape> {
                         });
                     }
                 } else if in_body && current_body_block_index.is_some() {
-                    append_floating_anchor_empty_marker(&mut current_body_block_text, name);
+                    append_floating_anchor_empty(&mut current_body_block_text, &e, name);
                 }
             }
             Ok(Event::End(e)) => {
@@ -1281,6 +1287,20 @@ fn read_floating_shapes(doc_xml: &str) -> Vec<FloatingShape> {
 
 fn append_floating_anchor_text(out: &mut String, text: &str) {
     out.push_str(text);
+}
+
+fn append_floating_anchor_symbol(out: &mut String, e: &BytesStart<'_>) {
+    if let Some(ch) = floating_run_symbol_char(e) {
+        out.push(ch);
+    }
+}
+
+fn append_floating_anchor_empty(out: &mut String, e: &BytesStart<'_>, name: &[u8]) {
+    if name == b"sym" {
+        append_floating_anchor_symbol(out, e);
+    } else {
+        append_floating_anchor_empty_marker(out, name);
+    }
 }
 
 fn append_floating_anchor_empty_marker(out: &mut String, name: &[u8]) {
@@ -1381,6 +1401,10 @@ fn read_floating_shape(
                 if text_box_depth > 0 {
                     match name {
                         b"t" => append_shape_text(&mut shape_text, &read_text(r)),
+                        b"sym" => {
+                            append_shape_symbol(&mut shape_text, &e);
+                            skip_subtree(r);
+                        }
                         _ => text_box_depth += 1,
                     }
                     continue;
@@ -1406,13 +1430,7 @@ fn read_floating_shape(
                 let qname = e.name();
                 let name = local(qname.as_ref());
                 if text_box_depth > 0 {
-                    match name {
-                        b"tab" => shape_text.push('\t'),
-                        b"br" | b"cr" => shape_text.push('\n'),
-                        b"noBreakHyphen" => shape_text.push('-'),
-                        b"softHyphen" => shape_text.push('\u{00ad}'),
-                        _ => {}
-                    }
+                    append_shape_empty(&mut shape_text, &e, name);
                     continue;
                 }
                 if name == b"srgbClr" {
@@ -1520,6 +1538,24 @@ fn append_shape_text(out: &mut String, text: &str) {
     out.push_str(text);
 }
 
+fn append_shape_symbol(out: &mut String, e: &BytesStart<'_>) {
+    if let Some(ch) = floating_run_symbol_char(e) {
+        let mut buf = [0; 4];
+        append_shape_text(out, ch.encode_utf8(&mut buf));
+    }
+}
+
+fn append_shape_empty(out: &mut String, e: &BytesStart<'_>, name: &[u8]) {
+    match name {
+        b"sym" => append_shape_symbol(out, e),
+        b"tab" => out.push('\t'),
+        b"br" | b"cr" => out.push('\n'),
+        b"noBreakHyphen" => out.push('-'),
+        b"softHyphen" => out.push('\u{00ad}'),
+        _ => {}
+    }
+}
+
 fn append_shape_paragraph_break(out: &mut String) {
     if !out.is_empty() && !out.ends_with('\n') {
         out.push('\n');
@@ -1529,6 +1565,12 @@ fn append_shape_paragraph_break(out: &mut String) {
 fn finalized_shape_text(text: String) -> Option<String> {
     let text = text.trim_matches('\n').to_string();
     (!text.trim().is_empty()).then_some(text)
+}
+
+fn floating_run_symbol_char(e: &BytesStart<'_>) -> Option<char> {
+    let value = attr_local_trimmed(e, b"char")?;
+    let font = attr_local_trimmed(e, b"font");
+    fields::computed_run_symbol_char(font.as_deref(), &value)
 }
 
 fn empty_shape_position(start: &BytesStart<'_>) -> ShapePosition {
