@@ -11113,6 +11113,33 @@ fn docx_ref_f_field_computes_bookmarks_inside_comment_ranges() {
     );
 }
 
+#[cfg(feature = "render")]
+#[test]
+fn docx_ref_f_computed_note_and_comment_marks_are_not_model_render_warnings() {
+    for fixture in [
+        ref_note_switch_docx(),
+        ref_comment_reference_mark_docx(),
+        ref_comment_range_reference_mark_docx(),
+        ref_inside_comment_range_reference_mark_docx(),
+    ] {
+        let doc = Document::open(&fixture).expect("fixture opens");
+        assert!(doc
+            .fields()
+            .iter()
+            .all(|field| field.kind == FieldKind::Ref && field.computed_result.is_some()));
+
+        let rendered = rdoc::render_pdf_with_report(&doc.model());
+
+        assert_eq!(rendered.report.unsupported.fields, 0);
+        assert!(rendered.report.unsupported.field_kinds.is_empty());
+        assert!(rendered
+            .report
+            .unsupported
+            .unsupported_field_reasons
+            .is_empty());
+    }
+}
+
 #[test]
 fn docx_ref_n_field_computes_numbered_bookmark_paragraph() {
     let doc = Document::open(&numbered_ref_switch_docx()).expect("fixture opens");
