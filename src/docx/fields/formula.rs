@@ -661,7 +661,8 @@ pub(super) fn eval_formula_function(name: &str, arguments: &[f64]) -> Option<f64
             if arguments[1].abs() < 1e-12 {
                 None
             } else {
-                Some(arguments[0] % arguments[1])
+                let value = arguments[0] - arguments[1] * (arguments[0] / arguments[1]).floor();
+                value.is_finite().then_some(value)
             }
         }
         "NOT" if arguments.len() == 1 => Some((!formula_truthy(arguments[0])) as u8 as f64),

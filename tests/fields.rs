@@ -949,7 +949,7 @@ fn formula_additional_function_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" = AVERAGE(2, 4, 6) "><w:r><w:t>stale average</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = COUNT(2, 4, 6) "><w:r><w:t>stale count</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = MOD(10, 4) "><w:r><w:t>stale mod</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = TRUE "><w:r><w:t>stale true constant</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = FALSE "><w:r><w:t>stale false constant</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = AND(1, 2, 3) "><w:r><w:t>stale and true</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = AND(1, 0, 3) "><w:r><w:t>stale and false</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = OR(0, 0, 7) "><w:r><w:t>stale or true</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = NOT(0) "><w:r><w:t>stale not</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = IF(0, 10, 20) "><w:r><w:t>stale if false</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = IF(OR(0, TRUE), SUM(1, 2), 9) "><w:r><w:t>stale nested if</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" = AVERAGE(2, 4, 6) "><w:r><w:t>stale average</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = COUNT(2, 4, 6) "><w:r><w:t>stale count</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = MOD(10, 4) "><w:r><w:t>stale mod</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = MOD(-3, 2) "><w:r><w:t>stale negative dividend mod</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = MOD(3, -2) "><w:r><w:t>stale negative divisor mod</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = MOD(-3, -2) "><w:r><w:t>stale negative both mod</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = TRUE "><w:r><w:t>stale true constant</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = FALSE "><w:r><w:t>stale false constant</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = AND(1, 2, 3) "><w:r><w:t>stale and true</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = AND(1, 0, 3) "><w:r><w:t>stale and false</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = OR(0, 0, 7) "><w:r><w:t>stale or true</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = NOT(0) "><w:r><w:t>stale not</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = IF(0, 10, 20) "><w:r><w:t>stale if false</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = IF(OR(0, TRUE), SUM(1, 2), 9) "><w:r><w:t>stale nested if</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -7198,6 +7198,9 @@ fn docx_formula_fields_compute_additional_literal_functions() {
         (r#"= AVERAGE(2, 4, 6)"#, "stale average", "4"),
         (r#"= COUNT(2, 4, 6)"#, "stale count", "3"),
         (r#"= MOD(10, 4)"#, "stale mod", "2"),
+        (r#"= MOD(-3, 2)"#, "stale negative dividend mod", "1"),
+        (r#"= MOD(3, -2)"#, "stale negative divisor mod", "-1"),
+        (r#"= MOD(-3, -2)"#, "stale negative both mod", "-1"),
         (r#"= TRUE"#, "stale true constant", "1"),
         (r#"= FALSE"#, "stale false constant", "0"),
         (r#"= AND(1, 2, 3)"#, "stale and true", "1"),
