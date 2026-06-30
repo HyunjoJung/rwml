@@ -534,12 +534,14 @@ fn unescape_eq_literal_operand(operand: &str) -> Option<String> {
 
 fn computed_symbol_result(instruction: &str) -> Option<String> {
     let spec = symbol_field_syntax(instruction)?;
+    let font = spec.font.as_deref();
+    let font_code = legacy_symbol_font_code(font, spec.code);
     let text = if spec.unicode {
         char::from_u32(spec.code)?.to_string()
-    } else if symbol_font_matches(spec.font.as_deref(), "symbol") {
-        symbol_font_char(spec.code)?.to_string()
-    } else if symbol_font_matches(spec.font.as_deref(), "wingdings") {
-        wingdings_font_char(spec.code)?.to_string()
+    } else if symbol_font_matches(font, "symbol") {
+        symbol_font_char(font_code)?.to_string()
+    } else if symbol_font_matches(font, "wingdings") {
+        wingdings_font_char(font_code)?.to_string()
     } else {
         ansi_char(spec.code)?.to_string()
     };
@@ -548,12 +550,7 @@ fn computed_symbol_result(instruction: &str) -> Option<String> {
 
 pub(crate) fn computed_run_symbol_char(font: Option<&str>, value: &str) -> Option<char> {
     let code = run_symbol_code(value)?;
-    let legacy_font = symbol_font_matches(font, "symbol") || symbol_font_matches(font, "wingdings");
-    let font_code = if legacy_font && code > 0xFF {
-        code & 0xFF
-    } else {
-        code
-    };
+    let font_code = legacy_symbol_font_code(font, code);
 
     if symbol_font_matches(font, "symbol") {
         symbol_font_char(font_code)
@@ -561,6 +558,15 @@ pub(crate) fn computed_run_symbol_char(font: Option<&str>, value: &str) -> Optio
         wingdings_font_char(font_code)
     } else {
         char::from_u32(code)
+    }
+}
+
+fn legacy_symbol_font_code(font: Option<&str>, code: u32) -> u32 {
+    let legacy_font = symbol_font_matches(font, "symbol") || symbol_font_matches(font, "wingdings");
+    if legacy_font && code > 0xFF {
+        code & 0xFF
+    } else {
+        code
     }
 }
 
