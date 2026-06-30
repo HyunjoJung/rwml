@@ -289,22 +289,14 @@ pub(crate) fn scan_page_setup(xml: &str) -> PageSetup {
     let mut found = false;
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
-                b"pgSz" => {
-                    if let Some(size) = section_page_size(&e) {
-                        apply_section_page_size(&mut page, size);
-                        found = true;
-                    }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                scan_page_setup_alternate_content(&mut r, &mut page, &mut found);
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
+                if apply_page_setup_child(&mut page, &e) {
+                    found = true;
                 }
-                b"pgMar" => {
-                    let margins = section_page_margins(&e);
-                    if section_page_margins_present(margins) {
-                        apply_section_page_margins(&mut page, margins);
-                        found = true;
-                    }
-                }
-                _ => {}
-            },
+            }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
@@ -313,6 +305,81 @@ pub(crate) fn scan_page_setup(xml: &str) -> PageSetup {
         page
     } else {
         PageSetup::default()
+    }
+}
+
+fn scan_page_setup_alternate_content(r: &mut Xml<'_>, page: &mut PageSetup, found: &mut bool) {
+    let mut took = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                match name {
+                    b"Choice" | b"Fallback" if !took => {
+                        took = true;
+                        scan_page_setup_alternate_content_branch(r, page, found, name);
+                    }
+                    _ => skip_subtree(r),
+                }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+}
+
+fn scan_page_setup_alternate_content_branch(
+    r: &mut Xml<'_>,
+    page: &mut PageSetup,
+    found: &mut bool,
+    branch: &[u8],
+) {
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                scan_page_setup_alternate_content(r, page, found);
+            }
+            Ok(Event::Start(e)) => {
+                if apply_page_setup_child(page, &e) {
+                    *found = true;
+                } else {
+                    skip_subtree(r);
+                }
+            }
+            Ok(Event::Empty(e)) => {
+                if apply_page_setup_child(page, &e) {
+                    *found = true;
+                }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+}
+
+fn apply_page_setup_child(page: &mut PageSetup, e: &BytesStart<'_>) -> bool {
+    match local(e.name().as_ref()) {
+        b"pgSz" => {
+            if let Some(size) = section_page_size(e) {
+                apply_section_page_size(page, size);
+                true
+            } else {
+                false
+            }
+        }
+        b"pgMar" => {
+            let margins = section_page_margins(e);
+            if section_page_margins_present(margins) {
+                apply_section_page_margins(page, margins);
+                true
+            } else {
+                false
+            }
+        }
+        _ => false,
     }
 }
 
@@ -5456,6 +5523,34 @@ mod tests {
             })
             .expect("section break");
         assert!(section.page.landscape);
+    }
+
+    #[test]
+    fn page_setup_uses_single_alternate_content_branch() {
+        let xml = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+            <w:sectPr>
+                <mc:AlternateContent>
+                    <mc:Choice Requires="w14">
+                        <w:pgSz w:w="15840" w:h="12240" w:orient="landscape"/>
+                        <w:pgMar w:left="720" w:right="1080" w:top="1440" w:bottom="1800"/>
+                    </mc:Choice>
+                    <mc:Fallback>
+                        <w:pgSz w:w="12240" w:h="15840"/>
+                        <w:pgMar w:left="1440" w:right="1440" w:top="1440" w:bottom="1440"/>
+                    </mc:Fallback>
+                </mc:AlternateContent>
+            </w:sectPr>
+        </w:body></w:document>"#;
+        let page = scan_page_setup(xml);
+
+        assert!(page.landscape);
+        assert_eq!(page.width_pt, 792.0);
+        assert_eq!(page.height_pt, 612.0);
+        assert_eq!(page.margin_pt, 36.0);
+        assert_eq!(page.margin_left_pt, Some(36.0));
+        assert_eq!(page.margin_right_pt, Some(54.0));
+        assert_eq!(page.margin_top_pt, Some(72.0));
+        assert_eq!(page.margin_bottom_pt, Some(90.0));
     }
 
     #[test]

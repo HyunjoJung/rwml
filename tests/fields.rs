@@ -3231,6 +3231,23 @@ fn page_ref_final_section_alternate_content_page_number_format_docx() -> Vec<u8>
     ])
 }
 
+fn final_section_alternate_content_page_setup_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:p><w:r><w:t>Body</w:t></w:r></w:p><w:sectPr><mc:AlternateContent><mc:Choice Requires="w14"><w:pgSz w:w="15840" w:h="12240" w:orient="landscape"/><w:pgMar w:left="720" w:right="1080" w:top="1440" w:bottom="1800"/></mc:Choice><mc:Fallback><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:left="1440" w:right="1440" w:top="1440" w:bottom="1440"/></mc:Fallback></mc:AlternateContent></w:sectPr></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn page_ref_final_section_old_paragraph_revision_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -14343,6 +14360,22 @@ fn docx_model_applies_final_section_alternate_content_page_number_format() {
         model.setup.page_number_format,
         Some(PageNumberFormat::LowerRoman)
     );
+}
+
+#[test]
+fn docx_model_applies_final_section_alternate_content_page_setup() {
+    let doc =
+        Document::open(&final_section_alternate_content_page_setup_docx()).expect("fixture opens");
+    let page = doc.model().setup.page;
+
+    assert!(page.landscape);
+    assert_eq!(page.width_pt, 792.0);
+    assert_eq!(page.height_pt, 612.0);
+    assert_eq!(page.margin_pt, 36.0);
+    assert_eq!(page.margin_left_pt, Some(36.0));
+    assert_eq!(page.margin_right_pt, Some(54.0));
+    assert_eq!(page.margin_top_pt, Some(72.0));
+    assert_eq!(page.margin_bottom_pt, Some(90.0));
 }
 
 #[test]
