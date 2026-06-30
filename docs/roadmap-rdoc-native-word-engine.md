@@ -1208,32 +1208,34 @@ The active roadmap slices are:
 For each slice, preserve cached text until semantics are unambiguous,
 distinguish `UnsupportedSwitch` from `NoComputedResult`, and add focused `.docx`
 and report diagnostics tests before public support wording moves.
-3. Floating-shape placement beyond geometry overlays: exact body anchor
-   range/page resolution beyond best-effort top-level block pages, real
-   text-wrap reflow, deeper z-order semantics beyond recovered
-   `relativeHeight`/`behindDoc`, and non-text Office-Art drawing contents.
-4. Newer extension chart families and metafile rendering strategy beyond the current
-   bounded diagnostics/header metadata, with public fixtures before broad claims.
-5. Release validation policy is currently maintenance-only: keep the existing
-   evidence machinery stable and fix only regressions or blockers until the
-   engine slices above are materially closer to public readiness. The
-   `public-release` manifest policy already fixes the required Rust gates and optional
-   threshold values (`0.95` POI recall/F1, at least one scored benchmark file,
-   `0.90` render mean recall, `0` errors or skips), and
-   `scripts/release_manifest.py --enforce-policy-inputs` can make
-   render validation, an `rdoc.benchmark-report.v1` / `extract-vs-mature`
-   extraction benchmark, and the exact public `MANIFEST.tsv`/`RENDER_MANIFEST.tsv`
-   corpus pair with matching document paths and existing listed documents
-   mandatory with passing compact gates
-   and policy-strength thresholds for strict public manifests.
-   Manifests now record `release_evidence.strict_policy_status`,
-   `strict_policy_enforced`, `strict_policy_inputs_complete`, and missing
-   strict inputs, including missing evidence files, so tagged automation that
-   only embeds the policy remains distinguishable from strict local release
-   evidence. Tagged automation
-   intentionally emits the non-strict policy manifest until local render and
-   extraction reports are generated in the workflow; strict public manifests
-   remain an explicit local generation step.
+
+Other near-term tracks stay separate from the R2 field backlog:
+
+- Floating-shape placement beyond geometry overlays: exact body anchor
+  range/page resolution beyond best-effort top-level block pages, real
+  text-wrap reflow, deeper z-order semantics beyond recovered
+  `relativeHeight`/`behindDoc`, and non-text Office-Art drawing contents.
+- Newer extension chart families and metafile rendering strategy beyond the
+  current bounded diagnostics/header metadata, with public fixtures before broad
+  claims.
+- Release validation policy is currently maintenance-only: keep the existing
+  evidence machinery stable and fix only regressions or blockers until the
+  engine slices above are materially closer to public readiness. The
+  `public-release` manifest policy already fixes the required Rust gates and
+  optional threshold values (`0.95` POI recall/F1, at least one scored benchmark
+  file, `0.90` render mean recall, `0` errors or skips), and
+  `scripts/release_manifest.py --enforce-policy-inputs` can make render
+  validation, an `rdoc.benchmark-report.v1` / `extract-vs-mature` extraction
+  benchmark, and the exact public `MANIFEST.tsv`/`RENDER_MANIFEST.tsv` corpus
+  pair with matching document paths and existing listed documents mandatory with
+  passing compact gates and policy-strength thresholds for strict public
+  manifests. Manifests now record `release_evidence.strict_policy_status`,
+  `strict_policy_enforced`, `strict_policy_inputs_complete`, and missing strict
+  inputs, including missing evidence files, so tagged automation that only
+  embeds the policy remains distinguishable from strict local release evidence.
+  Tagged automation intentionally emits the non-strict policy manifest until
+  local render and extraction reports are generated in the workflow; strict
+  public manifests remain an explicit local generation step.
 
 These are deliberately deeper roadmap items: the diagnostics, corpus, `.docx`
 comment/field/revision side tables, metadata query surface, preservation edits,
