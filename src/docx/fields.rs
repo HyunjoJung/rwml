@@ -161,7 +161,7 @@ pub(crate) fn parse(
                     skip_subtree(&mut r);
                     continue;
                 }
-                if matches!(name, b"del" | b"moveFrom") {
+                if matches!(name, b"del" | b"moveFrom" | b"pPrChange") {
                     skip_subtree(&mut r);
                     continue;
                 }
@@ -581,7 +581,7 @@ fn sequence_heading_context(xml: &str, styles: &Styles) -> SequenceHeadingContex
                     skip_subtree(&mut r);
                     continue;
                 }
-                if matches!(name, b"del" | b"moveFrom") {
+                if matches!(name, b"del" | b"moveFrom" | b"pPrChange") {
                     skip_subtree(&mut r);
                     continue;
                 }
