@@ -7081,6 +7081,21 @@ fn docx_reference_index_diagnostics_split_valid_generated_from_malformed_syntax(
             },
         ]
     );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| {
+            instruction.starts_with("BIBLIOGRAPHY") || instruction.starts_with("INDEX")
+        }),
+        vec![
+            (
+                "BIBLIOGRAPHY \\l 1033".to_string(),
+                Some(FieldUnsupportedReason::NoComputedResult),
+            ),
+            (
+                r#"INDEX "bad "#.to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+        ]
+    );
     assert!(doc.main_text().contains("cached malformed index"));
 }
 

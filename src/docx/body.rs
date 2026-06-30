@@ -25,7 +25,8 @@ use super::{
 };
 use crate::annotation::{
     direct_ref_field_syntax, instruction_parts, normalized_field_instruction,
-    note_ref_field_syntax, page_ref_field_syntax, ref_field_syntax, toc_field_syntax, FieldKind,
+    note_ref_field_syntax, opaque_field_syntax, page_ref_field_syntax, ref_field_syntax,
+    toc_field_syntax, FieldKind,
 };
 use crate::model::{
     Align, AuthoredContentControl, Block, Cell, CellMargins, CharProps, Color, DocGrid,
@@ -2421,6 +2422,9 @@ fn unsupported_simple_field_reason_hint(
     if let Some(reason) = unsupported_toc_reason_hint(instruction, ctx) {
         return Some(reason);
     }
+    if let Some(reason) = unsupported_reference_index_reason_hint(instruction) {
+        return Some(reason);
+    }
     None
 }
 
@@ -2500,6 +2504,36 @@ fn unsupported_toc_reason_hint(instruction: &str, ctx: &Ctx<'_>) -> Option<Field
         Some(_) => Some(FieldUnsupportedReason::UnresolvedBookmark),
         None => Some(FieldUnsupportedReason::NoComputedResult),
     }
+}
+
+fn unsupported_reference_index_reason_hint(instruction: &str) -> Option<FieldUnsupportedReason> {
+    let FieldKind::ReferenceIndex(kind) = FieldKind::from_instruction(instruction) else {
+        return None;
+    };
+    if is_generated_reference_index_kind(&kind) {
+        return Some(
+            if opaque_field_syntax(instruction, is_generated_reference_index_kind) {
+                FieldUnsupportedReason::NoComputedResult
+            } else {
+                FieldUnsupportedReason::UnsupportedSwitch
+            },
+        );
+    }
+    if is_reference_index_marker_kind(&kind) {
+        return Some(FieldUnsupportedReason::UnsupportedSwitch);
+    }
+    None
+}
+
+fn is_generated_reference_index_kind(kind: &str) -> bool {
+    matches!(
+        kind.to_ascii_uppercase().as_str(),
+        "BIBLIOGRAPHY" | "CITATION" | "INDEX" | "TOA"
+    )
+}
+
+fn is_reference_index_marker_kind(kind: &str) -> bool {
+    matches!(kind.to_ascii_uppercase().as_str(), "RD" | "TA" | "XE")
 }
 
 fn computed_simple_field_result(
