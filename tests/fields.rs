@@ -2068,6 +2068,23 @@ fn simple_cached_result_inline_marker_docx() -> Vec<u8> {
     ])
 }
 
+fn simple_cached_result_alternate_content_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:p><w:fldSimple w:instr=" CUSTOM value "><w:r><w:t>Before </w:t></w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:r><w:t>Choice</w:t></w:r></mc:Choice><mc:Fallback><w:r><w:t>Fallback</w:t></w:r></mc:Fallback></mc:AlternateContent><w:r><w:t> After</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn complex_cached_result_inline_marker_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -11756,6 +11773,23 @@ fn docx_simple_field_result_preserves_cached_inline_markers() {
         "{:?}",
         doc.main_text()
     );
+}
+
+#[test]
+fn docx_simple_field_result_uses_single_alternate_content_branch() {
+    let doc =
+        Document::open(&simple_cached_result_alternate_content_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::Unknown("CUSTOM".to_string()));
+    assert_eq!(fields[0].instruction, "CUSTOM value");
+    assert_eq!(fields[0].result, "Before Choice After");
+    assert_eq!(fields[0].computed_result, None);
+
+    let main_text = doc.main_text();
+    assert!(main_text.contains("Before Choice After"), "{main_text:?}");
+    assert!(!main_text.contains("Fallback"), "{main_text:?}");
 }
 
 #[test]

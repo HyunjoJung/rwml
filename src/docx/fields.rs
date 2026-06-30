@@ -299,18 +299,58 @@ fn record_simple_field(field: Field, current: &mut [ComplexField], fields: &mut 
 fn read_simple_field(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Field {
     let instruction = attr_local(start, b"instr").unwrap_or_default();
     let mut result = String::new();
+    let mut xml_depth = 0usize;
+    let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
-                skip_subtree(r);
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    skip_subtree(r);
+                    continue;
+                }
+                if matches!(name, b"del" | b"moveFrom") {
+                    skip_subtree(r);
+                    continue;
+                }
+                let mut consumed_element = false;
+                match name {
+                    b"AlternateContent" => {
+                        alternate_content_stack.push(AlternateContentBranchState {
+                            branch_depth: xml_depth + 1,
+                            took_branch: false,
+                        });
+                    }
+                    b"t" => {
+                        result.push_str(&read_text(r));
+                        consumed_element = true;
+                    }
+                    _ => {
+                        append_field_result_inline(&mut result, &e);
+                    }
+                }
+                if !consumed_element {
+                    xml_depth = xml_depth.saturating_add(1);
+                }
             }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"t" => {
-                result.push_str(&read_text(r));
-            }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
+            Ok(Event::Empty(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    continue;
+                }
                 append_field_result_inline(&mut result, &e);
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"fldSimple" => break,
+            Ok(Event::End(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if name == b"AlternateContent" {
+                    alternate_content_stack.pop();
+                }
+                xml_depth = xml_depth.saturating_sub(1);
+            }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
