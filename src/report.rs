@@ -706,6 +706,15 @@ fn supports_render_model_field_evaluation(field: &Field) -> bool {
         || supports_field_evaluation(field)
 }
 
+fn supports_model_field_entry_evaluation(entry: &ModelFieldEntry) -> bool {
+    entry.unsupported_reason.is_none() && supports_field_evaluation(&entry.field)
+}
+
+#[cfg(feature = "render")]
+fn supports_render_model_field_entry_evaluation(entry: &ModelFieldEntry) -> bool {
+    entry.unsupported_reason.is_none() && supports_render_model_field_evaluation(&entry.field)
+}
+
 pub(crate) fn fields_for_model(blocks: &[Block]) -> Vec<Field> {
     field_entries_for_model(blocks)
         .into_iter()
@@ -743,7 +752,7 @@ pub(crate) fn render_inventory_for_model(blocks: &[Block]) -> FeatureInventory {
         .count();
     for entry in &entries {
         let field = &entry.field;
-        if supports_render_model_field_evaluation(field) {
+        if supports_render_model_field_entry_evaluation(entry) {
             continue;
         }
         if let Some(existing) = inventory
@@ -1757,7 +1766,7 @@ fn count_model_unsupported_field_kinds(entries: &[ModelFieldEntry]) -> Vec<Field
     let mut counts: Vec<FieldKindCount> = Vec::new();
     for entry in entries {
         let field = &entry.field;
-        if supports_field_evaluation(field) {
+        if supports_model_field_entry_evaluation(entry) {
             continue;
         }
         if let Some(existing) = counts.iter_mut().find(|item| item.kind == field.kind) {
@@ -1861,11 +1870,11 @@ fn model_unsupported_field_reason(
     context: &ModelFieldReasonContext,
 ) -> Option<FieldEvaluationReason> {
     let field = &entry.field;
-    if supports_field_evaluation(field) {
-        return None;
-    }
     if let Some(reason) = entry.unsupported_reason {
         return Some(model_field_unsupported_reason(reason));
+    }
+    if supports_field_evaluation(field) {
+        return None;
     }
     if field.kind == FieldKind::PageRef {
         return Some(page_ref_uncomputed_reason(
@@ -3999,7 +4008,7 @@ fn docx_page_ref_unsupported_section_format_targets(xml: &str) -> HashSet<String
 mod tests {
     use super::fields_for_model;
     use crate::annotation::{Field, FieldKind};
-    use crate::model::{Block, FieldRole, Paragraph, Run};
+    use crate::model::{Block, FieldRole, FieldUnsupportedReason, Paragraph, Run};
 
     #[test]
     fn supported_page_ref_syntax_accepts_mixed_case_arabic() {
@@ -4997,6 +5006,39 @@ mod tests {
         );
     }
 
+    #[test]
+    fn model_inventory_preserves_explicit_unsupported_reason_for_supported_syntax() {
+        let blocks = vec![Block::Paragraph(Paragraph {
+            runs: vec![Run {
+                text: "site".to_string(),
+                field: FieldRole::Hyperlink {
+                    url: "https://example.com".to_string(),
+                },
+                field_unsupported_reason: Some(FieldUnsupportedReason::UnsupportedSwitch),
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        })];
+
+        let inventory = super::feature_inventory_for_model(&blocks);
+
+        assert_eq!(inventory.fields, 1);
+        assert_eq!(
+            inventory.unsupported_field_kinds,
+            vec![super::FieldKindCount {
+                kind: FieldKind::Hyperlink,
+                count: 1,
+            }]
+        );
+        assert_eq!(
+            inventory.unsupported_field_reasons,
+            vec![super::FieldEvaluationReasonCount {
+                reason: super::FieldEvaluationReason::UnsupportedSwitch,
+                count: 1,
+            }]
+        );
+    }
+
     #[cfg(feature = "render")]
     #[test]
     fn render_model_page_support_is_syntax_gated() {
@@ -5041,6 +5083,40 @@ mod tests {
             inventory.unsupported_field_reasons,
             vec![super::FieldEvaluationReasonCount {
                 reason: super::FieldEvaluationReason::UnsupportedSwitch,
+                count: 1,
+            }]
+        );
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn render_model_inventory_preserves_explicit_unsupported_reason_for_supported_syntax() {
+        let blocks = vec![Block::Paragraph(Paragraph {
+            runs: vec![Run {
+                text: "7".to_string(),
+                field: FieldRole::Simple {
+                    instruction: "PAGE".to_string(),
+                },
+                field_unsupported_reason: Some(FieldUnsupportedReason::NoComputedResult),
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        })];
+
+        let inventory = super::render_inventory_for_model(&blocks);
+
+        assert_eq!(inventory.fields, 1);
+        assert_eq!(
+            inventory.unsupported_field_kinds,
+            vec![super::FieldKindCount {
+                kind: FieldKind::Page,
+                count: 1,
+            }]
+        );
+        assert_eq!(
+            inventory.unsupported_field_reasons,
+            vec![super::FieldEvaluationReasonCount {
+                reason: super::FieldEvaluationReason::NoComputedResult,
                 count: 1,
             }]
         );

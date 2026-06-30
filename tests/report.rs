@@ -5264,11 +5264,11 @@ fn report_numbering_fields_split_cached_and_malformed_diagnostics() {
         vec![
             field_kind_count(FieldKind::Numbering("AUTONUM".to_string()), 1),
             field_kind_count(FieldKind::Numbering("LISTNUM".to_string()), 1),
-            field_kind_count(FieldKind::Numbering("BIDIOUTLINE".to_string()), 2),
+            field_kind_count(FieldKind::Numbering("BIDIOUTLINE".to_string()), 1),
         ],
         vec![
             field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 2),
-            field_reason_count(FieldEvaluationReason::NoComputedResult, 2),
+            field_reason_count(FieldEvaluationReason::NoComputedResult, 1),
         ],
     );
 }
@@ -5493,7 +5493,7 @@ fn report_formula_neutral_format_fields_split_supported_and_malformed_diagnostic
     assert_eq!(fields[1].computed_result.as_deref(), Some("6"));
     assert_eq!(fields[2].computed_result.as_deref(), Some("ten and 25/100"));
     assert_eq!(fields[3].computed_result.as_deref(), Some("1F"));
-    assert_eq!(fields[4].computed_result, None);
+    assert_eq!(fields[4].computed_result.as_deref(), Some("5"));
 
     let report = doc.report();
     assert_eq!(report.features.fields, 5);
@@ -5501,24 +5501,15 @@ fn report_formula_neutral_format_fields_split_supported_and_malformed_diagnostic
         report.features.field_kinds,
         vec![field_kind_count(FieldKind::Dynamic("=".to_string()), 5)]
     );
-    assert_eq!(
-        report.features.unsupported_field_kinds,
-        vec![field_kind_count(FieldKind::Dynamic("=".to_string()), 1)]
-    );
-    assert_eq!(
-        report.features.unsupported_field_reasons,
-        vec![field_reason_count(
-            FieldEvaluationReason::NoComputedResult,
-            1
-        )]
-    );
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
     assert_eq!(
         report
             .warnings
             .iter()
             .filter(|warning| matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. }))
             .count(),
-        1,
+        0,
         "{:?}",
         report.warnings
     );

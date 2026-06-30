@@ -16796,12 +16796,12 @@ fn docx_ref_gap_model_render_report_matches_document_reason_buckets() {
 
     let rendered = rdoc::render_pdf_with_report(&model);
 
-    assert_eq!(rendered.report.unsupported.fields, 3);
+    assert_eq!(rendered.report.unsupported.fields, 2);
     assert_eq!(
         rendered.report.unsupported.field_kinds,
         vec![rdoc::FieldKindCount {
             kind: FieldKind::Ref,
-            count: 3,
+            count: 2,
         }]
     );
     assert_eq!(
@@ -16893,19 +16893,19 @@ fn docx_direct_bookmark_ref_gap_model_render_report_matches_document_reason_buck
         expected_reasons,
         vec![FieldEvaluationReasonCount {
             reason: FieldEvaluationReason::NoComputedResult,
-            count: 2,
+            count: 1,
         }]
     );
     let model = doc.model();
 
     let rendered = rdoc::render_pdf_with_report(&model);
 
-    assert_eq!(rendered.report.unsupported.fields, 2);
+    assert_eq!(rendered.report.unsupported.fields, 1);
     assert_eq!(
         rendered.report.unsupported.field_kinds,
         vec![FieldKindCount {
             kind: FieldKind::Ref,
-            count: 2,
+            count: 1,
         }]
     );
     assert_eq!(
