@@ -24,7 +24,8 @@ use super::{
     field_char_type, is_page_break_type, local, toggle_on,
 };
 use crate::annotation::{
-    instruction_parts, normalized_field_instruction, note_ref_field_syntax, FieldKind,
+    instruction_parts, normalized_field_instruction, note_ref_field_syntax, page_ref_field_syntax,
+    ref_field_syntax, toc_field_syntax, FieldKind,
 };
 use crate::model::{
     Align, AuthoredContentControl, Block, Cell, CellMargins, CharProps, Color, DocGrid,
@@ -2408,13 +2409,56 @@ fn unsupported_simple_field_reason_hint(
     instruction: &str,
     ctx: &Ctx<'_>,
 ) -> Option<FieldUnsupportedReason> {
+    if let Some(reason) = unsupported_ref_reason_hint(instruction, ctx) {
+        return Some(reason);
+    }
+    if let Some(reason) = unsupported_page_ref_reason_hint(instruction, ctx) {
+        return Some(reason);
+    }
     if let Some(reason) = unsupported_note_ref_reason_hint(instruction, ctx) {
         return Some(reason);
     }
-    let target = super::fields::page_ref_target_using_target_format(instruction)?;
-    ctx.page_ref_context
-        .target_uses_unsupported_display_format(&target)
-        .then_some(FieldUnsupportedReason::UnsupportedSwitch)
+    if let Some(reason) = unsupported_toc_reason_hint(instruction, ctx) {
+        return Some(reason);
+    }
+    None
+}
+
+fn unsupported_ref_reason_hint(instruction: &str, ctx: &Ctx<'_>) -> Option<FieldUnsupportedReason> {
+    if FieldKind::from_instruction(instruction) != FieldKind::Ref {
+        return None;
+    }
+    let Some(syntax) = ref_field_syntax(instruction) else {
+        return Some(FieldUnsupportedReason::UnsupportedSwitch);
+    };
+    if ctx.bookmark_names.contains(&syntax.target) {
+        Some(FieldUnsupportedReason::NoComputedResult)
+    } else {
+        Some(FieldUnsupportedReason::UnresolvedBookmark)
+    }
+}
+
+fn unsupported_page_ref_reason_hint(
+    instruction: &str,
+    ctx: &Ctx<'_>,
+) -> Option<FieldUnsupportedReason> {
+    if FieldKind::from_instruction(instruction) != FieldKind::PageRef {
+        return None;
+    }
+    let Some(syntax) = page_ref_field_syntax(instruction) else {
+        return Some(FieldUnsupportedReason::UnsupportedSwitch);
+    };
+    if ctx
+        .page_ref_context
+        .target_uses_unsupported_display_format(&syntax.target)
+    {
+        return Some(FieldUnsupportedReason::UnsupportedSwitch);
+    }
+    if ctx.bookmark_names.contains(&syntax.target) {
+        Some(FieldUnsupportedReason::NoComputedResult)
+    } else {
+        Some(FieldUnsupportedReason::UnresolvedBookmark)
+    }
 }
 
 fn unsupported_note_ref_reason_hint(
@@ -2433,6 +2477,22 @@ fn unsupported_note_ref_reason_hint(
         Some(FieldUnsupportedReason::NoComputedResult)
     } else {
         Some(FieldUnsupportedReason::UnresolvedBookmark)
+    }
+}
+
+fn unsupported_toc_reason_hint(instruction: &str, ctx: &Ctx<'_>) -> Option<FieldUnsupportedReason> {
+    if FieldKind::from_instruction(instruction) != FieldKind::Toc {
+        return None;
+    }
+    let Some(syntax) = toc_field_syntax(instruction) else {
+        return Some(FieldUnsupportedReason::UnsupportedSwitch);
+    };
+    match syntax.bookmark {
+        Some(target) if ctx.bookmark_names.contains(&target) => {
+            Some(FieldUnsupportedReason::NoComputedResult)
+        }
+        Some(_) => Some(FieldUnsupportedReason::UnresolvedBookmark),
+        None => Some(FieldUnsupportedReason::NoComputedResult),
     }
 }
 

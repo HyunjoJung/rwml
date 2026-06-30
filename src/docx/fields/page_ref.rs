@@ -992,11 +992,6 @@ pub(crate) fn computed_page_ref_result(
     Some(apply_field_text_format(text, spec.text_format))
 }
 
-pub(crate) fn page_ref_target_using_target_format(instruction: &str) -> Option<String> {
-    let spec = page_ref_instruction(instruction)?;
-    spec.number_format.is_none().then_some(spec.target)
-}
-
 fn computed_relative_page_ref_result(
     spec: &PageRefInstruction,
     page_refs: &PageRefContext,

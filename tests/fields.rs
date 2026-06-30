@@ -34,6 +34,27 @@ fn unzip_parts(bytes: &[u8]) -> std::collections::BTreeMap<String, Vec<u8>> {
     parts
 }
 
+fn model_simple_field_reason_hints(
+    doc: &Document,
+    instruction_filter: impl Fn(&str) -> bool,
+) -> Vec<(String, Option<FieldUnsupportedReason>)> {
+    doc.model()
+        .blocks
+        .iter()
+        .filter_map(|block| match block {
+            Block::Paragraph(paragraph) => Some(paragraph),
+            _ => None,
+        })
+        .flat_map(|paragraph| paragraph.runs.iter())
+        .filter_map(|run| match &run.field {
+            FieldRole::Simple { instruction } if instruction_filter(instruction) => {
+                Some((instruction.clone(), run.field_unsupported_reason))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 fn field_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -10172,6 +10193,14 @@ fn docx_toc_b_existing_empty_scope_computes_empty_result() {
         }]
     );
 
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| instruction.starts_with("TOC")),
+        vec![(
+            "TOC \\b MissingScope".to_string(),
+            Some(FieldUnsupportedReason::UnresolvedBookmark),
+        )]
+    );
+
     let main_text = doc.main_text();
     assert!(
         !main_text.contains("cached empty toc") && main_text.contains("cached missing toc scope"),
@@ -10204,6 +10233,14 @@ fn docx_toc_field_with_unsupported_switch_keeps_cached_text() {
             reason: FieldEvaluationReason::UnsupportedSwitch,
             count: 1,
         }]
+    );
+
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| instruction.starts_with("TOC")),
+        vec![(
+            "TOC \\q".to_string(),
+            Some(FieldUnsupportedReason::UnsupportedSwitch),
+        )]
     );
 
     let main_text = doc.main_text();
@@ -10893,6 +10930,24 @@ fn docx_ref_gap_cases_keep_cached_text() {
         ]
     );
 
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| instruction.starts_with("REF ")),
+        vec![
+            (
+                "REF PlainText \\f".to_string(),
+                Some(FieldUnsupportedReason::NoComputedResult),
+            ),
+            (
+                "REF PlainText \\d-".to_string(),
+                Some(FieldUnsupportedReason::NoComputedResult),
+            ),
+            (
+                "REF MissingRef".to_string(),
+                Some(FieldUnsupportedReason::UnresolvedBookmark),
+            ),
+        ]
+    );
+
     let main_text = doc.main_text();
     assert!(
         main_text.contains("cached non-note ref mark")
@@ -11011,35 +11066,19 @@ fn docx_note_ref_gap_cases_keep_cached_text() {
         ]
     );
 
-    let model = doc.model();
-    let model_reason_hints = model
-        .blocks
-        .iter()
-        .filter_map(|block| match block {
-            Block::Paragraph(paragraph) => Some(paragraph),
-            _ => None,
-        })
-        .flat_map(|paragraph| paragraph.runs.iter())
-        .filter_map(|run| match &run.field {
-            FieldRole::Simple { instruction } if instruction.starts_with("NOTEREF") => {
-                Some((instruction.as_str(), run.field_unsupported_reason))
-            }
-            _ => None,
-        })
-        .collect::<Vec<_>>();
     assert_eq!(
-        model_reason_hints,
+        model_simple_field_reason_hints(&doc, |instruction| instruction.starts_with("NOTEREF")),
         vec![
             (
-                "NOTEREF PlainText",
+                "NOTEREF PlainText".to_string(),
                 Some(FieldUnsupportedReason::NoComputedResult),
             ),
             (
-                "NOTEREF MissingNote",
+                "NOTEREF MissingNote".to_string(),
                 Some(FieldUnsupportedReason::UnresolvedBookmark),
             ),
             (
-                "NOTEREF PlainText \\x",
+                "NOTEREF PlainText \\x".to_string(),
                 Some(FieldUnsupportedReason::UnsupportedSwitch),
             ),
         ]
@@ -11509,6 +11548,20 @@ fn docx_page_ref_gap_cases_keep_cached_text() {
                 reason: FieldEvaluationReason::UnresolvedBookmark,
                 count: 1,
             },
+        ]
+    );
+
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| instruction.starts_with("PAGEREF")),
+        vec![
+            (
+                "PAGEREF PlainText \\h".to_string(),
+                Some(FieldUnsupportedReason::NoComputedResult),
+            ),
+            (
+                "PAGEREF MissingPage \\h".to_string(),
+                Some(FieldUnsupportedReason::UnresolvedBookmark),
+            ),
         ]
     );
 
