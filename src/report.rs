@@ -40,7 +40,7 @@ use crate::annotation::{
 };
 #[cfg(feature = "docx")]
 use crate::docx::local;
-use crate::model::{Block, FieldRole, Stats, Table};
+use crate::model::{Block, FieldRole, FieldUnsupportedReason, Stats, Table};
 use crate::CoreProperties;
 #[cfg(feature = "docx")]
 use crate::RevisionKind;
@@ -691,24 +691,24 @@ fn supports_render_model_field_evaluation(field: &Field) -> bool {
 }
 
 pub(crate) fn fields_for_model(blocks: &[Block]) -> Vec<Field> {
-    let mut fields = Vec::new();
-    let bookmark_names = model_bookmark_names(blocks);
-    collect_model_fields(blocks, &bookmark_names, &mut fields);
-    fields
+    field_entries_for_model(blocks)
+        .into_iter()
+        .map(|entry| entry.field)
+        .collect()
 }
 
 pub(crate) fn feature_inventory_for_model(blocks: &[Block]) -> FeatureInventory {
     let mut inventory = FeatureInventory::default();
-    let fields = fields_for_model(blocks);
+    let entries = field_entries_for_model(blocks);
     let reason_context = model_field_reason_context(blocks);
-    inventory.fields = fields.len();
-    inventory.field_kinds = count_field_kinds(&fields);
-    inventory.unsupported_field_kinds = count_unsupported_field_kinds(&fields);
+    inventory.fields = entries.len();
+    inventory.field_kinds = count_model_field_kinds(&entries);
+    inventory.unsupported_field_kinds = count_model_unsupported_field_kinds(&entries);
     inventory.unsupported_field_reasons =
-        count_model_unsupported_field_reasons(&fields, &reason_context);
-    inventory.hyperlinks = fields
+        count_model_unsupported_field_reasons(&entries, &reason_context);
+    inventory.hyperlinks = entries
         .iter()
-        .filter(|field| field.kind == FieldKind::Hyperlink)
+        .filter(|entry| entry.field.kind == FieldKind::Hyperlink)
         .count();
     count_nested_model_tables(blocks, 0, &mut inventory, true);
     inventory
@@ -717,15 +717,16 @@ pub(crate) fn feature_inventory_for_model(blocks: &[Block]) -> FeatureInventory 
 #[cfg(feature = "render")]
 pub(crate) fn render_inventory_for_model(blocks: &[Block]) -> FeatureInventory {
     let mut inventory = FeatureInventory::default();
-    let fields = fields_for_model(blocks);
+    let entries = field_entries_for_model(blocks);
     let reason_context = model_field_reason_context(blocks);
-    inventory.fields = fields.len();
-    inventory.field_kinds = count_field_kinds(&fields);
-    inventory.hyperlinks = fields
+    inventory.fields = entries.len();
+    inventory.field_kinds = count_model_field_kinds(&entries);
+    inventory.hyperlinks = entries
         .iter()
-        .filter(|field| field.kind == FieldKind::Hyperlink)
+        .filter(|entry| entry.field.kind == FieldKind::Hyperlink)
         .count();
-    for field in &fields {
+    for entry in &entries {
+        let field = &entry.field;
         if supports_render_model_field_evaluation(field) {
             continue;
         }
@@ -741,7 +742,7 @@ pub(crate) fn render_inventory_for_model(blocks: &[Block]) -> FeatureInventory {
                 count: 1,
             });
         }
-        if let Some(reason) = render_model_unsupported_field_reason(field, &reason_context) {
+        if let Some(reason) = render_model_unsupported_field_reason(entry, &reason_context) {
             increment_field_evaluation_reason_count(
                 &mut inventory.unsupported_field_reasons,
                 reason,
@@ -750,6 +751,11 @@ pub(crate) fn render_inventory_for_model(blocks: &[Block]) -> FeatureInventory {
     }
     count_nested_model_tables(blocks, 0, &mut inventory, false);
     inventory
+}
+
+struct ModelFieldEntry {
+    field: Field,
+    unsupported_reason: Option<FieldUnsupportedReason>,
 }
 
 #[derive(Default)]
@@ -791,9 +797,13 @@ fn collect_model_field_reason_context(blocks: &[Block], context: &mut ModelField
 
 #[cfg(feature = "render")]
 fn render_model_unsupported_field_reason(
-    field: &Field,
+    entry: &ModelFieldEntry,
     context: &ModelFieldReasonContext,
 ) -> Option<FieldEvaluationReason> {
+    let field = &entry.field;
+    if let Some(reason) = entry.unsupported_reason {
+        return Some(model_field_unsupported_reason(reason));
+    }
     if !supports_render_model_field_evaluation(field) && field.kind == FieldKind::PageRef {
         return Some(page_ref_uncomputed_reason(
             &field.instruction,
@@ -825,6 +835,14 @@ fn render_model_unsupported_field_reason(
     unsupported_field_reason(field)
 }
 
+fn model_field_unsupported_reason(reason: FieldUnsupportedReason) -> FieldEvaluationReason {
+    match reason {
+        FieldUnsupportedReason::UnresolvedBookmark => FieldEvaluationReason::UnresolvedBookmark,
+        FieldUnsupportedReason::UnsupportedSwitch => FieldEvaluationReason::UnsupportedSwitch,
+        FieldUnsupportedReason::NoComputedResult => FieldEvaluationReason::NoComputedResult,
+    }
+}
+
 fn count_nested_model_tables(
     blocks: &[Block],
     depth: usize,
@@ -850,20 +868,37 @@ fn count_nested_model_tables(
     }
 }
 
-fn collect_model_fields(blocks: &[Block], bookmark_names: &HashSet<String>, out: &mut Vec<Field>) {
+fn field_entries_for_model(blocks: &[Block]) -> Vec<ModelFieldEntry> {
+    let mut fields = Vec::new();
+    let bookmark_names = model_bookmark_names(blocks);
+    collect_model_field_entries(blocks, &bookmark_names, &mut fields);
+    fields
+}
+
+fn collect_model_field_entries(
+    blocks: &[Block],
+    bookmark_names: &HashSet<String>,
+    out: &mut Vec<ModelFieldEntry>,
+) {
     for block in blocks {
         match block {
             Block::Paragraph(paragraph) => {
-                let mut current: Option<Field> = None;
+                let mut current: Option<ModelFieldEntry> = None;
                 for run in &paragraph.runs {
-                    let field = field_from_role(&run.field, &run.text, bookmark_names);
+                    let field = field_from_role(
+                        &run.field,
+                        &run.text,
+                        bookmark_names,
+                        run.field_unsupported_reason,
+                    );
                     match field {
                         Some(field) => {
                             if let Some(active) = &mut current {
-                                if active.kind == field.kind
-                                    && active.instruction == field.instruction
+                                if active.field.kind == field.field.kind
+                                    && active.field.instruction == field.field.instruction
+                                    && active.unsupported_reason == field.unsupported_reason
                                 {
-                                    active.result.push_str(&field.result);
+                                    active.field.result.push_str(&field.field.result);
                                     continue;
                                 }
                                 out.push(current.take().expect("checked above"));
@@ -881,20 +916,20 @@ fn collect_model_fields(blocks: &[Block], bookmark_names: &HashSet<String>, out:
                     out.push(done);
                 }
             }
-            Block::Table(table) => collect_model_table_fields(table, bookmark_names, out),
+            Block::Table(table) => collect_model_table_field_entries(table, bookmark_names, out),
             Block::Image(_) | Block::Chart(_) | Block::PageBreak | Block::SectionBreak(_) => {}
         }
     }
 }
 
-fn collect_model_table_fields(
+fn collect_model_table_field_entries(
     table: &Table,
     bookmark_names: &HashSet<String>,
-    out: &mut Vec<Field>,
+    out: &mut Vec<ModelFieldEntry>,
 ) {
     for row in &table.rows {
         for cell in &row.cells {
-            collect_model_fields(&cell.blocks, bookmark_names, out);
+            collect_model_field_entries(&cell.blocks, bookmark_names, out);
         }
     }
 }
@@ -903,7 +938,8 @@ fn field_from_role(
     role: &FieldRole,
     result: &str,
     bookmark_names: &HashSet<String>,
-) -> Option<Field> {
+    unsupported_reason: Option<FieldUnsupportedReason>,
+) -> Option<ModelFieldEntry> {
     match role {
         FieldRole::Simple { instruction } => {
             let instruction = normalize_model_field_instruction(instruction);
@@ -911,19 +947,25 @@ fn field_from_role(
                 None
             } else {
                 let kind = model_field_kind(&instruction, bookmark_names);
-                Some(Field {
-                    kind,
-                    instruction,
-                    result: result.to_string(),
-                    computed_result: None,
+                Some(ModelFieldEntry {
+                    field: Field {
+                        kind,
+                        instruction,
+                        result: result.to_string(),
+                        computed_result: None,
+                    },
+                    unsupported_reason,
                 })
             }
         }
-        FieldRole::Hyperlink { url } => Some(Field {
-            kind: FieldKind::Hyperlink,
-            instruction: format!("HYPERLINK \"{url}\""),
-            result: result.to_string(),
-            computed_result: None,
+        FieldRole::Hyperlink { url } => Some(ModelFieldEntry {
+            field: Field {
+                kind: FieldKind::Hyperlink,
+                instruction: format!("HYPERLINK \"{url}\""),
+                result: result.to_string(),
+                computed_result: None,
+            },
+            unsupported_reason,
         }),
         FieldRole::None | FieldRole::Other => None,
     }
@@ -1644,6 +1686,7 @@ pub(crate) fn docx_edit_capability(docx: &crate::docx::DocxState) -> EditCapabil
     }
 }
 
+#[cfg(feature = "docx")]
 fn count_field_kinds(fields: &[Field]) -> Vec<FieldKindCount> {
     let mut counts: Vec<FieldKindCount> = Vec::new();
     for field in fields {
@@ -1659,6 +1702,7 @@ fn count_field_kinds(fields: &[Field]) -> Vec<FieldKindCount> {
     counts
 }
 
+#[cfg(feature = "docx")]
 fn count_unsupported_field_kinds(fields: &[Field]) -> Vec<FieldKindCount> {
     let mut counts: Vec<FieldKindCount> = Vec::new();
     for field in fields {
@@ -1677,13 +1721,48 @@ fn count_unsupported_field_kinds(fields: &[Field]) -> Vec<FieldKindCount> {
     counts
 }
 
+fn count_model_field_kinds(entries: &[ModelFieldEntry]) -> Vec<FieldKindCount> {
+    let mut counts: Vec<FieldKindCount> = Vec::new();
+    for entry in entries {
+        let kind = &entry.field.kind;
+        if let Some(existing) = counts.iter_mut().find(|item| item.kind == *kind) {
+            existing.count += 1;
+        } else {
+            counts.push(FieldKindCount {
+                kind: kind.clone(),
+                count: 1,
+            });
+        }
+    }
+    counts
+}
+
+fn count_model_unsupported_field_kinds(entries: &[ModelFieldEntry]) -> Vec<FieldKindCount> {
+    let mut counts: Vec<FieldKindCount> = Vec::new();
+    for entry in entries {
+        let field = &entry.field;
+        if supports_field_evaluation(field) {
+            continue;
+        }
+        if let Some(existing) = counts.iter_mut().find(|item| item.kind == field.kind) {
+            existing.count += 1;
+        } else {
+            counts.push(FieldKindCount {
+                kind: field.kind.clone(),
+                count: 1,
+            });
+        }
+    }
+    counts
+}
+
 fn count_model_unsupported_field_reasons(
-    fields: &[Field],
+    entries: &[ModelFieldEntry],
     context: &ModelFieldReasonContext,
 ) -> Vec<FieldEvaluationReasonCount> {
     let mut counts: Vec<FieldEvaluationReasonCount> = Vec::new();
-    for field in fields {
-        if let Some(reason) = model_unsupported_field_reason(field, context) {
+    for entry in entries {
+        if let Some(reason) = model_unsupported_field_reason(entry, context) {
             increment_field_evaluation_reason_count(&mut counts, reason);
         }
     }
@@ -1762,11 +1841,15 @@ fn unsupported_docx_field_reason(
 }
 
 fn model_unsupported_field_reason(
-    field: &Field,
+    entry: &ModelFieldEntry,
     context: &ModelFieldReasonContext,
 ) -> Option<FieldEvaluationReason> {
+    let field = &entry.field;
     if supports_field_evaluation(field) {
         return None;
+    }
+    if let Some(reason) = entry.unsupported_reason {
+        return Some(model_field_unsupported_reason(reason));
     }
     if field.kind == FieldKind::PageRef {
         return Some(page_ref_uncomputed_reason(

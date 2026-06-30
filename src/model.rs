@@ -426,6 +426,8 @@ pub struct Run {
     pub field: FieldRole,
     /// Mark generated simple fields dirty so Word can refresh them.
     pub field_dirty: bool,
+    /// Best-effort reason an imported field result remains cached, when known.
+    pub field_unsupported_reason: Option<FieldUnsupportedReason>,
     /// An inline picture (the run's text is empty when this is set).
     pub image: Option<Image>,
     /// Authored comment anchored to this run.
@@ -438,6 +440,17 @@ pub struct Run {
     pub bookmark: Option<String>,
     /// Authored footnote/endnote anchored after this run.
     pub note: Option<AuthoredNote>,
+}
+
+/// Best-effort reason an imported field remains cached in the model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FieldUnsupportedReason {
+    /// The field points at a bookmark/scope rdoc could not resolve.
+    UnresolvedBookmark,
+    /// The instruction contains a switch whose value can change the result.
+    UnsupportedSwitch,
+    /// The instruction is supported, but the document contains no computable value.
+    NoComputedResult,
 }
 
 pub(crate) fn referenceable_bookmark_name(name: &str) -> bool {

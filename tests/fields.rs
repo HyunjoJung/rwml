@@ -2494,6 +2494,24 @@ fn page_ref_content_paragraph_section_format_docx() -> Vec<u8> {
     ])
 }
 
+#[cfg(feature = "render")]
+fn page_ref_complex_content_paragraph_section_format_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:sectPr><w:pgNumType w:fmt="bullet"/></w:sectPr></w:pPr><w:bookmarkStart w:id="7" w:name="BeforeFormatBreak"/><w:r><w:t>Before format break</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:bookmarkStart w:id="8" w:name="AfterFormatBreak"/><w:r><w:t>After format break</w:t></w:r><w:bookmarkEnd w:id="8"/></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> PAGEREF AfterFormatBreak \p </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale complex after</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn page_ref_default_section_break_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -12589,6 +12607,80 @@ fn docx_page_ref_gap_model_render_report_matches_document_reason_buckets() {
         vec![rdoc::FieldKindCount {
             kind: FieldKind::PageRef,
             count: 2,
+        }]
+    );
+    assert_eq!(
+        rendered.report.unsupported.unsupported_field_reasons,
+        expected_reasons
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn docx_page_ref_section_format_model_render_report_matches_document_reason_bucket() {
+    let doc =
+        Document::open(&page_ref_content_paragraph_section_format_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].computed_result.as_deref(), Some("on page 1"));
+    assert_eq!(fields[1].computed_result, None);
+
+    let expected_reasons = doc.report().features.unsupported_field_reasons;
+    assert_eq!(
+        expected_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnsupportedSwitch,
+            count: 1,
+        }]
+    );
+    let model = doc.model();
+
+    let rendered = rdoc::render_pdf_with_report(&model);
+
+    assert_eq!(rendered.report.unsupported.fields, 1);
+    assert_eq!(
+        rendered.report.unsupported.field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::PageRef,
+            count: 1,
+        }]
+    );
+    assert_eq!(
+        rendered.report.unsupported.unsupported_field_reasons,
+        expected_reasons
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn docx_page_ref_complex_section_format_model_render_report_matches_document_reason_bucket() {
+    let doc = Document::open(&page_ref_complex_content_paragraph_section_format_docx())
+        .expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::PageRef);
+    assert_eq!(fields[0].computed_result, None);
+
+    let expected_reasons = doc.report().features.unsupported_field_reasons;
+    assert_eq!(
+        expected_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnsupportedSwitch,
+            count: 1,
+        }]
+    );
+    let model = doc.model();
+
+    let rendered = rdoc::render_pdf_with_report(&model);
+
+    assert_eq!(rendered.report.unsupported.fields, 1);
+    assert_eq!(
+        rendered.report.unsupported.field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::PageRef,
+            count: 1,
         }]
     );
     assert_eq!(

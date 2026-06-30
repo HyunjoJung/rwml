@@ -81,8 +81,9 @@ use self::page_ref::{
 use self::page_ref::{cardinal_page_number_text, ordinal_page_number_text, page_ref_instruction};
 #[allow(unused_imports)]
 pub(crate) use self::page_ref::{
-    computed_page_ref_result, computed_page_result, page_ref_context, supports_page_field_syntax,
-    PageRefContext, PageRefPosition,
+    computed_page_ref_result, computed_page_result, page_ref_context,
+    page_ref_target_using_target_format, supports_page_field_syntax, PageRefContext,
+    PageRefPosition,
 };
 #[cfg(test)]
 use self::reference::ref_instruction;

@@ -8,6 +8,7 @@ pub(crate) struct PageRefContext {
     targets: HashMap<String, PageRefTarget>,
     target_positions: HashMap<String, PageRefPosition>,
     target_forced_break_after_orders: HashMap<String, usize>,
+    unsupported_section_format_targets: HashSet<String>,
     field_positions: Vec<Option<PageRefPosition>>,
     field_orders: Vec<usize>,
     page_field_positions: Vec<Option<PageRefPosition>>,
@@ -20,6 +21,14 @@ impl PageRefContext {
 
     fn target(&self, name: &str) -> Option<PageRefTarget> {
         self.targets.get(name).copied()
+    }
+
+    pub(crate) fn target_uses_unsupported_display_format(&self, name: &str) -> bool {
+        if self.unsupported_section_format_targets.contains(name) {
+            return true;
+        }
+        self.target(name)
+            .is_some_and(|target| target.display_format == PageRefDisplayFormat::Unsupported)
     }
 
     pub(crate) fn target_position(&self, name: &str) -> Option<PageRefPosition> {
@@ -249,6 +258,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
     let mut rendered_targets = HashMap::new();
     let mut target_positions = HashMap::new();
     let mut target_forced_break_after_orders = HashMap::new();
+    let mut unsupported_section_format_targets = HashSet::new();
     let mut field_positions = Vec::new();
     let mut field_orders = Vec::new();
     let mut page_field_positions = Vec::new();
@@ -357,6 +367,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                         &mut targets,
                         &mut rendered_targets,
                         &mut target_positions,
+                        &mut unsupported_section_format_targets,
                         &mut paragraph_section_break_targets,
                     ),
                     b"t" => {
@@ -452,6 +463,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                         &mut targets,
                         &mut rendered_targets,
                         &mut target_positions,
+                        &mut unsupported_section_format_targets,
                         &mut paragraph_section_break_targets,
                     ),
                     b"br" if is_page_break_type(&e) => {
@@ -566,6 +578,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
         targets,
         target_positions,
         target_forced_break_after_orders,
+        unsupported_section_format_targets,
         field_positions,
         field_orders,
         page_field_positions,
@@ -734,11 +747,15 @@ fn record_page_ref_bookmark_start(
     targets: &mut HashMap<String, PageRefTarget>,
     rendered_targets: &mut HashMap<String, PageRefPosition>,
     target_positions: &mut HashMap<String, PageRefPosition>,
+    unsupported_section_format_targets: &mut HashSet<String>,
     paragraph_section_break_targets: &mut Vec<String>,
 ) {
     let Some(name) = bookmark_name(e) else {
         return;
     };
+    if pages.leading_display_format == PageRefDisplayFormat::Unsupported {
+        unsupported_section_format_targets.insert(name.clone());
+    }
     if pages.leading_page_number > 1 && !saw_visible_content {
         targets.entry(name.clone()).or_insert(PageRefTarget {
             display_page: pages.leading_display_page_number,
@@ -935,6 +952,11 @@ pub(crate) fn computed_page_ref_result(
         )?
     };
     Some(apply_field_text_format(text, spec.text_format))
+}
+
+pub(crate) fn page_ref_target_using_target_format(instruction: &str) -> Option<String> {
+    let spec = page_ref_instruction(instruction)?;
+    spec.number_format.is_none().then_some(spec.target)
 }
 
 fn computed_relative_page_ref_result(

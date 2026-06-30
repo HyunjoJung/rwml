@@ -26,10 +26,10 @@ use super::{
 use crate::annotation::{instruction_parts, normalized_field_instruction, FieldKind};
 use crate::model::{
     Align, AuthoredContentControl, Block, Cell, CellMargins, CharProps, Color, DocGrid,
-    DocGridType, FieldRole, Image, Indent, ListInfo, PageNumberFormat, PageSetup, ParaProps,
-    Paragraph, Row, Run, SectionBreakKind, SectionSetup, Spacing, Table, TableBorderColors,
-    TableBorderSide, TableBorderSizes, TableBorderStyle, TableBorderStyles, TextDirection, VCell,
-    VertAlign,
+    DocGridType, FieldRole, FieldUnsupportedReason, Image, Indent, ListInfo, PageNumberFormat,
+    PageSetup, ParaProps, Paragraph, Row, Run, SectionBreakKind, SectionSetup, Spacing, Table,
+    TableBorderColors, TableBorderSide, TableBorderSizes, TableBorderStyle, TableBorderStyles,
+    TextDirection, VCell, VertAlign,
 };
 use crate::text;
 use crate::CoreProperties;
@@ -1267,6 +1267,7 @@ enum ComplexFieldPhase {
 struct PendingComplexField {
     instruction: String,
     text: Option<String>,
+    unsupported_reason: Option<FieldUnsupportedReason>,
     result_runs: Vec<usize>,
     insert_at: usize,
 }
@@ -1294,11 +1295,16 @@ impl ComplexFieldTracker {
                 let has_result_runs = !self.result_runs.is_empty();
                 let current_result = if has_result_runs { "\u{0}" } else { "" };
                 let text = computed_simple_field_result(&instruction, ctx, current_result);
+                let unsupported_reason = text
+                    .is_none()
+                    .then(|| unsupported_simple_field_reason_hint(&instruction, ctx))
+                    .flatten();
                 let insert_at = self.result_start.unwrap_or(index);
                 let should_apply = has_result_runs || text.is_some();
                 self.pending = Some(PendingComplexField {
                     text,
                     instruction,
+                    unsupported_reason,
                     result_runs: std::mem::take(&mut self.result_runs),
                     insert_at,
                 })
@@ -1343,10 +1349,12 @@ impl ComplexFieldTracker {
             };
             if computed.text.is_some() {
                 run.field = FieldRole::Other;
+                run.field_unsupported_reason = None;
             } else if offset == 0 {
                 run.field = FieldRole::Simple {
                     instruction: computed.instruction.clone(),
                 };
+                run.field_unsupported_reason = computed.unsupported_reason;
             }
             if let Some(text) = computed.text.as_deref() {
                 run.text = if offset == 0 {
@@ -1365,6 +1373,7 @@ fn computed_field_run(text: String) -> Run {
         props: CharProps::default(),
         field: FieldRole::Other,
         field_dirty: false,
+        field_unsupported_reason: None,
         image: None,
         comment: None,
         revision: None,
@@ -1802,6 +1811,7 @@ fn push_drawing_runs(images: &mut Vec<Run>, img: Option<Image>, txbx: String) {
             props: CharProps::default(),
             field: FieldRole::None,
             field_dirty: false,
+            field_unsupported_reason: None,
             image: Some(img),
             comment: None,
             revision: None,
@@ -1816,6 +1826,7 @@ fn push_drawing_runs(images: &mut Vec<Run>, img: Option<Image>, txbx: String) {
             props: CharProps::default(),
             field: FieldRole::None,
             field_dirty: false,
+            field_unsupported_reason: None,
             image: None,
             comment: None,
             revision: None,
@@ -1924,6 +1935,7 @@ fn read_run(
                 .map(|u| FieldRole::Hyperlink { url: u.to_string() })
                 .unwrap_or(FieldRole::None),
             field_dirty: false,
+            field_unsupported_reason: None,
             image: None,
             comment: None,
             revision: None,
@@ -2381,11 +2393,23 @@ fn read_fldsimple(r: &mut Xml<'_>, start: &BytesStart<'_>, ctx: &Ctx<'_>, depth:
                     run.field = FieldRole::Simple {
                         instruction: instruction.clone(),
                     };
+                    run.field_unsupported_reason =
+                        unsupported_simple_field_reason_hint(&instruction, ctx);
                 }
             }
         }
     }
     runs
+}
+
+fn unsupported_simple_field_reason_hint(
+    instruction: &str,
+    ctx: &Ctx<'_>,
+) -> Option<FieldUnsupportedReason> {
+    let target = super::fields::page_ref_target_using_target_format(instruction)?;
+    ctx.page_ref_context
+        .target_uses_unsupported_display_format(&target)
+        .then_some(FieldUnsupportedReason::UnsupportedSwitch)
 }
 
 fn computed_simple_field_result(

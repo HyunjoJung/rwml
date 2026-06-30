@@ -84,10 +84,11 @@ pub use error::{Error, Result};
 pub use model::{
     Align, AuthoredComment, AuthoredContentControl, AuthoredNote, AuthoredRevision, Block, Cell,
     CellMargins, CharProps, Chart, ChartKind, ChartSeries, ChartShape, Color, DocGrid, DocGridType,
-    DocMeta, DocModel, DocSetup, FieldRole, Image, Indent, ListInfo, PageNumberFormat, PageSetup,
-    ParaProps, Paragraph, ParagraphStyle, Row, Run, SectionBreakKind, SectionSetup, SourceRegion,
-    SourceRegionKind, Spacing, Stats, Table, TableBorderColors, TableBorderSide, TableBorderSizes,
-    TableBorderStyle, TableBorderStyles, TextDirection, VCell, VertAlign, WebExtensionTaskPane,
+    DocMeta, DocModel, DocSetup, FieldRole, FieldUnsupportedReason, Image, Indent, ListInfo,
+    PageNumberFormat, PageSetup, ParaProps, Paragraph, ParagraphStyle, Row, Run, SectionBreakKind,
+    SectionSetup, SourceRegion, SourceRegionKind, Spacing, Stats, Table, TableBorderColors,
+    TableBorderSide, TableBorderSizes, TableBorderStyle, TableBorderStyles, TextDirection, VCell,
+    VertAlign, WebExtensionTaskPane,
 };
 pub use report::{
     DocumentFormat, DocumentReport, DocumentWarning, EditCapability, EditReadOnlyReason,
