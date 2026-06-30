@@ -4940,6 +4940,90 @@ fn docx_simple_hyperlink_anchor_field_uses_bookmark_url() {
 }
 
 #[test]
+fn docx_hyperlink_field_accepts_noop_switches() {
+    let doc = Document::open(&docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" HYPERLINK &quot;https://example.com/no-history&quot; \n "><w:r><w:t>No history</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" HYPERLINK &quot;https://example.com/no-frame&quot; \m "><w:r><w:t>No frame</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" HYPERLINK &quot;https://example.com/full&quot; \m \n \o &quot;tip&quot; \t NewWindow "><w:r><w:t>Full link</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" HYPERLINK &quot;https://example.com/bad&quot; \n &quot;extra&quot; "><w:r><w:t>Bad tail</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ]))
+    .expect("fixture opens");
+
+    assert_eq!(doc.main_text(), "No history\nNo frame\nFull link\nBad tail");
+    let fields = doc.fields();
+    assert_eq!(fields.len(), 4);
+    assert!(fields
+        .iter()
+        .all(|field| field.kind == FieldKind::Hyperlink));
+
+    let report = doc.report();
+    assert_eq!(report.features.fields, 4);
+    assert_eq!(report.features.hyperlinks, 4);
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Hyperlink,
+            count: 1,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnsupportedSwitch,
+            count: 1,
+        }]
+    );
+
+    let [Block::Paragraph(no_history), Block::Paragraph(no_frame), Block::Paragraph(full_link), Block::Paragraph(bad_tail)] =
+        &doc.model().blocks[..]
+    else {
+        panic!("expected one paragraph per hyperlink field");
+    };
+    let [no_history_run] = &no_history.runs[..] else {
+        panic!("expected no-history hyperlink run");
+    };
+    let [no_frame_run] = &no_frame.runs[..] else {
+        panic!("expected no-frame hyperlink run");
+    };
+    let [full_link_run] = &full_link.runs[..] else {
+        panic!("expected full hyperlink run");
+    };
+    let [bad_tail_run] = &bad_tail.runs[..] else {
+        panic!("expected malformed hyperlink run");
+    };
+
+    assert!(matches!(
+        &no_history_run.field,
+        FieldRole::Hyperlink { url } if url == "https://example.com/no-history"
+    ));
+    assert!(matches!(
+        &no_frame_run.field,
+        FieldRole::Hyperlink { url } if url == "https://example.com/no-frame"
+    ));
+    assert!(matches!(
+        &full_link_run.field,
+        FieldRole::Hyperlink { url } if url == "https://example.com/full"
+    ));
+    assert!(matches!(
+        &bad_tail_run.field,
+        FieldRole::Simple { instruction }
+            if instruction == r#"HYPERLINK "https://example.com/bad" \n "extra""#
+    ));
+    assert_eq!(
+        bad_tail_run.field_unsupported_reason,
+        Some(FieldUnsupportedReason::UnsupportedSwitch)
+    );
+}
+
+#[test]
 fn docx_page_fields_compute_trusted_current_page_numbers() {
     let doc = Document::open(&page_field_docx()).expect("fixture opens");
     let fields = doc.fields();

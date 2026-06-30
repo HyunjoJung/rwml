@@ -622,6 +622,9 @@ fn hyperlink_tail_syntax(tail: &str) -> bool {
             return false;
         }
         let lower = part.to_ascii_lowercase();
+        if matches!(lower.as_str(), "\\m" | "\\n") {
+            continue;
+        }
         if part.len() > 2 && matches!(lower.get(..2), Some("\\l") | Some("\\o") | Some("\\t")) {
             if field_non_empty_non_switch_literal_token(&part[2..]).is_none() {
                 return false;
@@ -3615,11 +3618,19 @@ mod tests {
             Some("https://example.com")
         );
         assert_eq!(
+            hyperlink_field_target(
+                r#"HYPERLINK "https://example.com" \m \n \o "tip" \t NewWindow"#
+            )
+            .as_deref(),
+            Some("https://example.com")
+        );
+        assert_eq!(
             hyperlink_field_target(r#"HYPERLINK \l "AnchorName""#).as_deref(),
             Some("AnchorName")
         );
         assert!(hyperlink_field_target(r#"HYPERLINK "https://example.com" extra"#).is_none());
         assert!(hyperlink_field_target(r#"HYPERLINK "https://example.com" \x bad"#).is_none());
+        assert!(hyperlink_field_target(r#"HYPERLINK "https://example.com" \n "extra""#).is_none());
         assert!(hyperlink_field_target(r#"HYPERLINK \o "tip""#).is_none());
         assert!(hyperlink_field_target(r#"HYPERLINKBASE "https://example.com""#).is_none());
     }

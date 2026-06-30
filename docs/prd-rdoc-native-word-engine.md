@@ -288,6 +288,8 @@ The first public maturity release should meet these requirements.
   kilobyte/`\m` megabyte switches,
   direct `USERNAME`/`USERINITIALS`/`USERADDRESS` fields with explicit quoted
   literal overrides,
+  field-code `HYPERLINK` targets and anchors with tooltip/frame and documented
+  `\m`/`\n` no-op switch tails,
   plus cached date/user/unmapped
   document-info fields (`DATE`, `TIME`, unmapped `INFO`, unmapped
   `DOCVARIABLE`, unmapped core date fields, and app stat/template fields

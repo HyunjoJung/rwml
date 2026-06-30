@@ -442,8 +442,9 @@ Implementation:
 - parse field kind and raw instruction;
 - compute only low-risk fields at first (`PAGE` in renderer context and trusted
   structural/source-rendered reader current-page context, field-code
-  `HYPERLINK` as link annotations with malformed hyperlink syntax reporting
-  `UnsupportedSwitch`, `FILENAME` with malformed switches reporting
+  `HYPERLINK` as link annotations with target/anchor, tooltip/frame, and
+  documented `\m`/`\n` no-op switch tails, with malformed hyperlink syntax
+  reporting `UnsupportedSwitch`, `FILENAME` with malformed switches reporting
   `UnsupportedSwitch`, `MERGEFIELD` with malformed merge-field names or switch tails reporting
   `UnsupportedSwitch`,
   metadata-backed document-info fields such as `AUTHOR`, `TITLE`,
@@ -1124,8 +1125,9 @@ open and edit the chart data.
   layout context is available;
 - compute body `PAGE` field runs from the emitted PDF page number during the draw
   pass, while preserving cached text in the model and exporters;
-- treat field-code `HYPERLINK` runs with malformed hyperlink syntax reporting
-  `UnsupportedSwitch`, cached body `FILENAME` with malformed switches reporting
+- treat field-code `HYPERLINK` runs as link annotations for target/anchor,
+  tooltip/frame, and documented `\m`/`\n` no-op switch tails, with malformed
+  hyperlink syntax reporting `UnsupportedSwitch`, cached body `FILENAME` with malformed switches reporting
   `UnsupportedSwitch`, cached body `MERGEFIELD` with malformed merge-field names
   or switch tails reporting `UnsupportedSwitch`,
   metadata-backed document-info results, and cached date/stat/unmapped

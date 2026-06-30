@@ -808,7 +808,8 @@ Initial status:
   contents are still future work.
 - Generated running footer page numbers (`DocSetup::page_numbers`) and body
   `PAGE` field runs are computed from the actual emitted PDF page list.
-  Field-code `HYPERLINK` runs render as link annotations and malformed
+  Field-code `HYPERLINK` runs render as link annotations for target/anchor,
+  tooltip/frame, and documented `\m`/`\n` no-op switch tails, and malformed
   hyperlink syntax reports `UnsupportedSwitch`; body `FILENAME` with malformed
   switches reporting `UnsupportedSwitch`, `MERGEFIELD` with malformed merge-field
   names or switch tails reporting `UnsupportedSwitch`,
