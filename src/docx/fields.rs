@@ -2385,15 +2385,39 @@ mod tests {
 
     #[test]
     fn ref_sequence_separators_accept_compact_values() {
-        assert!(ref_instruction(r#"REF Figure1 \d-"#).is_some());
-        assert!(direct_bookmark_ref_instruction(r#"Figure1 \d-"#).is_some());
+        assert_eq!(
+            ref_instruction(r#"REF Figure1 \d-"#)
+                .expect("compact separator")
+                .sequence_separator_value
+                .as_deref(),
+            Some("-")
+        );
+        assert_eq!(
+            direct_bookmark_ref_instruction(r#"Figure1 \d-"#)
+                .expect("compact direct separator")
+                .sequence_separator_value
+                .as_deref(),
+            Some("-")
+        );
         assert!(ref_instruction(r#"REF Figure1 \d\p"#).is_none());
     }
 
     #[test]
     fn ref_sequence_separators_reject_malformed_quotes() {
-        assert!(ref_instruction(r#"REF Figure1 \d "-""#).is_some());
-        assert!(direct_bookmark_ref_instruction(r#"Figure1 \d-"#).is_some());
+        assert_eq!(
+            ref_instruction(r#"REF Figure1 \d "-""#)
+                .expect("quoted separator")
+                .sequence_separator_value
+                .as_deref(),
+            Some("-")
+        );
+        assert_eq!(
+            direct_bookmark_ref_instruction(r#"Figure1 \d-"#)
+                .expect("compact direct separator")
+                .sequence_separator_value
+                .as_deref(),
+            Some("-")
+        );
         assert!(ref_instruction(r#"REF Figure1 \d "-"#).is_none());
         assert!(ref_instruction(r#"REF Figure1 \d -""#).is_none());
         assert!(direct_bookmark_ref_instruction(r#"Figure1 \d"-"#).is_none());

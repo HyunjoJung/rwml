@@ -1899,6 +1899,7 @@ pub(crate) struct RefFieldSyntax {
     pub(crate) text_format: Option<FieldTextFormat>,
     pub(crate) note_reference: bool,
     pub(crate) sequence_separator: bool,
+    pub(crate) sequence_separator_value: Option<String>,
     pub(crate) relative: bool,
     pub(crate) paragraph_number: bool,
     pub(crate) full_context_number: bool,
@@ -1931,6 +1932,7 @@ fn ref_field_syntax_parts<'a>(mut parts: impl Iterator<Item = &'a str>) -> Optio
     let mut text_format = None;
     let mut note_reference = false;
     let mut sequence_separator = false;
+    let mut sequence_separator_value = None;
     let mut relative = false;
     let mut paragraph_number = false;
     let mut full_context_number = false;
@@ -1966,6 +1968,7 @@ fn ref_field_syntax_parts<'a>(mut parts: impl Iterator<Item = &'a str>) -> Optio
                     return None;
                 }
                 sequence_separator = true;
+                sequence_separator_value = Some(separator.to_string());
                 continue;
             }
             if let Some(separator) = strip_ascii_switch_prefix(part, "\\d") {
@@ -1977,6 +1980,7 @@ fn ref_field_syntax_parts<'a>(mut parts: impl Iterator<Item = &'a str>) -> Optio
                     return None;
                 }
                 sequence_separator = true;
+                sequence_separator_value = Some(separator.to_string());
                 continue;
             }
             return None;
@@ -2014,6 +2018,7 @@ fn ref_field_syntax_parts<'a>(mut parts: impl Iterator<Item = &'a str>) -> Optio
         text_format,
         note_reference,
         sequence_separator,
+        sequence_separator_value,
         relative,
         paragraph_number,
         full_context_number,
@@ -3199,6 +3204,15 @@ mod tests {
             ref_field_syntax(r#"REF Figure1 \d-"#).expect("valid compact sequence separator");
         assert_eq!(sequence.target, "Figure1");
         assert!(sequence.sequence_separator);
+        assert_eq!(sequence.sequence_separator_value.as_deref(), Some("-"));
+
+        let quoted_sequence =
+            ref_field_syntax(r#"REF Figure1 \d "-""#).expect("valid quoted sequence separator");
+        assert!(quoted_sequence.sequence_separator);
+        assert_eq!(
+            quoted_sequence.sequence_separator_value.as_deref(),
+            Some("-")
+        );
 
         assert!(direct_ref_field_syntax("REF Figure1").is_none());
         let numeric =

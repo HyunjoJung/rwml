@@ -711,6 +711,7 @@ pub(super) fn computed_ref_instruction_result(
     note_ref_field_position: Option<NoteRefFieldPosition>,
 ) -> Option<String> {
     if spec.sequence_separator {
+        let _separator = spec.sequence_separator_value.as_deref()?;
         return None;
     }
     if spec.note_reference {
@@ -837,6 +838,7 @@ pub(super) struct RefInstruction {
     pub(super) text_format: Option<FieldTextFormat>,
     pub(super) note_reference: bool,
     pub(super) sequence_separator: bool,
+    pub(super) sequence_separator_value: Option<String>,
     pub(super) relative: bool,
     pub(super) paragraph_number: bool,
     pub(super) full_context_number: bool,
@@ -863,6 +865,7 @@ fn ref_instruction_from_syntax(
         text_format: syntax.text_format,
         note_reference: syntax.note_reference,
         sequence_separator: syntax.sequence_separator,
+        sequence_separator_value: syntax.sequence_separator_value,
         relative: syntax.relative,
         paragraph_number: syntax.paragraph_number,
         full_context_number: syntax.full_context_number,
