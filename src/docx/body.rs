@@ -24,9 +24,9 @@ use super::{
     field_char_type, is_page_break_type, local, toggle_on,
 };
 use crate::annotation::{
-    direct_ref_field_syntax, instruction_parts, normalized_field_instruction,
-    note_ref_field_syntax, opaque_field_syntax, page_ref_field_syntax, ref_field_syntax,
-    toc_field_syntax, FieldKind,
+    barcode_field_syntax, direct_ref_field_syntax, instruction_parts, legacy_form_field_syntax,
+    normalized_field_instruction, note_ref_field_syntax, opaque_field_syntax,
+    page_ref_field_syntax, ref_field_syntax, toc_field_syntax, FieldKind,
 };
 use crate::model::{
     Align, AuthoredContentControl, Block, Cell, CellMargins, CharProps, Color, DocGrid,
@@ -2434,6 +2434,12 @@ fn unsupported_simple_field_reason_hint(
     if let Some(reason) = unsupported_mail_merge_reason_hint(instruction) {
         return Some(reason);
     }
+    if let Some(reason) = unsupported_barcode_reason_hint(instruction) {
+        return Some(reason);
+    }
+    if let Some(reason) = unsupported_form_field_reason_hint(instruction) {
+        return Some(reason);
+    }
     None
 }
 
@@ -2621,6 +2627,38 @@ fn is_mail_merge_kind(kind: &str) -> bool {
         kind.to_ascii_uppercase().as_str(),
         "ADDRESSBLOCK" | "GREETINGLINE" | "MERGEREC" | "MERGESEQ"
     )
+}
+
+fn unsupported_barcode_reason_hint(instruction: &str) -> Option<FieldUnsupportedReason> {
+    if !matches!(
+        FieldKind::from_instruction(instruction),
+        FieldKind::Barcode(_)
+    ) {
+        return None;
+    }
+    Some(unsupported_syntax_field_reason_hint(barcode_field_syntax(
+        instruction,
+    )))
+}
+
+fn unsupported_form_field_reason_hint(instruction: &str) -> Option<FieldUnsupportedReason> {
+    if !matches!(
+        FieldKind::from_instruction(instruction),
+        FieldKind::FormField(_)
+    ) {
+        return None;
+    }
+    Some(unsupported_syntax_field_reason_hint(
+        legacy_form_field_syntax(instruction).is_some(),
+    ))
+}
+
+fn unsupported_syntax_field_reason_hint(valid_syntax: bool) -> FieldUnsupportedReason {
+    if valid_syntax {
+        FieldUnsupportedReason::NoComputedResult
+    } else {
+        FieldUnsupportedReason::UnsupportedSwitch
+    }
 }
 
 fn computed_simple_field_result(

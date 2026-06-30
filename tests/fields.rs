@@ -8934,6 +8934,41 @@ fn docx_barcode_diagnostics_split_valid_broader_fields_from_malformed_syntax() {
             },
         ]
     );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| {
+            instruction.starts_with("DISPLAYBARCODE")
+        }),
+        vec![
+            (
+                r#"DISPLAYBARCODE "https://example.com" QR \q H"#.to_string(),
+                Some(FieldUnsupportedReason::NoComputedResult),
+            ),
+            (
+                r#"DISPLAYBARCODE "https://example.com" QR \* Upper"#.to_string(),
+                Some(FieldUnsupportedReason::NoComputedResult),
+            ),
+            (
+                r#"DISPLAYBARCODE "https://example.com" \q H"#.to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+            (
+                r#"DISPLAYBARCODE "https://example.com" QR \q"#.to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+            (
+                r#"DISPLAYBARCODE "https://example.com QR "#.to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+            (
+                r#"DISPLAYBARCODE "https://example.com" QR \*"#.to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+            (
+                r#"DISPLAYBARCODE "https://example.com" QR \* BadFormat"#.to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+        ]
+    );
     assert!(doc.main_text().contains("cached missing barcode type"));
     assert!(doc.main_text().contains("cached missing quality operand"));
     assert!(doc.main_text().contains("cached malformed barcode"));
@@ -9592,6 +9627,19 @@ fn docx_protected_legacy_form_diagnostics_split_valid_cached_from_malformed_synt
                 reason: FieldEvaluationReason::UnsupportedSwitch,
                 count: 1,
             },
+        ]
+    );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| instruction.starts_with("FORM")),
+        vec![
+            (
+                "FORMCHECKBOX".to_string(),
+                Some(FieldUnsupportedReason::NoComputedResult),
+            ),
+            (
+                r#"FORMTEXT "bad "#.to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
         ]
     );
     assert!(doc.main_text().contains("cached malformed form text"));
