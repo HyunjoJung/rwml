@@ -1350,7 +1350,7 @@ impl ComplexFieldTracker {
             if computed.text.is_some() {
                 run.field = FieldRole::Other;
                 run.field_unsupported_reason = None;
-            } else if offset == 0 {
+            } else {
                 run.field = FieldRole::Simple {
                     instruction: computed.instruction.clone(),
                 };

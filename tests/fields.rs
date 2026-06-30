@@ -1575,6 +1575,23 @@ fn complex_cached_result_inline_marker_docx() -> Vec<u8> {
     ])
 }
 
+fn complex_split_cached_result_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> CUSTOM split </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Alpha </w:t></w:r><w:r><w:t>Beta</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn nested_complex_field_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -9527,6 +9544,33 @@ fn docx_complex_field_result_preserves_cached_inline_markers() {
         "{:?}",
         doc.main_text()
     );
+}
+
+#[test]
+fn docx_complex_field_marks_all_split_cached_result_runs() {
+    let doc = Document::open(&complex_split_cached_result_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::Unknown("CUSTOM".to_string()));
+    assert_eq!(fields[0].instruction, "CUSTOM split");
+    assert_eq!(fields[0].result, "Alpha Beta");
+    assert_eq!(fields[0].computed_result, None);
+
+    let model = doc.model();
+    let Block::Paragraph(paragraph) = &model.blocks[0] else {
+        panic!("expected paragraph model");
+    };
+    let split_result_runs: Vec<_> = paragraph
+        .runs
+        .iter()
+        .filter(|run| run.text == "Alpha " || run.text == "Beta")
+        .collect();
+    assert_eq!(split_result_runs.len(), 2);
+    assert!(split_result_runs.iter().all(|run| matches!(
+        &run.field,
+        rdoc::FieldRole::Simple { instruction } if instruction == "CUSTOM split"
+    )));
 }
 
 #[test]
