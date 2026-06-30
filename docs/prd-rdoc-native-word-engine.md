@@ -273,8 +273,8 @@ The first public maturity release should meet these requirements.
   `DOCPROPERTY` names, mapped `INFO` package-property
   subfields, mapped `DOCVARIABLE` names, timestamp-shaped custom
   `DOCPROPERTY` values with simple `\@` pictures, and core timestamp-backed
-  `CREATEDATE`/`SAVEDATE`/`PRINTDATE` with simple numeric and English
-  month/weekday `\@` pictures, plus app-property-backed
+  `CREATEDATE`/`SAVEDATE`/`PRINTDATE` with quoted or switch-delimited unquoted
+  simple numeric and English month/weekday `\@` pictures, plus app-property-backed
   `NUMPAGES`/`NUMWORDS`/`NUMCHARS`/`EDITTIME`/`TEMPLATE` and common
   scalar built-ins such as `Company`/`Manager`/`HyperlinkBase`/`DocSecurity`
   from `docProps/app.xml`, including direct scalar app-property field names

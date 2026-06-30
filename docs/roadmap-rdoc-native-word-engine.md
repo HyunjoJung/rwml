@@ -802,7 +802,8 @@ Initial status:
   `DOCVARIABLE` names compute from `word/settings.xml`, timestamp-shaped custom
   `DOCPROPERTY` values compute with simple `\@` pictures, and core timestamp-backed
   `CREATEDATE`/`SAVEDATE`/`PRINTDATE` fields compute from core properties with
-  simple numeric and English month/weekday `\@` pictures; app-property-backed
+  quoted or switch-delimited unquoted simple numeric and English month/weekday
+  `\@` pictures; app-property-backed
   `NUMPAGES`, `NUMWORDS`, `NUMCHARS`, `EDITTIME`, `TEMPLATE`, and common
   scalar built-ins such as `Company`/`Manager`/`HyperlinkBase`/`DocSecurity`
   compute from `docProps/app.xml`, including direct scalar app-property field

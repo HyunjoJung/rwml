@@ -35,7 +35,7 @@ use crate::annotation::{
 };
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{
-    document_property_key, field_non_empty_literal_token, field_quoted_literal_token,
+    document_property_key, field_non_empty_non_switch_literal_token, field_quoted_literal_token,
     filename_field_syntax,
 };
 #[cfg(feature = "docx")]
@@ -2007,7 +2007,7 @@ enum DocumentInfoSyntaxProperty {
 #[cfg(not(feature = "docx"))]
 fn supported_document_info_syntax_for_report(instruction: &str) -> bool {
     let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
+    let mut parts = tokens.iter().map(String::as_str).peekable();
     let Some(kind) = parts.next() else {
         return false;
     };
@@ -2027,7 +2027,9 @@ fn supported_document_info_syntax_for_report(instruction: &str) -> bool {
             continue;
         }
         if part.eq_ignore_ascii_case("\\@") {
-            if date_format || document_info_date_format_for_report(parts.next()).is_none() {
+            if date_format
+                || document_info_date_format_for_report(parts.next(), &mut parts).is_none()
+            {
                 return false;
             }
             date_format = true;
@@ -2036,7 +2038,7 @@ fn supported_document_info_syntax_for_report(instruction: &str) -> bool {
         if let Some(format) = strip_ascii_switch_prefix(part, "\\@") {
             if date_format
                 || format.is_empty()
-                || document_info_date_format_for_report(Some(format)).is_none()
+                || document_info_date_format_for_report(Some(format), &mut parts).is_none()
             {
                 return false;
             }
@@ -2156,8 +2158,22 @@ fn is_user_info_property_for_report(value: &str) -> bool {
 }
 
 #[cfg(not(feature = "docx"))]
-fn document_info_date_format_for_report(value: Option<&str>) -> Option<()> {
-    field_non_empty_literal_token(value?).map(|_| ())
+fn document_info_date_format_for_report<'a>(
+    first: Option<&'a str>,
+    parts: &mut std::iter::Peekable<impl Iterator<Item = &'a str>>,
+) -> Option<()> {
+    let first = first?;
+    if let Some(format) = field_quoted_literal_token(first) {
+        return (!format.is_empty()).then_some(());
+    }
+    field_non_empty_non_switch_literal_token(first)?;
+    while let Some(part) = parts.peek().copied() {
+        if part.starts_with('\\') {
+            break;
+        }
+        field_non_empty_non_switch_literal_token(parts.next()?)?;
+    }
+    Some(())
 }
 
 #[cfg(not(feature = "docx"))]
@@ -4040,6 +4056,10 @@ mod tests {
         );
         assert_eq!(
             super::document_info_uncomputed_reason(r#"CREATEDATE \@"yyyy-MM-dd""#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::document_info_uncomputed_reason(r#"CREATEDATE \@ MMMM d, yyyy \* Upper"#),
             super::FieldEvaluationReason::NoComputedResult
         );
         assert_eq!(

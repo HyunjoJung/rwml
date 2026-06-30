@@ -446,8 +446,8 @@ fields (`AUTHOR`, `TITLE`, `SUBJECT`, `KEYWORDS`, `COMMENTS`, `LASTSAVEDBY`,
 `docProps/app.xml`, mapped `INFO` package-property subfields, mapped
 `DOCVARIABLE` names from `word/settings.xml`, and timestamp-shaped custom
 `DOCPROPERTY` values with simple numeric `\@` pictures, plus `CREATEDATE`,
-`SAVEDATE`, and `PRINTDATE` when backed by core-property timestamps with simple
-numeric `\@` pictures for
+`SAVEDATE`, and `PRINTDATE` when backed by core-property timestamps with quoted
+or switch-delimited unquoted simple numeric `\@` pictures for
 `y`/`M`/`d`/`H`/`h`/`m`/`s`, English `MMM`/`MMMM` month names,
 English `ddd`/`dddd` weekday names, and `AM/PM`, plus `docProps/app.xml`-backed
 stat/template fields (`NUMPAGES`, `NUMWORDS`, `NUMCHARS`, `EDITTIME`,

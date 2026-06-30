@@ -454,8 +454,8 @@ Implementation:
   plus mapped `INFO` package-property subfields, mapped `DOCVARIABLE` names from
   `word/settings.xml`, timestamp-shaped custom `DOCPROPERTY` values with simple
   `\@` pictures, core timestamp-backed
-  `CREATEDATE`/`SAVEDATE`/`PRINTDATE` with simple
-  numeric and English month/weekday `\@` pictures, app-property-backed
+  `CREATEDATE`/`SAVEDATE`/`PRINTDATE` with quoted or switch-delimited unquoted
+  simple numeric and English month/weekday `\@` pictures, app-property-backed
   `NUMPAGES`/`NUMWORDS`/`NUMCHARS`/`EDITTIME`/`TEMPLATE` values and common
   scalar built-ins such as `Company`/`Manager`/`HyperlinkBase`/`DocSecurity`
   from `docProps/app.xml`, including direct scalar app-property field names

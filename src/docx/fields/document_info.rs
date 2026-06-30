@@ -86,7 +86,7 @@ pub(crate) fn supports_document_info_field_syntax(instruction: &str) -> bool {
 
 pub(super) fn document_info_instruction(instruction: &str) -> Option<DocumentInfoInstruction> {
     let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
+    let mut parts = tokens.iter().map(String::as_str).peekable();
     let kind = parts.next()?;
     let mut text_format = None;
     let mut date_format = None;
@@ -116,16 +116,17 @@ pub(super) fn document_info_instruction(instruction: &str) -> Option<DocumentInf
             if date_format.is_some() {
                 return None;
             }
-            let format = field_non_empty_literal_token(parts.next()?)?;
-            date_format = Some(format.to_string());
+            date_format = Some(document_info_date_format_literal(
+                parts.next()?,
+                &mut parts,
+            )?);
             continue;
         }
         if let Some(format) = strip_ascii_switch_prefix(part, "\\@") {
             if date_format.is_some() {
                 return None;
             }
-            let format = field_non_empty_literal_token(format)?;
-            date_format = Some(format.to_string());
+            date_format = Some(document_info_date_format_literal(format, &mut parts)?);
             continue;
         }
         if let Some(unit) = file_size_unit_switch(part) {
@@ -250,6 +251,23 @@ fn document_info_property(value: &str) -> Option<DocumentInfoProperty> {
         "TEMPLATE" => DocumentInfoProperty::Extended(document_property_key("Template")),
         _ => return None,
     })
+}
+
+fn document_info_date_format_literal<'a>(
+    first: &'a str,
+    parts: &mut std::iter::Peekable<impl Iterator<Item = &'a str>>,
+) -> Option<String> {
+    if let Some(format) = field_quoted_literal_token(first) {
+        return (!format.is_empty()).then(|| format.to_string());
+    }
+    let mut values = vec![field_non_empty_non_switch_literal_token(first)?];
+    while let Some(part) = parts.peek().copied() {
+        if part.starts_with('\\') {
+            break;
+        }
+        values.push(field_non_empty_non_switch_literal_token(parts.next()?)?);
+    }
+    Some(values.join(" "))
 }
 
 pub(crate) fn computed_revision_number_result(

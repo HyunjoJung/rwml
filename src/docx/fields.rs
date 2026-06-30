@@ -15,7 +15,7 @@ use crate::annotation::{
     eq_parenthesized_operand as take_eq_parenthesized_operand,
     eq_prefix_switch_tail as consume_eq_prefix_switch,
     eq_radical_operands as split_eq_radical_operands, field_identifier_token, field_literal_token,
-    field_name_token, field_non_empty_literal_token, field_quoted_literal_token,
+    field_name_token, field_non_empty_non_switch_literal_token, field_quoted_literal_token,
     filename_field_syntax, if_field_syntax, instruction_parts, is_neutral_field_format_switch,
     legacy_form_field_syntax, merge_control_field_syntax, note_ref_field_syntax,
     numbering_field_syntax, page_field_format_syntax_tail, page_ref_field_syntax,
