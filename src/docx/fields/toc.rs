@@ -186,12 +186,7 @@ fn read_toc_paragraph(
                     b"t" => {
                         let run_text = read_text(r);
                         consumed_element = true;
-                        let hidden_result = current.iter().rev().any(|field| {
-                            field.phase == FieldPhase::Result
-                                && (toc_entry_field_syntax(&field.instruction).is_some()
-                                    || seq_identifier_from_instruction(Some(&field.instruction))
-                                        .is_some())
-                        });
+                        let hidden_result = toc_source_hidden_field_result(&current);
                         if !hidden_result {
                             text.push_str(&run_text);
                         }
@@ -245,6 +240,13 @@ fn read_toc_paragraph(
                             &mut text,
                             entries,
                         );
+                    }
+                    b"sym" => {
+                        if !toc_source_hidden_field_result(&current) {
+                            if let Some(ch) = toc_symbol_char(&e) {
+                                text.push(ch);
+                            }
+                        }
                     }
                     b"tab" | b"br" | b"cr" => text.push(' '),
                     b"noBreakHyphen" => text.push('-'),
@@ -318,6 +320,20 @@ fn read_toc_paragraph(
             style_name,
         });
     }
+}
+
+fn toc_source_hidden_field_result(current: &[ComplexField]) -> bool {
+    current.iter().rev().any(|field| {
+        field.phase == FieldPhase::Result
+            && (toc_entry_field_syntax(&field.instruction).is_some()
+                || seq_identifier_from_instruction(Some(&field.instruction)).is_some())
+    })
+}
+
+fn toc_symbol_char(e: &BytesStart<'_>) -> Option<char> {
+    let value = attr_local_trimmed(e, b"char")?;
+    let font = attr_local_trimmed(e, b"font");
+    computed_run_symbol_char(font.as_deref(), &value)
 }
 
 fn apply_toc_fld_char(
