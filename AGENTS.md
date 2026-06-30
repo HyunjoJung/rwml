@@ -81,6 +81,11 @@ rendering moving toward one coherent Rust-native document model.
 - Use synthetic or clearly public corpus files only. When adding public corpus
   data, update manifests and document provenance.
 - Before public/release work, run `python3 scripts/public_hygiene_audit.py`.
+- Near-term release validation and manifest policy work is parked except for
+  regressions, broken gates, or explicit user requests. Do not expand
+  release-policy scope, thresholds, evidence formats, or render/benchmark
+  normalization while the active engine push is trying to close reader,
+  evaluator, layout, and legacy compatibility slices.
 
 ## Verification
 

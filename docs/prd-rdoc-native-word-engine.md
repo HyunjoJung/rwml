@@ -645,6 +645,14 @@ keeping unmodeled content alive.
   named release policy without copying row-level corpus data;
 - release notes distinguish shipped behavior from roadmap claims.
 
+Near-term product work should not expand release-validation scope, evidence
+formats, thresholds, or manifest policy unless a regression, broken gate, or
+explicit release task requires it. Release evidence remains required for the
+first public release, but it is a final public-readiness gate. The active product
+focus is deterministic reader/evaluator behavior, layout-derived field semantics,
+legacy `.doc` anchor/header-footer fidelity, and public fixtures that prove those
+engine behaviors.
+
 ## 8. Current Maturity Gaps
 
 The current product line is broad enough for a public native engine baseline,

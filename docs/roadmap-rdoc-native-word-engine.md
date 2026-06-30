@@ -1165,6 +1165,14 @@ share duplicated helpers or fix a proven report/evaluator drift, verify with a
 focused field/report test pair, and avoid changing cached-result policy unless
 the semantics are deterministic.
 
+Release validation and manifest policy are parked for the near-term engine push
+except for regressions, broken gates, or explicit user requests. Do not expand
+release-policy scope, thresholds, evidence formats, render-validation
+normalization, or benchmark normalization while the active work is trying to
+promote deterministic reader/evaluator behavior, layout-derived field semantics,
+and legacy anchor fidelity. Treat strict release evidence as the final
+public-readiness gate, not as the current implementation stream.
+
 The active roadmap slices are:
 
 1. R2-a field report/evaluator parity: parser/evaluator/report parity for
@@ -1206,9 +1214,10 @@ and report diagnostics tests before public support wording moves.
    `relativeHeight`/`behindDoc`, and non-text Office-Art drawing contents.
 4. Newer extension chart families and metafile rendering strategy beyond the current
    bounded diagnostics/header metadata, with public fixtures before broad claims.
-5. Release validation policy: keep tightening which external, locally configured
-   render/extraction benchmark reports are required for public releases. The
-   `public-release` manifest policy now fixes the required Rust gates and optional
+5. Release validation policy is currently maintenance-only: keep the existing
+   evidence machinery stable and fix only regressions or blockers until the
+   engine slices above are materially closer to public readiness. The
+   `public-release` manifest policy already fixes the required Rust gates and optional
    threshold values (`0.95` POI recall/F1, at least one scored benchmark file,
    `0.90` render mean recall, `0` errors or skips), and
    `scripts/release_manifest.py --enforce-policy-inputs` can make
