@@ -51,6 +51,7 @@ mod style_ref;
 mod table_formula;
 mod toc;
 
+pub(crate) use self::display::computed_run_symbol_char;
 use self::display::unquote_field_text;
 pub(crate) use self::display::{computed_display_result, supports_display_field_syntax};
 #[cfg(test)]

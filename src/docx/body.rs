@@ -14,7 +14,7 @@ use std::collections::{HashMap, HashSet};
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 
-use super::fields::TocEntry;
+use super::fields::{computed_run_symbol_char, TocEntry};
 use super::numbering::Numbering;
 use super::parse_rgb_hex_color;
 use super::styles::Styles;
@@ -2806,6 +2806,18 @@ fn read_run(
                     }
                     text.push_str(&read_text(r));
                 }
+                b"sym" => {
+                    if append_run_symbol(&mut text, &e) {
+                        let in_result = complex_field
+                            .as_deref()
+                            .map(ComplexFieldTracker::in_result)
+                            .unwrap_or(false);
+                        if in_result {
+                            text_is_field_result = true;
+                        }
+                    }
+                    skip_subtree(r);
+                }
                 b"drawing" | b"pict" | b"object" => {
                     let (img, txbx) = read_drawing(r, ctx, depth);
                     push_drawing_runs(&mut images, img, txbx);
@@ -2841,6 +2853,17 @@ fn read_run(
                 b"cr" => text.push('\n'),
                 b"noBreakHyphen" => text.push('-'),
                 b"softHyphen" => text.push('\u{00ad}'),
+                b"sym" => {
+                    if append_run_symbol(&mut text, &e) {
+                        let in_result = complex_field
+                            .as_deref()
+                            .map(ComplexFieldTracker::in_result)
+                            .unwrap_or(false);
+                        if in_result {
+                            text_is_field_result = true;
+                        }
+                    }
+                }
                 _ => {}
             },
             Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
@@ -2872,6 +2895,18 @@ fn read_run(
     }
     runs.extend(images);
     runs
+}
+
+fn append_run_symbol(text: &mut String, e: &BytesStart<'_>) -> bool {
+    let Some(value) = attr_local_trimmed(e, b"char") else {
+        return false;
+    };
+    let font = attr_local_trimmed(e, b"font");
+    let Some(ch) = computed_run_symbol_char(font.as_deref(), &value) else {
+        return false;
+    };
+    text.push(ch);
+    true
 }
 
 fn append_run_alternate_content(
@@ -2950,6 +2985,18 @@ fn append_run_alternate_content_branch(
                     }
                     text.push_str(&read_text(r));
                 }
+                b"sym" => {
+                    if append_run_symbol(text, &e) {
+                        let in_result = complex_field
+                            .as_deref()
+                            .map(ComplexFieldTracker::in_result)
+                            .unwrap_or(false);
+                        if in_result {
+                            *text_is_field_result = true;
+                        }
+                    }
+                    skip_subtree(r);
+                }
                 b"drawing" | b"pict" | b"object" => {
                     let (img, txbx) = read_drawing(r, ctx, depth);
                     push_drawing_runs(images, img, txbx);
@@ -2982,6 +3029,17 @@ fn append_run_alternate_content_branch(
                 b"cr" => text.push('\n'),
                 b"noBreakHyphen" => text.push('-'),
                 b"softHyphen" => text.push('\u{00ad}'),
+                b"sym" => {
+                    if append_run_symbol(text, &e) {
+                        let in_result = complex_field
+                            .as_deref()
+                            .map(ComplexFieldTracker::in_result)
+                            .unwrap_or(false);
+                        if in_result {
+                            *text_is_field_result = true;
+                        }
+                    }
+                }
                 _ => {}
             },
             Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,

@@ -223,6 +223,40 @@ fn header_footer_docx() -> Vec<u8> {
     ])
 }
 
+fn symbol_body_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Alpha </w:t><w:sym w:font="Symbol" w:char="F0B7"/><w:t> Beta</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn symbol_alternate_content_body_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:p><w:r><w:t>Alpha </w:t><mc:AlternateContent><mc:Choice Requires="wps"><w:sym w:font="Symbol" w:char="F0B7"/></mc:Choice><mc:Fallback><w:t>fallback</w:t></mc:Fallback></mc:AlternateContent><w:t> Beta</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn table_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -2017,6 +2051,28 @@ fn replace_body_text_writes_tabs_and_breaks_as_markers() {
 
     let reopened = Document::open(&saved).expect("reopen edited docx");
     assert_eq!(reopened.main_text(), "Line 1\nLine\t2");
+}
+
+#[test]
+fn docx_symbol_runs_are_exposed_in_main_text() {
+    let doc = Document::open(&symbol_body_docx()).expect("fixture opens");
+
+    assert_eq!(doc.main_text(), "Alpha • Beta");
+    assert_eq!(doc.text(), "Alpha • Beta");
+    let Block::Paragraph(paragraph) = &doc.model().blocks[0] else {
+        panic!("expected paragraph");
+    };
+    assert_eq!(paragraph.text(), "Alpha • Beta");
+    assert_eq!(paragraph.runs.len(), 1);
+    assert_eq!(paragraph.runs[0].text, "Alpha • Beta");
+}
+
+#[test]
+fn docx_symbol_runs_use_selected_alternate_content_branch() {
+    let doc = Document::open(&symbol_alternate_content_body_docx()).expect("fixture opens");
+
+    assert_eq!(doc.main_text(), "Alpha • Beta");
+    assert!(!doc.main_text().contains("fallback"));
 }
 
 #[test]
