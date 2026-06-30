@@ -1759,6 +1759,12 @@ pub(crate) fn note_ref_field_syntax(instruction: &str) -> Option<NoteRefFieldSyn
             continue;
         }
         if part.starts_with('\\') {
+            if let Some(switches) = compact_note_ref_flag_switches(part) {
+                for switch in switches {
+                    apply_note_ref_flag_switch(switch, &mut relative, &mut formatted)?;
+                }
+                continue;
+            }
             if part.eq_ignore_ascii_case("\\h") {
                 continue;
             }
@@ -1789,6 +1795,35 @@ pub(crate) fn note_ref_field_syntax(instruction: &str) -> Option<NoteRefFieldSyn
         text_format,
         relative,
     })
+}
+
+fn compact_note_ref_flag_switches(part: &str) -> Option<Vec<char>> {
+    compact_flag_switches(part, |switch| matches!(switch, 'h' | 'f' | 'p'))
+}
+
+fn apply_note_ref_flag_switch(
+    switch: char,
+    relative: &mut bool,
+    formatted: &mut bool,
+) -> Option<()> {
+    match switch {
+        'h' => Some(()),
+        'f' => {
+            if *formatted {
+                return None;
+            }
+            *formatted = true;
+            Some(())
+        }
+        'p' => {
+            if *relative {
+                return None;
+            }
+            *relative = true;
+            Some(())
+        }
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1922,6 +1957,12 @@ fn ref_field_syntax_parts<'a>(mut parts: impl Iterator<Item = &'a str>) -> Optio
 }
 
 fn compact_ref_flag_switches(part: &str) -> Option<Vec<char>> {
+    compact_flag_switches(part, |switch| {
+        matches!(switch, 't' | 'f' | 'n' | 'w' | 'r' | 'p' | 'h')
+    })
+}
+
+fn compact_flag_switches(part: &str, mut allowed: impl FnMut(char) -> bool) -> Option<Vec<char>> {
     let mut rest = part;
     let mut switches = Vec::new();
     while !rest.is_empty() {
@@ -1930,7 +1971,7 @@ fn compact_ref_flag_switches(part: &str) -> Option<Vec<char>> {
             return None;
         }
         let switch = chars.next()?.to_ascii_lowercase();
-        if !matches!(switch, 't' | 'f' | 'n' | 'w' | 'r' | 'p' | 'h') {
+        if !allowed(switch) {
             return None;
         }
         switches.push(switch);
@@ -3018,9 +3059,20 @@ mod tests {
         assert_eq!(relative.text_format, Some(FieldTextFormat::Upper));
         assert!(relative.relative);
 
+        let compact = note_ref_field_syntax(r#"NOTEREF FootOne \h\f"#)
+            .expect("valid compact note ref syntax");
+        assert_eq!(compact.target, "FootOne");
+        assert!(!compact.relative);
+        let compact_relative = note_ref_field_syntax(r#"NOTEREF LaterNote \h\p"#)
+            .expect("valid compact relative note ref syntax");
+        assert_eq!(compact_relative.target, "LaterNote");
+        assert!(compact_relative.relative);
+
         assert!(note_ref_field_syntax(r#"FTNREF FootOne \h"#).is_some());
         assert!(note_ref_field_syntax(r#"NOTEREF FootOne \p \p"#).is_none());
+        assert!(note_ref_field_syntax(r#"NOTEREF FootOne \p\p"#).is_none());
         assert!(note_ref_field_syntax(r#"NOTEREF FootOne \f \f"#).is_none());
+        assert!(note_ref_field_syntax(r#"NOTEREF FootOne \f\f"#).is_none());
         assert!(note_ref_field_syntax(r#"NOTEREF LaterNote \p \* roman"#).is_none());
         assert!(note_ref_field_syntax(r#"NOTEREF \p FootOne"#).is_none());
         assert!(note_ref_field_syntax(r#"NOTEREF "Foot One""#).is_none());
