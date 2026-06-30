@@ -1626,6 +1626,23 @@ fn ref_bookmark_docx() -> Vec<u8> {
     ])
 }
 
+fn ref_empty_bookmark_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="EmptyTarget"/><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" REF EmptyTarget "><w:r><w:t>stale empty ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF EmptyTarget \* Upper "><w:r><w:t>stale empty upper ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF MissingTarget "><w:r><w:t>cached missing ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn ref_deleted_bookmark_text_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -10411,6 +10428,48 @@ fn docx_ref_field_computes_unambiguous_bookmark_text() {
 }
 
 #[test]
+fn docx_ref_field_computes_empty_bookmark_text() {
+    let doc = Document::open(&ref_empty_bookmark_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 3);
+    assert!(fields.iter().all(|field| field.kind == FieldKind::Ref));
+    assert_eq!(fields[0].instruction, "REF EmptyTarget");
+    assert_eq!(fields[0].result, "stale empty ref");
+    assert_eq!(fields[0].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[1].instruction, "REF EmptyTarget \\* Upper");
+    assert_eq!(fields[1].result, "stale empty upper ref");
+    assert_eq!(fields[1].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[2].instruction, "REF MissingTarget");
+    assert_eq!(fields[2].result, "cached missing ref");
+    assert_eq!(fields[2].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Ref,
+            count: 1,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnresolvedBookmark,
+            count: 1,
+        }]
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        !main_text.contains("stale empty ref")
+            && !main_text.contains("stale empty upper ref")
+            && main_text.contains("cached missing ref"),
+        "empty REF targets should render as empty computed text while missing targets stay cached: {main_text:?}"
+    );
+}
+
+#[test]
 fn docx_ref_targets_ignore_deleted_bookmark_text() {
     let doc = Document::open(&ref_deleted_bookmark_text_docx()).expect("fixture opens");
     let fields = doc.fields();
@@ -12577,6 +12636,43 @@ fn docx_ref_existing_target_numeric_gap_model_render_report_matches_document_rea
         expected_reasons,
         vec![FieldEvaluationReasonCount {
             reason: FieldEvaluationReason::NoComputedResult,
+            count: 1,
+        }]
+    );
+    let model = doc.model();
+
+    let rendered = rdoc::render_pdf_with_report(&model);
+
+    assert_eq!(rendered.report.unsupported.fields, 1);
+    assert_eq!(
+        rendered.report.unsupported.field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Ref,
+            count: 1,
+        }]
+    );
+    assert_eq!(
+        rendered.report.unsupported.unsupported_field_reasons,
+        expected_reasons
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn docx_empty_bookmark_ref_model_render_report_matches_document_reason_bucket() {
+    let doc = Document::open(&ref_empty_bookmark_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 3);
+    assert_eq!(fields[0].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[1].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[2].computed_result, None);
+
+    let expected_reasons = doc.report().features.unsupported_field_reasons;
+    assert_eq!(
+        expected_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnresolvedBookmark,
             count: 1,
         }]
     );

@@ -29,6 +29,7 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
                     b"p" => append_ref_paragraph_breaks(&active, &mut out),
                     b"bookmarkStart" => {
                         if let Some((id, name)) = bookmark_start(&e) {
+                            out.entry(name.clone()).or_default();
                             active.push((id, name));
                         }
                     }
@@ -68,6 +69,7 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
                 match name {
                     b"bookmarkStart" => {
                         if let Some((id, name)) = bookmark_start(&e) {
+                            out.entry(name.clone()).or_default();
                             active.push((id, name));
                         }
                     }
@@ -754,7 +756,6 @@ pub(super) fn computed_ref_instruction_result(
     } else {
         ctx.bookmarks
             .get(&spec.target)
-            .filter(|text| !text.is_empty())
             .and_then(|text| computed_ref_bookmark_text_result(text, spec.number_format))
     }
 }

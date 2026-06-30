@@ -7850,7 +7850,7 @@ fn report_ref_field_warning_ignores_computed_bookmark_refs() {
         report.features.unsupported_field_kinds,
         vec![FieldKindCount {
             kind: FieldKind::Ref,
-            count: 6,
+            count: 5,
         }]
     );
     assert_eq!(
@@ -7858,7 +7858,7 @@ fn report_ref_field_warning_ignores_computed_bookmark_refs() {
         vec![
             FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::NoComputedResult,
-                count: 3,
+                count: 2,
             },
             FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::UnresolvedBookmark,
@@ -7872,10 +7872,10 @@ fn report_ref_field_warning_ignores_computed_bookmark_refs() {
             .iter()
             .find(|warning| matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })),
         Some(&DocumentWarning::UnsupportedFieldEvaluation {
-            count: 6,
+            count: 5,
             field_kinds: vec![FieldKindCount {
                 kind: FieldKind::Ref,
-                count: 6,
+                count: 5,
             }],
         })
     );
@@ -7886,14 +7886,14 @@ fn report_ref_field_warning_ignores_computed_bookmark_refs() {
         "{json}"
     );
     assert!(
-        json.contains(r#""unsupported_field_kinds":[{"kind":"REF","count":6}]"#),
+        json.contains(r#""unsupported_field_kinds":[{"kind":"REF","count":5}]"#),
         "{json}"
     );
     assert!(
-        json.contains(r#""unsupported_field_reasons":[{"reason":"NoComputedResult","count":3},{"reason":"UnresolvedBookmark","count":3}]"#),
+        json.contains(r#""unsupported_field_reasons":[{"reason":"NoComputedResult","count":2},{"reason":"UnresolvedBookmark","count":3}]"#),
         "{json}"
     );
-    assert!(json.contains(r#""kind":"UnsupportedFieldEvaluation","count":6,"field_kinds":[{"kind":"REF","count":6}]"#), "{json}");
+    assert!(json.contains(r#""kind":"UnsupportedFieldEvaluation","count":5,"field_kinds":[{"kind":"REF","count":5}]"#), "{json}");
 }
 
 #[cfg(feature = "docx")]
