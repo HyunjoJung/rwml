@@ -1424,7 +1424,18 @@ fn if_operand(token: &str, field_bookmarks: &HashMap<String, String>) -> Option<
         return Some(IfOperand::Number(value));
     }
     let name = field_name_token(token)?;
-    field_bookmarks.get(name).cloned().map(IfOperand::Text)
+    field_bookmarks
+        .get(name)
+        .map(|value| bookmark_if_operand(value))
+}
+
+fn bookmark_if_operand(value: &str) -> IfOperand {
+    value
+        .parse::<f64>()
+        .ok()
+        .filter(|value| value.is_finite())
+        .map(IfOperand::Number)
+        .unwrap_or_else(|| IfOperand::Text(value.to_string()))
 }
 
 fn compact_if_comparison(

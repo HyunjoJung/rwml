@@ -597,6 +597,23 @@ fn set_backed_comparison_docx() -> Vec<u8> {
     ])
 }
 
+fn set_backed_numeric_comparison_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SET ClientTotal 42 "><w:r><w:t>cached numeric set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" IF ClientTotal = 42 &quot;match&quot; &quot;miss&quot; "><w:r><w:t>stale numeric if</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" COMPARE ClientTotal &gt;= 40 "><w:r><w:t>stale numeric compare</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NEXTIF ClientTotal = 42 "><w:r><w:t>cached numeric nextif</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SKIPIF ClientTotal &lt; 40 "><w:r><w:t>cached numeric skipif</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SET ClientTier &quot;Gold&quot; "><w:r><w:t>cached text set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" COMPARE ClientTier = &quot;G*&quot; "><w:r><w:t>stale text compare</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn set_backed_formula_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -6173,6 +6190,59 @@ fn docx_if_compare_and_merge_controls_resolve_prior_set_bookmark_operands() {
             && !main_text.contains("stale set if")
             && !main_text.contains("stale set compare"),
         "computed SET-backed comparison text should replace stale cached text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_if_compare_and_merge_controls_resolve_prior_numeric_set_bookmark_operands() {
+    let doc = Document::open(&set_backed_numeric_comparison_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 7);
+    assert_eq!(fields[0].kind, FieldKind::Dynamic("SET".to_string()));
+    assert_eq!(fields[0].instruction, "SET ClientTotal 42");
+    assert_eq!(fields[0].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[1].kind, FieldKind::Dynamic("IF".to_string()));
+    assert_eq!(
+        fields[1].instruction,
+        r#"IF ClientTotal = 42 "match" "miss""#
+    );
+    assert_eq!(fields[1].result, "stale numeric if");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("match"));
+    assert_eq!(fields[2].kind, FieldKind::Dynamic("COMPARE".to_string()));
+    assert_eq!(fields[2].instruction, "COMPARE ClientTotal >= 40");
+    assert_eq!(fields[2].result, "stale numeric compare");
+    assert_eq!(fields[2].computed_result.as_deref(), Some("1"));
+    assert_eq!(fields[3].kind, FieldKind::Dynamic("NEXTIF".to_string()));
+    assert_eq!(fields[3].instruction, "NEXTIF ClientTotal = 42");
+    assert_eq!(fields[3].result, "cached numeric nextif");
+    assert_eq!(fields[3].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[4].kind, FieldKind::Dynamic("SKIPIF".to_string()));
+    assert_eq!(fields[4].instruction, "SKIPIF ClientTotal < 40");
+    assert_eq!(fields[4].result, "cached numeric skipif");
+    assert_eq!(fields[4].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[5].kind, FieldKind::Dynamic("SET".to_string()));
+    assert_eq!(fields[5].instruction, r#"SET ClientTier "Gold""#);
+    assert_eq!(fields[5].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[6].kind, FieldKind::Dynamic("COMPARE".to_string()));
+    assert_eq!(fields[6].instruction, r#"COMPARE ClientTier = "G*""#);
+    assert_eq!(fields[6].result, "stale text compare");
+    assert_eq!(fields[6].computed_result.as_deref(), Some("1"));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("match")
+            && main_text.contains("1")
+            && !main_text.contains("stale numeric if")
+            && !main_text.contains("stale numeric compare")
+            && !main_text.contains("cached numeric nextif")
+            && !main_text.contains("cached numeric skipif")
+            && !main_text.contains("stale text compare"),
+        "computed numeric SET-backed comparison text should replace stale cached text: {main_text:?}"
     );
 }
 
