@@ -2053,7 +2053,8 @@ fn supported_document_info_syntax_for_report(instruction: &str) -> bool {
             continue;
         }
         if property == DocumentInfoSyntaxProperty::UserInfo && !part.starts_with('\\') {
-            if user_override || !document_info_quoted_literal_for_report(part) {
+            if user_override || document_info_literal_operand_for_report(part, &mut parts).is_none()
+            {
                 return false;
             }
             user_override = true;
@@ -2182,8 +2183,21 @@ fn document_info_file_size_unit_switch_for_report(part: &str) -> bool {
 }
 
 #[cfg(not(feature = "docx"))]
-fn document_info_quoted_literal_for_report(value: &str) -> bool {
-    field_quoted_literal_token(value).is_some()
+fn document_info_literal_operand_for_report<'a>(
+    first: &'a str,
+    parts: &mut std::iter::Peekable<impl Iterator<Item = &'a str>>,
+) -> Option<()> {
+    if let Some(value) = field_quoted_literal_token(first) {
+        return (!value.is_empty()).then_some(());
+    }
+    field_non_empty_non_switch_literal_token(first)?;
+    while let Some(part) = parts.peek().copied() {
+        if part.starts_with('\\') {
+            break;
+        }
+        field_non_empty_non_switch_literal_token(parts.next()?)?;
+    }
+    Some(())
 }
 
 fn filename_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
@@ -4073,6 +4087,10 @@ mod tests {
         );
         assert_eq!(
             super::document_info_uncomputed_reason(r#"USERNAME "Casey Reviewer" \*Upper"#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::document_info_uncomputed_reason(r#"USERNAME Casey Reviewer \*Upper"#),
             super::FieldEvaluationReason::NoComputedResult
         );
         assert_eq!(

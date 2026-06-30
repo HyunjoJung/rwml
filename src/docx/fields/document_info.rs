@@ -139,7 +139,7 @@ pub(super) fn document_info_instruction(instruction: &str) -> Option<DocumentInf
             continue;
         }
         if is_user_info_property(&property) && !part.starts_with('\\') {
-            let value = field_quoted_literal_token(part)?.to_string();
+            let value = document_info_literal_operand(part, &mut parts)?;
             if user_override.replace(value).is_some() {
                 return None;
             }
@@ -255,6 +255,13 @@ fn document_info_property(value: &str) -> Option<DocumentInfoProperty> {
 }
 
 fn document_info_date_format_literal<'a>(
+    first: &'a str,
+    parts: &mut std::iter::Peekable<impl Iterator<Item = &'a str>>,
+) -> Option<String> {
+    document_info_literal_operand(first, parts)
+}
+
+fn document_info_literal_operand<'a>(
     first: &'a str,
     parts: &mut std::iter::Peekable<impl Iterator<Item = &'a str>>,
 ) -> Option<String> {

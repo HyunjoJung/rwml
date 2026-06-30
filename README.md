@@ -457,8 +457,8 @@ app-property field names such as `APPLICATION`, `APPVERSION`, `COMPANY`,
 `MANAGER`, `HYPERLINKBASE`, `DOCSECURITY`, and `LINKSUPTODATE`), and
 `FILESIZE` from the opened `.docx` package byte length with raw byte output
 plus rounded `\k` kilobyte and `\m` megabyte switches,
-direct `USERNAME`/`USERINITIALS`/`USERADDRESS` fields with explicit quoted
-literal overrides,
+direct `USERNAME`/`USERINITIALS`/`USERADDRESS` fields with explicit literal
+overrides,
 plus cached
 date/user/unmapped document-info fields
 (`DATE`, `TIME`, `USERNAME`, `USERINITIALS`, `USERADDRESS`,

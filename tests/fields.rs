@@ -341,7 +341,7 @@ fn user_info_field_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" USERNAME "><w:r><w:t>cached user name</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" USERINITIALS "><w:r><w:t>cached initials</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" USERADDRESS "><w:r><w:t>cached address</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" USERNAME &quot;Casey Reviewer&quot; \* Upper "><w:r><w:t>stale override name</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" USERINITIALS &quot;cr&quot; \* Upper "><w:r><w:t>stale override initials</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" USERADDRESS &quot;Review desk, Seoul&quot; \* Upper "><w:r><w:t>stale override address</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" USERNAME "><w:r><w:t>cached user name</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" USERINITIALS "><w:r><w:t>cached initials</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" USERADDRESS "><w:r><w:t>cached address</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" USERNAME &quot;Casey Reviewer&quot; \* Upper "><w:r><w:t>stale override name</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" USERINITIALS &quot;cr&quot; \* Upper "><w:r><w:t>stale override initials</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" USERADDRESS &quot;Review desk, Seoul&quot; \* Upper "><w:r><w:t>stale override address</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" USERNAME Casey Reviewer \* Upper "><w:r><w:t>stale unquoted name</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" USERINITIALS casey reviewer \* Upper "><w:r><w:t>stale unquoted initials</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" USERADDRESS Review desk Seoul \* Upper "><w:r><w:t>stale unquoted address</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -4581,7 +4581,7 @@ fn docx_user_info_fields_compute_explicit_literal_overrides() {
     let doc = Document::open(&user_info_field_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 6);
+    assert_eq!(fields.len(), 9);
     assert_eq!(
         fields[0].kind,
         FieldKind::DocumentInfo("USERNAME".to_string())
@@ -4621,6 +4621,24 @@ fn docx_user_info_fields_compute_explicit_literal_overrides() {
         fields[5].computed_result.as_deref(),
         Some("REVIEW DESK, SEOUL")
     );
+    assert_eq!(fields[6].instruction, "USERNAME Casey Reviewer \\* Upper");
+    assert_eq!(fields[6].result, "stale unquoted name");
+    assert_eq!(fields[6].computed_result.as_deref(), Some("CASEY REVIEWER"));
+    assert_eq!(
+        fields[7].instruction,
+        "USERINITIALS casey reviewer \\* Upper"
+    );
+    assert_eq!(fields[7].result, "stale unquoted initials");
+    assert_eq!(fields[7].computed_result.as_deref(), Some("CASEY REVIEWER"));
+    assert_eq!(
+        fields[8].instruction,
+        "USERADDRESS Review desk Seoul \\* Upper"
+    );
+    assert_eq!(fields[8].result, "stale unquoted address");
+    assert_eq!(
+        fields[8].computed_result.as_deref(),
+        Some("REVIEW DESK SEOUL")
+    );
 
     let report = doc.report();
     assert!(report.features.unsupported_field_kinds.is_empty());
@@ -4633,13 +4651,17 @@ fn docx_user_info_fields_compute_explicit_literal_overrides() {
             && main_text.contains("cached address")
             && main_text.contains("CASEY REVIEWER")
             && main_text.contains("CR")
-            && main_text.contains("REVIEW DESK, SEOUL"),
+            && main_text.contains("REVIEW DESK, SEOUL")
+            && main_text.contains("REVIEW DESK SEOUL"),
         "cached user-info fields and computed literal overrides should appear in main text: {main_text:?}"
     );
     assert!(
         !main_text.contains("stale override name")
             && !main_text.contains("stale override initials")
-            && !main_text.contains("stale override address"),
+            && !main_text.contains("stale override address")
+            && !main_text.contains("stale unquoted name")
+            && !main_text.contains("stale unquoted initials")
+            && !main_text.contains("stale unquoted address"),
         "computed user-info overrides should replace stale cached text: {main_text:?}"
     );
 }
