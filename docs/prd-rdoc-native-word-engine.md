@@ -236,8 +236,8 @@ The first public maturity release should meet these requirements.
   `\w \t` numeric-text suppression, `REF \f` visible body footnote/endnote
   reference marks, body comment-reference markers, exact matching bookmarked
   comment ranges, and bookmarks wholly inside body comment ranges, with prior generated REF note marks counted in
-  source order, `REF \d "separator"`
-  sequence/page separator syntax recognized while preserving cached text until
+  source order, text-neutral `REF \d "separator"` bookmark text while
+  value-changing sequence/page separator cases preserve cached text until
   sequence/page separator semantics are modeled, bookmarked `NOTEREF`/legacy `FTNREF`
   footnote/endnote reference marks with neutral `\h`, note-reference-style `\f`,
   source-order `\p` above/below results, and common field-result format switches

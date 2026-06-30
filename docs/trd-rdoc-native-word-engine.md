@@ -486,10 +486,10 @@ Implementation:
   comment-reference markers, exact matching bookmarked comment ranges, and
   bookmarks wholly inside body comment ranges,
   counting prior generated REF note marks in source order plus common
-  field-result number/text format switches, and
-  `REF \d "separator"` sequence/page separator syntax
-  recognized while preserving cached text until sequence/page separator
-  semantics are modeled,
+  field-result number/text format switches, and text-neutral
+  `REF \d "separator"` bookmark text while value-changing sequence/page
+  separator cases preserve cached text until sequence/page separator semantics
+  are modeled,
   as `Field::computed_result` and use that text in the read/render model
   instead of stale cached text for simple and common complex fields;
 - compute bookmarked `.docx` `NOTEREF` and legacy `FTNREF` fields when the
@@ -1139,8 +1139,9 @@ open and edit the chart data.
   bookmarks wholly inside body comment ranges,
   including prior generated REF note marks in source order plus common
   field-result number/text format switches,
-  `REF \d "separator"` sequence/page separator syntax recognized while
-  preserving cached text, direct bookmark-name field computation when the
+  text-neutral `REF \d "separator"` bookmark text while value-changing
+  sequence/page separator cases preserve cached text, direct bookmark-name field
+  computation when the
   bookmark exists with supported text-format switches, neutral `\h`,
   explicit-number `\n`/`\n \t`/`\r`/`\r \t`/`\w`/`\w \t`, note-reference `\f`,
   sequence-separator `\d`, and source-order `\p`,
