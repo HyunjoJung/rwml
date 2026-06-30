@@ -206,7 +206,7 @@ fn read_table_formula_table(r: &mut Xml<'_>) -> Vec<Option<String>> {
                 row,
                 col,
                 instruction,
-            } if !has_spans || span_safe_explicit_formula(&instruction, &rows, row, col) => {
+            } if !has_spans || span_safe_formula(&instruction, &rows, row, col) => {
                 computed_table_formula_result(&instruction, &rows, row, col)
             }
             TableFormulaRecord::Local { .. } => None,
@@ -574,7 +574,7 @@ fn computed_table_formula_result(
     }
 }
 
-fn span_safe_explicit_formula(
+fn span_safe_formula(
     instruction: &str,
     rows: &[Vec<TableFormulaCell>],
     row: usize,
@@ -626,7 +626,7 @@ fn table_formula_expression_is_span_safe(
                 if let Some(arguments) = table_formula_arguments(&inner) {
                     if !arguments
                         .iter()
-                        .all(|argument| table_formula_argument_is_span_safe(*argument, rows))
+                        .all(|argument| table_formula_argument_is_span_safe(*argument, rows, row))
                     {
                         return false;
                     }
@@ -655,19 +655,23 @@ fn table_formula_cell_reference_is_span_safe(
 fn table_formula_argument_is_span_safe(
     argument: TableFormulaArgument,
     rows: &[Vec<TableFormulaCell>],
+    row: usize,
 ) -> bool {
     match argument {
         TableFormulaArgument::Direction(
             TableFormulaDirection::Left | TableFormulaDirection::Right,
         )
         | TableFormulaArgument::CurrentRow => true,
+        TableFormulaArgument::Direction(TableFormulaDirection::Above) => {
+            table_formula_rows_above_are_span_free(rows, row)
+        }
+        TableFormulaArgument::Direction(TableFormulaDirection::Below) => {
+            table_formula_rows_below_until_formula_are_span_free(rows, row)
+        }
         TableFormulaArgument::Range {
             start_row, end_row, ..
         } => table_formula_rows_are_span_free(rows, start_row, end_row),
-        TableFormulaArgument::Direction(
-            TableFormulaDirection::Above | TableFormulaDirection::Below,
-        )
-        | TableFormulaArgument::CurrentColumn => false,
+        TableFormulaArgument::CurrentColumn => false,
     }
 }
 
@@ -685,6 +689,34 @@ fn table_formula_rows_are_span_free(
             .iter()
             .all(|table_row| !table_row.iter().any(|cell| cell.has_span))
     })
+}
+
+fn table_formula_rows_above_are_span_free(rows: &[Vec<TableFormulaCell>], row: usize) -> bool {
+    match row.checked_sub(1) {
+        Some(end_row) => table_formula_rows_are_span_free(rows, 0, end_row),
+        None => true,
+    }
+}
+
+fn table_formula_rows_below_until_formula_are_span_free(
+    rows: &[Vec<TableFormulaCell>],
+    row: usize,
+) -> bool {
+    let Some(start_row) = row.checked_add(1) else {
+        return false;
+    };
+    let Some(table_rows) = rows.get(start_row..) else {
+        return false;
+    };
+    for table_row in table_rows {
+        if table_row.iter().any(|cell| cell.contains_formula) {
+            break;
+        }
+        if table_row.iter().any(|cell| cell.has_span) {
+            return false;
+        }
+    }
+    true
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

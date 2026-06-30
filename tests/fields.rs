@@ -1090,6 +1090,23 @@ fn formula_table_span_cross_row_cell_reference_docx() -> Vec<u8> {
     ])
 }
 
+fn formula_table_span_directional_reference_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>3</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>1</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(ABOVE) "><w:r><w:t>cached safe above</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr><w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr><w:p><w:r><w:t>spanned below</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:tbl><w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr><w:p><w:r><w:t>spanned above</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:fldSimple w:instr=" = SUM(BELOW) "><w:r><w:t>cached safe below</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:r><w:t>1</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>4</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>1</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>6</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>1</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:tbl><w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr><w:p><w:r><w:t>spanned heading</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>3</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>1</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(ABOVE) "><w:r><w:t>cached spanned above</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl><w:tbl><w:tr><w:tc><w:p><w:fldSimple w:instr=" = SUM(BELOW) "><w:r><w:t>cached spanned below</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:r><w:t>1</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr><w:p><w:r><w:t>8</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn formula_table_structural_wrapper_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -7145,6 +7162,57 @@ fn docx_table_formula_computes_cross_row_cell_references_when_referenced_rows_ha
         !main_text.contains("cached cross-row direct")
             && !main_text.contains("cached unspanned-row range"),
         "computed cross-row cell-reference formulas should replace stale cached text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_table_formula_computes_directional_references_when_traversed_rows_have_no_spans() {
+    let doc =
+        Document::open(&formula_table_span_directional_reference_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let expected = [
+        (r#"= SUM(ABOVE)"#, "cached safe above", Some("3")),
+        (r#"= SUM(BELOW)"#, "cached safe below", Some("10")),
+        (r#"= SUM(ABOVE)"#, "cached spanned above", None),
+        (r#"= SUM(BELOW)"#, "cached spanned below", None),
+    ];
+
+    assert_eq!(fields.len(), expected.len());
+    for (field, (instruction, stale, result)) in fields.iter().zip(expected) {
+        assert_eq!(field.kind, FieldKind::Dynamic("=".to_string()));
+        assert_eq!(field.instruction, instruction);
+        assert_eq!(field.result, stale);
+        assert_eq!(field.computed_result.as_deref(), result);
+    }
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Dynamic("=".to_string()),
+            count: 2
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::NoComputedResult,
+            count: 2
+        }]
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("3")
+            && main_text.contains("10")
+            && main_text.contains("cached spanned above")
+            && main_text.contains("cached spanned below"),
+        "directional formulas should compute only when traversed rows have no spans: {main_text:?}"
+    );
+    assert!(
+        !main_text.contains("cached safe above") && !main_text.contains("cached safe below"),
+        "computed directional formulas should replace stale cached text: {main_text:?}"
     );
 }
 
