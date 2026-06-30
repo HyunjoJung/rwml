@@ -544,6 +544,11 @@ fn read_section_columns(r: &mut Xml<'_>) -> Option<u16> {
     let mut columns = None;
     loop {
         match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                if let Some(value) = read_section_setup_alternate_content(r).columns {
+                    columns = value;
+                }
+            }
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"cols" => {
                 columns = section_columns(&e);
             }
@@ -564,6 +569,11 @@ fn read_section_text_direction(r: &mut Xml<'_>) -> Option<TextDirection> {
     let mut text_direction = None;
     loop {
         match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                if let Some(value) = read_section_setup_alternate_content(r).text_direction {
+                    text_direction = value;
+                }
+            }
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"textDirection" =>
             {
@@ -599,6 +609,11 @@ fn read_section_doc_grid(r: &mut Xml<'_>) -> Option<DocGrid> {
     let mut doc_grid = None;
     loop {
         match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                if let Some(value) = read_section_setup_alternate_content(r).doc_grid {
+                    doc_grid = value;
+                }
+            }
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"docGrid" => {
                 doc_grid = doc_grid_from_attrs(&e);
             }
@@ -615,6 +630,11 @@ fn read_section_title_page(r: &mut Xml<'_>) -> bool {
     let mut title_page = false;
     loop {
         match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                if read_section_setup_alternate_content(r).title_page {
+                    title_page = true;
+                }
+            }
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"titlePg" => {
                 title_page = true;
             }
@@ -625,6 +645,96 @@ fn read_section_title_page(r: &mut Xml<'_>) -> bool {
         }
     }
     title_page
+}
+
+#[derive(Default)]
+struct SectionSetupScan {
+    columns: Option<Option<u16>>,
+    text_direction: Option<Option<TextDirection>>,
+    doc_grid: Option<Option<DocGrid>>,
+    title_page: bool,
+}
+
+fn read_section_setup_alternate_content(r: &mut Xml<'_>) -> SectionSetupScan {
+    let mut setup = SectionSetupScan::default();
+    let mut took = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                match name {
+                    b"Choice" | b"Fallback" if !took => {
+                        took = true;
+                        setup = read_section_setup_alternate_content_branch(r, name);
+                    }
+                    _ => skip_subtree(r),
+                }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    setup
+}
+
+fn read_section_setup_alternate_content_branch(r: &mut Xml<'_>, branch: &[u8]) -> SectionSetupScan {
+    let mut setup = SectionSetupScan::default();
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                merge_section_setup_scan(&mut setup, read_section_setup_alternate_content(r));
+            }
+            Ok(Event::Start(e)) => {
+                if !record_section_setup_child(&mut setup, &e) {
+                    skip_subtree(r);
+                }
+            }
+            Ok(Event::Empty(e)) => {
+                record_section_setup_child(&mut setup, &e);
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    setup
+}
+
+fn merge_section_setup_scan(target: &mut SectionSetupScan, source: SectionSetupScan) {
+    if source.columns.is_some() {
+        target.columns = source.columns;
+    }
+    if source.text_direction.is_some() {
+        target.text_direction = source.text_direction;
+    }
+    if source.doc_grid.is_some() {
+        target.doc_grid = source.doc_grid;
+    }
+    target.title_page |= source.title_page;
+}
+
+fn record_section_setup_child(setup: &mut SectionSetupScan, e: &BytesStart<'_>) -> bool {
+    match local(e.name().as_ref()) {
+        b"cols" => {
+            setup.columns = Some(section_columns(e));
+            true
+        }
+        b"textDirection" => {
+            setup.text_direction = Some(section_text_direction(e));
+            true
+        }
+        b"docGrid" => {
+            setup.doc_grid = Some(doc_grid_from_attrs(e));
+            true
+        }
+        b"titlePg" => {
+            setup.title_page = true;
+            true
+        }
+        _ => false,
+    }
 }
 
 fn read_section_page_number_start(r: &mut Xml<'_>) -> Option<u32> {
@@ -5551,6 +5661,42 @@ mod tests {
         assert_eq!(page.margin_right_pt, Some(54.0));
         assert_eq!(page.margin_top_pt, Some(72.0));
         assert_eq!(page.margin_bottom_pt, Some(90.0));
+    }
+
+    #[test]
+    fn final_section_setup_scanners_use_single_alternate_content_branch() {
+        let xml = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+            <w:sectPr>
+                <mc:AlternateContent>
+                    <mc:Choice Requires="w14">
+                        <w:cols w:num="2"/>
+                        <w:textDirection w:val="tbRl"/>
+                        <w:docGrid w:type="lines" w:linePitch="360" w:charSpace="120"/>
+                        <w:titlePg/>
+                    </mc:Choice>
+                    <mc:Fallback>
+                        <w:cols w:num="5"/>
+                        <w:textDirection w:val="lrTb"/>
+                        <w:docGrid w:type="snapToChars" w:linePitch="720" w:charSpace="240"/>
+                    </mc:Fallback>
+                </mc:AlternateContent>
+            </w:sectPr>
+        </w:body></w:document>"#;
+
+        assert_eq!(scan_section_columns(xml), Some(2));
+        assert_eq!(
+            scan_section_text_direction(xml),
+            Some(TextDirection::TopToBottomRightToLeft)
+        );
+        assert_eq!(
+            scan_section_doc_grid(xml),
+            Some(DocGrid {
+                grid_type: DocGridType::Lines,
+                line_pitch: Some(360),
+                character_space: Some(120),
+            })
+        );
+        assert!(scan_section_title_page(xml));
     }
 
     #[test]
