@@ -27,9 +27,10 @@ use crate::annotation::{
 };
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{
-    compare_field_syntax, formula_field_syntax, if_field_syntax, merge_control_field_syntax,
-    numbering_field_syntax, page_field_format_syntax_tail, prompt_field_syntax, quote_field_syntax,
-    reference_index_category_token, reference_index_literal_operand, reference_index_literal_token,
+    compare_field_syntax, formula_field_expression_syntax, if_field_syntax,
+    merge_control_field_syntax, numbering_field_syntax, page_field_format_syntax_tail,
+    prompt_field_syntax, quote_field_syntax, reference_index_category_token,
+    reference_index_literal_operand, reference_index_literal_token,
     reference_index_plain_value_token, revision_number_field_text_format, sequence_field_syntax,
     set_field_syntax, style_ref_field_syntax, toc_entry_field_syntax,
 };
@@ -3209,7 +3210,7 @@ fn formula_uncomputed_reason(instruction: &str) -> FieldEvaluationReason {
     }
     #[cfg(not(feature = "docx"))]
     {
-        if formula_field_syntax(instruction) {
+        if formula_field_expression_syntax(instruction) {
             FieldEvaluationReason::NoComputedResult
         } else {
             FieldEvaluationReason::UnsupportedSwitch
@@ -4606,6 +4607,31 @@ mod tests {
         );
         assert_eq!(
             super::formula_uncomputed_reason(r#"= 1 \# "0.00"#),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_formula_diagnostics_reject_malformed_bodies() {
+        assert_eq!(
+            super::formula_uncomputed_reason(r#"= CustomerTotal \# "0.00""#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::formula_uncomputed_reason("= CustomerTotal + TaxTotal"),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::formula_uncomputed_reason("= 1 +"),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+        assert_eq!(
+            super::formula_uncomputed_reason("= (1 + 2"),
+            super::FieldEvaluationReason::UnsupportedSwitch
+        );
+        assert_eq!(
+            super::formula_uncomputed_reason("= 1e+"),
             super::FieldEvaluationReason::UnsupportedSwitch
         );
     }

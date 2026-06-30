@@ -1199,46 +1199,254 @@ fn field_comparison_operand_syntax(token: &str) -> bool {
     }
 }
 
-pub(crate) fn formula_field_syntax(instruction: &str) -> bool {
+pub(crate) fn formula_field_expression_syntax(instruction: &str) -> bool {
+    formula_field_expression(instruction)
+        .as_deref()
+        .is_some_and(formula_expression_shape_syntax)
+}
+
+fn formula_field_expression(instruction: &str) -> Option<String> {
     let Some(body) = instruction.trim().strip_prefix('=') else {
-        return false;
+        return None;
     };
     let body = body.trim();
     if body.is_empty() {
-        return false;
+        return None;
     }
     let tokens = instruction_parts(body);
     let Some(format_switch) = formula_field_number_format_switch(&tokens) else {
         if let Some(tail_index) = tokens.iter().position(|part| is_field_format_start(part)) {
             if tail_index == 0 {
-                return false;
+                return None;
             }
             let mut tail = tokens[tail_index..].iter().map(String::as_str);
-            return formula_field_general_format_tail(&mut tail);
+            return formula_field_general_format_tail(&mut tail)
+                .then(|| tokens[..tail_index].join(" "));
         }
-        return true;
+        return Some(body.to_string());
     };
     let (format_index, tail_start) = match format_switch {
         FormulaFieldNumberFormatSwitch::Separate(format_index) => {
             let Some(tail_start) =
                 formula_field_number_format_picture_operand(&tokens, format_index + 1)
             else {
-                return false;
+                return None;
             };
             (format_index, tail_start)
         }
         FormulaFieldNumberFormatSwitch::Compact { index, picture } => {
             if !formula_field_number_format_picture(&picture) {
-                return false;
+                return None;
             }
             (index, index + 1)
         }
     };
     if format_index == 0 {
-        return false;
+        return None;
     }
     let mut tail = tokens[tail_start..].iter().map(String::as_str);
-    formula_field_format_tail(&mut tail)
+    formula_field_format_tail(&mut tail).then(|| tokens[..format_index].join(" "))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FormulaParenKind {
+    Group,
+    Function,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct FormulaParenFrame {
+    kind: FormulaParenKind,
+    saw_operand: bool,
+}
+
+fn formula_expression_shape_syntax(expression: &str) -> bool {
+    let chars = expression.chars().collect::<Vec<_>>();
+    let mut index = 0usize;
+    let mut expecting_operand = true;
+    let mut frames = Vec::<FormulaParenFrame>::new();
+
+    while index < chars.len() {
+        if chars[index].is_whitespace() {
+            index += 1;
+            continue;
+        }
+        let ch = chars[index];
+        if expecting_operand {
+            match ch {
+                '+' | '-' => {
+                    index += 1;
+                }
+                '(' => {
+                    frames.push(FormulaParenFrame {
+                        kind: FormulaParenKind::Group,
+                        saw_operand: false,
+                    });
+                    index += 1;
+                }
+                ')' => {
+                    if !close_formula_expression_frame(&mut frames, true, &mut expecting_operand) {
+                        return false;
+                    }
+                    index += 1;
+                }
+                _ if ch.is_ascii_digit() || ch == '.' => {
+                    let Some(next) = formula_expression_number_end(&chars, index) else {
+                        return false;
+                    };
+                    index = next;
+                    formula_expression_mark_operand(&mut frames, &mut expecting_operand);
+                }
+                _ if is_formula_shape_identifier_start(ch) => {
+                    let (next, identifier_only) = formula_expression_operand_end(&chars, index);
+                    index = skip_formula_expression_ws(&chars, next);
+                    if identifier_only && chars.get(index) == Some(&'(') {
+                        frames.push(FormulaParenFrame {
+                            kind: FormulaParenKind::Function,
+                            saw_operand: false,
+                        });
+                        index += 1;
+                        expecting_operand = true;
+                    } else {
+                        formula_expression_mark_operand(&mut frames, &mut expecting_operand);
+                    }
+                }
+                _ => return false,
+            }
+            continue;
+        }
+
+        match ch {
+            '+' | '-' | '*' | '/' | '^' => {
+                expecting_operand = true;
+                index += 1;
+            }
+            '<' | '>' | '=' => {
+                expecting_operand = true;
+                index += formula_expression_comparison_operator_len(&chars, index);
+            }
+            ',' | ';' => {
+                if !matches!(
+                    frames.last(),
+                    Some(FormulaParenFrame {
+                        kind: FormulaParenKind::Function,
+                        ..
+                    })
+                ) {
+                    return false;
+                }
+                expecting_operand = true;
+                index += 1;
+            }
+            ')' => {
+                if !close_formula_expression_frame(&mut frames, false, &mut expecting_operand) {
+                    return false;
+                }
+                index += 1;
+            }
+            _ => return false,
+        }
+    }
+
+    !expecting_operand && frames.is_empty()
+}
+
+fn formula_expression_mark_operand(frames: &mut [FormulaParenFrame], expecting_operand: &mut bool) {
+    if let Some(frame) = frames.last_mut() {
+        frame.saw_operand = true;
+    }
+    *expecting_operand = false;
+}
+
+fn close_formula_expression_frame(
+    frames: &mut Vec<FormulaParenFrame>,
+    empty_operand: bool,
+    expecting_operand: &mut bool,
+) -> bool {
+    let Some(frame) = frames.pop() else {
+        return false;
+    };
+    if empty_operand && (frame.kind != FormulaParenKind::Function || frame.saw_operand) {
+        return false;
+    }
+    formula_expression_mark_operand(frames, expecting_operand);
+    true
+}
+
+fn formula_expression_number_end(chars: &[char], start: usize) -> Option<usize> {
+    let mut index = start;
+    let mut saw_digit = false;
+    let mut saw_dot = false;
+    while let Some(ch) = chars.get(index).copied() {
+        if ch.is_ascii_digit() {
+            saw_digit = true;
+            index += 1;
+        } else if ch == '.' && !saw_dot {
+            saw_dot = true;
+            index += 1;
+        } else {
+            break;
+        }
+    }
+    if !saw_digit {
+        return None;
+    }
+    if chars.get(index).is_some_and(|ch| matches!(ch, 'e' | 'E')) {
+        index += 1;
+        if chars.get(index).is_some_and(|ch| matches!(ch, '+' | '-')) {
+            index += 1;
+        }
+        let exponent_start = index;
+        while chars.get(index).is_some_and(|ch| ch.is_ascii_digit()) {
+            index += 1;
+        }
+        if index == exponent_start {
+            return None;
+        }
+    }
+    Some(index)
+}
+
+fn formula_expression_operand_end(chars: &[char], start: usize) -> (usize, bool) {
+    let mut index = start;
+    let mut identifier_only = true;
+    while let Some(ch) = chars.get(index).copied() {
+        if ch.is_whitespace()
+            || matches!(
+                ch,
+                '+' | '-' | '*' | '/' | '^' | '<' | '>' | '=' | '(' | ')' | ',' | ';'
+            )
+        {
+            break;
+        }
+        if !is_formula_shape_identifier_continue(ch) {
+            identifier_only = false;
+        }
+        index += 1;
+    }
+    (index, identifier_only)
+}
+
+fn skip_formula_expression_ws(chars: &[char], mut index: usize) -> usize {
+    while chars.get(index).is_some_and(|ch| ch.is_whitespace()) {
+        index += 1;
+    }
+    index
+}
+
+fn formula_expression_comparison_operator_len(chars: &[char], index: usize) -> usize {
+    match (chars.get(index).copied(), chars.get(index + 1).copied()) {
+        (Some('<'), Some('=' | '>')) | (Some('>'), Some('=')) => 2,
+        _ => 1,
+    }
+}
+
+fn is_formula_shape_identifier_start(ch: char) -> bool {
+    ch.is_ascii_alphabetic() || ch == '_'
+}
+
+fn is_formula_shape_identifier_continue(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || ch == '_'
 }
 
 enum FormulaFieldNumberFormatSwitch {
