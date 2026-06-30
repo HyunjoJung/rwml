@@ -1618,6 +1618,14 @@ pub(crate) fn style_ref_field_syntax(instruction: &str) -> Option<StyleRefFieldS
         if accepted {
             continue;
         }
+        if part.starts_with('\\') {
+            if let Some(switches) = compact_style_ref_flag_switches(part) {
+                for switch in switches {
+                    apply_style_ref_flag_switch(switch, &mut result, &mut suppress_non_numeric)?;
+                }
+                continue;
+            }
+        }
         if part.eq_ignore_ascii_case("\\t") {
             if suppress_non_numeric {
                 return None;
@@ -1657,6 +1665,40 @@ pub(crate) fn style_ref_field_syntax(instruction: &str) -> Option<StyleRefFieldS
         result,
         suppress_non_numeric,
     })
+}
+
+fn compact_style_ref_flag_switches(part: &str) -> Option<Vec<char>> {
+    compact_flag_switches(part, |switch| matches!(switch, 't' | 'n' | 'r' | 'w' | 'p'))
+}
+
+fn apply_style_ref_flag_switch(
+    switch: char,
+    result: &mut StyleRefResult,
+    suppress_non_numeric: &mut bool,
+) -> Option<()> {
+    match switch {
+        't' => {
+            if *suppress_non_numeric {
+                return None;
+            }
+            *suppress_non_numeric = true;
+            Some(())
+        }
+        'n' | 'r' | 'w' | 'p' => {
+            if *result != StyleRefResult::Text {
+                return None;
+            }
+            *result = match switch {
+                'n' => StyleRefResult::ParagraphNumber,
+                'r' => StyleRefResult::RelativeContextNumber,
+                'w' => StyleRefResult::FullContextNumber,
+                'p' => StyleRefResult::RelativePosition,
+                _ => return None,
+            };
+            Some(())
+        }
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2983,8 +3025,8 @@ mod tests {
         eq_radical_operands, hyperlink_field_target, if_field_syntax, legacy_form_field_syntax,
         merge_control_field_syntax, merge_field_name, normalized_field_instruction,
         note_ref_field_syntax, opaque_field_syntax, page_ref_field_syntax, ref_field_syntax,
-        symbol_field_syntax, toc_field_syntax, FieldNumberFormat, FieldTextFormat,
-        TocSequenceFilter, TocTcFilter,
+        style_ref_field_syntax, symbol_field_syntax, toc_field_syntax, FieldNumberFormat,
+        FieldTextFormat, StyleRefResult, TocSequenceFilter, TocTcFilter,
     };
 
     #[test]
@@ -3051,6 +3093,25 @@ mod tests {
         assert!(legacy_form_field_syntax(r#"FORMTEXT \x"#).is_none());
         assert!(legacy_form_field_syntax(r#"FORMTEXT \* BadFormat"#).is_none());
         assert!(legacy_form_field_syntax("FORMFIELD").is_none());
+    }
+
+    #[test]
+    fn style_ref_field_syntax_accepts_compact_number_switches() {
+        let compact = style_ref_field_syntax(r#"STYLEREF NumberedTarget \n\t"#)
+            .expect("valid compact numbered style ref syntax");
+        assert_eq!(compact.style_identifier, "NumberedTarget");
+        assert_eq!(compact.result, StyleRefResult::ParagraphNumber);
+        assert!(compact.suppress_non_numeric);
+
+        let compact_context = style_ref_field_syntax(r#"STYLEREF NumberedTarget \t\w"#)
+            .expect("valid compact full-context style ref syntax");
+        assert_eq!(compact_context.result, StyleRefResult::FullContextNumber);
+        assert!(compact_context.suppress_non_numeric);
+
+        assert!(style_ref_field_syntax(r#"STYLEREF NumberedTarget \n\r"#).is_none());
+        assert!(style_ref_field_syntax(r#"STYLEREF NumberedTarget \t\t"#).is_none());
+        assert!(style_ref_field_syntax(r#"STYLEREF NumberedTarget \p\t"#).is_none());
+        assert!(style_ref_field_syntax(r#"STYLEREF NumberedTarget \x"#).is_none());
     }
 
     #[test]
