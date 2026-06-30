@@ -5003,6 +5003,43 @@ fn report_dynamic_control_fields_split_cached_and_malformed_diagnostics() {
     );
 }
 
+#[cfg(feature = "render")]
+#[test]
+fn report_dynamic_control_model_render_report_matches_document_reason_buckets() {
+    let doc = Document::open(&dynamic_control_field_diagnostics_docx()).expect("fixture opens");
+    let expected_kinds = doc.report().features.unsupported_field_kinds;
+    let expected_reasons = doc.report().features.unsupported_field_reasons;
+    assert_eq!(
+        expected_kinds,
+        vec![
+            field_kind_count(FieldKind::Dynamic("IF".to_string()), 2),
+            field_kind_count(FieldKind::Dynamic("COMPARE".to_string()), 2),
+            field_kind_count(FieldKind::Dynamic("=".to_string()), 2),
+            field_kind_count(FieldKind::Dynamic("FILLIN".to_string()), 2),
+            field_kind_count(FieldKind::Dynamic("ASK".to_string()), 1),
+            field_kind_count(FieldKind::Dynamic("SET".to_string()), 2),
+            field_kind_count(FieldKind::Dynamic("QUOTE".to_string()), 1),
+            field_kind_count(FieldKind::Dynamic("NEXTIF".to_string()), 2),
+        ]
+    );
+    assert_eq!(
+        expected_reasons,
+        vec![
+            field_reason_count(FieldEvaluationReason::NoComputedResult, 7),
+            field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 7),
+        ]
+    );
+
+    let rendered = rdoc::render_pdf_with_report(&doc.model());
+
+    assert_eq!(rendered.report.unsupported.fields, 14);
+    assert_eq!(rendered.report.unsupported.field_kinds, expected_kinds);
+    assert_eq!(
+        rendered.report.unsupported.unsupported_field_reasons,
+        expected_reasons
+    );
+}
+
 #[cfg(feature = "docx")]
 #[test]
 fn report_formula_numeric_picture_fields_are_supported() {
