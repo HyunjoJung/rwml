@@ -181,7 +181,7 @@ pub(crate) fn ref_position_context(xml: &str, numbering: &Numbering) -> RefPosit
                     skip_subtree(&mut r);
                     continue;
                 }
-                if matches!(name, b"del" | b"moveFrom") {
+                if matches!(name, b"del" | b"moveFrom" | b"pPrChange") {
                     skip_subtree(&mut r);
                     continue;
                 }
@@ -527,7 +527,7 @@ pub(crate) fn ref_number_context(xml: &str, numbering: &Numbering) -> RefNumberC
                     skip_subtree(&mut r);
                     continue;
                 }
-                if matches!(name, b"del" | b"moveFrom") {
+                if matches!(name, b"del" | b"moveFrom" | b"pPrChange") {
                     skip_subtree(&mut r);
                     continue;
                 }

@@ -2411,6 +2411,27 @@ fn alternate_content_numbered_ref_docx() -> Vec<u8> {
     ])
 }
 
+fn ref_numbering_property_revision_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pPrChange><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="92"/></w:numPr></w:pPr></w:pPrChange></w:pPr><w:bookmarkStart w:id="7" w:name="OldClause"/><w:r><w:t>Former numbered clause</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="92"/></w:numPr></w:pPr><w:bookmarkStart w:id="8" w:name="CurrentClause"/><w:r><w:t>Current numbered clause</w:t></w:r><w:bookmarkEnd w:id="8"/></w:p><w:p><w:pPr><w:pPrChange><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="92"/></w:numPr></w:pPr></w:pPrChange></w:pPr><w:fldSimple w:instr=" REF OldClause \n "><w:r><w:t>cached old number</w:t></w:r></w:fldSimple><w:r><w:t> </w:t></w:r><w:fldSimple w:instr=" REF CurrentClause \n "><w:r><w:t>stale current number</w:t></w:r></w:fldSimple><w:r><w:t> </w:t></w:r><w:fldSimple w:instr=" REF CurrentClause \r "><w:r><w:t>cached relative old context</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/numbering.xml",
+            r#"<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="16"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum><w:num w:numId="92"><w:abstractNumId w:val="16"/></w:num></w:numbering>"#,
+        ),
+    ])
+}
+
 fn numbered_ref_suppress_text_switch_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -12790,6 +12811,71 @@ fn docx_ref_numbering_uses_single_alternate_content_branch() {
         main_text.contains("2") && !main_text.contains("stale alt number"),
         "REF \\n should not double-count Choice/Fallback numbered paragraphs: {main_text:?}"
     );
+}
+
+#[test]
+fn docx_ref_numbering_ignores_old_paragraph_property_revisions() {
+    let doc = Document::open(&ref_numbering_property_revision_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 3);
+    assert!(fields.iter().all(|field| field.kind == FieldKind::Ref));
+    assert_eq!(fields[0].instruction, "REF OldClause \\n");
+    assert_eq!(fields[0].result, "cached old number");
+    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(fields[1].instruction, "REF CurrentClause \\n");
+    assert_eq!(fields[1].result, "stale current number");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("1"));
+    assert_eq!(fields[2].instruction, "REF CurrentClause \\r");
+    assert_eq!(fields[2].result, "cached relative old context");
+    assert_eq!(fields[2].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Ref,
+            count: 2,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::NoComputedResult,
+            count: 2,
+        }]
+    );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| instruction.contains("CurrentClause")
+            || instruction.contains("OldClause")),
+        vec![
+            (
+                "REF OldClause \\n".to_string(),
+                Some(FieldUnsupportedReason::NoComputedResult),
+            ),
+            (
+                "REF CurrentClause \\r".to_string(),
+                Some(FieldUnsupportedReason::NoComputedResult),
+            ),
+        ]
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Former numbered clause"),
+        "{main_text:?}"
+    );
+    assert!(
+        main_text.contains("Current numbered clause"),
+        "{main_text:?}"
+    );
+    assert!(main_text.contains("cached old number"), "{main_text:?}");
+    assert!(main_text.contains("1"), "{main_text:?}");
+    assert!(
+        main_text.contains("cached relative old context"),
+        "{main_text:?}"
+    );
+    assert!(!main_text.contains("stale current number"), "{main_text:?}");
 }
 
 #[test]
