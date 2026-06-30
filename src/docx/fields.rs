@@ -981,7 +981,10 @@ fn apply_computed_results(fields: &mut [Field], ctx: ComputedResultContexts<'_>)
                 result
             }
             FieldKind::Numbering(kind)
-                if kind == "AUTONUM" || kind == "AUTONUMLGL" || kind == "AUTONUMOUT" =>
+                if kind == "AUTONUM"
+                    || kind == "AUTONUMLGL"
+                    || kind == "AUTONUMOUT"
+                    || kind == "BIDIOUTLINE" =>
             {
                 computed_numbering_result(&field.instruction, &mut autonum_counter)
             }
@@ -1889,6 +1892,7 @@ pub(crate) fn computed_numbering_result(
     if !kind.eq_ignore_ascii_case("AUTONUM")
         && !kind.eq_ignore_ascii_case("AUTONUMLGL")
         && !kind.eq_ignore_ascii_case("AUTONUMOUT")
+        && !kind.eq_ignore_ascii_case("BIDIOUTLINE")
     {
         return None;
     }

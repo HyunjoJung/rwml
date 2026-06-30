@@ -9154,7 +9154,7 @@ fn docx_numbering_fields_compute_formatted_autonum_subset() {
     );
     assert_eq!(fields[12].instruction, "BIDIOUTLINE");
     assert_eq!(fields[12].result, "cached bidi outline");
-    assert_eq!(fields[12].computed_result, None);
+    assert_eq!(fields[12].computed_result.as_deref(), Some("11"));
     assert_eq!(
         fields[13].kind,
         FieldKind::Numbering("BIDIOUTLINE".to_string())
@@ -9177,7 +9177,7 @@ fn docx_numbering_fields_compute_formatted_autonum_subset() {
             },
             FieldKindCount {
                 kind: FieldKind::Numbering("BIDIOUTLINE".to_string()),
-                count: 2,
+                count: 1,
             },
         ]
     );
@@ -9190,7 +9190,7 @@ fn docx_numbering_fields_compute_formatted_autonum_subset() {
             },
             FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::NoComputedResult,
-                count: 2,
+                count: 1,
             },
         ]
     );
@@ -9207,10 +9207,6 @@ fn docx_numbering_fields_compute_formatted_autonum_subset() {
             ),
             (
                 "LISTNUM LegalDefault \\l 2".to_string(),
-                Some(FieldUnsupportedReason::NoComputedResult),
-            ),
-            (
-                "BIDIOUTLINE".to_string(),
                 Some(FieldUnsupportedReason::NoComputedResult),
             ),
             (
@@ -9234,7 +9230,7 @@ fn docx_numbering_fields_compute_formatted_autonum_subset() {
             && main_text.contains("9")
             && main_text.contains("x")
             && main_text.contains("cached list number")
-            && main_text.contains("cached bidi outline")
+            && main_text.contains("11")
             && main_text.contains("cached malformed bidi outline"),
         "computed AUTONUM and cached remaining numbering field results should appear in main text: {main_text:?}"
     );
@@ -9248,13 +9244,14 @@ fn docx_numbering_fields_compute_formatted_autonum_subset() {
             && !main_text.contains("cached legal number")
             && !main_text.contains("cached legal roman")
             && !main_text.contains("cached outline number")
-            && !main_text.contains("cached outline roman"),
+            && !main_text.contains("cached outline roman")
+            && !main_text.contains("cached bidi outline"),
         "computed automatic numbering fields should replace stale cached text: {main_text:?}"
     );
 }
 
 #[test]
-fn docx_bidioutline_accepts_format_tail_as_known_noncomputed_syntax() {
+fn docx_bidioutline_computes_valid_format_tails() {
     let doc = Document::open(&docx_fixture(&[
         (
             "[Content_Types].xml",
@@ -9277,9 +9274,9 @@ fn docx_bidioutline_accepts_format_tail_as_known_noncomputed_syntax() {
         .iter()
         .all(|field| field.kind == FieldKind::Numbering("BIDIOUTLINE".to_string())));
     assert_eq!(fields[0].instruction, "BIDIOUTLINE \\* MERGEFORMAT");
-    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(fields[0].computed_result.as_deref(), Some("1"));
     assert_eq!(fields[1].instruction, "BIDIOUTLINE \\* roman \\* Upper");
-    assert_eq!(fields[1].computed_result, None);
+    assert_eq!(fields[1].computed_result.as_deref(), Some("II"));
     assert_eq!(fields[2].instruction, "BIDIOUTLINE \\* BadFormat");
     assert_eq!(fields[2].computed_result, None);
 
@@ -9288,26 +9285,22 @@ fn docx_bidioutline_accepts_format_tail_as_known_noncomputed_syntax() {
         report.features.unsupported_field_kinds,
         vec![FieldKindCount {
             kind: FieldKind::Numbering("BIDIOUTLINE".to_string()),
-            count: 3,
+            count: 1,
         }]
     );
     assert_eq!(
         report.features.unsupported_field_reasons,
-        vec![
-            FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::NoComputedResult,
-                count: 2,
-            },
-            FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::UnsupportedSwitch,
-                count: 1,
-            },
-        ]
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnsupportedSwitch,
+            count: 1,
+        }]
     );
 
     let main_text = doc.main_text();
-    assert!(main_text.contains("cached bidi mergeformat"));
-    assert!(main_text.contains("cached bidi formatted"));
+    assert!(main_text.contains("1"));
+    assert!(main_text.contains("II"));
+    assert!(!main_text.contains("cached bidi mergeformat"));
+    assert!(!main_text.contains("cached bidi formatted"));
     assert!(main_text.contains("cached bad bidi format"));
 }
 

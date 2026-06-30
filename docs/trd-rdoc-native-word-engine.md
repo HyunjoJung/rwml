@@ -777,12 +777,11 @@ Acceptance:
 - plain `AUTONUM` fields compute source-order values with common number and
   text format switches and the documented `\s` separator switch, including unquoted or
   quoted one-character separators; standalone plain, neutral,
-  common-number-format, or text-format `AUTONUMLGL` and `AUTONUMOUT` values compute on the same source-order counter; level-1
+  common-number-format, or text-format `AUTONUMLGL`, `AUTONUMOUT`, and `BIDIOUTLINE` values compute on the same source-order counter; level-1
   `LISTNUM NumberDefault`/`LegalDefault` fields compute source-order values with common
   number and text format switches, neutral field-format switches, and `\s`
   starts/resets; invalid numbering/list syntax reports `UnsupportedSwitch`,
-  while richer `AUTONUMOUT`
-  outline formatting, `BIDIOUTLINE` with valid field-result format switches,
+  while richer `AUTONUMOUT`/`BIDIOUTLINE` outline semantics
   and richer `LISTNUM` levels/named lists preserve cached text with
   `NoComputedResult` diagnostics until richer
   automatic-numbering semantics are modeled.

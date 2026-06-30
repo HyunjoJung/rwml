@@ -367,11 +367,10 @@ The first public maturity release should meet these requirements.
   source-order plain `AUTONUM` values with common number and text format switches and the
   documented `\s` separator switch, including unquoted or quoted
   one-character separators, standalone plain, neutral, common-number-format, or text-format
-  `AUTONUMLGL` and `AUTONUMOUT` values on the same source-order counter, plus level-1
+  `AUTONUMLGL`, `AUTONUMOUT`, and `BIDIOUTLINE` values on the same source-order counter, plus level-1
   `LISTNUM NumberDefault`/`LegalDefault` values with common number and text format switches, neutral
   field-format switches, and `\s` starts/resets, invalid numbering/list syntax
-  reports `UnsupportedSwitch`, while richer `AUTONUMOUT` outline formatting,
-  `BIDIOUTLINE`,
+  reports `UnsupportedSwitch`, while richer `AUTONUMOUT`/`BIDIOUTLINE` outline semantics
   and richer `LISTNUM` levels/named lists are named diagnostics with cached
   display text and `NoComputedResult` until broader native automatic-numbering
   evaluation is implemented;

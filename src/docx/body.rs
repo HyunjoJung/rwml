@@ -4031,7 +4031,10 @@ fn computed_simple_field_result(
             if matches!(
                 FieldKind::from_instruction(instruction),
                 FieldKind::Numbering(kind)
-                    if kind == "AUTONUM" || kind == "AUTONUMLGL" || kind == "AUTONUMOUT"
+                    if kind == "AUTONUM"
+                        || kind == "AUTONUMLGL"
+                        || kind == "AUTONUMOUT"
+                        || kind == "BIDIOUTLINE"
             ) {
                 let mut counter = ctx.autonum_counter.borrow_mut();
                 super::fields::computed_numbering_result(instruction, &mut counter)

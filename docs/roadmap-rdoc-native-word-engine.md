@@ -382,13 +382,12 @@ Initial status:
   numbering/list fields compute deterministic source-order plain `AUTONUM`
   values with common number and text format switches and the documented `\s` separator
   switch, including unquoted or quoted one-character separators, standalone
-  plain, neutral, common-number-format, or text-format `AUTONUMLGL` and `AUTONUMOUT`
+  plain, neutral, common-number-format, or text-format `AUTONUMLGL`, `AUTONUMOUT`, and `BIDIOUTLINE`
   values on the same source-order counter,
   plus level-1 `LISTNUM NumberDefault`/`LegalDefault` values with common
   number and text format switches, neutral field-format switches, and `\s`
   starts/resets, invalid numbering/list syntax reports `UnsupportedSwitch`,
-  while richer `AUTONUMOUT`
-  outline formatting, `BIDIOUTLINE`, and richer `LISTNUM` levels/named lists
+  while richer `AUTONUMOUT`/`BIDIOUTLINE` outline semantics and richer `LISTNUM` levels/named lists
   are named separately from unknown fields and report `NoComputedResult` until
   broader native automatic-numbering evaluation is implemented. The
   document-structure fields (`REVNUM`, `SECTION`, `SECTIONPAGES`, `STYLEREF`)
@@ -894,13 +893,13 @@ Initial status:
   Numbering/list fields compute deterministic source-order plain `AUTONUM`
   values with common number and text format switches and the documented `\s` separator
   switch, including unquoted or quoted one-character separators, standalone
-  plain, neutral, common-number-format, or text-format `AUTONUMLGL` and `AUTONUMOUT`
+  plain, neutral, common-number-format, or text-format `AUTONUMLGL`, `AUTONUMOUT`, and `BIDIOUTLINE`
   values on the same source-order counter,
   and level-1 `LISTNUM NumberDefault`/`LegalDefault` values with common number
   and text format switches, neutral field-format switches, and `\s` starts/resets; invalid
-  numbering/list syntax reports `UnsupportedSwitch`; `BIDIOUTLINE` fields with
-  valid field-result format switches and remaining automatic-numbering/list
-  fields are named separately from unknown fields and preserve cached text with
+  numbering/list syntax reports `UnsupportedSwitch`; richer `AUTONUMOUT`/`BIDIOUTLINE`
+  outline semantics and remaining automatic-numbering/list fields are named separately
+  from unknown fields and preserve cached text with
   `NoComputedResult` diagnostics.
   Document-structure fields are named separately from unknown fields; `REVNUM`
   computes from `cp:revision`, `SECTION` computes the current structural section
