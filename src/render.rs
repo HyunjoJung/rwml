@@ -601,6 +601,11 @@ fn floating_shape_label(shape: &FloatingShape, index: usize, w: f32, h: f32) -> 
                 last.push_str(&distance_label);
             }
         }
+        if !wrapping.polygon.is_empty() {
+            if let Some(last) = layout.last_mut() {
+                last.push_str(&format!(" wrap polygon {} pts", wrapping.polygon.len()));
+            }
+        }
     }
     if let Some(geometry) = shape.preset_geometry.as_deref() {
         let geometry = geometry.trim();
@@ -4377,7 +4382,21 @@ mod tests {
                         left_emu: Some(27_432),
                         right_emu: Some(36_576),
                     },
-                    polygon: Vec::new(),
+                    polygon: vec![
+                        ShapePoint { x_emu: 0, y_emu: 0 },
+                        ShapePoint {
+                            x_emu: 914_400,
+                            y_emu: 0,
+                        },
+                        ShapePoint {
+                            x_emu: 914_400,
+                            y_emu: 457_200,
+                        },
+                        ShapePoint {
+                            x_emu: 0,
+                            y_emu: 457_200,
+                        },
+                    ],
                 }),
             }],
             geom,
@@ -4393,7 +4412,7 @@ mod tests {
         assert_eq!(overlay.page_index, 0);
         assert_eq!(
             overlay.label,
-            "floating shape 1: Float one (72 x 36 pt, x simplePos 14.4 pt, y simplePos 21.6 pt, z 251659264, front, anchor dist t 1 pt, b 2 pt, l 3 pt, r 4 pt, wrap square bothSides wrap dist t 0.7 pt, b 1.4 pt, l 2.2 pt, r 2.9 pt, geometry roundRect, effect l 0.7 pt, t 1.4 pt, r 2.2 pt, b 2.9 pt, fill #FF8800, outline #003366, anchor Before anchor After anchor, text Shape body)"
+            "floating shape 1: Float one (72 x 36 pt, x simplePos 14.4 pt, y simplePos 21.6 pt, z 251659264, front, anchor dist t 1 pt, b 2 pt, l 3 pt, r 4 pt, wrap square bothSides wrap dist t 0.7 pt, b 1.4 pt, l 2.2 pt, r 2.9 pt wrap polygon 4 pts, geometry roundRect, effect l 0.7 pt, t 1.4 pt, r 2.2 pt, b 2.9 pt, fill #FF8800, outline #003366, anchor Before anchor After anchor, text Shape body)"
         );
     }
 

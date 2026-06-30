@@ -1250,13 +1250,14 @@ open and edit the chart data.
   layout metadata (`wp:extent`, `wp:docPr`, `wp:positionH`, `wp:positionV`,
   `wp:simplePos` when enabled by `wp:anchor/@simplePos`, `wp:effectExtent`,
   `relativeHeight`, `behindDoc`, `layoutInCell`, `locked`, `allowOverlap`,
-  `wp:anchor/@dist*`, `wp:wrap*` kind/text, `wp:wrap*/@dist*`, visible top-level
-  body block anchor index, containing-block anchor text, zero-width anchor
-  character offset, and `a:prstGeom/@prst` preset geometry, simple sRGB solid
-  fill/outline colors, and text-bearing `w:txbxContent`, including transparent
-  body-level content-control, custom-XML, smart-tag, single-branch
-  `mc:AlternateContent`, and accepted/current revision wrappers, while omitting
-  deleted and moved-from old-only shapes);
+  `wp:anchor/@dist*`, `wp:wrap*` kind/text, `wp:wrap*/@dist*`,
+  `wp:wrapPolygon` point lists, visible top-level body block anchor index,
+  containing-block anchor text, zero-width anchor character offset, and
+  `a:prstGeom/@prst` preset geometry, simple sRGB solid fill/outline colors,
+  and text-bearing `w:txbxContent`, including transparent body-level
+  content-control, custom-XML, smart-tag, single-branch `mc:AlternateContent`,
+  and accepted/current revision wrappers, while omitting deleted and moved-from
+  old-only shapes);
 - emit compact summary placeholders for shape markers without recovered geometry,
   backed by the same feature inventory;
 - draw recovered `.docx` anchors as bounded approximate overlay boxes using EMU
@@ -1264,7 +1265,7 @@ open and edit the chart data.
   `positionH`/`positionV` offset/alignment policy, recovered relative z-order,
   recovered visible top-level body block page, and compact anchor-text preview
   labels that include recovered effect extents, anchor distance margins, and
-  wrap-element distance margins when present;
+  wrap-element distance margins plus wrap-polygon point counts when present;
 - keep exact body anchor range/page resolution, real text-wrap reflow, deeper
   z-order semantics, and full non-text Office-Art drawing as later layout work;
 - validate against golden fixtures.

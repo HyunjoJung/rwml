@@ -524,8 +524,8 @@ The first public maturity release should meet these requirements.
 - output is valid PDF with selectable text.
 - opened `.docx` renders use recovered floating-shape geometry, relative
   z-order, behind/in-front flags, enabled `wp:simplePos` absolute points, anchor
-  `dist*` margins, wrap-element `dist*` margins, wrap policy, best-effort
-  visible top-level body block page selection including transparent body
+  `dist*` margins, wrap-element `dist*` margins, wrap policy,
+  `wp:wrapPolygon` point counts, best-effort visible top-level body block page selection including transparent body
   content-control, custom-XML, smart-tag, single-branch `mc:AlternateContent`,
   and accepted/current revision wrappers,
   surfacing direct, inserted, and moved-to shapes while omitting deleted and
@@ -534,9 +534,9 @@ The first public maturity release should meet these requirements.
   accepted/current policies,
   containing-block anchor text plus zero-width anchor character
   offsets, DrawingML preset geometry names, `wp:effectExtent` visual-effect
-  bounds, simple sRGB solid fill/outline colors, and text-bearing shape body
-  text for bounded approximate overlay previews while keeping exact Office
-  layout out of scope.
+  bounds, simple sRGB solid fill/outline colors, wrap-polygon point counts, and
+  text-bearing shape body text for bounded approximate overlay previews while
+  keeping exact Office layout out of scope.
 - validation script reports text recall, page-count ratio, and visual/hash
   metrics against external renderers when configured.
 - README labels the renderer as preview/report-grade.

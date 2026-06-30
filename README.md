@@ -44,7 +44,7 @@ let props = doc.core_properties(); // title/creator/etc. from docProps/core.xml 
 let comments = doc.comments();   // .docx comments + recovered .doc annotations
 let notes = doc.notes();         // .docx + recovered .doc footnote/endnote records with anchors
 let boxes = doc.text_boxes();    // .docx + recovered .doc text-box records
-let shapes = doc.floating_shapes(); // .docx wp:anchor geometry/layout/anchor/preset/color/simplePos/effect/wrap-distance records
+let shapes = doc.floating_shapes(); // .docx wp:anchor geometry/layout/anchor/preset/color/simplePos/effect/wrap-distance/polygon records
 let hfs   = doc.header_footers(); // .docx part/type records + recovered .doc regions
 let flds  = doc.fields();        // .docx + recovered .doc fields
 let revs  = doc.revisions();     // .docx tracked changes (kind, metadata, text)
@@ -763,13 +763,13 @@ Opened-document PDF rendering draws approximate overlay boxes for recovered
 `.docx` `wp:anchor` geometry and anchor layout metadata,
 including enabled `wp:simplePos` absolute placement, relative z-order,
 behind/in-front flags, anchor `dist*` margins, `wp:effectExtent` bounds,
-wrap-element `dist*` margins, wrap policy, and a best-effort visible top-level
-body block anchor page, including body blocks wrapped by transparent content
+wrap-element `dist*` margins, wrap policy, `wp:wrapPolygon` point counts, and a
+best-effort visible top-level body block anchor page, including body blocks wrapped by transparent content
 controls, custom XML, smart tags, single-branch `mc:AlternateContent`, or
 accepted/current revision wrappers, while omitting deleted and moved-from
 old-only shape anchors. It
 surfaces recovered containing-block anchor text, zero-width anchor character offsets inside that text, DrawingML preset geometry
-names, simple sRGB solid fill/outline colors, anchor-distance and wrap-distance labels, and
+names, simple sRGB solid fill/outline colors, anchor-distance and wrap-distance labels, wrap-polygon point counts, and
 text-bearing shape body text in preview labels.
 It appends compact placeholder lines for
 preserved-but-unmodeled chart parts, OLE objects, unsupported metafile images,

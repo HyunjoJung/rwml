@@ -767,10 +767,11 @@ Initial status:
   horizontal/vertical positioning metadata, enabled `wp:simplePos` absolute
   points, `wp:effectExtent` visual-effect bounds, `relativeHeight`,
   behind/in-front flags, anchor `dist*` margins, wrap-element `dist*` margins,
-  wrap policy, best-effort visible top-level body block page, containing-block
-  anchor text, zero-width anchor character offsets inside that normalized text,
-  DrawingML preset geometry names from `a:prstGeom/@prst`, simple sRGB solid
-  fill/outline colors, and text-bearing shape body text, using the same
+  wrap policy, `wp:wrapPolygon` point lists, best-effort visible top-level body
+  block page, containing-block anchor text, zero-width anchor character offsets
+  inside that normalized text, DrawingML preset geometry names from
+  `a:prstGeom/@prst`, simple sRGB solid fill/outline colors, and text-bearing
+  shape body text, using the same
   `mc:AlternateContent` first-branch policy as flat text so DrawingML Choice and
   fallback serializations of the same shape are not duplicated. Shape records and
   anchor block selection now follow transparent body-level content-control,
@@ -779,8 +780,9 @@ Initial status:
   old-only shapes are omitted, so wrapped visible blocks line up with the parsed
   model. Renderer placement now uses those records for approximate
   overlays, recovered simple absolute placement, recovered effect-extents,
-  anchor-distance labels, wrap-distance labels, recovered z-order, recovered block-page selection, and
-  compact anchor/body-text preview labels; exact body anchor-range page
+  anchor-distance labels, wrap-distance labels, wrap-polygon point counts,
+  recovered z-order, recovered block-page selection, and compact anchor/body-text
+  preview labels; exact body anchor-range page
   resolution, real text-wrap reflow, and full non-text Office-Art drawing
   contents are still future work.
 - Generated running footer page numbers (`DocSetup::page_numbers`) and body
