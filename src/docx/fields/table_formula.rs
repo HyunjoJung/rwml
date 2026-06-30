@@ -364,9 +364,7 @@ fn read_table_formula_cell(r: &mut Xml<'_>, row: usize, col: usize) -> TableForm
                         consumed_element = true;
                     }
                     _ => {
-                        if let Some(text) = inline_marker_text(&e) {
-                            cell.text.push_str(text);
-                        }
+                        append_table_formula_result_inline(&mut cell.text, &e);
                     }
                 }
                 if !consumed_element {
@@ -410,9 +408,7 @@ fn read_table_formula_cell(r: &mut Xml<'_>, row: usize, col: usize) -> TableForm
                         });
                     }
                     _ => {
-                        if let Some(text) = inline_marker_text(&e) {
-                            cell.text.push_str(text);
-                        }
+                        append_table_formula_result_inline(&mut cell.text, &e);
                     }
                 }
             }
