@@ -4120,6 +4120,12 @@ mod tests {
             ..Field::default()
         };
         assert_eq!(super::unsupported_field_reason(&valid), None);
+        let unquoted_tip = Field {
+            instruction: r#"HYPERLINK "https://example.com" \o Client portal tooltip \t NewWindow"#
+                .to_string(),
+            ..valid.clone()
+        };
+        assert_eq!(super::unsupported_field_reason(&unquoted_tip), None);
         let malformed = Field {
             instruction: r#"HYPERLINK "https://example.com" extra"#.to_string(),
             ..valid

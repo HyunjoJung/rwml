@@ -319,7 +319,7 @@ fn hyperlink_field_diagnostics_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" HYPERLINK &quot;https://example.com&quot; \o &quot;tip&quot; "><w:r><w:t>Example</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" HYPERLINK &quot;https://example.com "><w:r><w:t>Cached link</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" HYPERLINK \o &quot;tip&quot; "><w:r><w:t>Cached tooltip-only link</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" HYPERLINK &quot;https://example.com&quot; extra "><w:r><w:t>Cached trailing link</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" HYPERLINK &quot;https://example.com&quot; \o &quot;tip&quot; "><w:r><w:t>Example</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" HYPERLINK &quot;https://example.com/portal&quot; \o Client portal tooltip \t NewWindow "><w:r><w:t>Unquoted tip</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" HYPERLINK &quot;https://example.com "><w:r><w:t>Cached link</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" HYPERLINK \o &quot;tip&quot; "><w:r><w:t>Cached tooltip-only link</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" HYPERLINK &quot;https://example.com&quot; extra "><w:r><w:t>Cached trailing link</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -3856,19 +3856,19 @@ fn report_hyperlink_fields_split_supported_and_malformed_diagnostics() {
     let doc = Document::open(&hyperlink_field_diagnostics_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 4);
+    assert_eq!(fields.len(), 5);
     assert!(fields
         .iter()
         .all(|field| field.kind == FieldKind::Hyperlink));
 
     let report = doc.report();
 
-    assert_eq!(report.features.fields, 4);
+    assert_eq!(report.features.fields, 5);
     assert_eq!(
         report.features.field_kinds,
         vec![FieldKindCount {
             kind: FieldKind::Hyperlink,
-            count: 4,
+            count: 5,
         }]
     );
     assert_eq!(

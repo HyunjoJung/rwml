@@ -587,7 +587,7 @@ pub(crate) fn hyperlink_field_target(instruction: &str) -> Option<String> {
 
 fn hyperlink_tail_syntax(tail: &str) -> bool {
     let tokens = instruction_parts(tail);
-    let mut parts = tokens.iter().map(String::as_str);
+    let mut parts = tokens.iter().map(String::as_str).peekable();
     while let Some(part) = parts.next() {
         if !part.starts_with('\\') || part.contains('"') {
             return false;
@@ -600,12 +600,39 @@ fn hyperlink_tail_syntax(tail: &str) -> bool {
             continue;
         }
         if matches!(lower.as_str(), "\\l" | "\\o" | "\\t") {
-            let Some(value) = parts.next() else {
-                return false;
-            };
-            if field_non_empty_non_switch_literal_token(value).is_none() {
+            if !hyperlink_tail_value_syntax(&mut parts) {
                 return false;
             }
+            continue;
+        }
+        return false;
+    }
+    true
+}
+
+fn hyperlink_tail_value_syntax<'a>(
+    parts: &mut std::iter::Peekable<impl Iterator<Item = &'a str>>,
+) -> bool {
+    let Some(value) = parts.next() else {
+        return false;
+    };
+    if field_non_empty_non_switch_literal_token(value).is_none() {
+        return false;
+    }
+    if field_quoted_literal_token(value).is_some() {
+        return true;
+    }
+    while let Some(value) = parts.peek().copied() {
+        if value.starts_with('\\') {
+            break;
+        }
+        let Some(value) = parts.next() else {
+            return false;
+        };
+        if field_quoted_literal_token(value).is_some()
+            || field_non_empty_non_switch_literal_token(value).is_none()
+        {
+            return false;
         }
     }
     true
@@ -3470,10 +3497,18 @@ mod tests {
             Some("https://example.com")
         );
         assert_eq!(
+            hyperlink_field_target(
+                r#"HYPERLINK "https://example.com" \o Client portal tooltip \t NewWindow"#
+            )
+            .as_deref(),
+            Some("https://example.com")
+        );
+        assert_eq!(
             hyperlink_field_target(r#"HYPERLINK \l "AnchorName""#).as_deref(),
             Some("AnchorName")
         );
         assert!(hyperlink_field_target(r#"HYPERLINK "https://example.com" extra"#).is_none());
+        assert!(hyperlink_field_target(r#"HYPERLINK "https://example.com" \x bad"#).is_none());
         assert!(hyperlink_field_target(r#"HYPERLINK \o "tip""#).is_none());
         assert!(hyperlink_field_target(r#"HYPERLINKBASE "https://example.com""#).is_none());
     }
