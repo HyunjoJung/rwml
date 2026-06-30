@@ -4166,6 +4166,9 @@ fn read_tc_mar(r: &mut Xml<'_>) -> Option<CellMargins> {
     let mut seen = false;
     loop {
         match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                read_tc_mar_alternate_content(r, &mut margins, &mut seen);
+            }
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
                 apply_tc_mar_side(&mut margins, &mut seen, &e);
             }
@@ -4175,6 +4178,49 @@ fn read_tc_mar(r: &mut Xml<'_>) -> Option<CellMargins> {
         }
     }
     seen.then_some(margins)
+}
+
+fn read_tc_mar_alternate_content(r: &mut Xml<'_>, margins: &mut CellMargins, seen: &mut bool) {
+    let mut took = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                match name {
+                    b"Choice" | b"Fallback" if !took => {
+                        took = true;
+                        read_tc_mar_alternate_content_branch(r, margins, seen, name);
+                    }
+                    _ => skip_subtree(r),
+                }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+}
+
+fn read_tc_mar_alternate_content_branch(
+    r: &mut Xml<'_>,
+    margins: &mut CellMargins,
+    seen: &mut bool,
+    branch: &[u8],
+) {
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                read_tc_mar_alternate_content(r, margins, seen);
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
+                apply_tc_mar_side(margins, seen, &e);
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
 }
 
 fn apply_tc_mar_side(margins: &mut CellMargins, seen: &mut bool, e: &BytesStart<'_>) {
@@ -5288,6 +5334,50 @@ mod tests {
         assert_eq!(table.border_sizes.top, Some(8));
         assert_eq!(table.border_style, Some(TableBorderStyle::Double));
         assert_eq!(table.border_styles.top, Some(TableBorderStyle::Double));
+    }
+
+    #[test]
+    fn table_cell_margins_use_single_alternate_content_branch() {
+        let xml = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+            <w:tbl>
+                <w:tr>
+                    <w:tc>
+                        <w:tcPr>
+                            <w:tcMar>
+                                <mc:AlternateContent>
+                                    <mc:Choice Requires="w14">
+                                        <w:top w:w="120" w:type="dxa"/>
+                                        <w:right w:w="240" w:type="dxa"/>
+                                        <w:bottom w:w="360" w:type="dxa"/>
+                                        <w:left w:w="480" w:type="dxa"/>
+                                    </mc:Choice>
+                                    <mc:Fallback>
+                                        <w:top w:w="720" w:type="dxa"/>
+                                        <w:right w:w="840" w:type="dxa"/>
+                                        <w:bottom w:w="960" w:type="dxa"/>
+                                        <w:left w:w="1080" w:type="dxa"/>
+                                    </mc:Fallback>
+                                </mc:AlternateContent>
+                            </w:tcMar>
+                        </w:tcPr>
+                        <w:p><w:r><w:t>Margin cell</w:t></w:r></w:p>
+                    </w:tc>
+                </w:tr>
+            </w:tbl>
+        </w:body></w:document>"#;
+        let Block::Table(table) = &parse(xml)[0] else {
+            panic!("table")
+        };
+
+        assert_eq!(
+            table.rows[0].cells[0].margins,
+            Some(CellMargins {
+                top: 120,
+                right: 240,
+                bottom: 360,
+                left: 480,
+            })
+        );
     }
 
     #[test]
