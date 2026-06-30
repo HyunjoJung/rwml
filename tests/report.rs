@@ -737,6 +737,24 @@ fn action_button_compact_format_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn action_print_group_unquoted_code_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" PRINT \p ReportBox 0 0 moveto \* MERGEFORMAT "><w:r><w:t>cached unquoted print group</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" PRINT \pReportBox compact moveto "><w:r><w:t>cached compact unquoted print group</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn action_accepted_current_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -4375,6 +4393,18 @@ fn report_action_fields_split_cached_and_malformed_diagnostics() {
                 count: 1,
             },
         ]
+    );
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_action_print_groups_accept_unquoted_multi_token_code() {
+    assert_report_field_diagnostics(
+        action_print_group_unquoted_code_diagnostics_docx(),
+        2,
+        vec![field_kind_count(FieldKind::Action("PRINT".to_string()), 2)],
+        vec![],
+        vec![],
     );
 }
 

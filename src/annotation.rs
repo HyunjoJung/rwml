@@ -3002,7 +3002,7 @@ pub(crate) fn action_field_syntax(instruction: &str) -> Option<ActionFieldSyntax
 
 fn print_action_field_syntax(instruction: &str) -> Option<ActionFieldSyntax> {
     let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
+    let mut parts = tokens.iter().map(String::as_str).peekable();
     let kind = parts.next()?;
     if !kind.eq_ignore_ascii_case("PRINT") {
         return None;
@@ -3010,11 +3010,11 @@ fn print_action_field_syntax(instruction: &str) -> Option<ActionFieldSyntax> {
     let first = parts.next()?;
     if first.eq_ignore_ascii_case("\\p") {
         field_identifier_token(parts.next()?)?;
-        field_non_empty_quoted_literal_token(parts.next()?)?;
+        print_group_code_operand(parts.next()?, &mut parts)?;
         action_field_format_tail(&mut parts)?;
     } else if let Some(group) = strip_ascii_switch_prefix(first, "\\p") {
         field_identifier_token(group)?;
-        field_non_empty_quoted_literal_token(parts.next()?)?;
+        print_group_code_operand(parts.next()?, &mut parts)?;
         action_field_format_tail(&mut parts)?;
     } else {
         field_non_empty_non_switch_literal_token(first)?;
@@ -3035,6 +3035,24 @@ fn print_action_field_syntax(instruction: &str) -> Option<ActionFieldSyntax> {
         computed_text: Some(String::new()),
         text_format: None,
     })
+}
+
+fn print_group_code_operand<'a, I>(first: &'a str, parts: &mut std::iter::Peekable<I>) -> Option<()>
+where
+    I: Iterator<Item = &'a str>,
+{
+    if field_non_empty_quoted_literal_token(first).is_some() {
+        return Some(());
+    }
+    field_non_empty_non_switch_literal_token(first)?;
+    while let Some(part) = parts.peek().copied() {
+        if is_field_format_start(part) {
+            break;
+        }
+        field_non_empty_non_switch_literal_token(part)?;
+        parts.next();
+    }
+    Some(())
 }
 
 fn button_action_field_syntax(instruction: &str) -> Option<ActionFieldSyntax> {

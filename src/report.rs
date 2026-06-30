@@ -4277,6 +4277,19 @@ mod tests {
 
     #[cfg(not(feature = "docx"))]
     #[test]
+    fn no_default_action_diagnostics_accept_unquoted_multi_token_print_group_code() {
+        assert_eq!(
+            super::action_uncomputed_reason(r#"PRINT \p ReportBox 0 0 moveto \* MERGEFORMAT"#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::action_uncomputed_reason(r#"PRINT \pReportBox compact moveto"#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
     fn no_default_display_diagnostics_accept_valid_advance() {
         assert_eq!(
             super::display_uncomputed_reason(r"ADVANCE \r 2 \d4 \* MERGEFORMAT"),
