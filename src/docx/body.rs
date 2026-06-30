@@ -1141,6 +1141,11 @@ fn read_paragraph(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Paragraph, Opt
             Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
                 b"bookmarkStart" => push_active_bookmark(&mut bookmarks, &e),
                 b"bookmarkEnd" => remove_active_bookmark(&mut bookmarks, &e),
+                b"fldSimple" => {
+                    let start = runs.len();
+                    push_empty_fldsimple_run(&mut runs, &e, ctx);
+                    apply_active_bookmark(&mut runs, start, &bookmarks);
+                }
                 _ => {}
             },
             Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
@@ -1202,7 +1207,7 @@ fn split_page_breaks(paragraph: Paragraph) -> Vec<Block> {
         .iter()
         .any(|run| run.text.contains(PAGE_BREAK_MARKER))
     {
-        return if paragraph.is_blank() {
+        return if paragraph.is_blank() && !paragraph_has_field_runs(&paragraph) {
             Vec::new()
         } else {
             vec![Block::Paragraph(paragraph)]
@@ -1227,7 +1232,7 @@ fn split_page_breaks(paragraph: Paragraph) -> Vec<Block> {
             .collect();
         for (index, part) in parts.into_iter().enumerate() {
             if index > 0 {
-                if !current.is_blank() {
+                if !current.is_blank() || paragraph_has_field_runs(&current) {
                     blocks.push(Block::Paragraph(std::mem::replace(
                         &mut current,
                         Paragraph {
@@ -1247,10 +1252,17 @@ fn split_page_breaks(paragraph: Paragraph) -> Vec<Block> {
             }
         }
     }
-    if !current.is_blank() {
+    if !current.is_blank() || paragraph_has_field_runs(&current) {
         blocks.push(Block::Paragraph(current));
     }
     blocks
+}
+
+fn paragraph_has_field_runs(paragraph: &Paragraph) -> bool {
+    paragraph
+        .runs
+        .iter()
+        .any(|run| !matches!(run.field, FieldRole::Other))
 }
 
 #[derive(Default)]
@@ -1387,6 +1399,18 @@ fn computed_field_run(text: String) -> Run {
     }
 }
 
+fn empty_simple_field_run(
+    instruction: String,
+    unsupported_reason: Option<FieldUnsupportedReason>,
+) -> Run {
+    Run {
+        text: String::new(),
+        field: FieldRole::Simple { instruction },
+        field_unsupported_reason: unsupported_reason,
+        ..Default::default()
+    }
+}
+
 /// Collected `<w:pPr>` properties.
 #[derive(Default)]
 struct PPr {
@@ -1424,6 +1448,11 @@ fn read_runs_container(r: &mut Xml<'_>, ctx: &Ctx<'_>, link: Option<&str>, depth
                 }
                 _ => skip_subtree(r),
             },
+            Ok(Event::Empty(e)) => {
+                if local(e.name().as_ref()) == b"fldSimple" {
+                    push_empty_fldsimple_run(&mut runs, &e, ctx);
+                }
+            }
             Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
@@ -1474,6 +1503,11 @@ fn append_runs_container_with_complex(
                 ),
                 _ => skip_subtree(r),
             },
+            Ok(Event::Empty(e)) => {
+                if local(e.name().as_ref()) == b"fldSimple" {
+                    push_empty_fldsimple_run(runs, &e, ctx);
+                }
+            }
             Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
@@ -1509,6 +1543,11 @@ fn read_content_control_runs(
                 }
                 _ => skip_subtree(r),
             },
+            Ok(Event::Empty(e)) => {
+                if local(e.name().as_ref()) == b"fldSimple" {
+                    push_empty_fldsimple_run(&mut runs, &e, ctx);
+                }
+            }
             Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
@@ -1566,6 +1605,11 @@ fn append_content_control_runs_with_complex(
                 ),
                 _ => skip_subtree(r),
             },
+            Ok(Event::Empty(e)) => {
+                if local(e.name().as_ref()) == b"fldSimple" {
+                    push_empty_fldsimple_run(runs, &e, ctx);
+                }
+            }
             Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
@@ -2382,6 +2426,11 @@ fn read_fldsimple(r: &mut Xml<'_>, start: &BytesStart<'_>, ctx: &Ctx<'_>, depth:
             if runs.is_empty() {
                 if let Some(text) = computed {
                     runs.push(computed_field_run(text));
+                } else {
+                    runs.push(empty_simple_field_run(
+                        instruction.clone(),
+                        unsupported_simple_field_reason_hint(&instruction, ctx),
+                    ));
                 }
                 return runs;
             }
@@ -2404,6 +2453,28 @@ fn read_fldsimple(r: &mut Xml<'_>, start: &BytesStart<'_>, ctx: &Ctx<'_>, depth:
         }
     }
     runs
+}
+
+fn read_empty_fldsimple(start: &BytesStart<'_>, ctx: &Ctx<'_>) -> Option<Run> {
+    let instruction =
+        normalized_field_instruction(&attr_local(start, b"instr").unwrap_or_default());
+    if instruction.is_empty() {
+        return None;
+    }
+    computed_simple_field_result(&instruction, ctx, "")
+        .map(computed_field_run)
+        .or_else(|| {
+            Some(empty_simple_field_run(
+                instruction.clone(),
+                unsupported_simple_field_reason_hint(&instruction, ctx),
+            ))
+        })
+}
+
+fn push_empty_fldsimple_run(runs: &mut Vec<Run>, start: &BytesStart<'_>, ctx: &Ctx<'_>) {
+    if let Some(run) = read_empty_fldsimple(start, ctx) {
+        runs.push(run);
+    }
 }
 
 fn unsupported_simple_field_reason_hint(
@@ -3836,6 +3907,52 @@ mod tests {
             &p.runs[0].field,
             FieldRole::Hyperlink { url } if url == "#TargetBookmark"
         ));
+    }
+
+    #[test]
+    fn empty_unsupported_simple_fields_are_counted_in_model_inventory() {
+        let xml = r#"<w:document><w:body><w:p>
+            <w:fldSimple w:instr=" DOESNOTEXIST "/>
+            <w:fldSimple w:instr=" CUSTOMEMPTY "></w:fldSimple>
+        </w:p></w:body></w:document>"#;
+        let blocks = parse(xml);
+
+        let inventory = crate::report::feature_inventory_for_model(&blocks);
+
+        assert_eq!(inventory.fields, 2);
+        assert_eq!(
+            inventory.unsupported_field_kinds,
+            vec![
+                crate::FieldKindCount {
+                    kind: FieldKind::Unknown("DOESNOTEXIST".to_string()),
+                    count: 1,
+                },
+                crate::FieldKindCount {
+                    kind: FieldKind::Unknown("CUSTOMEMPTY".to_string()),
+                    count: 1,
+                },
+            ]
+        );
+        assert_eq!(
+            inventory.unsupported_field_reasons,
+            vec![crate::FieldEvaluationReasonCount {
+                reason: crate::FieldEvaluationReason::UnknownField,
+                count: 2,
+            }]
+        );
+        #[cfg(feature = "render")]
+        {
+            let render_inventory = crate::report::render_inventory_for_model(&blocks);
+            assert_eq!(render_inventory.fields, inventory.fields);
+            assert_eq!(
+                render_inventory.unsupported_field_kinds,
+                inventory.unsupported_field_kinds
+            );
+            assert_eq!(
+                render_inventory.unsupported_field_reasons,
+                inventory.unsupported_field_reasons
+            );
+        }
     }
 
     fn raw_merge_cell(vmerge: VMerge) -> CellRaw {
