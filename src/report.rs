@@ -4835,6 +4835,69 @@ mod tests {
                 },
             ]
         );
+        assert_eq!(
+            inventory.unsupported_field_kinds,
+            vec![super::FieldKindCount {
+                kind: FieldKind::Page,
+                count: 1,
+            }]
+        );
+        assert_eq!(
+            inventory.unsupported_field_reasons,
+            vec![super::FieldEvaluationReasonCount {
+                reason: super::FieldEvaluationReason::NoComputedResult,
+                count: 1,
+            }]
+        );
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn render_model_page_support_is_syntax_gated() {
+        let blocks = vec![Block::Paragraph(Paragraph {
+            runs: vec![
+                Run {
+                    text: "7".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: " PAGE ".to_string(),
+                    },
+                    ..Run::default()
+                },
+                Run {
+                    text: "bad".to_string(),
+                    field: FieldRole::Simple {
+                        instruction: "PAGE \\x".to_string(),
+                    },
+                    ..Run::default()
+                },
+            ],
+            ..Paragraph::default()
+        })];
+
+        let inventory = super::render_inventory_for_model(&blocks);
+
+        assert_eq!(inventory.fields, 2);
+        assert_eq!(
+            inventory.field_kinds,
+            vec![super::FieldKindCount {
+                kind: FieldKind::Page,
+                count: 2,
+            }]
+        );
+        assert_eq!(
+            inventory.unsupported_field_kinds,
+            vec![super::FieldKindCount {
+                kind: FieldKind::Page,
+                count: 1,
+            }]
+        );
+        assert_eq!(
+            inventory.unsupported_field_reasons,
+            vec![super::FieldEvaluationReasonCount {
+                reason: super::FieldEvaluationReason::UnsupportedSwitch,
+                count: 1,
+            }]
+        );
     }
 
     #[test]
