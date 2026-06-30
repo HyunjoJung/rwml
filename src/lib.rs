@@ -2607,18 +2607,19 @@ fn legacy_doc_text_boxes_from_model(model: &DocModel) -> Vec<TextBox> {
 }
 
 fn legacy_doc_header_footers_from_model(model: &DocModel) -> Vec<HeaderFooter> {
-    model
-        .source_regions(SourceRegionKind::HeaderFooter)
-        .enumerate()
-        .filter_map(|(index, region)| {
-            let text = model.source_region_text(region);
-            (!text.is_empty()).then(|| HeaderFooter {
-                id: format!("legacy-doc-header-footer-{index}"),
-                kind: legacy_doc_header_footer_kind(region.source_story_index),
-                text,
-            })
-        })
-        .collect()
+    let mut records = Vec::new();
+    for region in model.source_regions(SourceRegionKind::HeaderFooter) {
+        let text = model.source_region_text(region);
+        if text.is_empty() {
+            continue;
+        }
+        records.push(HeaderFooter {
+            id: format!("legacy-doc-header-footer-{}", records.len()),
+            kind: legacy_doc_header_footer_kind(region.source_story_index),
+            text,
+        });
+    }
+    records
 }
 
 fn legacy_doc_header_footer_kind(story_index: Option<usize>) -> HeaderFooterKind {
@@ -4416,6 +4417,29 @@ mod tests {
         assert_eq!(regions[1].source_len_cp, 4);
         assert_eq!(regions[1].source_story_index, Some(9));
         assert_eq!(model.source_region_text(regions[0]), "HEAD");
+    }
+
+    #[test]
+    fn legacy_doc_header_footer_side_table_ids_skip_empty_stories() {
+        // Story 6 is an empty even-page header paragraph; story 7 is the first
+        // visible header/footer record. Public side-table ids should stay dense.
+        let plcf_hdd = [0, 0, 0, 0, 0, 0, 0, 1, 5, 5, 5, 5, 5, 5];
+        let bytes = synth_doc_with_ccp_and_plcfhdd(
+            "BODY\rFOOT",
+            "",
+            0x00C1,
+            0,
+            0,
+            [4, 0, 5, 0, 0, 0],
+            Some(&plcf_hdd),
+        );
+        let doc = Document::open(&bytes).unwrap();
+
+        let header_footers = doc.header_footers();
+        assert_eq!(header_footers.len(), 1);
+        assert_eq!(header_footers[0].id, "legacy-doc-header-footer-0");
+        assert_eq!(header_footers[0].kind, HeaderFooterKind::OddPageHeader);
+        assert_eq!(header_footers[0].text, "FOOT");
     }
 
     #[test]
