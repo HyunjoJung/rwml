@@ -4,7 +4,7 @@ use quick_xml::Reader;
 use crate::annotation::FieldKind;
 
 use super::super::xml_text::{read_text, skip_subtree};
-use super::super::{attr_local, local};
+use super::super::{attr_local, local, toggle_on};
 use super::formula::{
     eval_formula_function, format_formula_general_number, format_formula_number,
     formula_instruction, formula_number_text, formula_truthy, FormulaNumberFormat, FormulaParser,
@@ -137,6 +137,7 @@ struct TableFormulaCell {
     text: String,
     contains_formula: bool,
     has_span: bool,
+    is_header_row: bool,
     records: Vec<TableFormulaRecord>,
 }
 
@@ -251,7 +252,8 @@ fn promote_table_formula_cell_source_value(
 }
 
 fn read_table_formula_row(r: &mut Xml<'_>, row_index: usize) -> Vec<TableFormulaCell> {
-    let mut row = Vec::new();
+    let mut row: Vec<TableFormulaCell> = Vec::new();
+    let mut is_header_row = false;
     let mut xml_depth = 1usize;
     let mut alternate_content_stack = Vec::new();
     loop {
@@ -278,9 +280,17 @@ fn read_table_formula_row(r: &mut Xml<'_>, row_index: usize) -> Vec<TableFormula
                     b"Choice" | b"Fallback" => {
                         xml_depth = xml_depth.saturating_add(1);
                     }
+                    b"trPr" => {
+                        is_header_row = read_table_formula_row_props(r);
+                        for cell in &mut row {
+                            cell.is_header_row = is_header_row;
+                        }
+                    }
                     b"tc" => {
                         let col_index = row.len();
-                        row.push(read_table_formula_cell(r, row_index, col_index));
+                        let mut cell = read_table_formula_cell(r, row_index, col_index);
+                        cell.is_header_row = is_header_row;
+                        row.push(cell);
                     }
                     name if is_current_table_formula_structural_wrapper(name) => {
                         xml_depth = xml_depth.saturating_add(1);
@@ -289,7 +299,10 @@ fn read_table_formula_row(r: &mut Xml<'_>, row_index: usize) -> Vec<TableFormula
                 }
             }
             Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"tc" => {
-                row.push(TableFormulaCell::default());
+                row.push(TableFormulaCell {
+                    is_header_row,
+                    ..TableFormulaCell::default()
+                });
             }
             Ok(Event::End(e)) => {
                 let qname = e.name();
@@ -307,6 +320,83 @@ fn read_table_formula_row(r: &mut Xml<'_>, row_index: usize) -> Vec<TableFormula
         }
     }
     row
+}
+
+fn read_table_formula_row_props(r: &mut Xml<'_>) -> bool {
+    let mut header = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"trPrChange" => {
+                skip_subtree(r);
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                if let Some(value) = read_table_formula_row_props_alternate_content(r) {
+                    header = value;
+                }
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if local(e.name().as_ref()) == b"tblHeader" =>
+            {
+                header = toggle_on(attr_local(&e, b"val"));
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"trPr" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    header
+}
+
+fn read_table_formula_row_props_alternate_content(r: &mut Xml<'_>) -> Option<bool> {
+    let mut took = false;
+    let mut header = None;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                match name {
+                    b"Choice" | b"Fallback" if !took => {
+                        took = true;
+                        header = read_table_formula_row_props_alternate_content_branch(r, name);
+                    }
+                    _ => skip_subtree(r),
+                }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    header
+}
+
+fn read_table_formula_row_props_alternate_content_branch(
+    r: &mut Xml<'_>,
+    branch: &[u8],
+) -> Option<bool> {
+    let mut header = None;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"trPrChange" => {
+                skip_subtree(r);
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                if let Some(value) = read_table_formula_row_props_alternate_content(r) {
+                    header = Some(value);
+                }
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if local(e.name().as_ref()) == b"tblHeader" =>
+            {
+                header = Some(toggle_on(attr_local(&e, b"val")));
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    header
 }
 
 fn is_current_table_formula_structural_wrapper(name: &[u8]) -> bool {
@@ -1216,18 +1306,18 @@ fn push_table_formula_argument_values(
     match argument {
         TableFormulaArgument::Direction(TableFormulaDirection::Left) => {
             for cell in rows.get(row)?.get(..col)? {
-                push_table_formula_cell_number(cell, values)?;
+                push_table_formula_directional_cell_number(cell, values)?;
             }
         }
         TableFormulaArgument::Direction(TableFormulaDirection::Right) => {
             for cell in rows.get(row)?.get(col + 1..)? {
-                push_table_formula_cell_number(cell, values)?;
+                push_table_formula_directional_cell_number(cell, values)?;
             }
         }
         TableFormulaArgument::Direction(TableFormulaDirection::Above) => {
             for table_row in rows.get(..row)? {
                 if let Some(cell) = table_row.get(col) {
-                    push_table_formula_cell_number(cell, values)?;
+                    push_table_formula_directional_cell_number(cell, values)?;
                 }
             }
         }
@@ -1237,7 +1327,7 @@ fn push_table_formula_argument_values(
                     break;
                 }
                 if let Some(cell) = table_row.get(col) {
-                    push_table_formula_cell_number(cell, values)?;
+                    push_table_formula_directional_cell_number(cell, values)?;
                 }
             }
         }
@@ -1277,6 +1367,16 @@ fn push_table_formula_argument_values(
         }
     }
     Some(())
+}
+
+fn push_table_formula_directional_cell_number(
+    cell: &TableFormulaCell,
+    values: &mut Vec<f64>,
+) -> Option<()> {
+    if cell.is_header_row {
+        return Some(());
+    }
+    push_table_formula_cell_number(cell, values)
 }
 
 fn push_table_formula_cell_number(cell: &TableFormulaCell, values: &mut Vec<f64>) -> Option<()> {
