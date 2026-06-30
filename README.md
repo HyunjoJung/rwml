@@ -503,13 +503,15 @@ multi-token unquoted defaults, render those defaults without simulating prompts,
 deterministic `ASK name prompt \d default` fields with quoted or single-token
 prompts, quoted or unquoted default literals, and field-result format switches
 render as hidden output while seeding later plain `REF`/direct bookmark
-references and source-order bookmark-backed `NEXTIF`/`SKIPIF` comparisons,
+references and source-order bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF`
+comparisons, including numeric comparison for finite numeric bookmark values,
 malformed prompt field syntax reports `UnsupportedSwitch`, and deterministic literal
 quoted or unquoted `SET name value` fields, including multi-token unquoted
 payloads, with
 field-result format switches render as hidden
 output while feeding later plain `REF`/direct bookmark references and
-source-order bookmark-backed `NEXTIF`/`SKIPIF` comparisons, malformed `SET`
+source-order bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons,
+including numeric comparison for finite numeric bookmark values, malformed `SET`
 syntax reports `UnsupportedSwitch`, plus literal `NEXT` and literal or
 source-order bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with
 field-result format switches render as hidden output without running a mail
@@ -714,7 +716,7 @@ explicit-default `FILLIN`/`ASK` prompt fields, and
 literal quoted or unquoted `SET` bookmark assignments, including multi-token
 unquoted payloads, feeding later plain
 `REF`/direct bookmark references and source-order bookmark-backed
-`NEXTIF`/`SKIPIF` comparisons,
+`IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons,
 malformed `SET` syntax reporting `UnsupportedSwitch`, inserted-content
 fields, mail-merge helper fields, reference/index fields beyond hidden simple
 `RD`/`TA`/`XE` markers, numbering/list fields,
@@ -969,7 +971,8 @@ deterministic computation or precise cached-result diagnostics.
       literal `QUOTE`, literal `IF`, literal `COMPARE`, explicit-default
       `FILLIN`/`ASK`, and literal `SET`
       bookmark assignments feeding later plain `REF`/direct bookmark references
-      and source-order bookmark-backed `NEXTIF`/`SKIPIF` comparisons,
+      and source-order bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF`
+      comparisons,
       dynamic/control,
       inserted-content, and mail-merge helper field diagnostics, reference/index field diagnostics,
       numbering/list field diagnostics, document-structure field diagnostics,

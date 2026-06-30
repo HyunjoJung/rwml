@@ -646,7 +646,8 @@ Implementation:
   finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields, and literal quoted or unquoted
   `SET` bookmark assignments, including multi-token unquoted payloads, with field-result format switches feeding later
   plain `REF`/direct bookmark references and source-order bookmark-backed
-  `NEXTIF`/`SKIPIF` comparisons, plus literal `NEXT` and literal or source-order
+  `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons, including numeric comparison
+  for finite numeric bookmark values, plus literal `NEXT` and literal or source-order
   bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with field-result format
   switches that render as hidden output without running a mail merge,
   inserted-content fields, mail-merge helper
@@ -677,7 +678,8 @@ Implementation:
   `COMPARE` finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields, and
   literal quoted or unquoted `SET` bookmark assignments, including multi-token unquoted payloads, with field-result
   format switches feeding later plain `REF`/direct bookmark references and
-  source-order bookmark-backed `NEXTIF`/`SKIPIF` comparisons, with malformed
+  source-order bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons,
+  including numeric comparison for finite numeric bookmark values, with malformed
   `SET` syntax reporting `UnsupportedSwitch`, plus literal `NEXT` and literal
   or source-order bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with field-result format
   switches that render as hidden output without running a mail merge,
@@ -742,7 +744,8 @@ Acceptance:
   prompt fields with field-result format switches, malformed prompt field syntax
   reporting `UnsupportedSwitch`, and literal quoted or unquoted `SET` bookmark
   assignments, including multi-token unquoted payloads, feeding later plain `REF`/direct bookmark references and
-  source-order bookmark-backed `NEXTIF`/`SKIPIF` comparisons, malformed
+  source-order bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons,
+  including numeric comparison for finite numeric bookmark values, malformed
   `SET` syntax reporting `UnsupportedSwitch`,
   malformed merge-control syntax reporting `UnsupportedSwitch`,
   inserted-content fields including
@@ -1201,7 +1204,8 @@ open and edit the chart data.
   finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields, and literal quoted or unquoted
   `SET` bookmark assignments, including multi-token unquoted payloads, with field-result format switches feeding later
   plain `REF`/direct bookmark references and source-order bookmark-backed
-  `NEXTIF`/`SKIPIF` comparisons, plus literal `NEXT` and literal or source-order
+  `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons, including numeric comparison
+  for finite numeric bookmark values, plus literal `NEXT` and literal or source-order
   bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with field-result format
   switches that render as hidden output without running a mail merge,
   inserted-content fields, mail-merge helper
@@ -1233,7 +1237,8 @@ open and edit the chart data.
   explicit-default `FILLIN`/`ASK` prompt fields, and
   literal quoted or unquoted `SET` bookmark assignments, including multi-token unquoted payloads, with field-result
   format switches feeding later plain `REF`/direct bookmark references and
-  source-order bookmark-backed `NEXTIF`/`SKIPIF` comparisons, with malformed
+  source-order bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons,
+  including numeric comparison for finite numeric bookmark values, with malformed
   `SET` syntax reporting `UnsupportedSwitch`, plus literal `NEXT` and literal
   or source-order bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with field-result format
   switches that render as hidden output without running a mail merge,

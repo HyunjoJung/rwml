@@ -112,7 +112,8 @@ Deliverables:
   literal `IF` comparisons, literal `COMPARE` results, explicit-default
   `FILLIN`/`ASK` prompt fields, and literal `SET`
   bookmark assignments feeding later plain `REF`/direct bookmark references
-  and source-order bookmark-backed `NEXTIF`/`SKIPIF` comparisons,
+  and source-order bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF`
+  comparisons,
   inserted-content fields, mail-merge
   helper fields, reference/index fields, numbering/list fields, document-structure
   fields, display/layout fields, action/automation fields,
@@ -218,7 +219,8 @@ Initial status:
   deterministic literal quoted or unquoted `SET name value` fields, including multi-token unquoted payloads, with
   field-result format switches rendered as hidden output while
   feeding later plain `REF`/direct bookmark references and source-order
-  bookmark-backed `NEXTIF`/`SKIPIF` comparisons,
+  bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons, including
+  numeric comparison for finite numeric bookmark values,
   malformed `SET` syntax reports `UnsupportedSwitch`,
   literal `NEXT` and literal or source-order bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with
   field-result format switches rendered as hidden output without running a mail merge,
@@ -341,13 +343,15 @@ Initial status:
   `ASK name prompt \d default` fields with quoted or single-token prompts,
   quoted or unquoted default literals, and field-result format switches rendered as hidden
   output while feeding later plain `REF`/direct bookmark references and
-  source-order bookmark-backed `NEXTIF`/`SKIPIF` comparisons, malformed
+  source-order bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons,
+  including numeric comparison for finite numeric bookmark values, malformed
   prompt field syntax reports
   `UnsupportedSwitch`, and
   deterministic literal quoted or unquoted `SET name value` fields, including multi-token unquoted payloads, with
   field-result format switches render as hidden output while
   feeding later plain `REF`/direct bookmark references and source-order
-  bookmark-backed `NEXTIF`/`SKIPIF` comparisons,
+  bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons, including
+  numeric comparison for finite numeric bookmark values,
   malformed `SET` syntax reports `UnsupportedSwitch`, plus literal `NEXT`
   and literal or source-order bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with
   field-result format switches render as hidden output without running a mail
@@ -854,12 +858,14 @@ Initial status:
   deterministic `FILLIN` fields with quoted or single-token prompts and quoted or unquoted explicit `\d` default responses, including multi-token unquoted defaults, render without simulating prompts,
   deterministic `ASK name prompt \d default` fields with quoted or single-token prompts, quoted or unquoted default literals, and field-result format
   switches render as hidden output while feeding later plain `REF`/direct bookmark references
-  and source-order bookmark-backed `NEXTIF`/`SKIPIF` comparisons,
+  and source-order bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF`
+  comparisons, including numeric comparison for finite numeric bookmark values,
   malformed prompt field syntax reports `UnsupportedSwitch`,
   and deterministic literal quoted or unquoted `SET name value` fields, including multi-token unquoted payloads, with
   field-result format switches render as hidden output while
   feeding later plain `REF`/direct bookmark references and source-order
-  bookmark-backed `NEXTIF`/`SKIPIF` comparisons,
+  bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons, including
+  numeric comparison for finite numeric bookmark values,
   malformed `SET` syntax reports `UnsupportedSwitch`,
   plus literal `NEXT` and literal or source-order bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with
   field-result format switches render as hidden output without running a mail merge;

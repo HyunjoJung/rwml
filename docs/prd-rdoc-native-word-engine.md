@@ -331,13 +331,15 @@ The first public maturity release should meet these requirements.
   with quoted or single-token prompts and quoted or unquoted default literals
   rendered as hidden output
   while feeding later plain `REF`/direct bookmark references and source-order
-  bookmark-backed `NEXTIF`/`SKIPIF` comparisons, malformed
+  bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons, including
+  numeric comparison for finite numeric bookmark values, malformed
   prompt field syntax reports `UnsupportedSwitch`, and deterministic literal
   quoted or unquoted `SET name value` fields, including multi-token unquoted
   payloads, with
   field-result format switches rendered as hidden output while feeding later
   plain `REF`/direct bookmark references and source-order bookmark-backed
-  `NEXTIF`/`SKIPIF` comparisons, malformed `SET` syntax reports
+  `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons, including numeric comparison
+  for finite numeric bookmark values, malformed `SET` syntax reports
   `UnsupportedSwitch`, plus literal `NEXT` and literal or source-order
   bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with field-result
   format switches
