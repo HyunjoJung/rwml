@@ -1181,8 +1181,9 @@ The active roadmap slices are:
    opened-document report. Focused tests now cover `PAGEREF`, `REF`,
    `NOTEREF`/`FTNREF`, and TOC computed/gap buckets across document and
    render-model reports, plus empty unsupported simple/complex field inventory
-   preservation; keep this bucket open only for newly proven drift or exact
-   duplicated parser/report syntax.
+   preservation and supported hidden `RD`/`TA`/`XE` marker model/render
+   inventory preservation; keep this bucket open only for newly proven drift or
+   exact duplicated parser/report syntax.
 2. R2-b layout-derived `PAGE`/`PAGEREF`: contexts beyond trusted
    leading/source-rendered, section-start, paragraph-end section-break target,
    source-marker, display-only restart target/order, and hard-break cases,

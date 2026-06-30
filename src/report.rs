@@ -637,6 +637,11 @@ fn supports_field_evaluation(field: &Field) -> bool {
     if field.kind == FieldKind::Filename {
         return supported_filename_syntax(&field.instruction);
     }
+    if let FieldKind::ReferenceIndex(kind) = &field.kind {
+        if is_reference_index_marker_kind(kind) {
+            return supports_reference_index_marker_field_evaluation(field);
+        }
+    }
     supports_field_kind_evaluation(&field.kind)
 }
 
@@ -681,6 +686,17 @@ fn supports_document_info_field_evaluation(field: &Field) -> bool {
     {
         let _ = field;
         false
+    }
+}
+
+fn supports_reference_index_marker_field_evaluation(field: &Field) -> bool {
+    #[cfg(feature = "docx")]
+    {
+        crate::docx::supports_reference_index_marker_syntax(&field.instruction)
+    }
+    #[cfg(not(feature = "docx"))]
+    {
+        supported_reference_index_marker_syntax_for_report(&field.instruction)
     }
 }
 

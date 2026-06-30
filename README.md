@@ -1030,9 +1030,10 @@ deterministic computation or precise cached-result diagnostics.
       diagnostics can drift from computed-result behavior. Verified parity
       coverage now locks `PAGEREF`, `REF`, `NOTEREF`/`FTNREF`, and TOC
       computed/gap buckets across opened-document and render-model reports, and
-      empty unsupported simple/complex field instructions stay reportable in
-      model/render inventories; the remaining R2-a work is limited to newly
-      proven parser/evaluator/report drift or exact duplicated syntax logic.
+      empty unsupported simple/complex field instructions plus supported hidden
+      `RD`/`TA`/`XE` marker fields stay reportable in model/render inventories;
+      the remaining R2-a work is limited to newly proven parser/evaluator/report
+      drift or exact duplicated syntax logic.
 - [ ] Reader R2-b: layout-derived `PAGE`/`PAGEREF` current-page,
       page-number, and relative-position computation beyond trusted
       leading/source-rendered, section-start, paragraph-end section-break

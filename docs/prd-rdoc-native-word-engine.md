@@ -669,8 +669,9 @@ public-readable R2 sub-buckets:
   drift. Current focused tests lock the `PAGEREF`, `REF`, `NOTEREF`/`FTNREF`,
   and TOC computed/gap buckets across opened-document and render-model reports,
   and model/render inventories preserve empty unsupported simple and complex
-  field instructions as reportable metadata. Remaining R2-a work should be
-  limited to newly proven drift or exact duplicated parser/report syntax;
+  field instructions plus supported hidden `RD`/`TA`/`XE` marker fields as
+  reportable metadata. Remaining R2-a work should be limited to newly proven
+  drift or exact duplicated parser/report syntax;
 - R2-b layout-derived `PAGE` and `PAGEREF` outside trusted structural,
   source-rendered, section-start, paragraph-end section-break target,
   source-marker, and hard-break contexts;

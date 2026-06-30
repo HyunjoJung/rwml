@@ -1353,7 +1353,10 @@ impl ComplexFieldTracker {
         };
         if computed.result_runs.is_empty() {
             if let Some(text) = computed.text {
-                runs.insert(computed.insert_at.min(runs.len()), computed_field_run(text));
+                runs.insert(
+                    computed.insert_at.min(runs.len()),
+                    computed_simple_field_run(computed.instruction, text),
+                );
             } else {
                 runs.insert(
                     computed.insert_at.min(runs.len()),
@@ -1366,8 +1369,17 @@ impl ComplexFieldTracker {
             let Some(run) = runs.get_mut(index) else {
                 continue;
             };
-            if computed.text.is_some() {
-                run.field = FieldRole::Other;
+            if let Some(text) = computed.text.as_deref() {
+                run.field = if text.is_empty()
+                    && offset == 0
+                    && preserves_computed_empty_field_instruction(&computed.instruction)
+                {
+                    FieldRole::Simple {
+                        instruction: computed.instruction.clone(),
+                    }
+                } else {
+                    FieldRole::Other
+                };
                 run.field_unsupported_reason = None;
             } else {
                 run.field = FieldRole::Simple {
@@ -1400,6 +1412,21 @@ fn computed_field_run(text: String) -> Run {
         bookmark: None,
         note: None,
     }
+}
+
+fn computed_simple_field_run(instruction: String, text: String) -> Run {
+    if text.is_empty() && preserves_computed_empty_field_instruction(&instruction) {
+        empty_simple_field_run(instruction, None)
+    } else {
+        computed_field_run(text)
+    }
+}
+
+fn preserves_computed_empty_field_instruction(instruction: &str) -> bool {
+    matches!(
+        FieldKind::from_instruction(instruction),
+        FieldKind::ReferenceIndex(ref kind) if is_reference_index_marker_kind(kind)
+    )
 }
 
 fn empty_simple_field_run(
@@ -2428,7 +2455,7 @@ fn read_fldsimple(r: &mut Xml<'_>, start: &BytesStart<'_>, ctx: &Ctx<'_>, depth:
             let computed = computed_simple_field_result(&instruction, ctx, &current_result);
             if runs.is_empty() {
                 if let Some(text) = computed {
-                    runs.push(computed_field_run(text));
+                    runs.push(computed_simple_field_run(instruction.clone(), text));
                 } else {
                     runs.push(empty_simple_field_run(
                         instruction.clone(),
@@ -2439,7 +2466,17 @@ fn read_fldsimple(r: &mut Xml<'_>, start: &BytesStart<'_>, ctx: &Ctx<'_>, depth:
             }
             for (index, run) in runs.iter_mut().enumerate() {
                 if let Some(text) = computed.as_deref() {
-                    run.field = FieldRole::Other;
+                    run.field = if text.is_empty()
+                        && index == 0
+                        && preserves_computed_empty_field_instruction(&instruction)
+                    {
+                        FieldRole::Simple {
+                            instruction: instruction.clone(),
+                        }
+                    } else {
+                        FieldRole::Other
+                    };
+                    run.field_unsupported_reason = None;
                     run.text = if index == 0 {
                         text.to_string()
                     } else {
@@ -2465,7 +2502,7 @@ fn read_empty_fldsimple(start: &BytesStart<'_>, ctx: &Ctx<'_>) -> Option<Run> {
         return None;
     }
     computed_simple_field_result(&instruction, ctx, "")
-        .map(computed_field_run)
+        .map(|text| computed_simple_field_run(instruction.clone(), text))
         .or_else(|| {
             Some(empty_simple_field_run(
                 instruction.clone(),

@@ -7263,6 +7263,62 @@ fn docx_reference_index_fields_are_named_noncomputed_fields() {
 }
 
 #[test]
+fn docx_reference_index_marker_fields_remain_reportable_in_model() {
+    let doc = Document::open(&reference_index_field_docx()).expect("fixture opens");
+    let marker_hints = model_simple_field_reason_hints(&doc, |instruction| {
+        matches!(
+            instruction,
+            "TA \\l \"Case v. Example\" \\c 1"
+                | "XE \"Term\""
+                | "RD \"appendix.docx\""
+                | "TA \\l\"Compact Case\" \\c2"
+                | "TA \\sShortEntry \\c3"
+                | "XE \"See Term\" \\t\"See Also\""
+                | "RD \"formatted-appendix.docx\" \\*MERGEFORMAT"
+                | "TA \\l \"Formatted Case\" \\c 1 \\*CHARFORMAT"
+                | "XE \"Formatted Term\" \\*MERGEFORMAT"
+        )
+    });
+
+    assert_eq!(
+        marker_hints,
+        vec![
+            ("TA \\l \"Case v. Example\" \\c 1".to_string(), None),
+            ("XE \"Term\"".to_string(), None),
+            ("RD \"appendix.docx\"".to_string(), None),
+            ("TA \\l\"Compact Case\" \\c2".to_string(), None),
+            ("TA \\sShortEntry \\c3".to_string(), None),
+            ("XE \"See Term\" \\t\"See Also\"".to_string(), None),
+            (
+                "RD \"formatted-appendix.docx\" \\*MERGEFORMAT".to_string(),
+                None,
+            ),
+            (
+                "TA \\l \"Formatted Case\" \\c 1 \\*CHARFORMAT".to_string(),
+                None,
+            ),
+            ("XE \"Formatted Term\" \\*MERGEFORMAT".to_string(), None),
+        ]
+    );
+
+    #[cfg(feature = "render")]
+    {
+        let expected_report = doc.report();
+        let rendered = rdoc::render_pdf_with_report(&doc.model());
+
+        assert_eq!(rendered.report.unsupported.fields, 6);
+        assert_eq!(
+            rendered.report.unsupported.field_kinds,
+            expected_report.features.unsupported_field_kinds
+        );
+        assert_eq!(
+            rendered.report.unsupported.unsupported_field_reasons,
+            expected_report.features.unsupported_field_reasons
+        );
+    }
+}
+
+#[test]
 fn docx_reference_index_diagnostics_split_valid_generated_from_malformed_syntax() {
     let doc = Document::open(&docx_fixture(&[
         (
