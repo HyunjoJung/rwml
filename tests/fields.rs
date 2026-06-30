@@ -10710,12 +10710,8 @@ fn docx_ref_gap_cases_keep_cached_text() {
         report.features.unsupported_field_reasons,
         vec![
             FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::UnsupportedSwitch,
-                count: 1,
-            },
-            FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::NoComputedResult,
-                count: 1,
+                count: 2,
             },
             FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::UnresolvedBookmark,

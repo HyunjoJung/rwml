@@ -2105,7 +2105,11 @@ fn ref_uncomputed_reason(
     if syntax.sequence_separator {
         FieldEvaluationReason::NoComputedResult
     } else if syntax.note_reference {
-        FieldEvaluationReason::UnsupportedSwitch
+        if target_exists {
+            FieldEvaluationReason::NoComputedResult
+        } else {
+            FieldEvaluationReason::UnsupportedSwitch
+        }
     } else if target_exists {
         FieldEvaluationReason::NoComputedResult
     } else {

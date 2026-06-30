@@ -2347,7 +2347,7 @@ fn field_diagnostic_inventory_cases() -> Vec<FieldDiagnosticInventoryCase> {
             r"REF PlainText \f",
             "cached ref note mark",
             FieldKind::Ref,
-            FieldEvaluationReason::UnsupportedSwitch,
+            FieldEvaluationReason::NoComputedResult,
         ),
         field_diagnostic_inventory_case(
             "D2",
@@ -7536,16 +7536,10 @@ fn report_direct_bookmark_field_switches_count_as_supported_refs() {
     );
     assert_eq!(
         report.features.unsupported_field_reasons,
-        vec![
-            FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::NoComputedResult,
-                count: 1,
-            },
-            FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::UnsupportedSwitch,
-                count: 1,
-            },
-        ]
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::NoComputedResult,
+            count: 2,
+        }]
     );
     assert_eq!(
         report
@@ -7571,7 +7565,7 @@ fn report_direct_bookmark_field_switches_count_as_supported_refs() {
         "{json}"
     );
     assert!(
-        json.contains(r#""unsupported_field_reasons":[{"reason":"NoComputedResult","count":1},{"reason":"UnsupportedSwitch","count":1}]"#),
+        json.contains(r#""unsupported_field_reasons":[{"reason":"NoComputedResult","count":2}]"#),
         "{json}"
     );
 }
@@ -7863,12 +7857,8 @@ fn report_ref_field_warning_ignores_computed_bookmark_refs() {
         report.features.unsupported_field_reasons,
         vec![
             FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::UnsupportedSwitch,
-                count: 1,
-            },
-            FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::NoComputedResult,
-                count: 2,
+                count: 3,
             },
             FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::UnresolvedBookmark,
@@ -7900,7 +7890,7 @@ fn report_ref_field_warning_ignores_computed_bookmark_refs() {
         "{json}"
     );
     assert!(
-        json.contains(r#""unsupported_field_reasons":[{"reason":"UnsupportedSwitch","count":1},{"reason":"NoComputedResult","count":2},{"reason":"UnresolvedBookmark","count":3}]"#),
+        json.contains(r#""unsupported_field_reasons":[{"reason":"NoComputedResult","count":3},{"reason":"UnresolvedBookmark","count":3}]"#),
         "{json}"
     );
     assert!(json.contains(r#""kind":"UnsupportedFieldEvaluation","count":6,"field_kinds":[{"kind":"REF","count":6}]"#), "{json}");
@@ -7981,12 +7971,8 @@ fn report_ref_field_warning_reports_gap_cases() {
         report.features.unsupported_field_reasons,
         vec![
             FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::UnsupportedSwitch,
-                count: 1,
-            },
-            FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::NoComputedResult,
-                count: 1,
+                count: 2,
             },
             FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::UnresolvedBookmark,
@@ -8014,7 +8000,7 @@ fn report_ref_field_warning_reports_gap_cases() {
         "{json}"
     );
     assert!(
-        json.contains(r#""unsupported_field_reasons":[{"reason":"UnsupportedSwitch","count":1},{"reason":"NoComputedResult","count":1},{"reason":"UnresolvedBookmark","count":1}]"#),
+        json.contains(r#""unsupported_field_reasons":[{"reason":"NoComputedResult","count":2},{"reason":"UnresolvedBookmark","count":1}]"#),
         "{json}"
     );
 }
@@ -8441,7 +8427,7 @@ fn report_field_diagnostic_inventory_tracks_active_gap_buckets() {
     );
 
     let json = report.to_json();
-    assert!(json.contains(r#""unsupported_field_reasons":[{"reason":"UnsupportedSwitch","count":3},{"reason":"NoComputedResult","count":3},{"reason":"UnresolvedBookmark","count":4},{"reason":"UnknownField","count":1}]"#), "{json}");
+    assert!(json.contains(r#""unsupported_field_reasons":[{"reason":"NoComputedResult","count":4},{"reason":"UnresolvedBookmark","count":4},{"reason":"UnsupportedSwitch","count":2},{"reason":"UnknownField","count":1}]"#), "{json}");
 }
 
 #[cfg(feature = "docx")]
