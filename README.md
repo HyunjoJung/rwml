@@ -502,7 +502,8 @@ quoted or single-token prompt/default literals and field-result format switches
 render as hidden output while seeding later plain `REF`/direct bookmark
 references and source-order bookmark-backed `NEXTIF`/`SKIPIF` comparisons,
 malformed prompt field syntax reports `UnsupportedSwitch`, and deterministic literal
-`SET name "value"` or single-token `SET name value` fields with
+quoted or unquoted `SET name value` fields, including multi-token unquoted
+payloads, with
 field-result format switches render as hidden
 output while feeding later plain `REF`/direct bookmark references and
 source-order bookmark-backed `NEXTIF`/`SKIPIF` comparisons, malformed `SET`

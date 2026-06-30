@@ -607,7 +607,7 @@ fn set_diagnostics_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SET ClientName Client 42 "><w:r><w:t>cached ambiguous set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SET ClientName &quot;Acme "><w:r><w:t>cached broken set</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SET ClientName Client 42 "><w:r><w:t>cached unquoted set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SET ClientName &quot;Acme "><w:r><w:t>cached broken set</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -658,7 +658,7 @@ fn unquoted_set_field_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SET ClientCode Client-42 "><w:r><w:t>cached set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF ClientCode \* Upper "><w:r><w:t>stale ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SET ClientName Client 42 "><w:r><w:t>cached multi-token set</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SET ClientCode Client-42 "><w:r><w:t>cached set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF ClientCode \* Upper "><w:r><w:t>stale ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SET ClientName Client 42 "><w:r><w:t>cached multi-token set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF ClientName \* Upper "><w:r><w:t>stale multi-token ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -675,7 +675,7 @@ fn set_backed_direct_ref_field_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SET ClientCode Client-42 "><w:r><w:t>cached set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" ClientCode \* Upper "><w:r><w:t>stale direct set ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SET ClientName Client 42 "><w:r><w:t>cached multi-token set</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SET ClientCode Client-42 "><w:r><w:t>cached set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" ClientCode \* Upper "><w:r><w:t>stale direct set ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SET ClientName Client 42 "><w:r><w:t>cached multi-token set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" ClientName \* Upper "><w:r><w:t>stale direct multi-token ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -5461,14 +5461,14 @@ fn docx_malformed_formula_picture_reports_unsupported_switch_without_flagging_da
 }
 
 #[test]
-fn docx_malformed_set_reports_unsupported_switch_without_flagging_ambiguous_set() {
+fn docx_malformed_set_reports_unsupported_switch_without_flagging_unquoted_value_set() {
     let doc = Document::open(&set_diagnostics_docx()).expect("fixture opens");
     let fields = doc.fields();
 
     assert_eq!(fields.len(), 2);
     assert_eq!(fields[0].kind, FieldKind::Dynamic("SET".to_string()));
     assert_eq!(fields[0].instruction, "SET ClientName Client 42");
-    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(fields[0].computed_result.as_deref(), Some(""));
     assert_eq!(fields[1].kind, FieldKind::Dynamic("SET".to_string()));
     assert_eq!(fields[1].instruction, r#"SET ClientName "Acme "#);
     assert_eq!(fields[1].computed_result, None);
@@ -5478,40 +5478,28 @@ fn docx_malformed_set_reports_unsupported_switch_without_flagging_ambiguous_set(
         report.features.unsupported_field_kinds,
         vec![FieldKindCount {
             kind: FieldKind::Dynamic("SET".to_string()),
-            count: 2,
+            count: 1,
         }]
     );
     assert_eq!(
         report.features.unsupported_field_reasons,
-        vec![
-            FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::NoComputedResult,
-                count: 1,
-            },
-            FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::UnsupportedSwitch,
-                count: 1,
-            },
-        ]
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnsupportedSwitch,
+            count: 1,
+        }]
     );
     assert_eq!(
         model_simple_field_reason_hints(&doc, |instruction| instruction.starts_with("SET")),
-        vec![
-            (
-                "SET ClientName Client 42".to_string(),
-                Some(FieldUnsupportedReason::NoComputedResult),
-            ),
-            (
-                r#"SET ClientName "Acme "#.to_string(),
-                Some(FieldUnsupportedReason::UnsupportedSwitch),
-            ),
-        ]
+        vec![(
+            r#"SET ClientName "Acme "#.to_string(),
+            Some(FieldUnsupportedReason::UnsupportedSwitch),
+        ),]
     );
 
     let main_text = doc.main_text();
     assert!(
-        main_text.contains("cached ambiguous set") && main_text.contains("cached broken set"),
-        "uncomputed SET fields should preserve cached text: {main_text:?}"
+        !main_text.contains("cached unquoted set") && main_text.contains("cached broken set"),
+        "computed SET fields should render hidden output and malformed SET fields should preserve cached text: {main_text:?}"
     );
 }
 
@@ -5606,7 +5594,7 @@ fn docx_unquoted_single_token_set_fields_feed_later_refs() {
     let doc = Document::open(&unquoted_set_field_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 3);
+    assert_eq!(fields.len(), 4);
     assert_eq!(fields[0].kind, FieldKind::Dynamic("SET".to_string()));
     assert_eq!(fields[0].instruction, "SET ClientCode Client-42");
     assert_eq!(fields[0].result, "cached set");
@@ -5618,31 +5606,26 @@ fn docx_unquoted_single_token_set_fields_feed_later_refs() {
     assert_eq!(fields[2].kind, FieldKind::Dynamic("SET".to_string()));
     assert_eq!(fields[2].instruction, "SET ClientName Client 42");
     assert_eq!(fields[2].result, "cached multi-token set");
-    assert_eq!(fields[2].computed_result, None);
+    assert_eq!(fields[2].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[3].kind, FieldKind::Ref);
+    assert_eq!(fields[3].instruction, r#"REF ClientName \* Upper"#);
+    assert_eq!(fields[3].result, "stale multi-token ref");
+    assert_eq!(fields[3].computed_result.as_deref(), Some("CLIENT 42"));
 
     let report = doc.report();
-    assert_eq!(
-        report.features.unsupported_field_kinds,
-        vec![FieldKindCount {
-            kind: FieldKind::Dynamic("SET".to_string()),
-            count: 1,
-        }]
-    );
-    assert_eq!(
-        report.features.unsupported_field_reasons,
-        vec![FieldEvaluationReasonCount {
-            reason: FieldEvaluationReason::NoComputedResult,
-            count: 1,
-        }]
-    );
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
 
     let main_text = doc.main_text();
     assert!(
-        main_text.contains("CLIENT-42") && main_text.contains("cached multi-token set"),
-        "unquoted single-token SET should feed REF while ambiguous SET stays cached: {main_text:?}"
+        main_text.contains("CLIENT-42") && main_text.contains("CLIENT 42"),
+        "unquoted SET payloads should feed REF fields: {main_text:?}"
     );
     assert!(
-        !main_text.contains("cached set") && !main_text.contains("stale ref"),
+        !main_text.contains("cached set")
+            && !main_text.contains("stale ref")
+            && !main_text.contains("cached multi-token set")
+            && !main_text.contains("stale multi-token ref"),
         "computed SET/REF output should replace stale cached text: {main_text:?}"
     );
 }
@@ -5652,7 +5635,7 @@ fn docx_unquoted_single_token_set_fields_feed_later_direct_bookmark_refs() {
     let doc = Document::open(&set_backed_direct_ref_field_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 3);
+    assert_eq!(fields.len(), 4);
     assert_eq!(fields[0].kind, FieldKind::Dynamic("SET".to_string()));
     assert_eq!(fields[0].instruction, "SET ClientCode Client-42");
     assert_eq!(fields[0].result, "cached set");
@@ -5664,31 +5647,26 @@ fn docx_unquoted_single_token_set_fields_feed_later_direct_bookmark_refs() {
     assert_eq!(fields[2].kind, FieldKind::Dynamic("SET".to_string()));
     assert_eq!(fields[2].instruction, "SET ClientName Client 42");
     assert_eq!(fields[2].result, "cached multi-token set");
-    assert_eq!(fields[2].computed_result, None);
+    assert_eq!(fields[2].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[3].kind, FieldKind::Ref);
+    assert_eq!(fields[3].instruction, r#"ClientName \* Upper"#);
+    assert_eq!(fields[3].result, "stale direct multi-token ref");
+    assert_eq!(fields[3].computed_result.as_deref(), Some("CLIENT 42"));
 
     let report = doc.report();
-    assert_eq!(
-        report.features.unsupported_field_kinds,
-        vec![FieldKindCount {
-            kind: FieldKind::Dynamic("SET".to_string()),
-            count: 1,
-        }]
-    );
-    assert_eq!(
-        report.features.unsupported_field_reasons,
-        vec![FieldEvaluationReasonCount {
-            reason: FieldEvaluationReason::NoComputedResult,
-            count: 1,
-        }]
-    );
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
 
     let main_text = doc.main_text();
     assert!(
-        main_text.contains("CLIENT-42") && main_text.contains("cached multi-token set"),
-        "unquoted single-token SET should feed direct bookmark refs while ambiguous SET stays cached: {main_text:?}"
+        main_text.contains("CLIENT-42") && main_text.contains("CLIENT 42"),
+        "unquoted SET payloads should feed direct bookmark refs: {main_text:?}"
     );
     assert!(
-        !main_text.contains("cached set") && !main_text.contains("stale direct set ref"),
+        !main_text.contains("cached set")
+            && !main_text.contains("stale direct set ref")
+            && !main_text.contains("cached multi-token set")
+            && !main_text.contains("stale direct multi-token ref"),
         "computed SET/direct REF output should replace stale cached text: {main_text:?}"
     );
 }

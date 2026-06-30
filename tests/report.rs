@@ -941,7 +941,7 @@ fn dynamic_control_field_diagnostics_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" IF CustomerTier = &quot;Gold&quot; &quot;ship&quot; &quot;hold&quot; "><w:r><w:t>cached data if</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" IF 1 = "><w:r><w:t>cached broken if</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" COMPARE CustomerTier = &quot;Gold&quot; "><w:r><w:t>cached data compare</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" COMPARE \o = &quot;Gold&quot; "><w:r><w:t>cached switch compare</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = CustomerTotal \# &quot;0.00&quot; "><w:r><w:t>cached data formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = 1 \# &quot;0.00 "><w:r><w:t>cached broken formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FILLIN &quot;Client?&quot; "><w:r><w:t>cached fillin</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" ASK ClientCode &quot;Client code?&quot; "><w:r><w:t>cached ask</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FILLIN &quot;broken prompt "><w:r><w:t>cached broken fillin</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SET ClientName Client 42 "><w:r><w:t>cached ambiguous set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SET ClientName &quot;Acme "><w:r><w:t>cached broken set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" QUOTE &quot;literal&quot; "><w:r><w:t>cached quote</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" QUOTE &quot;bad "><w:r><w:t>cached broken quote</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NEXT "><w:r><w:t>cached next</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SKIPIF 1 = 0 "><w:r><w:t>cached skipif</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NEXTIF City = &quot;Tokyo&quot; "><w:r><w:t>cached data nextif</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NEXTIF 1 = "><w:r><w:t>cached broken nextif</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" IF CustomerTier = &quot;Gold&quot; &quot;ship&quot; &quot;hold&quot; "><w:r><w:t>cached data if</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" IF 1 = "><w:r><w:t>cached broken if</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" COMPARE CustomerTier = &quot;Gold&quot; "><w:r><w:t>cached data compare</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" COMPARE \o = &quot;Gold&quot; "><w:r><w:t>cached switch compare</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = CustomerTotal \# &quot;0.00&quot; "><w:r><w:t>cached data formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = 1 \# &quot;0.00 "><w:r><w:t>cached broken formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FILLIN &quot;Client?&quot; "><w:r><w:t>cached fillin</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" ASK ClientCode &quot;Client code?&quot; "><w:r><w:t>cached ask</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FILLIN &quot;broken prompt "><w:r><w:t>cached broken fillin</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SET ClientName Client 42 "><w:r><w:t>cached unquoted set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SET ClientName &quot;Acme "><w:r><w:t>cached broken set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" QUOTE &quot;literal&quot; "><w:r><w:t>cached quote</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" QUOTE &quot;bad "><w:r><w:t>cached broken quote</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NEXT "><w:r><w:t>cached next</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SKIPIF 1 = 0 "><w:r><w:t>cached skipif</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NEXTIF City = &quot;Tokyo&quot; "><w:r><w:t>cached data nextif</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NEXTIF 1 = "><w:r><w:t>cached broken nextif</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -1211,7 +1211,7 @@ fn set_backed_direct_ref_diagnostics_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SET ClientCode Client-42 "><w:r><w:t>cached set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" ClientCode \* Upper "><w:r><w:t>stale direct set ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SET ClientName Client 42 "><w:r><w:t>cached multi-token set</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SET ClientCode Client-42 "><w:r><w:t>cached set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" ClientCode \* Upper "><w:r><w:t>stale direct set ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SET ClientName Client 42 "><w:r><w:t>cached multi-token set</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" ClientName \* Upper "><w:r><w:t>stale direct multi-token ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -5028,12 +5028,12 @@ fn report_dynamic_control_fields_split_cached_and_malformed_diagnostics() {
             field_kind_count(FieldKind::Dynamic("=".to_string()), 2),
             field_kind_count(FieldKind::Dynamic("FILLIN".to_string()), 2),
             field_kind_count(FieldKind::Dynamic("ASK".to_string()), 1),
-            field_kind_count(FieldKind::Dynamic("SET".to_string()), 2),
+            field_kind_count(FieldKind::Dynamic("SET".to_string()), 1),
             field_kind_count(FieldKind::Dynamic("QUOTE".to_string()), 1),
             field_kind_count(FieldKind::Dynamic("NEXTIF".to_string()), 2),
         ],
         vec![
-            field_reason_count(FieldEvaluationReason::NoComputedResult, 7),
+            field_reason_count(FieldEvaluationReason::NoComputedResult, 6),
             field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 7),
         ],
     );
@@ -5053,7 +5053,7 @@ fn report_dynamic_control_model_render_report_matches_document_reason_buckets() 
             field_kind_count(FieldKind::Dynamic("=".to_string()), 2),
             field_kind_count(FieldKind::Dynamic("FILLIN".to_string()), 2),
             field_kind_count(FieldKind::Dynamic("ASK".to_string()), 1),
-            field_kind_count(FieldKind::Dynamic("SET".to_string()), 2),
+            field_kind_count(FieldKind::Dynamic("SET".to_string()), 1),
             field_kind_count(FieldKind::Dynamic("QUOTE".to_string()), 1),
             field_kind_count(FieldKind::Dynamic("NEXTIF".to_string()), 2),
         ]
@@ -5061,14 +5061,14 @@ fn report_dynamic_control_model_render_report_matches_document_reason_buckets() 
     assert_eq!(
         expected_reasons,
         vec![
-            field_reason_count(FieldEvaluationReason::NoComputedResult, 7),
+            field_reason_count(FieldEvaluationReason::NoComputedResult, 6),
             field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 7),
         ]
     );
 
     let rendered = rdoc::render_pdf_with_report(&doc.model());
 
-    assert_eq!(rendered.report.unsupported.fields, 14);
+    assert_eq!(rendered.report.unsupported.fields, 13);
     assert_eq!(rendered.report.unsupported.field_kinds, expected_kinds);
     assert_eq!(
         rendered.report.unsupported.unsupported_field_reasons,
@@ -5693,7 +5693,7 @@ fn report_set_backed_direct_bookmark_refs_are_supported() {
     let doc = Document::open(&set_backed_direct_ref_diagnostics_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 3);
+    assert_eq!(fields.len(), 4);
     assert_eq!(fields[0].kind, FieldKind::Dynamic("SET".to_string()));
     assert_eq!(fields[0].instruction, "SET ClientCode Client-42");
     assert_eq!(fields[0].computed_result.as_deref(), Some(""));
@@ -5702,28 +5702,22 @@ fn report_set_backed_direct_bookmark_refs_are_supported() {
     assert_eq!(fields[1].computed_result.as_deref(), Some("CLIENT-42"));
     assert_eq!(fields[2].kind, FieldKind::Dynamic("SET".to_string()));
     assert_eq!(fields[2].instruction, "SET ClientName Client 42");
-    assert_eq!(fields[2].computed_result, None);
+    assert_eq!(fields[2].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[3].kind, FieldKind::Ref);
+    assert_eq!(fields[3].instruction, r#"ClientName \* Upper"#);
+    assert_eq!(fields[3].computed_result.as_deref(), Some("CLIENT 42"));
 
     let report = doc.report();
-    assert_eq!(report.features.fields, 3);
+    assert_eq!(report.features.fields, 4);
     assert_eq!(
         report.features.field_kinds,
         vec![
             field_kind_count(FieldKind::Dynamic("SET".to_string()), 2),
-            field_kind_count(FieldKind::Ref, 1),
+            field_kind_count(FieldKind::Ref, 2),
         ]
     );
-    assert_eq!(
-        report.features.unsupported_field_kinds,
-        vec![field_kind_count(FieldKind::Dynamic("SET".to_string()), 1)]
-    );
-    assert_eq!(
-        report.features.unsupported_field_reasons,
-        vec![field_reason_count(
-            FieldEvaluationReason::NoComputedResult,
-            1,
-        )]
-    );
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
 }
 
 #[cfg(feature = "docx")]

@@ -863,20 +863,34 @@ fn set_instruction(instruction: &str) -> Option<SetInstruction> {
         return None;
     }
     let name = field_identifier_token(parts.next()?)?;
-    let value = set_value_literal(parts.next()?)?;
-    accept_field_format_tail(&mut parts)?;
+    let value = set_value_literal(&tokens[2..])?;
     Some(SetInstruction {
         name: name.to_string(),
         value,
     })
 }
 
-fn set_value_literal(token: &str) -> Option<String> {
-    if let Some(value) = quoted_literal_text(token) {
+fn set_value_literal(tokens: &[String]) -> Option<String> {
+    let first = tokens.first()?.as_str();
+    if let Some(value) = quoted_literal_text(first) {
+        let mut tail = tokens[1..].iter().map(String::as_str);
+        accept_field_format_tail(&mut tail)?;
         return Some(value);
     }
-    (!token.is_empty() && !token.starts_with('\\') && !token.contains('"'))
-        .then(|| token.to_string())
+    let mut values = Vec::new();
+    for (index, token) in tokens.iter().enumerate() {
+        let token = token.as_str();
+        if is_field_format_start(token) {
+            let mut tail = tokens[index..].iter().map(String::as_str);
+            accept_field_format_tail(&mut tail)?;
+            break;
+        }
+        if token.is_empty() || token.starts_with('\\') || token.contains('"') {
+            return None;
+        }
+        values.push(token);
+    }
+    (!values.is_empty()).then(|| values.join(" "))
 }
 
 fn computed_quote_result(instruction: &str) -> Option<String> {
