@@ -9171,11 +9171,11 @@ fn report_sequence_fields_split_computed_cached_and_malformed_diagnostics() {
         report.features.unsupported_field_reasons,
         vec![
             FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::NoComputedResult,
+                reason: FieldEvaluationReason::UnsupportedSwitch,
                 count: 2,
             },
             FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::UnsupportedSwitch,
+                reason: FieldEvaluationReason::NoComputedResult,
                 count: 1,
             },
         ]

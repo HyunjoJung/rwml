@@ -1730,8 +1730,9 @@ mod tests {
         ref_position_context, ref_targets, seq_identifier_from_instruction, style_ref_instruction,
         supports_action_field_syntax, supports_compare_field_syntax, supports_if_field_syntax,
         supports_merge_control_field_syntax, supports_prompt_field_syntax,
-        supports_reference_index_marker_syntax, supports_toc_entry_field_syntax,
-        table_formula_context, toc_entries, toc_spec, PageNumberFormat, TocEntrySource,
+        supports_reference_index_marker_syntax, supports_sequence_field_syntax,
+        supports_toc_entry_field_syntax, table_formula_context, toc_entries, toc_spec,
+        PageNumberFormat, TocEntrySource,
     };
     use crate::docx::numbering::Numbering;
     use crate::docx::styles::Styles;
@@ -2314,6 +2315,7 @@ mod tests {
 
     #[test]
     fn sequence_identifiers_reject_unsupported_negative_resets() {
+        assert!(!supports_sequence_field_syntax(r#"SEQ Figure \r -1"#));
         assert_eq!(
             seq_identifier_from_instruction(Some(r#"SEQ Figure \r -1"#)),
             None

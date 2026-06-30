@@ -1258,10 +1258,10 @@ fn accept_sequence_reset_syntax(part: &str, action_seen: &mut bool) -> bool {
     if *action_seen {
         return false;
     }
-    if field_name_token(part)
-        .and_then(|part| part.parse::<i64>().ok())
-        .is_none()
-    {
+    let Some(value) = field_name_token(part).and_then(|part| part.parse::<i64>().ok()) else {
+        return false;
+    };
+    if value < 0 {
         return false;
     }
     *action_seen = true;

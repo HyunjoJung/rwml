@@ -4024,7 +4024,7 @@ fn docx_sequence_fields_compute_source_order_numbers() {
     assert_eq!(
         report.features.unsupported_field_reasons,
         vec![FieldEvaluationReasonCount {
-            reason: FieldEvaluationReason::NoComputedResult,
+            reason: FieldEvaluationReason::UnsupportedSwitch,
             count: 1,
         }]
     );

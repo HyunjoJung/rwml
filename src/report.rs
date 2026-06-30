@@ -4531,7 +4531,7 @@ mod tests {
     fn no_default_sequence_diagnostics_reject_malformed_tails() {
         assert_eq!(
             super::sequence_uncomputed_reason(r"SEQ Figure \r -1"),
-            super::FieldEvaluationReason::NoComputedResult
+            super::FieldEvaluationReason::UnsupportedSwitch
         );
         assert_eq!(
             super::sequence_uncomputed_reason(r"SEQ Figure \s 1"),
