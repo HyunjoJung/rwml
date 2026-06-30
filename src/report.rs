@@ -35,8 +35,8 @@ use crate::annotation::{
 };
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{
-    document_property_key, field_non_empty_non_switch_literal_token, field_quoted_literal_token,
-    filename_field_syntax,
+    document_property_key, field_name_operand as diagnostic_name_operand,
+    field_non_empty_non_switch_literal_token, field_quoted_literal_token, filename_field_syntax,
 };
 #[cfg(feature = "docx")]
 use crate::docx::local;
@@ -2067,17 +2067,17 @@ fn supported_document_info_syntax_for_report(instruction: &str) -> bool {
 #[cfg(not(feature = "docx"))]
 fn document_info_syntax_property_for_report<'a>(
     kind: &str,
-    parts: &mut impl Iterator<Item = &'a str>,
+    parts: &mut std::iter::Peekable<impl Iterator<Item = &'a str>>,
 ) -> Option<DocumentInfoSyntaxProperty> {
     if kind.eq_ignore_ascii_case("DOCPROPERTY") {
-        let name = diagnostic_name_token(parts.next()?)?;
+        let name = diagnostic_name_operand(parts.next()?, parts)?;
         return Some(
-            document_info_property_kind_for_report(name)
+            document_info_property_kind_for_report(&name)
                 .unwrap_or(DocumentInfoSyntaxProperty::Other),
         );
     }
     if kind.eq_ignore_ascii_case("DOCVARIABLE") {
-        diagnostic_name_token(parts.next()?)?;
+        diagnostic_name_operand(parts.next()?, parts)?;
         return Some(DocumentInfoSyntaxProperty::Other);
     }
     if kind.eq_ignore_ascii_case("INFO") {
@@ -4080,7 +4080,15 @@ mod tests {
             super::FieldEvaluationReason::NoComputedResult
         );
         assert_eq!(
+            super::document_info_uncomputed_reason(r#"DOCPROPERTY Client Name \*Caps"#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
             super::document_info_uncomputed_reason(r#"DOCVARIABLE ClientCode \*Upper"#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::document_info_uncomputed_reason(r#"DOCVARIABLE Client Code \*Upper"#),
             super::FieldEvaluationReason::NoComputedResult
         );
         assert_eq!(

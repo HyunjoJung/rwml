@@ -520,6 +520,34 @@ pub(crate) fn field_identifier_token(value: &str) -> Option<&str> {
     (!value.chars().any(char::is_whitespace)).then_some(value)
 }
 
+pub(crate) fn field_name_operand<'a>(
+    first: &'a str,
+    parts: &mut std::iter::Peekable<impl Iterator<Item = &'a str>>,
+) -> Option<String> {
+    if first.starts_with('\\') {
+        return None;
+    }
+    let first_name = field_name_token(first)?;
+    if field_quoted_literal_token(first).is_some() {
+        return Some(first_name.to_string());
+    }
+
+    let mut name = first_name.to_string();
+    while let Some(part) = parts.peek().copied() {
+        if part.starts_with('\\') {
+            break;
+        }
+        let part = parts.next()?;
+        if part.contains('"') {
+            return None;
+        }
+        let part = field_name_token(part)?;
+        name.push(' ');
+        name.push_str(part);
+    }
+    Some(name)
+}
+
 pub(crate) fn field_literal_token(value: &str) -> Option<&str> {
     let value = value.trim();
     let value = match (value.starts_with('"'), value.ends_with('"')) {
@@ -646,28 +674,7 @@ pub(crate) fn merge_field_name(instruction: &str) -> Option<String> {
         return None;
     }
     let first = parts.next()?;
-    if first.starts_with('\\') {
-        return None;
-    }
-    let first_name = field_name_token(first)?;
-    if field_quoted_literal_token(first).is_some() {
-        return Some(first_name.to_string());
-    }
-
-    let mut name = first_name.to_string();
-    while let Some(part) = parts.peek().copied() {
-        if part.starts_with('\\') {
-            break;
-        }
-        let part = parts.next()?;
-        if part.contains('"') {
-            return None;
-        }
-        let part = field_name_token(part)?;
-        name.push(' ');
-        name.push_str(part);
-    }
-    Some(name)
+    field_name_operand(first, &mut parts)
 }
 
 pub(crate) fn field_comparison_syntax<'a>(

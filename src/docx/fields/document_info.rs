@@ -94,10 +94,11 @@ pub(super) fn document_info_instruction(instruction: &str) -> Option<DocumentInf
     let mut file_size_unit_seen = false;
     let mut user_override = None;
     let property = if kind.eq_ignore_ascii_case("DOCPROPERTY") {
-        doc_property_instruction_property(field_name_token(parts.next()?)?)?
+        let name = field_name_operand(parts.next()?, &mut parts)?;
+        doc_property_instruction_property(&name)?
     } else if kind.eq_ignore_ascii_case("DOCVARIABLE") {
-        let name = field_name_token(parts.next()?)?;
-        (!name.is_empty()).then(|| DocumentInfoProperty::Variable(document_property_key(name)))?
+        let name = field_name_operand(parts.next()?, &mut parts)?;
+        (!name.is_empty()).then(|| DocumentInfoProperty::Variable(document_property_key(&name)))?
     } else if kind.eq_ignore_ascii_case("INFO") {
         document_info_property(field_name_token(parts.next()?)?)
             .unwrap_or(DocumentInfoProperty::DisplayOnly)

@@ -417,6 +417,31 @@ fn document_info_compact_property_format_docx() -> Vec<u8> {
     ])
 }
 
+fn document_info_unquoted_multi_token_names_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/><Override PartName="/docProps/custom.xml" ContentType="application/vnd.openxmlformats-officedocument.custom-properties+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rIdCustom" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties" Target="docProps/custom.xml"/></Relationships>"#,
+        ),
+        (
+            "docProps/custom.xml",
+            r#"<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="2" name=" Client Name "><vt:lpwstr>acme launch</vt:lpwstr></property></Properties>"#,
+        ),
+        (
+            "word/settings.xml",
+            r#"<w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docVars><w:docVar w:name=" Client Code " w:val="alpha-42"/></w:docVars></w:settings>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" DOCPROPERTY Client Name \* Caps "><w:r><w:t>stale client</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DOCVARIABLE Client Code \* Upper "><w:r><w:t>stale variable</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn document_info_compact_variable_format_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -5025,6 +5050,33 @@ fn docx_document_info_property_accepts_compact_format_switch() {
         main_text.contains("Acme Launch") && !main_text.contains("stale compact property"),
         "compact property format should replace stale cached text: {main_text:?}"
     );
+}
+
+#[test]
+fn docx_document_info_accepts_unquoted_multi_token_names() {
+    let doc =
+        Document::open(&document_info_unquoted_multi_token_names_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(
+        fields[0].kind,
+        FieldKind::DocumentInfo("DOCPROPERTY".to_string())
+    );
+    assert_eq!(fields[0].instruction, r#"DOCPROPERTY Client Name \* Caps"#);
+    assert_eq!(fields[0].result, "stale client");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("Acme Launch"));
+    assert_eq!(
+        fields[1].kind,
+        FieldKind::DocumentInfo("DOCVARIABLE".to_string())
+    );
+    assert_eq!(fields[1].instruction, r#"DOCVARIABLE Client Code \* Upper"#);
+    assert_eq!(fields[1].result, "stale variable");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("ALPHA-42"));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
 }
 
 #[test]
