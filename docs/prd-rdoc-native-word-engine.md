@@ -666,7 +666,10 @@ public-readable R2 sub-buckets:
 
 - R2-a field report/evaluator parity for value-changing fields whose
   computation, document-report diagnostics, or render-model diagnostics can
-  drift;
+  drift. Current focused tests lock the `PAGEREF`, `REF`, `NOTEREF`/`FTNREF`,
+  and TOC computed/gap buckets across opened-document and render-model reports,
+  so remaining R2-a work should be limited to newly proven drift or exact
+  duplicated parser/report syntax;
 - R2-b layout-derived `PAGE` and `PAGEREF` outside trusted structural,
   source-rendered, section-start, paragraph-end section-break target,
   source-marker, and hard-break contexts;
