@@ -2520,13 +2520,6 @@ fn field_diagnostic_inventory_cases() -> Vec<FieldDiagnosticInventoryCase> {
             FieldEvaluationReason::NoComputedResult,
         ),
         field_diagnostic_inventory_case(
-            "D2",
-            r"REF PlainText \d-",
-            "cached ref separator",
-            FieldKind::Ref,
-            FieldEvaluationReason::NoComputedResult,
-        ),
-        field_diagnostic_inventory_case(
             "D3",
             "REF MissingRef",
             "cached missing ref",
@@ -8128,7 +8121,7 @@ fn report_direct_bookmark_field_switches_count_as_supported_refs() {
             Some("FIGURE ONE"),
             Some("Figure one"),
             Some("figure one"),
-            None,
+            Some("figure one"),
             None
         ]
     );
@@ -8144,14 +8137,14 @@ fn report_direct_bookmark_field_switches_count_as_supported_refs() {
         report.features.unsupported_field_kinds,
         vec![FieldKindCount {
             kind: FieldKind::Ref,
-            count: 2,
+            count: 1,
         }]
     );
     assert_eq!(
         report.features.unsupported_field_reasons,
         vec![FieldEvaluationReasonCount {
             reason: FieldEvaluationReason::NoComputedResult,
-            count: 2,
+            count: 1,
         }]
     );
     assert_eq!(
@@ -8160,10 +8153,10 @@ fn report_direct_bookmark_field_switches_count_as_supported_refs() {
             .iter()
             .find(|warning| matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })),
         Some(&DocumentWarning::UnsupportedFieldEvaluation {
-            count: 2,
+            count: 1,
             field_kinds: vec![FieldKindCount {
                 kind: FieldKind::Ref,
-                count: 2,
+                count: 1,
             }],
         })
     );
@@ -8174,11 +8167,11 @@ fn report_direct_bookmark_field_switches_count_as_supported_refs() {
         "{json}"
     );
     assert!(
-        json.contains(r#""unsupported_field_kinds":[{"kind":"REF","count":2}]"#),
+        json.contains(r#""unsupported_field_kinds":[{"kind":"REF","count":1}]"#),
         "{json}"
     );
     assert!(
-        json.contains(r#""unsupported_field_reasons":[{"reason":"NoComputedResult","count":2}]"#),
+        json.contains(r#""unsupported_field_reasons":[{"reason":"NoComputedResult","count":1}]"#),
         "{json}"
     );
 }
@@ -8463,7 +8456,7 @@ fn report_ref_field_warning_ignores_computed_bookmark_refs() {
         report.features.unsupported_field_kinds,
         vec![FieldKindCount {
             kind: FieldKind::Ref,
-            count: 5,
+            count: 4,
         }]
     );
     assert_eq!(
@@ -8471,7 +8464,7 @@ fn report_ref_field_warning_ignores_computed_bookmark_refs() {
         vec![
             FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::NoComputedResult,
-                count: 2,
+                count: 1,
             },
             FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::UnresolvedBookmark,
@@ -8485,10 +8478,10 @@ fn report_ref_field_warning_ignores_computed_bookmark_refs() {
             .iter()
             .find(|warning| matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })),
         Some(&DocumentWarning::UnsupportedFieldEvaluation {
-            count: 5,
+            count: 4,
             field_kinds: vec![FieldKindCount {
                 kind: FieldKind::Ref,
-                count: 5,
+                count: 4,
             }],
         })
     );
@@ -8499,14 +8492,14 @@ fn report_ref_field_warning_ignores_computed_bookmark_refs() {
         "{json}"
     );
     assert!(
-        json.contains(r#""unsupported_field_kinds":[{"kind":"REF","count":5}]"#),
+        json.contains(r#""unsupported_field_kinds":[{"kind":"REF","count":4}]"#),
         "{json}"
     );
     assert!(
-        json.contains(r#""unsupported_field_reasons":[{"reason":"NoComputedResult","count":2},{"reason":"UnresolvedBookmark","count":3}]"#),
+        json.contains(r#""unsupported_field_reasons":[{"reason":"NoComputedResult","count":1},{"reason":"UnresolvedBookmark","count":3}]"#),
         "{json}"
     );
-    assert!(json.contains(r#""kind":"UnsupportedFieldEvaluation","count":5,"field_kinds":[{"kind":"REF","count":5}]"#), "{json}");
+    assert!(json.contains(r#""kind":"UnsupportedFieldEvaluation","count":4,"field_kinds":[{"kind":"REF","count":4}]"#), "{json}");
 }
 
 #[cfg(feature = "docx")]
@@ -9002,7 +8995,7 @@ fn report_note_ref_field_warning_reports_gap_cases() {
 fn report_field_diagnostic_inventory_tracks_active_gap_buckets() {
     let cases = field_diagnostic_inventory_cases();
     let expected_rows = [
-        "D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8", "D10", "D11", "D12",
+        "D1", "D3", "D4", "D5", "D6", "D7", "D8", "D10", "D11", "D12",
     ];
     let rows = cases.iter().map(|case| case.row).collect::<Vec<_>>();
     assert_eq!(rows, expected_rows);
@@ -9040,7 +9033,7 @@ fn report_field_diagnostic_inventory_tracks_active_gap_buckets() {
     );
 
     let json = report.to_json();
-    assert!(json.contains(r#""unsupported_field_reasons":[{"reason":"NoComputedResult","count":4},{"reason":"UnresolvedBookmark","count":4},{"reason":"UnsupportedSwitch","count":2},{"reason":"UnknownField","count":1}]"#), "{json}");
+    assert!(json.contains(r#""unsupported_field_reasons":[{"reason":"NoComputedResult","count":3},{"reason":"UnresolvedBookmark","count":4},{"reason":"UnsupportedSwitch","count":2},{"reason":"UnknownField","count":1}]"#), "{json}");
 }
 
 #[cfg(feature = "docx")]
