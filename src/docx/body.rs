@@ -2290,43 +2290,89 @@ fn read_rpr(r: &mut Xml<'_>) -> CharProps {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"rPrChange" => {
                 skip_subtree(r);
             }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
-                b"b" => p.bold = toggle_on(attr_local(&e, b"val")),
-                b"i" => p.italic = toggle_on(attr_local(&e, b"val")),
-                b"strike" => p.strike = toggle_on(attr_local(&e, b"val")),
-                b"dstrike" => p.strike |= toggle_on(attr_local(&e, b"val")),
-                b"vanish" => p.hidden = toggle_on(attr_local(&e, b"val")),
-                // `w:u` carries a line style; anything but "none" underlines.
-                b"u" => {
-                    p.underline = attr_local(&e, b"val")
-                        .map(|v| v.trim() != "none")
-                        .unwrap_or(true)
-                }
-                b"smallCaps" => p.small_caps = toggle_on(attr_local(&e, b"val")),
-                b"caps" => p.caps = toggle_on(attr_local(&e, b"val")),
-                // Font family: prefer the East-Asian face (Korean) over the Latin one.
-                b"rFonts" => {
-                    p.font = attr_local_trimmed(&e, b"eastAsia")
-                        .or_else(|| attr_local_trimmed(&e, b"ascii"));
-                }
-                b"sz" => p.size_half_pt = attr_u16(&e, b"val"),
-                b"color" => p.color = attr_local(&e, b"val").and_then(|v| parse_rgb_hex_color(&v)),
-                b"highlight" => p.highlight = attr_local_trimmed(&e, b"val"),
-                b"vertAlign" => {
-                    p.vert_align = match attr_local_trimmed(&e, b"val").as_deref() {
-                        Some("superscript") => VertAlign::Super,
-                        Some("subscript") => VertAlign::Sub,
-                        _ => VertAlign::Baseline,
-                    };
-                }
-                _ => {}
-            },
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                read_rpr_alternate_content(r, &mut p);
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => apply_rpr_child(&mut p, &e),
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"rPr" => break,
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
     }
     p
+}
+
+fn read_rpr_alternate_content(r: &mut Xml<'_>, props: &mut CharProps) {
+    let mut took = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                match name {
+                    b"Choice" | b"Fallback" if !took => {
+                        took = true;
+                        read_rpr_alternate_content_branch(r, props, name);
+                    }
+                    _ => skip_subtree(r),
+                }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+}
+
+fn read_rpr_alternate_content_branch(r: &mut Xml<'_>, props: &mut CharProps, branch: &[u8]) {
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"rPrChange" => {
+                skip_subtree(r);
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                read_rpr_alternate_content(r, props);
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => apply_rpr_child(props, &e),
+            Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+}
+
+fn apply_rpr_child(props: &mut CharProps, e: &BytesStart<'_>) {
+    match local(e.name().as_ref()) {
+        b"b" => props.bold = toggle_on(attr_local(e, b"val")),
+        b"i" => props.italic = toggle_on(attr_local(e, b"val")),
+        b"strike" => props.strike = toggle_on(attr_local(e, b"val")),
+        b"dstrike" => props.strike |= toggle_on(attr_local(e, b"val")),
+        b"vanish" => props.hidden = toggle_on(attr_local(e, b"val")),
+        // `w:u` carries a line style; anything but "none" underlines.
+        b"u" => {
+            props.underline = attr_local(e, b"val")
+                .map(|v| v.trim() != "none")
+                .unwrap_or(true)
+        }
+        b"smallCaps" => props.small_caps = toggle_on(attr_local(e, b"val")),
+        b"caps" => props.caps = toggle_on(attr_local(e, b"val")),
+        // Font family: prefer the East-Asian face (Korean) over the Latin one.
+        b"rFonts" => {
+            props.font =
+                attr_local_trimmed(e, b"eastAsia").or_else(|| attr_local_trimmed(e, b"ascii"));
+        }
+        b"sz" => props.size_half_pt = attr_u16(e, b"val"),
+        b"color" => props.color = attr_local(e, b"val").and_then(|v| parse_rgb_hex_color(&v)),
+        b"highlight" => props.highlight = attr_local_trimmed(e, b"val"),
+        b"vertAlign" => {
+            props.vert_align = match attr_local_trimmed(e, b"val").as_deref() {
+                Some("superscript") => VertAlign::Super,
+                Some("subscript") => VertAlign::Sub,
+                _ => VertAlign::Baseline,
+            };
+        }
+        _ => {}
+    }
 }
 
 /// Scan a `<w:drawing>`/`<w:pict>` subtree for (a) the first image blip, resolved
@@ -5150,6 +5196,65 @@ mod tests {
         };
         assert!(!p.runs[0].props.underline);
         assert!(p.runs[1].props.underline);
+    }
+
+    #[test]
+    fn run_props_use_single_alternate_content_branch() {
+        let xml = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:p>
+            <w:r><w:rPr>
+                <mc:AlternateContent>
+                    <mc:Choice Requires="w14">
+                        <w:b/>
+                        <w:i/>
+                        <w:u w:val="single"/>
+                        <w:strike/>
+                        <w:smallCaps/>
+                        <w:caps/>
+                        <w:rFonts w:ascii="Choice Latin" w:eastAsia="Choice Korean"/>
+                        <w:sz w:val="28"/>
+                        <w:color w:val="112233"/>
+                        <w:highlight w:val="yellow"/>
+                        <w:vertAlign w:val="superscript"/>
+                    </mc:Choice>
+                    <mc:Fallback>
+                        <w:b w:val="false"/>
+                        <w:i w:val="false"/>
+                        <w:u w:val="none"/>
+                        <w:strike w:val="false"/>
+                        <w:smallCaps w:val="false"/>
+                        <w:caps w:val="false"/>
+                        <w:rFonts w:ascii="Fallback Latin" w:eastAsia="Fallback Korean"/>
+                        <w:sz w:val="20"/>
+                        <w:color w:val="445566"/>
+                        <w:highlight w:val="green"/>
+                        <w:vertAlign w:val="subscript"/>
+                    </mc:Fallback>
+                </mc:AlternateContent>
+            </w:rPr><w:t>Run properties</w:t></w:r>
+        </w:p></w:body></w:document>"#;
+        let Block::Paragraph(p) = &parse(xml)[0] else {
+            panic!("paragraph");
+        };
+        let props = &p.runs[0].props;
+
+        assert!(props.bold);
+        assert!(props.italic);
+        assert!(props.underline);
+        assert!(props.strike);
+        assert!(props.small_caps);
+        assert!(props.caps);
+        assert_eq!(props.font.as_deref(), Some("Choice Korean"));
+        assert_eq!(props.size_half_pt, Some(28));
+        assert_eq!(
+            props.color,
+            Some(Color {
+                r: 0x11,
+                g: 0x22,
+                b: 0x33
+            })
+        );
+        assert_eq!(props.highlight.as_deref(), Some("yellow"));
+        assert_eq!(props.vert_align, VertAlign::Super);
     }
 
     #[test]
