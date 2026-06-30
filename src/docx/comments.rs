@@ -152,8 +152,25 @@ fn comment_para_ids(xml: &str) -> HashMap<String, String> {
 fn extended_parent_para_ids(xml: &str) -> HashMap<String, String> {
     let mut r = Reader::from_str(xml);
     let mut ids = HashMap::new();
+    let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
+            Ok(Event::Start(e))
+                if skip_alternate_content_branch(
+                    &mut alternate_content_stack,
+                    local(e.name().as_ref()),
+                ) =>
+            {
+                skip_subtree(&mut r);
+            }
+            Ok(Event::Empty(e))
+                if skip_alternate_content_branch(
+                    &mut alternate_content_stack,
+                    local(e.name().as_ref()),
+                ) => {}
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                alternate_content_stack.push(AlternateContentBranchState::default());
+            }
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"commentEx" =>
             {
@@ -163,6 +180,9 @@ fn extended_parent_para_ids(xml: &str) -> HashMap<String, String> {
                 ) {
                     ids.insert(para_id, parent_para_id);
                 }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                alternate_content_stack.pop();
             }
             Ok(Event::Eof) | Err(_) => break,
             _ => {}

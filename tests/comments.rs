@@ -220,6 +220,35 @@ fn threaded_comments_docx() -> Vec<u8> {
     ])
 }
 
+fn alternate_content_comments_extended_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/><Override PartName="/word/commentsExtended.xml" ContentType="application/vnd.ms-word.commentsExt+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="comments.xml"/><Relationship Id="rId2" Type="http://schemas.microsoft.com/office/2011/relationships/commentsExtended" Target="commentsExtended.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:commentRangeStart w:id="1"/><w:r><w:t>Threaded anchor</w:t></w:r><w:commentRangeEnd w:id="1"/><w:r><w:commentReference w:id="1"/></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/comments.xml",
+            r#"<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"><w:comment w:id="1" w:author="Reviewer"><w:p w14:paraId="11111111"><w:r><w:t>Selected parent</w:t></w:r></w:p></w:comment><w:comment w:id="2" w:author="Approver"><w:p w14:paraId="22222222"><w:r><w:t>Reply</w:t></w:r></w:p></w:comment><w:comment w:id="3" w:author="Fallback"><w:p w14:paraId="33333333"><w:r><w:t>Fallback parent</w:t></w:r></w:p></w:comment></w:comments>"#,
+        ),
+        (
+            "word/commentsExtended.xml",
+            r#"<w15:commentsEx xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:AlternateContent><mc:Choice Requires="w15"><w15:commentEx w15:paraId="22222222" w15:paraIdParent="11111111" w15:done="0"/></mc:Choice><mc:Fallback><w15:commentEx w15:paraId="22222222" w15:paraIdParent="33333333" w15:done="0"/></mc:Fallback></mc:AlternateContent></w15:commentsEx>"#,
+        ),
+    ])
+}
+
 fn revision_wrapped_commented_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -372,6 +401,20 @@ fn docx_comment_reply_threading_uses_selected_alternate_content_branch() {
     assert_eq!(comments[1].id, "2");
     assert_eq!(comments[1].parent_comment_id.as_deref(), Some("1"));
     assert_eq!(comments[1].text, "Choice reply");
+}
+
+#[test]
+fn docx_comment_reply_threading_uses_selected_comments_extended_alternate_content_branch() {
+    let doc = Document::open(&alternate_content_comments_extended_docx()).expect("fixture opens");
+    let comments = doc.comments();
+
+    assert_eq!(comments.len(), 3);
+    assert_eq!(comments[0].id, "1");
+    assert_eq!(comments[0].parent_comment_id, None);
+    assert_eq!(comments[1].id, "2");
+    assert_eq!(comments[1].parent_comment_id.as_deref(), Some("1"));
+    assert_eq!(comments[2].id, "3");
+    assert_eq!(comments[2].parent_comment_id, None);
 }
 
 #[test]
