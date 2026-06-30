@@ -1316,15 +1316,13 @@ impl ComplexFieldTracker {
                     .then(|| unsupported_simple_field_reason_hint(&instruction, ctx))
                     .flatten();
                 let insert_at = self.result_start.unwrap_or(index);
-                let should_apply = has_result_runs || text.is_some();
                 self.pending = Some(PendingComplexField {
                     text,
                     instruction,
                     unsupported_reason,
                     result_runs: std::mem::take(&mut self.result_runs),
                     insert_at,
-                })
-                .filter(|_| should_apply);
+                });
             }
         }
         self.instruction.clear();
@@ -1356,6 +1354,11 @@ impl ComplexFieldTracker {
         if computed.result_runs.is_empty() {
             if let Some(text) = computed.text {
                 runs.insert(computed.insert_at.min(runs.len()), computed_field_run(text));
+            } else {
+                runs.insert(
+                    computed.insert_at.min(runs.len()),
+                    empty_simple_field_run(computed.instruction, computed.unsupported_reason),
+                );
             }
             return;
         }
@@ -3938,6 +3941,47 @@ mod tests {
             vec![crate::FieldEvaluationReasonCount {
                 reason: crate::FieldEvaluationReason::UnknownField,
                 count: 2,
+            }]
+        );
+        #[cfg(feature = "render")]
+        {
+            let render_inventory = crate::report::render_inventory_for_model(&blocks);
+            assert_eq!(render_inventory.fields, inventory.fields);
+            assert_eq!(
+                render_inventory.unsupported_field_kinds,
+                inventory.unsupported_field_kinds
+            );
+            assert_eq!(
+                render_inventory.unsupported_field_reasons,
+                inventory.unsupported_field_reasons
+            );
+        }
+    }
+
+    #[test]
+    fn empty_unsupported_complex_fields_are_counted_in_model_inventory() {
+        let xml = r#"<w:document><w:body><w:p>
+            <w:r><w:fldChar w:fldCharType="begin"/></w:r>
+            <w:r><w:instrText> CUSTOMCOMPLEX </w:instrText></w:r>
+            <w:r><w:fldChar w:fldCharType="end"/></w:r>
+        </w:p></w:body></w:document>"#;
+        let blocks = parse(xml);
+
+        let inventory = crate::report::feature_inventory_for_model(&blocks);
+
+        assert_eq!(inventory.fields, 1);
+        assert_eq!(
+            inventory.unsupported_field_kinds,
+            vec![crate::FieldKindCount {
+                kind: FieldKind::Unknown("CUSTOMCOMPLEX".to_string()),
+                count: 1,
+            }]
+        );
+        assert_eq!(
+            inventory.unsupported_field_reasons,
+            vec![crate::FieldEvaluationReasonCount {
+                reason: crate::FieldEvaluationReason::UnknownField,
+                count: 1,
             }]
         );
         #[cfg(feature = "render")]
