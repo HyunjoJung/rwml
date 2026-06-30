@@ -294,10 +294,12 @@ Initial status:
   scopes, and remaining broader TOC field cases whose
   computed values are not evaluated; cached `MERGEFIELD` results, malformed
   merge-field names reporting `UnsupportedSwitch`,
-  deterministic simple source-order `SEQ` fields with `\n`/`\r`/`\c`, hidden
-  `\h`, and common number-format switches, malformed `SEQ` syntax reporting
-  `UnsupportedSwitch`, while valid unsupported `SEQ` forms preserve cached text
-  with `NoComputedResult` diagnostics and do not mutate later sequence counters,
+  deterministic simple source-order `SEQ` fields with `\n`/`\r`/`\c`,
+  heading-reset `\s` from resolved body heading scopes, hidden `\h`, and
+  common number-format switches, malformed `SEQ` syntax reporting
+  `UnsupportedSwitch`, while remaining valid unsupported `SEQ` forms preserve
+  cached text with `NoComputedResult` diagnostics and do not mutate later
+  sequence counters,
   metadata-backed document-info/date results, and cached date/stat/unmapped
   document-info results are counted as supported display
   fields when their instruction syntax is valid; malformed document-info syntax

@@ -91,6 +91,8 @@ pub(crate) struct Ctx<'a> {
     pub form_field_cursor: std::cell::RefCell<usize>,
     pub formula_field_cursor: std::cell::RefCell<usize>,
     pub sequence_counters: std::cell::RefCell<HashMap<String, i64>>,
+    pub sequence_heading_counts: std::cell::RefCell<[u32; 9]>,
+    pub sequence_heading_scopes: std::cell::RefCell<HashMap<(String, u8), u32>>,
     pub autonum_counter: std::cell::RefCell<i64>,
     pub listnum_counter: std::cell::RefCell<i64>,
     pub field_bookmarks: std::cell::RefCell<HashMap<String, String>>,
@@ -1061,12 +1063,16 @@ fn read_paragraph(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Paragraph, Opt
     }
     let mut runs: Vec<Run> = Vec::new();
     let mut pp = PPr::default();
+    let mut sequence_heading_applied = false;
     let mut complex_field = ComplexFieldTracker::default();
     let mut bookmarks = Vec::new();
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
-                b"pPr" => pp = read_ppr(r),
+                b"pPr" => {
+                    pp = read_ppr(r);
+                    apply_sequence_heading_scope(&pp, ctx, &mut sequence_heading_applied);
+                }
                 b"r" => {
                     let start = runs.len();
                     let next = read_run(
@@ -1152,6 +1158,7 @@ fn read_paragraph(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Paragraph, Opt
             _ => {}
         }
     }
+    apply_sequence_heading_scope(&pp, ctx, &mut sequence_heading_applied);
     let section = pp.section.take();
     (finalize_paragraph(runs, pp, ctx), section)
 }
@@ -3046,8 +3053,15 @@ fn computed_simple_field_result(
         })
         .or_else(|| {
             if FieldKind::from_instruction(instruction) == FieldKind::Sequence {
+                let heading_scope = *ctx.sequence_heading_counts.borrow();
                 let mut counters = ctx.sequence_counters.borrow_mut();
-                super::fields::computed_sequence_result(instruction, &mut counters)
+                let mut heading_scopes = ctx.sequence_heading_scopes.borrow_mut();
+                super::fields::computed_sequence_result_with_heading_scope(
+                    instruction,
+                    &mut counters,
+                    Some(heading_scope),
+                    &mut heading_scopes,
+                )
             } else {
                 None
             }
@@ -3239,6 +3253,29 @@ fn ref_field_positions(
         ctx.ref_position_context.field_position(index),
         ctx.note_ref_context.ref_field_position(index),
     )
+}
+
+fn apply_sequence_heading_scope(pp: &PPr, ctx: &Ctx<'_>, applied: &mut bool) {
+    if *applied {
+        return;
+    }
+    let Some(level) = sequence_heading_level(pp, ctx.styles) else {
+        return;
+    };
+    let mut counts = ctx.sequence_heading_counts.borrow_mut();
+    counts[usize::from(level - 1)] = counts[usize::from(level - 1)].saturating_add(1);
+    *applied = true;
+}
+
+fn sequence_heading_level(pp: &PPr, styles: &Styles) -> Option<u8> {
+    match pp.outline {
+        Some(level) if level <= 8 => Some(level + 1),
+        Some(_) => None,
+        None => pp
+            .style_id
+            .as_deref()
+            .and_then(|style_id| styles.heading_level(style_id)),
+    }
 }
 
 /// Extract a URL from a `HYPERLINK "…"` field instruction (matches the `.doc`
@@ -3910,6 +3947,8 @@ mod tests {
             form_field_cursor: Default::default(),
             formula_field_cursor: Default::default(),
             sequence_counters: Default::default(),
+            sequence_heading_counts: Default::default(),
+            sequence_heading_scopes: Default::default(),
             autonum_counter: Default::default(),
             listnum_counter: Default::default(),
             field_bookmarks: Default::default(),
@@ -4312,6 +4351,8 @@ mod tests {
             form_field_cursor: Default::default(),
             formula_field_cursor: Default::default(),
             sequence_counters: Default::default(),
+            sequence_heading_counts: Default::default(),
+            sequence_heading_scopes: Default::default(),
             autonum_counter: Default::default(),
             listnum_counter: Default::default(),
             field_bookmarks: Default::default(),
@@ -4385,6 +4426,8 @@ mod tests {
             form_field_cursor: Default::default(),
             formula_field_cursor: Default::default(),
             sequence_counters: Default::default(),
+            sequence_heading_counts: Default::default(),
+            sequence_heading_scopes: Default::default(),
             autonum_counter: Default::default(),
             listnum_counter: Default::default(),
             field_bookmarks: Default::default(),

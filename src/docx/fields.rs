@@ -146,6 +146,7 @@ pub(crate) fn parse(
     let style_refs = style_ref_context(xml, styles, numbering);
     let legacy_forms = legacy_form_context(xml, preserve_legacy_form_cache);
     let table_formulas = table_formula_context(xml);
+    let sequence_headings = sequence_heading_context(xml, styles);
     let mut r = Reader::from_str(xml);
     let mut fields = Vec::new();
     let mut current = Vec::new();
@@ -267,6 +268,7 @@ pub(crate) fn parse(
             style_refs: &style_refs,
             legacy_forms: &legacy_forms,
             table_formulas: &table_formulas,
+            sequence_headings: &sequence_headings,
             toc_entries,
             bookmark_names: &all_bookmark_names,
             core_properties: properties.core,
@@ -532,6 +534,249 @@ fn inline_marker_text(e: &BytesStart<'_>) -> Option<&'static str> {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+struct SequenceHeadingContext {
+    field_scopes: Vec<[u32; 9]>,
+}
+
+impl SequenceHeadingContext {
+    fn field_scope(&self, index: usize) -> Option<[u32; 9]> {
+        self.field_scopes.get(index).copied()
+    }
+}
+
+#[derive(Debug, Default)]
+struct SequenceHeadingParagraph {
+    depth: usize,
+    properties_depth: usize,
+    style_id: Option<String>,
+    outline: Option<u8>,
+    heading_applied: bool,
+}
+
+impl SequenceHeadingParagraph {
+    fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    fn active(&self) -> bool {
+        self.depth > 0
+    }
+}
+
+fn sequence_heading_context(xml: &str, styles: &Styles) -> SequenceHeadingContext {
+    let mut r = Reader::from_str(xml);
+    let mut context = SequenceHeadingContext::default();
+    let mut current = Vec::new();
+    let mut paragraph = SequenceHeadingParagraph::default();
+    let mut heading_counts = [0u32; 9];
+    let mut xml_depth = 0usize;
+    let mut alternate_content_stack = Vec::new();
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    skip_subtree(&mut r);
+                    continue;
+                }
+                if matches!(name, b"del" | b"moveFrom") {
+                    skip_subtree(&mut r);
+                    continue;
+                }
+                let mut consumed_element = false;
+                match name {
+                    b"AlternateContent" => {
+                        alternate_content_stack.push(AlternateContentBranchState {
+                            branch_depth: xml_depth + 1,
+                            took_branch: false,
+                        });
+                    }
+                    b"p" => {
+                        if paragraph.active() {
+                            paragraph.depth += 1;
+                        } else {
+                            paragraph.reset();
+                            paragraph.depth = 1;
+                        }
+                    }
+                    b"pPr" if paragraph.active() => {
+                        paragraph.properties_depth += 1;
+                    }
+                    b"pStyle" if paragraph.properties_depth > 0 => {
+                        paragraph.style_id = attr_local_trimmed(&e, b"val");
+                    }
+                    b"outlineLvl" if paragraph.properties_depth > 0 => {
+                        paragraph.outline = attr_u8(&e, b"val");
+                    }
+                    b"fldSimple" => {
+                        record_sequence_heading_scope(
+                            attr_local(&e, b"instr").as_deref(),
+                            &heading_counts,
+                            &mut context,
+                        );
+                        skip_subtree(&mut r);
+                        consumed_element = true;
+                    }
+                    b"fldChar" => {
+                        apply_sequence_heading_scan_fld_char(
+                            &e,
+                            &mut current,
+                            heading_counts,
+                            &mut context,
+                        );
+                    }
+                    b"instrText" => {
+                        let text = read_text(&mut r);
+                        consumed_element = true;
+                        if let Some(field) = current.last_mut() {
+                            if field.phase == FieldPhase::Instruction {
+                                field.instruction.push_str(&text);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+                if !consumed_element {
+                    xml_depth = xml_depth.saturating_add(1);
+                }
+            }
+            Ok(Event::Empty(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    continue;
+                }
+                match name {
+                    b"p" => {
+                        paragraph.reset();
+                    }
+                    b"pPr" if paragraph.active() => {}
+                    b"pStyle" if paragraph.properties_depth > 0 => {
+                        paragraph.style_id = attr_local_trimmed(&e, b"val");
+                    }
+                    b"outlineLvl" if paragraph.properties_depth > 0 => {
+                        paragraph.outline = attr_u8(&e, b"val");
+                    }
+                    b"fldSimple" => {
+                        record_sequence_heading_scope(
+                            attr_local(&e, b"instr").as_deref(),
+                            &heading_counts,
+                            &mut context,
+                        );
+                    }
+                    b"fldChar" => {
+                        apply_sequence_heading_scan_fld_char(
+                            &e,
+                            &mut current,
+                            heading_counts,
+                            &mut context,
+                        );
+                    }
+                    _ => {}
+                }
+            }
+            Ok(Event::End(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                match name {
+                    b"pPr" if paragraph.properties_depth > 0 => {
+                        paragraph.properties_depth -= 1;
+                        if paragraph.properties_depth == 0 {
+                            apply_sequence_paragraph_heading(
+                                &mut paragraph,
+                                styles,
+                                &mut heading_counts,
+                            );
+                        }
+                    }
+                    b"p" if paragraph.depth > 1 => {
+                        paragraph.depth -= 1;
+                    }
+                    b"p" if paragraph.active() => {
+                        apply_sequence_paragraph_heading(
+                            &mut paragraph,
+                            styles,
+                            &mut heading_counts,
+                        );
+                        paragraph.reset();
+                    }
+                    b"AlternateContent" => {
+                        alternate_content_stack.pop();
+                    }
+                    _ => {}
+                }
+                xml_depth = xml_depth.saturating_sub(1);
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    context
+}
+
+fn apply_sequence_paragraph_heading(
+    paragraph: &mut SequenceHeadingParagraph,
+    styles: &Styles,
+    heading_counts: &mut [u32; 9],
+) {
+    if paragraph.heading_applied {
+        return;
+    }
+    let Some(level) = sequence_paragraph_heading_level(paragraph, styles) else {
+        paragraph.heading_applied = true;
+        return;
+    };
+    let index = usize::from(level - 1);
+    heading_counts[index] = heading_counts[index].saturating_add(1);
+    paragraph.heading_applied = true;
+}
+
+fn sequence_paragraph_heading_level(
+    paragraph: &SequenceHeadingParagraph,
+    styles: &Styles,
+) -> Option<u8> {
+    paragraph
+        .outline
+        .filter(|&level| level <= 8)
+        .map(|level| level + 1)
+        .or_else(|| {
+            paragraph
+                .style_id
+                .as_deref()
+                .and_then(|style_id| styles.heading_level(style_id))
+        })
+}
+
+fn apply_sequence_heading_scan_fld_char(
+    e: &BytesStart<'_>,
+    current: &mut Vec<ComplexField>,
+    heading_counts: [u32; 9],
+    context: &mut SequenceHeadingContext,
+) {
+    apply_complex_field_scan_fld_char(e, current, |field| {
+        record_sequence_heading_scope(Some(&field.instruction), &heading_counts, context);
+    });
+}
+
+fn record_sequence_heading_scope(
+    instruction: Option<&str>,
+    heading_counts: &[u32; 9],
+    context: &mut SequenceHeadingContext,
+) {
+    if instruction.is_some_and(is_sequence_field_instruction) {
+        context.field_scopes.push(*heading_counts);
+    }
+}
+
+fn is_sequence_field_instruction(instruction: &str) -> bool {
+    matches!(
+        field_kind(&normalize_instruction(instruction)),
+        FieldKind::Sequence
+    )
+}
+
 struct ComputedResultContexts<'a> {
     bookmarks: &'a HashMap<String, String>,
     ref_positions: &'a RefPositionContext,
@@ -542,6 +787,7 @@ struct ComputedResultContexts<'a> {
     style_refs: &'a StyleRefContext,
     legacy_forms: &'a LegacyFormContext,
     table_formulas: &'a TableFormulaContext,
+    sequence_headings: &'a SequenceHeadingContext,
     toc_entries: &'a [TocEntry],
     bookmark_names: &'a HashSet<String>,
     core_properties: &'a CoreProperties,
@@ -560,7 +806,9 @@ fn apply_computed_results(fields: &mut [Field], ctx: ComputedResultContexts<'_>)
     let mut style_ref_field_index = 0usize;
     let mut form_field_index = 0usize;
     let mut formula_field_index = 0usize;
+    let mut sequence_field_index = 0usize;
     let mut sequence_counters = HashMap::new();
+    let mut sequence_heading_scopes = HashMap::new();
     let mut autonum_counter = 0i64;
     let mut listnum_counter = 0i64;
     let mut field_bookmarks = HashMap::new();
@@ -596,7 +844,14 @@ fn apply_computed_results(fields: &mut [Field], ctx: ComputedResultContexts<'_>)
                 computed_note_ref_result(&field.instruction, ctx.note_refs, position)
             }
             FieldKind::Sequence => {
-                computed_sequence_result(&field.instruction, &mut sequence_counters)
+                let heading_scope = ctx.sequence_headings.field_scope(sequence_field_index);
+                sequence_field_index += 1;
+                computed_sequence_result_with_heading_scope(
+                    &field.instruction,
+                    &mut sequence_counters,
+                    heading_scope,
+                    &mut sequence_heading_scopes,
+                )
             }
             FieldKind::TocEntry => computed_toc_entry_result(&field.instruction),
             FieldKind::Toc => {
@@ -1382,6 +1637,7 @@ enum SequenceAction {
 struct SequenceInstruction {
     identifier: String,
     action: SequenceAction,
+    heading_reset: Option<u8>,
     hidden: bool,
     number_format: Option<PageNumberFormat>,
     text_format: Option<FieldTextFormat>,
@@ -1406,6 +1662,7 @@ fn sequence_instruction_with_reset_policy(
     let mut action = SequenceAction::Next;
     let mut action_seen = false;
     let mut heading_reset_seen = false;
+    let mut heading_reset = None;
     let mut hidden = false;
     let mut number_format = None;
     let mut text_format = None;
@@ -1443,14 +1700,22 @@ fn sequence_instruction_with_reset_policy(
         }
         if part.eq_ignore_ascii_case("\\s") {
             let level = parts.next()?;
-            accept_sequence_heading_reset(level, &mut heading_reset_seen, allow_heading_reset)?;
+            heading_reset = Some(accept_sequence_heading_reset(
+                level,
+                &mut heading_reset_seen,
+                allow_heading_reset,
+            )?);
             continue;
         }
         if let Some(level) = strip_ascii_switch_prefix(part, "\\s") {
             if level.is_empty() {
                 return None;
             }
-            accept_sequence_heading_reset(level, &mut heading_reset_seen, allow_heading_reset)?;
+            heading_reset = Some(accept_sequence_heading_reset(
+                level,
+                &mut heading_reset_seen,
+                allow_heading_reset,
+            )?);
             continue;
         }
         if part.eq_ignore_ascii_case("\\r") {
@@ -1476,6 +1741,7 @@ fn sequence_instruction_with_reset_policy(
     Some(SequenceInstruction {
         identifier,
         action,
+        heading_reset,
         hidden,
         number_format,
         text_format,
@@ -1486,7 +1752,7 @@ fn accept_sequence_heading_reset(
     value: &str,
     heading_reset_seen: &mut bool,
     allow_heading_reset: bool,
-) -> Option<()> {
+) -> Option<u8> {
     if !allow_heading_reset || *heading_reset_seen {
         return None;
     }
@@ -1495,7 +1761,7 @@ fn accept_sequence_heading_reset(
         return None;
     }
     *heading_reset_seen = true;
-    Some(())
+    Some(level)
 }
 
 fn sequence_reset_value(value: i64, allow_negative: bool) -> Option<i64> {
@@ -1511,6 +1777,31 @@ pub(crate) fn computed_sequence_result(
     counters: &mut HashMap<String, i64>,
 ) -> Option<String> {
     let instruction = sequence_instruction(instruction)?;
+    computed_sequence_instruction_result(instruction, counters)
+}
+
+pub(super) fn computed_sequence_result_with_heading_scope(
+    instruction: &str,
+    counters: &mut HashMap<String, i64>,
+    heading_scope: Option<[u32; 9]>,
+    heading_scopes: &mut HashMap<(String, u8), u32>,
+) -> Option<String> {
+    let instruction = sequence_instruction_with_reset_policy(instruction, false, true)?;
+    if let Some(level) = instruction.heading_reset {
+        let scope = heading_scope?[usize::from(level - 1)];
+        let key = (instruction.identifier.clone(), level);
+        if heading_scopes.get(&key).copied() != Some(scope) {
+            counters.insert(instruction.identifier.clone(), 0);
+            heading_scopes.insert(key, scope);
+        }
+    }
+    computed_sequence_instruction_result(instruction, counters)
+}
+
+fn computed_sequence_instruction_result(
+    instruction: SequenceInstruction,
+    counters: &mut HashMap<String, i64>,
+) -> Option<String> {
     let value = match instruction.action {
         SequenceAction::Next => counters.get(&instruction.identifier).copied().unwrap_or(0) + 1,
         SequenceAction::Current => counters.get(&instruction.identifier).copied()?,

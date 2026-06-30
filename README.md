@@ -436,7 +436,8 @@ PDF page list; section-aware default/first/even running header/footer variants
 are selected with first-page variants scoped to each section and even variants
 based on emitted page parity; field-code `HYPERLINK` runs render as link
 annotations and malformed hyperlink syntax reports `UnsupportedSwitch`; cached
-body `FILENAME`/`MERGEFIELD`, deterministic simple source-order `SEQ`,
+body `FILENAME`/`MERGEFIELD`, deterministic simple source-order `SEQ` with
+heading-reset `\s` from resolved body heading scopes,
 malformed `FILENAME` switches, `MERGEFIELD` names, and `SEQ` syntax reported as `UnsupportedSwitch`,
 metadata-backed document-info/date
 fields (`AUTHOR`, `TITLE`, `SUBJECT`, `KEYWORDS`, `COMMENTS`, `LASTSAVEDBY`,

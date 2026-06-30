@@ -9703,6 +9703,8 @@ fn report_sequence_fields_split_computed_cached_and_malformed_diagnostics() {
 
     assert_eq!(fields.len(), 4);
     assert!(fields.iter().all(|field| field.kind == FieldKind::Sequence));
+    assert_eq!(fields[2].instruction, "SEQ Figure \\s 1");
+    assert_eq!(fields[2].computed_result.as_deref(), Some("1"));
 
     let report = doc.report();
     assert_eq!(report.features.fields, 4);
@@ -9717,21 +9719,15 @@ fn report_sequence_fields_split_computed_cached_and_malformed_diagnostics() {
         report.features.unsupported_field_kinds,
         vec![FieldKindCount {
             kind: FieldKind::Sequence,
-            count: 3,
+            count: 2,
         }]
     );
     assert_eq!(
         report.features.unsupported_field_reasons,
-        vec![
-            FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::UnsupportedSwitch,
-                count: 2,
-            },
-            FieldEvaluationReasonCount {
-                reason: FieldEvaluationReason::NoComputedResult,
-                count: 1,
-            },
-        ]
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnsupportedSwitch,
+            count: 2,
+        }]
     );
 }
 

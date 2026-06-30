@@ -282,15 +282,23 @@ fn sequence_heading_reset_field_docx() -> Vec<u8> {
     docx_fixture(&[
         (
             "[Content_Types].xml",
-            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>"#,
         ),
         (
             "_rels/.rels",
             r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
         ),
         (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>"#,
+        ),
+        (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SEQ Figure "><w:r><w:t>stale figure one</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SEQ Figure \s 1 "><w:r><w:t>cached heading reset</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SEQ Figure "><w:r><w:t>stale figure two</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Chapter One</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" SEQ Figure \s 1 "><w:r><w:t>stale chapter one figure</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SEQ Figure "><w:r><w:t>stale chapter one followup</w:t></w:r></w:fldSimple></w:p><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Chapter Two</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" SEQ Figure \s 1 "><w:r><w:t>stale chapter two figure</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> SEQ Figure \s1 \* roman </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale chapter two roman</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -4347,53 +4355,42 @@ fn docx_sequence_fields_compute_source_order_numbers() {
 }
 
 #[test]
-fn docx_sequence_heading_reset_is_known_uncomputed_syntax() {
+fn docx_sequence_heading_reset_computes_from_heading_scope() {
     let doc = Document::open(&sequence_heading_reset_field_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 3);
+    assert_eq!(fields.len(), 4);
     assert_eq!(fields[0].kind, FieldKind::Sequence);
-    assert_eq!(fields[0].instruction, "SEQ Figure");
+    assert_eq!(fields[0].instruction, "SEQ Figure \\s 1");
+    assert_eq!(fields[0].result, "stale chapter one figure");
     assert_eq!(fields[0].computed_result.as_deref(), Some("1"));
     assert_eq!(fields[1].kind, FieldKind::Sequence);
-    assert_eq!(fields[1].instruction, "SEQ Figure \\s 1");
-    assert_eq!(fields[1].result, "cached heading reset");
-    assert_eq!(fields[1].computed_result, None);
+    assert_eq!(fields[1].instruction, "SEQ Figure");
+    assert_eq!(fields[1].result, "stale chapter one followup");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("2"));
     assert_eq!(fields[2].kind, FieldKind::Sequence);
-    assert_eq!(fields[2].instruction, "SEQ Figure");
-    assert_eq!(fields[2].computed_result.as_deref(), Some("2"));
+    assert_eq!(fields[2].instruction, "SEQ Figure \\s 1");
+    assert_eq!(fields[2].result, "stale chapter two figure");
+    assert_eq!(fields[2].computed_result.as_deref(), Some("1"));
+    assert_eq!(fields[3].kind, FieldKind::Sequence);
+    assert_eq!(fields[3].instruction, "SEQ Figure \\s1 \\* roman");
+    assert_eq!(fields[3].result, "stale chapter two roman");
+    assert_eq!(fields[3].computed_result.as_deref(), Some("ii"));
 
     let report = doc.report();
-    assert_eq!(
-        report.features.unsupported_field_kinds,
-        vec![FieldKindCount {
-            kind: FieldKind::Sequence,
-            count: 1,
-        }]
-    );
-    assert_eq!(
-        report.features.unsupported_field_reasons,
-        vec![FieldEvaluationReasonCount {
-            reason: FieldEvaluationReason::NoComputedResult,
-            count: 1,
-        }]
-    );
-    assert_eq!(
-        model_simple_field_reason_hints(&doc, |instruction| {
-            instruction.starts_with("SEQ Figure \\s 1")
-        }),
-        vec![(
-            "SEQ Figure \\s 1".to_string(),
-            Some(FieldUnsupportedReason::NoComputedResult),
-        )]
-    );
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+    assert!(model_simple_field_reason_hints(&doc, |instruction| {
+        instruction.starts_with("SEQ Figure")
+    })
+    .is_empty());
 
     assert_eq!(
         doc.main_text()
             .lines()
             .filter(|line| !line.is_empty())
             .collect::<Vec<_>>(),
-        vec!["1", "cached heading reset", "2"]
+        vec!["Chapter One", "1", "2", "Chapter Two", "1", "ii"]
     );
 }
 
