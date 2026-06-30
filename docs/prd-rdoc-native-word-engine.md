@@ -322,7 +322,7 @@ The first public maturity release should meet these requirements.
   with optional neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT` formula tails,
   formula result text-format tails such as `\* Upper`/`\* Lower`/`\* Caps`/`\* FirstCap`, and
   literal and table formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
-  malformed formula switch syntax reporting `UnsupportedSwitch`,
+  malformed formula syntax reporting `UnsupportedSwitch`,
   deterministic literal `QUOTE` fields computed from quoted or unquoted text
   using general text-format switches, malformed literal `QUOTE` syntax reports
   `UnsupportedSwitch`, and deterministic literal `IF` fields computed

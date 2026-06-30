@@ -645,7 +645,7 @@ Implementation:
   positive/negative/zero pictures, plus neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT`
   formula tails, formula result text-format tails such as `\* Upper`/`\* Lower`/`\* Caps`/`\* FirstCap`,
   and literal/table formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
-  malformed formula switch syntax reporting `UnsupportedSwitch`,
+  malformed formula syntax reporting `UnsupportedSwitch`,
   and literal `DEFINED(expr)` checks for parser-local literal expressions and source-order prior bookmark names,
   guarded scalar/table numeric `IF` branch selection skips unsupported or span-unsafe unselected branches, literal
   quoted/unquoted literal `QUOTE`, literal `IF` finite numeric/text comparisons, literal `COMPARE`
@@ -681,7 +681,7 @@ Implementation:
   plus neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT` formula tails,
   formula result text-format tails such as `\* Upper`/`\* Lower`/`\* Caps`/`\* FirstCap`, and
   literal/table formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
-  malformed formula switch syntax reporting `UnsupportedSwitch`,
+  malformed formula syntax reporting `UnsupportedSwitch`,
   quoted/unquoted literal `QUOTE`, literal `IF` finite numeric/text comparisons, literal
   `COMPARE` finite numeric/text results, explicit-default `FILLIN`/`ASK`
   prompt fields, valid no-default prompt fields cached with
@@ -746,7 +746,7 @@ Acceptance:
   positive/negative/zero pictures, plus neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT`
   formula tails, formula result text-format tails such as `\* Upper`/`\* Lower`/`\* Caps`/`\* FirstCap`,
   and literal/table formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
-  malformed formula switch syntax reporting `UnsupportedSwitch`,
+  malformed formula syntax reporting `UnsupportedSwitch`,
   and literal `DEFINED(expr)` checks for parser-local literal expressions and source-order prior bookmark names,
   guarded scalar/table numeric `IF` branch selection skips unsupported or span-unsafe unselected branches,
   quoted/unquoted literal `QUOTE`, malformed literal `QUOTE` syntax reporting
@@ -1217,7 +1217,7 @@ open and edit the chart data.
   positive/negative/zero pictures, plus neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT`
   formula tails, formula result text-format tails such as `\* Upper`/`\* Lower`/`\* Caps`/`\* FirstCap`,
   and literal/table formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
-  malformed formula switch syntax reporting `UnsupportedSwitch`,
+  malformed formula syntax reporting `UnsupportedSwitch`,
   and literal `DEFINED(expr)` checks for parser-local literal expressions and source-order prior bookmark names,
   guarded scalar/table numeric `IF` branch selection skips unsupported or span-unsafe unselected branches, literal
   quoted/unquoted literal `QUOTE`, literal `IF` finite numeric/text comparisons, literal `COMPARE`
@@ -1253,7 +1253,7 @@ open and edit the chart data.
   plus neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT` formula tails,
   formula result text-format tails such as `\* Upper`/`\* Lower`/`\* Caps`/`\* FirstCap`, and
   literal/table formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
-  malformed formula switch syntax reporting `UnsupportedSwitch`,
+  malformed formula syntax reporting `UnsupportedSwitch`,
   literal `DEFINED(expr)` checks for parser-local literal expressions and source-order prior bookmark names,
   guarded scalar/table numeric `IF` branch selection skips unsupported or span-unsafe unselected branches,
   quoted/unquoted literal `QUOTE`, literal `IF` comparisons, literal `COMPARE` results,

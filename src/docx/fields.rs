@@ -2091,11 +2091,11 @@ mod tests {
         document_info_instruction, format_page_number, note_ref_context, note_ref_instruction,
         ordinal_page_number_text, page_ref_context, page_ref_instruction, ref_instruction,
         ref_position_context, ref_targets, seq_identifier_from_instruction, style_ref_instruction,
-        supports_action_field_syntax, supports_compare_field_syntax, supports_if_field_syntax,
-        supports_merge_control_field_syntax, supports_prompt_field_syntax,
-        supports_reference_index_marker_syntax, supports_sequence_field_syntax,
-        supports_toc_entry_field_syntax, table_formula_context, toc_entries, toc_spec,
-        PageNumberFormat, TocEntrySource,
+        supports_action_field_syntax, supports_compare_field_syntax, supports_formula_field_syntax,
+        supports_if_field_syntax, supports_merge_control_field_syntax,
+        supports_prompt_field_syntax, supports_reference_index_marker_syntax,
+        supports_sequence_field_syntax, supports_toc_entry_field_syntax, table_formula_context,
+        toc_entries, toc_spec, PageNumberFormat, TocEntrySource,
     };
     use crate::docx::numbering::Numbering;
     use crate::docx::styles::Styles;
@@ -2164,6 +2164,17 @@ mod tests {
             Some("twenty-first")
         );
         assert_eq!(computed_dynamic_result(r#"= 10.25 \* Hex"#), None);
+    }
+
+    #[test]
+    fn formula_syntax_accepts_data_identifiers_and_rejects_malformed_bodies() {
+        assert!(supports_formula_field_syntax(
+            r#"= CustomerTotal \# "0.00""#
+        ));
+        assert!(supports_formula_field_syntax("= CustomerTotal + TaxTotal"));
+        assert!(!supports_formula_field_syntax("= 1 +"));
+        assert!(!supports_formula_field_syntax("= (1 + 2"));
+        assert!(!supports_formula_field_syntax("= 1e+"));
     }
 
     #[test]

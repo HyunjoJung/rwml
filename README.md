@@ -492,7 +492,7 @@ three-section positive/negative/zero numeric pictures separated by semicolons,
 with optional neutral `\* MERGEFORMAT`/`\* MERGEFORMATINET`/`\* CHARFORMAT` formula tails,
 formula result text-format tails such as `\* Upper`/`\* Lower`/`\* Caps`/`\* FirstCap`, and
 literal and table formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
-malformed formula switch syntax reports `UnsupportedSwitch`,
+malformed formula syntax reports `UnsupportedSwitch`,
 deterministic literal `QUOTE` fields render quoted or unquoted computed text
 with general text-format switches, malformed literal `QUOTE` syntax reports
 `UnsupportedSwitch`, deterministic literal `IF` fields compute finite
