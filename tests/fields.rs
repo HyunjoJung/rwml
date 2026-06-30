@@ -1498,6 +1498,23 @@ fn formula_table_nested_expression_docx() -> Vec<u8> {
     ])
 }
 
+fn formula_table_defined_reference_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = DEFINED(A1) "><w:r><w:t>stale defined direct cell</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl><w:tbl><w:tr><w:tc><w:p><w:r><w:t>4</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>6</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = DEFINED(SUM(LEFT,1)) "><w:r><w:t>stale defined aggregate</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl><w:tbl><w:tr><w:tc><w:p><w:r><w:t>5</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = DEFINED(Z99) "><w:r><w:t>stale missing defined</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl><w:tbl><w:tr><w:tc><w:p><w:r><w:t>5</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = IF(DEFINED(Z99),Z99,7) "><w:r><w:t>stale guarded missing defined</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl><w:tbl><w:tr><w:tc><w:p><w:r><w:t>1</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = DEFINED() "><w:r><w:t>cached empty defined</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn formula_table_ragged_reference_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -8667,6 +8684,66 @@ fn docx_formula_fields_compute_nested_table_reference_expressions() {
             && !main_text.contains("stale nested literal round")
             && !main_text.contains("stale table range literal sum"),
         "computed nested table-reference formulas should replace stale cached text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_table_formula_defined_resolves_table_references() {
+    let doc = Document::open(&formula_table_defined_reference_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let expected = [
+        (r#"= DEFINED(A1)"#, "stale defined direct cell", Some("1")),
+        (
+            r#"= DEFINED(SUM(LEFT,1))"#,
+            "stale defined aggregate",
+            Some("1"),
+        ),
+        (r#"= DEFINED(Z99)"#, "stale missing defined", Some("0")),
+        (
+            r#"= IF(DEFINED(Z99),Z99,7)"#,
+            "stale guarded missing defined",
+            Some("7"),
+        ),
+        (r#"= DEFINED()"#, "cached empty defined", None),
+    ];
+
+    assert_eq!(fields.len(), expected.len());
+    for (field, (instruction, stale, result)) in fields.iter().zip(expected) {
+        assert_eq!(field.kind, FieldKind::Dynamic("=".to_string()));
+        assert_eq!(field.instruction, instruction);
+        assert_eq!(field.result, stale);
+        assert_eq!(field.computed_result.as_deref(), result);
+    }
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Dynamic("=".to_string()),
+            count: 1
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::NoComputedResult,
+            count: 1
+        }]
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("2\t1")
+            && main_text.contains("4\t6\t1")
+            && main_text.contains("5\t0")
+            && main_text.contains("5\t7")
+            && main_text.contains("cached empty defined")
+            && !main_text.contains("stale defined direct cell")
+            && !main_text.contains("stale defined aggregate")
+            && !main_text.contains("stale missing defined")
+            && !main_text.contains("stale guarded missing defined"),
+        "table DEFINED formulas should compute supported table references and keep empty calls cached: {main_text:?}"
     );
 }
 
