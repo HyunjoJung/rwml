@@ -188,7 +188,8 @@ Initial status:
   text-format tails, with supported `TC` marker fields themselves rendering as
   hidden output and unsupported `TC` marker syntax preserving cached text with `UnsupportedSwitch` diagnostics, `TOC \c` full-caption entries
   and `TOC \a` label/number-omitted caption-text entries from paragraphs
-  containing matching cached `SEQ Identifier` fields, and standalone
+  containing matching `SEQ Identifier` fields, with simple or common complex
+  dirty/stale `SEQ` caption numbers recomputed from source order, and standalone
   `TOC \u` fields over explicit paragraph
   outline levels with normalized simple inline heading tabs, line
   breaks, and no-break/soft hyphens, including common complex begin/separate/end
@@ -990,7 +991,8 @@ Initial status:
   text-format tails, with supported `TC` marker fields themselves rendering as
   hidden output and unsupported `TC` marker syntax preserving cached text with `UnsupportedSwitch` diagnostics, `TOC \c` full-caption entries
   and `TOC \a` label/number-omitted caption-text entries from paragraphs
-  containing matching cached `SEQ Identifier` fields, and standalone
+  containing matching `SEQ Identifier` fields, with simple or common complex
+  dirty/stale `SEQ` caption numbers recomputed from source order, and standalone
   `TOC \u` fields over explicit paragraph
   outline levels plus `TOC \b` bookmark-scoped variants when the bookmark range
   is recoverable, including empty computed results for existing scopes with no

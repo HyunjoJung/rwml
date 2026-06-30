@@ -256,8 +256,9 @@ The first public maturity release should meet these requirements.
   `TC` marker fields themselves rendering as hidden output and unsupported `TC`
   marker syntax preserving cached text with `UnsupportedSwitch` diagnostics,
   `TOC \c` full-caption entries and `TOC \a` label/number-omitted
-  caption-text entries from paragraphs containing matching cached
-  `SEQ Identifier` fields, and standalone `TOC \u` fields over explicit
+  caption-text entries from paragraphs containing matching `SEQ Identifier`
+  fields, with simple or common complex dirty/stale `SEQ` caption numbers
+  recomputed from source order, and standalone `TOC \u` fields over explicit
   paragraph outline levels, plus
   `TOC \b` bookmark-scoped variants when the bookmark range is recoverable,
   including empty computed results for existing scopes with no matching entries,

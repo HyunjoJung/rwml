@@ -514,7 +514,8 @@ Implementation:
   `TC` marker fields themselves rendering as hidden output and unsupported `TC`
   marker syntax preserving cached text with `UnsupportedSwitch` diagnostics, `TOC \c` full-caption entries and `TOC \a`
   label/number-omitted caption-text entries from paragraphs containing
-  matching cached `SEQ Identifier` fields,
+  matching `SEQ Identifier` fields, with simple or common complex dirty/stale
+  `SEQ` caption numbers recomputed from source order,
   and standalone `TOC \u` fields over explicit paragraph outline levels, plus
   `TOC \b` bookmark-scoped variants when the bookmark range is recoverable, as
   `Field::computed_result`, including empty computed results for existing
@@ -1162,7 +1163,8 @@ open and edit the chart data.
   `TC` marker fields themselves rendering as hidden output and unsupported `TC`
   marker syntax preserving cached text with `UnsupportedSwitch` diagnostics, `TOC \c` full-caption entries and `TOC \a`
   label/number-omitted caption-text entries from paragraphs containing
-  matching cached `SEQ Identifier` fields,
+  matching `SEQ Identifier` fields, with simple or common complex dirty/stale
+  `SEQ` caption numbers recomputed from source order,
   and standalone `TOC \u` fields over explicit paragraph outline levels, plus
   `TOC \b` bookmark-scoped variants when the bookmark range is recoverable,
   including empty computed results for existing scopes with no matching entries,
