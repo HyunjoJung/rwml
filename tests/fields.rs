@@ -784,6 +784,23 @@ fn prompt_unquoted_multi_token_text_docx() -> Vec<u8> {
     ])
 }
 
+fn prompt_unquoted_multi_token_text_no_default_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" FILLIN Client display prompt "><w:r><w:t>cached unquoted prompt fillin</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" ASK ClientName Client name prompt "><w:r><w:t>cached unquoted prompt ask</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF ClientName \* Upper "><w:r><w:t>stale unquoted prompt ask ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn compact_prompt_default_field_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -7140,6 +7157,67 @@ fn docx_prompt_fields_accept_unquoted_multi_token_prompt_text() {
             && !main_text.contains("cached unquoted prompt ask")
             && !main_text.contains("stale unquoted prompt ask ref"),
         "unquoted multi-token prompt text should parse before explicit defaults: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_prompt_fields_accept_unquoted_multi_token_prompt_text_without_defaults() {
+    let doc =
+        Document::open(&prompt_unquoted_multi_token_text_no_default_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 3);
+    assert_eq!(fields[0].kind, FieldKind::Dynamic("FILLIN".to_string()));
+    assert_eq!(fields[0].instruction, "FILLIN Client display prompt");
+    assert_eq!(fields[0].result, "cached unquoted prompt fillin");
+    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(fields[1].kind, FieldKind::Dynamic("ASK".to_string()));
+    assert_eq!(fields[1].instruction, "ASK ClientName Client name prompt");
+    assert_eq!(fields[1].result, "cached unquoted prompt ask");
+    assert_eq!(fields[1].computed_result, None);
+    assert_eq!(fields[2].kind, FieldKind::Ref);
+    assert_eq!(fields[2].instruction, r#"REF ClientName \* Upper"#);
+    assert_eq!(fields[2].result, "stale unquoted prompt ask ref");
+    assert_eq!(fields[2].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::NoComputedResult,
+                count: 2,
+            },
+            FieldEvaluationReasonCount {
+                reason: FieldEvaluationReason::UnresolvedBookmark,
+                count: 1,
+            },
+        ]
+    );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| {
+            instruction.starts_with("FILLIN")
+                || instruction.starts_with("ASK")
+                || instruction.starts_with("REF ClientName")
+        }),
+        vec![
+            (
+                "FILLIN Client display prompt".to_string(),
+                Some(FieldUnsupportedReason::NoComputedResult),
+            ),
+            (
+                "ASK ClientName Client name prompt".to_string(),
+                Some(FieldUnsupportedReason::NoComputedResult),
+            ),
+            (
+                r#"REF ClientName \* Upper"#.to_string(),
+                Some(FieldUnsupportedReason::UnresolvedBookmark),
+            ),
+        ]
+    );
+    assert_eq!(
+        doc.main_text(),
+        "cached unquoted prompt fillin\ncached unquoted prompt ask\nstale unquoted prompt ask ref"
     );
 }
 

@@ -1347,6 +1347,24 @@ fn prompt_unquoted_multi_token_text_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn prompt_unquoted_multi_token_text_no_default_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" FILLIN Client display prompt "><w:r><w:t>cached unquoted prompt fillin</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" ASK ClientName Client name prompt "><w:r><w:t>cached unquoted prompt ask</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF ClientName \* Upper "><w:r><w:t>stale unquoted prompt ask ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn document_structure_field_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -5453,6 +5471,62 @@ fn report_prompt_fields_accept_unquoted_multi_token_prompt_text() {
         .warnings
         .iter()
         .all(|warning| !matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })));
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_prompt_fields_accept_unquoted_multi_token_prompt_text_without_defaults() {
+    let doc = Document::open(&prompt_unquoted_multi_token_text_no_default_diagnostics_docx())
+        .expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 3);
+    assert_eq!(fields[0].kind, FieldKind::Dynamic("FILLIN".to_string()));
+    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(fields[1].kind, FieldKind::Dynamic("ASK".to_string()));
+    assert_eq!(fields[1].computed_result, None);
+    assert_eq!(fields[2].kind, FieldKind::Ref);
+    assert_eq!(fields[2].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(report.features.fields, 3);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![
+            field_kind_count(FieldKind::Dynamic("FILLIN".to_string()), 1),
+            field_kind_count(FieldKind::Dynamic("ASK".to_string()), 1),
+            field_kind_count(FieldKind::Ref, 1),
+        ]
+    );
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![
+            field_kind_count(FieldKind::Dynamic("FILLIN".to_string()), 1),
+            field_kind_count(FieldKind::Dynamic("ASK".to_string()), 1),
+            field_kind_count(FieldKind::Ref, 1),
+        ]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![
+            field_reason_count(FieldEvaluationReason::NoComputedResult, 2),
+            field_reason_count(FieldEvaluationReason::UnresolvedBookmark, 1),
+        ]
+    );
+    assert_eq!(
+        report
+            .warnings
+            .iter()
+            .find(|warning| matches!(warning, DocumentWarning::UnsupportedFieldEvaluation { .. })),
+        Some(&DocumentWarning::UnsupportedFieldEvaluation {
+            count: 3,
+            field_kinds: vec![
+                field_kind_count(FieldKind::Dynamic("FILLIN".to_string()), 1),
+                field_kind_count(FieldKind::Dynamic("ASK".to_string()), 1),
+                field_kind_count(FieldKind::Ref, 1),
+            ],
+        })
+    );
 }
 
 #[cfg(feature = "docx")]

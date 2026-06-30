@@ -509,6 +509,8 @@ quoted or unquoted default literals, and field-result format switches
 render as hidden output while seeding later plain `REF`/direct bookmark
 references and source-order bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF`
 comparisons, including numeric comparison for finite numeric bookmark values,
+valid no-default `FILLIN`/`ASK` prompt fields, including multi-token unquoted
+prompts, preserve cached text with `NoComputedResult`,
 malformed prompt field syntax reports `UnsupportedSwitch`, and deterministic literal
 quoted or unquoted `SET name value` fields, including multi-token unquoted
 payloads, with
@@ -717,7 +719,8 @@ remaining unknown fields beyond named document-info/date/stat fields,
 dynamic/control fields beyond deterministic literal arithmetic/comparison/scalar-function
 formula fields,
 literal `QUOTE`, literal `IF` comparisons, literal `COMPARE` results,
-explicit-default `FILLIN`/`ASK` prompt fields, and
+explicit-default `FILLIN`/`ASK` prompt fields, valid no-default prompt fields
+cached with `NoComputedResult`, and
 literal quoted or unquoted `SET` bookmark assignments, including multi-token
 unquoted payloads, feeding later plain
 `REF`/direct bookmark references and source-order bookmark-backed

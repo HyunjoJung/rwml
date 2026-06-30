@@ -2791,7 +2791,6 @@ fn prompt_text_operand<'a>(
         return Some(());
     }
     field_non_empty_non_switch_literal_token(first)?;
-    let mut tokens = 1usize;
     while let Some(part) = parts.peek().copied() {
         if part.starts_with('\\') {
             return Some(());
@@ -2800,9 +2799,8 @@ fn prompt_text_operand<'a>(
             return None;
         }
         field_non_empty_non_switch_literal_token(parts.next()?)?;
-        tokens += 1;
     }
-    (tokens == 1).then_some(())
+    Some(())
 }
 
 fn prompt_default_switch<'a>(

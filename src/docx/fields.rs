@@ -2285,6 +2285,25 @@ mod tests {
     }
 
     #[test]
+    fn prompt_text_accepts_unquoted_multi_token_prompts_without_defaults() {
+        assert!(supports_prompt_field_syntax("FILLIN Client display prompt"));
+        assert_eq!(
+            computed_dynamic_result("FILLIN Client display prompt"),
+            None
+        );
+
+        let mut field_bookmarks = HashMap::new();
+        assert!(supports_prompt_field_syntax(
+            "ASK ClientName Client name prompt"
+        ));
+        assert_eq!(
+            computed_ask_result("ASK ClientName Client name prompt", &mut field_bookmarks),
+            None
+        );
+        assert!(field_bookmarks.is_empty());
+    }
+
+    #[test]
     fn prompt_text_rejects_switch_like_unquoted_tokens() {
         assert_eq!(computed_dynamic_result(r#"FILLIN \z \d Acme"#), None);
         assert!(!supports_prompt_field_syntax(r#"FILLIN \z \d Acme"#));

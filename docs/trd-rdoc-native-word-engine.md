@@ -649,7 +649,8 @@ Implementation:
   and literal `DEFINED(expr)` checks for parser-local literal expressions and source-order prior bookmark names,
   guarded scalar/table numeric `IF` branch selection skips unsupported or span-unsafe unselected branches, literal
   quoted/unquoted literal `QUOTE`, literal `IF` finite numeric/text comparisons, literal `COMPARE`
-  finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields, and literal quoted or unquoted
+  finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields,
+  valid no-default prompt fields cached with `NoComputedResult`, and literal quoted or unquoted
   `SET` bookmark assignments, including multi-token unquoted payloads, with field-result format switches feeding later
   plain `REF`/direct bookmark references and source-order bookmark-backed
   `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons, including numeric comparison
@@ -682,7 +683,9 @@ Implementation:
   literal/table formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
   malformed formula switch syntax reporting `UnsupportedSwitch`,
   quoted/unquoted literal `QUOTE`, literal `IF` finite numeric/text comparisons, literal
-  `COMPARE` finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields, and
+  `COMPARE` finite numeric/text results, explicit-default `FILLIN`/`ASK`
+  prompt fields, valid no-default prompt fields cached with
+  `NoComputedResult`, and
   literal quoted or unquoted `SET` bookmark assignments, including multi-token unquoted payloads, with field-result
   format switches feeding later plain `REF`/direct bookmark references and
   source-order bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons,
@@ -751,7 +754,8 @@ Acceptance:
   syntax reporting `UnsupportedSwitch`, literal `COMPARE` results,
   invalid literal `COMPARE` syntax reporting `UnsupportedSwitch`,
   explicit-default `FILLIN`/`ASK`
-  prompt fields with field-result format switches, malformed prompt field syntax
+  prompt fields with field-result format switches, valid no-default prompt
+  fields cached with `NoComputedResult`, malformed prompt field syntax
   reporting `UnsupportedSwitch`, and literal quoted or unquoted `SET` bookmark
   assignments, including multi-token unquoted payloads, feeding later plain `REF`/direct bookmark references and
   source-order bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons,
@@ -1217,7 +1221,8 @@ open and edit the chart data.
   and literal `DEFINED(expr)` checks for parser-local literal expressions and source-order prior bookmark names,
   guarded scalar/table numeric `IF` branch selection skips unsupported or span-unsafe unselected branches, literal
   quoted/unquoted literal `QUOTE`, literal `IF` finite numeric/text comparisons, literal `COMPARE`
-  finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields, and literal quoted or unquoted
+  finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields,
+  valid no-default prompt fields cached with `NoComputedResult`, and literal quoted or unquoted
   `SET` bookmark assignments, including multi-token unquoted payloads, with field-result format switches feeding later
   plain `REF`/direct bookmark references and source-order bookmark-backed
   `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons, including numeric comparison
@@ -1252,7 +1257,8 @@ open and edit the chart data.
   literal `DEFINED(expr)` checks for parser-local literal expressions and source-order prior bookmark names,
   guarded scalar/table numeric `IF` branch selection skips unsupported or span-unsafe unselected branches,
   quoted/unquoted literal `QUOTE`, literal `IF` comparisons, literal `COMPARE` results,
-  explicit-default `FILLIN`/`ASK` prompt fields, and
+  explicit-default `FILLIN`/`ASK` prompt fields, valid no-default prompt
+  fields cached with `NoComputedResult`, and
   literal quoted or unquoted `SET` bookmark assignments, including multi-token unquoted payloads, with field-result
   format switches feeding later plain `REF`/direct bookmark references and
   source-order bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons,
