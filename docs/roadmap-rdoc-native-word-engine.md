@@ -365,7 +365,8 @@ Initial status:
   The
   reference/index fields (`BIBLIOGRAPHY`, `CITATION`, `INDEX`, `RD`, `TA`,
   `TOA`, `XE`) are named separately from unknown fields, deterministic simple
-  literal `RD`/`TA`/`XE` marker fields with field-result format switches render
+  literal `RD`/`TA`/`XE` marker fields, including quoted or switch-bounded
+  unquoted `TA`/`XE` marker operands, with field-result format switches render
   as hidden output, invalid marker syntax reports `UnsupportedSwitch`, malformed
   generated-field quoted or field-result format syntax reports `UnsupportedSwitch`, and valid broader
   generated bibliography/citation/index/table-of-authorities fields report
@@ -872,7 +873,8 @@ Initial status:
   `UnsupportedSwitch`, and keep valid broader forms as `NoComputedResult`
   diagnostics.
   Reference/index fields are named separately from unknown fields; simple
-  literal `RD`/`TA`/`XE` marker fields with field-result format switches render
+  literal `RD`/`TA`/`XE` marker fields, including quoted or switch-bounded
+  unquoted `TA`/`XE` marker operands, with field-result format switches render
   as hidden output, invalid marker syntax reports `UnsupportedSwitch`, while
   malformed generated-field quoted or field-result format syntax reports
   `UnsupportedSwitch`, and valid

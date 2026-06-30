@@ -276,7 +276,8 @@ pub enum FieldKind {
     /// `GREETINGLINE`, `MERGEREC`, or `MERGESEQ`.
     MailMerge(String),
     /// Bibliography, citation, index, reference-document, and table-of-authorities
-    /// fields. Simple literal `RD`, `TA`, and `XE` marker fields compute as
+    /// fields. Simple literal `RD`, `TA`, and `XE` marker fields, including
+    /// quoted or switch-bounded unquoted `TA`/`XE` marker operands, compute as
     /// hidden output; generated bibliography, index, and table-of-authorities
     /// fields preserve cached display text until native generation is broader.
     ReferenceIndex(String),
@@ -3460,6 +3461,24 @@ pub(crate) fn reference_index_literal_token(value: &str) -> Option<&str> {
         return None;
     }
     Some(text)
+}
+
+pub(crate) fn reference_index_literal_operand<'a>(
+    first: &'a str,
+    parts: &mut std::iter::Peekable<impl Iterator<Item = &'a str>>,
+) -> Option<String> {
+    let quoted = first.trim().starts_with('"');
+    let mut values = vec![reference_index_literal_token(first)?];
+    if quoted {
+        return Some(values.join(" "));
+    }
+    while let Some(part) = parts.peek().copied() {
+        if part.starts_with('\\') {
+            break;
+        }
+        values.push(reference_index_literal_token(parts.next()?)?);
+    }
+    Some(values.join(" "))
 }
 
 pub(crate) fn reference_index_plain_value_token(value: &str) -> Option<&str> {

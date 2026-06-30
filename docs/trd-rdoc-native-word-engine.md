@@ -761,8 +761,9 @@ Acceptance:
   cached with `NoComputedResult` diagnostics and do not mutate later source-order
   counters.
 - deterministic simple literal `RD`, `TA`, and `XE` reference/index marker fields
-  validate their filename or literal marker text, supported marker switches, and
-  field-result format switches, then render as hidden output; invalid marker
+  validate their filename or literal marker text, including quoted or
+  switch-bounded unquoted `TA`/`XE` marker operands, supported marker switches,
+  and field-result format switches, then render as hidden output; invalid marker
   syntax reports `UnsupportedSwitch`, while generated bibliography, citation,
   index, and table-of-authorities fields preserve cached text with
   `NoComputedResult` diagnostics until native generation is modeled.

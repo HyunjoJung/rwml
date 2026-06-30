@@ -1109,6 +1109,23 @@ fn reference_index_field_docx() -> Vec<u8> {
     ])
 }
 
+fn reference_index_unquoted_multi_token_marker_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" TA \l Case v. Example \c 1 "><w:r><w:t>cached unquoted ta marker</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" XE &quot;Mercury&quot; \t See planets \* FirstCap "><w:r><w:t>cached unquoted xe marker</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn numbering_field_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -7443,6 +7460,49 @@ fn docx_reference_index_fields_are_named_noncomputed_fields() {
             && !main_text.contains("Formatted Case")
             && !main_text.contains("Formatted Term"),
         "computed RD/TA/XE marker fields should be hidden in main text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_reference_index_markers_accept_unquoted_multi_token_switch_operands() {
+    let doc =
+        Document::open(&reference_index_unquoted_multi_token_marker_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::ReferenceIndex("TA".to_string()));
+    assert_eq!(fields[0].instruction, "TA \\l Case v. Example \\c 1");
+    assert_eq!(fields[0].result, "cached unquoted ta marker");
+    assert_eq!(fields[0].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[1].kind, FieldKind::ReferenceIndex("XE".to_string()));
+    assert_eq!(
+        fields[1].instruction,
+        "XE \"Mercury\" \\t See planets \\* FirstCap"
+    );
+    assert_eq!(fields[1].result, "cached unquoted xe marker");
+    assert_eq!(fields[1].computed_result.as_deref(), Some(""));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| {
+            instruction.starts_with("TA ") || instruction.starts_with("XE ")
+        }),
+        vec![
+            ("TA \\l Case v. Example \\c 1".to_string(), None),
+            (
+                "XE \"Mercury\" \\t See planets \\* FirstCap".to_string(),
+                None,
+            ),
+        ]
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        !main_text.contains("cached unquoted ta marker")
+            && !main_text.contains("cached unquoted xe marker"),
+        "computed TA/XE marker fields should stay hidden for unquoted multi-token switch operands: {main_text:?}"
     );
 }
 

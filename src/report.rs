@@ -29,7 +29,7 @@ use crate::annotation::{
 use crate::annotation::{
     compare_field_syntax, formula_field_syntax, if_field_syntax, merge_control_field_syntax,
     numbering_field_syntax, page_field_format_syntax_tail, prompt_field_syntax, quote_field_syntax,
-    reference_index_category_token, reference_index_literal_token,
+    reference_index_category_token, reference_index_literal_operand, reference_index_literal_token,
     reference_index_plain_value_token, revision_number_field_text_format, sequence_field_syntax,
     set_field_syntax, style_ref_field_syntax, toc_entry_field_syntax,
 };
@@ -2991,17 +2991,17 @@ fn supported_reference_index_rd_syntax_for_report<'a>(
 
 #[cfg(not(feature = "docx"))]
 fn supported_reference_index_ta_syntax_for_report<'a>(
-    mut parts: impl Iterator<Item = &'a str>,
+    parts: impl Iterator<Item = &'a str>,
 ) -> bool {
+    let mut parts = parts.peekable();
     let mut has_entry_text = false;
     let mut text_format = false;
     while let Some(part) = parts.next() {
         if part.eq_ignore_ascii_case("\\l") || part.eq_ignore_ascii_case("\\s") {
-            if parts
-                .next()
-                .and_then(reference_index_literal_token)
-                .is_none()
-            {
+            let Some(first) = parts.next() else {
+                return false;
+            };
+            if reference_index_literal_operand(first, &mut parts).is_none() {
                 return false;
             }
             has_entry_text = true;
@@ -3044,8 +3044,9 @@ fn supported_reference_index_ta_syntax_for_report<'a>(
 
 #[cfg(not(feature = "docx"))]
 fn supported_reference_index_xe_syntax_for_report<'a>(
-    mut parts: impl Iterator<Item = &'a str>,
+    parts: impl Iterator<Item = &'a str>,
 ) -> bool {
+    let mut parts = parts.peekable();
     if parts
         .next()
         .and_then(reference_index_literal_token)
@@ -3077,11 +3078,10 @@ fn supported_reference_index_xe_syntax_for_report<'a>(
             continue;
         }
         if part.eq_ignore_ascii_case("\\t") {
-            if parts
-                .next()
-                .and_then(reference_index_literal_token)
-                .is_none()
-            {
+            let Some(first) = parts.next() else {
+                return false;
+            };
+            if reference_index_literal_operand(first, &mut parts).is_none() {
                 return false;
             }
             continue;
@@ -4182,6 +4182,21 @@ mod tests {
         assert_eq!(
             super::reference_index_marker_uncomputed_reason(r#"TA \l "Case" \c"1"#),
             super::FieldEvaluationReason::UnsupportedSwitch
+        );
+    }
+
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_reference_index_marker_diagnostics_accept_multi_token_switch_operands() {
+        assert_eq!(
+            super::reference_index_marker_uncomputed_reason(r#"TA \l Case v. Example \c 1"#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::reference_index_marker_uncomputed_reason(
+                r#"XE "Mercury" \t See planets \* FirstCap"#
+            ),
+            super::FieldEvaluationReason::NoComputedResult
         );
     }
 
