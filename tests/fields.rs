@@ -6740,6 +6740,31 @@ fn docx_inserted_content_diagnostics_split_valid_broader_fields_from_malformed_s
             },
         ]
     );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| {
+            instruction.starts_with("INCLUDETEXT")
+                || instruction.starts_with("INCLUDEPICTURE")
+                || instruction.starts_with("LINK")
+        }),
+        vec![
+            (
+                r#"INCLUDETEXT "appendix.docx""#.to_string(),
+                Some(FieldUnsupportedReason::NoComputedResult),
+            ),
+            (
+                r#"INCLUDEPICTURE "chart.png "#.to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+            (
+                r#"LINK \*"#.to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+            (
+                r#"INCLUDETEXT "chapter.docx" \* BadFormat"#.to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+        ]
+    );
     assert!(doc.main_text().contains("cached malformed include picture"));
     assert!(doc.main_text().contains("cached dangling format switch"));
     assert!(doc.main_text().contains("cached bad include format"));
@@ -6868,6 +6893,21 @@ fn docx_mail_merge_helper_diagnostics_split_valid_broader_fields_from_malformed_
                 reason: FieldEvaluationReason::UnsupportedSwitch,
                 count: 1,
             },
+        ]
+    );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| {
+            instruction.starts_with("ADDRESSBLOCK") || instruction.starts_with("GREETINGLINE")
+        }),
+        vec![
+            (
+                "ADDRESSBLOCK".to_string(),
+                Some(FieldUnsupportedReason::NoComputedResult),
+            ),
+            (
+                r#"GREETINGLINE "Dear "#.to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
         ]
     );
     assert!(doc.main_text().contains("cached malformed greeting"));

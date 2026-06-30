@@ -2428,6 +2428,12 @@ fn unsupported_simple_field_reason_hint(
     if let Some(reason) = unsupported_compatibility_reason_hint(instruction) {
         return Some(reason);
     }
+    if let Some(reason) = unsupported_inserted_content_reason_hint(instruction) {
+        return Some(reason);
+    }
+    if let Some(reason) = unsupported_mail_merge_reason_hint(instruction) {
+        return Some(reason);
+    }
     None
 }
 
@@ -2514,13 +2520,10 @@ fn unsupported_reference_index_reason_hint(instruction: &str) -> Option<FieldUns
         return None;
     };
     if is_generated_reference_index_kind(&kind) {
-        return Some(
-            if opaque_field_syntax(instruction, is_generated_reference_index_kind) {
-                FieldUnsupportedReason::NoComputedResult
-            } else {
-                FieldUnsupportedReason::UnsupportedSwitch
-            },
-        );
+        return Some(unsupported_opaque_field_reason_hint(
+            instruction,
+            is_generated_reference_index_kind,
+        ));
     }
     if is_reference_index_marker_kind(&kind) {
         return Some(FieldUnsupportedReason::UnsupportedSwitch);
@@ -2546,17 +2549,77 @@ fn unsupported_compatibility_reason_hint(instruction: &str) -> Option<FieldUnsup
     ) {
         return None;
     }
-    Some(if opaque_field_syntax(instruction, is_compatibility_kind) {
-        FieldUnsupportedReason::NoComputedResult
-    } else {
-        FieldUnsupportedReason::UnsupportedSwitch
-    })
+    Some(unsupported_opaque_field_reason_hint(
+        instruction,
+        is_compatibility_kind,
+    ))
 }
 
 fn is_compatibility_kind(kind: &str) -> bool {
     matches!(
         kind.to_ascii_uppercase().as_str(),
         "ADDIN" | "DATA" | "GLOSSARY" | "HTMLACTIVEX" | "PRIVATE"
+    )
+}
+
+fn unsupported_inserted_content_reason_hint(instruction: &str) -> Option<FieldUnsupportedReason> {
+    if !matches!(
+        FieldKind::from_instruction(instruction),
+        FieldKind::InsertedContent(_)
+    ) {
+        return None;
+    }
+    Some(unsupported_opaque_field_reason_hint(
+        instruction,
+        is_inserted_content_kind,
+    ))
+}
+
+fn is_inserted_content_kind(kind: &str) -> bool {
+    matches!(
+        kind.to_ascii_uppercase().as_str(),
+        "AUTOTEXT"
+            | "AUTOTEXTLIST"
+            | "DATABASE"
+            | "DDE"
+            | "DDEAUTO"
+            | "EMBED"
+            | "IMPORT"
+            | "INCLUDE"
+            | "INCLUDEPICTURE"
+            | "INCLUDETEXT"
+            | "LINK"
+    )
+}
+
+fn unsupported_mail_merge_reason_hint(instruction: &str) -> Option<FieldUnsupportedReason> {
+    if !matches!(
+        FieldKind::from_instruction(instruction),
+        FieldKind::MailMerge(_)
+    ) {
+        return None;
+    }
+    Some(unsupported_opaque_field_reason_hint(
+        instruction,
+        is_mail_merge_kind,
+    ))
+}
+
+fn unsupported_opaque_field_reason_hint(
+    instruction: &str,
+    is_kind: fn(&str) -> bool,
+) -> FieldUnsupportedReason {
+    if opaque_field_syntax(instruction, is_kind) {
+        FieldUnsupportedReason::NoComputedResult
+    } else {
+        FieldUnsupportedReason::UnsupportedSwitch
+    }
+}
+
+fn is_mail_merge_kind(kind: &str) -> bool {
+    matches!(
+        kind.to_ascii_uppercase().as_str(),
+        "ADDRESSBLOCK" | "GREETINGLINE" | "MERGEREC" | "MERGESEQ"
     )
 }
 
