@@ -478,7 +478,13 @@ fn remove_active_bookmark(active_bookmarks: &mut Vec<(String, String)>, e: &Byte
 fn read_toc_ppr(r: &mut Xml<'_>, style_id: &mut Option<String>, outline: &mut Option<u8>) {
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"pPrChange" => skip_subtree(r),
+            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
+                b"pStyle" => *style_id = attr_local_trimmed(&e, b"val"),
+                b"outlineLvl" => *outline = attr_u8(&e, b"val"),
+                _ => {}
+            },
+            Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
                 b"pStyle" => *style_id = attr_local_trimmed(&e, b"val"),
                 b"outlineLvl" => *outline = attr_u8(&e, b"val"),
                 _ => {}

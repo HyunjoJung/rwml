@@ -1467,6 +1467,27 @@ fn style_ref_deleted_heading_docx() -> Vec<u8> {
     ])
 }
 
+fn style_ref_property_revision_heading_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pPrChange w:id="9" w:author="Reviewer"><w:pPr><w:pStyle w:val="Heading1"/></w:pPr></w:pPrChange></w:pPr><w:r><w:t>Former heading only</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;heading 1&quot; "><w:r><w:t>stale before current heading</w:t></w:r></w:fldSimple></w:p><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Current Heading</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;heading 1&quot; "><w:r><w:t>stale after current heading</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn style_ref_alternate_content_heading_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -3202,6 +3223,27 @@ fn toc_heading_docx() -> Vec<u8> {
         (
             "word/document.xml",
             r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Executive Summary</w:t></w:r></w:p><w:p><w:pPr><w:outlineLvl w:val=" 1 "/></w:pPr><w:r><w:t>Risks</w:t></w:r></w:p><w:p><w:pPr><w:outlineLvl w:val="3"/></w:pPr><w:r><w:t>Excluded Detail</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" TOC \o &quot;1-2&quot; "><w:r><w:t>stale toc</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn toc_property_revision_heading_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pPrChange w:id="9" w:author="Reviewer"><w:pPr><w:pStyle w:val="Heading1"/></w:pPr></w:pPrChange></w:pPr><w:r><w:t>Former heading only</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Current Heading</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" TOC \o &quot;1-1&quot; "><w:r><w:t>stale current toc</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -8833,6 +8875,39 @@ fn docx_style_ref_context_ignores_deleted_styled_paragraphs() {
 }
 
 #[test]
+fn docx_style_ref_ignores_old_paragraph_property_revisions() {
+    let doc = Document::open(&style_ref_property_revision_heading_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert!(fields
+        .iter()
+        .all(|field| field.kind == FieldKind::DocumentStructure("STYLEREF".to_string())));
+    assert_eq!(fields[0].instruction, "STYLEREF \"heading 1\"");
+    assert_eq!(fields[0].result, "stale before current heading");
+    assert_eq!(
+        fields[0].computed_result.as_deref(),
+        Some("Current Heading")
+    );
+    assert_eq!(fields[1].instruction, "STYLEREF \"heading 1\"");
+    assert_eq!(fields[1].result, "stale after current heading");
+    assert_eq!(
+        fields[1].computed_result.as_deref(),
+        Some("Current Heading")
+    );
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(main_text.contains("Former heading only"));
+    assert!(main_text.contains("Current Heading"));
+    assert!(!main_text.contains("stale before current heading"));
+    assert!(!main_text.contains("stale after current heading"));
+}
+
+#[test]
 fn docx_style_ref_context_uses_single_alternate_content_branch() {
     let doc = Document::open(&style_ref_alternate_content_heading_docx()).expect("fixture opens");
     let fields = doc.fields();
@@ -10798,6 +10873,30 @@ fn docx_toc_field_computes_unambiguous_heading_outline_range() {
     assert_eq!(main_text.matches("Executive Summary").count(), 2);
     assert_eq!(main_text.matches("Risks").count(), 2);
     assert_eq!(main_text.matches("Excluded Detail").count(), 1);
+}
+
+#[test]
+fn docx_toc_ignores_old_paragraph_property_revisions() {
+    let doc = Document::open(&toc_property_revision_heading_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::Toc);
+    assert_eq!(fields[0].instruction, "TOC \\o \"1-1\"");
+    assert_eq!(fields[0].result, "stale current toc");
+    assert_eq!(
+        fields[0].computed_result.as_deref(),
+        Some("Current Heading")
+    );
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(main_text.contains("Former heading only"));
+    assert!(main_text.contains("Current Heading"));
+    assert!(!main_text.contains("stale current toc"));
 }
 
 #[test]

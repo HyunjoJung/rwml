@@ -480,7 +480,18 @@ fn read_style_ref_ppr(
 ) {
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"pPrChange" => skip_subtree(r),
+            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
+                b"pStyle" => *style_id = attr_local_trimmed(&e, b"val"),
+                b"ilvl" => {
+                    if let Some(value) = attr_u8(&e, b"val") {
+                        *ilvl = value;
+                    }
+                }
+                b"numId" => *num_id = attr_local_trimmed(&e, b"val"),
+                _ => {}
+            },
+            Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
                 b"pStyle" => *style_id = attr_local_trimmed(&e, b"val"),
                 b"ilvl" => {
                     if let Some(value) = attr_u8(&e, b"val") {
