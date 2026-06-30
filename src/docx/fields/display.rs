@@ -546,6 +546,35 @@ fn computed_symbol_result(instruction: &str) -> Option<String> {
     Some(apply_field_text_format(text, spec.text_format))
 }
 
+pub(super) fn computed_run_symbol_char(font: Option<&str>, value: &str) -> Option<char> {
+    let code = run_symbol_code(value)?;
+    let legacy_font = symbol_font_matches(font, "symbol") || symbol_font_matches(font, "wingdings");
+    let font_code = if legacy_font && code > 0xFF {
+        code & 0xFF
+    } else {
+        code
+    };
+
+    if symbol_font_matches(font, "symbol") {
+        symbol_font_char(font_code)
+    } else if symbol_font_matches(font, "wingdings") {
+        wingdings_font_char(font_code)
+    } else {
+        char::from_u32(code)
+    }
+}
+
+fn run_symbol_code(value: &str) -> Option<u32> {
+    let value = value.trim();
+    let hex = value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+        .unwrap_or(value);
+    (!hex.is_empty() && hex.chars().all(|ch| ch.is_ascii_hexdigit()))
+        .then(|| u32::from_str_radix(hex, 16).ok())
+        .flatten()
+}
+
 fn ansi_char(code: u32) -> Option<char> {
     match code {
         0x80 => Some('\u{20AC}'),

@@ -56,6 +56,7 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
                     b"cr" => append_ref_text(&active, &mut out, "\n"),
                     b"noBreakHyphen" => append_ref_text(&active, &mut out, "-"),
                     b"softHyphen" => append_ref_text(&active, &mut out, "\u{00ad}"),
+                    b"sym" => append_ref_symbol(&active, &mut out, &e),
                     _ => {}
                 }
                 xml_depth = xml_depth.saturating_add(1);
@@ -89,6 +90,7 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
                     b"cr" => append_ref_text(&active, &mut out, "\n"),
                     b"noBreakHyphen" => append_ref_text(&active, &mut out, "-"),
                     b"softHyphen" => append_ref_text(&active, &mut out, "\u{00ad}"),
+                    b"sym" => append_ref_symbol(&active, &mut out, &e),
                     _ => {}
                 }
             }
@@ -103,6 +105,21 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
         }
     }
     out
+}
+
+fn append_ref_symbol(
+    active: &[(String, String)],
+    out: &mut HashMap<String, String>,
+    e: &BytesStart<'_>,
+) {
+    let font = attr_local_trimmed(e, b"font");
+    let Some(value) = attr_local_trimmed(e, b"char") else {
+        return;
+    };
+    let Some(ch) = super::display::computed_run_symbol_char(font.as_deref(), &value) else {
+        return;
+    };
+    append_ref_text(active, out, &ch.to_string());
 }
 
 #[derive(Debug, Clone, Default)]
