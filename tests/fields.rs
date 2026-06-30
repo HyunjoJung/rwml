@@ -1238,7 +1238,7 @@ fn formula_table_general_number_format_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:tc><w:p><w:r><w:t>10.25</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(LEFT) \* DollarText "><w:r><w:t>stale table dollar</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl><w:tbl><w:tr><w:tc><w:p><w:r><w:t>31</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(LEFT) \* Hex "><w:r><w:t>stale table hex</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl><w:tbl><w:tr><w:tc><w:p><w:r><w:t>21</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(LEFT) \* OrdText "><w:r><w:t>stale table ordinal text</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:tc><w:p><w:r><w:t>10.25</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(LEFT) \* DollarText "><w:r><w:t>stale table dollar</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl><w:tbl><w:tr><w:tc><w:p><w:r><w:t>31</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(LEFT) \* Hex "><w:r><w:t>stale table hex</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl><w:tbl><w:tr><w:tc><w:p><w:r><w:t>21</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(LEFT) \* OrdText "><w:r><w:t>stale table ordinal text</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl><w:tbl><w:tr><w:tc><w:p><w:r><w:t>10.25</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(LEFT) \* DollarText \* Upper "><w:r><w:t>stale table dollar upper</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
         ),
     ])
 }
@@ -7746,6 +7746,11 @@ fn docx_table_formula_fields_apply_general_number_format_tails() {
             "stale table ordinal text",
             "twenty-first",
         ),
+        (
+            r#"= SUM(LEFT) \* DollarText \* Upper"#,
+            "stale table dollar upper",
+            "TEN AND 25/100",
+        ),
     ];
 
     assert_eq!(fields.len(), expected.len());
@@ -7764,13 +7769,15 @@ fn docx_table_formula_fields_apply_general_number_format_tails() {
     assert!(
         main_text.contains("ten and 25/100")
             && main_text.contains("1F")
-            && main_text.contains("twenty-first"),
+            && main_text.contains("twenty-first")
+            && main_text.contains("TEN AND 25/100"),
         "table formula general-number tails should materialize computed text: {main_text:?}"
     );
     assert!(
         !main_text.contains("stale table dollar")
             && !main_text.contains("stale table hex")
-            && !main_text.contains("stale table ordinal text"),
+            && !main_text.contains("stale table ordinal text")
+            && !main_text.contains("stale table dollar upper"),
         "computed table formula general-number tails should replace stale cached text: {main_text:?}"
     );
 }

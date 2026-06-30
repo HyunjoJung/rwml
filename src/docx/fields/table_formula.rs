@@ -10,9 +10,9 @@ use super::formula::{
     formula_instruction, formula_number_text, FormulaNumberFormat, FormulaParser,
 };
 use super::{
-    apply_complex_field_scan_fld_char, computed_run_symbol_char, inline_marker_text,
-    normalize_instruction, should_skip_alternate_branch, skip_element, AlternateContentBranchState,
-    ComplexField, FieldPhase,
+    apply_complex_field_scan_fld_char, apply_field_text_format, computed_run_symbol_char,
+    inline_marker_text, normalize_instruction, should_skip_alternate_branch, skip_element,
+    AlternateContentBranchState, ComplexField, FieldPhase,
 };
 
 type Xml<'a> = Reader<&'a [u8]>;
@@ -624,11 +624,12 @@ fn computed_table_formula_result(
     let expression = resolved_table_formula_expression(&spec.expression, rows, row, col)?;
     let mut parser = FormulaParser::new(&expression, None);
     let value = parser.parse()?;
-    match spec.number_format {
+    let text = match spec.number_format {
         Some(FormulaNumberFormat::Picture(format)) => format_formula_number(value, &format),
         Some(FormulaNumberFormat::General(format)) => format_formula_general_number(value, format),
         None => formula_number_text(value),
-    }
+    }?;
+    Some(apply_field_text_format(text, spec.text_format))
 }
 
 fn span_safe_formula(
