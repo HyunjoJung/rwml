@@ -389,8 +389,9 @@ Initial status:
   switch, including unquoted or quoted one-character separators, standalone
   plain, neutral, common-number-format, or text-format `AUTONUMLGL`, `AUTONUMOUT`, and `BIDIOUTLINE`
   values on the same source-order counter,
-  plus level-1 `LISTNUM NumberDefault`/`LegalDefault` values with common
-  number and text format switches, neutral field-format switches, and `\s`
+  plus level-1 bare `LISTNUM` values and quoted or unquoted
+  `LISTNUM NumberDefault`/`LegalDefault` values with common number and text
+  format switches, neutral field-format switches, and `\s`
   starts/resets, invalid numbering/list syntax reports `UnsupportedSwitch`,
   while richer `AUTONUMOUT`/`BIDIOUTLINE` outline semantics and richer `LISTNUM` levels/named lists
   are named separately from unknown fields and report `NoComputedResult` until
@@ -906,7 +907,8 @@ Initial status:
   switch, including unquoted or quoted one-character separators, standalone
   plain, neutral, common-number-format, or text-format `AUTONUMLGL`, `AUTONUMOUT`, and `BIDIOUTLINE`
   values on the same source-order counter,
-  and level-1 `LISTNUM NumberDefault`/`LegalDefault` values with common number
+  and level-1 bare `LISTNUM` values and quoted or unquoted
+  `LISTNUM NumberDefault`/`LegalDefault` values with common number
   and text format switches, neutral field-format switches, and `\s` starts/resets; invalid
   numbering/list syntax reports `UnsupportedSwitch`; richer `AUTONUMOUT`/`BIDIOUTLINE`
   outline semantics and remaining automatic-numbering/list fields are named separately

@@ -784,7 +784,7 @@ Acceptance:
   text format switches and the documented `\s` separator switch, including unquoted or
   quoted one-character separators; standalone plain, neutral,
   common-number-format, or text-format `AUTONUMLGL`, `AUTONUMOUT`, and `BIDIOUTLINE` values compute on the same source-order counter; level-1
-  `LISTNUM NumberDefault`/`LegalDefault` fields compute source-order values with common
+  bare `LISTNUM` fields and quoted or unquoted `LISTNUM NumberDefault`/`LegalDefault` fields compute source-order values with common
   number and text format switches, neutral field-format switches, and `\s`
   starts/resets; invalid numbering/list syntax reports `UnsupportedSwitch`,
   while richer `AUTONUMOUT`/`BIDIOUTLINE` outline semantics

@@ -1680,7 +1680,7 @@ fn listnum_number_default_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" LISTNUM NumberDefault "><w:r><w:t>stale listnum one</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" LISTNUM NumberDefault \* MERGEFORMAT "><w:r><w:t>stale listnum mergeformat</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" LISTNUM NumberDefault \*CHARFORMAT "><w:r><w:t>stale listnum charformat</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" LISTNUM NumberDefault \s 4 "><w:r><w:t>stale listnum reset</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" LISTNUM NumberDefault "><w:r><w:t>stale listnum after reset</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" LISTNUM NumberDefault \* roman "><w:r><w:t>stale listnum roman</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" LISTNUM NumberDefault \l 2 "><w:r><w:t>cached nested listnum</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" LISTNUM LegalDefault "><w:r><w:t>cached legal listnum</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" LISTNUM NumberDefault "><w:r><w:t>stale listnum one</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" LISTNUM NumberDefault \* MERGEFORMAT "><w:r><w:t>stale listnum mergeformat</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" LISTNUM NumberDefault \*CHARFORMAT "><w:r><w:t>stale listnum charformat</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" LISTNUM NumberDefault \s 4 "><w:r><w:t>stale listnum reset</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" LISTNUM NumberDefault "><w:r><w:t>stale listnum after reset</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" LISTNUM NumberDefault \* roman "><w:r><w:t>stale listnum roman</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" LISTNUM NumberDefault \l 2 "><w:r><w:t>cached nested listnum</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" LISTNUM LegalDefault "><w:r><w:t>cached legal listnum</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" LISTNUM &quot;NumberDefault&quot; "><w:r><w:t>stale quoted listnum</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" LISTNUM "><w:r><w:t>stale unnamed listnum</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -10059,7 +10059,7 @@ fn docx_listnum_number_default_computes_level_one_subset() {
     let doc = Document::open(&listnum_number_default_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 8);
+    assert_eq!(fields.len(), 10);
     assert!(fields
         .iter()
         .all(|field| field.kind == FieldKind::Numbering("LISTNUM".to_string())));
@@ -10090,6 +10090,12 @@ fn docx_listnum_number_default_computes_level_one_subset() {
     assert_eq!(fields[7].instruction, "LISTNUM LegalDefault");
     assert_eq!(fields[7].result, "cached legal listnum");
     assert_eq!(fields[7].computed_result.as_deref(), Some("7"));
+    assert_eq!(fields[8].instruction, "LISTNUM \"NumberDefault\"");
+    assert_eq!(fields[8].result, "stale quoted listnum");
+    assert_eq!(fields[8].computed_result.as_deref(), Some("8"));
+    assert_eq!(fields[9].instruction, "LISTNUM");
+    assert_eq!(fields[9].result, "stale unnamed listnum");
+    assert_eq!(fields[9].computed_result.as_deref(), Some("9"));
 
     let report = doc.report();
     assert_eq!(
@@ -10125,7 +10131,9 @@ fn docx_listnum_number_default_computes_level_one_subset() {
             && main_text.contains("5")
             && main_text.contains("vi")
             && main_text.contains("cached nested listnum")
-            && main_text.contains("7"),
+            && main_text.contains("7")
+            && main_text.contains("8")
+            && main_text.contains("9"),
         "computed listnum values and unsupported cached results should be visible: {main_text:?}"
     );
     assert!(
@@ -10135,7 +10143,9 @@ fn docx_listnum_number_default_computes_level_one_subset() {
             && !main_text.contains("stale listnum reset")
             && !main_text.contains("stale listnum after reset")
             && !main_text.contains("stale listnum roman")
-            && !main_text.contains("cached legal listnum"),
+            && !main_text.contains("cached legal listnum")
+            && !main_text.contains("stale quoted listnum")
+            && !main_text.contains("stale unnamed listnum"),
         "computed listnum results should replace stale cached field text: {main_text:?}"
     );
 }

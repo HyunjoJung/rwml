@@ -285,8 +285,9 @@ pub enum FieldKind {
     /// source-order values with common number-format switches and the
     /// documented separator switch, including unquoted or quoted one-character
     /// separators; standalone plain/neutral `AUTONUMLGL`, `AUTONUMOUT`, and
-    /// `BIDIOUTLINE` compute on the same source-order counter; level-1 `LISTNUM
-    /// NumberDefault`/`LegalDefault` computes source-order values with common
+    /// `BIDIOUTLINE` compute on the same source-order counter; level-1 bare
+    /// `LISTNUM` and quoted or unquoted `LISTNUM NumberDefault`/`LegalDefault`
+    /// compute source-order values with common
     /// number-format switches, neutral field-format switches, and starts/resets;
     /// richer outline/list fields preserve cached display text until native
     /// automatic-numbering evaluation is broader.
