@@ -1771,6 +1771,27 @@ fn character_style_ref_simple_field_source_docx() -> Vec<u8> {
     ])
 }
 
+fn style_ref_symbol_source_text_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style><w:style w:type="character" w:styleId="SymbolTarget"><w:name w:val="Symbol Target"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Risk </w:t><w:sym w:font="Symbol" w:char="F0B7"/><w:t> Control</w:t></w:r></w:p><w:p><w:r><w:rPr><w:rStyle w:val="SymbolTarget"/></w:rPr><w:t>Marked </w:t><w:sym w:font="Symbol" w:char="F0B7"/><w:t> Run</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;heading 1&quot; "><w:r><w:t>stale symbol heading</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;Symbol Target&quot; "><w:r><w:t>stale symbol character</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn character_style_ref_property_revision_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -9867,6 +9888,40 @@ fn docx_style_ref_character_style_source_includes_simple_field_result_runs() {
             && !main_text.contains("stale simple field character source")
             && !main_text.contains("stale upper simple field character source"),
         "character-style STYLEREF should index visible simple-field result runs: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_style_ref_source_text_includes_supported_symbols() {
+    let doc = Document::open(&style_ref_symbol_source_text_docx()).expect("fixture opens");
+    let fields = doc.fields();
+    let style_ref_fields = fields
+        .iter()
+        .filter(|field| field.kind == FieldKind::DocumentStructure("STYLEREF".to_string()))
+        .collect::<Vec<_>>();
+
+    assert_eq!(style_ref_fields.len(), 2);
+    assert_eq!(style_ref_fields[0].instruction, "STYLEREF \"heading 1\"");
+    assert_eq!(
+        style_ref_fields[0].computed_result.as_deref(),
+        Some("Risk • Control")
+    );
+    assert_eq!(
+        style_ref_fields[1].instruction,
+        "STYLEREF \"Symbol Target\""
+    );
+    assert_eq!(
+        style_ref_fields[1].computed_result.as_deref(),
+        Some("Marked • Run")
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Risk • Control")
+            && main_text.contains("Marked • Run")
+            && !main_text.contains("stale symbol heading")
+            && !main_text.contains("stale symbol character"),
+        "STYLEREF source context should include supported literal symbols: {main_text:?}"
     );
 }
 
