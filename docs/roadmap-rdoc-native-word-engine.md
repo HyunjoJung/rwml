@@ -299,7 +299,7 @@ Initial status:
   note-reference marks, unsupported `NOTEREF` switches, missing `TOC \b`
   scopes, and remaining broader TOC field cases whose
   computed values are not evaluated; cached `MERGEFIELD` results, malformed
-  merge-field names reporting `UnsupportedSwitch`,
+  merge-field names or switch tails reporting `UnsupportedSwitch`,
   deterministic simple source-order `SEQ` fields with `\n`/`\r`/`\c`,
   heading-reset `\s` from resolved body heading scopes, hidden `\h`, and
   common number-format switches, malformed `SEQ` syntax reporting
@@ -811,7 +811,7 @@ Initial status:
   Field-code `HYPERLINK` runs render as link annotations and malformed
   hyperlink syntax reports `UnsupportedSwitch`; body `FILENAME` with malformed
   switches reporting `UnsupportedSwitch`, `MERGEFIELD` with malformed merge-field
-  names reporting `UnsupportedSwitch`,
+  names or switch tails reporting `UnsupportedSwitch`,
   metadata-backed document-info fields such as
   `AUTHOR`, `TITLE`, `SUBJECT`, `KEYWORDS`, `COMMENTS`, `LASTSAVEDBY`,
   `CATEGORY`, `CONTENTSTATUS`, `VERSION`, core aliases such as `CREATOR`,

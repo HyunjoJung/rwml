@@ -12,7 +12,7 @@ use crate::annotation::field_name_token as diagnostic_name_token;
 use crate::annotation::{
     accept_field_text_format_switch, accept_general_format_switch,
     field_literal_token as diagnostic_literal_token, hyperlink_field_target, instruction_parts,
-    merge_field_name as diagnostic_merge_field_name, strip_ascii_switch_prefix, FieldTextFormat,
+    strip_ascii_switch_prefix, FieldTextFormat,
 };
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{
@@ -21,9 +21,9 @@ use crate::annotation::{
     symbol_field_syntax,
 };
 use crate::annotation::{
-    barcode_field_syntax, direct_ref_field_syntax, legacy_form_field_syntax, note_ref_field_syntax,
-    opaque_field_syntax, page_ref_field_syntax, ref_field_syntax, toc_field_syntax, Field,
-    FieldKind, RefFieldSyntax,
+    barcode_field_syntax, direct_ref_field_syntax, legacy_form_field_syntax, merge_field_syntax,
+    note_ref_field_syntax, opaque_field_syntax, page_ref_field_syntax, ref_field_syntax,
+    toc_field_syntax, Field, FieldKind, RefFieldSyntax,
 };
 #[cfg(not(feature = "docx"))]
 use crate::annotation::{
@@ -664,7 +664,7 @@ fn supported_hyperlink_syntax_for_report(instruction: &str) -> bool {
 fn supports_merge_field_evaluation(field: &Field) -> bool {
     #[cfg(feature = "docx")]
     {
-        crate::merge_field_name(&field.instruction).is_some()
+        merge_field_syntax(&field.instruction)
     }
     #[cfg(not(feature = "docx"))]
     {
@@ -674,7 +674,7 @@ fn supports_merge_field_evaluation(field: &Field) -> bool {
 
 #[cfg(not(feature = "docx"))]
 fn supported_merge_field_syntax_for_report(instruction: &str) -> bool {
-    diagnostic_merge_field_name(instruction).is_some()
+    merge_field_syntax(instruction)
 }
 
 fn supports_document_info_field_evaluation(field: &Field) -> bool {
@@ -4200,12 +4200,25 @@ mod tests {
             ..Field::default()
         };
         assert_eq!(super::unsupported_field_reason(&valid), None);
+        let valid_prefix_suffix = Field {
+            instruction: r#"MERGEFIELD "Client Name" \b "Before " \f suffix text"#.to_string(),
+            ..valid.clone()
+        };
+        assert_eq!(super::unsupported_field_reason(&valid_prefix_suffix), None);
         let malformed = Field {
             instruction: r#"MERGEFIELD \* MERGEFORMAT"#.to_string(),
-            ..valid
+            ..valid.clone()
         };
         assert_eq!(
             super::unsupported_field_reason(&malformed),
+            Some(super::FieldEvaluationReason::UnsupportedSwitch)
+        );
+        let malformed_tail = Field {
+            instruction: r#"MERGEFIELD "Client Name" \b"#.to_string(),
+            ..valid
+        };
+        assert_eq!(
+            super::unsupported_field_reason(&malformed_tail),
             Some(super::FieldEvaluationReason::UnsupportedSwitch)
         );
     }

@@ -438,7 +438,7 @@ based on emitted page parity; field-code `HYPERLINK` runs render as link
 annotations and malformed hyperlink syntax reports `UnsupportedSwitch`; cached
 body `FILENAME`/`MERGEFIELD`, deterministic simple source-order `SEQ` with
 heading-reset `\s` from resolved body heading scopes,
-malformed `FILENAME` switches, `MERGEFIELD` names, and `SEQ` syntax reported as `UnsupportedSwitch`,
+malformed `FILENAME` switches, `MERGEFIELD` names or switch tails, and `SEQ` syntax reported as `UnsupportedSwitch`,
 metadata-backed document-info/date
 fields (`AUTHOR`, `TITLE`, `SUBJECT`, `KEYWORDS`, `COMMENTS`, `LASTSAVEDBY`,
 `CATEGORY`, `CONTENTSTATUS`, `VERSION`, core aliases such as `CREATOR`,

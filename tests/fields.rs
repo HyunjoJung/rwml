@@ -5195,6 +5195,90 @@ fn docx_merge_field_diagnostics_reject_missing_name_before_format_tail() {
 }
 
 #[test]
+fn docx_merge_field_diagnostics_validate_common_switch_tails() {
+    let doc = Document::open(&docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" MERGEFIELD ClientName \b &quot;Before &quot; \f &quot; After&quot; \* MERGEFORMAT "><w:r><w:t>Client cached</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" MERGEFIELD Client Name \f suffix text "><w:r><w:t>Project cached</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" MERGEFIELD ClientName \b "><w:r><w:t>cached missing before text</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" MERGEFIELD ClientName \x "><w:r><w:t>cached unknown merge switch</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ]))
+    .expect("fixture opens");
+
+    let fields = doc.fields();
+    assert_eq!(fields.len(), 4);
+    assert!(fields
+        .iter()
+        .all(|field| field.kind == FieldKind::MergeField));
+    assert_eq!(
+        fields[0].instruction,
+        r#"MERGEFIELD ClientName \b "Before " \f " After" \* MERGEFORMAT"#
+    );
+    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(
+        fields[1].instruction,
+        "MERGEFIELD Client Name \\f suffix text"
+    );
+    assert_eq!(fields[1].computed_result, None);
+    assert_eq!(fields[2].instruction, "MERGEFIELD ClientName \\b");
+    assert_eq!(fields[2].computed_result, None);
+    assert_eq!(fields[3].instruction, "MERGEFIELD ClientName \\x");
+    assert_eq!(fields[3].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::MergeField,
+            count: 2,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnsupportedSwitch,
+            count: 2,
+        }]
+    );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| {
+            instruction.starts_with("MERGEFIELD")
+        }),
+        vec![
+            (
+                r#"MERGEFIELD ClientName \b "Before " \f " After" \* MERGEFORMAT"#.to_string(),
+                None,
+            ),
+            ("MERGEFIELD Client Name \\f suffix text".to_string(), None),
+            (
+                "MERGEFIELD ClientName \\b".to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+            (
+                "MERGEFIELD ClientName \\x".to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+        ]
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Client cached")
+            && main_text.contains("Project cached")
+            && main_text.contains("cached missing before text")
+            && main_text.contains("cached unknown merge switch"),
+        "MERGEFIELD diagnostics should preserve cached display text: {main_text:?}"
+    );
+}
+
+#[test]
 fn docx_sequence_fields_compute_source_order_numbers() {
     let doc = Document::open(&sequence_field_docx()).expect("fixture opens");
     let fields = doc.fields();

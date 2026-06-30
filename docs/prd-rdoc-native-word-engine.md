@@ -296,7 +296,7 @@ The first public maturity release should meet these requirements.
   syntax is valid; malformed document-info syntax reports `UnsupportedSwitch`;
   `FILENAME` keeps cached display text, with malformed switches reporting
   `UnsupportedSwitch`; `MERGEFIELD` remains available for template filling,
-  with malformed merge-field names reporting `UnsupportedSwitch`; known dynamic/control fields (`=`, `IF`,
+  with malformed merge-field names or switch tails reporting `UnsupportedSwitch`; known dynamic/control fields (`=`, `IF`,
   `QUOTE`, `FILLIN`, `ASK`, `COMPARE`, `SET`, `NEXT`, `NEXTIF`, `SKIPIF`) are named
   diagnostics, with deterministic literal arithmetic formula fields computed for
   finite decimal/scientific numeric constants, literal scalar numeric/logical functions (`ABS`, `AND`,

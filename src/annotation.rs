@@ -678,6 +678,81 @@ pub(crate) fn merge_field_name(instruction: &str) -> Option<String> {
     field_name_operand(first, &mut parts)
 }
 
+pub(crate) fn merge_field_syntax(instruction: &str) -> bool {
+    let tokens = instruction_parts(instruction);
+    let mut parts = tokens.iter().map(String::as_str).peekable();
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if !kind.eq_ignore_ascii_case("MERGEFIELD") {
+        return false;
+    }
+    let Some(first) = parts.next() else {
+        return false;
+    };
+    if field_name_operand(first, &mut parts).is_none() {
+        return false;
+    }
+    merge_field_tail_syntax(&mut parts)
+}
+
+fn merge_field_tail_syntax<'a, I>(parts: &mut std::iter::Peekable<I>) -> bool
+where
+    I: Iterator<Item = &'a str>,
+{
+    while let Some(part) = parts.next() {
+        let Some(accepted) = accept_field_diagnostic_format_switch_syntax(part, parts) else {
+            return false;
+        };
+        if accepted {
+            continue;
+        }
+        if part.eq_ignore_ascii_case("\\b") || part.eq_ignore_ascii_case("\\f") {
+            if !merge_field_text_switch_operand_syntax(parts) {
+                return false;
+            }
+            continue;
+        }
+        if let Some(value) = strip_ascii_switch_prefix(part, "\\b")
+            .or_else(|| strip_ascii_switch_prefix(part, "\\f"))
+        {
+            if value.is_empty() || field_non_empty_non_switch_literal_token(value).is_none() {
+                return false;
+            }
+            continue;
+        }
+        return false;
+    }
+    true
+}
+
+fn merge_field_text_switch_operand_syntax<'a, I>(parts: &mut std::iter::Peekable<I>) -> bool
+where
+    I: Iterator<Item = &'a str>,
+{
+    let Some(first) = parts.next() else {
+        return false;
+    };
+    if field_non_empty_quoted_literal_token(first).is_some() {
+        return true;
+    }
+    if field_non_empty_non_switch_literal_token(first).is_none() {
+        return false;
+    }
+    while let Some(part) = parts.peek().copied() {
+        if part.starts_with('\\') {
+            break;
+        }
+        if field_quoted_literal_token(part).is_some()
+            || field_non_empty_non_switch_literal_token(part).is_none()
+        {
+            return false;
+        }
+        parts.next();
+    }
+    true
+}
+
 pub(crate) fn field_comparison_syntax<'a>(
     first: &str,
     parts: &mut impl Iterator<Item = &'a str>,
@@ -3232,10 +3307,11 @@ mod tests {
         direct_ref_field_syntax, eq_enclosed_operand, eq_fraction_operands, eq_list_operands,
         eq_numeric_prefix_option, eq_parenthesized_operand, eq_prefix_switch_tail,
         eq_radical_operands, hyperlink_field_target, if_field_syntax, legacy_form_field_syntax,
-        merge_control_field_syntax, merge_field_name, normalized_field_instruction,
-        note_ref_field_syntax, opaque_field_syntax, page_ref_field_syntax, ref_field_syntax,
-        style_ref_field_syntax, symbol_field_syntax, toc_field_syntax, FieldNumberFormat,
-        FieldTextFormat, StyleRefResult, TocSequenceFilter, TocTcFilter,
+        merge_control_field_syntax, merge_field_name, merge_field_syntax,
+        normalized_field_instruction, note_ref_field_syntax, opaque_field_syntax,
+        page_ref_field_syntax, ref_field_syntax, style_ref_field_syntax, symbol_field_syntax,
+        toc_field_syntax, FieldNumberFormat, FieldTextFormat, StyleRefResult, TocSequenceFilter,
+        TocTcFilter,
     };
 
     #[test]
@@ -3569,6 +3645,24 @@ mod tests {
         assert!(merge_field_name(r#"MERGEFIELD \* MERGEFORMAT ClientName"#).is_none());
         assert!(merge_field_name(r#"MERGEFIELD "Client Name"#).is_none());
         assert!(merge_field_name(r#"MERGEFIELD "Client"Name""#).is_none());
+    }
+
+    #[test]
+    fn merge_field_syntax_validates_common_switch_tails() {
+        assert!(merge_field_syntax(
+            r#"MERGEFIELD ClientName \b "Before " \f " After" \* MERGEFORMAT"#
+        ));
+        assert!(merge_field_syntax(
+            r#"MERGEFIELD Client Name \f suffix text"#
+        ));
+        assert!(merge_field_syntax(
+            r#"MERGEFIELD ClientName \bPrefix \fSuffix"#
+        ));
+        assert!(!merge_field_syntax(r#"MERGEFIELD ClientName \b"#));
+        assert!(!merge_field_syntax(r#"MERGEFIELD ClientName \x"#));
+        assert!(!merge_field_syntax(
+            r#"MERGEFIELD ClientName \b "Before " trailing"#
+        ));
     }
 
     #[test]

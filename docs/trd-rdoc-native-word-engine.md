@@ -444,7 +444,7 @@ Implementation:
   structural/source-rendered reader current-page context, field-code
   `HYPERLINK` as link annotations with malformed hyperlink syntax reporting
   `UnsupportedSwitch`, `FILENAME` with malformed switches reporting
-  `UnsupportedSwitch`, `MERGEFIELD` with malformed merge-field names reporting
+  `UnsupportedSwitch`, `MERGEFIELD` with malformed merge-field names or switch tails reporting
   `UnsupportedSwitch`,
   metadata-backed document-info fields such as `AUTHOR`, `TITLE`,
   `SUBJECT`, `KEYWORDS`, `COMMENTS`, `LASTSAVEDBY`, core aliases such as
@@ -1127,7 +1127,7 @@ open and edit the chart data.
 - treat field-code `HYPERLINK` runs with malformed hyperlink syntax reporting
   `UnsupportedSwitch`, cached body `FILENAME` with malformed switches reporting
   `UnsupportedSwitch`, cached body `MERGEFIELD` with malformed merge-field names
-  reporting `UnsupportedSwitch`,
+  or switch tails reporting `UnsupportedSwitch`,
   metadata-backed document-info results, and cached date/stat/unmapped
   document-info field results as supported preview-render
   content;

@@ -1571,7 +1571,7 @@ fn merge_field_diagnostics_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" MERGEFIELD client-name \* MERGEFORMAT "><w:r><w:t>Acme</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> MERGEFIELD &quot;project-name&quot; \* MERGEFORMAT </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Roadmap</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:p><w:fldSimple w:instr=" MERGEFIELD &quot;client-name "><w:r><w:t>Cached client</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" MERGEFIELD \* MERGEFORMAT ClientName "><w:r><w:t>Cached missing name before format</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" MERGEFIELD client-name \* MERGEFORMAT "><w:r><w:t>Acme</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> MERGEFIELD &quot;project-name&quot; \* MERGEFORMAT </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Roadmap</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:p><w:fldSimple w:instr=" MERGEFIELD display-name \b &quot;Before &quot; \f &quot; After&quot; "><w:r><w:t>Display</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" MERGEFIELD &quot;client-name "><w:r><w:t>Cached client</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" MERGEFIELD \* MERGEFORMAT ClientName "><w:r><w:t>Cached missing name before format</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" MERGEFIELD client-name \b "><w:r><w:t>Cached missing prefix</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" MERGEFIELD client-name \x "><w:r><w:t>Cached unknown switch</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -6600,12 +6600,12 @@ fn report_revnum_text_format_switches_are_supported() {
 fn report_merge_fields_split_supported_and_malformed_diagnostics() {
     assert_report_field_diagnostics(
         merge_field_diagnostics_docx(),
-        4,
+        7,
+        vec![field_kind_count(FieldKind::MergeField, 7)],
         vec![field_kind_count(FieldKind::MergeField, 4)],
-        vec![field_kind_count(FieldKind::MergeField, 2)],
         vec![field_reason_count(
             FieldEvaluationReason::UnsupportedSwitch,
-            2,
+            4,
         )],
     );
 }

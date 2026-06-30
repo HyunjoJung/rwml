@@ -25,7 +25,7 @@ use super::{
 };
 use crate::annotation::{
     barcode_field_syntax, direct_ref_field_syntax, instruction_parts, legacy_form_field_syntax,
-    merge_field_name, normalized_field_instruction, note_ref_field_syntax, opaque_field_syntax,
+    merge_field_syntax, normalized_field_instruction, note_ref_field_syntax, opaque_field_syntax,
     page_ref_field_syntax, ref_field_syntax, toc_field_syntax, FieldKind,
 };
 use crate::model::{
@@ -3950,9 +3950,7 @@ fn unsupported_merge_field_reason_hint(instruction: &str) -> Option<FieldUnsuppo
     if FieldKind::from_instruction(instruction) != FieldKind::MergeField {
         return None;
     }
-    merge_field_name(instruction)
-        .is_none()
-        .then_some(FieldUnsupportedReason::UnsupportedSwitch)
+    (!merge_field_syntax(instruction)).then_some(FieldUnsupportedReason::UnsupportedSwitch)
 }
 
 fn computed_simple_field_result(
