@@ -23,7 +23,7 @@ use super::{
     attr_f32, attr_i32, attr_i64, attr_local, attr_local_trimmed, attr_u16, attr_u32, attr_u8,
     field_char_type, is_page_break_type, local, toggle_on,
 };
-use crate::annotation::{normalized_field_instruction, FieldKind};
+use crate::annotation::{instruction_parts, normalized_field_instruction, FieldKind};
 use crate::model::{
     Align, AuthoredContentControl, Block, Cell, CellMargins, CharProps, Color, DocGrid,
     DocGridType, FieldRole, Image, Indent, ListInfo, PageNumberFormat, PageSetup, ParaProps,
@@ -2657,7 +2657,28 @@ fn ref_field_positions(
 /// Extract a URL from a `HYPERLINK "…"` field instruction (matches the `.doc`
 /// field-code parser).
 pub(crate) fn hyperlink_instr_url(instr: &str) -> Option<String> {
-    crate::annotation::hyperlink_field_target(instr)
+    let target = crate::annotation::hyperlink_field_target(instr)?;
+    Some(if hyperlink_instr_uses_anchor_target(instr) {
+        format!("#{target}")
+    } else {
+        target
+    })
+}
+
+fn hyperlink_instr_uses_anchor_target(instr: &str) -> bool {
+    let tokens = instruction_parts(instr);
+    let mut parts = tokens.iter().map(String::as_str);
+    let Some(kind) = parts.next() else {
+        return false;
+    };
+    if !kind.eq_ignore_ascii_case("HYPERLINK") {
+        return false;
+    }
+    let Some(first_arg) = parts.next() else {
+        return false;
+    };
+    let lower = first_arg.to_ascii_lowercase();
+    lower == "\\l" || lower.starts_with("\\l")
 }
 
 /// Resolve paragraph-level properties (heading level, alignment, list) from the

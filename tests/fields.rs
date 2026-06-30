@@ -51,6 +51,24 @@ fn field_docx() -> Vec<u8> {
     ])
 }
 
+#[cfg(feature = "render")]
+fn hyperlink_gap_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" HYPERLINK &quot;https://example.com&quot; \o &quot;tip&quot; "><w:r><w:t>Example</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" HYPERLINK &quot;https://example.com "><w:r><w:t>Cached link</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" HYPERLINK \o &quot;tip&quot; "><w:r><w:t>Cached tooltip-only link</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" HYPERLINK &quot;https://example.com&quot; extra "><w:r><w:t>Cached trailing link</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn revision_wrapped_field_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -3649,6 +3667,40 @@ fn docx_paragraph_alternate_content_preserves_hyperlink_runs() {
         FieldRole::Hyperlink { url } if url == "https://example.com/choice"
     ));
     assert_eq!(doc.report().features.hyperlinks, 1);
+}
+
+#[test]
+fn docx_simple_hyperlink_anchor_field_uses_bookmark_url() {
+    let doc = Document::open(&docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="TargetBookmark"/><w:r><w:t>Target</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" HYPERLINK \l &quot;TargetBookmark&quot; "><w:r><w:t>Jump</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ]))
+    .expect("fixture opens");
+
+    assert_eq!(doc.main_text(), "Target\nJump");
+    let [Block::Paragraph(_), Block::Paragraph(paragraph)] = &doc.model().blocks[..] else {
+        panic!("expected target and hyperlink paragraphs");
+    };
+    let [run] = &paragraph.runs[..] else {
+        panic!("expected one hyperlink run");
+    };
+    assert_eq!(run.text, "Jump");
+    assert!(matches!(
+        &run.field,
+        FieldRole::Hyperlink { url } if url == "#TargetBookmark"
+    ));
+    assert_eq!(doc.report().features.hyperlinks, 1);
+    assert!(doc.report().features.unsupported_field_reasons.is_empty());
 }
 
 #[test]
@@ -12647,6 +12699,51 @@ fn docx_toc_unsupported_switch_model_render_report_matches_document_reason_bucke
         vec![FieldKindCount {
             kind: FieldKind::Toc,
             count: 1,
+        }]
+    );
+    assert_eq!(
+        rendered.report.unsupported.unsupported_field_reasons,
+        expected_reasons
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn docx_hyperlink_unsupported_switch_model_render_report_matches_document_reason_bucket() {
+    let doc = Document::open(&hyperlink_gap_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 4);
+    assert!(fields
+        .iter()
+        .all(|field| field.kind == FieldKind::Hyperlink));
+    assert!(fields.iter().any(|field| field.result == "Example"));
+    assert!(fields.iter().any(|field| field.result == "Cached link"));
+    assert!(fields
+        .iter()
+        .any(|field| field.result == "Cached tooltip-only link"));
+    assert!(fields
+        .iter()
+        .any(|field| field.result == "Cached trailing link"));
+
+    let expected_reasons = doc.report().features.unsupported_field_reasons;
+    assert_eq!(
+        expected_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnsupportedSwitch,
+            count: 3,
+        }]
+    );
+    let model = doc.model();
+
+    let rendered = rdoc::render_pdf_with_report(&model);
+
+    assert_eq!(rendered.report.unsupported.fields, 3);
+    assert_eq!(
+        rendered.report.unsupported.field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Hyperlink,
+            count: 3,
         }]
     );
     assert_eq!(
