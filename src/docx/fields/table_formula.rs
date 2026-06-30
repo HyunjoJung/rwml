@@ -206,7 +206,9 @@ fn read_table_formula_table(r: &mut Xml<'_>) -> Vec<Option<String>> {
                 row,
                 col,
                 instruction,
-            } if !has_spans => computed_table_formula_result(&instruction, &rows, row, col),
+            } if !has_spans || span_safe_row_local_formula(&instruction, &rows, row) => {
+                computed_table_formula_result(&instruction, &rows, row, col)
+            }
             TableFormulaRecord::Local { .. } => None,
         })
         .collect()
@@ -570,6 +572,71 @@ fn computed_table_formula_result(
         Some(FormulaNumberFormat::General(format)) => format_formula_general_number(value, format),
         None => formula_number_text(value),
     }
+}
+
+fn span_safe_row_local_formula(
+    instruction: &str,
+    rows: &[Vec<TableFormulaCell>],
+    row: usize,
+) -> bool {
+    if rows
+        .get(row)
+        .map_or(true, |table_row| table_row.iter().any(|cell| cell.has_span))
+    {
+        return false;
+    }
+    let Some(spec) = formula_instruction(instruction) else {
+        return false;
+    };
+    table_formula_expression_is_row_local_span_safe(&spec.expression)
+}
+
+fn table_formula_expression_is_row_local_span_safe(expression: &str) -> bool {
+    let chars: Vec<_> = expression.chars().collect();
+    let mut pos = 0usize;
+    while pos < chars.len() {
+        if table_formula_cell_reference_at(&chars, pos).is_some() {
+            return false;
+        }
+        if chars[pos].is_ascii_alphabetic() {
+            let start = pos;
+            while pos < chars.len() && chars[pos].is_ascii_alphabetic() {
+                pos += 1;
+            }
+            let name: String = chars[start..pos].iter().collect();
+            if table_formula_cell_reference(&name).is_some() {
+                return false;
+            }
+            let mut after_name = pos;
+            while after_name < chars.len() && chars[after_name].is_whitespace() {
+                after_name += 1;
+            }
+            if after_name < chars.len() && chars[after_name] == '(' {
+                let Some(close) = matching_formula_paren(&chars, after_name) else {
+                    return false;
+                };
+                let inner: String = chars[after_name + 1..close].iter().collect();
+                if let Some(arguments) = table_formula_arguments(&inner) {
+                    if !arguments.iter().all(|argument| {
+                        matches!(
+                            argument,
+                            TableFormulaArgument::Direction(
+                                TableFormulaDirection::Left | TableFormulaDirection::Right
+                            )
+                        )
+                    }) {
+                        return false;
+                    }
+                } else if !table_formula_expression_is_row_local_span_safe(&inner) {
+                    return false;
+                }
+                pos = close + 1;
+            }
+            continue;
+        }
+        pos += 1;
+    }
+    true
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
