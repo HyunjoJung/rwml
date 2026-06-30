@@ -925,7 +925,7 @@ fn table_formula_rows_are_span_free(
 
 fn table_formula_rows_above_are_span_free(rows: &[Vec<TableFormulaCell>], row: usize) -> bool {
     match row.checked_sub(1) {
-        Some(end_row) => table_formula_rows_are_span_free(rows, 0, end_row),
+        Some(end_row) => table_formula_directional_rows_are_span_free(rows, 0, end_row),
         None => true,
     }
 }
@@ -941,6 +941,9 @@ fn table_formula_rows_below_until_formula_are_span_free(
         return false;
     };
     for table_row in table_rows {
+        if table_formula_row_is_header(table_row) {
+            continue;
+        }
         if table_row.iter().any(|cell| cell.contains_formula) {
             break;
         }
@@ -949,6 +952,22 @@ fn table_formula_rows_below_until_formula_are_span_free(
         }
     }
     true
+}
+
+fn table_formula_directional_rows_are_span_free(
+    rows: &[Vec<TableFormulaCell>],
+    start_row: usize,
+    end_row: usize,
+) -> bool {
+    rows.get(start_row..=end_row).is_some_and(|table_rows| {
+        table_rows.iter().all(|table_row| {
+            table_formula_row_is_header(table_row) || !table_row.iter().any(|cell| cell.has_span)
+        })
+    })
+}
+
+fn table_formula_row_is_header(row: &[TableFormulaCell]) -> bool {
+    row.iter().any(|cell| cell.is_header_row)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -1056,6 +1056,23 @@ fn formula_table_header_row_reference_docx() -> Vec<u8> {
     ])
 }
 
+fn formula_table_header_row_span_reference_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:p><w:fldSimple w:instr=" = SUM(BELOW) "><w:r><w:t>stale header below span sum</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:r><w:t>header formula peer</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr><w:p><w:r><w:t>spanned heading</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>4</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>3</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>6</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:fldSimple w:instr=" = SUM(ABOVE) "><w:r><w:t>stale body above span sum</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(A1:A3) "><w:r><w:t>cached explicit spanned header range</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn formula_table_prior_computed_formula_source_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -7573,6 +7590,40 @@ fn docx_table_formula_positional_arguments_skip_header_rows() {
             && !main_text.contains("stale body above sum")
             && !main_text.contains("stale body above count"),
         "header rows should not contribute to positional table formulas: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_table_formula_positional_span_safety_skips_header_rows() {
+    let doc =
+        Document::open(&formula_table_header_row_span_reference_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let expected = [
+        (r#"= SUM(BELOW)"#, "stale header below span sum", Some("5")),
+        (r#"= SUM(ABOVE)"#, "stale body above span sum", Some("5")),
+        (
+            r#"= SUM(A1:A3)"#,
+            "cached explicit spanned header range",
+            None,
+        ),
+    ];
+
+    assert_eq!(fields.len(), expected.len());
+    for (field, (instruction, stale, result)) in fields.iter().zip(expected) {
+        assert_eq!(field.kind, FieldKind::Dynamic("=".to_string()));
+        assert_eq!(field.instruction, instruction);
+        assert_eq!(field.result, stale);
+        assert_eq!(field.computed_result.as_deref(), result);
+    }
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("5")
+            && main_text.contains("cached explicit spanned header range")
+            && !main_text.contains("stale header below span sum")
+            && !main_text.contains("stale body above span sum"),
+        "span-bearing header rows should not block directional table formulas: {main_text:?}"
     );
 }
 
