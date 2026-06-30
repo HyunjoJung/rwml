@@ -24,8 +24,8 @@ use super::{
     field_char_type, is_page_break_type, local, toggle_on,
 };
 use crate::annotation::{
-    instruction_parts, normalized_field_instruction, note_ref_field_syntax, page_ref_field_syntax,
-    ref_field_syntax, toc_field_syntax, FieldKind,
+    direct_ref_field_syntax, instruction_parts, normalized_field_instruction,
+    note_ref_field_syntax, page_ref_field_syntax, ref_field_syntax, toc_field_syntax, FieldKind,
 };
 use crate::model::{
     Align, AuthoredContentControl, Block, Cell, CellMargins, CharProps, Color, DocGrid,
@@ -2425,11 +2425,17 @@ fn unsupported_simple_field_reason_hint(
 }
 
 fn unsupported_ref_reason_hint(instruction: &str, ctx: &Ctx<'_>) -> Option<FieldUnsupportedReason> {
-    if FieldKind::from_instruction(instruction) != FieldKind::Ref {
-        return None;
-    }
-    let Some(syntax) = ref_field_syntax(instruction) else {
-        return Some(FieldUnsupportedReason::UnsupportedSwitch);
+    let syntax = if FieldKind::from_instruction(instruction) == FieldKind::Ref {
+        let Some(syntax) = ref_field_syntax(instruction) else {
+            return Some(FieldUnsupportedReason::UnsupportedSwitch);
+        };
+        syntax
+    } else {
+        let syntax = direct_ref_field_syntax(instruction)?;
+        if !ctx.bookmark_names.contains(&syntax.target) {
+            return None;
+        }
+        syntax
     };
     if ctx.bookmark_names.contains(&syntax.target) {
         Some(FieldUnsupportedReason::NoComputedResult)

@@ -10760,6 +10760,20 @@ fn docx_direct_bookmark_field_applies_supported_ref_switches() {
     assert_eq!(fields[4].result, "direct note mark");
     assert_eq!(fields[4].computed_result, None);
 
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| instruction.starts_with("Figure1 \\")),
+        vec![
+            (
+                "Figure1 \\d \"-\"".to_string(),
+                Some(FieldUnsupportedReason::NoComputedResult),
+            ),
+            (
+                "Figure1 \\f".to_string(),
+                Some(FieldUnsupportedReason::NoComputedResult),
+            ),
+        ]
+    );
+
     let main_text = doc.main_text();
     assert!(
         !main_text.contains("stale direct upper")
