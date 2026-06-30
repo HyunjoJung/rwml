@@ -206,7 +206,7 @@ fn read_table_formula_table(r: &mut Xml<'_>) -> Vec<Option<String>> {
                 row,
                 col,
                 instruction,
-            } if !has_spans || span_safe_row_local_formula(&instruction, &rows, row) => {
+            } if !has_spans || span_safe_row_local_formula(&instruction, &rows, row, col) => {
                 computed_table_formula_result(&instruction, &rows, row, col)
             }
             TableFormulaRecord::Local { .. } => None,
@@ -578,6 +578,7 @@ fn span_safe_row_local_formula(
     instruction: &str,
     rows: &[Vec<TableFormulaCell>],
     row: usize,
+    col: usize,
 ) -> bool {
     if rows
         .get(row)
@@ -588,15 +589,25 @@ fn span_safe_row_local_formula(
     let Some(spec) = formula_instruction(instruction) else {
         return false;
     };
-    table_formula_expression_is_row_local_span_safe(&spec.expression)
+    table_formula_expression_is_row_local_span_safe(&spec.expression, row, col)
 }
 
-fn table_formula_expression_is_row_local_span_safe(expression: &str) -> bool {
+fn table_formula_expression_is_row_local_span_safe(
+    expression: &str,
+    row: usize,
+    col: usize,
+) -> bool {
     let chars: Vec<_> = expression.chars().collect();
     let mut pos = 0usize;
     while pos < chars.len() {
-        if table_formula_cell_reference_at(&chars, pos).is_some() {
-            return false;
+        if let Some((end, target_row, target_col)) = table_formula_cell_reference_at(&chars, pos) {
+            if !table_formula_cell_reference_is_row_local_span_safe(
+                row, col, target_row, target_col,
+            ) {
+                return false;
+            }
+            pos = end;
+            continue;
         }
         if chars[pos].is_ascii_alphabetic() {
             let start = pos;
@@ -618,16 +629,11 @@ fn table_formula_expression_is_row_local_span_safe(expression: &str) -> bool {
                 let inner: String = chars[after_name + 1..close].iter().collect();
                 if let Some(arguments) = table_formula_arguments(&inner) {
                     if !arguments.iter().all(|argument| {
-                        matches!(
-                            argument,
-                            TableFormulaArgument::Direction(
-                                TableFormulaDirection::Left | TableFormulaDirection::Right
-                            ) | TableFormulaArgument::CurrentRow
-                        )
+                        table_formula_argument_is_row_local_span_safe(*argument, row)
                     }) {
                         return false;
                     }
-                } else if !table_formula_expression_is_row_local_span_safe(&inner) {
+                } else if !table_formula_expression_is_row_local_span_safe(&inner, row, col) {
                     return false;
                 }
                 pos = close + 1;
@@ -637,6 +643,34 @@ fn table_formula_expression_is_row_local_span_safe(expression: &str) -> bool {
         pos += 1;
     }
     true
+}
+
+fn table_formula_cell_reference_is_row_local_span_safe(
+    row: usize,
+    col: usize,
+    target_row: usize,
+    target_col: usize,
+) -> bool {
+    target_row == row && target_col != col
+}
+
+fn table_formula_argument_is_row_local_span_safe(
+    argument: TableFormulaArgument,
+    row: usize,
+) -> bool {
+    match argument {
+        TableFormulaArgument::Direction(
+            TableFormulaDirection::Left | TableFormulaDirection::Right,
+        )
+        | TableFormulaArgument::CurrentRow => true,
+        TableFormulaArgument::Range {
+            start_row, end_row, ..
+        } => start_row == row && end_row == row,
+        TableFormulaArgument::Direction(
+            TableFormulaDirection::Above | TableFormulaDirection::Below,
+        )
+        | TableFormulaArgument::CurrentColumn => false,
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

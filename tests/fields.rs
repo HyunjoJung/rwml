@@ -1056,6 +1056,23 @@ fn formula_table_span_current_row_docx() -> Vec<u8> {
     ])
 }
 
+fn formula_table_span_same_row_cell_reference_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr><w:p><w:r><w:t>spanned heading</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>tail heading</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>3</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = A2 + B2 \# &quot;0&quot; "><w:r><w:t>cached same-row direct</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>4</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>6</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(A3:B3) "><w:r><w:t>cached same-row range</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:fldSimple w:instr=" = SUM(A1:B2) "><w:r><w:t>cached cross-row range</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:r><w:t>1</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>1</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn formula_table_structural_wrapper_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -7011,6 +7028,56 @@ fn docx_table_formula_computes_current_row_when_other_rows_have_spans() {
     assert!(
         !main_text.contains("cached span-table row"),
         "computed current-row span-table formulas should replace stale cached text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_table_formula_computes_same_row_cell_references_when_other_rows_have_spans() {
+    let doc =
+        Document::open(&formula_table_span_same_row_cell_reference_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let expected = [
+        (r#"= A2 + B2 \# "0""#, "cached same-row direct", Some("5")),
+        (r#"= SUM(A3:B3)"#, "cached same-row range", Some("10")),
+        (r#"= SUM(A1:B2)"#, "cached cross-row range", None),
+    ];
+
+    assert_eq!(fields.len(), expected.len());
+    for (field, (instruction, stale, result)) in fields.iter().zip(expected) {
+        assert_eq!(field.kind, FieldKind::Dynamic("=".to_string()));
+        assert_eq!(field.instruction, instruction);
+        assert_eq!(field.result, stale);
+        assert_eq!(field.computed_result.as_deref(), result);
+    }
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Dynamic("=".to_string()),
+            count: 1
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::NoComputedResult,
+            count: 1
+        }]
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("5")
+            && main_text.contains("10")
+            && main_text.contains("cached cross-row range"),
+        "same-row cell-reference formulas should compute while cross-row ranges stay cached: {main_text:?}"
+    );
+    assert!(
+        !main_text.contains("cached same-row direct")
+            && !main_text.contains("cached same-row range"),
+        "computed same-row cell-reference formulas should replace stale cached text: {main_text:?}"
     );
 }
 
