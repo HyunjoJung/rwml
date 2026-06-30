@@ -568,6 +568,10 @@ fn field_result_symbol_char(e: &BytesStart<'_>) -> Option<char> {
     computed_run_symbol_char(font.as_deref(), &value)
 }
 
+fn is_supported_run_symbol(e: &BytesStart<'_>) -> bool {
+    local(e.name().as_ref()) == b"sym" && field_result_symbol_char(e).is_some()
+}
+
 fn inline_marker_text(e: &BytesStart<'_>) -> Option<&'static str> {
     match local(e.name().as_ref()) {
         b"tab" => Some("\t"),

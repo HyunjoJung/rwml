@@ -398,6 +398,11 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                         saw_rendered_page_break = true;
                         pages.advance_last_rendered_page_break(&mut source_order);
                     }
+                    b"sym" if is_supported_run_symbol(&e) => {
+                        saw_visible_content = true;
+                        pages.note_visible_content();
+                        source_order += 1;
+                    }
                     b"tab" | b"cr" | b"noBreakHyphen" | b"softHyphen" | b"drawing" | b"pict"
                     | b"object" => {
                         saw_visible_content = true;
@@ -490,6 +495,11 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                     b"lastRenderedPageBreak" => {
                         saw_rendered_page_break = true;
                         pages.advance_last_rendered_page_break(&mut source_order);
+                    }
+                    b"sym" if is_supported_run_symbol(&e) => {
+                        saw_visible_content = true;
+                        pages.note_visible_content();
+                        source_order += 1;
                     }
                     b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"softHyphen" | b"drawing"
                     | b"pict" | b"object" => {

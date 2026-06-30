@@ -123,6 +123,9 @@ pub(crate) fn section_context(xml: &str) -> SectionContext {
                     b"lastRenderedPageBreak" => {
                         current_page += 1;
                     }
+                    b"sym" if is_supported_run_symbol(&e) => {
+                        section_has_visible_content = true;
+                    }
                     b"tab" | b"cr" | b"noBreakHyphen" | b"softHyphen" | b"drawing" | b"pict"
                     | b"object" => {
                         section_has_visible_content = true;
@@ -175,6 +178,9 @@ pub(crate) fn section_context(xml: &str) -> SectionContext {
                     }
                     b"lastRenderedPageBreak" => {
                         current_page += 1;
+                    }
+                    b"sym" if is_supported_run_symbol(&e) => {
+                        section_has_visible_content = true;
                     }
                     b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"softHyphen" | b"drawing"
                     | b"pict" | b"object" => {
