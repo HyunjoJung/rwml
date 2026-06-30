@@ -640,13 +640,34 @@ fn hyperlink_tail_value_syntax<'a>(
 
 pub(crate) fn merge_field_name(instruction: &str) -> Option<String> {
     let tokens = instruction_parts(instruction);
-    let mut parts = tokens.iter().map(String::as_str);
+    let mut parts = tokens.iter().map(String::as_str).peekable();
     let kind = parts.next()?;
     if !kind.eq_ignore_ascii_case("MERGEFIELD") {
         return None;
     }
-    let name = parts.next().and_then(field_name_token)?;
-    Some(name.to_string())
+    let first = parts.next()?;
+    if first.starts_with('\\') {
+        return None;
+    }
+    let first_name = field_name_token(first)?;
+    if field_quoted_literal_token(first).is_some() {
+        return Some(first_name.to_string());
+    }
+
+    let mut name = first_name.to_string();
+    while let Some(part) = parts.peek().copied() {
+        if part.starts_with('\\') {
+            break;
+        }
+        let part = parts.next()?;
+        if part.contains('"') {
+            return None;
+        }
+        let part = field_name_token(part)?;
+        name.push(' ');
+        name.push_str(part);
+    }
+    Some(name)
 }
 
 pub(crate) fn field_comparison_syntax<'a>(
@@ -3521,6 +3542,14 @@ mod tests {
         );
         assert_eq!(
             merge_field_name(r#"MERGEFIELD "Client Name" \* MERGEFORMAT"#).as_deref(),
+            Some("Client Name")
+        );
+        assert_eq!(
+            merge_field_name(r#"MERGEFIELD Client Name \* MERGEFORMAT"#).as_deref(),
+            Some("Client Name")
+        );
+        assert_eq!(
+            merge_field_name(r#"MERGEFIELD Client Name"#).as_deref(),
             Some("Client Name")
         );
         assert!(merge_field_name(r#"MERGEFIELD \* MERGEFORMAT ClientName"#).is_none());

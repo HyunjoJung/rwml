@@ -742,6 +742,23 @@ fn merge_template_docx() -> Vec<u8> {
     ])
 }
 
+fn unquoted_multi_token_merge_template_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" MERGEFIELD Client Name \* MERGEFORMAT "><w:r><w:t>Old Client Field</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn header_footer_merge_template_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -1208,6 +1225,47 @@ fn fill_template_fields_updates_content_controls_and_merge_fields() {
     assert_eq!(reopened_fields[1].result, "Roadmap");
     assert!(reopened.text().contains("Acme & Co"));
     assert!(reopened.text().contains("Roadmap"));
+}
+
+#[test]
+fn fill_template_fields_updates_unquoted_multi_token_merge_field_names() {
+    let mut doc =
+        Document::open(&unquoted_multi_token_merge_template_docx()).expect("fixture opens");
+    let fields = doc.fields();
+    assert_eq!(fields.len(), 1);
+    assert_eq!(
+        fields[0].instruction,
+        "MERGEFIELD Client Name \\* MERGEFORMAT"
+    );
+    assert_eq!(fields[0].result, "Old Client Field");
+
+    let changed = doc
+        .fill_template_fields([("Client Name", "Acme Corp")])
+        .expect("template fields filled");
+
+    assert_eq!(changed, 1);
+    assert_eq!(doc.edited_parts(), ["word/document.xml"]);
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+
+    assert!(
+        body.contains(r#"MERGEFIELD Client Name \* MERGEFORMAT"#),
+        "merge field instruction should be preserved: {body}"
+    );
+    assert!(
+        body.contains("<w:t>Acme Corp</w:t>"),
+        "filled value missing: {body}"
+    );
+    assert!(
+        !body.contains("Old Client Field"),
+        "old merge field value leaked after fill: {body}"
+    );
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    let reopened_fields = reopened.fields();
+    assert_eq!(reopened_fields[0].result, "Acme Corp");
+    assert!(reopened.text().contains("Acme Corp"));
 }
 
 #[test]
