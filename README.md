@@ -499,11 +499,12 @@ decimal/scientific numeric comparisons and quoted string equality/inequality,
 malformed literal `IF` syntax reports `UnsupportedSwitch`,
 deterministic literal `COMPARE` fields compute `1`/`0` results for finite
 decimal/scientific numeric operands and either-side quoted `?`/`*` wildcard
-equality/inequality, deterministic `FILLIN` fields with quoted or single-token
-prompts and quoted or unquoted explicit `\d` default responses, including
-multi-token unquoted defaults, render those defaults without simulating prompts,
-deterministic `ASK name prompt \d default` fields with quoted or single-token
-prompts, quoted or unquoted default literals, and field-result format switches
+equality/inequality, deterministic `FILLIN` fields with quoted or unquoted
+prompts, including multi-token unquoted prompts, and quoted or unquoted explicit
+`\d` default responses, including multi-token unquoted defaults, render those
+defaults without simulating prompts, deterministic `ASK name prompt \d default`
+fields with quoted or unquoted prompts, including multi-token unquoted prompts,
+quoted or unquoted default literals, and field-result format switches
 render as hidden output while seeding later plain `REF`/direct bookmark
 references and source-order bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF`
 comparisons, including numeric comparison for finite numeric bookmark values,

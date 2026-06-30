@@ -329,11 +329,12 @@ The first public maturity release should meet these requirements.
   deterministic literal `COMPARE` fields computed as `1`/`0` for finite
   decimal/scientific numeric operands and quoted
   `?`/`*` wildcard equality/inequality, deterministic `FILLIN` fields with
-  quoted or single-token prompts and quoted or unquoted explicit `\d` default
-  responses, including multi-token unquoted defaults, rendered without
-  simulating prompts, deterministic `ASK name prompt \d default` fields
-  with quoted or single-token prompts and quoted or unquoted default literals
-  rendered as hidden output
+  quoted or unquoted prompts, including multi-token unquoted prompts, and quoted
+  or unquoted explicit `\d` default responses, including multi-token unquoted
+  defaults, rendered without simulating prompts, deterministic
+  `ASK name prompt \d default` fields with quoted or unquoted prompts,
+  including multi-token unquoted prompts, and quoted or unquoted default
+  literals rendered as hidden output
   while feeding later plain `REF`/direct bookmark references and source-order
   bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons, including
   numeric comparison for finite numeric bookmark values, malformed
