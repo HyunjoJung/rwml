@@ -2603,10 +2603,10 @@ fn fill_in_field_syntax<'a>(parts: impl Iterator<Item = &'a str>) -> Option<Prom
         if accepted {
             continue;
         }
-        field_non_empty_non_switch_literal_token(part)?;
         if prompt_seen {
             return None;
         }
+        prompt_text_operand(part, &mut parts)?;
         prompt_seen = true;
     }
     Some(PromptFieldSyntax::FillIn {
@@ -2618,7 +2618,7 @@ fn fill_in_field_syntax<'a>(parts: impl Iterator<Item = &'a str>) -> Option<Prom
 fn ask_field_syntax<'a>(parts: impl Iterator<Item = &'a str>) -> Option<PromptFieldSyntax> {
     let mut parts = parts.peekable();
     let bookmark = field_identifier_token(parts.next()?)?.to_string();
-    field_non_empty_non_switch_literal_token(parts.next()?)?;
+    prompt_text_operand(parts.next()?, &mut parts)?;
     let mut default = None;
     let mut text_format = None;
     let mut ask_once = false;
@@ -2641,6 +2641,28 @@ fn ask_field_syntax<'a>(parts: impl Iterator<Item = &'a str>) -> Option<PromptFi
         }
     }
     Some(PromptFieldSyntax::Ask { bookmark, default })
+}
+
+fn prompt_text_operand<'a>(
+    first: &'a str,
+    parts: &mut std::iter::Peekable<impl Iterator<Item = &'a str>>,
+) -> Option<()> {
+    if field_non_empty_quoted_literal_token(first).is_some() {
+        return Some(());
+    }
+    field_non_empty_non_switch_literal_token(first)?;
+    let mut tokens = 1usize;
+    while let Some(part) = parts.peek().copied() {
+        if part.starts_with('\\') {
+            return Some(());
+        }
+        if part.trim().starts_with('"') || part.trim().ends_with('"') {
+            return None;
+        }
+        field_non_empty_non_switch_literal_token(parts.next()?)?;
+        tokens += 1;
+    }
+    (tokens == 1).then_some(())
 }
 
 fn prompt_default_switch<'a>(

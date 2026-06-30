@@ -4654,6 +4654,21 @@ mod tests {
         );
     }
 
+    #[cfg(not(feature = "docx"))]
+    #[test]
+    fn no_default_prompt_diagnostics_accept_unquoted_multi_token_prompt_text() {
+        assert_eq!(
+            super::prompt_uncomputed_reason(
+                r#"FILLIN Client display prompt \d Acme Corp \* Upper"#
+            ),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+        assert_eq!(
+            super::prompt_uncomputed_reason(r#"ASK ClientName Client name prompt \d Acme Corp"#),
+            super::FieldEvaluationReason::NoComputedResult
+        );
+    }
+
     #[test]
     fn opaque_field_diagnostics_reject_malformed_quoted_syntax() {
         for (kind, valid, valid_format, malformed, malformed_format, bad_format) in [
