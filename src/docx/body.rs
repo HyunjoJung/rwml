@@ -1022,7 +1022,13 @@ fn read_content_control_blocks(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Ve
                     blocks.extend(read_blocks(r, ctx, depth + 1))
                 }
                 b"AlternateContent" => {
-                    blocks.extend(read_alternate_content_blocks(r, ctx, depth + 1))
+                    read_content_control_blocks_alternate_content(
+                        r,
+                        ctx,
+                        depth + 1,
+                        &mut control,
+                        &mut blocks,
+                    );
                 }
                 _ => skip_subtree(r),
             },
@@ -1032,6 +1038,85 @@ fn read_content_control_blocks(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Ve
     }
     apply_content_control_to_blocks(&mut blocks, control);
     blocks
+}
+
+fn read_content_control_blocks_alternate_content(
+    r: &mut Xml<'_>,
+    ctx: &Ctx<'_>,
+    depth: u32,
+    control: &mut Option<AuthoredContentControl>,
+    blocks: &mut Vec<Block>,
+) {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return;
+    }
+    let mut took = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                match name {
+                    b"Choice" | b"Fallback" if !took => {
+                        took = true;
+                        read_content_control_blocks_alternate_content_branch(
+                            r,
+                            ctx,
+                            depth + 1,
+                            control,
+                            blocks,
+                            name,
+                        );
+                    }
+                    _ => skip_subtree(r),
+                }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+}
+
+fn read_content_control_blocks_alternate_content_branch(
+    r: &mut Xml<'_>,
+    ctx: &Ctx<'_>,
+    depth: u32,
+    control: &mut Option<AuthoredContentControl>,
+    blocks: &mut Vec<Block>,
+    branch: &[u8],
+) {
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
+                b"sdtPr" => *control = read_content_control_pr(r),
+                b"sdtContent" => blocks.extend(read_blocks(r, ctx, depth + 1)),
+                b"p" => blocks.extend(read_paragraph_blocks(r, ctx, depth + 1)),
+                b"tbl" => {
+                    let table = read_table(r, ctx, depth + 1);
+                    if !table.rows.is_empty() {
+                        blocks.push(Block::Table(table));
+                    }
+                }
+                b"sdt" => blocks.extend(read_content_control_blocks(r, ctx, depth + 1)),
+                b"customXml" | b"smartTag" | b"ins" | b"moveTo" => {
+                    blocks.extend(read_blocks(r, ctx, depth + 1))
+                }
+                b"AlternateContent" => read_content_control_blocks_alternate_content(
+                    r,
+                    ctx,
+                    depth + 1,
+                    control,
+                    blocks,
+                ),
+                _ => skip_subtree(r),
+            },
+            Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
 }
 
 fn apply_content_control_to_blocks(blocks: &mut [Block], control: Option<AuthoredContentControl>) {
@@ -1576,7 +1661,14 @@ fn read_content_control_runs(
                     runs.extend(read_runs_container(r, ctx, link, depth + 1))
                 }
                 b"AlternateContent" => {
-                    runs.extend(read_alternate_content_runs(r, ctx, link, depth + 1))
+                    read_content_control_runs_alternate_content(
+                        r,
+                        ctx,
+                        link,
+                        depth + 1,
+                        &mut control,
+                        &mut runs,
+                    );
                 }
                 _ => skip_subtree(r),
             },
@@ -1591,6 +1683,92 @@ fn read_content_control_runs(
     }
     apply_content_control(&mut runs, control);
     runs
+}
+
+fn read_content_control_runs_alternate_content(
+    r: &mut Xml<'_>,
+    ctx: &Ctx<'_>,
+    link: Option<&str>,
+    depth: u32,
+    control: &mut Option<AuthoredContentControl>,
+    runs: &mut Vec<Run>,
+) {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return;
+    }
+    let mut took = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                match name {
+                    b"Choice" | b"Fallback" if !took => {
+                        took = true;
+                        read_content_control_runs_alternate_content_branch(
+                            r,
+                            ctx,
+                            link,
+                            depth + 1,
+                            control,
+                            runs,
+                            name,
+                        );
+                    }
+                    _ => skip_subtree(r),
+                }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+}
+
+fn read_content_control_runs_alternate_content_branch(
+    r: &mut Xml<'_>,
+    ctx: &Ctx<'_>,
+    link: Option<&str>,
+    depth: u32,
+    control: &mut Option<AuthoredContentControl>,
+    runs: &mut Vec<Run>,
+    branch: &[u8],
+) {
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
+                b"sdtPr" => *control = read_content_control_pr(r),
+                b"sdtContent" => runs.extend(read_runs_container(r, ctx, link, depth + 1)),
+                b"r" => runs.extend(read_run(r, ctx, link, depth + 1, None, 0)),
+                b"hyperlink" => runs.extend(read_hyperlink(r, &e, ctx, depth)),
+                b"fldSimple" => runs.extend(read_fldsimple(r, &e, ctx, depth)),
+                b"sdt" => runs.extend(read_content_control_runs(r, ctx, link, depth + 1)),
+                b"ins" | b"moveTo" | b"smartTag" | b"bdo" | b"dir" => {
+                    runs.extend(read_runs_container(r, ctx, link, depth + 1))
+                }
+                b"AlternateContent" => {
+                    read_content_control_runs_alternate_content(
+                        r,
+                        ctx,
+                        link,
+                        depth + 1,
+                        control,
+                        runs,
+                    );
+                }
+                _ => skip_subtree(r),
+            },
+            Ok(Event::Empty(e)) => {
+                if local(e.name().as_ref()) == b"fldSimple" {
+                    push_empty_fldsimple_run(runs, &e, ctx);
+                }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
 }
 
 fn append_content_control_runs_with_complex(
@@ -1632,11 +1810,12 @@ fn append_content_control_runs_with_complex(
                 b"ins" | b"moveTo" | b"smartTag" | b"bdo" | b"dir" => {
                     append_runs_container_with_complex(r, ctx, link, depth + 1, runs, complex_field)
                 }
-                b"AlternateContent" => append_alternate_content_runs_with_complex(
+                b"AlternateContent" => append_content_control_runs_alternate_content_with_complex(
                     r,
                     ctx,
                     link,
                     depth + 1,
+                    &mut control,
                     runs,
                     complex_field,
                 ),
@@ -1652,6 +1831,107 @@ fn append_content_control_runs_with_complex(
         }
     }
     apply_content_control(&mut runs[start..], control);
+}
+
+fn append_content_control_runs_alternate_content_with_complex(
+    r: &mut Xml<'_>,
+    ctx: &Ctx<'_>,
+    link: Option<&str>,
+    depth: u32,
+    control: &mut Option<AuthoredContentControl>,
+    runs: &mut Vec<Run>,
+    complex_field: &mut ComplexFieldTracker,
+) {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return;
+    }
+    let mut took = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                match name {
+                    b"Choice" | b"Fallback" if !took => {
+                        took = true;
+                        append_content_control_runs_alternate_content_branch_with_complex(
+                            r,
+                            ctx,
+                            link,
+                            depth + 1,
+                            control,
+                            runs,
+                            complex_field,
+                            name,
+                        );
+                    }
+                    _ => skip_subtree(r),
+                }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+}
+
+fn append_content_control_runs_alternate_content_branch_with_complex(
+    r: &mut Xml<'_>,
+    ctx: &Ctx<'_>,
+    link: Option<&str>,
+    depth: u32,
+    control: &mut Option<AuthoredContentControl>,
+    runs: &mut Vec<Run>,
+    complex_field: &mut ComplexFieldTracker,
+    branch: &[u8],
+) {
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
+                b"sdtPr" => *control = read_content_control_pr(r),
+                b"sdtContent" => {
+                    append_runs_container_with_complex(r, ctx, link, depth + 1, runs, complex_field)
+                }
+                b"r" => {
+                    let next = read_run(r, ctx, link, depth + 1, Some(complex_field), runs.len());
+                    runs.extend(next);
+                    complex_field.apply_pending(runs);
+                }
+                b"hyperlink" => runs.extend(read_hyperlink(r, &e, ctx, depth)),
+                b"fldSimple" => runs.extend(read_fldsimple(r, &e, ctx, depth)),
+                b"sdt" => append_content_control_runs_with_complex(
+                    r,
+                    ctx,
+                    link,
+                    depth + 1,
+                    runs,
+                    complex_field,
+                ),
+                b"ins" | b"moveTo" | b"smartTag" | b"bdo" | b"dir" => {
+                    append_runs_container_with_complex(r, ctx, link, depth + 1, runs, complex_field)
+                }
+                b"AlternateContent" => append_content_control_runs_alternate_content_with_complex(
+                    r,
+                    ctx,
+                    link,
+                    depth + 1,
+                    control,
+                    runs,
+                    complex_field,
+                ),
+                _ => skip_subtree(r),
+            },
+            Ok(Event::Empty(e)) => {
+                if local(e.name().as_ref()) == b"fldSimple" {
+                    push_empty_fldsimple_run(runs, &e, ctx);
+                }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
 }
 
 fn read_alternate_content_runs(
@@ -5544,6 +5824,86 @@ mod tests {
             control.data_binding_store_item_id.as_deref(),
             Some("{11111111-2222-3333-4444-555555555555}")
         );
+    }
+
+    #[test]
+    fn block_content_control_uses_single_alternate_content_child_branch() {
+        let xml = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+            <w:sdt>
+                <mc:AlternateContent>
+                    <mc:Choice Requires="w14">
+                        <w:sdtPr>
+                            <w:alias w:val=" Choice block "/>
+                            <w:tag w:val="choice-block"/>
+                        </w:sdtPr>
+                        <w:sdtContent>
+                            <w:p><w:r><w:t>Choice block</w:t></w:r></w:p>
+                        </w:sdtContent>
+                    </mc:Choice>
+                    <mc:Fallback>
+                        <w:sdtPr>
+                            <w:alias w:val="Fallback block"/>
+                            <w:tag w:val="fallback-block"/>
+                        </w:sdtPr>
+                        <w:sdtContent>
+                            <w:p><w:r><w:t>Fallback block</w:t></w:r></w:p>
+                        </w:sdtContent>
+                    </mc:Fallback>
+                </mc:AlternateContent>
+            </w:sdt>
+        </w:body></w:document>"#;
+        let blocks = parse(xml);
+        let Block::Paragraph(paragraph) = &blocks[0] else {
+            panic!("paragraph")
+        };
+        assert_eq!(paragraph.text(), "Choice block");
+        let control = paragraph.runs[0]
+            .content_control
+            .as_ref()
+            .expect("content control metadata");
+
+        assert_eq!(control.alias.as_deref(), Some("Choice block"));
+        assert_eq!(control.tag.as_deref(), Some("choice-block"));
+    }
+
+    #[test]
+    fn run_content_control_uses_single_alternate_content_child_branch() {
+        let xml = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+            <w:p><w:sdt>
+                <mc:AlternateContent>
+                    <mc:Choice Requires="w14">
+                        <w:sdtPr>
+                            <w:alias w:val=" Choice run "/>
+                            <w:tag w:val="choice-run"/>
+                        </w:sdtPr>
+                        <w:sdtContent>
+                            <w:r><w:t>Choice run</w:t></w:r>
+                        </w:sdtContent>
+                    </mc:Choice>
+                    <mc:Fallback>
+                        <w:sdtPr>
+                            <w:alias w:val="Fallback run"/>
+                            <w:tag w:val="fallback-run"/>
+                        </w:sdtPr>
+                        <w:sdtContent>
+                            <w:r><w:t>Fallback run</w:t></w:r>
+                        </w:sdtContent>
+                    </mc:Fallback>
+                </mc:AlternateContent>
+            </w:sdt></w:p>
+        </w:body></w:document>"#;
+        let blocks = parse(xml);
+        let Block::Paragraph(paragraph) = &blocks[0] else {
+            panic!("paragraph")
+        };
+        assert_eq!(paragraph.text(), "Choice run");
+        let control = paragraph.runs[0]
+            .content_control
+            .as_ref()
+            .expect("content control metadata");
+
+        assert_eq!(control.alias.as_deref(), Some("Choice run"));
+        assert_eq!(control.tag.as_deref(), Some("choice-run"));
     }
 
     #[test]
