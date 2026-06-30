@@ -3408,6 +3408,9 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Table {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
                 b"tblPr" => props = read_tblpr(r),
                 b"tr" => rows.push(read_row(r, ctx, depth)),
+                b"AlternateContent" => {
+                    rows.extend(read_table_alternate_content_rows(r, ctx, depth + 1))
+                }
                 name if is_current_table_structural_wrapper(name) => {}
                 _ => skip_subtree(r), // tblGrid, …
             },
@@ -3424,6 +3427,68 @@ fn is_current_table_structural_wrapper(name: &[u8]) -> bool {
         name,
         b"sdt" | b"sdtContent" | b"customXml" | b"smartTag" | b"ins" | b"moveTo"
     )
+}
+
+fn read_table_alternate_content_rows(
+    r: &mut Xml<'_>,
+    ctx: &Ctx<'_>,
+    depth: u32,
+) -> Vec<(Vec<CellRaw>, bool)> {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return Vec::new();
+    }
+    let mut rows = Vec::new();
+    let mut took = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                match name {
+                    b"Choice" | b"Fallback" if !took => {
+                        took = true;
+                        rows.extend(read_table_alternate_content_branch_rows(
+                            r,
+                            ctx,
+                            depth + 1,
+                            name,
+                        ));
+                    }
+                    _ => skip_subtree(r),
+                }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    rows
+}
+
+fn read_table_alternate_content_branch_rows(
+    r: &mut Xml<'_>,
+    ctx: &Ctx<'_>,
+    depth: u32,
+    branch: &[u8],
+) -> Vec<(Vec<CellRaw>, bool)> {
+    let mut rows = Vec::new();
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
+                b"tr" => rows.push(read_row(r, ctx, depth)),
+                b"AlternateContent" => {
+                    rows.extend(read_table_alternate_content_rows(r, ctx, depth + 1))
+                }
+                name if is_current_table_structural_wrapper(name) => {}
+                _ => skip_subtree(r),
+            },
+            Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    rows
 }
 
 #[derive(Default)]
@@ -3600,10 +3665,88 @@ fn read_row(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Vec<CellRaw>, bool) 
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
                 b"trPr" => header = read_trpr(r),
                 b"tc" => cells.push(read_cell(r, ctx, depth + 1)),
+                b"AlternateContent" => {
+                    let (branch_cells, branch_header) =
+                        read_row_alternate_content_cells(r, ctx, depth + 1);
+                    cells.extend(branch_cells);
+                    if let Some(value) = branch_header {
+                        header = value;
+                    }
+                }
                 name if is_current_table_structural_wrapper(name) => {}
                 _ => skip_subtree(r),
             },
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"tr" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    (cells, header)
+}
+
+fn read_row_alternate_content_cells(
+    r: &mut Xml<'_>,
+    ctx: &Ctx<'_>,
+    depth: u32,
+) -> (Vec<CellRaw>, Option<bool>) {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return (Vec::new(), None);
+    }
+    let mut cells = Vec::new();
+    let mut header = None;
+    let mut took = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                match name {
+                    b"Choice" | b"Fallback" if !took => {
+                        took = true;
+                        let (branch_cells, branch_header) =
+                            read_row_alternate_content_branch_cells(r, ctx, depth + 1, name);
+                        cells.extend(branch_cells);
+                        if branch_header.is_some() {
+                            header = branch_header;
+                        }
+                    }
+                    _ => skip_subtree(r),
+                }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    (cells, header)
+}
+
+fn read_row_alternate_content_branch_cells(
+    r: &mut Xml<'_>,
+    ctx: &Ctx<'_>,
+    depth: u32,
+    branch: &[u8],
+) -> (Vec<CellRaw>, Option<bool>) {
+    let mut cells = Vec::new();
+    let mut header = None;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
+                b"trPr" => header = Some(read_trpr(r)),
+                b"tc" => cells.push(read_cell(r, ctx, depth + 1)),
+                b"AlternateContent" => {
+                    let (branch_cells, branch_header) =
+                        read_row_alternate_content_cells(r, ctx, depth + 1);
+                    cells.extend(branch_cells);
+                    if branch_header.is_some() {
+                        header = branch_header;
+                    }
+                }
+                name if is_current_table_structural_wrapper(name) => {}
+                _ => skip_subtree(r),
+            },
+            Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }

@@ -165,6 +165,9 @@ fn read_table_formula_table(r: &mut Xml<'_>) -> Vec<Option<String>> {
                         });
                         xml_depth = xml_depth.saturating_add(1);
                     }
+                    b"Choice" | b"Fallback" => {
+                        xml_depth = xml_depth.saturating_add(1);
+                    }
                     b"tr" => {
                         let row_index = rows.len();
                         let mut row = read_table_formula_row(r, row_index);
@@ -232,6 +235,9 @@ fn read_table_formula_row(r: &mut Xml<'_>, row_index: usize) -> Vec<TableFormula
                             branch_depth: xml_depth + 1,
                             took_branch: false,
                         });
+                        xml_depth = xml_depth.saturating_add(1);
+                    }
+                    b"Choice" | b"Fallback" => {
                         xml_depth = xml_depth.saturating_add(1);
                     }
                     b"tc" => {
