@@ -2091,7 +2091,7 @@ fn numbered_ref_switch_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val=" 42 "/></w:numPr></w:pPr><w:bookmarkStart w:id="7" w:name="Clause"/><w:r><w:t>Numbered clause</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" REF Clause \n "><w:r><w:t>stale number</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF Clause \n \p "><w:r><w:t>stale number relative</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" Clause \n "><w:r><w:t>stale direct number</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val=" 42 "/></w:numPr></w:pPr><w:bookmarkStart w:id="7" w:name="Clause"/><w:r><w:t>Numbered clause</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" REF Clause \n "><w:r><w:t>stale number</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF Clause \n \p "><w:r><w:t>stale number relative</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF Clause \n\p "><w:r><w:t>stale compact number relative</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" Clause \n "><w:r><w:t>stale direct number</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" Clause \n\t "><w:r><w:t>stale compact direct numeric</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
         (
             "word/numbering.xml",
@@ -11145,7 +11145,7 @@ fn docx_ref_n_field_computes_numbered_bookmark_paragraph() {
     let doc = Document::open(&numbered_ref_switch_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 3);
+    assert_eq!(fields.len(), 5);
     assert!(fields.iter().all(|field| field.kind == FieldKind::Ref));
     assert_eq!(fields[0].instruction, "REF Clause \\n");
     assert_eq!(fields[0].result, "stale number");
@@ -11153,15 +11153,27 @@ fn docx_ref_n_field_computes_numbered_bookmark_paragraph() {
     assert_eq!(fields[1].instruction, "REF Clause \\n \\p");
     assert_eq!(fields[1].result, "stale number relative");
     assert_eq!(fields[1].computed_result.as_deref(), Some("3 above"));
-    assert_eq!(fields[2].instruction, "Clause \\n");
-    assert_eq!(fields[2].result, "stale direct number");
-    assert_eq!(fields[2].computed_result.as_deref(), Some("3"));
+    assert_eq!(fields[2].instruction, "REF Clause \\n\\p");
+    assert_eq!(fields[2].result, "stale compact number relative");
+    assert_eq!(fields[2].computed_result.as_deref(), Some("3 above"));
+    assert_eq!(fields[3].instruction, "Clause \\n");
+    assert_eq!(fields[3].result, "stale direct number");
+    assert_eq!(fields[3].computed_result.as_deref(), Some("3"));
+    assert_eq!(fields[4].instruction, "Clause \\n\\t");
+    assert_eq!(fields[4].result, "stale compact direct numeric");
+    assert_eq!(fields[4].computed_result.as_deref(), Some("3"));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
 
     let main_text = doc.main_text();
     assert!(
         !main_text.contains("stale number")
             && !main_text.contains("stale number relative")
-            && !main_text.contains("stale direct number"),
+            && !main_text.contains("stale compact number relative")
+            && !main_text.contains("stale direct number")
+            && !main_text.contains("stale compact direct numeric"),
         "REF \\n fields should display computed numbered-paragraph text: {main_text:?}"
     );
     assert!(main_text.contains("Numbered clause"), "{main_text:?}");

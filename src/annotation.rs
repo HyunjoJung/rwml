@@ -487,10 +487,6 @@ pub(crate) fn is_toc_value_neutral_switch(part: &str) -> bool {
         || part.eq_ignore_ascii_case("\\x")
 }
 
-pub(crate) fn is_ref_value_neutral_switch(part: &str) -> bool {
-    part.eq_ignore_ascii_case("\\h")
-}
-
 pub(crate) fn is_note_ref_kind(kind: &str) -> bool {
     kind.eq_ignore_ascii_case("NOTEREF") || kind.eq_ignore_ascii_case("FTNREF")
 }
@@ -1846,18 +1842,18 @@ fn ref_field_syntax_parts<'a>(mut parts: impl Iterator<Item = &'a str>) -> Optio
             continue;
         }
         if part.starts_with('\\') {
-            if part.eq_ignore_ascii_case("\\t") {
-                if suppress_non_numeric {
-                    return None;
+            if let Some(switches) = compact_ref_flag_switches(part) {
+                for switch in switches {
+                    apply_ref_flag_switch(
+                        switch,
+                        &mut note_reference,
+                        &mut relative,
+                        &mut paragraph_number,
+                        &mut full_context_number,
+                        &mut relative_context_number,
+                        &mut suppress_non_numeric,
+                    )?;
                 }
-                suppress_non_numeric = true;
-                continue;
-            }
-            if part.eq_ignore_ascii_case("\\f") {
-                if note_reference {
-                    return None;
-                }
-                note_reference = true;
                 continue;
             }
             if part.eq_ignore_ascii_case("\\d") {
@@ -1880,37 +1876,6 @@ fn ref_field_syntax_parts<'a>(mut parts: impl Iterator<Item = &'a str>) -> Optio
                     return None;
                 }
                 sequence_separator = true;
-                continue;
-            }
-            if part.eq_ignore_ascii_case("\\n") {
-                if paragraph_number || full_context_number || relative_context_number {
-                    return None;
-                }
-                paragraph_number = true;
-                continue;
-            }
-            if part.eq_ignore_ascii_case("\\w") {
-                if full_context_number || paragraph_number || relative_context_number {
-                    return None;
-                }
-                full_context_number = true;
-                continue;
-            }
-            if part.eq_ignore_ascii_case("\\r") {
-                if relative_context_number || paragraph_number || full_context_number {
-                    return None;
-                }
-                relative_context_number = true;
-                continue;
-            }
-            if part.eq_ignore_ascii_case("\\p") {
-                if relative {
-                    return None;
-                }
-                relative = true;
-                continue;
-            }
-            if is_ref_value_neutral_switch(part) {
                 continue;
             }
             return None;
@@ -1954,6 +1919,81 @@ fn ref_field_syntax_parts<'a>(mut parts: impl Iterator<Item = &'a str>) -> Optio
         relative_context_number,
         suppress_non_numeric,
     })
+}
+
+fn compact_ref_flag_switches(part: &str) -> Option<Vec<char>> {
+    let mut rest = part;
+    let mut switches = Vec::new();
+    while !rest.is_empty() {
+        let mut chars = rest.chars();
+        if chars.next()? != '\\' {
+            return None;
+        }
+        let switch = chars.next()?.to_ascii_lowercase();
+        if !matches!(switch, 't' | 'f' | 'n' | 'w' | 'r' | 'p' | 'h') {
+            return None;
+        }
+        switches.push(switch);
+        rest = chars.as_str();
+    }
+    (!switches.is_empty()).then_some(switches)
+}
+
+fn apply_ref_flag_switch(
+    switch: char,
+    note_reference: &mut bool,
+    relative: &mut bool,
+    paragraph_number: &mut bool,
+    full_context_number: &mut bool,
+    relative_context_number: &mut bool,
+    suppress_non_numeric: &mut bool,
+) -> Option<()> {
+    match switch {
+        'h' => Some(()),
+        't' => {
+            if *suppress_non_numeric {
+                return None;
+            }
+            *suppress_non_numeric = true;
+            Some(())
+        }
+        'f' => {
+            if *note_reference {
+                return None;
+            }
+            *note_reference = true;
+            Some(())
+        }
+        'n' => {
+            if *paragraph_number || *full_context_number || *relative_context_number {
+                return None;
+            }
+            *paragraph_number = true;
+            Some(())
+        }
+        'w' => {
+            if *full_context_number || *paragraph_number || *relative_context_number {
+                return None;
+            }
+            *full_context_number = true;
+            Some(())
+        }
+        'r' => {
+            if *relative_context_number || *paragraph_number || *full_context_number {
+                return None;
+            }
+            *relative_context_number = true;
+            Some(())
+        }
+        'p' => {
+            if *relative {
+                return None;
+            }
+            *relative = true;
+            Some(())
+        }
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3002,6 +3042,16 @@ mod tests {
         assert_eq!(direct.target, "Figure1");
         assert_eq!(direct.text_format, Some(FieldTextFormat::FirstCap));
         assert!(direct.relative);
+
+        let compact_number =
+            ref_field_syntax(r#"REF Figure1 \n\p"#).expect("valid compact numbered REF syntax");
+        assert!(compact_number.paragraph_number);
+        assert!(compact_number.relative);
+
+        let compact_direct = direct_ref_field_syntax(r#"Figure1 \n\t"#)
+            .expect("valid compact direct numbered REF syntax");
+        assert!(compact_direct.paragraph_number);
+        assert!(compact_direct.suppress_non_numeric);
 
         let sequence =
             ref_field_syntax(r#"REF Figure1 \d-"#).expect("valid compact sequence separator");
