@@ -26,6 +26,7 @@ pub(crate) fn toc_entries(xml: &str, styles: &Styles) -> Vec<TocEntry> {
     let mut r = Reader::from_str(xml);
     let mut entries = Vec::new();
     let mut active_bookmarks = Vec::new();
+    let mut sequence_counters = HashMap::new();
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
     loop {
@@ -50,7 +51,13 @@ pub(crate) fn toc_entries(xml: &str, styles: &Styles) -> Vec<TocEntry> {
                         });
                     }
                     b"p" => {
-                        read_toc_paragraph(&mut r, styles, &mut active_bookmarks, &mut entries);
+                        read_toc_paragraph(
+                            &mut r,
+                            styles,
+                            &mut active_bookmarks,
+                            &mut sequence_counters,
+                            &mut entries,
+                        );
                         consumed_element = true;
                     }
                     b"bookmarkStart" => {
@@ -100,6 +107,7 @@ fn read_toc_paragraph(
     r: &mut Xml<'_>,
     styles: &Styles,
     active_bookmarks: &mut Vec<(String, String)>,
+    sequence_counters: &mut HashMap<String, i64>,
     entries: &mut Vec<TocEntry>,
 ) {
     let mut style_id: Option<String> = None;
@@ -139,6 +147,14 @@ fn read_toc_paragraph(
                         let instruction = attr_local(&e, b"instr");
                         if push_tc_entry_from_instruction(instruction.clone(), &bookmarks, entries)
                         {
+                            skip_element(r, b"fldSimple");
+                            consumed_element = true;
+                        } else if push_computed_toc_sequence_result(
+                            instruction.as_deref(),
+                            sequence_counters,
+                            &mut sequence_identifiers,
+                            &mut text,
+                        ) {
                             skip_element(r, b"fldSimple");
                             consumed_element = true;
                         } else if let Some(identifier) =
@@ -201,6 +217,12 @@ fn read_toc_paragraph(
                     b"fldSimple" => {
                         let instruction = attr_local(&e, b"instr");
                         if !push_tc_entry_from_instruction(instruction.clone(), &bookmarks, entries)
+                            && !push_computed_toc_sequence_result(
+                                instruction.as_deref(),
+                                sequence_counters,
+                                &mut sequence_identifiers,
+                                &mut text,
+                            )
                         {
                             if let Some(identifier) =
                                 seq_identifier_from_instruction(instruction.as_deref())
@@ -354,6 +376,26 @@ fn is_tc_instruction(instruction: &str) -> bool {
     instruction_parts(instruction)
         .first()
         .is_some_and(|kind| kind.eq_ignore_ascii_case("TC"))
+}
+
+fn push_computed_toc_sequence_result(
+    instruction: Option<&str>,
+    sequence_counters: &mut HashMap<String, i64>,
+    sequence_identifiers: &mut Vec<String>,
+    text: &mut String,
+) -> bool {
+    let Some(instruction) = instruction else {
+        return false;
+    };
+    let Some(identifier) = seq_identifier_from_instruction(Some(instruction)) else {
+        return false;
+    };
+    let Some(result) = computed_sequence_result(instruction, sequence_counters) else {
+        return false;
+    };
+    push_unique(sequence_identifiers, identifier);
+    text.push_str(&result);
+    true
 }
 
 pub(crate) fn seq_identifier_from_instruction(instruction: Option<&str>) -> Option<String> {

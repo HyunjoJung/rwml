@@ -3232,6 +3232,23 @@ fn toc_sequence_caption_switch_docx() -> Vec<u8> {
     ])
 }
 
+fn toc_dirty_sequence_caption_switch_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Figure </w:t></w:r><w:fldSimple w:instr=" SEQ Figure "><w:r><w:t>9</w:t></w:r></w:fldSimple><w:r><w:t>: Mercury</w:t></w:r></w:p><w:p><w:r><w:t>Figure </w:t></w:r><w:fldSimple w:instr=" SEQ Figure "><w:r><w:t>99</w:t></w:r></w:fldSimple><w:r><w:t>: Venus</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" TOC \c Figure "><w:r><w:t>stale dirty figures toc</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn toc_sequence_caption_text_switch_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -11021,6 +11038,40 @@ fn docx_toc_c_field_computes_matching_seq_caption_entries() {
     );
     assert_eq!(main_text.matches("Figure 1: Mercury").count(), 2);
     assert_eq!(main_text.matches("Table 1: Invoices").count(), 1);
+}
+
+#[test]
+fn docx_toc_c_field_uses_computed_seq_numbers_for_dirty_caption_entries() {
+    let doc = Document::open(&toc_dirty_sequence_caption_switch_docx()).expect("fixture opens");
+    let fields = doc.fields();
+    assert_eq!(fields.len(), 3);
+    assert_eq!(fields[0].kind, FieldKind::Sequence);
+    assert_eq!(fields[0].instruction, "SEQ Figure");
+    assert_eq!(fields[0].result, "9");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("1"));
+    assert_eq!(fields[1].kind, FieldKind::Sequence);
+    assert_eq!(fields[1].instruction, "SEQ Figure");
+    assert_eq!(fields[1].result, "99");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("2"));
+    let toc = fields
+        .iter()
+        .find(|field| field.kind == FieldKind::Toc)
+        .expect("TOC field is parsed");
+
+    assert_eq!(toc.instruction, "TOC \\c Figure");
+    assert_eq!(toc.result, "stale dirty figures toc");
+    assert_eq!(
+        toc.computed_result.as_deref(),
+        Some("Figure 1: Mercury\nFigure 2: Venus")
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        !main_text.contains("stale dirty figures toc"),
+        "TOC \\c should use computed SEQ caption numbers in the read model: {main_text:?}"
+    );
+    assert_eq!(main_text.matches("Figure 1: Mercury").count(), 2);
+    assert_eq!(main_text.matches("Figure 2: Venus").count(), 2);
 }
 
 #[test]
