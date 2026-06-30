@@ -28,6 +28,10 @@ rendering moving toward one coherent Rust-native document model.
   gaps with evidence, risk, likely files, and focused verification; explicitly
   mark no-op or ambiguous candidates as skipped, then implement only the top
   verified slice.
+- Keep inventory notes proportional. For a small deterministic parser/evaluator
+  gap, first prove the gap locally with code evidence or a red test; write the
+  longer outside-repo inventory entry after the selected slice is real, not
+  before.
 - Keep skill usage narrow. Select the smallest directly relevant skill set,
   avoid overlapping skills for the same decision, and reuse skill guidance that
   is already present in the current context instead of rereading adjacent docs.
@@ -36,6 +40,24 @@ rendering moving toward one coherent Rust-native document model.
   exit status plus failures.
 - Keep diffs small by closing focused, verified batches frequently. When asked
   to commit, stage only task-owned files and commit after the batch gate passes.
+
+## Exploration Discipline
+
+- Use a local-first path for narrow deterministic field/parser/report gaps:
+  inspect the current code with `rg`, read the smallest relevant windows, add a
+  focused red test, then edit. Do not start Spark just to find the next small
+  syntax variant when the likely files are already known.
+- Use Spark/Ultracode for high-uncertainty direction choices, cross-subsystem
+  audits, R2-b layout work, R2-e legacy `.doc` work, or cases where independent
+  read-only lanes can genuinely reduce search time.
+- Before launching workers, define the stop condition. If local evidence or two
+  worker lanes already identify the same low-risk candidate, start the local
+  red-test loop instead of waiting for marginal extra scouting.
+- Worker output is advisory. The parent must validate the chosen candidate
+  locally before changing code, public docs, or outside inventories.
+- When looking for an existing filtered test, use `cargo test <scope> -- --list`
+  plus `rg` if the exact name is uncertain. A filtered command that runs zero
+  tests is not verification.
 
 ## Ultracode / Spark
 
@@ -56,7 +78,9 @@ rendering moving toward one coherent Rust-native document model.
 - Avoid duplicate local/worker inspection. Before launching a worker, give it a
   bounded question that does not overlap with the parent agent's active local
   search; if the parent can answer the question cheaply, skip the worker.
-- Do not launch Ultracode for genuinely trivial edits or direct local commands.
+- Do not launch Ultracode for genuinely trivial edits, direct local commands, or
+  small deterministic parser/evaluator gaps that can be proven faster with local
+  `rg` plus one red test.
 
 ## Project Invariants
 
@@ -98,6 +122,8 @@ surface or risk justifies them.
 - Formatting: `cargo fmt --all -- --check`
 - Focused Rust tests: `cargo test --test <name> <filter>` or
   `cargo test --lib <filter>`
+- Test discovery: `cargo test --test <name> -- --list | rg '<pattern>'` when a
+  filter is uncertain; rerun with the exact test name before claiming coverage.
 - Default Rust gate: `cargo test --all-targets`
 - Render changes: `cargo test --all-targets --features render`
 - Public hygiene: `python3 scripts/public_hygiene_audit.py`
@@ -117,6 +143,16 @@ If a check is skipped, say exactly why.
 
 - Keep README, PRD, TRD, roadmap, tests, and diagnostics aligned. Do not claim
   support that lacks tests or deterministic behavior.
+- Treat the roadmap's Near-Term Cut/R2 slice list as the canonical active
+  backlog summary. README/PRD/TRD should stay user-facing and need not repeat
+  every micro-slice if the existing wording remains true.
+- For small semantic batches, update public docs only when the public support
+  claim changes, becomes misleading, or needs a cached-vs-computed distinction.
+  If a change only tightens already-documented behavior, record that in tests and
+  the outside inventory instead of editing four long support paragraphs.
+- Prefer short tables, bullets, or stable subsection anchors for support wording.
+  Avoid broad patches against dense field-support paragraphs when a narrow exact
+  clause or no doc change is enough.
 - Write public docs as release notes for users, not internal agent logs.
 - Avoid hype. State what works, what remains cached/unsupported, and which
   command verifies it.
