@@ -8708,6 +8708,21 @@ fn docx_compatibility_diagnostics_split_valid_broader_fields_from_malformed_synt
             },
         ]
     );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| {
+            instruction.starts_with("PRIVATE") || instruction.starts_with("ADDIN")
+        }),
+        vec![
+            (
+                "PRIVATE legacy-data".to_string(),
+                Some(FieldUnsupportedReason::NoComputedResult),
+            ),
+            (
+                r#"ADDIN "bad "#.to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+        ]
+    );
     assert!(doc.main_text().contains("cached malformed addin"));
 }
 

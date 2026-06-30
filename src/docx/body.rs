@@ -2425,6 +2425,9 @@ fn unsupported_simple_field_reason_hint(
     if let Some(reason) = unsupported_reference_index_reason_hint(instruction) {
         return Some(reason);
     }
+    if let Some(reason) = unsupported_compatibility_reason_hint(instruction) {
+        return Some(reason);
+    }
     None
 }
 
@@ -2534,6 +2537,27 @@ fn is_generated_reference_index_kind(kind: &str) -> bool {
 
 fn is_reference_index_marker_kind(kind: &str) -> bool {
     matches!(kind.to_ascii_uppercase().as_str(), "RD" | "TA" | "XE")
+}
+
+fn unsupported_compatibility_reason_hint(instruction: &str) -> Option<FieldUnsupportedReason> {
+    if !matches!(
+        FieldKind::from_instruction(instruction),
+        FieldKind::Compatibility(_)
+    ) {
+        return None;
+    }
+    Some(if opaque_field_syntax(instruction, is_compatibility_kind) {
+        FieldUnsupportedReason::NoComputedResult
+    } else {
+        FieldUnsupportedReason::UnsupportedSwitch
+    })
+}
+
+fn is_compatibility_kind(kind: &str) -> bool {
+    matches!(
+        kind.to_ascii_uppercase().as_str(),
+        "ADDIN" | "DATA" | "GLOSSARY" | "HTMLACTIVEX" | "PRIVATE"
+    )
 }
 
 fn computed_simple_field_result(
