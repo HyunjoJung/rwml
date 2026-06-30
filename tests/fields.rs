@@ -4009,6 +4009,18 @@ fn docx_merge_field_diagnostics_reject_missing_name_before_format_tail() {
             count: 1,
         }]
     );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| {
+            instruction.starts_with("MERGEFIELD")
+        }),
+        vec![
+            ("MERGEFIELD ClientName \\* MERGEFORMAT".to_string(), None),
+            (
+                "MERGEFIELD \\* MERGEFORMAT ClientName".to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+        ]
+    );
     assert!(doc.main_text().contains("cached missing merge name"));
 }
 
@@ -4211,6 +4223,18 @@ fn docx_document_info_fields_are_named_cached_display_fields() {
             count: 1,
         }]
     );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| {
+            instruction.starts_with("DOCPROPERTY")
+        }),
+        vec![
+            ("DOCPROPERTY \"Company\"".to_string(), None),
+            (
+                "DOCPROPERTY \"Broken Name ".to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+        ]
+    );
 
     let main_text = doc.main_text();
     assert!(
@@ -4223,6 +4247,60 @@ fn docx_document_info_fields_are_named_cached_display_fields() {
             && main_text.contains("cached broken property"),
         "document-info fields should preserve cached display text: {main_text:?}"
     );
+}
+
+#[test]
+fn docx_filename_field_diagnostics_reject_unknown_switch() {
+    let doc = Document::open(&docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" FILENAME \p "><w:r><w:t>report.docx</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FILENAME \x "><w:r><w:t>cached filename</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ]))
+    .expect("fixture opens");
+
+    let fields = doc.fields();
+    assert_eq!(fields.len(), 2);
+    assert!(fields.iter().all(|field| field.kind == FieldKind::Filename));
+    assert_eq!(fields[0].instruction, "FILENAME \\p");
+    assert_eq!(fields[1].instruction, "FILENAME \\x");
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Filename,
+            count: 1,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::UnsupportedSwitch,
+            count: 1,
+        }]
+    );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| {
+            instruction.starts_with("FILENAME")
+        }),
+        vec![
+            ("FILENAME \\p".to_string(), None),
+            (
+                "FILENAME \\x".to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+        ]
+    );
+    assert!(doc.main_text().contains("cached filename"));
 }
 
 #[test]
@@ -13327,6 +13405,25 @@ fn docx_hyperlink_unsupported_switch_model_render_report_matches_document_reason
             reason: FieldEvaluationReason::UnsupportedSwitch,
             count: 3,
         }]
+    );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| {
+            instruction.starts_with("HYPERLINK")
+        }),
+        vec![
+            (
+                "HYPERLINK \"https://example.com ".to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+            (
+                "HYPERLINK \\o \"tip\"".to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+            (
+                "HYPERLINK \"https://example.com\" extra".to_string(),
+                Some(FieldUnsupportedReason::UnsupportedSwitch),
+            ),
+        ]
     );
     let model = doc.model();
 

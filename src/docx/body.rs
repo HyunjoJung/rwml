@@ -25,7 +25,7 @@ use super::{
 };
 use crate::annotation::{
     barcode_field_syntax, direct_ref_field_syntax, instruction_parts, legacy_form_field_syntax,
-    normalized_field_instruction, note_ref_field_syntax, opaque_field_syntax,
+    merge_field_name, normalized_field_instruction, note_ref_field_syntax, opaque_field_syntax,
     page_ref_field_syntax, ref_field_syntax, toc_field_syntax, FieldKind,
 };
 use crate::model::{
@@ -2452,6 +2452,18 @@ fn unsupported_simple_field_reason_hint(
     if let Some(reason) = unsupported_numbering_reason_hint(instruction) {
         return Some(reason);
     }
+    if let Some(reason) = unsupported_document_info_reason_hint(instruction) {
+        return Some(reason);
+    }
+    if let Some(reason) = unsupported_filename_reason_hint(instruction) {
+        return Some(reason);
+    }
+    if let Some(reason) = unsupported_hyperlink_reason_hint(instruction) {
+        return Some(reason);
+    }
+    if let Some(reason) = unsupported_merge_field_reason_hint(instruction) {
+        return Some(reason);
+    }
     None
 }
 
@@ -2716,6 +2728,43 @@ fn unsupported_numbering_reason_hint(instruction: &str) -> Option<FieldUnsupport
     Some(unsupported_syntax_field_reason_hint(
         super::fields::supports_numbering_field_syntax(instruction),
     ))
+}
+
+fn unsupported_document_info_reason_hint(instruction: &str) -> Option<FieldUnsupportedReason> {
+    if !matches!(
+        FieldKind::from_instruction(instruction),
+        FieldKind::DocumentInfo(_)
+    ) {
+        return None;
+    }
+    (!super::fields::supports_document_info_field_syntax(instruction))
+        .then_some(FieldUnsupportedReason::UnsupportedSwitch)
+}
+
+fn unsupported_filename_reason_hint(instruction: &str) -> Option<FieldUnsupportedReason> {
+    if FieldKind::from_instruction(instruction) != FieldKind::Filename {
+        return None;
+    }
+    (!super::fields::supports_filename_field_syntax(instruction))
+        .then_some(FieldUnsupportedReason::UnsupportedSwitch)
+}
+
+fn unsupported_hyperlink_reason_hint(instruction: &str) -> Option<FieldUnsupportedReason> {
+    if FieldKind::from_instruction(instruction) != FieldKind::Hyperlink {
+        return None;
+    }
+    hyperlink_instr_url(instruction)
+        .is_none()
+        .then_some(FieldUnsupportedReason::UnsupportedSwitch)
+}
+
+fn unsupported_merge_field_reason_hint(instruction: &str) -> Option<FieldUnsupportedReason> {
+    if FieldKind::from_instruction(instruction) != FieldKind::MergeField {
+        return None;
+    }
+    merge_field_name(instruction)
+        .is_none()
+        .then_some(FieldUnsupportedReason::UnsupportedSwitch)
 }
 
 fn computed_simple_field_result(
