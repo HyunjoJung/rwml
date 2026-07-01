@@ -561,11 +561,22 @@ fn read_table_formula_cell(
                     b"fldSimple" => {
                         let instruction =
                             attr_local(&e, b"instr").map(|value| normalize_instruction(&value));
-                        let result_text = read_field_result_text(r);
                         let is_local_formula = instruction.as_deref().is_some_and(|value| {
                             FieldKind::from_instruction(value)
                                 == FieldKind::Dynamic("=".to_string())
                         });
+                        let result_text = if is_local_formula {
+                            read_field_result_text(r)
+                        } else {
+                            read_table_formula_source_field_result_text(
+                                r,
+                                document_bookmarks,
+                                sequence_counters,
+                                autonum_counter,
+                                listnum_counter,
+                                field_bookmarks,
+                            )
+                        };
                         if is_local_formula && current.is_empty() {
                             cell.contains_formula = true;
                             cell.records.push(TableFormulaRecord::Local {
@@ -775,6 +786,34 @@ fn grid_span_exceeds_one(e: &BytesStart<'_>) -> bool {
 }
 
 fn read_field_result_text(r: &mut Xml<'_>) -> String {
+    read_field_result_text_with_empty_simple_fields(r, |_| None)
+}
+
+fn read_table_formula_source_field_result_text(
+    r: &mut Xml<'_>,
+    document_bookmarks: &HashMap<String, String>,
+    sequence_counters: &mut HashMap<String, i64>,
+    autonum_counter: &mut i64,
+    listnum_counter: &mut i64,
+    field_bookmarks: &mut HashMap<String, String>,
+) -> String {
+    read_field_result_text_with_empty_simple_fields(r, |instruction| {
+        let instruction = instruction.map(normalize_instruction);
+        computed_table_formula_source_field_result(
+            instruction.as_deref(),
+            document_bookmarks,
+            sequence_counters,
+            autonum_counter,
+            listnum_counter,
+            field_bookmarks,
+        )
+    })
+}
+
+fn read_field_result_text_with_empty_simple_fields(
+    r: &mut Xml<'_>,
+    mut empty_simple_field_result: impl FnMut(Option<&str>) -> Option<String>,
+) -> String {
     let mut text = String::new();
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
@@ -817,7 +856,16 @@ fn read_field_result_text(r: &mut Xml<'_>) -> String {
                 if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
                     continue;
                 }
-                append_table_formula_result_inline(&mut text, &e);
+                if name == b"fldSimple" {
+                    let instruction = attr_local(&e, b"instr");
+                    if let Some(computed) = empty_simple_field_result(instruction.as_deref()) {
+                        text.push_str(&computed);
+                    } else {
+                        append_table_formula_result_inline(&mut text, &e);
+                    }
+                } else {
+                    append_table_formula_result_inline(&mut text, &e);
+                }
             }
             Ok(Event::End(e)) => {
                 let qname = e.name();
