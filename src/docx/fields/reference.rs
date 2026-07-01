@@ -7,6 +7,7 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
     let mut current = Vec::new();
+    let mut field_bookmarks = HashMap::new();
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => {
@@ -28,15 +29,50 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
                         });
                     }
                     b"fldSimple" if !active.is_empty() => {
-                        append_ref_simple_field_result(&active, &mut current, &mut out, &mut r, &e);
+                        append_ref_simple_field_result(
+                            &active,
+                            &mut current,
+                            &mut out,
+                            &mut field_bookmarks,
+                            &mut r,
+                            &e,
+                        );
                         continue;
                     }
                     b"fldSimple" if ref_target_complex_in_result(&current) => {
-                        append_ref_simple_field_result(&active, &mut current, &mut out, &mut r, &e);
+                        append_ref_simple_field_result(
+                            &active,
+                            &mut current,
+                            &mut out,
+                            &mut field_bookmarks,
+                            &mut r,
+                            &e,
+                        );
+                        continue;
+                    }
+                    b"fldSimple"
+                        if is_ref_target_source_order_field_instruction(
+                            attr_local(&e, b"instr").as_deref(),
+                        ) =>
+                    {
+                        let field = read_simple_field(&mut r, &e);
+                        let _ = computed_ref_target_field_result(
+                            &field.instruction,
+                            &out,
+                            &[],
+                            &mut field_bookmarks,
+                        )
+                        .unwrap_or(field.result);
                         continue;
                     }
                     b"fldChar" => {
-                        apply_ref_target_fld_char(&e, &active, &mut current, &mut out);
+                        apply_ref_target_fld_char(
+                            &e,
+                            &active,
+                            &mut current,
+                            &mut out,
+                            &mut field_bookmarks,
+                        );
                     }
                     b"p" => append_ref_target_paragraph_breaks(&active, &mut current, &mut out),
                     b"bookmarkStart" => {
@@ -104,8 +140,27 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
                             active.retain(|(active_id, _)| active_id != &id);
                         }
                     }
+                    b"fldSimple"
+                        if is_ref_target_source_order_field_instruction(
+                            attr_local(&e, b"instr").as_deref(),
+                        ) =>
+                    {
+                        let instruction = attr_local(&e, b"instr").unwrap_or_default();
+                        let _ = computed_ref_target_field_result(
+                            &instruction,
+                            &out,
+                            &[],
+                            &mut field_bookmarks,
+                        );
+                    }
                     b"fldChar" => {
-                        apply_ref_target_fld_char(&e, &active, &mut current, &mut out);
+                        apply_ref_target_fld_char(
+                            &e,
+                            &active,
+                            &mut current,
+                            &mut out,
+                            &mut field_bookmarks,
+                        );
                     }
                     b"tab" => append_ref_target_text(&active, &mut current, &mut out, "\t"),
                     b"br" => {
@@ -152,6 +207,7 @@ fn apply_ref_target_fld_char(
     active: &[(String, String)],
     current: &mut Vec<RefTargetComplexField>,
     out: &mut HashMap<String, String>,
+    field_bookmarks: &mut HashMap<String, String>,
 ) {
     match field_char_type(e).as_deref() {
         Some("begin") => {
@@ -173,8 +229,13 @@ fn apply_ref_target_fld_char(
             let Some(field) = current.pop() else {
                 return;
             };
-            let text = computed_ref_target_field_result(&field.instruction, out, &field.active)
-                .unwrap_or(field.result);
+            let text = computed_ref_target_field_result(
+                &field.instruction,
+                out,
+                &field.active,
+                field_bookmarks,
+            )
+            .unwrap_or(field.result);
             if let Some(parent) = current.last_mut() {
                 if parent.phase == FieldPhase::Result {
                     parent.result.push_str(&text);
@@ -238,13 +299,14 @@ fn append_ref_simple_field_result(
     active: &[(String, String)],
     current: &mut [RefTargetComplexField],
     out: &mut HashMap<String, String>,
+    field_bookmarks: &mut HashMap<String, String>,
     r: &mut Xml<'_>,
     e: &BytesStart<'_>,
 ) {
     let field = read_simple_field(r, e);
     let excluded = ref_target_excluded_bookmarks(active, current);
-    let text =
-        computed_ref_target_field_result(&field.instruction, out, excluded).unwrap_or(field.result);
+    let text = computed_ref_target_field_result(&field.instruction, out, excluded, field_bookmarks)
+        .unwrap_or(field.result);
     append_ref_target_text(active, current, out, &text);
 }
 
@@ -252,12 +314,49 @@ fn computed_ref_target_field_result(
     instruction: &str,
     bookmarks: &HashMap<String, String>,
     excluded: &[(String, String)],
+    field_bookmarks: &mut HashMap<String, String>,
 ) -> Option<String> {
     let available_bookmarks = ref_target_available_bookmarks(bookmarks, excluded);
-    computed_dynamic_result_with_bookmarks(instruction, &available_bookmarks)
-        .or_else(|| computed_display_result(instruction))
-        .or_else(|| computed_action_result(instruction))
-        .or_else(|| computed_reference_index_result(instruction))
+    let instruction = normalize_instruction(instruction);
+    match FieldKind::from_instruction(&instruction) {
+        FieldKind::Dynamic(kind) if kind == "ASK" => {
+            return computed_ask_result(&instruction, field_bookmarks);
+        }
+        FieldKind::Dynamic(kind) if kind == "SET" => {
+            return computed_set_result(&instruction, field_bookmarks);
+        }
+        _ => {}
+    }
+    let bookmarks = ref_target_merged_bookmarks(&available_bookmarks, field_bookmarks);
+    computed_dynamic_result_with_bookmarks(&instruction, &bookmarks)
+        .or_else(|| computed_display_result(&instruction))
+        .or_else(|| computed_action_result(&instruction))
+        .or_else(|| computed_reference_index_result(&instruction))
+}
+
+fn is_ref_target_source_order_field_instruction(instruction: Option<&str>) -> bool {
+    instruction
+        .map(normalize_instruction)
+        .as_deref()
+        .is_some_and(
+            |instruction| match FieldKind::from_instruction(instruction) {
+                FieldKind::Dynamic(kind) => matches!(kind.as_str(), "ASK" | "SET"),
+                _ => false,
+            },
+        )
+}
+
+fn ref_target_merged_bookmarks(
+    document_bookmarks: &HashMap<String, String>,
+    field_bookmarks: &HashMap<String, String>,
+) -> HashMap<String, String> {
+    let mut bookmarks = document_bookmarks.clone();
+    bookmarks.extend(
+        field_bookmarks
+            .iter()
+            .map(|(name, value)| (name.clone(), value.clone())),
+    );
+    bookmarks
 }
 
 fn ref_target_excluded_bookmarks<'a>(
