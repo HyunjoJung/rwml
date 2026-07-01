@@ -156,6 +156,20 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
                         }
                     }
                     b"fldSimple"
+                        if !active.is_empty() || ref_target_complex_in_result(&current) =>
+                    {
+                        append_ref_empty_simple_field_result(
+                            attr_local(&e, b"instr").as_deref(),
+                            &active,
+                            &mut current,
+                            &mut out,
+                            &mut autonum_counter,
+                            &mut listnum_counter,
+                            &mut sequence_counters,
+                            &mut field_bookmarks,
+                        );
+                    }
+                    b"fldSimple"
                         if is_ref_target_source_order_field_instruction(
                             attr_local(&e, b"instr").as_deref(),
                         ) =>
@@ -352,6 +366,31 @@ fn append_ref_simple_field_result(
         field_bookmarks,
     )
     .unwrap_or(field.result);
+    append_ref_target_text(active, current, out, &text);
+}
+
+fn append_ref_empty_simple_field_result(
+    instruction: Option<&str>,
+    active: &[(String, String)],
+    current: &mut [RefTargetComplexField],
+    out: &mut HashMap<String, String>,
+    autonum_counter: &mut i64,
+    listnum_counter: &mut i64,
+    sequence_counters: &mut HashMap<String, i64>,
+    field_bookmarks: &mut HashMap<String, String>,
+) {
+    let instruction = instruction.unwrap_or_default();
+    let excluded = ref_target_excluded_bookmarks(active, current);
+    let text = computed_ref_target_field_result(
+        instruction,
+        out,
+        excluded,
+        autonum_counter,
+        listnum_counter,
+        sequence_counters,
+        field_bookmarks,
+    )
+    .unwrap_or_default();
     append_ref_target_text(active, current, out, &text);
 }
 
