@@ -81,6 +81,7 @@ pub(crate) fn style_ref_context(
     let mut counters: HashMap<String, [u32; 9]> = HashMap::new();
     let mut sequence_counters = HashMap::new();
     let mut autonum_counter = 0i64;
+    let mut listnum_counter = 0i64;
     let mut field_bookmarks = HashMap::new();
     let mut next_order = 0usize;
     let mut xml_depth = 0usize;
@@ -118,6 +119,7 @@ pub(crate) fn style_ref_context(
                             document_bookmarks,
                             &mut sequence_counters,
                             &mut autonum_counter,
+                            &mut listnum_counter,
                             &mut field_bookmarks,
                         );
                         consumed_element = true;
@@ -164,6 +166,7 @@ fn read_style_ref_paragraph(
     document_bookmarks: &HashMap<String, String>,
     sequence_counters: &mut HashMap<String, i64>,
     autonum_counter: &mut i64,
+    listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
 ) {
     let mut style_id = None;
@@ -220,6 +223,7 @@ fn read_style_ref_paragraph(
                                 document_bookmarks,
                                 sequence_counters,
                                 autonum_counter,
+                                listnum_counter,
                                 field_bookmarks,
                             },
                         );
@@ -257,6 +261,7 @@ fn read_style_ref_paragraph(
                                 document_bookmarks,
                                 sequence_counters,
                                 autonum_counter,
+                                listnum_counter,
                                 field_bookmarks,
                             ));
                         }
@@ -371,6 +376,7 @@ struct StyleRefRunScan<'a> {
     document_bookmarks: &'a HashMap<String, String>,
     sequence_counters: &'a mut HashMap<String, i64>,
     autonum_counter: &'a mut i64,
+    listnum_counter: &'a mut i64,
     field_bookmarks: &'a mut HashMap<String, String>,
 }
 
@@ -386,6 +392,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
         document_bookmarks,
         sequence_counters,
         autonum_counter,
+        listnum_counter,
         field_bookmarks,
     } = scan;
     let mut run_style_id = None;
@@ -428,6 +435,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
                             document_bookmarks,
                             sequence_counters,
                             autonum_counter,
+                            listnum_counter,
                             field_bookmarks,
                         );
                     }
@@ -493,6 +501,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
                             document_bookmarks,
                             sequence_counters,
                             autonum_counter,
+                            listnum_counter,
                             field_bookmarks,
                         );
                     }
@@ -560,6 +569,7 @@ fn read_style_ref_simple_field_result(
     document_bookmarks: &HashMap<String, String>,
     sequence_counters: &mut HashMap<String, i64>,
     autonum_counter: &mut i64,
+    listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
 ) -> String {
     let mut text = String::new();
@@ -603,6 +613,7 @@ fn read_style_ref_simple_field_result(
                                 document_bookmarks,
                                 sequence_counters,
                                 autonum_counter,
+                                listnum_counter,
                                 field_bookmarks,
                             },
                         );
@@ -686,6 +697,7 @@ fn read_style_ref_simple_field_result(
         document_bookmarks,
         sequence_counters,
         autonum_counter,
+        listnum_counter,
         field_bookmarks,
     ) {
         let cached_text = normalize_toc_text(&text);
@@ -751,6 +763,7 @@ fn computed_style_ref_source_field_result(
     document_bookmarks: &HashMap<String, String>,
     sequence_counters: &mut HashMap<String, i64>,
     autonum_counter: &mut i64,
+    listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
 ) -> Option<String> {
     let instruction = normalize_instruction(instruction?);
@@ -768,6 +781,7 @@ fn computed_style_ref_source_field_result(
     }
     computed_style_ref_source_ref_result(&instruction, document_bookmarks, field_bookmarks)
         .or_else(|| computed_numbering_result(&instruction, autonum_counter))
+        .or_else(|| computed_listnum_result(&instruction, listnum_counter))
         .or_else(|| computed_sequence_result(&instruction, sequence_counters))
         .or_else(|| {
             computed_formula_result_with_bookmark_context(
@@ -934,6 +948,7 @@ fn apply_style_ref_scan_fld_char(
     document_bookmarks: &HashMap<String, String>,
     sequence_counters: &mut HashMap<String, i64>,
     autonum_counter: &mut i64,
+    listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
 ) {
     match field_char_type(e).as_deref() {
@@ -961,6 +976,7 @@ fn apply_style_ref_scan_fld_char(
                         document_bookmarks,
                         sequence_counters,
                         autonum_counter,
+                        listnum_counter,
                         field_bookmarks,
                     ),
                 ) {
