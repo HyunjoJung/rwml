@@ -393,6 +393,23 @@ struct DocState {
     enc: &'static encoding_rs::Encoding,
 }
 
+fn doc_model_from_doc_state(state: &DocState) -> DocModel {
+    let mut numberer = list::Numberer::new(&state.lists);
+    assemble::build_model(
+        &state.word,
+        &state.table,
+        &state.pieces,
+        state.enc,
+        &state.papx,
+        &state.chpx,
+        &state.stylesheet,
+        &state.data,
+        &state.fonts,
+        &mut numberer,
+        &state.fib,
+    )
+}
+
 impl Document {
     /// Open and decode a Word document from its raw bytes, detecting the format:
     /// the OLE2/CFB magic (`D0CF11E0`) routes to the legacy `.doc` parser, the
@@ -462,22 +479,7 @@ impl Document {
     /// and re-[`Document::open`] the result.
     pub fn model(&self) -> DocModel {
         match &self.backend {
-            Backend::Doc(d) => {
-                let mut numberer = list::Numberer::new(&d.lists);
-                assemble::build_model(
-                    &d.word,
-                    &d.table,
-                    &d.pieces,
-                    d.enc,
-                    &d.papx,
-                    &d.chpx,
-                    &d.stylesheet,
-                    &d.data,
-                    &d.fonts,
-                    &mut numberer,
-                    &d.fib,
-                )
-            }
+            Backend::Doc(d) => doc_model_from_doc_state(d),
             #[cfg(feature = "docx")]
             Backend::Docx(d) => {
                 // The stored model is body-only; re-append footnote/endnote blocks for
@@ -663,7 +665,7 @@ impl Document {
     /// them.
     pub fn notes(&self) -> Vec<Note> {
         match &self.backend {
-            Backend::Doc(_) => legacy_doc_notes_from_model(&self.model()),
+            Backend::Doc(d) => legacy_doc_notes_from_state(d),
             #[cfg(feature = "docx")]
             Backend::Docx(d) => d.note_records.clone(),
         }
@@ -2586,6 +2588,13 @@ fn legacy_doc_notes_from_model(model: &DocModel) -> Vec<Note> {
     notes
 }
 
+fn legacy_doc_notes_from_state(state: &DocState) -> Vec<Note> {
+    let model = doc_model_from_doc_state(state);
+    let mut notes = legacy_doc_notes_from_model(&model);
+    attach_legacy_doc_footnote_marker_anchors(&mut notes, state);
+    notes
+}
+
 fn legacy_doc_text_boxes_from_model(model: &DocModel) -> Vec<TextBox> {
     model
         .source_regions(SourceRegionKind::TextBox)
@@ -2637,6 +2646,72 @@ fn legacy_doc_header_footer_kind(story_index: Option<usize>) -> HeaderFooterKind
         4 => HeaderFooterKind::FirstPageHeader,
         _ => HeaderFooterKind::FirstPageFooter,
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LegacyDocBodyMarkerAnchor {
+    source_cp: usize,
+    text: String,
+}
+
+fn attach_legacy_doc_footnote_marker_anchors(notes: &mut [Note], state: &DocState) {
+    let mut footnotes: Vec<_> = notes
+        .iter_mut()
+        .filter(|note| note.kind == NoteKind::Footnote)
+        .collect();
+    if footnotes.is_empty() {
+        return;
+    }
+    let anchors = legacy_doc_body_marker_anchors(state, 0x0002);
+    if anchors.len() != footnotes.len() {
+        return;
+    }
+    for (note, anchor) in footnotes.iter_mut().zip(anchors) {
+        note.anchor = Some(TextAnchor {
+            id: format!("{}@body-cp{}", note.id, anchor.source_cp),
+            text: anchor.text,
+        });
+    }
+}
+
+fn legacy_doc_body_marker_anchors(state: &DocState, marker: u16) -> Vec<LegacyDocBodyMarkerAnchor> {
+    let (units, _) = assemble::decode_with_fc(&state.word, &state.pieces, state.enc);
+    let main_len = (state.fib.ccp_text as usize).min(units.len());
+    legacy_doc_body_marker_anchors_from_units(&units[..main_len], marker)
+}
+
+fn legacy_doc_body_marker_anchors_from_units(
+    units: &[u16],
+    marker: u16,
+) -> Vec<LegacyDocBodyMarkerAnchor> {
+    units
+        .iter()
+        .enumerate()
+        .filter_map(|(source_cp, unit)| {
+            if *unit != marker {
+                return None;
+            }
+            legacy_doc_body_marker_anchor_text(units, source_cp)
+                .map(|text| LegacyDocBodyMarkerAnchor { source_cp, text })
+        })
+        .collect()
+}
+
+fn legacy_doc_body_marker_anchor_text(units: &[u16], source_cp: usize) -> Option<String> {
+    let start = (0..source_cp)
+        .rev()
+        .find(|index| legacy_doc_body_marker_context_boundary(units[*index]))
+        .map_or(0, |index| index + 1);
+    let end = (source_cp + 1..units.len())
+        .find(|index| legacy_doc_body_marker_context_boundary(units[*index]))
+        .unwrap_or(units.len());
+    let raw = String::from_utf16_lossy(&units[start..end]);
+    let text = text::finalize(&raw);
+    (!text.is_empty()).then_some(text)
+}
+
+fn legacy_doc_body_marker_context_boundary(unit: u16) -> bool {
+    matches!(unit, 0x0007 | 0x000D)
 }
 
 fn push_legacy_doc_notes(
@@ -4337,6 +4412,27 @@ mod tests {
         assert_eq!(
             notes[1].anchor.as_ref().map(|anchor| anchor.text.as_str()),
             Some("END")
+        );
+    }
+
+    #[test]
+    fn legacy_doc_single_footnote_marker_anchors_note_to_body_text() {
+        let bytes = synth_doc_with_ccp("BO\u{0002}DYFTN", "", 0x00C1, 0, 0, [5, 3, 0, 0, 0, 0]);
+        let doc = Document::open(&bytes).unwrap();
+
+        assert_eq!(doc.main_text(), "BODY");
+        let notes = doc.notes();
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].id, "legacy-doc-footnote-0");
+        assert_eq!(notes[0].kind, NoteKind::Footnote);
+        assert_eq!(notes[0].text, "FTN");
+        assert_eq!(
+            notes[0].anchor.as_ref().map(|anchor| anchor.id.as_str()),
+            Some("legacy-doc-footnote-0@body-cp2")
+        );
+        assert_eq!(
+            notes[0].anchor.as_ref().map(|anchor| anchor.text.as_str()),
+            Some("BODY")
         );
     }
 

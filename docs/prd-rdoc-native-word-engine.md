@@ -206,7 +206,8 @@ The first public maturity release should meet these requirements.
   moved-from old fields.
 - Legacy `.doc` annotation, note, and text-box side-table records expose
   best-effort source-region anchors when exact body or shape anchors are not yet
-  decoded.
+  decoded; a single unambiguous legacy footnote marker anchors to its containing
+  body text.
 - Legacy `.doc` header/footer side-table records split recovered `PlcfHdd`
   stories when available and classify exact even-page, odd-page, and first-page
   header/footer variants, and mirror the first recovered default, even-page,

@@ -282,7 +282,11 @@ fn legacy_region_specs(fib: &Fib) -> [(SourceRegionKind, usize); 6] {
 /// Decode every piece in CP order into UTF-16 code units, recording each unit's
 /// source byte offset in the `WordDocument` stream (so CHPX/PAPX FC lookups land
 /// on the right character).
-fn decode_with_fc(word: &[u8], pieces: &[Piece], enc: &'static Encoding) -> (Vec<u16>, Vec<u32>) {
+pub(crate) fn decode_with_fc(
+    word: &[u8],
+    pieces: &[Piece],
+    enc: &'static Encoding,
+) -> (Vec<u16>, Vec<u32>) {
     let mut units: Vec<u16> = Vec::new();
     let mut fcs: Vec<u32> = Vec::new();
     // Bound cumulative decoded bytes (see `text::decode_pieces`): valid pieces partition the

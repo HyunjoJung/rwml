@@ -871,9 +871,11 @@ code points.
   `DocModel::source_region_kind_text()` available for model-level region text.
   Non-empty annotation regions are exposed through `comments()` as best-effort
   recovered comments with source-region anchors, and footnote/endnote regions
-  are exposed through `notes()` as best-effort recovered note records with
-  source-region anchors. Text-box regions are exposed through `text_boxes()` as
-  best-effort recovered text-box records with source-region anchors.
+  are exposed through `notes()` as best-effort recovered note records. A single
+  unambiguous legacy footnote marker anchors to its containing body text;
+  broader note/endnote cases keep source-region anchors. Text-box regions are
+  exposed through `text_boxes()` as best-effort recovered text-box records with
+  source-region anchors.
   Header/footer regions are exposed through `header_footers()` as best-effort
   recovered records; when legacy `PlcfHdd` story boundaries are available, rdoc
   splits stories and classifies exact even-page, odd-page, and first-page
@@ -881,8 +883,9 @@ code points.
   `DocSetup` mirrors the first recovered default, even-page, and first-page
   legacy header/footer variants when story indexes are available, and falls back
   to a default running header for unsplit recovered header/footer text.
-  Exact note reference markers and exact text-box shape anchors are not yet
-  fully promoted, so non-body regions still remain in the flat block stream;
+  Exact multi-note/endnote reference markers and exact text-box shape anchors
+  are not yet fully promoted, so non-body regions still remain in the flat
+  block stream;
   `Document::report()` emits `LegacyDocFlattenedSubdocuments` when FIB
   subdocument counts show that promotion is still incomplete.
 - *`.docx` read only:* comments and tracked-change *original* views; accepted
