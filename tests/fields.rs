@@ -631,6 +631,23 @@ fn set_backed_formula_docx() -> Vec<u8> {
     ])
 }
 
+fn bookmark_backed_formula_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="InvoiceSubtotal"/><w:r><w:t>42</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:bookmarkStart w:id="8" w:name="InvoiceTier"/><w:r><w:t>Gold</w:t></w:r><w:bookmarkEnd w:id="8"/></w:p><w:p><w:fldSimple w:instr=" = InvoiceSubtotal + 8 "><w:r><w:t>stale bookmark formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = SUM(InvoiceSubtotal; 8) "><w:r><w:t>stale bookmark formula function</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = DEFINED(InvoiceSubtotal) "><w:r><w:t>stale bookmark defined</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = InvoiceTier + 1 "><w:r><w:t>cached text bookmark formula</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" = MissingSubtotal + 1 "><w:r><w:t>cached missing bookmark formula</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn set_backed_defined_formula_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -6709,6 +6726,61 @@ fn docx_formula_fields_resolve_prior_numeric_set_bookmark_operands() {
             && main_text.contains("cached text formula")
             && !main_text.contains("stale set formula"),
         "computed SET-backed formula text should replace stale cached text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_formula_fields_resolve_numeric_document_bookmark_operands() {
+    let doc = Document::open(&bookmark_backed_formula_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 5);
+    assert_eq!(fields[0].kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(fields[0].instruction, "= InvoiceSubtotal + 8");
+    assert_eq!(fields[0].result, "stale bookmark formula");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("50"));
+    assert_eq!(fields[1].kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(fields[1].instruction, "= SUM(InvoiceSubtotal; 8)");
+    assert_eq!(fields[1].result, "stale bookmark formula function");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("50"));
+    assert_eq!(fields[2].kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(fields[2].instruction, "= DEFINED(InvoiceSubtotal)");
+    assert_eq!(fields[2].result, "stale bookmark defined");
+    assert_eq!(fields[2].computed_result.as_deref(), Some("1"));
+    assert_eq!(fields[3].kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(fields[3].instruction, "= InvoiceTier + 1");
+    assert_eq!(fields[3].result, "cached text bookmark formula");
+    assert_eq!(fields[3].computed_result, None);
+    assert_eq!(fields[4].kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(fields[4].instruction, "= MissingSubtotal + 1");
+    assert_eq!(fields[4].result, "cached missing bookmark formula");
+    assert_eq!(fields[4].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::Dynamic("=".to_string()),
+            count: 2
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::NoComputedResult,
+            count: 2
+        }]
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("42\nGold\n50\n50\n1")
+            && main_text.contains("cached text bookmark formula")
+            && main_text.contains("cached missing bookmark formula")
+            && !main_text.contains("stale bookmark formula")
+            && !main_text.contains("stale bookmark formula function")
+            && !main_text.contains("stale bookmark defined"),
+        "computed document-bookmark formula text should replace stale cached text: {main_text:?}"
     );
 }
 

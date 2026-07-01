@@ -646,7 +646,9 @@ Implementation:
   formula tails, formula result text-format tails such as `\* Upper`/`\* Lower`/`\* Caps`/`\* FirstCap`,
   and literal/table formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
   malformed formula syntax reporting `UnsupportedSwitch`,
-  and literal `DEFINED(expr)` checks for parser-local literal expressions and source-order prior bookmark names,
+  numeric ordinary document bookmark operands, and literal `DEFINED(expr)` checks
+  for parser-local literal expressions, source-order prior `SET`/`ASK`
+  bookmark names, and ordinary document bookmark names,
   guarded scalar/table numeric `IF` branch selection skips unsupported or span-unsafe unselected branches, literal
   quoted/unquoted literal `QUOTE`, literal `IF` finite numeric/text comparisons, literal `COMPARE`
   finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields,
@@ -747,7 +749,9 @@ Acceptance:
   formula tails, formula result text-format tails such as `\* Upper`/`\* Lower`/`\* Caps`/`\* FirstCap`,
   and literal/table formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
   malformed formula syntax reporting `UnsupportedSwitch`,
-  and literal `DEFINED(expr)` checks for parser-local literal expressions and source-order prior bookmark names,
+  numeric ordinary document bookmark operands, and literal `DEFINED(expr)` checks
+  for parser-local literal expressions, source-order prior `SET`/`ASK`
+  bookmark names, and ordinary document bookmark names,
   guarded scalar/table numeric `IF` branch selection skips unsupported or span-unsafe unselected branches,
   quoted/unquoted literal `QUOTE`, malformed literal `QUOTE` syntax reporting
   `UnsupportedSwitch`, literal `IF` comparisons, malformed literal `IF`
@@ -1219,7 +1223,9 @@ open and edit the chart data.
   formula tails, formula result text-format tails such as `\* Upper`/`\* Lower`/`\* Caps`/`\* FirstCap`,
   and literal/table formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
   malformed formula syntax reporting `UnsupportedSwitch`,
-  and literal `DEFINED(expr)` checks for parser-local literal expressions and source-order prior bookmark names,
+  numeric ordinary document bookmark operands, and literal `DEFINED(expr)` checks
+  for parser-local literal expressions, source-order prior `SET`/`ASK`
+  bookmark names, and ordinary document bookmark names,
   guarded scalar/table numeric `IF` branch selection skips unsupported or span-unsafe unselected branches, literal
   quoted/unquoted literal `QUOTE`, literal `IF` finite numeric/text comparisons, literal `COMPARE`
   finite numeric/text results, explicit-default `FILLIN`/`ASK` prompt fields,
@@ -1255,7 +1261,9 @@ open and edit the chart data.
   formula result text-format tails such as `\* Upper`/`\* Lower`/`\* Caps`/`\* FirstCap`, and
   literal/table formula general-number tails such as `\* DollarText` cents output and integer-valued `\* Hex`/`\* OrdText`,
   malformed formula syntax reporting `UnsupportedSwitch`,
-  literal `DEFINED(expr)` checks for parser-local literal expressions and source-order prior bookmark names,
+  numeric ordinary document bookmark operands, literal `DEFINED(expr)` checks
+  for parser-local literal expressions, source-order prior `SET`/`ASK`
+  bookmark names, and ordinary document bookmark names,
   guarded scalar/table numeric `IF` branch selection skips unsupported or span-unsafe unselected branches,
   quoted/unquoted literal `QUOTE`, literal `IF` comparisons, literal `COMPARE` results,
   explicit-default `FILLIN`/`ASK` prompt fields, valid no-default prompt

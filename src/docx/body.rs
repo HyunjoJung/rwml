@@ -4206,6 +4206,12 @@ fn computed_dynamic_field_result(instruction: &str, ctx: &Ctx<'_>) -> Option<Str
         if let Some(result) = ctx.table_formula_context.field_result(index) {
             return Some(result);
         }
+        let field_bookmarks = ctx.field_bookmarks.borrow();
+        return super::fields::computed_formula_result_with_bookmark_context(
+            instruction,
+            ctx.ref_targets,
+            &field_bookmarks,
+        );
     }
     let field_bookmarks = ctx.field_bookmarks.borrow();
     super::fields::computed_dynamic_result_with_bookmarks(instruction, &field_bookmarks)

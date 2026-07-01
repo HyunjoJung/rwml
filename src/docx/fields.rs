@@ -933,7 +933,11 @@ fn apply_computed_results(fields: &mut [Field], ctx: ComputedResultContexts<'_>)
                 let result = ctx.table_formulas.field_result(formula_field_index);
                 formula_field_index += 1;
                 result.or_else(|| {
-                    computed_dynamic_result_with_bookmarks(&field.instruction, &field_bookmarks)
+                    computed_formula_result_with_bookmark_context(
+                        &field.instruction,
+                        ctx.bookmarks,
+                        &field_bookmarks,
+                    )
                 })
             }
             FieldKind::Dynamic(kind)
@@ -1061,6 +1065,23 @@ pub(crate) fn computed_dynamic_result_with_bookmarks(
         .or_else(|| computed_if_result_with_bookmarks(instruction, field_bookmarks))
         .or_else(|| computed_compare_result_with_bookmarks(instruction, field_bookmarks))
         .or_else(|| computed_merge_control_result_with_bookmarks(instruction, field_bookmarks))
+}
+
+pub(crate) fn computed_formula_result_with_bookmark_context(
+    instruction: &str,
+    document_bookmarks: &HashMap<String, String>,
+    field_bookmarks: &HashMap<String, String>,
+) -> Option<String> {
+    if document_bookmarks.is_empty() {
+        return computed_formula_result_with_bookmarks(instruction, Some(field_bookmarks));
+    }
+    let mut formula_bookmarks = document_bookmarks.clone();
+    formula_bookmarks.extend(
+        field_bookmarks
+            .iter()
+            .map(|(name, value)| (name.clone(), value.clone())),
+    );
+    computed_formula_result_with_bookmarks(instruction, Some(&formula_bookmarks))
 }
 
 #[cfg(test)]
