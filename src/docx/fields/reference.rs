@@ -173,7 +173,8 @@ fn apply_ref_target_fld_char(
             let Some(field) = current.pop() else {
                 return;
             };
-            let text = computed_ref_target_field_result(&field.instruction).unwrap_or(field.result);
+            let text = computed_ref_target_field_result(&field.instruction, out, &field.active)
+                .unwrap_or(field.result);
             if let Some(parent) = current.last_mut() {
                 if parent.phase == FieldPhase::Result {
                     parent.result.push_str(&text);
@@ -241,16 +242,46 @@ fn append_ref_simple_field_result(
     e: &BytesStart<'_>,
 ) {
     let field = read_simple_field(r, e);
-    let text = computed_ref_target_field_result(&field.instruction).unwrap_or(field.result);
+    let excluded = ref_target_excluded_bookmarks(active, current);
+    let text =
+        computed_ref_target_field_result(&field.instruction, out, excluded).unwrap_or(field.result);
     append_ref_target_text(active, current, out, &text);
 }
 
-fn computed_ref_target_field_result(instruction: &str) -> Option<String> {
-    let empty_bookmarks = HashMap::new();
-    computed_dynamic_result_with_bookmarks(instruction, &empty_bookmarks)
+fn computed_ref_target_field_result(
+    instruction: &str,
+    bookmarks: &HashMap<String, String>,
+    excluded: &[(String, String)],
+) -> Option<String> {
+    let available_bookmarks = ref_target_available_bookmarks(bookmarks, excluded);
+    computed_dynamic_result_with_bookmarks(instruction, &available_bookmarks)
         .or_else(|| computed_display_result(instruction))
         .or_else(|| computed_action_result(instruction))
         .or_else(|| computed_reference_index_result(instruction))
+}
+
+fn ref_target_excluded_bookmarks<'a>(
+    active: &'a [(String, String)],
+    current: &'a [RefTargetComplexField],
+) -> &'a [(String, String)] {
+    current
+        .last()
+        .map(|field| field.active.as_slice())
+        .unwrap_or(active)
+}
+
+fn ref_target_available_bookmarks(
+    bookmarks: &HashMap<String, String>,
+    excluded: &[(String, String)],
+) -> HashMap<String, String> {
+    if excluded.is_empty() {
+        return bookmarks.clone();
+    }
+    bookmarks
+        .iter()
+        .filter(|(name, _)| !excluded.iter().any(|(_, active_name)| active_name == *name))
+        .map(|(name, value)| (name.clone(), value.clone()))
+        .collect()
 }
 
 fn ref_target_complex_in_result(current: &[RefTargetComplexField]) -> bool {
