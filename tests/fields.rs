@@ -4916,6 +4916,27 @@ fn toc_heading_complex_field_source_docx() -> Vec<u8> {
     ])
 }
 
+fn toc_heading_set_field_source_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Executive </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> SET Marker &quot;Ready&quot; </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale heading set</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> Review</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" TOC \o &quot;1-1&quot; "><w:r><w:t>stale set-source toc</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn toc_property_revision_heading_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -15753,6 +15774,38 @@ fn docx_toc_heading_source_text_uses_computed_complex_field_results() {
             && !main_text.contains("stale heading quote")
             && !main_text.contains("stale complex-field heading toc"),
         "TOC source text should use computed complex-field heading text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_toc_heading_source_text_uses_computed_set_field_results() {
+    let doc = Document::open(&toc_heading_set_field_source_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::Dynamic("SET".to_string()));
+    assert_eq!(fields[0].instruction, r#"SET Marker "Ready""#);
+    assert_eq!(fields[0].result, "stale heading set");
+    assert_eq!(fields[0].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[1].kind, FieldKind::Toc);
+    assert_eq!(fields[1].instruction, "TOC \\o \"1-1\"");
+    assert_eq!(fields[1].result, "stale set-source toc");
+    assert_eq!(
+        fields[1].computed_result.as_deref(),
+        Some("Executive Review")
+    );
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Executive")
+            && main_text.contains("Review")
+            && !main_text.contains("stale heading set")
+            && !main_text.contains("stale set-source toc"),
+        "TOC source text should drop the SET field's cached result: {main_text:?}"
     );
 }
 

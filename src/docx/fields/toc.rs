@@ -681,7 +681,16 @@ fn computed_toc_source_field_result(instruction: Option<&str>) -> Option<String>
     {
         return None;
     }
-    let field_bookmarks = HashMap::new();
+    let mut field_bookmarks = HashMap::new();
+    match FieldKind::from_instruction(&instruction) {
+        FieldKind::Dynamic(kind) if kind == "SET" => {
+            return super::computed_set_result(&instruction, &mut field_bookmarks);
+        }
+        FieldKind::Dynamic(kind) if kind == "ASK" => {
+            return super::computed_ask_result(&instruction, &mut field_bookmarks);
+        }
+        _ => {}
+    }
     super::computed_quote_result(&instruction)
         .or_else(|| super::computed_fill_in_result(&instruction))
         .or_else(|| super::computed_if_result_with_bookmarks(&instruction, &field_bookmarks))
