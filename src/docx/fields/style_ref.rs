@@ -755,6 +755,11 @@ fn read_style_ref_simple_field_result(
         );
         return computed;
     }
+    collapse_style_ref_source_entries_for_cached_text(
+        entries,
+        entry_start,
+        &normalize_toc_text(&text),
+    );
     text
 }
 
@@ -793,6 +798,36 @@ fn replace_style_ref_source_entries_with_computed(
     }
     let mut replacement = first.clone();
     replacement.text = computed.to_string();
+    entries.splice(entry_start.., [replacement]);
+}
+
+fn collapse_style_ref_source_entries_for_cached_text(
+    entries: &mut Vec<StyleRefEntry>,
+    entry_start: usize,
+    cached_text: &str,
+) {
+    let Some(created) = entries.get(entry_start..) else {
+        return;
+    };
+    if created.len() <= 1 {
+        return;
+    }
+    let first = &created[0];
+    if !created
+        .iter()
+        .all(|entry| style_ref_entries_share_source_style(entry, first))
+    {
+        return;
+    }
+    let joined = created
+        .iter()
+        .map(|entry| entry.text.as_str())
+        .collect::<String>();
+    if normalize_toc_text(&joined) != cached_text {
+        return;
+    }
+    let mut replacement = first.clone();
+    replacement.text = cached_text.to_string();
     entries.splice(entry_start.., [replacement]);
 }
 
