@@ -96,9 +96,13 @@ pub(crate) fn table_formula_context(
                         consumed_element = true;
                     }
                     b"fldChar" => {
-                        apply_table_formula_scan_fld_char(&e, &mut current, |_, _| {
-                            results.push(None)
-                        });
+                        apply_table_formula_scan_fld_char(
+                            &e,
+                            &mut current,
+                            document_bookmarks,
+                            &mut field_bookmarks,
+                            |_, _| results.push(None),
+                        );
                     }
                     b"instrText" => {
                         let text = read_text(&mut r);
@@ -136,9 +140,13 @@ pub(crate) fn table_formula_context(
                         }
                     }
                     b"fldChar" => {
-                        apply_table_formula_scan_fld_char(&e, &mut current, |_, _| {
-                            results.push(None)
-                        });
+                        apply_table_formula_scan_fld_char(
+                            &e,
+                            &mut current,
+                            document_bookmarks,
+                            &mut field_bookmarks,
+                            |_, _| results.push(None),
+                        );
                     }
                     _ => {}
                 }
@@ -906,12 +914,21 @@ fn table_formula_symbol_char(e: &BytesStart<'_>) -> Option<char> {
 fn apply_table_formula_scan_fld_char(
     e: &BytesStart<'_>,
     current: &mut Vec<ComplexField>,
+    document_bookmarks: &HashMap<String, String>,
+    field_bookmarks: &mut HashMap<String, String>,
     mut record: impl FnMut(&str, &str),
 ) {
     apply_complex_field_scan_fld_char(e, current, |field| {
         let instruction = normalize_instruction(&field.instruction);
         if is_formula_instruction(Some(&instruction)) {
             record(&instruction, &field.result);
+        } else {
+            let _ = computed_table_formula_source_field_result(
+                Some(&instruction),
+                document_bookmarks,
+                field_bookmarks,
+            )
+            .unwrap_or(field.result);
         }
     });
 }
