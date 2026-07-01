@@ -71,15 +71,21 @@ pub(crate) fn apply_extended_parent_ids(
         .iter()
         .map(|(id, para_id)| (para_id.clone(), id.clone()))
         .collect();
-    let parent_para_by_child_para = extended_parent_para_ids(ex_xml);
+    let metadata = extended_comment_metadata(ex_xml);
     for comment in comments {
-        if comment.parent_comment_id.is_some() {
-            continue;
-        }
         let Some(child_para_id) = id_to_para.get(&comment.id) else {
             continue;
         };
-        let Some(parent_para_id) = parent_para_by_child_para.get(child_para_id) else {
+        let Some(meta) = metadata.get(child_para_id) else {
+            continue;
+        };
+        if let Some(done) = meta.done {
+            comment.resolved = Some(done);
+        }
+        if comment.parent_comment_id.is_some() {
+            continue;
+        }
+        let Some(parent_para_id) = meta.parent_para_id.as_ref() else {
             continue;
         };
         if let Some(parent_id) = para_to_id.get(parent_para_id) {
@@ -97,6 +103,7 @@ fn comment_shell(e: &BytesStart<'_>) -> Option<Comment> {
         parent_comment_id: attr_local_trimmed(e, b"parentId"),
         text: String::new(),
         anchor: None,
+        resolved: None,
     })
 }
 
@@ -150,9 +157,15 @@ fn comment_para_ids(xml: &str) -> HashMap<String, String> {
     ids
 }
 
-fn extended_parent_para_ids(xml: &str) -> HashMap<String, String> {
+#[derive(Default)]
+struct CommentExMetadata {
+    parent_para_id: Option<String>,
+    done: Option<bool>,
+}
+
+fn extended_comment_metadata(xml: &str) -> HashMap<String, CommentExMetadata> {
     let mut r = Reader::from_str(xml);
-    let mut ids = HashMap::new();
+    let mut ids: HashMap<String, CommentExMetadata> = HashMap::new();
     let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
@@ -175,11 +188,15 @@ fn extended_parent_para_ids(xml: &str) -> HashMap<String, String> {
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"commentEx" =>
             {
-                if let (Some(para_id), Some(parent_para_id)) = (
-                    attr_local_trimmed(&e, b"paraId"),
-                    attr_local_trimmed(&e, b"paraIdParent"),
-                ) {
-                    ids.insert(para_id, parent_para_id);
+                if let Some(para_id) = attr_local_trimmed(&e, b"paraId") {
+                    ids.insert(
+                        para_id,
+                        CommentExMetadata {
+                            parent_para_id: attr_local_trimmed(&e, b"paraIdParent"),
+                            done: attr_local_trimmed(&e, b"done")
+                                .map(|v| super::toggle_on(Some(v))),
+                        },
+                    );
                 }
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => {

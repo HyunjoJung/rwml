@@ -220,6 +220,35 @@ fn threaded_comments_docx() -> Vec<u8> {
     ])
 }
 
+fn resolved_comments_extended_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/><Override PartName="/word/commentsExtended.xml" ContentType="application/vnd.ms-word.commentsExt+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="comments.xml"/><Relationship Id="rId2" Type="http://schemas.microsoft.com/office/2011/relationships/commentsExtended" Target="commentsExtended.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:commentRangeStart w:id="0"/><w:commentRangeStart w:id="1"/><w:commentRangeStart w:id="2"/><w:r><w:t>Reviewed clause</w:t></w:r><w:commentRangeEnd w:id="0"/><w:commentRangeEnd w:id="1"/><w:commentRangeEnd w:id="2"/><w:r><w:commentReference w:id="0"/></w:r><w:r><w:commentReference w:id="1"/></w:r><w:r><w:commentReference w:id="2"/></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/comments.xml",
+            r#"<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"><w:comment w:id="0" w:author="Reviewer"><w:p w14:paraId="11111111"><w:r><w:t>done note</w:t></w:r></w:p></w:comment><w:comment w:id="1" w:author="Reviewer"><w:p w14:paraId="22222222"><w:r><w:t>open note</w:t></w:r></w:p></w:comment><w:comment w:id="2" w:author="Reviewer"><w:p w14:paraId="33333333"><w:r><w:t>no-ex note</w:t></w:r></w:p></w:comment></w:comments>"#,
+        ),
+        (
+            "word/commentsExtended.xml",
+            r#"<w15:commentsEx xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml"><w15:commentEx w15:paraId="11111111" w15:done="1"/><w15:commentEx w15:paraId="22222222" w15:done="0"/></w15:commentsEx>"#,
+        ),
+    ])
+}
+
 fn alternate_content_comments_extended_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -339,6 +368,23 @@ fn docx_comment_replies_use_comments_extended_parent_ids() {
     assert_eq!(comments[1].id, "2");
     assert_eq!(comments[1].parent_comment_id.as_deref(), Some("1"));
     assert_eq!(comments[1].text, "Reply note");
+}
+
+#[test]
+fn docx_recovers_comment_resolved_done_state() {
+    let doc = Document::open(&resolved_comments_extended_docx()).expect("fixture opens");
+    let comments = doc.comments();
+
+    let done = comments.iter().find(|c| c.id == "0").expect("comment 0");
+    let open = comments.iter().find(|c| c.id == "1").expect("comment 1");
+    let no_ex = comments.iter().find(|c| c.id == "2").expect("comment 2");
+    assert_eq!(done.resolved, Some(true));
+    assert_eq!(open.resolved, Some(false));
+    assert_eq!(no_ex.resolved, None);
+
+    // A document without a commentsExtended part leaves resolved unknown.
+    let plain = Document::open(&commented_docx()).expect("fixture opens");
+    assert_eq!(plain.comments()[0].resolved, None);
 }
 
 #[test]

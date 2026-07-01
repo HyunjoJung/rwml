@@ -29,6 +29,10 @@ pub struct Comment {
     pub text: String,
     /// Main-document range this comment is anchored to, if rdoc found one.
     pub anchor: Option<TextAnchor>,
+    /// Resolved/"done" state from `commentsExtended.xml` (`w15:done`): `Some(true)`
+    /// when marked done, `Some(false)` when explicitly not done, `None` when the
+    /// document has no commentsExtended entry for the comment.
+    pub resolved: Option<bool>,
 }
 
 /// Kind of note recovered from a Word document.
