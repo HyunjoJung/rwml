@@ -6,6 +6,7 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
     let mut out: HashMap<String, String> = HashMap::new();
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
+    let mut current = Vec::new();
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => {
@@ -27,10 +28,17 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
                         });
                     }
                     b"fldSimple" if !active.is_empty() => {
-                        append_ref_simple_field_result(&active, &mut out, &mut r, &e);
+                        append_ref_simple_field_result(&active, &mut current, &mut out, &mut r, &e);
                         continue;
                     }
-                    b"p" => append_ref_paragraph_breaks(&active, &mut out),
+                    b"fldSimple" if ref_target_complex_in_result(&current) => {
+                        append_ref_simple_field_result(&active, &mut current, &mut out, &mut r, &e);
+                        continue;
+                    }
+                    b"fldChar" => {
+                        apply_ref_target_fld_char(&e, &active, &mut current, &mut out);
+                    }
+                    b"p" => append_ref_target_paragraph_breaks(&active, &mut current, &mut out),
                     b"bookmarkStart" => {
                         if let Some((id, name)) = bookmark_start(&e) {
                             out.entry(name.clone()).or_default();
@@ -45,22 +53,35 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
                     b"t" => {
                         let text = read_text(&mut r);
                         if !text.is_empty() {
-                            append_ref_text(&active, &mut out, &text);
+                            append_ref_target_text(&active, &mut current, &mut out, &text);
                         }
                         continue;
                     }
-                    b"tab" => append_ref_text(&active, &mut out, "\t"),
+                    b"instrText" => {
+                        let text = read_text(&mut r);
+                        if let Some(field) = current.last_mut() {
+                            if field.phase == FieldPhase::Instruction {
+                                field.instruction.push_str(&text);
+                            }
+                        }
+                        continue;
+                    }
+                    b"tab" => append_ref_target_text(&active, &mut current, &mut out, "\t"),
                     b"br" => {
                         if is_page_break_type(&e) {
-                            append_ref_text(&active, &mut out, "\u{000C}");
+                            append_ref_target_text(&active, &mut current, &mut out, "\u{000C}");
                         } else {
-                            append_ref_text(&active, &mut out, "\n");
+                            append_ref_target_text(&active, &mut current, &mut out, "\n");
                         }
                     }
-                    b"cr" => append_ref_text(&active, &mut out, "\n"),
-                    b"noBreakHyphen" => append_ref_text(&active, &mut out, "-"),
-                    b"softHyphen" => append_ref_text(&active, &mut out, "\u{00ad}"),
-                    b"sym" => append_ref_symbol(&active, &mut out, &e),
+                    b"cr" => append_ref_target_text(&active, &mut current, &mut out, "\n"),
+                    b"noBreakHyphen" => {
+                        append_ref_target_text(&active, &mut current, &mut out, "-")
+                    }
+                    b"softHyphen" => {
+                        append_ref_target_text(&active, &mut current, &mut out, "\u{00ad}")
+                    }
+                    b"sym" => append_ref_target_symbol(&active, &mut current, &mut out, &e),
                     _ => {}
                 }
                 xml_depth = xml_depth.saturating_add(1);
@@ -83,18 +104,25 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
                             active.retain(|(active_id, _)| active_id != &id);
                         }
                     }
-                    b"tab" => append_ref_text(&active, &mut out, "\t"),
+                    b"fldChar" => {
+                        apply_ref_target_fld_char(&e, &active, &mut current, &mut out);
+                    }
+                    b"tab" => append_ref_target_text(&active, &mut current, &mut out, "\t"),
                     b"br" => {
                         if is_page_break_type(&e) {
-                            append_ref_text(&active, &mut out, "\u{000C}");
+                            append_ref_target_text(&active, &mut current, &mut out, "\u{000C}");
                         } else {
-                            append_ref_text(&active, &mut out, "\n");
+                            append_ref_target_text(&active, &mut current, &mut out, "\n");
                         }
                     }
-                    b"cr" => append_ref_text(&active, &mut out, "\n"),
-                    b"noBreakHyphen" => append_ref_text(&active, &mut out, "-"),
-                    b"softHyphen" => append_ref_text(&active, &mut out, "\u{00ad}"),
-                    b"sym" => append_ref_symbol(&active, &mut out, &e),
+                    b"cr" => append_ref_target_text(&active, &mut current, &mut out, "\n"),
+                    b"noBreakHyphen" => {
+                        append_ref_target_text(&active, &mut current, &mut out, "-")
+                    }
+                    b"softHyphen" => {
+                        append_ref_target_text(&active, &mut current, &mut out, "\u{00ad}")
+                    }
+                    b"sym" => append_ref_target_symbol(&active, &mut current, &mut out, &e),
                     _ => {}
                 }
             }
@@ -111,8 +139,87 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
     out
 }
 
-fn append_ref_symbol(
+#[derive(Debug, Clone)]
+struct RefTargetComplexField {
+    active: Vec<(String, String)>,
+    instruction: String,
+    result: String,
+    phase: FieldPhase,
+}
+
+fn apply_ref_target_fld_char(
+    e: &BytesStart<'_>,
     active: &[(String, String)],
+    current: &mut Vec<RefTargetComplexField>,
+    out: &mut HashMap<String, String>,
+) {
+    match field_char_type(e).as_deref() {
+        Some("begin") => {
+            if !active.is_empty() || !current.is_empty() {
+                current.push(RefTargetComplexField {
+                    active: active.to_vec(),
+                    instruction: String::new(),
+                    result: String::new(),
+                    phase: FieldPhase::Instruction,
+                });
+            }
+        }
+        Some("separate") => {
+            if let Some(field) = current.last_mut() {
+                field.phase = FieldPhase::Result;
+            }
+        }
+        Some("end") => {
+            let Some(field) = current.pop() else {
+                return;
+            };
+            let text = computed_ref_target_field_result(&field.instruction).unwrap_or(field.result);
+            if let Some(parent) = current.last_mut() {
+                if parent.phase == FieldPhase::Result {
+                    parent.result.push_str(&text);
+                }
+            } else {
+                append_ref_text(&field.active, out, &text);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn append_ref_target_paragraph_breaks(
+    active: &[(String, String)],
+    current: &mut [RefTargetComplexField],
+    out: &mut HashMap<String, String>,
+) {
+    if let Some(field) = current.last_mut() {
+        if field.phase == FieldPhase::Result {
+            if !field.result.is_empty() {
+                field.result.push('\n');
+            }
+        }
+        return;
+    }
+    append_ref_paragraph_breaks(active, out);
+}
+
+fn append_ref_target_text(
+    active: &[(String, String)],
+    current: &mut [RefTargetComplexField],
+    out: &mut HashMap<String, String>,
+    text: &str,
+) {
+    if let Some(field) = current.last_mut() {
+        if field.phase == FieldPhase::Result {
+            field.result.push_str(text);
+        }
+        return;
+    }
+    append_ref_text(active, out, text);
+}
+
+fn append_ref_target_symbol(
+    active: &[(String, String)],
+    current: &mut [RefTargetComplexField],
     out: &mut HashMap<String, String>,
     e: &BytesStart<'_>,
 ) {
@@ -123,26 +230,33 @@ fn append_ref_symbol(
     let Some(ch) = super::display::computed_run_symbol_char(font.as_deref(), &value) else {
         return;
     };
-    append_ref_text(active, out, &ch.to_string());
+    append_ref_target_text(active, current, out, &ch.to_string());
 }
 
 fn append_ref_simple_field_result(
     active: &[(String, String)],
+    current: &mut [RefTargetComplexField],
     out: &mut HashMap<String, String>,
     r: &mut Xml<'_>,
     e: &BytesStart<'_>,
 ) {
     let field = read_simple_field(r, e);
-    let text = computed_ref_target_simple_field_result(&field.instruction).unwrap_or(field.result);
-    append_ref_text(active, out, &text);
+    let text = computed_ref_target_field_result(&field.instruction).unwrap_or(field.result);
+    append_ref_target_text(active, current, out, &text);
 }
 
-fn computed_ref_target_simple_field_result(instruction: &str) -> Option<String> {
+fn computed_ref_target_field_result(instruction: &str) -> Option<String> {
     let empty_bookmarks = HashMap::new();
     computed_dynamic_result_with_bookmarks(instruction, &empty_bookmarks)
         .or_else(|| computed_display_result(instruction))
         .or_else(|| computed_action_result(instruction))
         .or_else(|| computed_reference_index_result(instruction))
+}
+
+fn ref_target_complex_in_result(current: &[RefTargetComplexField]) -> bool {
+    current
+        .last()
+        .is_some_and(|field| field.phase == FieldPhase::Result)
 }
 
 #[derive(Debug, Clone, Default)]
