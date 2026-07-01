@@ -211,16 +211,23 @@ fn apply_ref_target_fld_char(
 ) {
     match field_char_type(e).as_deref() {
         Some("begin") => {
-            if !active.is_empty() || !current.is_empty() {
-                current.push(RefTargetComplexField {
-                    active: active.to_vec(),
-                    instruction: String::new(),
-                    result: String::new(),
-                    phase: FieldPhase::Instruction,
-                });
-            }
+            current.push(RefTargetComplexField {
+                active: active.to_vec(),
+                instruction: String::new(),
+                result: String::new(),
+                phase: FieldPhase::Instruction,
+            });
         }
         Some("separate") => {
+            if current.len() == 1 {
+                let field = &current[0];
+                if field.active.is_empty()
+                    && !is_ref_target_source_order_field_instruction(Some(&field.instruction))
+                {
+                    current.pop();
+                    return;
+                }
+            }
             if let Some(field) = current.last_mut() {
                 field.phase = FieldPhase::Result;
             }
