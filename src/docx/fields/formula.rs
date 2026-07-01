@@ -921,7 +921,14 @@ struct FormulaNumberPicture {
 }
 
 fn parse_formula_number_picture(picture: &str) -> Option<FormulaNumberPicture> {
-    if picture.contains('\'') || picture.contains('`') {
+    if picture.contains('`') {
+        return None;
+    }
+    // Emit a trailing single-quoted literal (e.g. `#,##0 'items'`) verbatim. Leading
+    // or interspersed quotes stay unsupported (bail -> cached) so the literal never
+    // perturbs sign control or digit counting in the numeric core.
+    let (picture, trailing_literal) = peel_trailing_quoted_literal(picture)?;
+    if picture.contains('\'') {
         return None;
     }
     let mut first = picture.find(['0', '#', 'x'])?;
@@ -939,8 +946,20 @@ fn parse_formula_number_picture(picture: &str) -> Option<FormulaNumberPicture> {
     Some(FormulaNumberPicture {
         prefix: prefix.to_string(),
         core: core.to_string(),
-        suffix: suffix.to_string(),
+        suffix: format!("{suffix}{trailing_literal}"),
     })
+}
+
+fn peel_trailing_quoted_literal(picture: &str) -> Option<(&str, String)> {
+    let Some(head) = picture.strip_suffix('\'') else {
+        return Some((picture, String::new()));
+    };
+    let start = head.rfind('\'')?;
+    let literal = &head[start + 1..];
+    if literal.chars().any(|ch| ch.is_ascii_digit()) {
+        return None;
+    }
+    Some((&head[..start], literal.to_string()))
 }
 
 fn valid_formula_number_affix(affix: &str) -> bool {
