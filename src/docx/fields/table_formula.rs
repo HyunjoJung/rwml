@@ -637,12 +637,11 @@ fn read_table_formula_cell(
                     b"fldSimple" => {
                         let instruction =
                             attr_local(&e, b"instr").map(|value| normalize_instruction(&value));
-                        if current.is_empty()
-                            && instruction.as_deref().is_some_and(|value| {
-                                FieldKind::from_instruction(value)
-                                    == FieldKind::Dynamic("=".to_string())
-                            })
-                        {
+                        let is_local_formula = instruction.as_deref().is_some_and(|value| {
+                            FieldKind::from_instruction(value)
+                                == FieldKind::Dynamic("=".to_string())
+                        });
+                        if current.is_empty() && is_local_formula {
                             cell.contains_formula = true;
                             cell.records.push(TableFormulaRecord::Local {
                                 row,
@@ -650,6 +649,17 @@ fn read_table_formula_cell(
                                 instruction: instruction.unwrap_or_default(),
                                 cached_result: String::new(),
                             });
+                        } else if !is_local_formula {
+                            let text = computed_table_formula_source_field_result(
+                                instruction.as_deref(),
+                                document_bookmarks,
+                                sequence_counters,
+                                autonum_counter,
+                                listnum_counter,
+                                field_bookmarks,
+                            )
+                            .unwrap_or_default();
+                            append_table_formula_cell_text(&mut cell.text, &mut current, &text);
                         }
                     }
                     b"fldChar" => {
