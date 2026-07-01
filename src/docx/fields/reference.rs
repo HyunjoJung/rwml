@@ -354,10 +354,20 @@ fn append_ref_simple_field_result(
     r: &mut Xml<'_>,
     e: &BytesStart<'_>,
 ) {
-    let field = read_simple_field(r, e);
     let excluded = ref_target_excluded_bookmarks(active, current);
+    let (instruction, result) = read_simple_field_result(r, e, |instruction| {
+        computed_ref_target_field_result(
+            instruction.unwrap_or_default(),
+            out,
+            excluded,
+            autonum_counter,
+            listnum_counter,
+            sequence_counters,
+            field_bookmarks,
+        )
+    });
     let text = computed_ref_target_field_result(
-        &field.instruction,
+        &instruction,
         out,
         excluded,
         autonum_counter,
@@ -365,7 +375,7 @@ fn append_ref_simple_field_result(
         sequence_counters,
         field_bookmarks,
     )
-    .unwrap_or(field.result);
+    .unwrap_or(result);
     append_ref_target_text(active, current, out, &text);
 }
 

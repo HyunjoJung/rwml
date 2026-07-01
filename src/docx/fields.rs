@@ -297,6 +297,15 @@ fn record_simple_field(field: Field, current: &mut [ComplexField], fields: &mut 
 }
 
 fn read_simple_field(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Field {
+    let (instruction, result) = read_simple_field_result(r, start, |_| None);
+    make_field(instruction, result)
+}
+
+fn read_simple_field_result(
+    r: &mut Xml<'_>,
+    start: &BytesStart<'_>,
+    mut empty_simple_field_result: impl FnMut(Option<&str>) -> Option<String>,
+) -> (String, String) {
     let instruction = attr_local(start, b"instr").unwrap_or_default();
     let mut result = String::new();
     let mut xml_depth = 0usize;
@@ -340,7 +349,16 @@ fn read_simple_field(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Field {
                 if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
                     continue;
                 }
-                append_field_result_inline(&mut result, &e);
+                if name == b"fldSimple" {
+                    let instruction = attr_local(&e, b"instr");
+                    if let Some(text) = empty_simple_field_result(instruction.as_deref()) {
+                        result.push_str(&text);
+                    } else {
+                        append_field_result_inline(&mut result, &e);
+                    }
+                } else {
+                    append_field_result_inline(&mut result, &e);
+                }
             }
             Ok(Event::End(e)) => {
                 let qname = e.name();
@@ -357,7 +375,7 @@ fn read_simple_field(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Field {
             _ => {}
         }
     }
-    make_field(instruction, result)
+    (instruction, result)
 }
 
 fn apply_fld_char(e: &BytesStart<'_>, current: &mut Vec<ComplexField>, out: &mut Vec<Field>) {
