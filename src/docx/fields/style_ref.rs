@@ -55,6 +55,7 @@ pub(crate) struct StyleRefFieldPosition {
 struct StyleRefScanField {
     instruction: String,
     phase: FieldPhase,
+    paragraph_result_start: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -390,6 +391,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
                             field_positions,
                             next_order,
                             paragraph_number,
+                            paragraph_text,
                         );
                     }
                     b"instrText" => {
@@ -449,6 +451,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
                             field_positions,
                             next_order,
                             paragraph_number,
+                            paragraph_text,
                         );
                     }
                     b"sym" => {
@@ -749,21 +752,30 @@ fn apply_style_ref_scan_fld_char(
     field_positions: &mut Vec<StyleRefFieldPosition>,
     next_order: &mut usize,
     paragraph_number: &Option<StyleRefParagraphNumber>,
+    paragraph_text: &mut String,
 ) {
     match field_char_type(e).as_deref() {
         Some("begin") => {
             *current = Some(StyleRefScanField {
                 instruction: String::new(),
                 phase: FieldPhase::Instruction,
+                paragraph_result_start: None,
             });
         }
         Some("separate") => {
             if let Some(field) = current.as_mut() {
                 field.phase = FieldPhase::Result;
+                field.paragraph_result_start = Some(paragraph_text.len());
             }
         }
         Some("end") => {
             if let Some(field) = current.take() {
+                if let (Some(start), Some(computed)) = (
+                    field.paragraph_result_start,
+                    computed_style_ref_source_field_result(Some(&field.instruction)),
+                ) {
+                    paragraph_text.replace_range(start.., &computed);
+                }
                 record_style_ref_field(
                     Some(&field.instruction),
                     field_positions,
