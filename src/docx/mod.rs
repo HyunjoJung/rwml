@@ -876,6 +876,7 @@ fn read_hf_parts(
                 records.push(HeaderFooter {
                     id: format!("{path}#{type_name}"),
                     kind: header_footer_kind(part_kind, type_name),
+                    section: None,
                     text,
                 });
             }

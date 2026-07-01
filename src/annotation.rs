@@ -230,6 +230,11 @@ pub struct HeaderFooter {
     pub id: String,
     /// Header/footer variant when known.
     pub kind: HeaderFooterKind,
+    /// Zero-based document section this record belongs to when it can be
+    /// determined. Legacy `.doc` recovery derives it from the `PlcfHdd` story
+    /// group (`(story_index - 6) / 6`); `None` for `.docx` parts (which are shared
+    /// across sections) and for legacy base/unknown stories.
+    pub section: Option<usize>,
     /// Visible header/footer text.
     pub text: String,
 }

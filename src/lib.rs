@@ -2625,10 +2625,15 @@ fn legacy_doc_header_footers_from_model(model: &DocModel) -> Vec<HeaderFooter> {
         records.push(HeaderFooter {
             id: format!("legacy-doc-header-footer-{}", records.len()),
             kind: legacy_doc_header_footer_kind(region.source_story_index),
+            section: legacy_doc_header_footer_section(region.source_story_index),
             text,
         });
     }
     records
+}
+
+fn legacy_doc_header_footer_section(story_index: Option<usize>) -> Option<usize> {
+    story_index?.checked_sub(6).map(|index| index / 6)
 }
 
 fn legacy_doc_header_footer_kind(story_index: Option<usize>) -> HeaderFooterKind {
@@ -4603,6 +4608,46 @@ mod tests {
         assert_eq!(default_footer.text(), "OF");
         assert_eq!(even_footer.text(), "EF");
         assert_eq!(first_footer.text(), "FF");
+    }
+
+    #[test]
+    fn legacy_doc_plcfhdd_disambiguates_header_footer_sections() {
+        let plcf_hdd = [
+            0, 0, 0, 0, 0, 0, 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 24,
+        ];
+        let bytes = synth_doc_with_ccp_and_plcfhdd(
+            "BODYEHOHEFOFFHFFehohefoffhff",
+            "",
+            0x00C1,
+            0,
+            0,
+            [4, 0, 24, 0, 0, 0],
+            Some(&plcf_hdd),
+        );
+        let doc = Document::open(&bytes).unwrap();
+
+        let records: Vec<_> = doc
+            .header_footers()
+            .iter()
+            .map(|record| (record.kind, record.text.clone(), record.section))
+            .collect();
+        assert_eq!(
+            records,
+            vec![
+                (HeaderFooterKind::EvenPageHeader, "EH".to_string(), Some(0)),
+                (HeaderFooterKind::OddPageHeader, "OH".to_string(), Some(0)),
+                (HeaderFooterKind::EvenPageFooter, "EF".to_string(), Some(0)),
+                (HeaderFooterKind::OddPageFooter, "OF".to_string(), Some(0)),
+                (HeaderFooterKind::FirstPageHeader, "FH".to_string(), Some(0)),
+                (HeaderFooterKind::FirstPageFooter, "FF".to_string(), Some(0)),
+                (HeaderFooterKind::EvenPageHeader, "eh".to_string(), Some(1)),
+                (HeaderFooterKind::OddPageHeader, "oh".to_string(), Some(1)),
+                (HeaderFooterKind::EvenPageFooter, "ef".to_string(), Some(1)),
+                (HeaderFooterKind::OddPageFooter, "of".to_string(), Some(1)),
+                (HeaderFooterKind::FirstPageHeader, "fh".to_string(), Some(1)),
+                (HeaderFooterKind::FirstPageFooter, "ff".to_string(), Some(1)),
+            ]
+        );
     }
 
     #[cfg(feature = "docx")]
