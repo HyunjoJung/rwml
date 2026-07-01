@@ -211,6 +211,46 @@ impl PageRefPageState {
         *source_order += 1;
     }
 
+    fn apply_continuous_section_break(
+        &mut self,
+        saw_visible_content: bool,
+        saw_rendered_page_break: bool,
+        page_number_start: Option<usize>,
+        page_number_format: Option<PageRefDisplayFormat>,
+        source_order: &mut usize,
+    ) {
+        // A continuous (non-paginating) section break keeps the physical page but
+        // can restart the display page number and/or change the display format. It
+        // never advances a page counter or changes rendered_context_trusted.
+        if let Some(start) = page_number_start {
+            self.leading_display_page_number = start;
+        }
+        if let Some(format) = page_number_format {
+            self.leading_display_format = format;
+        }
+        if !saw_visible_content || saw_rendered_page_break {
+            if let Some(start) = page_number_start {
+                self.rendered_display_page_number = start;
+            }
+            if let Some(format) = page_number_format {
+                self.rendered_display_format = format;
+            }
+            self.display_only_restart_target = None;
+            self.display_only_restart_page_ref_target = None;
+        } else {
+            if let Some(format) = page_number_format {
+                self.rendered_display_format = format;
+            }
+            let display_only_target = page_number_start.map(|_| PageRefTarget {
+                display_page: self.leading_display_page_number,
+                display_format: self.leading_display_format,
+            });
+            self.display_only_restart_target = display_only_target;
+            self.display_only_restart_page_ref_target = display_only_target;
+        }
+        *source_order += 1;
+    }
+
     fn advance_explicit_break(
         &mut self,
         saw_visible_content: bool,
@@ -280,9 +320,14 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
     let mut paragraph_properties_depth = 0usize;
     let mut section_properties_depth = 0usize;
     let mut section_type_seen = false;
+    let mut section_continuous_seen = false;
     let mut section_is_paragraph_break = false;
     let mut section_break_pending = None;
     let mut paragraph_section_break_pending = None;
+    let mut paragraph_continuous_restart_pending: Option<(
+        Option<usize>,
+        Option<PageRefDisplayFormat>,
+    )> = None;
     let mut paragraph_section_break_targets = Vec::new();
     let mut paragraph_forced_break_after_targets = Vec::new();
     let mut section_page_number_start = None;
@@ -327,6 +372,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                         section_properties_depth += 1;
                         if section_properties_depth == 1 {
                             section_type_seen = false;
+                            section_continuous_seen = false;
                             section_is_paragraph_break = paragraph_properties_depth > 0;
                             section_break_pending = None;
                             section_page_number_start = None;
@@ -336,6 +382,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                     b"type" if section_properties_depth > 0 && !section_type_seen => {
                         section_type_seen = true;
                         section_break_pending = page_ref_section_break(&e);
+                        section_continuous_seen = page_ref_section_is_continuous(&e);
                     }
                     b"pgNumType" if section_properties_depth > 0 => {
                         if section_page_number_start.is_none() {
@@ -452,6 +499,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                     b"type" if section_properties_depth > 0 && !section_type_seen => {
                         section_type_seen = true;
                         section_break_pending = page_ref_section_break(&e);
+                        section_continuous_seen = page_ref_section_is_continuous(&e);
                     }
                     b"pgNumType" if section_properties_depth > 0 => {
                         if section_page_number_start.is_none() {
@@ -543,11 +591,18 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                                     section_page_number_start,
                                     section_page_number_format,
                                 ));
+                            } else if section_continuous_seen
+                                && (section_page_number_start.is_some()
+                                    || section_page_number_format.is_some())
+                            {
+                                paragraph_continuous_restart_pending =
+                                    Some((section_page_number_start, section_page_number_format));
                             }
                         }
                         section_properties_depth = section_properties_depth.saturating_sub(1);
                         if section_properties_depth == 0 {
                             section_type_seen = false;
+                            section_continuous_seen = false;
                             section_is_paragraph_break = false;
                             section_break_pending = None;
                             section_page_number_start = None;
@@ -573,6 +628,16 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                                         .entry(name)
                                         .or_insert(break_order);
                                 }
+                            } else if let Some((page_number_start, page_number_format)) =
+                                paragraph_continuous_restart_pending.take()
+                            {
+                                pages.apply_continuous_section_break(
+                                    saw_visible_content,
+                                    saw_rendered_page_break,
+                                    page_number_start,
+                                    page_number_format,
+                                    &mut source_order,
+                                );
                             }
                         }
                         paragraph_depth = paragraph_depth.saturating_sub(1);
@@ -732,6 +797,15 @@ pub(super) fn page_ref_section_break(e: &BytesStart<'_>) -> Option<PageRefSectio
         None | Some("") | Some("nextPage") => Some(PageRefSectionBreak::Next),
         Some(value) => SectionBreakKind::from_wml_value(value).map(PageRefSectionBreak::from),
     }
+}
+
+// A `continuous`/`nextColumn` section break does not paginate, so any pgNumType
+// restart/format on it is applied to the current physical page without a break.
+fn page_ref_section_is_continuous(e: &BytesStart<'_>) -> bool {
+    matches!(
+        attr_local_trimmed_preserve_empty(e, b"val").as_deref(),
+        Some("continuous") | Some("nextColumn")
+    )
 }
 
 fn page_ref_section_page_number_start(e: &BytesStart<'_>) -> Option<usize> {

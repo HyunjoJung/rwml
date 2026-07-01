@@ -176,6 +176,23 @@ fn page_field_visible_intro_section_page_number_restart_docx() -> Vec<u8> {
     ])
 }
 
+fn page_field_continuous_section_restart_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:sectPr><w:type w:val="continuous"/><w:pgNumType w:start="5"/></w:sectPr></w:pPr></w:p><w:p><w:fldSimple w:instr=" PAGE "><w:r><w:t>stale continuous restart</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn page_field_page_break_before_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -6138,6 +6155,28 @@ fn docx_page_field_computes_restarted_section_display_page_after_visible_intro()
     assert!(
         main_text.contains("7") && !main_text.contains("stale restarted current page"),
         "restarted section display page should compute for PAGE fields: {main_text:?}"
+    );
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+}
+
+#[test]
+fn docx_page_field_computes_continuous_section_page_number_restart() {
+    let doc = Document::open(&page_field_continuous_section_restart_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::Page);
+    assert_eq!(fields[0].instruction, "PAGE");
+    assert_eq!(fields[0].result, "stale continuous restart");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("5"));
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("5") && !main_text.contains("stale continuous restart"),
+        "continuous section pgNumType restart should compute for PAGE fields: {main_text:?}"
     );
 
     let report = doc.report();
