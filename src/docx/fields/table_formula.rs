@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 
@@ -10,9 +12,11 @@ use super::formula::{
     formula_instruction, formula_number_text, formula_truthy, FormulaNumberFormat, FormulaParser,
 };
 use super::{
-    apply_complex_field_scan_fld_char, apply_field_text_format, computed_run_symbol_char,
-    inline_marker_text, normalize_instruction, should_skip_alternate_branch, skip_element,
-    AlternateContentBranchState, ComplexField, FieldPhase,
+    apply_complex_field_scan_fld_char, apply_field_text_format, computed_action_result,
+    computed_display_result, computed_dynamic_result_with_bookmarks,
+    computed_reference_index_result, computed_run_symbol_char, inline_marker_text,
+    normalize_instruction, should_skip_alternate_branch, skip_element, AlternateContentBranchState,
+    ComplexField, FieldPhase,
 };
 
 type Xml<'a> = Reader<&'a [u8]>;
@@ -449,19 +453,27 @@ fn read_table_formula_cell(r: &mut Xml<'_>, row: usize, col: usize) -> TableForm
                         let instruction =
                             attr_local(&e, b"instr").map(|value| normalize_instruction(&value));
                         let result_text = read_field_result_text(r);
-                        if instruction.as_deref().is_some_and(|value| {
+                        let is_local_formula = instruction.as_deref().is_some_and(|value| {
                             FieldKind::from_instruction(value)
                                 == FieldKind::Dynamic("=".to_string())
-                        }) {
+                        });
+                        if is_local_formula {
                             cell.contains_formula = true;
                             cell.records.push(TableFormulaRecord::Local {
                                 row,
                                 col,
-                                instruction: instruction.unwrap_or_default(),
+                                instruction: instruction.clone().unwrap_or_default(),
                                 cached_result: result_text.clone(),
                             });
                         }
-                        cell.text.push_str(&result_text);
+                        if is_local_formula {
+                            cell.text.push_str(&result_text);
+                        } else {
+                            let text =
+                                computed_table_formula_source_field_result(instruction.as_deref())
+                                    .unwrap_or(result_text);
+                            cell.text.push_str(&text);
+                        }
                         consumed_element = true;
                     }
                     b"fldChar" => {
@@ -705,6 +717,18 @@ fn read_field_result_text(r: &mut Xml<'_>) -> String {
         }
     }
     text
+}
+
+fn computed_table_formula_source_field_result(instruction: Option<&str>) -> Option<String> {
+    let instruction = instruction?;
+    if FieldKind::from_instruction(instruction) == FieldKind::Dynamic("=".to_string()) {
+        return None;
+    }
+    let empty_bookmarks = HashMap::new();
+    computed_dynamic_result_with_bookmarks(instruction, &empty_bookmarks)
+        .or_else(|| computed_display_result(instruction))
+        .or_else(|| computed_action_result(instruction))
+        .or_else(|| computed_reference_index_result(instruction))
 }
 
 fn append_table_formula_result_inline(text: &mut String, e: &BytesStart<'_>) {
