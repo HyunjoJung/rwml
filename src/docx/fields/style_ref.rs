@@ -643,6 +643,24 @@ fn read_style_ref_simple_field_result(
                         skip_element(r, b"fldSimple");
                         consumed_element = true;
                     }
+                    b"fldSimple" => {
+                        let nested_instruction = attr_local(&e, b"instr");
+                        text.push_str(&read_style_ref_simple_field_result(
+                            r,
+                            nested_instruction.as_deref(),
+                            styles,
+                            entries,
+                            field_positions,
+                            next_order,
+                            paragraph_number,
+                            document_bookmarks,
+                            sequence_counters,
+                            autonum_counter,
+                            listnum_counter,
+                            field_bookmarks,
+                        ));
+                        consumed_element = true;
+                    }
                     b"instrText" => {
                         read_text(r);
                         consumed_element = true;
