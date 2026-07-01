@@ -1362,7 +1362,7 @@ fn push_table_formula_argument_values(
         TableFormulaArgument::CurrentRow => {
             for (cell_index, cell) in rows.get(row)?.iter().enumerate() {
                 if cell_index != col {
-                    push_table_formula_cell_number(cell, values)?;
+                    push_table_formula_directional_cell_number(cell, values)?;
                 }
             }
         }

@@ -1102,7 +1102,7 @@ fn formula_table_header_formula_row_reference_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:p><w:fldSimple w:instr=" = SUM(BELOW) "><w:r><w:t>stale header below formula row</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:r><w:t>heading peer</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:p><w:fldSimple w:instr=" = SUM(RIGHT) "><w:r><w:t>cached skipped header formula</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:r><w:t>99</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>4</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>3</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>6</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:p><w:fldSimple w:instr=" = SUM(BELOW) "><w:r><w:t>stale header below formula row</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:r><w:t>heading peer</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:p><w:fldSimple w:instr=" = SUM(RIGHT) "><w:r><w:t>cached skipped header formula</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:r><w:t>99</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:p><w:fldSimple w:instr=" = SUM(R) "><w:r><w:t>cached skipped header row formula</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:r><w:t>400</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>500</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>4</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>3</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>6</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
         ),
     ])
 }
@@ -7957,6 +7957,7 @@ fn docx_table_formula_below_skips_header_formula_rows() {
             Some("5"),
         ),
         (r#"= SUM(RIGHT)"#, "cached skipped header formula", None),
+        (r#"= SUM(R)"#, "cached skipped header row formula", None),
     ];
 
     assert_eq!(fields.len(), expected.len());
@@ -7971,8 +7972,9 @@ fn docx_table_formula_below_skips_header_formula_rows() {
     assert!(
         main_text.contains("5")
             && main_text.contains("cached skipped header formula")
+            && main_text.contains("cached skipped header row formula")
             && !main_text.contains("stale header below formula row"),
-        "header formula rows should not stop BELOW traversal: {main_text:?}"
+        "header formula rows should not stop BELOW traversal or contribute header row values: {main_text:?}"
     );
 }
 
