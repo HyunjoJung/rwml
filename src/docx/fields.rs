@@ -297,15 +297,26 @@ fn record_simple_field(field: Field, current: &mut [ComplexField], fields: &mut 
 }
 
 fn read_simple_field(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Field {
-    let (instruction, result) = read_simple_field_result(r, start, |_| None);
+    let (instruction, result) = read_simple_field_result(r, start, |_, _| None);
     make_field(instruction, result)
 }
 
 fn read_simple_field_result(
     r: &mut Xml<'_>,
     start: &BytesStart<'_>,
-    mut empty_simple_field_result: impl FnMut(Option<&str>) -> Option<String>,
+    mut nested_simple_field_result: impl FnMut(&str, &str) -> Option<String>,
 ) -> (String, String) {
+    read_simple_field_result_with_nested(r, start, &mut nested_simple_field_result)
+}
+
+fn read_simple_field_result_with_nested<F>(
+    r: &mut Xml<'_>,
+    start: &BytesStart<'_>,
+    nested_simple_field_result: &mut F,
+) -> (String, String)
+where
+    F: FnMut(&str, &str) -> Option<String>,
+{
     let instruction = attr_local(start, b"instr").unwrap_or_default();
     let mut result = String::new();
     let mut xml_depth = 0usize;
@@ -331,6 +342,14 @@ fn read_simple_field_result(
                             took_branch: false,
                         });
                     }
+                    b"fldSimple" => {
+                        let (nested_instruction, nested_result) =
+                            read_simple_field_result_with_nested(r, &e, nested_simple_field_result);
+                        let text = nested_simple_field_result(&nested_instruction, &nested_result)
+                            .unwrap_or(nested_result);
+                        result.push_str(&text);
+                        consumed_element = true;
+                    }
                     b"t" => {
                         result.push_str(&read_text(r));
                         consumed_element = true;
@@ -350,8 +369,8 @@ fn read_simple_field_result(
                     continue;
                 }
                 if name == b"fldSimple" {
-                    let instruction = attr_local(&e, b"instr");
-                    if let Some(text) = empty_simple_field_result(instruction.as_deref()) {
+                    let instruction = attr_local(&e, b"instr").unwrap_or_default();
+                    if let Some(text) = nested_simple_field_result(&instruction, "") {
                         result.push_str(&text);
                     } else {
                         append_field_result_inline(&mut result, &e);

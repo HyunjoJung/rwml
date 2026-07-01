@@ -355,9 +355,9 @@ fn append_ref_simple_field_result(
     e: &BytesStart<'_>,
 ) {
     let excluded = ref_target_excluded_bookmarks(active, current);
-    let (instruction, result) = read_simple_field_result(r, e, |instruction| {
+    let (instruction, result) = read_simple_field_result(r, e, |instruction, _| {
         computed_ref_target_field_result(
-            instruction.unwrap_or_default(),
+            instruction,
             out,
             excluded,
             autonum_counter,

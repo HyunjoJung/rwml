@@ -3110,6 +3110,23 @@ fn nested_empty_simple_field_inside_ref_target_result_docx() -> Vec<u8> {
     ])
 }
 
+fn nested_simple_field_inside_ref_target_result_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="ComputedText"/><w:fldSimple w:instr=" CUSTOM outer "><w:r><w:t>Prefix </w:t></w:r><w:fldSimple w:instr=" QUOTE &quot;Inner target&quot; "><w:r><w:t>stale inner target</w:t></w:r></w:fldSimple><w:r><w:t> Suffix</w:t></w:r></w:fldSimple><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" REF ComputedText "><w:r><w:t>stale nested result ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn nested_complex_field_ref_bookmark_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -16595,6 +16612,31 @@ fn docx_ref_targets_compute_empty_simple_fields_inside_field_results() {
         main_text.contains("Prefix Inner target Suffix")
             && !main_text.contains("stale nested empty result ref"),
         "REF targets should compute empty simple fields consumed inside another field result: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_ref_targets_compute_simple_fields_inside_field_results() {
+    let doc = Document::open(&nested_simple_field_inside_ref_target_result_docx())
+        .expect("fixture opens");
+    let fields = doc.fields();
+    let ref_field = fields
+        .iter()
+        .find(|field| field.instruction == "REF ComputedText")
+        .expect("REF field is parsed");
+
+    assert_eq!(ref_field.kind, FieldKind::Ref);
+    assert_eq!(ref_field.result, "stale nested result ref");
+    assert_eq!(
+        ref_field.computed_result.as_deref(),
+        Some("Prefix Inner target Suffix")
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Prefix Inner target Suffix")
+            && !main_text.contains("stale nested result ref"),
+        "REF targets should compute non-empty simple fields consumed inside another field result: {main_text:?}"
     );
 }
 
