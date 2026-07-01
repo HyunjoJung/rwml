@@ -2205,6 +2205,27 @@ fn style_ref_source_document_bookmark_operand_docx() -> Vec<u8> {
     ])
 }
 
+fn style_ref_source_ref_bookmark_field_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="BaseText"/><w:r><w:t>current base</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Source </w:t></w:r><w:fldSimple w:instr=" REF BaseText \* Upper "><w:r><w:t>stale explicit source ref</w:t></w:r></w:fldSimple><w:r><w:t> and </w:t></w:r><w:fldSimple w:instr=" BaseText \* FirstCap "><w:r><w:t>stale direct source ref</w:t></w:r></w:fldSimple><w:r><w:t> ready</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;heading 1&quot; "><w:r><w:t>stale ref style source</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;heading 1&quot; \* Upper "><w:r><w:t>stale upper ref style source</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn style_ref_complex_field_source_text_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -12074,6 +12095,66 @@ fn docx_style_ref_source_text_resolves_document_bookmark_operands() {
             && !main_text.contains("stale bookmark style source")
             && !main_text.contains("stale upper bookmark style source"),
         "STYLEREF source context should resolve document bookmark operands: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_style_ref_source_text_resolves_ref_bookmark_fields() {
+    let doc = Document::open(&style_ref_source_ref_bookmark_field_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let explicit_ref = fields
+        .iter()
+        .find(|field| field.instruction == "REF BaseText \\* Upper")
+        .expect("explicit REF source field is recorded");
+    assert_eq!(explicit_ref.kind, FieldKind::Ref);
+    assert_eq!(explicit_ref.result, "stale explicit source ref");
+    assert_eq!(
+        explicit_ref.computed_result.as_deref(),
+        Some("CURRENT BASE")
+    );
+
+    let direct_ref = fields
+        .iter()
+        .find(|field| field.instruction == "BaseText \\* FirstCap")
+        .expect("direct bookmark source field is recorded");
+    assert_eq!(direct_ref.kind, FieldKind::Ref);
+    assert_eq!(direct_ref.result, "stale direct source ref");
+    assert_eq!(direct_ref.computed_result.as_deref(), Some("Current base"));
+
+    let style_ref_fields = fields
+        .iter()
+        .filter(|field| field.kind == FieldKind::DocumentStructure("STYLEREF".to_string()))
+        .collect::<Vec<_>>();
+
+    assert_eq!(style_ref_fields.len(), 2);
+    assert_eq!(style_ref_fields[0].instruction, "STYLEREF \"heading 1\"");
+    assert_eq!(
+        style_ref_fields[0].computed_result.as_deref(),
+        Some("Source CURRENT BASE and Current base ready")
+    );
+    assert_eq!(
+        style_ref_fields[1].instruction,
+        "STYLEREF \"heading 1\" \\* Upper"
+    );
+    assert_eq!(
+        style_ref_fields[1].computed_result.as_deref(),
+        Some("SOURCE CURRENT BASE AND CURRENT BASE READY")
+    );
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Source CURRENT BASE and Current base ready")
+            && main_text.contains("SOURCE CURRENT BASE AND CURRENT BASE READY")
+            && !main_text.contains("stale explicit source ref")
+            && !main_text.contains("stale direct source ref")
+            && !main_text.contains("stale ref style source")
+            && !main_text.contains("stale upper ref style source"),
+        "STYLEREF source context should resolve REF/direct bookmark source fields: {main_text:?}"
     );
 }
 
