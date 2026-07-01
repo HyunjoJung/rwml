@@ -7,6 +7,7 @@ use crate::numfmt;
 pub(crate) struct PageRefContext {
     targets: HashMap<String, PageRefTarget>,
     target_positions: HashMap<String, PageRefPosition>,
+    rendered_target_positions: HashMap<String, PageRefPosition>,
     target_forced_break_after_orders: HashMap<String, usize>,
     unsupported_section_format_targets: HashSet<String>,
     field_positions: Vec<Option<PageRefPosition>>,
@@ -37,6 +38,10 @@ impl PageRefContext {
 
     fn target_forced_break_after_order(&self, name: &str) -> Option<usize> {
         self.target_forced_break_after_orders.get(name).copied()
+    }
+
+    fn rendered_target_position(&self, name: &str) -> Option<PageRefPosition> {
+        self.rendered_target_positions.get(name).copied()
     }
 
     pub(crate) fn field_position(&self, index: usize) -> Option<PageRefPosition> {
@@ -657,6 +662,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
             _ => {}
         }
     }
+    let rendered_target_positions = rendered_targets.clone();
     if saw_rendered_page_break {
         for (name, position) in rendered_targets {
             match targets.entry(name.clone()) {
@@ -680,6 +686,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
     PageRefContext {
         targets,
         target_positions,
+        rendered_target_positions,
         target_forced_break_after_orders,
         unsupported_section_format_targets,
         field_positions,
@@ -1106,8 +1113,18 @@ fn computed_relative_page_ref_result(
         }
     } else {
         let field_order = field_order?;
-        let break_order = page_refs.target_forced_break_after_order(&spec.target)?;
-        if field_order <= break_order {
+        // The field is in an untrusted (auto-paginated) context. It resolves to a
+        // definite page only when the target is provably on a different page: either
+        // a forced break was recorded after the target, or the target itself sits on
+        // a trusted rendered page later in source order (every trusted-rendered
+        // position is preceded by a page advance, so a later one is a later page).
+        let different_page = match page_refs.target_forced_break_after_order(&spec.target) {
+            Some(break_order) => field_order > break_order,
+            None => page_refs
+                .rendered_target_position(&spec.target)
+                .is_some_and(|position| position.order > field_order),
+        };
+        if !different_page {
             return None;
         }
     }

@@ -193,6 +193,23 @@ fn page_field_continuous_section_restart_docx() -> Vec<u8> {
     ])
 }
 
+fn page_ref_relative_untrusted_field_trusted_target_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Visible intro can auto-paginate.</w:t><w:br w:type="page"/></w:r></w:p><w:p><w:fldSimple w:instr=" PAGEREF Later \p "><w:r><w:t>stale relative ref</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:lastRenderedPageBreak/><w:t>Later page content.</w:t></w:r></w:p><w:p><w:bookmarkStart w:id="1" w:name="Later"/><w:r><w:t>Target heading</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn page_field_page_break_before_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -6182,6 +6199,19 @@ fn docx_page_field_computes_continuous_section_page_number_restart() {
     let report = doc.report();
     assert!(report.features.unsupported_field_kinds.is_empty());
     assert!(report.features.unsupported_field_reasons.is_empty());
+}
+
+#[test]
+fn docx_pageref_relative_untrusted_field_resolves_trusted_later_target() {
+    let doc = Document::open(&page_ref_relative_untrusted_field_trusted_target_docx())
+        .expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::PageRef);
+    assert_eq!(fields[0].instruction, "PAGEREF Later \\p");
+    assert_eq!(fields[0].result, "stale relative ref");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("on page 2"));
 }
 
 #[test]
