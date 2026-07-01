@@ -8,6 +8,7 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
     let mut alternate_content_stack = Vec::new();
     let mut current = Vec::new();
     let mut autonum_counter = 0i64;
+    let mut listnum_counter = 0i64;
     let mut sequence_counters = HashMap::new();
     let mut field_bookmarks = HashMap::new();
     loop {
@@ -36,6 +37,7 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
                             &mut current,
                             &mut out,
                             &mut autonum_counter,
+                            &mut listnum_counter,
                             &mut sequence_counters,
                             &mut field_bookmarks,
                             &mut r,
@@ -49,6 +51,7 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
                             &mut current,
                             &mut out,
                             &mut autonum_counter,
+                            &mut listnum_counter,
                             &mut sequence_counters,
                             &mut field_bookmarks,
                             &mut r,
@@ -67,6 +70,7 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
                             &out,
                             &[],
                             &mut autonum_counter,
+                            &mut listnum_counter,
                             &mut sequence_counters,
                             &mut field_bookmarks,
                         )
@@ -80,6 +84,7 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
                             &mut current,
                             &mut out,
                             &mut autonum_counter,
+                            &mut listnum_counter,
                             &mut sequence_counters,
                             &mut field_bookmarks,
                         );
@@ -161,6 +166,7 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
                             &out,
                             &[],
                             &mut autonum_counter,
+                            &mut listnum_counter,
                             &mut sequence_counters,
                             &mut field_bookmarks,
                         );
@@ -172,6 +178,7 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
                             &mut current,
                             &mut out,
                             &mut autonum_counter,
+                            &mut listnum_counter,
                             &mut sequence_counters,
                             &mut field_bookmarks,
                         );
@@ -222,6 +229,7 @@ fn apply_ref_target_fld_char(
     current: &mut Vec<RefTargetComplexField>,
     out: &mut HashMap<String, String>,
     autonum_counter: &mut i64,
+    listnum_counter: &mut i64,
     sequence_counters: &mut HashMap<String, i64>,
     field_bookmarks: &mut HashMap<String, String>,
 ) {
@@ -257,6 +265,7 @@ fn apply_ref_target_fld_char(
                 out,
                 &field.active,
                 autonum_counter,
+                listnum_counter,
                 sequence_counters,
                 field_bookmarks,
             )
@@ -325,6 +334,7 @@ fn append_ref_simple_field_result(
     current: &mut [RefTargetComplexField],
     out: &mut HashMap<String, String>,
     autonum_counter: &mut i64,
+    listnum_counter: &mut i64,
     sequence_counters: &mut HashMap<String, i64>,
     field_bookmarks: &mut HashMap<String, String>,
     r: &mut Xml<'_>,
@@ -337,6 +347,7 @@ fn append_ref_simple_field_result(
         out,
         excluded,
         autonum_counter,
+        listnum_counter,
         sequence_counters,
         field_bookmarks,
     )
@@ -349,6 +360,7 @@ fn computed_ref_target_field_result(
     bookmarks: &HashMap<String, String>,
     excluded: &[(String, String)],
     autonum_counter: &mut i64,
+    listnum_counter: &mut i64,
     sequence_counters: &mut HashMap<String, i64>,
     field_bookmarks: &mut HashMap<String, String>,
 ) -> Option<String> {
@@ -366,6 +378,7 @@ fn computed_ref_target_field_result(
     let bookmarks = ref_target_merged_bookmarks(&available_bookmarks, field_bookmarks);
     computed_ref_target_ref_result(&instruction, &bookmarks)
         .or_else(|| computed_numbering_result(&instruction, autonum_counter))
+        .or_else(|| computed_listnum_result(&instruction, listnum_counter))
         .or_else(|| computed_sequence_result(&instruction, sequence_counters))
         .or_else(|| computed_dynamic_result_with_bookmarks(&instruction, &bookmarks))
         .or_else(|| computed_display_result(&instruction))
@@ -404,7 +417,7 @@ fn is_ref_target_source_order_field_instruction(instruction: Option<&str>) -> bo
                 FieldKind::Dynamic(kind) => matches!(kind.as_str(), "ASK" | "SET"),
                 FieldKind::Numbering(kind) => matches!(
                     kind.as_str(),
-                    "AUTONUM" | "AUTONUMLGL" | "AUTONUMOUT" | "BIDIOUTLINE"
+                    "AUTONUM" | "AUTONUMLGL" | "AUTONUMOUT" | "BIDIOUTLINE" | "LISTNUM"
                 ),
                 FieldKind::Sequence => true,
                 _ => false,
