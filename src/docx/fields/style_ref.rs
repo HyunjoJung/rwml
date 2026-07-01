@@ -663,12 +663,61 @@ fn read_style_ref_simple_field_result(
         computed_style_ref_source_field_result(instruction, document_bookmarks, field_bookmarks)
     {
         let cached_text = normalize_toc_text(&text);
-        if entries.len() == entry_start + 1 && entries[entry_start].text == cached_text {
-            entries[entry_start].text = computed.clone();
-        }
+        replace_style_ref_source_entries_with_computed(
+            entries,
+            entry_start,
+            &cached_text,
+            &computed,
+        );
         return computed;
     }
     text
+}
+
+fn replace_style_ref_source_entries_with_computed(
+    entries: &mut Vec<StyleRefEntry>,
+    entry_start: usize,
+    cached_text: &str,
+    computed: &str,
+) {
+    let Some(created) = entries.get(entry_start..) else {
+        return;
+    };
+    if created.is_empty() {
+        return;
+    }
+    if created.len() == 1 {
+        if created[0].text == cached_text {
+            entries[entry_start].text = computed.to_string();
+        }
+        return;
+    }
+    let first = &created[0];
+    if !created
+        .iter()
+        .all(|entry| style_ref_entries_share_source_style(entry, first))
+    {
+        return;
+    }
+    let joined = created
+        .iter()
+        .map(|entry| entry.text.as_str())
+        .collect::<Vec<_>>()
+        .join(" ");
+    if normalize_toc_text(&joined) != cached_text {
+        return;
+    }
+    let mut replacement = first.clone();
+    replacement.text = computed.to_string();
+    entries.splice(entry_start.., [replacement]);
+}
+
+fn style_ref_entries_share_source_style(left: &StyleRefEntry, right: &StyleRefEntry) -> bool {
+    left.style_id == right.style_id
+        && left.style_name == right.style_name
+        && left.number_text == right.number_text
+        && left.number_numeric == right.number_numeric
+        && left.number_full_context == right.number_full_context
 }
 
 fn computed_style_ref_source_field_result(
@@ -883,11 +932,12 @@ fn apply_style_ref_scan_fld_char(
                 ) {
                     let cached_text = normalize_toc_text(&paragraph_text[start..]);
                     if let Some(entry_start) = field.entry_result_start {
-                        if entries.len() == entry_start + 1
-                            && entries[entry_start].text == cached_text
-                        {
-                            entries[entry_start].text = computed.clone();
-                        }
+                        replace_style_ref_source_entries_with_computed(
+                            entries,
+                            entry_start,
+                            &cached_text,
+                            &computed,
+                        );
                     }
                     paragraph_text.replace_range(start.., &computed);
                 }
