@@ -26,6 +26,10 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
                             took_branch: false,
                         });
                     }
+                    b"fldSimple" if !active.is_empty() => {
+                        append_ref_simple_field_result(&active, &mut out, &mut r, &e);
+                        continue;
+                    }
                     b"p" => append_ref_paragraph_breaks(&active, &mut out),
                     b"bookmarkStart" => {
                         if let Some((id, name)) = bookmark_start(&e) {
@@ -120,6 +124,25 @@ fn append_ref_symbol(
         return;
     };
     append_ref_text(active, out, &ch.to_string());
+}
+
+fn append_ref_simple_field_result(
+    active: &[(String, String)],
+    out: &mut HashMap<String, String>,
+    r: &mut Xml<'_>,
+    e: &BytesStart<'_>,
+) {
+    let field = read_simple_field(r, e);
+    let text = computed_ref_target_simple_field_result(&field.instruction).unwrap_or(field.result);
+    append_ref_text(active, out, &text);
+}
+
+fn computed_ref_target_simple_field_result(instruction: &str) -> Option<String> {
+    let empty_bookmarks = HashMap::new();
+    computed_dynamic_result_with_bookmarks(instruction, &empty_bookmarks)
+        .or_else(|| computed_display_result(instruction))
+        .or_else(|| computed_action_result(instruction))
+        .or_else(|| computed_reference_index_result(instruction))
 }
 
 #[derive(Debug, Clone, Default)]
