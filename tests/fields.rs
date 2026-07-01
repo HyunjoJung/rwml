@@ -1243,6 +1243,23 @@ fn formula_table_source_field_stale_nested_simple_docx() -> Vec<u8> {
     ])
 }
 
+fn formula_table_source_field_stale_complex_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:tc><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> QUOTE "123" </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale complex source</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(LEFT) "><w:r><w:t>stale complex source sum</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn formula_table_source_field_symbol_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -8399,6 +8416,41 @@ fn docx_table_formula_source_simple_field_uses_computed_nested_result_text() {
             && !main_text.contains("stale source value")
             && !main_text.contains("stale source sum"),
         "table formula source text should use computed deterministic nested field output: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_table_formula_source_complex_field_uses_computed_nested_result_text() {
+    let doc =
+        Document::open(&formula_table_source_field_stale_complex_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let source = fields
+        .iter()
+        .find(|field| field.instruction == r#"QUOTE "123""#)
+        .expect("source field is recorded");
+    assert_eq!(source.kind, FieldKind::Dynamic("QUOTE".to_string()));
+    assert_eq!(source.result, "stale complex source");
+    assert_eq!(source.computed_result.as_deref(), Some("123"));
+
+    let formula = fields
+        .iter()
+        .find(|field| field.instruction == r#"= SUM(LEFT)"#)
+        .expect("formula field is recorded");
+    assert_eq!(formula.kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(formula.result, "stale complex source sum");
+    assert_eq!(formula.computed_result.as_deref(), Some("123"));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("123")
+            && !main_text.contains("stale complex source")
+            && !main_text.contains("stale complex source sum"),
+        "table formula source text should use computed deterministic complex field output: {main_text:?}"
     );
 }
 

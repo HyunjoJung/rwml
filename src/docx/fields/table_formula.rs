@@ -6,7 +6,7 @@ use quick_xml::Reader;
 use crate::annotation::FieldKind;
 
 use super::super::xml_text::{read_text, skip_subtree};
-use super::super::{attr_local, local, toggle_on};
+use super::super::{attr_local, field_char_type, local, toggle_on};
 use super::formula::{
     eval_formula_function, format_formula_general_number, format_formula_number,
     formula_instruction, formula_number_text, formula_truthy, FormulaNumberFormat, FormulaParser,
@@ -457,7 +457,7 @@ fn read_table_formula_cell(r: &mut Xml<'_>, row: usize, col: usize) -> TableForm
                             FieldKind::from_instruction(value)
                                 == FieldKind::Dynamic("=".to_string())
                         });
-                        if is_local_formula {
+                        if is_local_formula && current.is_empty() {
                             cell.contains_formula = true;
                             cell.records.push(TableFormulaRecord::Local {
                                 row,
@@ -466,34 +466,17 @@ fn read_table_formula_cell(r: &mut Xml<'_>, row: usize, col: usize) -> TableForm
                                 cached_result: result_text.clone(),
                             });
                         }
-                        if is_local_formula {
-                            cell.text.push_str(&result_text);
+                        let text = if is_local_formula {
+                            result_text
                         } else {
-                            let text =
-                                computed_table_formula_source_field_result(instruction.as_deref())
-                                    .unwrap_or(result_text);
-                            cell.text.push_str(&text);
-                        }
+                            computed_table_formula_source_field_result(instruction.as_deref())
+                                .unwrap_or(result_text)
+                        };
+                        append_table_formula_cell_text(&mut cell.text, &mut current, &text);
                         consumed_element = true;
                     }
                     b"fldChar" => {
-                        apply_table_formula_scan_fld_char(
-                            &e,
-                            &mut current,
-                            |instruction, result| {
-                                if FieldKind::from_instruction(instruction)
-                                    == FieldKind::Dynamic("=".to_string())
-                                {
-                                    cell.contains_formula = true;
-                                    cell.records.push(TableFormulaRecord::Local {
-                                        row,
-                                        col,
-                                        instruction: instruction.to_string(),
-                                        cached_result: result.to_string(),
-                                    });
-                                }
-                            },
-                        );
+                        apply_table_formula_cell_fld_char(&e, &mut current, &mut cell, row, col);
                     }
                     b"instrText" => {
                         let text = read_text(r);
@@ -505,11 +488,12 @@ fn read_table_formula_cell(r: &mut Xml<'_>, row: usize, col: usize) -> TableForm
                         }
                     }
                     b"t" => {
-                        cell.text.push_str(&read_text(r));
+                        let text = read_text(r);
+                        append_table_formula_cell_text(&mut cell.text, &mut current, &text);
                         consumed_element = true;
                     }
                     _ => {
-                        append_table_formula_result_inline(&mut cell.text, &e);
+                        append_table_formula_cell_inline(&mut cell.text, &mut current, &e);
                     }
                 }
                 if !consumed_element {
@@ -526,10 +510,12 @@ fn read_table_formula_cell(r: &mut Xml<'_>, row: usize, col: usize) -> TableForm
                     b"fldSimple" => {
                         let instruction =
                             attr_local(&e, b"instr").map(|value| normalize_instruction(&value));
-                        if instruction.as_deref().is_some_and(|value| {
-                            FieldKind::from_instruction(value)
-                                == FieldKind::Dynamic("=".to_string())
-                        }) {
+                        if current.is_empty()
+                            && instruction.as_deref().is_some_and(|value| {
+                                FieldKind::from_instruction(value)
+                                    == FieldKind::Dynamic("=".to_string())
+                            })
+                        {
                             cell.contains_formula = true;
                             cell.records.push(TableFormulaRecord::Local {
                                 row,
@@ -540,26 +526,10 @@ fn read_table_formula_cell(r: &mut Xml<'_>, row: usize, col: usize) -> TableForm
                         }
                     }
                     b"fldChar" => {
-                        apply_table_formula_scan_fld_char(
-                            &e,
-                            &mut current,
-                            |instruction, result| {
-                                if FieldKind::from_instruction(instruction)
-                                    == FieldKind::Dynamic("=".to_string())
-                                {
-                                    cell.contains_formula = true;
-                                    cell.records.push(TableFormulaRecord::Local {
-                                        row,
-                                        col,
-                                        instruction: instruction.to_string(),
-                                        cached_result: result.to_string(),
-                                    });
-                                }
-                            },
-                        );
+                        apply_table_formula_cell_fld_char(&e, &mut current, &mut cell, row, col);
                     }
                     _ => {
-                        append_table_formula_result_inline(&mut cell.text, &e);
+                        append_table_formula_cell_inline(&mut cell.text, &mut current, &e);
                     }
                 }
             }
@@ -717,6 +687,76 @@ fn read_field_result_text(r: &mut Xml<'_>) -> String {
         }
     }
     text
+}
+
+fn apply_table_formula_cell_fld_char(
+    e: &BytesStart<'_>,
+    current: &mut Vec<ComplexField>,
+    cell: &mut TableFormulaCell,
+    row: usize,
+    col: usize,
+) {
+    match field_char_type(e).as_deref() {
+        Some("begin") => current.push(ComplexField {
+            instruction: String::new(),
+            result: String::new(),
+            phase: FieldPhase::Instruction,
+        }),
+        Some("separate") => {
+            if let Some(field) = current.last_mut() {
+                field.phase = FieldPhase::Result;
+            }
+        }
+        Some("end") => {
+            let Some(field) = current.pop() else {
+                return;
+            };
+            let instruction = normalize_instruction(&field.instruction);
+            let is_local_formula =
+                FieldKind::from_instruction(&instruction) == FieldKind::Dynamic("=".to_string());
+            if is_local_formula && current.is_empty() {
+                cell.contains_formula = true;
+                cell.records.push(TableFormulaRecord::Local {
+                    row,
+                    col,
+                    instruction: instruction.clone(),
+                    cached_result: field.result.clone(),
+                });
+            }
+            let text = if is_local_formula {
+                field.result
+            } else {
+                computed_table_formula_source_field_result(Some(&instruction))
+                    .unwrap_or(field.result)
+            };
+            append_table_formula_cell_text(&mut cell.text, current, &text);
+        }
+        _ => {}
+    }
+}
+
+fn append_table_formula_cell_text(
+    cell_text: &mut String,
+    current: &mut [ComplexField],
+    text: &str,
+) {
+    if let Some(field) = current.last_mut() {
+        if field.phase == FieldPhase::Result {
+            field.result.push_str(text);
+        }
+    } else {
+        cell_text.push_str(text);
+    }
+}
+
+fn append_table_formula_cell_inline(
+    cell_text: &mut String,
+    current: &mut [ComplexField],
+    e: &BytesStart<'_>,
+) {
+    let mut text = String::new();
+    append_table_formula_result_inline(&mut text, e);
+    append_table_formula_cell_text(cell_text, current, &text);
 }
 
 fn computed_table_formula_source_field_result(instruction: Option<&str>) -> Option<String> {
