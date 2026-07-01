@@ -13,10 +13,13 @@ use super::formula::{
 };
 use super::{
     apply_complex_field_scan_fld_char, apply_field_text_format, computed_action_result,
-    computed_display_result, computed_dynamic_result_with_bookmarks,
-    computed_reference_index_result, computed_run_symbol_char, inline_marker_text,
-    normalize_instruction, should_skip_alternate_branch, skip_element, AlternateContentBranchState,
-    ComplexField, FieldPhase,
+    computed_ask_result, computed_display_result, computed_fill_in_result,
+    computed_formula_result_with_bookmark_context,
+    computed_if_compare_result_with_bookmark_context,
+    computed_merge_control_result_with_bookmark_context, computed_quote_result,
+    computed_reference_index_result, computed_run_symbol_char, computed_set_result,
+    inline_marker_text, normalize_instruction, should_skip_alternate_branch, skip_element,
+    AlternateContentBranchState, ComplexField, FieldPhase,
 };
 
 type Xml<'a> = Reader<&'a [u8]>;
@@ -43,6 +46,7 @@ pub(crate) fn table_formula_context(
     let mut r = Reader::from_str(xml);
     let mut results = Vec::new();
     let mut current = Vec::new();
+    let mut field_bookmarks = HashMap::new();
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
     loop {
@@ -67,14 +71,28 @@ pub(crate) fn table_formula_context(
                         });
                     }
                     b"tbl" => {
-                        results.extend(read_table_formula_table(&mut r, document_bookmarks));
+                        results.extend(read_table_formula_table(
+                            &mut r,
+                            document_bookmarks,
+                            &mut field_bookmarks,
+                        ));
                         consumed_element = true;
                     }
                     b"fldSimple" => {
-                        if is_formula_instruction(attr_local(&e, b"instr").as_deref()) {
+                        let instruction =
+                            attr_local(&e, b"instr").map(|value| normalize_instruction(&value));
+                        if is_formula_instruction(instruction.as_deref()) {
                             results.push(None);
+                            skip_element(&mut r, b"fldSimple");
+                        } else {
+                            let result_text = read_field_result_text(&mut r);
+                            let _ = computed_table_formula_source_field_result(
+                                instruction.as_deref(),
+                                document_bookmarks,
+                                &mut field_bookmarks,
+                            )
+                            .unwrap_or(result_text);
                         }
-                        skip_element(&mut r, b"fldSimple");
                         consumed_element = true;
                     }
                     b"fldChar" => {
@@ -104,8 +122,18 @@ pub(crate) fn table_formula_context(
                     continue;
                 }
                 match name {
-                    b"fldSimple" if is_formula_instruction(attr_local(&e, b"instr").as_deref()) => {
-                        results.push(None);
+                    b"fldSimple" => {
+                        let instruction =
+                            attr_local(&e, b"instr").map(|value| normalize_instruction(&value));
+                        if is_formula_instruction(instruction.as_deref()) {
+                            results.push(None);
+                        } else {
+                            let _ = computed_table_formula_source_field_result(
+                                instruction.as_deref(),
+                                document_bookmarks,
+                                &mut field_bookmarks,
+                            );
+                        }
                     }
                     b"fldChar" => {
                         apply_table_formula_scan_fld_char(&e, &mut current, |_, _| {
@@ -151,6 +179,7 @@ struct TableFormulaCell {
 fn read_table_formula_table(
     r: &mut Xml<'_>,
     document_bookmarks: &HashMap<String, String>,
+    field_bookmarks: &mut HashMap<String, String>,
 ) -> Vec<Option<String>> {
     let mut rows = Vec::new();
     let mut records = Vec::new();
@@ -182,7 +211,12 @@ fn read_table_formula_table(
                     }
                     b"tr" => {
                         let row_index = rows.len();
-                        let mut row = read_table_formula_row(r, row_index, document_bookmarks);
+                        let mut row = read_table_formula_row(
+                            r,
+                            row_index,
+                            document_bookmarks,
+                            field_bookmarks,
+                        );
                         for cell in &mut row {
                             records.append(&mut cell.records);
                         }
@@ -265,6 +299,7 @@ fn read_table_formula_row(
     r: &mut Xml<'_>,
     row_index: usize,
     document_bookmarks: &HashMap<String, String>,
+    field_bookmarks: &mut HashMap<String, String>,
 ) -> Vec<TableFormulaCell> {
     let mut row: Vec<TableFormulaCell> = Vec::new();
     let mut is_header_row = false;
@@ -302,8 +337,13 @@ fn read_table_formula_row(
                     }
                     b"tc" => {
                         let col_index = row.len();
-                        let mut cell =
-                            read_table_formula_cell(r, row_index, col_index, document_bookmarks);
+                        let mut cell = read_table_formula_cell(
+                            r,
+                            row_index,
+                            col_index,
+                            document_bookmarks,
+                            field_bookmarks,
+                        );
                         cell.is_header_row = is_header_row;
                         row.push(cell);
                     }
@@ -426,6 +466,7 @@ fn read_table_formula_cell(
     row: usize,
     col: usize,
     document_bookmarks: &HashMap<String, String>,
+    field_bookmarks: &mut HashMap<String, String>,
 ) -> TableFormulaCell {
     let mut cell = TableFormulaCell::default();
     let mut current = Vec::new();
@@ -457,7 +498,9 @@ fn read_table_formula_cell(
                         consumed_element = true;
                     }
                     b"tbl" => {
-                        for result in read_table_formula_table(r, document_bookmarks) {
+                        for result in
+                            read_table_formula_table(r, document_bookmarks, field_bookmarks)
+                        {
                             cell.records.push(TableFormulaRecord::Nested(result));
                         }
                         if !cell.text.is_empty() {
@@ -488,6 +531,7 @@ fn read_table_formula_cell(
                             computed_table_formula_source_field_result(
                                 instruction.as_deref(),
                                 document_bookmarks,
+                                field_bookmarks,
                             )
                             .unwrap_or(result_text)
                         };
@@ -502,6 +546,7 @@ fn read_table_formula_cell(
                             row,
                             col,
                             document_bookmarks,
+                            field_bookmarks,
                         );
                     }
                     b"instrText" => {
@@ -559,6 +604,7 @@ fn read_table_formula_cell(
                             row,
                             col,
                             document_bookmarks,
+                            field_bookmarks,
                         );
                     }
                     _ => {
@@ -729,6 +775,7 @@ fn apply_table_formula_cell_fld_char(
     row: usize,
     col: usize,
     document_bookmarks: &HashMap<String, String>,
+    field_bookmarks: &mut HashMap<String, String>,
 ) {
     match field_char_type(e).as_deref() {
         Some("begin") => current.push(ComplexField {
@@ -760,8 +807,12 @@ fn apply_table_formula_cell_fld_char(
             let text = if is_local_formula {
                 field.result
             } else {
-                computed_table_formula_source_field_result(Some(&instruction), document_bookmarks)
-                    .unwrap_or(field.result)
+                computed_table_formula_source_field_result(
+                    Some(&instruction),
+                    document_bookmarks,
+                    field_bookmarks,
+                )
+                .unwrap_or(field.result)
             };
             append_table_formula_cell_text(&mut cell.text, current, &text);
         }
@@ -796,12 +847,36 @@ fn append_table_formula_cell_inline(
 fn computed_table_formula_source_field_result(
     instruction: Option<&str>,
     document_bookmarks: &HashMap<String, String>,
+    field_bookmarks: &mut HashMap<String, String>,
 ) -> Option<String> {
     let instruction = instruction?;
-    if FieldKind::from_instruction(instruction) == FieldKind::Dynamic("=".to_string()) {
-        return None;
+    match FieldKind::from_instruction(instruction) {
+        FieldKind::Dynamic(kind) if kind == "=" => return None,
+        FieldKind::Dynamic(kind) if kind == "ASK" => {
+            return computed_ask_result(instruction, field_bookmarks);
+        }
+        FieldKind::Dynamic(kind) if kind == "SET" => {
+            return computed_set_result(instruction, field_bookmarks);
+        }
+        _ => {}
     }
-    computed_dynamic_result_with_bookmarks(instruction, document_bookmarks)
+    computed_formula_result_with_bookmark_context(instruction, document_bookmarks, field_bookmarks)
+        .or_else(|| computed_quote_result(instruction))
+        .or_else(|| computed_fill_in_result(instruction))
+        .or_else(|| {
+            computed_if_compare_result_with_bookmark_context(
+                instruction,
+                document_bookmarks,
+                field_bookmarks,
+            )
+        })
+        .or_else(|| {
+            computed_merge_control_result_with_bookmark_context(
+                instruction,
+                document_bookmarks,
+                field_bookmarks,
+            )
+        })
         .or_else(|| computed_display_result(instruction))
         .or_else(|| computed_action_result(instruction))
         .or_else(|| computed_reference_index_result(instruction))
