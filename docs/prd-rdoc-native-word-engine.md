@@ -341,18 +341,20 @@ The first public maturity release should meet these requirements.
   `ASK name prompt \d default` fields with quoted or unquoted prompts,
   including multi-token unquoted prompts, and quoted or unquoted default
   literals rendered as hidden output
-  while feeding later plain `REF`/direct bookmark references and source-order
-  bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons, including
-  numeric comparison for finite numeric bookmark values, valid no-default
+  while feeding later plain `REF`/direct bookmark references, source-order
+  bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons, and ordinary
+  document-bookmark-backed `IF`/`COMPARE` comparisons, including numeric
+  comparison for finite numeric bookmark values, valid no-default
   `FILLIN`/`ASK` prompt fields, including multi-token unquoted prompts,
   preserve cached text with `NoComputedResult`, malformed
   prompt field syntax reports `UnsupportedSwitch`, and deterministic literal
   quoted or unquoted `SET name value` fields, including multi-token unquoted
   payloads, with
   field-result format switches rendered as hidden output while feeding later
-  plain `REF`/direct bookmark references and source-order bookmark-backed
-  `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons, including numeric comparison
-  for finite numeric bookmark values, malformed `SET` syntax reports
+  plain `REF`/direct bookmark references, source-order bookmark-backed
+  `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons, and ordinary
+  document-bookmark-backed `IF`/`COMPARE` comparisons, including numeric
+  comparison for finite numeric bookmark values, malformed `SET` syntax reports
   `UnsupportedSwitch`, plus literal `NEXT` and literal or source-order
   bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with field-result
   format switches

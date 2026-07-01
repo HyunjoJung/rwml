@@ -614,6 +614,23 @@ fn set_backed_numeric_comparison_docx() -> Vec<u8> {
     ])
 }
 
+fn bookmark_backed_comparison_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="InvoiceTier"/><w:r><w:t>Gold</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:bookmarkStart w:id="8" w:name="InvoiceTotal"/><w:r><w:t>42</w:t></w:r><w:bookmarkEnd w:id="8"/></w:p><w:p><w:fldSimple w:instr=" IF InvoiceTier = &quot;Gold&quot; &quot;ship&quot; &quot;hold&quot; "><w:r><w:t>stale bookmark if</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" COMPARE InvoiceTier = &quot;G*&quot; "><w:r><w:t>stale bookmark compare</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" IF InvoiceTotal &gt;= 40 &quot;match&quot; &quot;miss&quot; "><w:r><w:t>stale numeric bookmark if</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" COMPARE InvoiceTotal &lt; 40 "><w:r><w:t>stale numeric bookmark compare</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" IF MissingTier = &quot;Gold&quot; &quot;ship&quot; &quot;hold&quot; "><w:r><w:t>cached missing bookmark if</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NEXTIF InvoiceTier = &quot;Gold&quot; "><w:r><w:t>cached bookmark nextif</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn set_backed_formula_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -6687,6 +6704,81 @@ fn docx_if_compare_and_merge_controls_resolve_prior_numeric_set_bookmark_operand
             && !main_text.contains("cached numeric skipif")
             && !main_text.contains("stale text compare"),
         "computed numeric SET-backed comparison text should replace stale cached text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_if_and_compare_resolve_document_bookmark_operands() {
+    let doc = Document::open(&bookmark_backed_comparison_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 6);
+    assert_eq!(fields[0].kind, FieldKind::Dynamic("IF".to_string()));
+    assert_eq!(
+        fields[0].instruction,
+        r#"IF InvoiceTier = "Gold" "ship" "hold""#
+    );
+    assert_eq!(fields[0].result, "stale bookmark if");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("ship"));
+    assert_eq!(fields[1].kind, FieldKind::Dynamic("COMPARE".to_string()));
+    assert_eq!(fields[1].instruction, r#"COMPARE InvoiceTier = "G*""#);
+    assert_eq!(fields[1].result, "stale bookmark compare");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("1"));
+    assert_eq!(fields[2].kind, FieldKind::Dynamic("IF".to_string()));
+    assert_eq!(
+        fields[2].instruction,
+        r#"IF InvoiceTotal >= 40 "match" "miss""#
+    );
+    assert_eq!(fields[2].result, "stale numeric bookmark if");
+    assert_eq!(fields[2].computed_result.as_deref(), Some("match"));
+    assert_eq!(fields[3].kind, FieldKind::Dynamic("COMPARE".to_string()));
+    assert_eq!(fields[3].instruction, "COMPARE InvoiceTotal < 40");
+    assert_eq!(fields[3].result, "stale numeric bookmark compare");
+    assert_eq!(fields[3].computed_result.as_deref(), Some("0"));
+    assert_eq!(fields[4].kind, FieldKind::Dynamic("IF".to_string()));
+    assert_eq!(
+        fields[4].instruction,
+        r#"IF MissingTier = "Gold" "ship" "hold""#
+    );
+    assert_eq!(fields[4].result, "cached missing bookmark if");
+    assert_eq!(fields[4].computed_result, None);
+    assert_eq!(fields[5].kind, FieldKind::Dynamic("NEXTIF".to_string()));
+    assert_eq!(fields[5].instruction, r#"NEXTIF InvoiceTier = "Gold""#);
+    assert_eq!(fields[5].result, "cached bookmark nextif");
+    assert_eq!(fields[5].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![
+            FieldKindCount {
+                kind: FieldKind::Dynamic("IF".to_string()),
+                count: 1,
+            },
+            FieldKindCount {
+                kind: FieldKind::Dynamic("NEXTIF".to_string()),
+                count: 1,
+            },
+        ]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::NoComputedResult,
+            count: 2,
+        }]
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Gold\n42\nship\n1\nmatch\n0")
+            && main_text.contains("cached missing bookmark if")
+            && main_text.contains("cached bookmark nextif")
+            && !main_text.contains("stale bookmark if")
+            && !main_text.contains("stale bookmark compare")
+            && !main_text.contains("stale numeric bookmark if")
+            && !main_text.contains("stale numeric bookmark compare"),
+        "computed document-bookmark comparisons should replace stale cached text: {main_text:?}"
     );
 }
 

@@ -4213,6 +4213,17 @@ fn computed_dynamic_field_result(instruction: &str, ctx: &Ctx<'_>) -> Option<Str
             &field_bookmarks,
         );
     }
+    if matches!(
+        FieldKind::from_instruction(instruction),
+        FieldKind::Dynamic(kind) if kind == "IF" || kind == "COMPARE"
+    ) {
+        let field_bookmarks = ctx.field_bookmarks.borrow();
+        return super::fields::computed_if_compare_result_with_bookmark_context(
+            instruction,
+            ctx.ref_targets,
+            &field_bookmarks,
+        );
+    }
     let field_bookmarks = ctx.field_bookmarks.borrow();
     super::fields::computed_dynamic_result_with_bookmarks(instruction, &field_bookmarks)
 }

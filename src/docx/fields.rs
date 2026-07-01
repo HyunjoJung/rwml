@@ -943,13 +943,18 @@ fn apply_computed_results(fields: &mut [Field], ctx: ComputedResultContexts<'_>)
             FieldKind::Dynamic(kind)
                 if kind == "QUOTE"
                     || kind == "FILLIN"
-                    || kind == "IF"
-                    || kind == "COMPARE"
                     || kind == "NEXT"
                     || kind == "NEXTIF"
                     || kind == "SKIPIF" =>
             {
                 computed_dynamic_result_with_bookmarks(&field.instruction, &field_bookmarks)
+            }
+            FieldKind::Dynamic(kind) if kind == "IF" || kind == "COMPARE" => {
+                computed_if_compare_result_with_bookmark_context(
+                    &field.instruction,
+                    ctx.bookmarks,
+                    &field_bookmarks,
+                )
             }
             FieldKind::Dynamic(kind) if kind == "ASK" => {
                 computed_ask_result(&field.instruction, &mut field_bookmarks)
@@ -1072,16 +1077,41 @@ pub(crate) fn computed_formula_result_with_bookmark_context(
     document_bookmarks: &HashMap<String, String>,
     field_bookmarks: &HashMap<String, String>,
 ) -> Option<String> {
-    if document_bookmarks.is_empty() {
+    let Some(formula_bookmarks) = merged_bookmark_context(document_bookmarks, field_bookmarks)
+    else {
         return computed_formula_result_with_bookmarks(instruction, Some(field_bookmarks));
+    };
+    computed_formula_result_with_bookmarks(instruction, Some(&formula_bookmarks))
+}
+
+pub(crate) fn computed_if_compare_result_with_bookmark_context(
+    instruction: &str,
+    document_bookmarks: &HashMap<String, String>,
+    field_bookmarks: &HashMap<String, String>,
+) -> Option<String> {
+    let Some(comparison_bookmarks) = merged_bookmark_context(document_bookmarks, field_bookmarks)
+    else {
+        return computed_if_result_with_bookmarks(instruction, field_bookmarks)
+            .or_else(|| computed_compare_result_with_bookmarks(instruction, field_bookmarks));
+    };
+    computed_if_result_with_bookmarks(instruction, &comparison_bookmarks)
+        .or_else(|| computed_compare_result_with_bookmarks(instruction, &comparison_bookmarks))
+}
+
+fn merged_bookmark_context(
+    document_bookmarks: &HashMap<String, String>,
+    field_bookmarks: &HashMap<String, String>,
+) -> Option<HashMap<String, String>> {
+    if document_bookmarks.is_empty() {
+        return None;
     }
-    let mut formula_bookmarks = document_bookmarks.clone();
-    formula_bookmarks.extend(
+    let mut bookmarks = document_bookmarks.clone();
+    bookmarks.extend(
         field_bookmarks
             .iter()
             .map(|(name, value)| (name.clone(), value.clone())),
     );
-    computed_formula_result_with_bookmarks(instruction, Some(&formula_bookmarks))
+    Some(bookmarks)
 }
 
 #[cfg(test)]
