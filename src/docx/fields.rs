@@ -146,7 +146,7 @@ pub(crate) fn parse(
     let sections = section_context(xml);
     let style_refs = style_ref_context(xml, styles, numbering);
     let legacy_forms = legacy_form_context(xml, preserve_legacy_form_cache);
-    let table_formulas = table_formula_context(xml);
+    let table_formulas = table_formula_context(xml, &bookmarks);
     let sequence_headings = sequence_heading_context(xml, styles);
     let mut r = Reader::from_str(xml);
     let mut fields = Vec::new();
@@ -2639,7 +2639,9 @@ mod tests {
         </w:document>"#;
 
         assert_eq!(
-            table_formula_context(xml).field_result(0).as_deref(),
+            table_formula_context(xml, &HashMap::new())
+                .field_result(0)
+                .as_deref(),
             Some("5")
         );
     }
@@ -2663,7 +2665,9 @@ mod tests {
         </w:document>"#;
 
         assert_eq!(
-            table_formula_context(xml).field_result(0).as_deref(),
+            table_formula_context(xml, &HashMap::new())
+                .field_result(0)
+                .as_deref(),
             Some("5")
         );
     }

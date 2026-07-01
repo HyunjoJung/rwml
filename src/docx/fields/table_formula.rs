@@ -36,7 +36,10 @@ impl TableFormulaContext {
     }
 }
 
-pub(crate) fn table_formula_context(xml: &str) -> TableFormulaContext {
+pub(crate) fn table_formula_context(
+    xml: &str,
+    document_bookmarks: &HashMap<String, String>,
+) -> TableFormulaContext {
     let mut r = Reader::from_str(xml);
     let mut results = Vec::new();
     let mut current = Vec::new();
@@ -64,7 +67,7 @@ pub(crate) fn table_formula_context(xml: &str) -> TableFormulaContext {
                         });
                     }
                     b"tbl" => {
-                        results.extend(read_table_formula_table(&mut r));
+                        results.extend(read_table_formula_table(&mut r, document_bookmarks));
                         consumed_element = true;
                     }
                     b"fldSimple" => {
@@ -145,7 +148,10 @@ struct TableFormulaCell {
     records: Vec<TableFormulaRecord>,
 }
 
-fn read_table_formula_table(r: &mut Xml<'_>) -> Vec<Option<String>> {
+fn read_table_formula_table(
+    r: &mut Xml<'_>,
+    document_bookmarks: &HashMap<String, String>,
+) -> Vec<Option<String>> {
     let mut rows = Vec::new();
     let mut records = Vec::new();
     let mut xml_depth = 1usize;
@@ -176,7 +182,7 @@ fn read_table_formula_table(r: &mut Xml<'_>) -> Vec<Option<String>> {
                     }
                     b"tr" => {
                         let row_index = rows.len();
-                        let mut row = read_table_formula_row(r, row_index);
+                        let mut row = read_table_formula_row(r, row_index, document_bookmarks);
                         for cell in &mut row {
                             records.append(&mut cell.records);
                         }
@@ -255,7 +261,11 @@ fn promote_table_formula_cell_source_value(
     }
 }
 
-fn read_table_formula_row(r: &mut Xml<'_>, row_index: usize) -> Vec<TableFormulaCell> {
+fn read_table_formula_row(
+    r: &mut Xml<'_>,
+    row_index: usize,
+    document_bookmarks: &HashMap<String, String>,
+) -> Vec<TableFormulaCell> {
     let mut row: Vec<TableFormulaCell> = Vec::new();
     let mut is_header_row = false;
     let mut xml_depth = 1usize;
@@ -292,7 +302,8 @@ fn read_table_formula_row(r: &mut Xml<'_>, row_index: usize) -> Vec<TableFormula
                     }
                     b"tc" => {
                         let col_index = row.len();
-                        let mut cell = read_table_formula_cell(r, row_index, col_index);
+                        let mut cell =
+                            read_table_formula_cell(r, row_index, col_index, document_bookmarks);
                         cell.is_header_row = is_header_row;
                         row.push(cell);
                     }
@@ -410,7 +421,12 @@ fn is_current_table_formula_structural_wrapper(name: &[u8]) -> bool {
     )
 }
 
-fn read_table_formula_cell(r: &mut Xml<'_>, row: usize, col: usize) -> TableFormulaCell {
+fn read_table_formula_cell(
+    r: &mut Xml<'_>,
+    row: usize,
+    col: usize,
+    document_bookmarks: &HashMap<String, String>,
+) -> TableFormulaCell {
     let mut cell = TableFormulaCell::default();
     let mut current = Vec::new();
     let mut xml_depth = 1usize;
@@ -441,7 +457,7 @@ fn read_table_formula_cell(r: &mut Xml<'_>, row: usize, col: usize) -> TableForm
                         consumed_element = true;
                     }
                     b"tbl" => {
-                        for result in read_table_formula_table(r) {
+                        for result in read_table_formula_table(r, document_bookmarks) {
                             cell.records.push(TableFormulaRecord::Nested(result));
                         }
                         if !cell.text.is_empty() {
@@ -469,14 +485,24 @@ fn read_table_formula_cell(r: &mut Xml<'_>, row: usize, col: usize) -> TableForm
                         let text = if is_local_formula {
                             result_text
                         } else {
-                            computed_table_formula_source_field_result(instruction.as_deref())
-                                .unwrap_or(result_text)
+                            computed_table_formula_source_field_result(
+                                instruction.as_deref(),
+                                document_bookmarks,
+                            )
+                            .unwrap_or(result_text)
                         };
                         append_table_formula_cell_text(&mut cell.text, &mut current, &text);
                         consumed_element = true;
                     }
                     b"fldChar" => {
-                        apply_table_formula_cell_fld_char(&e, &mut current, &mut cell, row, col);
+                        apply_table_formula_cell_fld_char(
+                            &e,
+                            &mut current,
+                            &mut cell,
+                            row,
+                            col,
+                            document_bookmarks,
+                        );
                     }
                     b"instrText" => {
                         let text = read_text(r);
@@ -526,7 +552,14 @@ fn read_table_formula_cell(r: &mut Xml<'_>, row: usize, col: usize) -> TableForm
                         }
                     }
                     b"fldChar" => {
-                        apply_table_formula_cell_fld_char(&e, &mut current, &mut cell, row, col);
+                        apply_table_formula_cell_fld_char(
+                            &e,
+                            &mut current,
+                            &mut cell,
+                            row,
+                            col,
+                            document_bookmarks,
+                        );
                     }
                     _ => {
                         append_table_formula_cell_inline(&mut cell.text, &mut current, &e);
@@ -695,6 +728,7 @@ fn apply_table_formula_cell_fld_char(
     cell: &mut TableFormulaCell,
     row: usize,
     col: usize,
+    document_bookmarks: &HashMap<String, String>,
 ) {
     match field_char_type(e).as_deref() {
         Some("begin") => current.push(ComplexField {
@@ -726,7 +760,7 @@ fn apply_table_formula_cell_fld_char(
             let text = if is_local_formula {
                 field.result
             } else {
-                computed_table_formula_source_field_result(Some(&instruction))
+                computed_table_formula_source_field_result(Some(&instruction), document_bookmarks)
                     .unwrap_or(field.result)
             };
             append_table_formula_cell_text(&mut cell.text, current, &text);
@@ -759,13 +793,15 @@ fn append_table_formula_cell_inline(
     append_table_formula_cell_text(cell_text, current, &text);
 }
 
-fn computed_table_formula_source_field_result(instruction: Option<&str>) -> Option<String> {
+fn computed_table_formula_source_field_result(
+    instruction: Option<&str>,
+    document_bookmarks: &HashMap<String, String>,
+) -> Option<String> {
     let instruction = instruction?;
     if FieldKind::from_instruction(instruction) == FieldKind::Dynamic("=".to_string()) {
         return None;
     }
-    let empty_bookmarks = HashMap::new();
-    computed_dynamic_result_with_bookmarks(instruction, &empty_bookmarks)
+    computed_dynamic_result_with_bookmarks(instruction, document_bookmarks)
         .or_else(|| computed_display_result(instruction))
         .or_else(|| computed_action_result(instruction))
         .or_else(|| computed_reference_index_result(instruction))
