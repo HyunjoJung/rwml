@@ -1243,6 +1243,23 @@ fn formula_table_source_nested_empty_simple_field_docx() -> Vec<u8> {
     ])
 }
 
+fn formula_table_source_nested_simple_field_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:tc><w:p><w:fldSimple w:instr=" CUSTOM outer "><w:r><w:t>1</w:t></w:r><w:fldSimple w:instr=" QUOTE &quot;2&quot; "><w:r><w:t>9</w:t></w:r></w:fldSimple><w:r><w:t>3</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(LEFT) "><w:r><w:t>stale nested source sum</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn formula_table_source_field_stale_nested_simple_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -9031,6 +9048,35 @@ fn docx_table_formula_source_simple_field_computes_nested_empty_simple_fields() 
     assert!(
         main_text.contains("\t123") && !main_text.contains("stale nested empty source sum"),
         "table formula source text should compute empty simple fields consumed inside another field result: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_table_formula_source_simple_field_computes_nested_simple_fields() {
+    let doc =
+        Document::open(&formula_table_source_nested_simple_field_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let outer = fields
+        .iter()
+        .find(|field| field.instruction == "CUSTOM outer")
+        .expect("outer source field is recorded");
+    assert_eq!(outer.kind, FieldKind::Unknown("CUSTOM".to_string()));
+    assert_eq!(outer.result, "193");
+    assert_eq!(outer.computed_result, None);
+
+    let formula = fields
+        .iter()
+        .find(|field| field.instruction == r#"= SUM(LEFT)"#)
+        .expect("formula field is recorded");
+    assert_eq!(formula.kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(formula.result, "stale nested source sum");
+    assert_eq!(formula.computed_result.as_deref(), Some("123"));
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("\t123") && !main_text.contains("stale nested source sum"),
+        "table formula source text should compute simple fields consumed inside another field result: {main_text:?}"
     );
 }
 

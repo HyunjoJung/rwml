@@ -786,7 +786,7 @@ fn grid_span_exceeds_one(e: &BytesStart<'_>) -> bool {
 }
 
 fn read_field_result_text(r: &mut Xml<'_>) -> String {
-    read_field_result_text_with_empty_simple_fields(r, |_| None)
+    read_field_result_text_with_nested_simple_fields(r, |_, _| None)
 }
 
 fn read_table_formula_source_field_result_text(
@@ -797,10 +797,10 @@ fn read_table_formula_source_field_result_text(
     listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
 ) -> String {
-    read_field_result_text_with_empty_simple_fields(r, |instruction| {
-        let instruction = instruction.map(normalize_instruction);
+    read_field_result_text_with_nested_simple_fields(r, |instruction, _| {
+        let instruction = normalize_instruction(instruction);
         computed_table_formula_source_field_result(
-            instruction.as_deref(),
+            Some(&instruction),
             document_bookmarks,
             sequence_counters,
             autonum_counter,
@@ -810,10 +810,20 @@ fn read_table_formula_source_field_result_text(
     })
 }
 
-fn read_field_result_text_with_empty_simple_fields(
+fn read_field_result_text_with_nested_simple_fields(
     r: &mut Xml<'_>,
-    mut empty_simple_field_result: impl FnMut(Option<&str>) -> Option<String>,
+    mut nested_simple_field_result: impl FnMut(&str, &str) -> Option<String>,
 ) -> String {
+    read_field_result_text_with_nested_simple_fields_inner(r, &mut nested_simple_field_result)
+}
+
+fn read_field_result_text_with_nested_simple_fields_inner<F>(
+    r: &mut Xml<'_>,
+    nested_simple_field_result: &mut F,
+) -> String
+where
+    F: FnMut(&str, &str) -> Option<String>,
+{
     let mut text = String::new();
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
@@ -838,6 +848,17 @@ fn read_field_result_text_with_empty_simple_fields(
                             took_branch: false,
                         });
                     }
+                    b"fldSimple" => {
+                        let instruction = attr_local(&e, b"instr").unwrap_or_default();
+                        let nested_result = read_field_result_text_with_nested_simple_fields_inner(
+                            r,
+                            nested_simple_field_result,
+                        );
+                        let result = nested_simple_field_result(&instruction, &nested_result)
+                            .unwrap_or(nested_result);
+                        text.push_str(&result);
+                        consumed_element = true;
+                    }
                     b"t" => {
                         text.push_str(&read_text(r));
                         consumed_element = true;
@@ -857,8 +878,8 @@ fn read_field_result_text_with_empty_simple_fields(
                     continue;
                 }
                 if name == b"fldSimple" {
-                    let instruction = attr_local(&e, b"instr");
-                    if let Some(computed) = empty_simple_field_result(instruction.as_deref()) {
+                    let instruction = attr_local(&e, b"instr").unwrap_or_default();
+                    if let Some(computed) = nested_simple_field_result(&instruction, "") {
                         text.push_str(&computed);
                     } else {
                         append_table_formula_result_inline(&mut text, &e);
