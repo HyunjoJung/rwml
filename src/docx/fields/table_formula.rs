@@ -18,7 +18,7 @@ use super::{
     apply_complex_field_scan_fld_char, apply_field_text_format, computed_action_result,
     computed_ask_result, computed_display_result, computed_fill_in_result,
     computed_formula_result_with_bookmark_context,
-    computed_if_compare_result_with_bookmark_context,
+    computed_if_compare_result_with_bookmark_context, computed_listnum_result,
     computed_merge_control_result_with_bookmark_context, computed_numbering_result,
     computed_quote_result, computed_reference_index_result, computed_run_symbol_char,
     computed_sequence_result, computed_set_result, inline_marker_text, normalize_instruction,
@@ -52,6 +52,7 @@ pub(crate) fn table_formula_context(
     let mut current = Vec::new();
     let mut sequence_counters = HashMap::new();
     let mut autonum_counter = 0i64;
+    let mut listnum_counter = 0i64;
     let mut field_bookmarks = HashMap::new();
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
@@ -82,6 +83,7 @@ pub(crate) fn table_formula_context(
                             document_bookmarks,
                             &mut sequence_counters,
                             &mut autonum_counter,
+                            &mut listnum_counter,
                             &mut field_bookmarks,
                         ));
                         consumed_element = true;
@@ -99,6 +101,7 @@ pub(crate) fn table_formula_context(
                                 document_bookmarks,
                                 &mut sequence_counters,
                                 &mut autonum_counter,
+                                &mut listnum_counter,
                                 &mut field_bookmarks,
                             )
                             .unwrap_or(result_text);
@@ -112,6 +115,7 @@ pub(crate) fn table_formula_context(
                             document_bookmarks,
                             &mut sequence_counters,
                             &mut autonum_counter,
+                            &mut listnum_counter,
                             &mut field_bookmarks,
                             |_, _| results.push(None),
                         );
@@ -149,6 +153,7 @@ pub(crate) fn table_formula_context(
                                 document_bookmarks,
                                 &mut sequence_counters,
                                 &mut autonum_counter,
+                                &mut listnum_counter,
                                 &mut field_bookmarks,
                             );
                         }
@@ -160,6 +165,7 @@ pub(crate) fn table_formula_context(
                             document_bookmarks,
                             &mut sequence_counters,
                             &mut autonum_counter,
+                            &mut listnum_counter,
                             &mut field_bookmarks,
                             |_, _| results.push(None),
                         );
@@ -205,6 +211,7 @@ fn read_table_formula_table(
     document_bookmarks: &HashMap<String, String>,
     sequence_counters: &mut HashMap<String, i64>,
     autonum_counter: &mut i64,
+    listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
 ) -> Vec<Option<String>> {
     let mut rows = Vec::new();
@@ -243,6 +250,7 @@ fn read_table_formula_table(
                             document_bookmarks,
                             sequence_counters,
                             autonum_counter,
+                            listnum_counter,
                             field_bookmarks,
                         );
                         for cell in &mut row {
@@ -329,6 +337,7 @@ fn read_table_formula_row(
     document_bookmarks: &HashMap<String, String>,
     sequence_counters: &mut HashMap<String, i64>,
     autonum_counter: &mut i64,
+    listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
 ) -> Vec<TableFormulaCell> {
     let mut row: Vec<TableFormulaCell> = Vec::new();
@@ -374,6 +383,7 @@ fn read_table_formula_row(
                             document_bookmarks,
                             sequence_counters,
                             autonum_counter,
+                            listnum_counter,
                             field_bookmarks,
                         );
                         cell.is_header_row = is_header_row;
@@ -500,6 +510,7 @@ fn read_table_formula_cell(
     document_bookmarks: &HashMap<String, String>,
     sequence_counters: &mut HashMap<String, i64>,
     autonum_counter: &mut i64,
+    listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
 ) -> TableFormulaCell {
     let mut cell = TableFormulaCell::default();
@@ -537,6 +548,7 @@ fn read_table_formula_cell(
                             document_bookmarks,
                             sequence_counters,
                             autonum_counter,
+                            listnum_counter,
                             field_bookmarks,
                         ) {
                             cell.records.push(TableFormulaRecord::Nested(result));
@@ -571,6 +583,7 @@ fn read_table_formula_cell(
                                 document_bookmarks,
                                 sequence_counters,
                                 autonum_counter,
+                                listnum_counter,
                                 field_bookmarks,
                             )
                             .unwrap_or(result_text)
@@ -588,6 +601,7 @@ fn read_table_formula_cell(
                             document_bookmarks,
                             sequence_counters,
                             autonum_counter,
+                            listnum_counter,
                             field_bookmarks,
                         );
                     }
@@ -648,6 +662,7 @@ fn read_table_formula_cell(
                             document_bookmarks,
                             sequence_counters,
                             autonum_counter,
+                            listnum_counter,
                             field_bookmarks,
                         );
                     }
@@ -821,6 +836,7 @@ fn apply_table_formula_cell_fld_char(
     document_bookmarks: &HashMap<String, String>,
     sequence_counters: &mut HashMap<String, i64>,
     autonum_counter: &mut i64,
+    listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
 ) {
     match field_char_type(e).as_deref() {
@@ -858,6 +874,7 @@ fn apply_table_formula_cell_fld_char(
                     document_bookmarks,
                     sequence_counters,
                     autonum_counter,
+                    listnum_counter,
                     field_bookmarks,
                 )
                 .unwrap_or(field.result)
@@ -897,6 +914,7 @@ fn computed_table_formula_source_field_result(
     document_bookmarks: &HashMap<String, String>,
     sequence_counters: &mut HashMap<String, i64>,
     autonum_counter: &mut i64,
+    listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
 ) -> Option<String> {
     let instruction = instruction?;
@@ -912,6 +930,7 @@ fn computed_table_formula_source_field_result(
     }
     computed_table_formula_source_ref_result(instruction, document_bookmarks, field_bookmarks)
         .or_else(|| computed_numbering_result(instruction, autonum_counter))
+        .or_else(|| computed_listnum_result(instruction, listnum_counter))
         .or_else(|| computed_sequence_result(instruction, sequence_counters))
         .or_else(|| {
             computed_formula_result_with_bookmark_context(
@@ -993,6 +1012,7 @@ fn apply_table_formula_scan_fld_char(
     document_bookmarks: &HashMap<String, String>,
     sequence_counters: &mut HashMap<String, i64>,
     autonum_counter: &mut i64,
+    listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
     mut record: impl FnMut(&str, &str),
 ) {
@@ -1006,6 +1026,7 @@ fn apply_table_formula_scan_fld_char(
                 document_bookmarks,
                 sequence_counters,
                 autonum_counter,
+                listnum_counter,
                 field_bookmarks,
             )
             .unwrap_or(field.result);
