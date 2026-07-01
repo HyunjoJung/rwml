@@ -1319,6 +1319,18 @@ fn accept_field_format_switch_for_tail<'a>(
     })
 }
 
+fn accept_field_format_or_number_switch_for_tail<'a>(
+    part: &'a str,
+    parts: &mut impl Iterator<Item = &'a str>,
+    text_format: &mut Option<FieldTextFormat>,
+    number_format: &mut Option<FieldNumberFormat>,
+) -> Option<bool> {
+    accept_general_format_switch(part, parts, |format| {
+        accept_field_format_switch(format, text_format)
+            || accept_field_number_format_switch(format, number_format)
+    })
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct SetInstruction {
     name: String,

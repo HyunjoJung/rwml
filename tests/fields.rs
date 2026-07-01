@@ -2058,6 +2058,27 @@ fn doc_property_last_author_docx() -> Vec<u8> {
     ])
 }
 
+fn numeric_doc_info_star_format_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rIdApp" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>"#,
+        ),
+        (
+            "docProps/app.xml",
+            r#"<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Pages>12</Pages><Words>321</Words></Properties>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" NUMPAGES \* roman "><w:r><w:t>stale roman pages</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NUMPAGES \* ROMAN "><w:r><w:t>stale upper roman pages</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NUMPAGES \* Arabic "><w:r><w:t>stale arabic pages</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NUMWORDS \* Ordinal "><w:r><w:t>stale ordinal words</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn section_field_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -12311,6 +12332,39 @@ fn docx_docproperty_last_author_matches_last_modified_by() {
     assert!(
         main_text.contains("Dana Reviewer") && !main_text.contains("stale author name"),
         "DOCPROPERTY Last Author should compute cp:lastModifiedBy: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_numeric_document_info_fields_apply_star_number_format() {
+    let doc = Document::open(&numeric_doc_info_star_format_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let expected = [
+        ("NUMPAGES \\* roman", "stale roman pages", "xii"),
+        ("NUMPAGES \\* ROMAN", "stale upper roman pages", "XII"),
+        ("NUMPAGES \\* Arabic", "stale arabic pages", "12"),
+        ("NUMWORDS \\* Ordinal", "stale ordinal words", "321st"),
+    ];
+
+    assert_eq!(fields.len(), expected.len());
+    for (field, (instruction, result, computed)) in fields.iter().zip(expected) {
+        assert_eq!(field.instruction, instruction);
+        assert_eq!(field.result, result);
+        assert_eq!(field.computed_result.as_deref(), Some(computed));
+    }
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("xii")
+            && main_text.contains("XII")
+            && main_text.contains("321st")
+            && !main_text.contains("stale"),
+        "numeric document-info fields should apply the number format: {main_text:?}"
     );
 }
 

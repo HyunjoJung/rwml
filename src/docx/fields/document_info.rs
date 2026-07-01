@@ -4,6 +4,7 @@ use super::*;
 pub(super) struct DocumentInfoInstruction {
     property: DocumentInfoProperty,
     text_format: Option<FieldTextFormat>,
+    number_format: Option<FieldNumberFormat>,
     date_format: Option<String>,
     file_size_unit: FileSizeUnit,
     user_override: Option<String>,
@@ -79,7 +80,25 @@ pub(crate) fn computed_document_info_result(
         Some(format) => format_core_timestamp(&text, &format)?,
         None => text,
     };
+    let text = match spec.number_format {
+        Some(format) => {
+            let value = text.trim().parse::<usize>().ok()?;
+            format_page_number(value, Some(page_number_format_from_field_format(format)))?
+        }
+        None => text,
+    };
     Some(apply_field_text_format(text, spec.text_format))
+}
+
+fn is_numeric_document_info_property(property: &DocumentInfoProperty) -> bool {
+    match property {
+        DocumentInfoProperty::FileSize => true,
+        DocumentInfoProperty::Extended(key) => matches!(
+            key.as_str(),
+            "PAGES" | "WORDS" | "CHARACTERS" | "CHARACTERSWITHSPACES" | "LINES" | "PARAGRAPHS"
+        ),
+        _ => false,
+    }
 }
 
 pub(crate) fn supports_document_info_field_syntax(instruction: &str) -> bool {
@@ -91,6 +110,7 @@ pub(super) fn document_info_instruction(instruction: &str) -> Option<DocumentInf
     let mut parts = tokens.iter().map(String::as_str).peekable();
     let kind = parts.next()?;
     let mut text_format = None;
+    let mut number_format = None;
     let mut date_format = None;
     let mut file_size_unit = FileSizeUnit::Bytes;
     let mut file_size_unit_seen = false;
@@ -111,9 +131,24 @@ pub(super) fn document_info_instruction(instruction: &str) -> Option<DocumentInf
     } else {
         document_info_property(kind)?
     };
+    let numeric = is_numeric_document_info_property(&property);
     while let Some(part) = parts.next() {
-        if accept_field_format_switch_for_tail(part, &mut parts, &mut text_format)? {
-            continue;
+        // Numeric document-info properties accept `\*` number-format switches like
+        // their PAGE/SECTION/SEQ siblings; string properties keep rejecting them.
+        let switch = if numeric {
+            accept_field_format_or_number_switch_for_tail(
+                part,
+                &mut parts,
+                &mut text_format,
+                &mut number_format,
+            )
+        } else {
+            accept_field_format_switch_for_tail(part, &mut parts, &mut text_format)
+        };
+        match switch {
+            Some(true) => continue,
+            None => return None,
+            Some(false) => {}
         }
         if part.eq_ignore_ascii_case("\\@") {
             if date_format.is_some() {
@@ -152,6 +187,7 @@ pub(super) fn document_info_instruction(instruction: &str) -> Option<DocumentInf
     Some(DocumentInfoInstruction {
         property,
         text_format,
+        number_format,
         date_format,
         file_size_unit,
         user_override,
