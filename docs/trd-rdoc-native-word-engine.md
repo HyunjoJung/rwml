@@ -656,9 +656,9 @@ Implementation:
   `SET` bookmark assignments, including multi-token unquoted payloads, with field-result format switches feeding later
   plain `REF`/direct bookmark references, source-order bookmark-backed
   `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons, and ordinary
-  document-bookmark-backed `IF`/`COMPARE` comparisons, including numeric
-  comparison for finite numeric bookmark values, plus literal `NEXT` and literal or source-order
-  bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with field-result format
+  document-bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons, including numeric
+  comparison for finite numeric bookmark values, plus literal `NEXT` and literal, source-order, or
+  ordinary document-bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with field-result format
   switches that render as hidden output without running a mail merge,
   inserted-content fields, mail-merge helper
   fields, reference/index fields beyond hidden simple literal `RD`/`TA`/`XE` markers,
@@ -692,10 +692,10 @@ Implementation:
   literal quoted or unquoted `SET` bookmark assignments, including multi-token unquoted payloads, with field-result
   format switches feeding later plain `REF`/direct bookmark references and
   source-order bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons and
-  ordinary document-bookmark-backed `IF`/`COMPARE` comparisons, including
+  ordinary document-bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons, including
   numeric comparison for finite numeric bookmark values, with malformed `SET`
-  syntax reporting `UnsupportedSwitch`, plus literal `NEXT` and literal
-  or source-order bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with field-result format
+  syntax reporting `UnsupportedSwitch`, plus literal `NEXT` and literal,
+  source-order, or ordinary document-bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with field-result format
   switches that render as hidden output without running a mail merge,
   inserted-content, mail-merge helper, reference/index, numbering/list,
   document-structure fields beyond computed `REVNUM`/`SECTION`, structurally bounded
@@ -765,7 +765,7 @@ Acceptance:
   reporting `UnsupportedSwitch`, and literal quoted or unquoted `SET` bookmark
   assignments, including multi-token unquoted payloads, feeding later plain `REF`/direct bookmark references and
   source-order bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons
-  and ordinary document-bookmark-backed `IF`/`COMPARE` comparisons, including
+  and ordinary document-bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons, including
   numeric comparison for finite numeric bookmark values, malformed `SET` syntax
   reporting `UnsupportedSwitch`,
   malformed merge-control syntax reporting `UnsupportedSwitch`,
@@ -1236,9 +1236,9 @@ open and edit the chart data.
   `SET` bookmark assignments, including multi-token unquoted payloads, with field-result format switches feeding later
   plain `REF`/direct bookmark references, source-order bookmark-backed
   `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons, and ordinary
-  document-bookmark-backed `IF`/`COMPARE` comparisons, including numeric
-  comparison for finite numeric bookmark values, plus literal `NEXT` and literal or source-order
-  bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with field-result format
+  document-bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons, including numeric
+  comparison for finite numeric bookmark values, plus literal `NEXT` and literal, source-order, or
+  ordinary document-bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with field-result format
   switches that render as hidden output without running a mail merge,
   inserted-content fields, mail-merge helper
   fields, reference/index fields beyond hidden simple literal `RD`/`TA`/`XE` markers,
@@ -1275,10 +1275,10 @@ open and edit the chart data.
   literal quoted or unquoted `SET` bookmark assignments, including multi-token unquoted payloads, with field-result
   format switches feeding later plain `REF`/direct bookmark references and
   source-order bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons and
-  ordinary document-bookmark-backed `IF`/`COMPARE` comparisons, including
+  ordinary document-bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons, including
   numeric comparison for finite numeric bookmark values, with malformed `SET`
-  syntax reporting `UnsupportedSwitch`, plus literal `NEXT` and literal
-  or source-order bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with field-result format
+  syntax reporting `UnsupportedSwitch`, plus literal `NEXT` and literal,
+  source-order, or ordinary document-bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with field-result format
   switches that render as hidden output without running a mail merge,
   inserted-content, mail-merge helper, reference/index beyond hidden simple
   literal `RD`/`TA`/`XE` markers, numbering/list,

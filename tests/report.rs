@@ -1311,6 +1311,24 @@ fn set_backed_dynamic_control_diagnostics_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn bookmark_backed_dynamic_control_diagnostics_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="InvoiceTier"/><w:r><w:t>Gold</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:bookmarkStart w:id="8" w:name="InvoiceTotal"/><w:r><w:t>42</w:t></w:r><w:bookmarkEnd w:id="8"/></w:p><w:p><w:fldSimple w:instr=" IF InvoiceTier = &quot;Gold&quot; &quot;ship&quot; &quot;hold&quot; "><w:r><w:t>stale bookmark if</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" COMPARE InvoiceTier = &quot;G*&quot; "><w:r><w:t>stale bookmark compare</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" IF InvoiceTotal &gt;= 40 &quot;match&quot; &quot;miss&quot; "><w:r><w:t>stale numeric bookmark if</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" COMPARE InvoiceTotal &lt; 40 "><w:r><w:t>stale numeric bookmark compare</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" IF MissingTier = &quot;Gold&quot; &quot;ship&quot; &quot;hold&quot; "><w:r><w:t>cached missing bookmark if</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" NEXTIF InvoiceTier = &quot;Gold&quot; "><w:r><w:t>cached bookmark nextif</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SKIPIF InvoiceTotal &lt; 40 "><w:r><w:t>cached bookmark skipif</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+#[cfg(feature = "docx")]
 fn set_backed_direct_ref_diagnostics_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -6179,6 +6197,69 @@ fn report_set_backed_dynamic_controls_only_flags_unresolved_operands() {
             field_kind_count(FieldKind::Dynamic("SET".to_string()), 1),
             field_kind_count(FieldKind::Dynamic("IF".to_string()), 2),
             field_kind_count(FieldKind::Dynamic("COMPARE".to_string()), 1),
+            field_kind_count(FieldKind::Dynamic("NEXTIF".to_string()), 1),
+            field_kind_count(FieldKind::Dynamic("SKIPIF".to_string()), 1),
+        ]
+    );
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![field_kind_count(FieldKind::Dynamic("IF".to_string()), 1)]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![field_reason_count(
+            FieldEvaluationReason::NoComputedResult,
+            1,
+        )]
+    );
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_bookmark_backed_dynamic_controls_only_flag_unresolved_operands() {
+    let doc =
+        Document::open(&bookmark_backed_dynamic_control_diagnostics_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 7);
+    assert_eq!(fields[0].kind, FieldKind::Dynamic("IF".to_string()));
+    assert_eq!(
+        fields[0].instruction,
+        r#"IF InvoiceTier = "Gold" "ship" "hold""#
+    );
+    assert_eq!(fields[0].computed_result.as_deref(), Some("ship"));
+    assert_eq!(fields[1].kind, FieldKind::Dynamic("COMPARE".to_string()));
+    assert_eq!(fields[1].instruction, r#"COMPARE InvoiceTier = "G*""#);
+    assert_eq!(fields[1].computed_result.as_deref(), Some("1"));
+    assert_eq!(fields[2].kind, FieldKind::Dynamic("IF".to_string()));
+    assert_eq!(
+        fields[2].instruction,
+        r#"IF InvoiceTotal >= 40 "match" "miss""#
+    );
+    assert_eq!(fields[2].computed_result.as_deref(), Some("match"));
+    assert_eq!(fields[3].kind, FieldKind::Dynamic("COMPARE".to_string()));
+    assert_eq!(fields[3].instruction, "COMPARE InvoiceTotal < 40");
+    assert_eq!(fields[3].computed_result.as_deref(), Some("0"));
+    assert_eq!(fields[4].kind, FieldKind::Dynamic("IF".to_string()));
+    assert_eq!(
+        fields[4].instruction,
+        r#"IF MissingTier = "Gold" "ship" "hold""#
+    );
+    assert_eq!(fields[4].computed_result, None);
+    assert_eq!(fields[5].kind, FieldKind::Dynamic("NEXTIF".to_string()));
+    assert_eq!(fields[5].instruction, r#"NEXTIF InvoiceTier = "Gold""#);
+    assert_eq!(fields[5].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[6].kind, FieldKind::Dynamic("SKIPIF".to_string()));
+    assert_eq!(fields[6].instruction, "SKIPIF InvoiceTotal < 40");
+    assert_eq!(fields[6].computed_result.as_deref(), Some(""));
+
+    let report = doc.report();
+    assert_eq!(report.features.fields, 7);
+    assert_eq!(
+        report.features.field_kinds,
+        vec![
+            field_kind_count(FieldKind::Dynamic("IF".to_string()), 3),
+            field_kind_count(FieldKind::Dynamic("COMPARE".to_string()), 2),
             field_kind_count(FieldKind::Dynamic("NEXTIF".to_string()), 1),
             field_kind_count(FieldKind::Dynamic("SKIPIF".to_string()), 1),
         ]

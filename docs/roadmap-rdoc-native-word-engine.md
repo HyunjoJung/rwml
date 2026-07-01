@@ -113,7 +113,7 @@ Deliverables:
   `FILLIN`/`ASK` prompt fields, and literal `SET`
   bookmark assignments feeding later plain `REF`/direct bookmark references
   plus source-order bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF`
-  comparisons and ordinary document-bookmark-backed `IF`/`COMPARE`
+  comparisons and ordinary document-bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF`
   comparisons,
   inserted-content fields, mail-merge
   helper fields, reference/index fields, numbering/list fields, document-structure
@@ -228,10 +228,10 @@ Initial status:
   field-result format switches rendered as hidden output while
   feeding later plain `REF`/direct bookmark references, source-order
   bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons, and ordinary
-  document-bookmark-backed `IF`/`COMPARE` comparisons, including numeric
+  document-bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons, including numeric
   comparison for finite numeric bookmark values,
   malformed `SET` syntax reports `UnsupportedSwitch`,
-  literal `NEXT` and literal or source-order bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with
+  literal `NEXT` and literal, source-order, or ordinary document-bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with
   field-result format switches rendered as hidden output without running a mail merge,
   deterministic `GOTOBUTTON`/`MACROBUTTON` quoted or unquoted display text with
   field text-format switches, and deterministic `w:ffData` `FORMCHECKBOX`
@@ -358,7 +358,7 @@ Initial status:
   field-result format switches rendered as hidden output while feeding later
   plain `REF`/direct bookmark references and
   source-order bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons and
-  ordinary document-bookmark-backed `IF`/`COMPARE` comparisons, including
+  ordinary document-bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons, including
   numeric comparison for finite numeric bookmark values, valid
   no-default `FILLIN`/`ASK` prompt fields, including multi-token unquoted
   prompts, preserve cached text with `NoComputedResult`, malformed
@@ -368,10 +368,10 @@ Initial status:
   field-result format switches render as hidden output while
   feeding later plain `REF`/direct bookmark references, source-order
   bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons, and ordinary
-  document-bookmark-backed `IF`/`COMPARE` comparisons, including numeric
+  document-bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons, including numeric
   comparison for finite numeric bookmark values,
   malformed `SET` syntax reports `UnsupportedSwitch`, plus literal `NEXT`
-  and literal or source-order bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with
+  and literal, source-order, or ordinary document-bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with
   field-result format switches render as hidden output without running a mail
   merge; malformed merge-control syntax reports `UnsupportedSwitch`, invalid
   literal `COMPARE` syntax reports `UnsupportedSwitch`, while
@@ -888,7 +888,7 @@ Initial status:
   literals, and field-result format switches render as hidden output while
   feeding later plain `REF`/direct bookmark references
   plus source-order bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF`
-  comparisons and ordinary document-bookmark-backed `IF`/`COMPARE`
+  comparisons and ordinary document-bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF`
   comparisons, including numeric comparison for finite numeric bookmark values,
   valid no-default `FILLIN`/`ASK` prompt fields, including multi-token
   unquoted prompts, preserve cached text with `NoComputedResult`,
@@ -897,10 +897,10 @@ Initial status:
   field-result format switches render as hidden output while
   feeding later plain `REF`/direct bookmark references, source-order
   bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons, and ordinary
-  document-bookmark-backed `IF`/`COMPARE` comparisons, including numeric
+  document-bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons, including numeric
   comparison for finite numeric bookmark values,
   malformed `SET` syntax reports `UnsupportedSwitch`,
-  plus literal `NEXT` and literal or source-order bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with
+  plus literal `NEXT` and literal, source-order, or ordinary document-bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with
   field-result format switches render as hidden output without running a mail merge;
   malformed merge-control syntax reports `UnsupportedSwitch`; invalid literal
   `COMPARE` syntax reports `UnsupportedSwitch`; remaining

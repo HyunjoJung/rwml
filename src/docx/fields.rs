@@ -940,17 +940,18 @@ fn apply_computed_results(fields: &mut [Field], ctx: ComputedResultContexts<'_>)
                     )
                 })
             }
-            FieldKind::Dynamic(kind)
-                if kind == "QUOTE"
-                    || kind == "FILLIN"
-                    || kind == "NEXT"
-                    || kind == "NEXTIF"
-                    || kind == "SKIPIF" =>
-            {
+            FieldKind::Dynamic(kind) if kind == "QUOTE" || kind == "FILLIN" || kind == "NEXT" => {
                 computed_dynamic_result_with_bookmarks(&field.instruction, &field_bookmarks)
             }
             FieldKind::Dynamic(kind) if kind == "IF" || kind == "COMPARE" => {
                 computed_if_compare_result_with_bookmark_context(
+                    &field.instruction,
+                    ctx.bookmarks,
+                    &field_bookmarks,
+                )
+            }
+            FieldKind::Dynamic(kind) if kind == "NEXTIF" || kind == "SKIPIF" => {
+                computed_merge_control_result_with_bookmark_context(
                     &field.instruction,
                     ctx.bookmarks,
                     &field_bookmarks,
@@ -1096,6 +1097,19 @@ pub(crate) fn computed_if_compare_result_with_bookmark_context(
     };
     computed_if_result_with_bookmarks(instruction, &comparison_bookmarks)
         .or_else(|| computed_compare_result_with_bookmarks(instruction, &comparison_bookmarks))
+}
+
+pub(crate) fn computed_merge_control_result_with_bookmark_context(
+    instruction: &str,
+    document_bookmarks: &HashMap<String, String>,
+    field_bookmarks: &HashMap<String, String>,
+) -> Option<String> {
+    let Some(merge_control_bookmarks) =
+        merged_bookmark_context(document_bookmarks, field_bookmarks)
+    else {
+        return computed_merge_control_result_with_bookmarks(instruction, field_bookmarks);
+    };
+    computed_merge_control_result_with_bookmarks(instruction, &merge_control_bookmarks)
 }
 
 fn merged_bookmark_context(

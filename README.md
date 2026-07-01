@@ -509,7 +509,7 @@ fields with quoted or unquoted prompts, including multi-token unquoted prompts,
 quoted or unquoted default literals, and field-result format switches
 render as hidden output while seeding later plain `REF`/direct bookmark
 references, source-order bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF`
-comparisons, and ordinary document-bookmark-backed `IF`/`COMPARE`
+comparisons, and ordinary document-bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF`
 comparisons, including numeric comparison for finite numeric bookmark values,
 valid no-default `FILLIN`/`ASK` prompt fields, including multi-token unquoted
 prompts, preserve cached text with `NoComputedResult`,
@@ -519,10 +519,10 @@ payloads, with
 field-result format switches render as hidden
 output while feeding later plain `REF`/direct bookmark references and
 source-order bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons and
-ordinary document-bookmark-backed `IF`/`COMPARE` comparisons, including numeric
+ordinary document-bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF` comparisons, including numeric
 comparison for finite numeric bookmark values, malformed `SET`
-syntax reports `UnsupportedSwitch`, plus literal `NEXT` and literal or
-source-order bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with
+syntax reports `UnsupportedSwitch`, plus literal `NEXT` and literal,
+source-order, or ordinary document-bookmark-backed `NEXTIF`/`SKIPIF` merge-control fields with
 field-result format switches render as hidden output without running a mail
 merge; malformed merge-control syntax reports `UnsupportedSwitch`, invalid
 literal `COMPARE` syntax reports `UnsupportedSwitch`, while
@@ -986,7 +986,7 @@ deterministic computation or precise cached-result diagnostics.
       `FILLIN`/`ASK`, and literal `SET`
       bookmark assignments feeding later plain `REF`/direct bookmark references
       plus source-order bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF`
-      comparisons and ordinary document-bookmark-backed `IF`/`COMPARE`
+      comparisons and ordinary document-bookmark-backed `IF`/`COMPARE`/`NEXTIF`/`SKIPIF`
       comparisons,
       dynamic/control,
       inserted-content, and mail-merge helper field diagnostics, reference/index field diagnostics,
