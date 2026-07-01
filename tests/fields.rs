@@ -2748,6 +2748,23 @@ fn nested_complex_set_operand_field_ref_bookmark_docx() -> Vec<u8> {
     ])
 }
 
+fn nested_ref_field_ref_bookmark_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="BaseText"/><w:r><w:t>current base</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:bookmarkStart w:id="8" w:name="ComputedExplicit"/><w:fldSimple w:instr=" REF BaseText \* Upper "><w:r><w:t>stale nested explicit ref</w:t></w:r></w:fldSimple><w:bookmarkEnd w:id="8"/></w:p><w:p><w:bookmarkStart w:id="9" w:name="ComputedDirect"/><w:fldSimple w:instr=" BaseText \* FirstCap "><w:r><w:t>stale nested direct ref</w:t></w:r></w:fldSimple><w:bookmarkEnd w:id="9"/></w:p><w:p><w:fldSimple w:instr=" REF ComputedExplicit "><w:r><w:t>stale outer explicit ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" REF ComputedDirect "><w:r><w:t>stale outer direct ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn ref_deleted_bookmark_text_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -15217,6 +15234,46 @@ fn docx_ref_targets_resolve_prior_complex_set_operands_in_nested_field_results()
             && !main_text.contains("stale complex set nested formula")
             && !main_text.contains("stale complex set total ref"),
         "REF targets should compute nested field results with prior complex SET operands: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_ref_targets_resolve_nested_ref_field_results() {
+    let doc = Document::open(&nested_ref_field_ref_bookmark_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 4);
+    assert_eq!(fields[0].kind, FieldKind::Ref);
+    assert_eq!(fields[0].instruction, "REF BaseText \\* Upper");
+    assert_eq!(fields[0].result, "stale nested explicit ref");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("CURRENT BASE"));
+    assert_eq!(fields[1].kind, FieldKind::Ref);
+    assert_eq!(fields[1].instruction, "BaseText \\* FirstCap");
+    assert_eq!(fields[1].result, "stale nested direct ref");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("Current base"));
+    assert_eq!(fields[2].kind, FieldKind::Ref);
+    assert_eq!(fields[2].instruction, "REF ComputedExplicit");
+    assert_eq!(fields[2].result, "stale outer explicit ref");
+    assert_eq!(fields[2].computed_result.as_deref(), Some("CURRENT BASE"));
+    assert_eq!(fields[3].kind, FieldKind::Ref);
+    assert_eq!(fields[3].instruction, "REF ComputedDirect");
+    assert_eq!(fields[3].result, "stale outer direct ref");
+    assert_eq!(fields[3].computed_result.as_deref(), Some("Current base"));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("current base")
+            && main_text.contains("CURRENT BASE")
+            && main_text.contains("Current base")
+            && !main_text.contains("stale nested explicit ref")
+            && !main_text.contains("stale nested direct ref")
+            && !main_text.contains("stale outer explicit ref")
+            && !main_text.contains("stale outer direct ref"),
+        "REF targets should compute nested REF/direct bookmark fields: {main_text:?}"
     );
 }
 

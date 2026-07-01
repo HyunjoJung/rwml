@@ -335,10 +335,33 @@ fn computed_ref_target_field_result(
         _ => {}
     }
     let bookmarks = ref_target_merged_bookmarks(&available_bookmarks, field_bookmarks);
-    computed_dynamic_result_with_bookmarks(&instruction, &bookmarks)
+    computed_ref_target_ref_result(&instruction, &bookmarks)
+        .or_else(|| computed_dynamic_result_with_bookmarks(&instruction, &bookmarks))
         .or_else(|| computed_display_result(&instruction))
         .or_else(|| computed_action_result(&instruction))
         .or_else(|| computed_reference_index_result(&instruction))
+}
+
+fn computed_ref_target_ref_result(
+    instruction: &str,
+    bookmarks: &HashMap<String, String>,
+) -> Option<String> {
+    let spec =
+        ref_instruction(instruction).or_else(|| direct_bookmark_ref_instruction(instruction))?;
+    if spec.note_reference
+        || spec.relative
+        || spec.paragraph_number
+        || spec.full_context_number
+        || spec.relative_context_number
+    {
+        return None;
+    }
+    if spec.sequence_separator {
+        spec.sequence_separator_value.as_deref()?;
+    }
+    let text = bookmarks.get(&spec.target)?;
+    let text = computed_ref_bookmark_text_result(text, spec.number_format)?;
+    Some(apply_field_text_format(text, spec.text_format))
 }
 
 fn is_ref_target_source_order_field_instruction(instruction: Option<&str>) -> bool {
