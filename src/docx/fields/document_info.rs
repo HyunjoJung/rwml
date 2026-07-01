@@ -213,7 +213,7 @@ fn document_info_property(value: &str) -> Option<DocumentInfoProperty> {
         "KEYWORDS" | "KEYWORD" => DocumentInfoProperty::Keywords,
         "CATEGORY" => DocumentInfoProperty::Category,
         "CONTENTSTATUS" => DocumentInfoProperty::ContentStatus,
-        "LASTSAVEDBY" | "LASTMODIFIEDBY" => DocumentInfoProperty::LastModifiedBy,
+        "LASTSAVEDBY" | "LASTMODIFIEDBY" | "LASTAUTHOR" => DocumentInfoProperty::LastModifiedBy,
         "CREATEDATE" => DocumentInfoProperty::CreatedDate,
         "SAVEDATE" => DocumentInfoProperty::SavedDate,
         "PRINTDATE" => DocumentInfoProperty::PrintDate,

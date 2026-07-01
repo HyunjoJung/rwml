@@ -2037,6 +2037,27 @@ fn doc_property_revision_number_docx() -> Vec<u8> {
     ])
 }
 
+fn doc_property_last_author_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rIdCore" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>"#,
+        ),
+        (
+            "docProps/core.xml",
+            r#"<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"><cp:lastModifiedBy>Dana Reviewer</cp:lastModifiedBy></cp:coreProperties>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" DOCPROPERTY &quot;Last Author&quot; "><w:r><w:t>stale author name</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DOCPROPERTY LastAuthor "><w:r><w:t>stale author name 2</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn section_field_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -12241,6 +12262,34 @@ fn docx_docproperty_revision_number_matches_revnum() {
             && !main_text.contains("stale revnum property")
             && !main_text.contains("stale spaced revnum"),
         "DOCPROPERTY RevisionNumber should compute the core revision: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_docproperty_last_author_matches_last_modified_by() {
+    let doc = Document::open(&doc_property_last_author_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    for field in &fields {
+        assert_eq!(
+            field.kind,
+            FieldKind::DocumentInfo("DOCPROPERTY".to_string())
+        );
+        assert_eq!(field.computed_result.as_deref(), Some("Dana Reviewer"));
+    }
+    assert_eq!(fields[0].instruction, "DOCPROPERTY \"Last Author\"");
+    assert_eq!(fields[0].result, "stale author name");
+    assert_eq!(fields[1].instruction, "DOCPROPERTY LastAuthor");
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Dana Reviewer") && !main_text.contains("stale author name"),
+        "DOCPROPERTY Last Author should compute cp:lastModifiedBy: {main_text:?}"
     );
 }
 
