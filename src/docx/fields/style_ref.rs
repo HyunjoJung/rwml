@@ -310,12 +310,28 @@ fn read_style_ref_paragraph(
                             num_id.as_deref(),
                             ilvl,
                         );
+                        let instruction = attr_local(&e, b"instr");
                         record_style_ref_field(
-                            attr_local(&e, b"instr").as_deref(),
+                            instruction.as_deref(),
                             field_positions,
                             next_order,
                             &number,
                         );
+                        if !instruction
+                            .as_deref()
+                            .is_some_and(is_style_ref_field_instruction)
+                        {
+                            if let Some(computed) = computed_style_ref_source_field_result(
+                                instruction.as_deref(),
+                                document_bookmarks,
+                                sequence_counters,
+                                autonum_counter,
+                                listnum_counter,
+                                field_bookmarks,
+                            ) {
+                                text.push_str(&computed);
+                            }
+                        }
                     }
                     b"sym" => {
                         if !style_ref_suppresses_source_text(&current) {
