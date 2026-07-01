@@ -75,6 +75,7 @@ pub(crate) fn style_ref_context(
     let mut entries = Vec::new();
     let mut field_positions = Vec::new();
     let mut counters: HashMap<String, [u32; 9]> = HashMap::new();
+    let mut field_bookmarks = HashMap::new();
     let mut next_order = 0usize;
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
@@ -108,6 +109,7 @@ pub(crate) fn style_ref_context(
                             &mut entries,
                             &mut field_positions,
                             &mut next_order,
+                            &mut field_bookmarks,
                         );
                         consumed_element = true;
                     }
@@ -150,6 +152,7 @@ fn read_style_ref_paragraph(
     entries: &mut Vec<StyleRefEntry>,
     field_positions: &mut Vec<StyleRefFieldPosition>,
     next_order: &mut usize,
+    field_bookmarks: &mut HashMap<String, String>,
 ) {
     let mut style_id = None;
     let mut num_id = None;
@@ -202,6 +205,7 @@ fn read_style_ref_paragraph(
                                 paragraph_number: &number,
                                 current: &mut current,
                                 paragraph_text: &mut text,
+                                field_bookmarks,
                             },
                         );
                         consumed_element = true;
@@ -235,6 +239,7 @@ fn read_style_ref_paragraph(
                                 field_positions,
                                 next_order,
                                 &number,
+                                field_bookmarks,
                             ));
                         }
                         consumed_element = true;
@@ -345,6 +350,7 @@ struct StyleRefRunScan<'a> {
     paragraph_number: &'a Option<StyleRefParagraphNumber>,
     current: &'a mut Option<StyleRefScanField>,
     paragraph_text: &'a mut String,
+    field_bookmarks: &'a mut HashMap<String, String>,
 }
 
 fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
@@ -356,6 +362,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
         paragraph_number,
         current,
         paragraph_text,
+        field_bookmarks,
     } = scan;
     let mut run_style_id = None;
     let mut run_text = String::new();
@@ -394,6 +401,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
                             paragraph_number,
                             paragraph_text,
                             entries,
+                            field_bookmarks,
                         );
                     }
                     b"instrText" => {
@@ -455,6 +463,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
                             paragraph_number,
                             paragraph_text,
                             entries,
+                            field_bookmarks,
                         );
                     }
                     b"sym" => {
@@ -518,6 +527,7 @@ fn read_style_ref_simple_field_result(
     field_positions: &mut Vec<StyleRefFieldPosition>,
     next_order: &mut usize,
     paragraph_number: &Option<StyleRefParagraphNumber>,
+    field_bookmarks: &mut HashMap<String, String>,
 ) -> String {
     let mut text = String::new();
     let mut current: Option<StyleRefScanField> = None;
@@ -557,6 +567,7 @@ fn read_style_ref_simple_field_result(
                                 paragraph_number,
                                 current: &mut current,
                                 paragraph_text: &mut text,
+                                field_bookmarks,
                             },
                         );
                         consumed_element = true;
@@ -634,7 +645,7 @@ fn read_style_ref_simple_field_result(
             _ => {}
         }
     }
-    if let Some(computed) = computed_style_ref_source_field_result(instruction) {
+    if let Some(computed) = computed_style_ref_source_field_result(instruction, field_bookmarks) {
         let cached_text = normalize_toc_text(&text);
         if entries.len() == entry_start + 1 && entries[entry_start].text == cached_text {
             entries[entry_start].text = computed.clone();
@@ -644,12 +655,24 @@ fn read_style_ref_simple_field_result(
     text
 }
 
-fn computed_style_ref_source_field_result(instruction: Option<&str>) -> Option<String> {
+fn computed_style_ref_source_field_result(
+    instruction: Option<&str>,
+    field_bookmarks: &mut HashMap<String, String>,
+) -> Option<String> {
     let instruction = normalize_instruction(instruction?);
     if is_style_ref_field_instruction(&instruction) {
         return None;
     }
-    super::computed_dynamic_result_with_bookmarks(&instruction, &HashMap::new())
+    match FieldKind::from_instruction(&instruction) {
+        FieldKind::Dynamic(kind) if kind == "ASK" => {
+            return computed_ask_result(&instruction, field_bookmarks);
+        }
+        FieldKind::Dynamic(kind) if kind == "SET" => {
+            return computed_set_result(&instruction, field_bookmarks);
+        }
+        _ => {}
+    }
+    super::computed_dynamic_result_with_bookmarks(&instruction, field_bookmarks)
         .or_else(|| computed_display_result(&instruction))
         .or_else(|| computed_action_result(&instruction))
         .or_else(|| computed_reference_index_result(&instruction))
@@ -765,6 +788,7 @@ fn apply_style_ref_scan_fld_char(
     paragraph_number: &Option<StyleRefParagraphNumber>,
     paragraph_text: &mut String,
     entries: &mut Vec<StyleRefEntry>,
+    field_bookmarks: &mut HashMap<String, String>,
 ) {
     match field_char_type(e).as_deref() {
         Some("begin") => {
@@ -786,7 +810,10 @@ fn apply_style_ref_scan_fld_char(
             if let Some(field) = current.take() {
                 if let (Some(start), Some(computed)) = (
                     field.paragraph_result_start,
-                    computed_style_ref_source_field_result(Some(&field.instruction)),
+                    computed_style_ref_source_field_result(
+                        Some(&field.instruction),
+                        field_bookmarks,
+                    ),
                 ) {
                     let cached_text = normalize_toc_text(&paragraph_text[start..]);
                     if let Some(entry_start) = field.entry_result_start {
