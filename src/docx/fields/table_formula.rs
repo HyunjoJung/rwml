@@ -20,9 +20,9 @@ use super::{
     computed_formula_result_with_bookmark_context,
     computed_if_compare_result_with_bookmark_context,
     computed_merge_control_result_with_bookmark_context, computed_quote_result,
-    computed_reference_index_result, computed_run_symbol_char, computed_set_result,
-    inline_marker_text, normalize_instruction, should_skip_alternate_branch, skip_element,
-    AlternateContentBranchState, ComplexField, FieldPhase,
+    computed_reference_index_result, computed_run_symbol_char, computed_sequence_result,
+    computed_set_result, inline_marker_text, normalize_instruction, should_skip_alternate_branch,
+    skip_element, AlternateContentBranchState, ComplexField, FieldPhase,
 };
 
 type Xml<'a> = Reader<&'a [u8]>;
@@ -49,6 +49,7 @@ pub(crate) fn table_formula_context(
     let mut r = Reader::from_str(xml);
     let mut results = Vec::new();
     let mut current = Vec::new();
+    let mut sequence_counters = HashMap::new();
     let mut field_bookmarks = HashMap::new();
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
@@ -77,6 +78,7 @@ pub(crate) fn table_formula_context(
                         results.extend(read_table_formula_table(
                             &mut r,
                             document_bookmarks,
+                            &mut sequence_counters,
                             &mut field_bookmarks,
                         ));
                         consumed_element = true;
@@ -92,6 +94,7 @@ pub(crate) fn table_formula_context(
                             let _ = computed_table_formula_source_field_result(
                                 instruction.as_deref(),
                                 document_bookmarks,
+                                &mut sequence_counters,
                                 &mut field_bookmarks,
                             )
                             .unwrap_or(result_text);
@@ -103,6 +106,7 @@ pub(crate) fn table_formula_context(
                             &e,
                             &mut current,
                             document_bookmarks,
+                            &mut sequence_counters,
                             &mut field_bookmarks,
                             |_, _| results.push(None),
                         );
@@ -138,6 +142,7 @@ pub(crate) fn table_formula_context(
                             let _ = computed_table_formula_source_field_result(
                                 instruction.as_deref(),
                                 document_bookmarks,
+                                &mut sequence_counters,
                                 &mut field_bookmarks,
                             );
                         }
@@ -147,6 +152,7 @@ pub(crate) fn table_formula_context(
                             &e,
                             &mut current,
                             document_bookmarks,
+                            &mut sequence_counters,
                             &mut field_bookmarks,
                             |_, _| results.push(None),
                         );
@@ -190,6 +196,7 @@ struct TableFormulaCell {
 fn read_table_formula_table(
     r: &mut Xml<'_>,
     document_bookmarks: &HashMap<String, String>,
+    sequence_counters: &mut HashMap<String, i64>,
     field_bookmarks: &mut HashMap<String, String>,
 ) -> Vec<Option<String>> {
     let mut rows = Vec::new();
@@ -226,6 +233,7 @@ fn read_table_formula_table(
                             r,
                             row_index,
                             document_bookmarks,
+                            sequence_counters,
                             field_bookmarks,
                         );
                         for cell in &mut row {
@@ -310,6 +318,7 @@ fn read_table_formula_row(
     r: &mut Xml<'_>,
     row_index: usize,
     document_bookmarks: &HashMap<String, String>,
+    sequence_counters: &mut HashMap<String, i64>,
     field_bookmarks: &mut HashMap<String, String>,
 ) -> Vec<TableFormulaCell> {
     let mut row: Vec<TableFormulaCell> = Vec::new();
@@ -353,6 +362,7 @@ fn read_table_formula_row(
                             row_index,
                             col_index,
                             document_bookmarks,
+                            sequence_counters,
                             field_bookmarks,
                         );
                         cell.is_header_row = is_header_row;
@@ -477,6 +487,7 @@ fn read_table_formula_cell(
     row: usize,
     col: usize,
     document_bookmarks: &HashMap<String, String>,
+    sequence_counters: &mut HashMap<String, i64>,
     field_bookmarks: &mut HashMap<String, String>,
 ) -> TableFormulaCell {
     let mut cell = TableFormulaCell::default();
@@ -509,9 +520,12 @@ fn read_table_formula_cell(
                         consumed_element = true;
                     }
                     b"tbl" => {
-                        for result in
-                            read_table_formula_table(r, document_bookmarks, field_bookmarks)
-                        {
+                        for result in read_table_formula_table(
+                            r,
+                            document_bookmarks,
+                            sequence_counters,
+                            field_bookmarks,
+                        ) {
                             cell.records.push(TableFormulaRecord::Nested(result));
                         }
                         if !cell.text.is_empty() {
@@ -542,6 +556,7 @@ fn read_table_formula_cell(
                             computed_table_formula_source_field_result(
                                 instruction.as_deref(),
                                 document_bookmarks,
+                                sequence_counters,
                                 field_bookmarks,
                             )
                             .unwrap_or(result_text)
@@ -557,6 +572,7 @@ fn read_table_formula_cell(
                             row,
                             col,
                             document_bookmarks,
+                            sequence_counters,
                             field_bookmarks,
                         );
                     }
@@ -615,6 +631,7 @@ fn read_table_formula_cell(
                             row,
                             col,
                             document_bookmarks,
+                            sequence_counters,
                             field_bookmarks,
                         );
                     }
@@ -786,6 +803,7 @@ fn apply_table_formula_cell_fld_char(
     row: usize,
     col: usize,
     document_bookmarks: &HashMap<String, String>,
+    sequence_counters: &mut HashMap<String, i64>,
     field_bookmarks: &mut HashMap<String, String>,
 ) {
     match field_char_type(e).as_deref() {
@@ -821,6 +839,7 @@ fn apply_table_formula_cell_fld_char(
                 computed_table_formula_source_field_result(
                     Some(&instruction),
                     document_bookmarks,
+                    sequence_counters,
                     field_bookmarks,
                 )
                 .unwrap_or(field.result)
@@ -858,6 +877,7 @@ fn append_table_formula_cell_inline(
 fn computed_table_formula_source_field_result(
     instruction: Option<&str>,
     document_bookmarks: &HashMap<String, String>,
+    sequence_counters: &mut HashMap<String, i64>,
     field_bookmarks: &mut HashMap<String, String>,
 ) -> Option<String> {
     let instruction = instruction?;
@@ -872,6 +892,7 @@ fn computed_table_formula_source_field_result(
         _ => {}
     }
     computed_table_formula_source_ref_result(instruction, document_bookmarks, field_bookmarks)
+        .or_else(|| computed_sequence_result(instruction, sequence_counters))
         .or_else(|| {
             computed_formula_result_with_bookmark_context(
                 instruction,
@@ -950,6 +971,7 @@ fn apply_table_formula_scan_fld_char(
     e: &BytesStart<'_>,
     current: &mut Vec<ComplexField>,
     document_bookmarks: &HashMap<String, String>,
+    sequence_counters: &mut HashMap<String, i64>,
     field_bookmarks: &mut HashMap<String, String>,
     mut record: impl FnMut(&str, &str),
 ) {
@@ -961,6 +983,7 @@ fn apply_table_formula_scan_fld_char(
             let _ = computed_table_formula_source_field_result(
                 Some(&instruction),
                 document_bookmarks,
+                sequence_counters,
                 field_bookmarks,
             )
             .unwrap_or(field.result);
