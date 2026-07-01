@@ -2096,6 +2096,27 @@ fn numeric_doc_info_star_format_docx() -> Vec<u8> {
     ])
 }
 
+fn edittime_number_format_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rIdApp" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>"#,
+        ),
+        (
+            "docProps/app.xml",
+            r#"<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><TotalTime>7</TotalTime></Properties>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" EDITTIME \* roman "><w:r><w:t>stale roman time</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" EDITTIME \* Arabic "><w:r><w:t>stale arabic time</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn section_field_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -12411,6 +12432,25 @@ fn docx_numeric_document_info_fields_apply_star_number_format() {
             && !main_text.contains("stale"),
         "numeric document-info fields should apply the number format: {main_text:?}"
     );
+}
+
+#[test]
+fn docx_edittime_document_info_field_applies_star_number_format() {
+    let doc = Document::open(&edittime_number_format_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    for field in &fields {
+        assert_eq!(field.kind, FieldKind::DocumentInfo("EDITTIME".to_string()));
+    }
+    assert_eq!(fields[0].instruction, "EDITTIME \\* roman");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("vii"));
+    assert_eq!(fields[1].instruction, "EDITTIME \\* Arabic");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("7"));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
 }
 
 #[test]

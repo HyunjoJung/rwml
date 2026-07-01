@@ -95,7 +95,13 @@ fn is_numeric_document_info_property(property: &DocumentInfoProperty) -> bool {
         DocumentInfoProperty::FileSize => true,
         DocumentInfoProperty::Extended(key) => matches!(
             key.as_str(),
-            "PAGES" | "WORDS" | "CHARACTERS" | "CHARACTERSWITHSPACES" | "LINES" | "PARAGRAPHS"
+            "PAGES"
+                | "WORDS"
+                | "CHARACTERS"
+                | "CHARACTERSWITHSPACES"
+                | "LINES"
+                | "PARAGRAPHS"
+                | "TOTALTIME"
         ),
         _ => false,
     }
