@@ -19,10 +19,11 @@ use super::{
     computed_ask_result, computed_display_result, computed_fill_in_result,
     computed_formula_result_with_bookmark_context,
     computed_if_compare_result_with_bookmark_context,
-    computed_merge_control_result_with_bookmark_context, computed_quote_result,
-    computed_reference_index_result, computed_run_symbol_char, computed_sequence_result,
-    computed_set_result, inline_marker_text, normalize_instruction, should_skip_alternate_branch,
-    skip_element, AlternateContentBranchState, ComplexField, FieldPhase,
+    computed_merge_control_result_with_bookmark_context, computed_numbering_result,
+    computed_quote_result, computed_reference_index_result, computed_run_symbol_char,
+    computed_sequence_result, computed_set_result, inline_marker_text, normalize_instruction,
+    should_skip_alternate_branch, skip_element, AlternateContentBranchState, ComplexField,
+    FieldPhase,
 };
 
 type Xml<'a> = Reader<&'a [u8]>;
@@ -50,6 +51,7 @@ pub(crate) fn table_formula_context(
     let mut results = Vec::new();
     let mut current = Vec::new();
     let mut sequence_counters = HashMap::new();
+    let mut autonum_counter = 0i64;
     let mut field_bookmarks = HashMap::new();
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
@@ -79,6 +81,7 @@ pub(crate) fn table_formula_context(
                             &mut r,
                             document_bookmarks,
                             &mut sequence_counters,
+                            &mut autonum_counter,
                             &mut field_bookmarks,
                         ));
                         consumed_element = true;
@@ -95,6 +98,7 @@ pub(crate) fn table_formula_context(
                                 instruction.as_deref(),
                                 document_bookmarks,
                                 &mut sequence_counters,
+                                &mut autonum_counter,
                                 &mut field_bookmarks,
                             )
                             .unwrap_or(result_text);
@@ -107,6 +111,7 @@ pub(crate) fn table_formula_context(
                             &mut current,
                             document_bookmarks,
                             &mut sequence_counters,
+                            &mut autonum_counter,
                             &mut field_bookmarks,
                             |_, _| results.push(None),
                         );
@@ -143,6 +148,7 @@ pub(crate) fn table_formula_context(
                                 instruction.as_deref(),
                                 document_bookmarks,
                                 &mut sequence_counters,
+                                &mut autonum_counter,
                                 &mut field_bookmarks,
                             );
                         }
@@ -153,6 +159,7 @@ pub(crate) fn table_formula_context(
                             &mut current,
                             document_bookmarks,
                             &mut sequence_counters,
+                            &mut autonum_counter,
                             &mut field_bookmarks,
                             |_, _| results.push(None),
                         );
@@ -197,6 +204,7 @@ fn read_table_formula_table(
     r: &mut Xml<'_>,
     document_bookmarks: &HashMap<String, String>,
     sequence_counters: &mut HashMap<String, i64>,
+    autonum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
 ) -> Vec<Option<String>> {
     let mut rows = Vec::new();
@@ -234,6 +242,7 @@ fn read_table_formula_table(
                             row_index,
                             document_bookmarks,
                             sequence_counters,
+                            autonum_counter,
                             field_bookmarks,
                         );
                         for cell in &mut row {
@@ -319,6 +328,7 @@ fn read_table_formula_row(
     row_index: usize,
     document_bookmarks: &HashMap<String, String>,
     sequence_counters: &mut HashMap<String, i64>,
+    autonum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
 ) -> Vec<TableFormulaCell> {
     let mut row: Vec<TableFormulaCell> = Vec::new();
@@ -363,6 +373,7 @@ fn read_table_formula_row(
                             col_index,
                             document_bookmarks,
                             sequence_counters,
+                            autonum_counter,
                             field_bookmarks,
                         );
                         cell.is_header_row = is_header_row;
@@ -488,6 +499,7 @@ fn read_table_formula_cell(
     col: usize,
     document_bookmarks: &HashMap<String, String>,
     sequence_counters: &mut HashMap<String, i64>,
+    autonum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
 ) -> TableFormulaCell {
     let mut cell = TableFormulaCell::default();
@@ -524,6 +536,7 @@ fn read_table_formula_cell(
                             r,
                             document_bookmarks,
                             sequence_counters,
+                            autonum_counter,
                             field_bookmarks,
                         ) {
                             cell.records.push(TableFormulaRecord::Nested(result));
@@ -557,6 +570,7 @@ fn read_table_formula_cell(
                                 instruction.as_deref(),
                                 document_bookmarks,
                                 sequence_counters,
+                                autonum_counter,
                                 field_bookmarks,
                             )
                             .unwrap_or(result_text)
@@ -573,6 +587,7 @@ fn read_table_formula_cell(
                             col,
                             document_bookmarks,
                             sequence_counters,
+                            autonum_counter,
                             field_bookmarks,
                         );
                     }
@@ -632,6 +647,7 @@ fn read_table_formula_cell(
                             col,
                             document_bookmarks,
                             sequence_counters,
+                            autonum_counter,
                             field_bookmarks,
                         );
                     }
@@ -804,6 +820,7 @@ fn apply_table_formula_cell_fld_char(
     col: usize,
     document_bookmarks: &HashMap<String, String>,
     sequence_counters: &mut HashMap<String, i64>,
+    autonum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
 ) {
     match field_char_type(e).as_deref() {
@@ -840,6 +857,7 @@ fn apply_table_formula_cell_fld_char(
                     Some(&instruction),
                     document_bookmarks,
                     sequence_counters,
+                    autonum_counter,
                     field_bookmarks,
                 )
                 .unwrap_or(field.result)
@@ -878,6 +896,7 @@ fn computed_table_formula_source_field_result(
     instruction: Option<&str>,
     document_bookmarks: &HashMap<String, String>,
     sequence_counters: &mut HashMap<String, i64>,
+    autonum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
 ) -> Option<String> {
     let instruction = instruction?;
@@ -892,6 +911,7 @@ fn computed_table_formula_source_field_result(
         _ => {}
     }
     computed_table_formula_source_ref_result(instruction, document_bookmarks, field_bookmarks)
+        .or_else(|| computed_numbering_result(instruction, autonum_counter))
         .or_else(|| computed_sequence_result(instruction, sequence_counters))
         .or_else(|| {
             computed_formula_result_with_bookmark_context(
@@ -972,6 +992,7 @@ fn apply_table_formula_scan_fld_char(
     current: &mut Vec<ComplexField>,
     document_bookmarks: &HashMap<String, String>,
     sequence_counters: &mut HashMap<String, i64>,
+    autonum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
     mut record: impl FnMut(&str, &str),
 ) {
@@ -984,6 +1005,7 @@ fn apply_table_formula_scan_fld_char(
                 Some(&instruction),
                 document_bookmarks,
                 sequence_counters,
+                autonum_counter,
                 field_bookmarks,
             )
             .unwrap_or(field.result);
