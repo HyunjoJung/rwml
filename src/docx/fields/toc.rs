@@ -115,6 +115,7 @@ fn read_toc_paragraph(
     let mut text = String::new();
     let mut bookmarks = active_bookmark_names(active_bookmarks);
     let mut current = Vec::new();
+    let mut result_starts: Vec<Option<usize>> = Vec::new();
     let mut sequence_identifiers = Vec::new();
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
@@ -174,6 +175,7 @@ fn read_toc_paragraph(
                         apply_toc_fld_char(
                             &e,
                             &mut current,
+                            &mut result_starts,
                             &bookmarks,
                             sequence_counters,
                             &mut sequence_identifiers,
@@ -248,6 +250,7 @@ fn read_toc_paragraph(
                         apply_toc_fld_char(
                             &e,
                             &mut current,
+                            &mut result_starts,
                             &bookmarks,
                             sequence_counters,
                             &mut sequence_identifiers,
@@ -347,6 +350,7 @@ fn read_toc_simple_field_result(
 ) -> String {
     let mut text = String::new();
     let mut current = Vec::new();
+    let mut result_starts: Vec<Option<usize>> = Vec::new();
     let mut depth = 1usize;
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
@@ -403,6 +407,7 @@ fn read_toc_simple_field_result(
                         apply_toc_fld_char(
                             &e,
                             &mut current,
+                            &mut result_starts,
                             bookmarks,
                             sequence_counters,
                             sequence_identifiers,
@@ -485,6 +490,7 @@ fn read_toc_simple_field_result(
                         apply_toc_fld_char(
                             &e,
                             &mut current,
+                            &mut result_starts,
                             bookmarks,
                             sequence_counters,
                             sequence_identifiers,
@@ -553,26 +559,51 @@ fn toc_symbol_char(e: &BytesStart<'_>) -> Option<char> {
 fn apply_toc_fld_char(
     e: &BytesStart<'_>,
     current: &mut Vec<ComplexField>,
+    result_starts: &mut Vec<Option<usize>>,
     bookmarks: &[String],
     sequence_counters: &mut HashMap<String, i64>,
     sequence_identifiers: &mut Vec<String>,
     text: &mut String,
     entries: &mut Vec<TocEntry>,
 ) {
+    // Track where each complex field's result text begins in `text`, so a
+    // deterministic source-field result can overwrite the leaked cached runs on
+    // `end` — mirroring the STYLEREF/REF/table-formula complex-field sinks.
+    let fld_type = field_char_type(e);
+    match fld_type.as_deref() {
+        Some("begin") => result_starts.push(None),
+        Some("separate") => {
+            if let Some(start) = result_starts.last_mut() {
+                *start = Some(text.len());
+            }
+        }
+        _ => {}
+    }
+    let mut computed_source = None;
     apply_complex_field_scan_fld_char(e, current, |field| {
-        if !push_tc_entry(&field.instruction, bookmarks, entries)
-            && !push_computed_toc_sequence_result(
+        if push_tc_entry(&field.instruction, bookmarks, entries)
+            || push_computed_toc_sequence_result(
                 Some(&field.instruction),
                 sequence_counters,
                 sequence_identifiers,
                 text,
             )
         {
-            if let Some(identifier) = seq_identifier_from_instruction(Some(&field.instruction)) {
-                push_unique(sequence_identifiers, identifier);
+            return;
+        }
+        if let Some(identifier) = seq_identifier_from_instruction(Some(&field.instruction)) {
+            push_unique(sequence_identifiers, identifier);
+            return;
+        }
+        computed_source = computed_toc_source_field_result(Some(&field.instruction));
+    });
+    if fld_type.as_deref() == Some("end") {
+        if let (Some(Some(start)), Some(computed)) = (result_starts.pop(), computed_source) {
+            if start <= text.len() {
+                text.replace_range(start.., &computed);
             }
         }
-    });
+    }
 }
 
 fn push_tc_entry_from_instruction(
