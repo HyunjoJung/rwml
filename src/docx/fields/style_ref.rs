@@ -518,6 +518,7 @@ fn read_style_ref_simple_field_result(
 ) -> String {
     let mut text = String::new();
     let mut current: Option<StyleRefScanField> = None;
+    let entry_start = entries.len();
     let mut depth = 1usize;
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
@@ -630,7 +631,14 @@ fn read_style_ref_simple_field_result(
             _ => {}
         }
     }
-    computed_style_ref_source_field_result(instruction).unwrap_or(text)
+    if let Some(computed) = computed_style_ref_source_field_result(instruction) {
+        let cached_text = normalize_toc_text(&text);
+        if entries.len() == entry_start + 1 && entries[entry_start].text == cached_text {
+            entries[entry_start].text = computed.clone();
+        }
+        return computed;
+    }
+    text
 }
 
 fn computed_style_ref_source_field_result(instruction: Option<&str>) -> Option<String> {
