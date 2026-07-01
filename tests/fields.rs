@@ -1068,7 +1068,7 @@ fn formula_table_header_row_reference_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:p><w:fldSimple w:instr=" = SUM(BELOW) "><w:r><w:t>stale header below sum</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = COUNT(BELOW) "><w:r><w:t>stale header below count</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr><w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:p><w:r><w:t>200</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>300</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>4</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>3</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>6</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:fldSimple w:instr=" = SUM(ABOVE) "><w:r><w:t>stale body above sum</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = COUNT(ABOVE) "><w:r><w:t>stale body above count</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:p><w:fldSimple w:instr=" = SUM(BELOW) "><w:r><w:t>stale header below sum</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = COUNT(BELOW) "><w:r><w:t>stale header below count</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:r><w:t>400</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:trPr><w:tblHeader/></w:trPr><w:tc><w:p><w:r><w:t>200</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>300</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>500</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>2</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>4</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>7</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:r><w:t>3</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>6</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>8</w:t></w:r></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:fldSimple w:instr=" = SUM(ABOVE) "><w:r><w:t>stale body above sum</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = COUNT(ABOVE) "><w:r><w:t>stale body above count</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(C) "><w:r><w:t>stale body column sum</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
         ),
     ])
 }
@@ -7885,6 +7885,7 @@ fn docx_table_formula_positional_arguments_skip_header_rows() {
         (r#"= COUNT(BELOW)"#, "stale header below count", Some("2")),
         (r#"= SUM(ABOVE)"#, "stale body above sum", Some("5")),
         (r#"= COUNT(ABOVE)"#, "stale body above count", Some("2")),
+        (r#"= SUM(C)"#, "stale body column sum", Some("15")),
     ];
 
     assert_eq!(fields.len(), expected.len());
@@ -7898,12 +7899,14 @@ fn docx_table_formula_positional_arguments_skip_header_rows() {
     let main_text = doc.main_text();
     assert!(
         main_text.contains("5")
+            && main_text.contains("15")
             && main_text.contains("2")
             && !main_text.contains("stale header below sum")
             && !main_text.contains("stale header below count")
             && !main_text.contains("stale body above sum")
-            && !main_text.contains("stale body above count"),
-        "header rows should not contribute to positional table formulas: {main_text:?}"
+            && !main_text.contains("stale body above count")
+            && !main_text.contains("stale body column sum"),
+        "header rows should not contribute to positional table formulas, including current-column formulas: {main_text:?}"
     );
 }
 

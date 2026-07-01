@@ -1370,7 +1370,7 @@ fn push_table_formula_argument_values(
             for (row_index, table_row) in rows.iter().enumerate() {
                 if row_index != row {
                     if let Some(cell) = table_row.get(col) {
-                        push_table_formula_cell_number(cell, values)?;
+                        push_table_formula_directional_cell_number(cell, values)?;
                     }
                 }
             }
