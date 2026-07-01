@@ -2016,6 +2016,27 @@ fn revision_number_text_format_docx() -> Vec<u8> {
     ])
 }
 
+fn doc_property_revision_number_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rIdCore" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>"#,
+        ),
+        (
+            "docProps/core.xml",
+            r#"<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"><cp:revision>12</cp:revision></cp:coreProperties>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" DOCPROPERTY RevisionNumber "><w:r><w:t>stale revnum property</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DOCPROPERTY &quot;Revision Number&quot; "><w:r><w:t>stale spaced revnum</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn section_field_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -12190,6 +12211,36 @@ fn docx_revnum_field_computes_with_text_format_switches() {
     assert!(
         !main_text.contains("stale"),
         "formatted REVNUM fields should replace stale cached text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_docproperty_revision_number_matches_revnum() {
+    let doc = Document::open(&doc_property_revision_number_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    for field in &fields {
+        assert_eq!(
+            field.kind,
+            FieldKind::DocumentInfo("DOCPROPERTY".to_string())
+        );
+        assert_eq!(field.computed_result.as_deref(), Some("12"));
+    }
+    assert_eq!(fields[0].instruction, "DOCPROPERTY RevisionNumber");
+    assert_eq!(fields[0].result, "stale revnum property");
+    assert_eq!(fields[1].instruction, "DOCPROPERTY \"Revision Number\"");
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("12")
+            && !main_text.contains("stale revnum property")
+            && !main_text.contains("stale spaced revnum"),
+        "DOCPROPERTY RevisionNumber should compute the core revision: {main_text:?}"
     );
 }
 
