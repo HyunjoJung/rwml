@@ -56,6 +56,7 @@ struct StyleRefScanField {
     instruction: String,
     phase: FieldPhase,
     paragraph_result_start: Option<usize>,
+    entry_result_start: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -392,6 +393,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
                             next_order,
                             paragraph_number,
                             paragraph_text,
+                            entries,
                         );
                     }
                     b"instrText" => {
@@ -452,6 +454,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
                             next_order,
                             paragraph_number,
                             paragraph_text,
+                            entries,
                         );
                     }
                     b"sym" => {
@@ -761,6 +764,7 @@ fn apply_style_ref_scan_fld_char(
     next_order: &mut usize,
     paragraph_number: &Option<StyleRefParagraphNumber>,
     paragraph_text: &mut String,
+    entries: &mut Vec<StyleRefEntry>,
 ) {
     match field_char_type(e).as_deref() {
         Some("begin") => {
@@ -768,12 +772,14 @@ fn apply_style_ref_scan_fld_char(
                 instruction: String::new(),
                 phase: FieldPhase::Instruction,
                 paragraph_result_start: None,
+                entry_result_start: None,
             });
         }
         Some("separate") => {
             if let Some(field) = current.as_mut() {
                 field.phase = FieldPhase::Result;
                 field.paragraph_result_start = Some(paragraph_text.len());
+                field.entry_result_start = Some(entries.len());
             }
         }
         Some("end") => {
@@ -782,6 +788,14 @@ fn apply_style_ref_scan_fld_char(
                     field.paragraph_result_start,
                     computed_style_ref_source_field_result(Some(&field.instruction)),
                 ) {
+                    let cached_text = normalize_toc_text(&paragraph_text[start..]);
+                    if let Some(entry_start) = field.entry_result_start {
+                        if entries.len() == entry_start + 1
+                            && entries[entry_start].text == cached_text
+                        {
+                            entries[entry_start].text = computed.clone();
+                        }
+                    }
                     paragraph_text.replace_range(start.., &computed);
                 }
                 record_style_ref_field(
