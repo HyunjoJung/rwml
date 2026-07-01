@@ -680,6 +680,18 @@ fn read_style_ref_simple_field_result(
                         if attr_local(&e, b"instr")
                             .as_deref()
                             .is_some_and(is_style_ref_field_instruction) => {}
+                    b"fldSimple" => {
+                        if let Some(computed) = computed_style_ref_source_field_result(
+                            attr_local(&e, b"instr").as_deref(),
+                            document_bookmarks,
+                            sequence_counters,
+                            autonum_counter,
+                            listnum_counter,
+                            field_bookmarks,
+                        ) {
+                            text.push_str(&computed);
+                        }
+                    }
                     b"sym" => {
                         if let Some(symbol) = style_ref_symbol_text(&e) {
                             text.push_str(&symbol);
