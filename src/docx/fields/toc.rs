@@ -1,3 +1,6 @@
+use super::reference::{
+    computed_ref_bookmark_text_result, direct_bookmark_ref_instruction, ref_instruction,
+};
 use super::*;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,7 +25,11 @@ pub(crate) enum TocEntrySource {
     SequenceField,
 }
 
-pub(crate) fn toc_entries(xml: &str, styles: &Styles) -> Vec<TocEntry> {
+pub(crate) fn toc_entries(
+    xml: &str,
+    styles: &Styles,
+    ref_targets: &HashMap<String, String>,
+) -> Vec<TocEntry> {
     let mut r = Reader::from_str(xml);
     let mut entries = Vec::new();
     let mut active_bookmarks = Vec::new();
@@ -57,6 +64,7 @@ pub(crate) fn toc_entries(xml: &str, styles: &Styles) -> Vec<TocEntry> {
                             &mut active_bookmarks,
                             &mut sequence_counters,
                             &mut entries,
+                            ref_targets,
                         );
                         consumed_element = true;
                     }
@@ -109,6 +117,7 @@ fn read_toc_paragraph(
     active_bookmarks: &mut Vec<(String, String)>,
     sequence_counters: &mut HashMap<String, i64>,
     entries: &mut Vec<TocEntry>,
+    ref_targets: &HashMap<String, String>,
 ) {
     let mut style_id: Option<String> = None;
     let mut outline: Option<u8> = None;
@@ -167,6 +176,7 @@ fn read_toc_paragraph(
                                 sequence_counters,
                                 &mut sequence_identifiers,
                                 entries,
+                                ref_targets,
                             ));
                             consumed_element = true;
                         }
@@ -181,6 +191,7 @@ fn read_toc_paragraph(
                             &mut sequence_identifiers,
                             &mut text,
                             entries,
+                            ref_targets,
                         );
                     }
                     b"instrText" => {
@@ -239,9 +250,10 @@ fn read_toc_paragraph(
                                 &mut text,
                             )
                         {
-                            if let Some(computed) =
-                                computed_toc_source_field_result(instruction.as_deref())
-                            {
+                            if let Some(computed) = computed_toc_source_field_result(
+                                instruction.as_deref(),
+                                ref_targets,
+                            ) {
                                 text.push_str(&computed);
                             }
                         }
@@ -256,6 +268,7 @@ fn read_toc_paragraph(
                             &mut sequence_identifiers,
                             &mut text,
                             entries,
+                            ref_targets,
                         );
                     }
                     b"sym" => {
@@ -347,6 +360,7 @@ fn read_toc_simple_field_result(
     sequence_counters: &mut HashMap<String, i64>,
     sequence_identifiers: &mut Vec<String>,
     entries: &mut Vec<TocEntry>,
+    ref_targets: &HashMap<String, String>,
 ) -> String {
     let mut text = String::new();
     let mut current = Vec::new();
@@ -399,6 +413,7 @@ fn read_toc_simple_field_result(
                                 sequence_counters,
                                 sequence_identifiers,
                                 entries,
+                                ref_targets,
                             ));
                         }
                         consumed_element = true;
@@ -413,6 +428,7 @@ fn read_toc_simple_field_result(
                             sequence_identifiers,
                             &mut text,
                             entries,
+                            ref_targets,
                         );
                     }
                     b"instrText" => {
@@ -479,9 +495,10 @@ fn read_toc_simple_field_result(
                             sequence_identifiers,
                             &mut text,
                         ) {
-                            if let Some(computed) =
-                                computed_toc_source_field_result(nested_instruction.as_deref())
-                            {
+                            if let Some(computed) = computed_toc_source_field_result(
+                                nested_instruction.as_deref(),
+                                ref_targets,
+                            ) {
                                 text.push_str(&computed);
                             }
                         }
@@ -496,6 +513,7 @@ fn read_toc_simple_field_result(
                             sequence_identifiers,
                             &mut text,
                             entries,
+                            ref_targets,
                         );
                     }
                     b"sym" => {
@@ -539,7 +557,7 @@ fn read_toc_simple_field_result(
             _ => {}
         }
     }
-    computed_toc_source_field_result(instruction).unwrap_or(text)
+    computed_toc_source_field_result(instruction, ref_targets).unwrap_or(text)
 }
 
 fn toc_source_hidden_field_result(current: &[ComplexField]) -> bool {
@@ -565,6 +583,7 @@ fn apply_toc_fld_char(
     sequence_identifiers: &mut Vec<String>,
     text: &mut String,
     entries: &mut Vec<TocEntry>,
+    ref_targets: &HashMap<String, String>,
 ) {
     // Track where each complex field's result text begins in `text`, so a
     // deterministic source-field result can overwrite the leaked cached runs on
@@ -595,7 +614,7 @@ fn apply_toc_fld_char(
             push_unique(sequence_identifiers, identifier);
             return;
         }
-        computed_source = computed_toc_source_field_result(Some(&field.instruction));
+        computed_source = computed_toc_source_field_result(Some(&field.instruction), ref_targets);
     });
     if fld_type.as_deref() == Some("end") {
         if let (Some(Some(start)), Some(computed)) = (result_starts.pop(), computed_source) {
@@ -674,7 +693,10 @@ fn push_computed_toc_sequence_result(
     true
 }
 
-fn computed_toc_source_field_result(instruction: Option<&str>) -> Option<String> {
+fn computed_toc_source_field_result(
+    instruction: Option<&str>,
+    ref_targets: &HashMap<String, String>,
+) -> Option<String> {
     let instruction = normalize_instruction(instruction?);
     if is_tc_instruction(&instruction)
         || seq_identifier_from_instruction(Some(&instruction)).is_some()
@@ -691,7 +713,8 @@ fn computed_toc_source_field_result(instruction: Option<&str>) -> Option<String>
         }
         _ => {}
     }
-    super::computed_quote_result(&instruction)
+    computed_toc_source_ref_result(&instruction, ref_targets)
+        .or_else(|| super::computed_quote_result(&instruction))
         .or_else(|| super::computed_fill_in_result(&instruction))
         .or_else(|| super::computed_if_result_with_bookmarks(&instruction, &field_bookmarks))
         .or_else(|| super::computed_compare_result_with_bookmarks(&instruction, &field_bookmarks))
@@ -701,6 +724,31 @@ fn computed_toc_source_field_result(instruction: Option<&str>) -> Option<String>
         .or_else(|| computed_display_result(&instruction))
         .or_else(|| computed_action_result(&instruction))
         .or_else(|| computed_reference_index_result(&instruction))
+}
+
+// Plain-bookmark-text REF only, mirroring computed_style_ref_source_ref_result:
+// note/relative/paragraph-number/context REFs stay cached (return None) because
+// those are layout-derived and out of scope for source-text splicing.
+fn computed_toc_source_ref_result(
+    instruction: &str,
+    document_bookmarks: &HashMap<String, String>,
+) -> Option<String> {
+    let spec =
+        ref_instruction(instruction).or_else(|| direct_bookmark_ref_instruction(instruction))?;
+    if spec.note_reference
+        || spec.relative
+        || spec.paragraph_number
+        || spec.full_context_number
+        || spec.relative_context_number
+    {
+        return None;
+    }
+    if spec.sequence_separator {
+        spec.sequence_separator_value.as_deref()?;
+    }
+    let text = document_bookmarks.get(&spec.target)?;
+    let text = computed_ref_bookmark_text_result(text, spec.number_format)?;
+    Some(apply_field_text_format(text, spec.text_format))
 }
 
 pub(crate) fn seq_identifier_from_instruction(instruction: Option<&str>) -> Option<String> {

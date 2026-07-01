@@ -269,7 +269,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     let style_ref_context = fields::style_ref_context(&doc_xml, &styles, &numbering, &ref_targets);
     let legacy_form_context = fields::legacy_form_context(&doc_xml, preserve_legacy_form_cache);
     let table_formula_context = fields::table_formula_context(&doc_xml, &ref_targets);
-    let toc_entries = fields::toc_entries(&doc_xml, &styles);
+    let toc_entries = fields::toc_entries(&doc_xml, &styles, &ref_targets);
     let bookmark_names = fields::bookmark_names(&doc_xml);
     let document_properties = DocumentPropertyRefs {
         core: &core_properties,
@@ -790,7 +790,7 @@ fn read_hf_parts(
         let style_ref_context = fields::StyleRefContext::empty();
         let legacy_form_context = fields::legacy_form_context(&xml, preserve_legacy_form_cache);
         let table_formula_context = fields::TableFormulaContext::empty();
-        let toc_entries = fields::toc_entries(&xml, styles);
+        let toc_entries = fields::toc_entries(&xml, styles, &ref_targets);
         let bookmark_names = fields::bookmark_names(&xml);
         let hf_ctx = body::Ctx {
             styles,
@@ -960,7 +960,7 @@ fn read_notes(
     let style_ref_context = fields::StyleRefContext::empty();
     let legacy_form_context = fields::legacy_form_context(&xml, preserve_legacy_form_cache);
     let table_formula_context = fields::TableFormulaContext::empty();
-    let toc_entries = fields::toc_entries(&xml, styles);
+    let toc_entries = fields::toc_entries(&xml, styles, &ref_targets);
     let bookmark_names = fields::bookmark_names(&xml);
     let ctx = body::Ctx {
         styles,

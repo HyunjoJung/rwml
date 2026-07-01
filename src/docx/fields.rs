@@ -2822,7 +2822,7 @@ mod tests {
             </w:body>
         </w:document>"#;
 
-        let entries = toc_entries(xml, &Styles::default());
+        let entries = toc_entries(xml, &Styles::default(), &HashMap::new());
         let sequence = entries
             .iter()
             .find(|entry| entry.source == TocEntrySource::SequenceField)
@@ -2867,11 +2867,13 @@ mod tests {
             .is_some());
         assert!(page_ref_context(xml).target_position("Figure1").is_some());
         assert!(note_ref_context(xml).targets.contains_key("FootOne"));
-        assert!(toc_entries(xml, &Styles::default()).iter().any(|entry| {
-            entry.text == "Scoped Heading"
-                && entry.bookmarks.len() == 1
-                && entry.bookmarks[0] == "ScopedToc"
-        }));
+        assert!(toc_entries(xml, &Styles::default(), &HashMap::new())
+            .iter()
+            .any(|entry| {
+                entry.text == "Scoped Heading"
+                    && entry.bookmarks.len() == 1
+                    && entry.bookmarks[0] == "ScopedToc"
+            }));
     }
 
     #[test]
