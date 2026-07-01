@@ -304,21 +304,22 @@ fn read_simple_field(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Field {
 fn read_simple_field_result(
     r: &mut Xml<'_>,
     start: &BytesStart<'_>,
-    mut nested_simple_field_result: impl FnMut(&str, &str) -> Option<String>,
+    mut nested_field_result: impl FnMut(&str, &str) -> Option<String>,
 ) -> (String, String) {
-    read_simple_field_result_with_nested(r, start, &mut nested_simple_field_result)
+    read_simple_field_result_with_nested(r, start, &mut nested_field_result)
 }
 
 fn read_simple_field_result_with_nested<F>(
     r: &mut Xml<'_>,
     start: &BytesStart<'_>,
-    nested_simple_field_result: &mut F,
+    nested_field_result: &mut F,
 ) -> (String, String)
 where
     F: FnMut(&str, &str) -> Option<String>,
 {
     let instruction = attr_local(start, b"instr").unwrap_or_default();
     let mut result = String::new();
+    let mut current = Vec::new();
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
     loop {
@@ -342,20 +343,38 @@ where
                             took_branch: false,
                         });
                     }
+                    b"fldChar" => {
+                        apply_simple_result_fld_char(
+                            &e,
+                            &mut current,
+                            &mut result,
+                            nested_field_result,
+                        );
+                    }
+                    b"instrText" => {
+                        let text = read_text(r);
+                        if let Some(field) = current.last_mut() {
+                            if field.phase == FieldPhase::Instruction {
+                                field.instruction.push_str(&text);
+                            }
+                        }
+                        consumed_element = true;
+                    }
                     b"fldSimple" => {
                         let (nested_instruction, nested_result) =
-                            read_simple_field_result_with_nested(r, &e, nested_simple_field_result);
-                        let text = nested_simple_field_result(&nested_instruction, &nested_result)
+                            read_simple_field_result_with_nested(r, &e, nested_field_result);
+                        let text = nested_field_result(&nested_instruction, &nested_result)
                             .unwrap_or(nested_result);
-                        result.push_str(&text);
+                        append_simple_result_text(&mut result, &mut current, &text);
                         consumed_element = true;
                     }
                     b"t" => {
-                        result.push_str(&read_text(r));
+                        let text = read_text(r);
+                        append_simple_result_text(&mut result, &mut current, &text);
                         consumed_element = true;
                     }
                     _ => {
-                        append_field_result_inline(&mut result, &e);
+                        append_simple_result_inline(&mut result, &mut current, &e);
                     }
                 }
                 if !consumed_element {
@@ -368,15 +387,26 @@ where
                 if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
                     continue;
                 }
-                if name == b"fldSimple" {
-                    let instruction = attr_local(&e, b"instr").unwrap_or_default();
-                    if let Some(text) = nested_simple_field_result(&instruction, "") {
-                        result.push_str(&text);
-                    } else {
-                        append_field_result_inline(&mut result, &e);
+                match name {
+                    b"fldChar" => {
+                        apply_simple_result_fld_char(
+                            &e,
+                            &mut current,
+                            &mut result,
+                            nested_field_result,
+                        );
                     }
-                } else {
-                    append_field_result_inline(&mut result, &e);
+                    b"fldSimple" => {
+                        let instruction = attr_local(&e, b"instr").unwrap_or_default();
+                        if let Some(text) = nested_field_result(&instruction, "") {
+                            append_simple_result_text(&mut result, &mut current, &text);
+                        } else {
+                            append_simple_result_inline(&mut result, &mut current, &e);
+                        }
+                    }
+                    _ => {
+                        append_simple_result_inline(&mut result, &mut current, &e);
+                    }
                 }
             }
             Ok(Event::End(e)) => {
@@ -395,6 +425,57 @@ where
         }
     }
     (instruction, result)
+}
+
+fn apply_simple_result_fld_char<F>(
+    e: &BytesStart<'_>,
+    current: &mut Vec<ComplexField>,
+    result: &mut String,
+    nested_field_result: &mut F,
+) where
+    F: FnMut(&str, &str) -> Option<String>,
+{
+    match field_char_type(e).as_deref() {
+        Some("begin") => current.push(ComplexField {
+            instruction: String::new(),
+            result: String::new(),
+            phase: FieldPhase::Instruction,
+        }),
+        Some("separate") => {
+            if let Some(field) = current.last_mut() {
+                field.phase = FieldPhase::Result;
+            }
+        }
+        Some("end") => {
+            let Some(field) = current.pop() else {
+                return;
+            };
+            let text =
+                nested_field_result(&field.instruction, &field.result).unwrap_or(field.result);
+            append_simple_result_text(result, current, &text);
+        }
+        _ => {}
+    }
+}
+
+fn append_simple_result_text(result: &mut String, current: &mut [ComplexField], text: &str) {
+    if let Some(field) = current.last_mut() {
+        if field.phase == FieldPhase::Result {
+            field.result.push_str(text);
+        }
+    } else {
+        result.push_str(text);
+    }
+}
+
+fn append_simple_result_inline(
+    result: &mut String,
+    current: &mut [ComplexField],
+    e: &BytesStart<'_>,
+) {
+    let mut text = String::new();
+    append_field_result_inline(&mut text, e);
+    append_simple_result_text(result, current, &text);
 }
 
 fn apply_fld_char(e: &BytesStart<'_>, current: &mut Vec<ComplexField>, out: &mut Vec<Field>) {
