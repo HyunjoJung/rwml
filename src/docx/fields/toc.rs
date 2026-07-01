@@ -157,10 +157,17 @@ fn read_toc_paragraph(
                         ) {
                             skip_element(r, b"fldSimple");
                             consumed_element = true;
-                        } else if let Some(identifier) =
-                            seq_identifier_from_instruction(instruction.as_deref())
-                        {
-                            push_unique(&mut sequence_identifiers, identifier);
+                        } else {
+                            text.push_str(&read_toc_simple_field_result(
+                                r,
+                                instruction.as_deref(),
+                                active_bookmarks,
+                                &mut bookmarks,
+                                sequence_counters,
+                                &mut sequence_identifiers,
+                                entries,
+                            ));
+                            consumed_element = true;
                         }
                     }
                     b"fldChar" => {
@@ -230,10 +237,10 @@ fn read_toc_paragraph(
                                 &mut text,
                             )
                         {
-                            if let Some(identifier) =
-                                seq_identifier_from_instruction(instruction.as_deref())
+                            if let Some(computed) =
+                                computed_toc_source_field_result(instruction.as_deref())
                             {
-                                push_unique(&mut sequence_identifiers, identifier);
+                                text.push_str(&computed);
                             }
                         }
                     }
@@ -327,6 +334,206 @@ fn read_toc_paragraph(
             style_name,
         });
     }
+}
+
+fn read_toc_simple_field_result(
+    r: &mut Xml<'_>,
+    instruction: Option<&str>,
+    active_bookmarks: &mut Vec<(String, String)>,
+    bookmarks: &mut Vec<String>,
+    sequence_counters: &mut HashMap<String, i64>,
+    sequence_identifiers: &mut Vec<String>,
+    entries: &mut Vec<TocEntry>,
+) -> String {
+    let mut text = String::new();
+    let mut current = Vec::new();
+    let mut depth = 1usize;
+    let mut xml_depth = 0usize;
+    let mut alternate_content_stack = Vec::new();
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    skip_subtree(r);
+                    continue;
+                }
+                if matches!(name, b"del" | b"moveFrom") {
+                    skip_subtree(r);
+                    continue;
+                }
+                let mut consumed_element = false;
+                match name {
+                    b"AlternateContent" => {
+                        alternate_content_stack.push(AlternateContentBranchState {
+                            branch_depth: xml_depth + 1,
+                            took_branch: false,
+                        });
+                    }
+                    b"fldSimple" => {
+                        let nested_instruction = attr_local(&e, b"instr");
+                        if push_tc_entry_from_instruction(
+                            nested_instruction.clone(),
+                            bookmarks.as_slice(),
+                            entries,
+                        ) {
+                            skip_element(r, b"fldSimple");
+                        } else if push_computed_toc_sequence_result(
+                            nested_instruction.as_deref(),
+                            sequence_counters,
+                            sequence_identifiers,
+                            &mut text,
+                        ) {
+                            skip_element(r, b"fldSimple");
+                        } else {
+                            text.push_str(&read_toc_simple_field_result(
+                                r,
+                                nested_instruction.as_deref(),
+                                active_bookmarks,
+                                bookmarks,
+                                sequence_counters,
+                                sequence_identifiers,
+                                entries,
+                            ));
+                        }
+                        consumed_element = true;
+                    }
+                    b"fldChar" => {
+                        apply_toc_fld_char(
+                            &e,
+                            &mut current,
+                            bookmarks,
+                            sequence_counters,
+                            sequence_identifiers,
+                            &mut text,
+                            entries,
+                        );
+                    }
+                    b"instrText" => {
+                        let field_text = read_text(r);
+                        consumed_element = true;
+                        if let Some(field) = current.last_mut() {
+                            if field.phase == FieldPhase::Instruction {
+                                field.instruction.push_str(&field_text);
+                            }
+                        }
+                    }
+                    b"t" => {
+                        let run_text = read_text(r);
+                        consumed_element = true;
+                        if !toc_source_hidden_field_result(&current) {
+                            text.push_str(&run_text);
+                        }
+                    }
+                    b"sym" => {
+                        if !toc_source_hidden_field_result(&current) {
+                            if let Some(ch) = toc_symbol_char(&e) {
+                                text.push(ch);
+                            }
+                        }
+                    }
+                    b"tab" | b"br" | b"cr" => text.push(' '),
+                    b"noBreakHyphen" => text.push('-'),
+                    b"softHyphen" => text.push('\u{00ad}'),
+                    b"bookmarkStart" => {
+                        if let Some(name) = push_active_bookmark(active_bookmarks, &e) {
+                            push_unique(bookmarks, name);
+                        }
+                    }
+                    b"bookmarkEnd" => remove_active_bookmark(active_bookmarks, &e),
+                    _ => {
+                        if let Some(marker) = inline_marker_text(&e) {
+                            if !toc_source_hidden_field_result(&current) {
+                                text.push_str(marker);
+                            }
+                        }
+                    }
+                }
+                if !consumed_element {
+                    depth += 1;
+                    xml_depth = xml_depth.saturating_add(1);
+                }
+            }
+            Ok(Event::Empty(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
+                    continue;
+                }
+                match name {
+                    b"fldSimple" => {
+                        let nested_instruction = attr_local(&e, b"instr");
+                        if !push_tc_entry_from_instruction(
+                            nested_instruction.clone(),
+                            bookmarks.as_slice(),
+                            entries,
+                        ) && !push_computed_toc_sequence_result(
+                            nested_instruction.as_deref(),
+                            sequence_counters,
+                            sequence_identifiers,
+                            &mut text,
+                        ) {
+                            if let Some(computed) =
+                                computed_toc_source_field_result(nested_instruction.as_deref())
+                            {
+                                text.push_str(&computed);
+                            }
+                        }
+                    }
+                    b"fldChar" => {
+                        apply_toc_fld_char(
+                            &e,
+                            &mut current,
+                            bookmarks,
+                            sequence_counters,
+                            sequence_identifiers,
+                            &mut text,
+                            entries,
+                        );
+                    }
+                    b"sym" => {
+                        if !toc_source_hidden_field_result(&current) {
+                            if let Some(ch) = toc_symbol_char(&e) {
+                                text.push(ch);
+                            }
+                        }
+                    }
+                    b"tab" | b"br" | b"cr" => text.push(' '),
+                    b"noBreakHyphen" => text.push('-'),
+                    b"softHyphen" => text.push('\u{00ad}'),
+                    b"bookmarkStart" => {
+                        if let Some(name) = push_active_bookmark(active_bookmarks, &e) {
+                            push_unique(bookmarks, name);
+                        }
+                    }
+                    b"bookmarkEnd" => remove_active_bookmark(active_bookmarks, &e),
+                    _ => {
+                        if let Some(marker) = inline_marker_text(&e) {
+                            if !toc_source_hidden_field_result(&current) {
+                                text.push_str(marker);
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(Event::End(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if name == b"fldSimple" && depth == 1 {
+                    break;
+                }
+                if name == b"AlternateContent" {
+                    alternate_content_stack.pop();
+                }
+                depth = depth.saturating_sub(1);
+                xml_depth = xml_depth.saturating_sub(1);
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    computed_toc_source_field_result(instruction).unwrap_or(text)
 }
 
 fn toc_source_hidden_field_result(current: &[ComplexField]) -> bool {
@@ -434,6 +641,26 @@ fn push_computed_toc_sequence_result(
     push_unique(sequence_identifiers, identifier);
     text.push_str(&result);
     true
+}
+
+fn computed_toc_source_field_result(instruction: Option<&str>) -> Option<String> {
+    let instruction = normalize_instruction(instruction?);
+    if is_tc_instruction(&instruction)
+        || seq_identifier_from_instruction(Some(&instruction)).is_some()
+    {
+        return None;
+    }
+    let field_bookmarks = HashMap::new();
+    super::computed_quote_result(&instruction)
+        .or_else(|| super::computed_fill_in_result(&instruction))
+        .or_else(|| super::computed_if_result_with_bookmarks(&instruction, &field_bookmarks))
+        .or_else(|| super::computed_compare_result_with_bookmarks(&instruction, &field_bookmarks))
+        .or_else(|| {
+            super::computed_merge_control_result_with_bookmarks(&instruction, &field_bookmarks)
+        })
+        .or_else(|| computed_display_result(&instruction))
+        .or_else(|| computed_action_result(&instruction))
+        .or_else(|| computed_reference_index_result(&instruction))
 }
 
 pub(crate) fn seq_identifier_from_instruction(instruction: Option<&str>) -> Option<String> {
