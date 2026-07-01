@@ -786,7 +786,7 @@ fn grid_span_exceeds_one(e: &BytesStart<'_>) -> bool {
 }
 
 fn read_field_result_text(r: &mut Xml<'_>) -> String {
-    read_field_result_text_with_nested_simple_fields(r, |_, _| None)
+    read_field_result_text_with_nested_fields(r, |_, _| None)
 }
 
 fn read_table_formula_source_field_result_text(
@@ -797,7 +797,7 @@ fn read_table_formula_source_field_result_text(
     listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
 ) -> String {
-    read_field_result_text_with_nested_simple_fields(r, |instruction, _| {
+    read_field_result_text_with_nested_fields(r, |instruction, _| {
         let instruction = normalize_instruction(instruction);
         computed_table_formula_source_field_result(
             Some(&instruction),
@@ -810,21 +810,22 @@ fn read_table_formula_source_field_result_text(
     })
 }
 
-fn read_field_result_text_with_nested_simple_fields(
+fn read_field_result_text_with_nested_fields(
     r: &mut Xml<'_>,
-    mut nested_simple_field_result: impl FnMut(&str, &str) -> Option<String>,
+    mut nested_field_result: impl FnMut(&str, &str) -> Option<String>,
 ) -> String {
-    read_field_result_text_with_nested_simple_fields_inner(r, &mut nested_simple_field_result)
+    read_field_result_text_with_nested_fields_inner(r, &mut nested_field_result)
 }
 
-fn read_field_result_text_with_nested_simple_fields_inner<F>(
+fn read_field_result_text_with_nested_fields_inner<F>(
     r: &mut Xml<'_>,
-    nested_simple_field_result: &mut F,
+    nested_field_result: &mut F,
 ) -> String
 where
     F: FnMut(&str, &str) -> Option<String>,
 {
     let mut text = String::new();
+    let mut current = Vec::new();
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
     loop {
@@ -848,23 +849,39 @@ where
                             took_branch: false,
                         });
                     }
+                    b"fldChar" => {
+                        apply_field_result_fld_char(
+                            &e,
+                            &mut current,
+                            &mut text,
+                            nested_field_result,
+                        );
+                    }
+                    b"instrText" => {
+                        let result = read_text(r);
+                        if let Some(field) = current.last_mut() {
+                            if field.phase == FieldPhase::Instruction {
+                                field.instruction.push_str(&result);
+                            }
+                        }
+                        consumed_element = true;
+                    }
                     b"fldSimple" => {
                         let instruction = attr_local(&e, b"instr").unwrap_or_default();
-                        let nested_result = read_field_result_text_with_nested_simple_fields_inner(
-                            r,
-                            nested_simple_field_result,
-                        );
-                        let result = nested_simple_field_result(&instruction, &nested_result)
+                        let nested_result =
+                            read_field_result_text_with_nested_fields_inner(r, nested_field_result);
+                        let result = nested_field_result(&instruction, &nested_result)
                             .unwrap_or(nested_result);
-                        text.push_str(&result);
+                        append_field_result_text(&mut text, &mut current, &result);
                         consumed_element = true;
                     }
                     b"t" => {
-                        text.push_str(&read_text(r));
+                        let result = read_text(r);
+                        append_field_result_text(&mut text, &mut current, &result);
                         consumed_element = true;
                     }
                     _ => {
-                        append_table_formula_result_inline(&mut text, &e);
+                        append_field_result_inline_text(&mut text, &mut current, &e);
                     }
                 }
                 if !consumed_element {
@@ -877,15 +894,26 @@ where
                 if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
                     continue;
                 }
-                if name == b"fldSimple" {
-                    let instruction = attr_local(&e, b"instr").unwrap_or_default();
-                    if let Some(computed) = nested_simple_field_result(&instruction, "") {
-                        text.push_str(&computed);
-                    } else {
-                        append_table_formula_result_inline(&mut text, &e);
+                match name {
+                    b"fldChar" => {
+                        apply_field_result_fld_char(
+                            &e,
+                            &mut current,
+                            &mut text,
+                            nested_field_result,
+                        );
                     }
-                } else {
-                    append_table_formula_result_inline(&mut text, &e);
+                    b"fldSimple" => {
+                        let instruction = attr_local(&e, b"instr").unwrap_or_default();
+                        if let Some(computed) = nested_field_result(&instruction, "") {
+                            append_field_result_text(&mut text, &mut current, &computed);
+                        } else {
+                            append_field_result_inline_text(&mut text, &mut current, &e);
+                        }
+                    }
+                    _ => {
+                        append_field_result_inline_text(&mut text, &mut current, &e);
+                    }
                 }
             }
             Ok(Event::End(e)) => {
@@ -904,6 +932,57 @@ where
         }
     }
     text
+}
+
+fn apply_field_result_fld_char<F>(
+    e: &BytesStart<'_>,
+    current: &mut Vec<ComplexField>,
+    text: &mut String,
+    nested_field_result: &mut F,
+) where
+    F: FnMut(&str, &str) -> Option<String>,
+{
+    match field_char_type(e).as_deref() {
+        Some("begin") => current.push(ComplexField {
+            instruction: String::new(),
+            result: String::new(),
+            phase: FieldPhase::Instruction,
+        }),
+        Some("separate") => {
+            if let Some(field) = current.last_mut() {
+                field.phase = FieldPhase::Result;
+            }
+        }
+        Some("end") => {
+            let Some(field) = current.pop() else {
+                return;
+            };
+            let result =
+                nested_field_result(&field.instruction, &field.result).unwrap_or(field.result);
+            append_field_result_text(text, current, &result);
+        }
+        _ => {}
+    }
+}
+
+fn append_field_result_text(text: &mut String, current: &mut [ComplexField], value: &str) {
+    if let Some(field) = current.last_mut() {
+        if field.phase == FieldPhase::Result {
+            field.result.push_str(value);
+        }
+    } else {
+        text.push_str(value);
+    }
+}
+
+fn append_field_result_inline_text(
+    text: &mut String,
+    current: &mut [ComplexField],
+    e: &BytesStart<'_>,
+) {
+    let mut value = String::new();
+    append_table_formula_result_inline(&mut value, e);
+    append_field_result_text(text, current, &value);
 }
 
 fn apply_table_formula_cell_fld_char(
