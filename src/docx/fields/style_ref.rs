@@ -227,6 +227,7 @@ fn read_style_ref_paragraph(
                         } else {
                             text.push_str(&read_style_ref_simple_field_result(
                                 r,
+                                instruction.as_deref(),
                                 styles,
                                 entries,
                                 field_positions,
@@ -505,6 +506,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
 
 fn read_style_ref_simple_field_result(
     r: &mut Xml<'_>,
+    instruction: Option<&str>,
     styles: &Styles,
     entries: &mut Vec<StyleRefEntry>,
     field_positions: &mut Vec<StyleRefFieldPosition>,
@@ -625,7 +627,18 @@ fn read_style_ref_simple_field_result(
             _ => {}
         }
     }
-    text
+    computed_style_ref_source_field_result(instruction).unwrap_or(text)
+}
+
+fn computed_style_ref_source_field_result(instruction: Option<&str>) -> Option<String> {
+    let instruction = normalize_instruction(instruction?);
+    if is_style_ref_field_instruction(&instruction) {
+        return None;
+    }
+    super::computed_dynamic_result_with_bookmarks(&instruction, &HashMap::new())
+        .or_else(|| computed_display_result(&instruction))
+        .or_else(|| computed_action_result(&instruction))
+        .or_else(|| computed_reference_index_result(&instruction))
 }
 
 fn ensure_style_ref_paragraph_number(
