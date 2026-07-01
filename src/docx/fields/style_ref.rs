@@ -165,7 +165,7 @@ fn read_style_ref_paragraph(
     let mut ilvl = 0u8;
     let mut number = None;
     let mut text = String::new();
-    let mut current: Option<StyleRefScanField> = None;
+    let mut current = Vec::new();
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
     loop {
@@ -356,7 +356,7 @@ struct StyleRefRunScan<'a> {
     field_positions: &'a mut Vec<StyleRefFieldPosition>,
     next_order: &'a mut usize,
     paragraph_number: &'a Option<StyleRefParagraphNumber>,
-    current: &'a mut Option<StyleRefScanField>,
+    current: &'a mut Vec<StyleRefScanField>,
     paragraph_text: &'a mut String,
     document_bookmarks: &'a HashMap<String, String>,
     field_bookmarks: &'a mut HashMap<String, String>,
@@ -418,7 +418,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
                     b"instrText" => {
                         let field_text = read_text(r);
                         consumed_element = true;
-                        if let Some(field) = current.as_mut() {
+                        if let Some(field) = current.last_mut() {
                             if field.phase == FieldPhase::Instruction {
                                 field.instruction.push_str(&field_text);
                             }
@@ -543,7 +543,7 @@ fn read_style_ref_simple_field_result(
     field_bookmarks: &mut HashMap<String, String>,
 ) -> String {
     let mut text = String::new();
-    let mut current: Option<StyleRefScanField> = None;
+    let mut current = Vec::new();
     let entry_start = entries.len();
     let mut depth = 1usize;
     let mut xml_depth = 0usize;
@@ -816,8 +816,8 @@ fn style_ref_paragraph_number(
     })
 }
 
-fn style_ref_suppresses_source_text(current: &Option<StyleRefScanField>) -> bool {
-    current.as_ref().is_some_and(|field| {
+fn style_ref_suppresses_source_text(current: &[StyleRefScanField]) -> bool {
+    current.iter().any(|field| {
         field.phase == FieldPhase::Result && is_style_ref_field_instruction(&field.instruction)
     })
 }
@@ -846,7 +846,7 @@ fn record_style_ref_field(
 
 fn apply_style_ref_scan_fld_char(
     e: &BytesStart<'_>,
-    current: &mut Option<StyleRefScanField>,
+    current: &mut Vec<StyleRefScanField>,
     field_positions: &mut Vec<StyleRefFieldPosition>,
     next_order: &mut usize,
     paragraph_number: &Option<StyleRefParagraphNumber>,
@@ -857,7 +857,7 @@ fn apply_style_ref_scan_fld_char(
 ) {
     match field_char_type(e).as_deref() {
         Some("begin") => {
-            *current = Some(StyleRefScanField {
+            current.push(StyleRefScanField {
                 instruction: String::new(),
                 phase: FieldPhase::Instruction,
                 paragraph_result_start: None,
@@ -865,14 +865,14 @@ fn apply_style_ref_scan_fld_char(
             });
         }
         Some("separate") => {
-            if let Some(field) = current.as_mut() {
+            if let Some(field) = current.last_mut() {
                 field.phase = FieldPhase::Result;
                 field.paragraph_result_start = Some(paragraph_text.len());
                 field.entry_result_start = Some(entries.len());
             }
         }
         Some("end") => {
-            if let Some(field) = current.take() {
+            if let Some(field) = current.pop() {
                 if let (Some(start), Some(computed)) = (
                     field.paragraph_result_start,
                     computed_style_ref_source_field_result(
