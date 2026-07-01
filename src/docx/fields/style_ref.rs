@@ -70,6 +70,7 @@ pub(crate) fn style_ref_context(
     xml: &str,
     styles: &Styles,
     numbering: &Numbering,
+    document_bookmarks: &HashMap<String, String>,
 ) -> StyleRefContext {
     let mut r = Reader::from_str(xml);
     let mut entries = Vec::new();
@@ -109,6 +110,7 @@ pub(crate) fn style_ref_context(
                             &mut entries,
                             &mut field_positions,
                             &mut next_order,
+                            document_bookmarks,
                             &mut field_bookmarks,
                         );
                         consumed_element = true;
@@ -152,6 +154,7 @@ fn read_style_ref_paragraph(
     entries: &mut Vec<StyleRefEntry>,
     field_positions: &mut Vec<StyleRefFieldPosition>,
     next_order: &mut usize,
+    document_bookmarks: &HashMap<String, String>,
     field_bookmarks: &mut HashMap<String, String>,
 ) {
     let mut style_id = None;
@@ -205,6 +208,7 @@ fn read_style_ref_paragraph(
                                 paragraph_number: &number,
                                 current: &mut current,
                                 paragraph_text: &mut text,
+                                document_bookmarks,
                                 field_bookmarks,
                             },
                         );
@@ -239,6 +243,7 @@ fn read_style_ref_paragraph(
                                 field_positions,
                                 next_order,
                                 &number,
+                                document_bookmarks,
                                 field_bookmarks,
                             ));
                         }
@@ -350,6 +355,7 @@ struct StyleRefRunScan<'a> {
     paragraph_number: &'a Option<StyleRefParagraphNumber>,
     current: &'a mut Option<StyleRefScanField>,
     paragraph_text: &'a mut String,
+    document_bookmarks: &'a HashMap<String, String>,
     field_bookmarks: &'a mut HashMap<String, String>,
 }
 
@@ -362,6 +368,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
         paragraph_number,
         current,
         paragraph_text,
+        document_bookmarks,
         field_bookmarks,
     } = scan;
     let mut run_style_id = None;
@@ -401,6 +408,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
                             paragraph_number,
                             paragraph_text,
                             entries,
+                            document_bookmarks,
                             field_bookmarks,
                         );
                     }
@@ -463,6 +471,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
                             paragraph_number,
                             paragraph_text,
                             entries,
+                            document_bookmarks,
                             field_bookmarks,
                         );
                     }
@@ -527,6 +536,7 @@ fn read_style_ref_simple_field_result(
     field_positions: &mut Vec<StyleRefFieldPosition>,
     next_order: &mut usize,
     paragraph_number: &Option<StyleRefParagraphNumber>,
+    document_bookmarks: &HashMap<String, String>,
     field_bookmarks: &mut HashMap<String, String>,
 ) -> String {
     let mut text = String::new();
@@ -567,6 +577,7 @@ fn read_style_ref_simple_field_result(
                                 paragraph_number,
                                 current: &mut current,
                                 paragraph_text: &mut text,
+                                document_bookmarks,
                                 field_bookmarks,
                             },
                         );
@@ -645,7 +656,9 @@ fn read_style_ref_simple_field_result(
             _ => {}
         }
     }
-    if let Some(computed) = computed_style_ref_source_field_result(instruction, field_bookmarks) {
+    if let Some(computed) =
+        computed_style_ref_source_field_result(instruction, document_bookmarks, field_bookmarks)
+    {
         let cached_text = normalize_toc_text(&text);
         if entries.len() == entry_start + 1 && entries[entry_start].text == cached_text {
             entries[entry_start].text = computed.clone();
@@ -657,6 +670,7 @@ fn read_style_ref_simple_field_result(
 
 fn computed_style_ref_source_field_result(
     instruction: Option<&str>,
+    document_bookmarks: &HashMap<String, String>,
     field_bookmarks: &mut HashMap<String, String>,
 ) -> Option<String> {
     let instruction = normalize_instruction(instruction?);
@@ -672,7 +686,22 @@ fn computed_style_ref_source_field_result(
         }
         _ => {}
     }
-    super::computed_dynamic_result_with_bookmarks(&instruction, field_bookmarks)
+    computed_formula_result_with_bookmark_context(&instruction, document_bookmarks, field_bookmarks)
+        .or_else(|| super::computed_dynamic_result_with_bookmarks(&instruction, field_bookmarks))
+        .or_else(|| {
+            computed_if_compare_result_with_bookmark_context(
+                &instruction,
+                document_bookmarks,
+                field_bookmarks,
+            )
+        })
+        .or_else(|| {
+            computed_merge_control_result_with_bookmark_context(
+                &instruction,
+                document_bookmarks,
+                field_bookmarks,
+            )
+        })
         .or_else(|| computed_display_result(&instruction))
         .or_else(|| computed_action_result(&instruction))
         .or_else(|| computed_reference_index_result(&instruction))
@@ -788,6 +817,7 @@ fn apply_style_ref_scan_fld_char(
     paragraph_number: &Option<StyleRefParagraphNumber>,
     paragraph_text: &mut String,
     entries: &mut Vec<StyleRefEntry>,
+    document_bookmarks: &HashMap<String, String>,
     field_bookmarks: &mut HashMap<String, String>,
 ) {
     match field_char_type(e).as_deref() {
@@ -812,6 +842,7 @@ fn apply_style_ref_scan_fld_char(
                     field.paragraph_result_start,
                     computed_style_ref_source_field_result(
                         Some(&field.instruction),
+                        document_bookmarks,
                         field_bookmarks,
                     ),
                 ) {

@@ -144,7 +144,7 @@ pub(crate) fn parse(
     let page_refs = page_ref_context(xml);
     let note_refs = note_ref_context(xml);
     let sections = section_context(xml);
-    let style_refs = style_ref_context(xml, styles, numbering);
+    let style_refs = style_ref_context(xml, styles, numbering, &bookmarks);
     let legacy_forms = legacy_form_context(xml, preserve_legacy_form_cache);
     let table_formulas = table_formula_context(xml, &bookmarks);
     let sequence_headings = sequence_heading_context(xml, styles);
