@@ -1082,7 +1082,7 @@ pub(super) fn computed_ref_instruction_result(
     }
 }
 
-fn computed_ref_bookmark_text_result(
+pub(super) fn computed_ref_bookmark_text_result(
     text: &str,
     number_format: Option<PageNumberFormat>,
 ) -> Option<String> {

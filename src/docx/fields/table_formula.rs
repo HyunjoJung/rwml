@@ -11,6 +11,9 @@ use super::formula::{
     eval_formula_function, format_formula_general_number, format_formula_number,
     formula_instruction, formula_number_text, formula_truthy, FormulaNumberFormat, FormulaParser,
 };
+use super::reference::{
+    computed_ref_bookmark_text_result, direct_bookmark_ref_instruction, ref_instruction,
+};
 use super::{
     apply_complex_field_scan_fld_char, apply_field_text_format, computed_action_result,
     computed_ask_result, computed_display_result, computed_fill_in_result,
@@ -868,7 +871,14 @@ fn computed_table_formula_source_field_result(
         }
         _ => {}
     }
-    computed_formula_result_with_bookmark_context(instruction, document_bookmarks, field_bookmarks)
+    computed_table_formula_source_ref_result(instruction, document_bookmarks, field_bookmarks)
+        .or_else(|| {
+            computed_formula_result_with_bookmark_context(
+                instruction,
+                document_bookmarks,
+                field_bookmarks,
+            )
+        })
         .or_else(|| computed_quote_result(instruction))
         .or_else(|| computed_fill_in_result(instruction))
         .or_else(|| {
@@ -888,6 +898,31 @@ fn computed_table_formula_source_field_result(
         .or_else(|| computed_display_result(instruction))
         .or_else(|| computed_action_result(instruction))
         .or_else(|| computed_reference_index_result(instruction))
+}
+
+fn computed_table_formula_source_ref_result(
+    instruction: &str,
+    document_bookmarks: &HashMap<String, String>,
+    field_bookmarks: &HashMap<String, String>,
+) -> Option<String> {
+    let spec =
+        ref_instruction(instruction).or_else(|| direct_bookmark_ref_instruction(instruction))?;
+    if spec.note_reference
+        || spec.relative
+        || spec.paragraph_number
+        || spec.full_context_number
+        || spec.relative_context_number
+    {
+        return None;
+    }
+    if spec.sequence_separator {
+        spec.sequence_separator_value.as_deref()?;
+    }
+    let text = field_bookmarks
+        .get(&spec.target)
+        .or_else(|| document_bookmarks.get(&spec.target))?;
+    let text = computed_ref_bookmark_text_result(text, spec.number_format)?;
+    Some(apply_field_text_format(text, spec.text_format))
 }
 
 fn append_table_formula_result_inline(text: &mut String, e: &BytesStart<'_>) {

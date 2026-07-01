@@ -1277,6 +1277,23 @@ fn formula_table_source_field_document_bookmark_docx() -> Vec<u8> {
     ])
 }
 
+fn formula_table_source_field_ref_bookmark_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="InvoiceTotal"/><w:r><w:t>123</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:tbl><w:tr><w:tc><w:p><w:fldSimple w:instr=" REF InvoiceTotal "><w:r><w:t>stale ref source</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(LEFT) "><w:r><w:t>stale ref source sum</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr><w:tr><w:tc><w:p><w:fldSimple w:instr=" InvoiceTotal "><w:r><w:t>stale direct source</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(LEFT) "><w:r><w:t>stale direct source sum</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn formula_table_source_field_prior_set_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -8589,6 +8606,56 @@ fn docx_table_formula_source_field_resolves_document_bookmark_operands() {
             && !main_text.contains("stale bookmark source")
             && !main_text.contains("stale bookmark source sum"),
         "table formula source text should use computed bookmark-backed source field output: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_table_formula_source_field_resolves_ref_bookmark_sources() {
+    let doc =
+        Document::open(&formula_table_source_field_ref_bookmark_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let explicit = fields
+        .iter()
+        .find(|field| field.instruction == "REF InvoiceTotal")
+        .expect("explicit REF source field is recorded");
+    assert_eq!(explicit.kind, FieldKind::Ref);
+    assert_eq!(explicit.result, "stale ref source");
+    assert_eq!(explicit.computed_result.as_deref(), Some("123"));
+
+    let direct = fields
+        .iter()
+        .find(|field| field.instruction == "InvoiceTotal")
+        .expect("direct bookmark source field is recorded");
+    assert_eq!(direct.kind, FieldKind::Ref);
+    assert_eq!(direct.result, "stale direct source");
+    assert_eq!(direct.computed_result.as_deref(), Some("123"));
+
+    let formulas = fields
+        .iter()
+        .filter(|field| field.instruction == r#"= SUM(LEFT)"#)
+        .collect::<Vec<_>>();
+    assert_eq!(formulas.len(), 2);
+    assert!(formulas
+        .iter()
+        .all(|field| field.kind == FieldKind::Dynamic("=".to_string())));
+    assert_eq!(formulas[0].result, "stale ref source sum");
+    assert_eq!(formulas[0].computed_result.as_deref(), Some("123"));
+    assert_eq!(formulas[1].result, "stale direct source sum");
+    assert_eq!(formulas[1].computed_result.as_deref(), Some("123"));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.matches("123\t123").count() == 2
+            && !main_text.contains("stale ref source")
+            && !main_text.contains("stale direct source")
+            && !main_text.contains("stale ref source sum")
+            && !main_text.contains("stale direct source sum"),
+        "table formula source text should use computed REF/direct bookmark source fields: {main_text:?}"
     );
 }
 
