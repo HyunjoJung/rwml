@@ -1896,7 +1896,7 @@ fn style_ref_field_docx() -> Vec<u8> {
         ),
         (
             "word/document.xml",
-            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val=" Heading1 "/></w:pPr><w:r><w:t>Executive Summary</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;heading 1&quot; "><w:r><w:t>stale heading style</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;heading 1&quot; \p "><w:r><w:t>stale heading relative</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" STYLEREF CustomCallout "><w:r><w:t>stale forward style</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" STYLEREF CustomCallout \p \* Upper "><w:r><w:t>stale forward relative</w:t></w:r></w:fldSimple></w:p><w:p><w:pPr><w:pStyle w:val=" CustomCallout "/></w:pPr><w:r><w:t>Forward Finding</w:t></w:r></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> STYLEREF &quot;Custom Heading&quot; \* MERGEFORMAT </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale custom style</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:body></w:document>"#,
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val=" Heading1 "/></w:pPr><w:r><w:t>Executive Summary</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;heading 1&quot; "><w:r><w:t>stale heading style</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;heading 1&quot; \p "><w:r><w:t>stale heading relative</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" STYLEREF \p &quot;heading 1&quot; "><w:r><w:t>stale switch-first heading relative</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" STYLEREF CustomCallout "><w:r><w:t>stale forward style</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" STYLEREF CustomCallout \p \* Upper "><w:r><w:t>stale forward relative</w:t></w:r></w:fldSimple></w:p><w:p><w:pPr><w:pStyle w:val=" CustomCallout "/></w:pPr><w:r><w:t>Forward Finding</w:t></w:r></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> STYLEREF &quot;Custom Heading&quot; \* MERGEFORMAT </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale custom style</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -10538,11 +10538,11 @@ fn docx_document_structure_fields_are_named_and_section_is_computed() {
         vec![
             FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::NoComputedResult,
-                count: 2,
+                count: 3,
             },
             FieldEvaluationReasonCount {
                 reason: FieldEvaluationReason::UnsupportedSwitch,
-                count: 2,
+                count: 1,
             },
         ]
     );
@@ -10565,7 +10565,7 @@ fn docx_document_structure_fields_are_named_and_section_is_computed() {
             ),
             (
                 "STYLEREF \\p \"Heading 1\"".to_string(),
-                Some(FieldUnsupportedReason::UnsupportedSwitch),
+                Some(FieldUnsupportedReason::NoComputedResult),
             ),
         ]
     );
@@ -10944,7 +10944,7 @@ fn docx_style_ref_field_computes_nearest_paragraph_style_text() {
     let doc = Document::open(&style_ref_field_docx()).expect("fixture opens");
     let fields = doc.fields();
 
-    assert_eq!(fields.len(), 5);
+    assert_eq!(fields.len(), 6);
     for field in &fields {
         assert_eq!(
             field.kind,
@@ -10958,22 +10958,24 @@ fn docx_style_ref_field_computes_nearest_paragraph_style_text() {
     );
     assert_eq!(fields[1].instruction, "STYLEREF \"heading 1\" \\p");
     assert_eq!(fields[1].computed_result.as_deref(), Some("above"));
-    assert_eq!(fields[2].instruction, "STYLEREF CustomCallout");
+    assert_eq!(fields[2].instruction, "STYLEREF \\p \"heading 1\"");
+    assert_eq!(fields[2].computed_result.as_deref(), Some("above"));
+    assert_eq!(fields[3].instruction, "STYLEREF CustomCallout");
     assert_eq!(
-        fields[2].computed_result.as_deref(),
+        fields[3].computed_result.as_deref(),
         Some("Forward Finding")
     );
     assert_eq!(
-        fields[3].instruction,
+        fields[4].instruction,
         "STYLEREF CustomCallout \\p \\* Upper"
     );
-    assert_eq!(fields[3].computed_result.as_deref(), Some("BELOW"));
+    assert_eq!(fields[4].computed_result.as_deref(), Some("BELOW"));
     assert_eq!(
-        fields[4].instruction,
+        fields[5].instruction,
         "STYLEREF \"Custom Heading\" \\* MERGEFORMAT"
     );
     assert_eq!(
-        fields[4].computed_result.as_deref(),
+        fields[5].computed_result.as_deref(),
         Some("Forward Finding")
     );
 
@@ -10985,6 +10987,7 @@ fn docx_style_ref_field_computes_nearest_paragraph_style_text() {
     assert!(
         !main_text.contains("stale heading style")
             && !main_text.contains("stale heading relative")
+            && !main_text.contains("stale switch-first heading relative")
             && !main_text.contains("stale forward style")
             && !main_text.contains("stale forward relative")
             && !main_text.contains("stale custom style"),
@@ -11015,6 +11018,7 @@ fn docx_style_ref_field_computes_nearest_paragraph_style_text() {
         vec![
             "Executive Summary".to_string(),
             "Executive Summary".to_string(),
+            "above".to_string(),
             "above".to_string(),
             "Forward Finding".to_string(),
             "BELOW".to_string(),

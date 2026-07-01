@@ -6305,8 +6305,8 @@ fn report_document_structure_fields_split_computed_cached_and_malformed_diagnost
             field_kind_count(FieldKind::DocumentStructure("STYLEREF".to_string()), 3),
         ],
         vec![
-            field_reason_count(FieldEvaluationReason::NoComputedResult, 2),
-            field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 2),
+            field_reason_count(FieldEvaluationReason::NoComputedResult, 3),
+            field_reason_count(FieldEvaluationReason::UnsupportedSwitch, 1),
         ],
     );
 }

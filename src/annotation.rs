@@ -1998,16 +1998,18 @@ pub(crate) fn style_ref_field_syntax(instruction: &str) -> Option<StyleRefFieldS
     if !kind.eq_ignore_ascii_case("STYLEREF") {
         return None;
     }
-    let style_identifier = style_ref_identifier_operand(parts.next()?, &mut parts)?;
     let mut text_format = None;
     let mut result = StyleRefResult::Text;
     let mut suppress_non_numeric = false;
+    let mut style_identifier = None;
     while let Some(part) = parts.next() {
-        let accepted = accept_general_format_switch(part, &mut parts, |format| {
-            accept_field_text_format_switch(format, &mut text_format)
-        })?;
-        if accepted {
-            continue;
+        if style_identifier.is_some() {
+            let accepted = accept_general_format_switch(part, &mut parts, |format| {
+                accept_field_text_format_switch(format, &mut text_format)
+            })?;
+            if accepted {
+                continue;
+            }
         }
         if part.starts_with('\\') {
             if let Some(switches) = compact_style_ref_flag_switches(part) {
@@ -2016,30 +2018,15 @@ pub(crate) fn style_ref_field_syntax(instruction: &str) -> Option<StyleRefFieldS
                 }
                 continue;
             }
+            return None;
         }
-        if part.eq_ignore_ascii_case("\\t") {
-            if suppress_non_numeric {
-                return None;
-            }
-            suppress_non_numeric = true;
+        if style_identifier.is_none() {
+            style_identifier = Some(style_ref_identifier_operand(part, &mut parts)?);
             continue;
         }
-        let next_result = if part.eq_ignore_ascii_case("\\n") {
-            StyleRefResult::ParagraphNumber
-        } else if part.eq_ignore_ascii_case("\\r") {
-            StyleRefResult::RelativeContextNumber
-        } else if part.eq_ignore_ascii_case("\\w") {
-            StyleRefResult::FullContextNumber
-        } else if part.eq_ignore_ascii_case("\\p") {
-            StyleRefResult::RelativePosition
-        } else {
-            return None;
-        };
-        if result != StyleRefResult::Text {
-            return None;
-        }
-        result = next_result;
+        return None;
     }
+    let style_identifier = style_identifier?;
     if suppress_non_numeric
         && !matches!(
             result,
@@ -3601,6 +3588,12 @@ mod tests {
             .expect("valid compact full-context style ref syntax");
         assert_eq!(compact_context.result, StyleRefResult::FullContextNumber);
         assert!(compact_context.suppress_non_numeric);
+
+        let switch_first = style_ref_field_syntax(r#"STYLEREF \p "Heading 1""#)
+            .expect("valid switch-first relative style ref syntax");
+        assert_eq!(switch_first.style_identifier, "Heading 1");
+        assert_eq!(switch_first.result, StyleRefResult::RelativePosition);
+        assert!(!switch_first.suppress_non_numeric);
 
         assert!(style_ref_field_syntax(r#"STYLEREF NumberedTarget \n\r"#).is_none());
         assert!(style_ref_field_syntax(r#"STYLEREF NumberedTarget \t\t"#).is_none());
