@@ -1673,6 +1673,8 @@ fn computed_floating_anchor_field_text(
         return Some(text);
     }
     fields::computed_dynamic_result_with_bookmarks(instruction, field_bookmarks)
+        .or_else(|| fields::computed_display_result(instruction))
+        .or_else(|| fields::computed_action_result(instruction))
 }
 
 #[derive(Default)]

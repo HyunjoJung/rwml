@@ -817,6 +817,23 @@ fn anchored_text_box_local_field_bookmark_anchor_docx() -> Vec<u8> {
     ])
 }
 
+fn anchored_text_box_display_action_field_anchor_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:body><w:p><w:fldSimple w:instr=" SYMBOL 183 \f Symbol "><w:r><w:t>stale symbol</w:t></w:r></w:fldSimple><w:r><w:t> </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> MACROBUTTON RunReport &quot;Fresh anchor&quot; </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale action</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> </w:t></w:r><w:r><w:drawing><wp:anchor relativeHeight="8"><wp:docPr id="14" name="Anchored action display box"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>ACTION DISPLAY BOX</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:t>After</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn duplicate_anchored_text_box_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -2838,6 +2855,22 @@ fn docx_anchored_text_box_anchor_uses_local_field_bookmarks_in_dynamic_field_tex
     let anchor = text_boxes[0].anchor.as_ref().expect("local state anchor");
     assert_eq!(anchor.id, "13");
     assert_eq!(anchor.text, "Fresh anchor After");
+}
+
+#[test]
+fn docx_anchored_text_box_anchor_uses_supported_display_and_action_field_text() {
+    let doc = Document::open(&anchored_text_box_display_action_field_anchor_docx())
+        .expect("fixture opens");
+
+    let text_boxes = doc.text_boxes();
+    assert_eq!(text_boxes.len(), 1);
+    assert_eq!(text_boxes[0].text, "ACTION DISPLAY BOX");
+    let anchor = text_boxes[0]
+        .anchor
+        .as_ref()
+        .expect("display action anchor");
+    assert_eq!(anchor.id, "14");
+    assert_eq!(anchor.text, "• Fresh anchor After");
 }
 
 #[test]
