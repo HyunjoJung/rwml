@@ -14,7 +14,7 @@ use std::collections::{HashMap, HashSet};
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 
-use super::fields::{computed_quote_result, computed_run_symbol_char, TocEntry};
+use super::fields::{computed_dynamic_result_with_bookmarks, computed_run_symbol_char, TocEntry};
 use super::numbering::Numbering;
 use super::parse_rgb_hex_color;
 use super::styles::Styles;
@@ -1212,7 +1212,7 @@ impl NoteAnchorComplexField {
                     && self.phase == Some(NoteAnchorComplexFieldPhase::Instruction) =>
             {
                 self.phase = Some(NoteAnchorComplexFieldPhase::Result);
-                self.computed_result = computed_quote_result(&self.instruction);
+                self.computed_result = computed_note_anchor_field_text(&self.instruction);
                 self.computed_result.clone()
             }
             Some("end") => {
@@ -1260,7 +1260,11 @@ fn is_note_anchor_embedded_body(name: &[u8]) -> bool {
 
 fn computed_note_anchor_simple_field_text(e: &BytesStart<'_>) -> Option<String> {
     let instruction = attr_local_trimmed(e, b"instr")?;
-    computed_quote_result(&instruction)
+    computed_note_anchor_field_text(&instruction)
+}
+
+fn computed_note_anchor_field_text(instruction: &str) -> Option<String> {
+    computed_dynamic_result_with_bookmarks(instruction, &HashMap::new())
 }
 
 fn append_note_anchor_empty(out: &mut String, e: &BytesStart<'_>, name: &[u8]) {

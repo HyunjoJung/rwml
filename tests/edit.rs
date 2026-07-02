@@ -491,6 +491,35 @@ fn notes_with_complex_field_anchor_text_docx() -> Vec<u8> {
     ])
 }
 
+fn notes_with_dynamic_field_anchor_text_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rIdEnd" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" IF 1 = 1 &quot;Fresh foot&quot; &quot;stale branch&quot; "><w:r><w:t>stale foot</w:t></w:r></w:fldSimple><w:r><w:t> before </w:t></w:r><w:r><w:footnoteReference w:id="7"/></w:r><w:r><w:t>foot after</w:t></w:r></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> IF 2 &gt; 1 &quot;Fresh end&quot; &quot;stale branch&quot; </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale end</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> before </w:t></w:r><w:r><w:endnoteReference w:id="8"/></w:r><w:r><w:t>end after</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="7"><w:p><w:r><w:t>Foot body</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+        (
+            "word/endnotes.xml",
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="8"><w:p><w:r><w:t>End body</w:t></w:r></w:p></w:endnote></w:endnotes>"#,
+        ),
+    ])
+}
+
 fn notes_with_symbol_anchor_text_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -2863,6 +2892,30 @@ fn docx_note_reference_anchors_use_computed_simple_field_text() {
 #[test]
 fn docx_note_reference_anchors_use_computed_complex_field_text() {
     let doc = Document::open(&notes_with_complex_field_anchor_text_docx()).expect("fixture opens");
+
+    assert_eq!(
+        doc.main_text(),
+        "Fresh foot before foot after\nFresh end before end after"
+    );
+    let notes = doc.notes();
+    assert_eq!(notes.len(), 2);
+    assert_eq!(notes[0].id, "7");
+    assert_eq!(notes[0].kind, NoteKind::Footnote);
+    assert_eq!(
+        notes[0].anchor.as_ref().map(|a| a.text.as_str()),
+        Some("Fresh foot before foot after")
+    );
+    assert_eq!(notes[1].id, "8");
+    assert_eq!(notes[1].kind, NoteKind::Endnote);
+    assert_eq!(
+        notes[1].anchor.as_ref().map(|a| a.text.as_str()),
+        Some("Fresh end before end after")
+    );
+}
+
+#[test]
+fn docx_note_reference_anchors_use_computed_dynamic_field_text() {
+    let doc = Document::open(&notes_with_dynamic_field_anchor_text_docx()).expect("fixture opens");
 
     assert_eq!(
         doc.main_text(),
