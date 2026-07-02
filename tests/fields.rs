@@ -2452,6 +2452,23 @@ fn section_pages_bookmark_merge_control_result_docx() -> Vec<u8> {
     ])
 }
 
+fn section_pages_bookmark_if_result_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" IF Gate = &quot;Ready&quot; &quot;&quot; &quot;&quot; "><w:r><w:t>stale section if</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SECTIONPAGES "><w:r><w:t>cached section if pages</w:t></w:r></w:fldSimple></w:p><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/></w:sectPr></w:pPr></w:p><w:p><w:bookmarkStart w:id="7" w:name="Gate"/><w:r><w:t>Ready</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:sectPr/></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn section_pages_empty_ref_result_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -4295,6 +4312,40 @@ fn note_ref_bookmark_merge_control_result_marker_docx() -> Vec<u8> {
     ])
 }
 
+fn note_ref_bookmark_if_result_marker_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="ComputedNote"/><w:fldSimple w:instr=" IF Gate = &quot;Ready&quot; &quot;&quot; &quot;&quot; "><w:r><w:footnoteReference w:id="1"/></w:r><w:r><w:t>stale note if</w:t></w:r></w:fldSimple><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" NOTEREF ComputedNote "><w:r><w:t>cached stale bookmark if note ref</w:t></w:r></w:fldSimple></w:p><w:p><w:bookmarkStart w:id="8" w:name="Gate"/><w:r><w:t>Ready</w:t></w:r><w:bookmarkEnd w:id="8"/></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn note_ref_bookmark_compare_result_marker_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="ComputedNote"/><w:fldSimple w:instr=" COMPARE Gate = &quot;Ready&quot; "><w:r><w:footnoteReference w:id="1"/></w:r><w:r><w:t>stale note compare</w:t></w:r></w:fldSimple><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" NOTEREF ComputedNote "><w:r><w:t>cached stale bookmark compare note ref</w:t></w:r></w:fldSimple></w:p><w:p><w:bookmarkStart w:id="8" w:name="Gate"/><w:r><w:t>Ready</w:t></w:r><w:bookmarkEnd w:id="8"/></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn note_ref_stale_ref_result_marker_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -4912,6 +4963,23 @@ fn page_ref_bookmark_merge_control_before_manual_break_docx() -> Vec<u8> {
         (
             "word/document.xml",
             r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" NEXTIF Gate = &quot;Ready&quot; "><w:r><w:t>stale page merge control</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:br w:type="page"/></w:r></w:p><w:p><w:bookmarkStart w:id="7" w:name="Gate"/><w:bookmarkStart w:id="8" w:name="AfterBookmarkMerge"/><w:r><w:t>Ready</w:t></w:r><w:bookmarkEnd w:id="8"/><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF AfterBookmarkMerge \h "><w:r><w:t>cached after bookmark merge page</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn page_ref_bookmark_if_before_manual_break_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" IF Gate = &quot;Ready&quot; &quot;&quot; &quot;&quot; "><w:r><w:t>stale page if</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:br w:type="page"/></w:r></w:p><w:p><w:bookmarkStart w:id="7" w:name="Gate"/><w:bookmarkStart w:id="8" w:name="AfterBookmarkIf"/><w:r><w:t>Ready</w:t></w:r><w:bookmarkEnd w:id="8"/><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF AfterBookmarkIf \h "><w:r><w:t>cached after bookmark if page</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -21206,6 +21274,142 @@ fn docx_position_scanners_use_document_bookmark_merge_control_results() {
             && !note_text.contains('\u{0002}')
             && !note_text.contains('1'),
         "NOTEREF should not resolve a stale marker hidden inside document-bookmark merge-control output: {note_text:?}"
+    );
+}
+
+#[test]
+fn docx_position_scanners_use_document_bookmark_if_results() {
+    let page_doc = Document::open(&page_ref_bookmark_if_before_manual_break_docx())
+        .expect("page fixture opens");
+    let page_fields = page_doc.fields();
+
+    assert_eq!(page_fields.len(), 2);
+    assert_eq!(page_fields[0].kind, FieldKind::Dynamic("IF".to_string()));
+    assert_eq!(page_fields[0].instruction, r#"IF Gate = "Ready" "" """#);
+    assert_eq!(page_fields[0].result, "stale page if");
+    assert_eq!(page_fields[0].computed_result.as_deref(), Some(""));
+    assert_eq!(page_fields[1].kind, FieldKind::PageRef);
+    assert_eq!(page_fields[1].instruction, "PAGEREF AfterBookmarkIf \\h");
+    assert_eq!(page_fields[1].result, "cached after bookmark if page");
+    assert_eq!(page_fields[1].computed_result.as_deref(), Some("2"));
+
+    let section_doc =
+        Document::open(&section_pages_bookmark_if_result_docx()).expect("section fixture opens");
+    let section_fields = section_doc.fields();
+
+    assert_eq!(section_fields.len(), 2);
+    assert_eq!(section_fields[0].kind, FieldKind::Dynamic("IF".to_string()));
+    assert_eq!(section_fields[0].instruction, r#"IF Gate = "Ready" "" """#);
+    assert_eq!(section_fields[0].result, "stale section if");
+    assert_eq!(section_fields[0].computed_result.as_deref(), Some(""));
+    assert_eq!(
+        section_fields[1].kind,
+        FieldKind::DocumentStructure("SECTIONPAGES".to_string())
+    );
+    assert_eq!(section_fields[1].instruction, "SECTIONPAGES");
+    assert_eq!(section_fields[1].result, "cached section if pages");
+    assert_eq!(section_fields[1].computed_result.as_deref(), Some("1"));
+
+    let note_doc =
+        Document::open(&note_ref_bookmark_if_result_marker_docx()).expect("note fixture opens");
+    let note_fields = note_doc.fields();
+
+    assert_eq!(note_fields.len(), 2);
+    assert_eq!(note_fields[0].kind, FieldKind::Dynamic("IF".to_string()));
+    assert_eq!(note_fields[0].instruction, r#"IF Gate = "Ready" "" """#);
+    assert_eq!(note_fields[0].result, "stale note if");
+    assert_eq!(note_fields[0].computed_result.as_deref(), Some(""));
+    assert_eq!(note_fields[1].kind, FieldKind::NoteRef);
+    assert_eq!(note_fields[1].instruction, "NOTEREF ComputedNote");
+    assert_eq!(note_fields[1].result, "cached stale bookmark if note ref");
+    assert_eq!(note_fields[1].computed_result, None);
+
+    for doc in [&page_doc, &section_doc] {
+        let report = doc.report();
+        assert!(report.features.unsupported_field_kinds.is_empty());
+        assert!(report.features.unsupported_field_reasons.is_empty());
+    }
+    let note_report = note_doc.report();
+    assert_eq!(
+        note_report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::NoteRef,
+            count: 1,
+        }]
+    );
+    assert_eq!(
+        note_report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::NoComputedResult,
+            count: 1,
+        }]
+    );
+
+    let page_text = page_doc.main_text();
+    assert!(
+        page_text.contains("Ready\n2")
+            && !page_text.contains("stale page if")
+            && !page_text.contains("cached after bookmark if page"),
+        "PAGEREF should use computed document-bookmark IF output before a hard break: {page_text:?}"
+    );
+
+    let section_text = section_doc.main_text();
+    assert!(
+        section_text.contains('1')
+            && !section_text.contains("stale section if")
+            && !section_text.contains("cached section if pages"),
+        "SECTIONPAGES should use computed document-bookmark IF output when deciding section content: {section_text:?}"
+    );
+
+    let note_text = note_doc.main_text();
+    assert!(
+        note_text.contains("cached stale bookmark if note ref")
+            && !note_text.contains("stale note if")
+            && !note_text.contains('\u{0002}')
+            && !note_text.contains('1'),
+        "NOTEREF should not resolve a stale marker hidden inside document-bookmark IF output: {note_text:?}"
+    );
+}
+
+#[test]
+fn docx_note_ref_uses_document_bookmark_compare_result_for_marker_scan() {
+    let doc =
+        Document::open(&note_ref_bookmark_compare_result_marker_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::Dynamic("COMPARE".to_string()));
+    assert_eq!(fields[0].instruction, r#"COMPARE Gate = "Ready""#);
+    assert_eq!(fields[0].result, "stale note compare");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("1"));
+    assert_eq!(fields[1].kind, FieldKind::NoteRef);
+    assert_eq!(fields[1].instruction, "NOTEREF ComputedNote");
+    assert_eq!(fields[1].result, "cached stale bookmark compare note ref");
+    assert_eq!(fields[1].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::NoteRef,
+            count: 1,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::NoComputedResult,
+            count: 1,
+        }]
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("1")
+            && main_text.contains("cached stale bookmark compare note ref")
+            && !main_text.contains("stale note compare")
+            && !main_text.contains('\u{0002}'),
+        "NOTEREF should not resolve a stale marker hidden inside document-bookmark COMPARE output: {main_text:?}"
     );
 }
 
