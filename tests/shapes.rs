@@ -200,6 +200,23 @@ fn floating_shape_set_backed_if_field_text_docx() -> Vec<u8> {
     ])
 }
 
+fn floating_shape_complex_set_backed_if_field_text_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:body><w:p><w:r><w:t>Before </w:t></w:r><w:r><w:drawing><wp:anchor relativeHeight="38" behindDoc="0"><wp:extent cx="914400" cy="457200"/><wp:docPr id="38" name="Complex SET-backed IF float"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> SET ClientTier "Gold" </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>cached complex shape set</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:fldSimple w:instr=" IF ClientTier = &quot;Gold&quot; &quot;ship&quot; &quot;hold&quot; "><w:r><w:t>stale complex shape set if</w:t></w:r></w:fldSimple><w:r><w:t> body</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:t>after</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn floating_shape_ref_field_text_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -831,6 +848,27 @@ fn docx_floating_shape_metadata_uses_set_backed_if_text() {
     );
     assert_eq!(shapes.len(), 1);
     assert_eq!(shapes[0].name.as_deref(), Some("SET-backed IF float"));
+    assert_eq!(shapes[0].text.as_deref(), Some("ship body"));
+}
+
+#[test]
+fn docx_floating_shape_metadata_uses_complex_set_backed_if_text() {
+    let doc = Document::open(&floating_shape_complex_set_backed_if_field_text_docx())
+        .expect("fixture opens");
+    let shapes = doc.floating_shapes();
+    let main_text = doc.main_text();
+
+    assert!(
+        main_text.contains("ship body")
+            && !main_text.contains("cached complex shape set")
+            && !main_text.contains("stale complex shape set if"),
+        "body text should use shape-local complex SET-backed IF text inside shapes: {main_text:?}"
+    );
+    assert_eq!(shapes.len(), 1);
+    assert_eq!(
+        shapes[0].name.as_deref(),
+        Some("Complex SET-backed IF float")
+    );
     assert_eq!(shapes[0].text.as_deref(), Some("ship body"));
 }
 

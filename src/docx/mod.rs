@@ -2108,6 +2108,9 @@ fn computed_shape_context_field_result(
     document_bookmarks: &HashMap<String, String>,
     field_bookmarks: &mut HashMap<String, String>,
 ) -> Option<String> {
+    if update_field_bookmarks_from_instruction(instruction, field_bookmarks) {
+        return Some(String::new());
+    }
     fields::computed_formula_result_with_bookmark_context(
         instruction,
         document_bookmarks,
