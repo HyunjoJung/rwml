@@ -510,6 +510,20 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
                             properties,
                         );
                     }
+                    b"fldSimple"
+                        if attr_local(&e, b"instr")
+                            .as_deref()
+                            .is_some_and(is_style_ref_field_instruction) =>
+                    {
+                        record_style_ref_field(
+                            attr_local(&e, b"instr").as_deref(),
+                            field_positions,
+                            next_order,
+                            paragraph_number,
+                        );
+                        skip_element(r, b"fldSimple");
+                        consumed_element = true;
+                    }
                     b"instrText" => {
                         let field_text = read_text(r);
                         consumed_element = true;
@@ -577,6 +591,14 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
                             legacy_forms,
                             form_field_index,
                             properties,
+                        );
+                    }
+                    b"fldSimple" => {
+                        record_style_ref_field(
+                            attr_local(&e, b"instr").as_deref(),
+                            field_positions,
+                            next_order,
+                            paragraph_number,
                         );
                     }
                     b"sym" => {

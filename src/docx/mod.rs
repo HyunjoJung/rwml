@@ -409,6 +409,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         &legacy_form_context,
         &toc_entries,
         &bookmark_names,
+        &style_ref_context,
     );
     floating_shapes.extend(note_part.floating_shapes);
     let mut text_boxes = read_text_boxes(&doc_xml, &ctx, &floating_shapes);
@@ -927,6 +928,7 @@ fn read_hf_parts(
                 &legacy_form_context,
                 &toc_entries,
                 &bookmark_names,
+                &style_ref_context,
             ));
         }
         if seen_fields.insert((path.clone(), type_name.to_string())) {
@@ -1113,6 +1115,7 @@ fn read_notes(
         &legacy_form_context,
         &toc_entries,
         &bookmark_names,
+        &style_ref_context,
     );
     let text_box_id_prefix = format!("{name}-text-box");
     let text_boxes = read_text_boxes_with_prefix(&xml, &ctx, &floating_shapes, &text_box_id_prefix);
@@ -1233,6 +1236,7 @@ fn read_floating_shapes(
     legacy_forms: &fields::LegacyFormContext,
     toc_entries: &[fields::TocEntry],
     bookmark_names: &HashSet<String>,
+    style_refs: &fields::StyleRefContext,
 ) -> Vec<FloatingShape> {
     let mut r = Reader::from_str(doc_xml);
     let mut shapes = Vec::new();
@@ -1271,9 +1275,9 @@ fn read_floating_shapes(
                     });
                 }
                 if name == b"fldSimple" {
-                    shape_field_cursor.start_simple_field(&e, scan_depth + 1);
+                    shape_field_cursor.start_simple_field(&e, scan_depth + 1, style_refs);
                 } else if name == b"fldChar" {
-                    shape_field_cursor.apply_field_char(&e);
+                    shape_field_cursor.apply_field_char(&e, style_refs);
                 }
                 if name == b"body" {
                     in_body = true;
@@ -1326,6 +1330,7 @@ fn read_floating_shapes(
                         legacy_forms,
                         toc_entries,
                         bookmark_names,
+                        style_refs,
                         &mut shape_field_cursor,
                     ));
                     if current_body_block_index.is_some() {
@@ -1375,9 +1380,9 @@ fn read_floating_shapes(
                     append_floating_anchor_empty(&mut current_body_block_text, &e, name);
                 }
                 if name == b"fldSimple" {
-                    shape_field_cursor.empty_simple_field(&e);
+                    shape_field_cursor.empty_simple_field(&e, style_refs);
                 } else if name == b"fldChar" {
-                    shape_field_cursor.apply_field_char(&e);
+                    shape_field_cursor.apply_field_char(&e, style_refs);
                 }
             }
             Ok(Event::End(e)) => {
@@ -1479,6 +1484,7 @@ struct ShapeFieldCursor {
     sequence_counters: HashMap<String, i64>,
     autonum_counter: i64,
     listnum_counter: i64,
+    style_ref_index: usize,
     simple_field_depth: Option<usize>,
     simple_text_form: Option<ShapeSimpleTextFormField>,
     complex_field: Option<ShapeFieldCursorField>,
@@ -1498,6 +1504,7 @@ struct ShapeFieldCursorField {
     phase: ShapeFieldCursorPhase,
     computed_result: Option<String>,
     legacy_form_indexed: bool,
+    style_ref_indexed: bool,
     result_text: String,
 }
 
@@ -1508,7 +1515,12 @@ enum ShapeFieldCursorPhase {
 }
 
 impl ShapeFieldCursor {
-    fn start_simple_field(&mut self, e: &BytesStart<'_>, depth: usize) {
+    fn start_simple_field(
+        &mut self,
+        e: &BytesStart<'_>,
+        depth: usize,
+        style_refs: &fields::StyleRefContext,
+    ) {
         if self.simple_field_depth.is_some() {
             return;
         }
@@ -1517,11 +1529,12 @@ impl ShapeFieldCursor {
             self.computed_sequence_result(&instruction);
             self.computed_autonum_result(&instruction);
             self.computed_listnum_result(&instruction);
+            self.next_style_ref_field_position(&instruction, style_refs);
             self.next_legacy_form_index(&instruction);
         }
     }
 
-    fn empty_simple_field(&mut self, e: &BytesStart<'_>) {
+    fn empty_simple_field(&mut self, e: &BytesStart<'_>, style_refs: &fields::StyleRefContext) {
         if self.simple_field_depth.is_some() {
             return;
         }
@@ -1529,6 +1542,7 @@ impl ShapeFieldCursor {
             self.computed_sequence_result(&instruction);
             self.computed_autonum_result(&instruction);
             self.computed_listnum_result(&instruction);
+            self.next_style_ref_field_position(&instruction, style_refs);
             self.next_legacy_form_index(&instruction);
         }
     }
@@ -1591,7 +1605,11 @@ impl ShapeFieldCursor {
         self.simple_text_form.is_some()
     }
 
-    fn apply_field_char(&mut self, e: &BytesStart<'_>) -> Option<String> {
+    fn apply_field_char(
+        &mut self,
+        e: &BytesStart<'_>,
+        style_refs: &fields::StyleRefContext,
+    ) -> Option<String> {
         if self.simple_field_depth.is_some() {
             return None;
         }
@@ -1602,6 +1620,7 @@ impl ShapeFieldCursor {
                     phase: ShapeFieldCursorPhase::Instruction,
                     computed_result: None,
                     legacy_form_indexed: false,
+                    style_ref_indexed: false,
                     result_text: String::new(),
                 });
             }
@@ -1616,6 +1635,9 @@ impl ShapeFieldCursor {
                         self.computed_sequence_result(&field.instruction);
                         self.computed_autonum_result(&field.instruction);
                         self.computed_listnum_result(&field.instruction);
+                        if !field.style_ref_indexed {
+                            self.next_style_ref_field_position(&field.instruction, style_refs);
+                        }
                         if !field.legacy_form_indexed {
                             self.next_legacy_form_index(&field.instruction);
                         }
@@ -1642,6 +1664,22 @@ impl ShapeFieldCursor {
     fn current_complex_instruction(&self) -> Option<&str> {
         let field = self.complex_field.as_ref()?;
         (field.phase == ShapeFieldCursorPhase::Result).then_some(field.instruction.as_str())
+    }
+
+    fn current_complex_style_ref_position(
+        &mut self,
+        style_refs: &fields::StyleRefContext,
+    ) -> Option<fields::StyleRefFieldPosition> {
+        let field = self.complex_field.as_mut()?;
+        if field.phase != ShapeFieldCursorPhase::Result || field.style_ref_indexed {
+            return None;
+        }
+        let instruction = field.instruction.clone();
+        if !fields::is_style_ref_field_instruction(&instruction) {
+            return None;
+        }
+        field.style_ref_indexed = true;
+        self.next_style_ref_field_position(&instruction, style_refs)
     }
 
     fn set_complex_result(&mut self, text: String) {
@@ -1713,6 +1751,19 @@ impl ShapeFieldCursor {
         let index = self.next_index;
         self.next_index += 1;
         Some(index)
+    }
+
+    fn next_style_ref_field_position(
+        &mut self,
+        instruction: &str,
+        style_refs: &fields::StyleRefContext,
+    ) -> Option<fields::StyleRefFieldPosition> {
+        if !fields::is_style_ref_field_instruction(instruction) {
+            return None;
+        }
+        let index = self.style_ref_index;
+        self.style_ref_index += 1;
+        style_refs.field_position(index)
     }
 
     fn computed_sequence_result(&mut self, instruction: &str) -> Option<String> {
@@ -1828,6 +1879,7 @@ fn read_floating_shape(
     legacy_forms: &fields::LegacyFormContext,
     toc_entries: &[fields::TocEntry],
     bookmark_names: &HashSet<String>,
+    style_refs: &fields::StyleRefContext,
     shape_field_cursor: &mut ShapeFieldCursor,
 ) -> FloatingShape {
     let mut shape = floating_shape_shell(index, start, anchor_block_index);
@@ -1866,6 +1918,7 @@ fn read_floating_shape(
                                 legacy_forms,
                                 toc_entries,
                                 bookmark_names,
+                                style_refs,
                                 shape_field_cursor,
                                 Some(text_box_depth + 1),
                             ) {
@@ -1884,6 +1937,7 @@ fn read_floating_shape(
                                 legacy_forms,
                                 toc_entries,
                                 bookmark_names,
+                                style_refs,
                                 shape_field_cursor,
                             );
                             text_box_depth += 1;
@@ -1937,6 +1991,7 @@ fn read_floating_shape(
                             legacy_forms,
                             toc_entries,
                             bookmark_names,
+                            style_refs,
                             shape_field_cursor,
                         );
                     }
@@ -1956,6 +2011,7 @@ fn read_floating_shape(
                                 legacy_forms,
                                 toc_entries,
                                 bookmark_names,
+                                style_refs,
                                 shape_field_cursor,
                                 None,
                             ))
@@ -2129,6 +2185,8 @@ fn computed_shape_context_field_result(
     field_bookmarks: &mut HashMap<String, String>,
     toc_entries: &[fields::TocEntry],
     bookmark_names: &HashSet<String>,
+    style_refs: &fields::StyleRefContext,
+    style_ref_position: Option<fields::StyleRefFieldPosition>,
 ) -> Option<String> {
     if update_field_bookmarks_from_instruction(instruction, field_bookmarks) {
         return Some(String::new());
@@ -2166,6 +2224,7 @@ fn computed_shape_context_field_result(
         )
     })
     .or_else(|| fields::computed_revision_number_result(instruction, properties.core))
+    .or_else(|| fields::computed_style_ref_result(instruction, style_refs, style_ref_position))
     .or_else(|| fields::computed_display_result(instruction))
     .or_else(|| fields::computed_action_result(instruction))
     .or_else(|| fields::computed_reference_index_result(instruction))
@@ -2181,6 +2240,7 @@ fn apply_shape_field_char(
     legacy_forms: &fields::LegacyFormContext,
     toc_entries: &[fields::TocEntry],
     bookmark_names: &HashSet<String>,
+    style_refs: &fields::StyleRefContext,
     shape_field_cursor: &mut ShapeFieldCursor,
 ) {
     if field_char_type(e).as_deref() == Some("end") {
@@ -2189,17 +2249,22 @@ fn apply_shape_field_char(
             shape_field_cursor.set_complex_result(text);
         }
     }
-    let completed = shape_field_cursor.apply_field_char(e);
+    let completed = shape_field_cursor.apply_field_char(e, style_refs);
     let computed = shape_field_cursor
         .current_complex_instruction()
+        .map(str::to_string)
         .and_then(|instruction| {
+            let style_ref_position =
+                shape_field_cursor.current_complex_style_ref_position(style_refs);
             computed_shape_context_field_result(
-                instruction,
+                &instruction,
                 properties,
                 document_bookmarks,
                 field_bookmarks,
                 toc_entries,
                 bookmark_names,
+                style_refs,
+                style_ref_position,
             )
         })
         .or_else(|| shape_field_cursor.computed_complex_source_order_result())
@@ -2223,6 +2288,7 @@ fn append_shape_simple_field(
     legacy_forms: &fields::LegacyFormContext,
     toc_entries: &[fields::TocEntry],
     bookmark_names: &HashSet<String>,
+    style_refs: &fields::StyleRefContext,
     shape_field_cursor: &mut ShapeFieldCursor,
     simple_text_form_depth: Option<usize>,
 ) -> bool {
@@ -2237,6 +2303,8 @@ fn append_shape_simple_field(
             return false;
         }
     }
+    let style_ref_position =
+        shape_field_cursor.next_style_ref_field_position(&instruction, style_refs);
     let text = computed_shape_context_field_result(
         &instruction,
         properties,
@@ -2244,6 +2312,8 @@ fn append_shape_simple_field(
         field_bookmarks,
         toc_entries,
         bookmark_names,
+        style_refs,
+        style_ref_position,
     )
     .or_else(|| shape_field_cursor.computed_sequence_result(&instruction))
     .or_else(|| shape_field_cursor.computed_autonum_result(&instruction))
