@@ -1146,7 +1146,8 @@ fn computed_page_ref_scan_field_result(
     state: &mut PageRefComputedFieldState<'_>,
 ) -> Option<String> {
     let instruction = normalize_instruction(instruction?);
-    match field_kind(&instruction) {
+    let kind = field_kind(&instruction);
+    match &kind {
         FieldKind::Page | FieldKind::PageRef => return None,
         FieldKind::Ref => {
             return computed_page_ref_scan_ref_result(&instruction, state);
@@ -1159,8 +1160,10 @@ fn computed_page_ref_scan_field_result(
         }
         _ => {}
     }
-    if let Some(text) = computed_page_ref_scan_direct_bookmark_ref_result(&instruction, state) {
-        return Some(text);
+    if matches!(kind, FieldKind::Unknown(_)) {
+        if let Some(text) = computed_page_ref_scan_direct_bookmark_ref_result(&instruction, state) {
+            return Some(text);
+        }
     }
     computed_numbering_result(&instruction, &mut state.autonum_counter)
         .or_else(|| computed_listnum_result(&instruction, &mut state.listnum_counter))

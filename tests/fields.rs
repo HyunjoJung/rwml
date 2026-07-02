@@ -4554,6 +4554,23 @@ fn page_ref_empty_direct_bookmark_before_manual_break_docx() -> Vec<u8> {
     ])
 }
 
+fn page_ref_known_field_name_bookmark_before_manual_break_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="1" w:name="TOC"/><w:bookmarkEnd w:id="1"/></w:p><w:p><w:fldSimple w:instr=" TOC "><w:r><w:t>stale toc before break</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:br w:type="page"/></w:r></w:p><w:p><w:bookmarkStart w:id="7" w:name="AfterKnownField"/><w:r><w:t>After known field</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF AfterKnownField \h "><w:r><w:t>cached after known field page</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn page_ref_rendered_break_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -20079,6 +20096,51 @@ fn docx_page_ref_ignores_stale_empty_direct_bookmark_result_before_manual_break(
             && !main_text.contains("stale empty direct ref before break")
             && !main_text.contains("cached after direct ref page"),
         "PAGEREF should use the computed empty direct bookmark result when deciding hard-break trust: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_page_ref_does_not_treat_known_field_names_as_direct_bookmarks() {
+    let doc = Document::open(&page_ref_known_field_name_bookmark_before_manual_break_docx())
+        .expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::Toc);
+    assert_eq!(fields[0].instruction, "TOC");
+    assert_eq!(fields[0].result, "stale toc before break");
+    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(fields[1].kind, FieldKind::PageRef);
+    assert_eq!(fields[1].instruction, "PAGEREF AfterKnownField \\h");
+    assert_eq!(fields[1].result, "cached after known field page");
+    assert_eq!(fields[1].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![
+            FieldKindCount {
+                kind: FieldKind::Toc,
+                count: 1,
+            },
+            FieldKindCount {
+                kind: FieldKind::PageRef,
+                count: 1,
+            },
+        ]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::NoComputedResult,
+            count: 2,
+        }]
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("cached after known field page") && !main_text.contains("\n2"),
+        "PAGEREF should not treat a known TOC field as an empty direct bookmark before a manual break: {main_text:?}"
     );
 }
 
