@@ -3,7 +3,7 @@
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 
-use super::local;
+use super::{is_page_break_type, local};
 
 #[derive(Default)]
 pub(crate) struct AlternateContentBranchState {
@@ -96,7 +96,14 @@ mod tests {
 pub(crate) fn inline_marker_text(e: &BytesStart<'_>) -> Option<&'static str> {
     match local(e.name().as_ref()) {
         b"tab" => Some("\t"),
-        b"br" | b"cr" => Some("\n"),
+        b"br" => {
+            if is_page_break_type(e) {
+                Some("\u{000C}")
+            } else {
+                Some("\n")
+            }
+        }
+        b"cr" => Some("\n"),
         b"noBreakHyphen" => Some("-"),
         b"softHyphen" => Some("\u{00ad}"),
         _ => None,
