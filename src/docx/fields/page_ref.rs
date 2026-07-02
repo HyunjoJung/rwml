@@ -1159,6 +1159,9 @@ fn computed_page_ref_scan_field_result(
         }
         _ => {}
     }
+    if let Some(text) = computed_page_ref_scan_direct_bookmark_ref_result(&instruction, state) {
+        return Some(text);
+    }
     computed_numbering_result(&instruction, &mut state.autonum_counter)
         .or_else(|| computed_listnum_result(&instruction, &mut state.listnum_counter))
         .or_else(|| computed_sequence_result(&instruction, &mut state.sequence_counters))
@@ -1184,6 +1187,23 @@ fn computed_page_ref_scan_ref_result(
         field_bookmarks: &state.field_bookmarks,
     };
     computed_ref_result(instruction, &ctx, None, None)
+}
+
+fn computed_page_ref_scan_direct_bookmark_ref_result(
+    instruction: &str,
+    state: &PageRefComputedFieldState<'_>,
+) -> Option<String> {
+    let ref_positions = RefPositionContext::default();
+    let ref_numbers = RefNumberContext::empty();
+    let note_refs = NoteRefContext::empty();
+    let ctx = RefResultContext {
+        bookmarks: state.document_bookmarks,
+        ref_positions: &ref_positions,
+        ref_numbers: &ref_numbers,
+        note_refs: &note_refs,
+        field_bookmarks: &state.field_bookmarks,
+    };
+    computed_direct_bookmark_ref_result(instruction, &ctx, None, None)
 }
 
 fn note_page_ref_computed_scan_text(
