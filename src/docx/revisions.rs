@@ -150,6 +150,7 @@ fn read_revision(r: &mut Xml<'_>, start: &BytesStart<'_>, kind: RevisionKind) ->
 fn read_revision_text(r: &mut Xml<'_>, end_name: &[u8]) -> String {
     let mut depth = 1usize;
     let mut text = String::new();
+    let mut embedded_body_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
@@ -171,6 +172,12 @@ fn read_revision_text(r: &mut Xml<'_>, end_name: &[u8]) -> String {
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == end_name => {
                 depth = depth.saturating_add(1);
+            }
+            Ok(Event::Start(e)) if is_revision_embedded_body(local(e.name().as_ref())) => {
+                embedded_body_depth += 1;
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"p" && embedded_body_depth == 0 => {
+                push_revision_paragraph_boundary(&mut text);
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"t" => {
                 text.push_str(&read_text(r));
@@ -203,6 +210,9 @@ fn read_revision_text(r: &mut Xml<'_>, end_name: &[u8]) -> String {
                     break;
                 }
             }
+            Ok(Event::End(e)) if is_revision_embedded_body(local(e.name().as_ref())) => {
+                embedded_body_depth = embedded_body_depth.saturating_sub(1);
+            }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
                 alternate_content_stack.pop();
             }
@@ -211,6 +221,16 @@ fn read_revision_text(r: &mut Xml<'_>, end_name: &[u8]) -> String {
         }
     }
     text
+}
+
+fn is_revision_embedded_body(name: &[u8]) -> bool {
+    matches!(name, b"drawing" | b"pict" | b"object" | b"txbxContent")
+}
+
+fn push_revision_paragraph_boundary(text: &mut String) {
+    if !text.is_empty() {
+        text.push('\n');
+    }
 }
 
 fn revision_symbol_char(e: &BytesStart<'_>) -> Option<char> {
