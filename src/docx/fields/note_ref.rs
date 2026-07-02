@@ -133,6 +133,7 @@ pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
     let mut endnote_number = 0usize;
     let mut comment_number = 0usize;
     let mut current: Option<NoteRefScanField> = None;
+    let mut computed_fields = NoteRefComputedFieldState::default();
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
     loop {
@@ -155,13 +156,25 @@ pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
                             took_branch: false,
                         });
                     }
-                    b"fldSimple" => record_note_ref_scan_field_position(
-                        attr_local(&e, b"instr").as_deref(),
-                        &mut source_order,
-                        &mut field_positions,
-                        &mut ref_field_positions,
-                        &mut generated_ref_note_fields,
-                    ),
+                    b"fldSimple" => {
+                        if let Some(text) = computed_note_ref_scan_field_result(
+                            attr_local(&e, b"instr").as_deref(),
+                            &mut computed_fields,
+                        ) {
+                            if !text.is_empty() {
+                                source_order += 1;
+                            }
+                            skip_subtree(&mut r);
+                            continue;
+                        }
+                        record_note_ref_scan_field_position(
+                            attr_local(&e, b"instr").as_deref(),
+                            &mut source_order,
+                            &mut field_positions,
+                            &mut ref_field_positions,
+                            &mut generated_ref_note_fields,
+                        );
+                    }
                     b"fldChar" => apply_note_ref_scan_fld_char(
                         &e,
                         &mut source_order,
@@ -301,13 +314,24 @@ pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
                     continue;
                 }
                 match name {
-                    b"fldSimple" => record_note_ref_scan_field_position(
-                        attr_local(&e, b"instr").as_deref(),
-                        &mut source_order,
-                        &mut field_positions,
-                        &mut ref_field_positions,
-                        &mut generated_ref_note_fields,
-                    ),
+                    b"fldSimple" => {
+                        if let Some(text) = computed_note_ref_scan_field_result(
+                            attr_local(&e, b"instr").as_deref(),
+                            &mut computed_fields,
+                        ) {
+                            if !text.is_empty() {
+                                source_order += 1;
+                            }
+                        } else {
+                            record_note_ref_scan_field_position(
+                                attr_local(&e, b"instr").as_deref(),
+                                &mut source_order,
+                                &mut field_positions,
+                                &mut ref_field_positions,
+                                &mut generated_ref_note_fields,
+                            );
+                        }
+                    }
                     b"fldChar" => apply_note_ref_scan_fld_char(
                         &e,
                         &mut source_order,
@@ -435,6 +459,38 @@ pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
         markers,
         generated_ref_note_fields,
     }
+}
+
+#[derive(Debug, Default)]
+struct NoteRefComputedFieldState {
+    field_bookmarks: HashMap<String, String>,
+    sequence_counters: HashMap<String, i64>,
+    autonum_counter: i64,
+    listnum_counter: i64,
+}
+
+fn computed_note_ref_scan_field_result(
+    instruction: Option<&str>,
+    state: &mut NoteRefComputedFieldState,
+) -> Option<String> {
+    let instruction = normalize_instruction(instruction?);
+    match FieldKind::from_instruction(&instruction) {
+        FieldKind::Dynamic(kind) if kind == "SET" => {
+            return computed_set_result(&instruction, &mut state.field_bookmarks);
+        }
+        FieldKind::Dynamic(kind) if kind == "ASK" => {
+            return computed_ask_result(&instruction, &mut state.field_bookmarks);
+        }
+        _ => {}
+    }
+    computed_numbering_result(&instruction, &mut state.autonum_counter)
+        .or_else(|| computed_listnum_result(&instruction, &mut state.listnum_counter))
+        .or_else(|| computed_sequence_result(&instruction, &mut state.sequence_counters))
+        .or_else(|| computed_dynamic_result_with_bookmarks(&instruction, &state.field_bookmarks))
+        .or_else(|| computed_display_result(&instruction))
+        .or_else(|| computed_action_result(&instruction))
+        .or_else(|| computed_reference_index_result(&instruction))
+        .or_else(|| computed_toc_entry_result(&instruction))
 }
 
 pub(crate) fn note_ref_target_names(xml: &str) -> HashSet<String> {

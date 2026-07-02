@@ -3890,6 +3890,23 @@ fn note_body_field_docx() -> Vec<u8> {
     ])
 }
 
+fn note_ref_stale_computed_field_result_marker_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="ComputedNote"/><w:fldSimple w:instr=" QUOTE &quot;Plain text&quot; "><w:r><w:footnoteReference w:id="1"/></w:r></w:fldSimple><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" NOTEREF ComputedNote "><w:r><w:t>cached stale note ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn note_ref_alternate_content_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -18775,6 +18792,53 @@ fn docx_note_ref_gap_cases_keep_cached_text() {
             && main_text.contains("cached missing note ref")
             && main_text.contains("cached bad note ref switch"),
         "NOTEREF gap cases should preserve cached result text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_note_ref_ignores_stale_note_mark_inside_computed_field_result() {
+    let doc =
+        Document::open(&note_ref_stale_computed_field_result_marker_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::Dynamic("QUOTE".to_string()));
+    assert_eq!(fields[0].instruction, r#"QUOTE "Plain text""#);
+    assert_eq!(fields[0].computed_result.as_deref(), Some("Plain text"));
+    assert_eq!(fields[1].kind, FieldKind::NoteRef);
+    assert_eq!(fields[1].instruction, "NOTEREF ComputedNote");
+    assert_eq!(fields[1].result, "cached stale note ref");
+    assert_eq!(fields[1].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::NoteRef,
+            count: 1,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::NoComputedResult,
+            count: 1,
+        }]
+    );
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| instruction.starts_with("NOTEREF")),
+        vec![(
+            "NOTEREF ComputedNote".to_string(),
+            Some(FieldUnsupportedReason::NoComputedResult),
+        )]
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Plain text")
+            && main_text.contains("cached stale note ref")
+            && !main_text.contains('1'),
+        "NOTEREF should not resolve a note mark hidden inside a computed field result: {main_text:?}"
     );
 }
 
