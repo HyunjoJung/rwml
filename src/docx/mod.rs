@@ -275,7 +275,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     let ref_number_context = fields::ref_number_context(&doc_xml, &numbering);
     let page_ref_context = fields::page_ref_context(&doc_xml, &ref_targets);
     let note_ref_context = fields::note_ref_context(&doc_xml);
-    let section_context = fields::section_context(&doc_xml);
+    let section_context = fields::section_context(&doc_xml, &ref_targets);
     let style_ref_context = fields::style_ref_context(&doc_xml, &styles, &numbering, &ref_targets);
     let legacy_form_context = fields::legacy_form_context(&doc_xml, preserve_legacy_form_cache);
     let table_formula_context = fields::table_formula_context(&doc_xml, &ref_targets);

@@ -143,7 +143,7 @@ pub(crate) fn parse(
     let ref_numbers = ref_number_context(xml, numbering);
     let page_refs = page_ref_context(xml, &bookmarks);
     let note_refs = note_ref_context(xml);
-    let sections = section_context(xml);
+    let sections = section_context(xml, &bookmarks);
     let style_refs = style_ref_context(xml, styles, numbering, &bookmarks);
     let legacy_forms = legacy_form_context(xml, preserve_legacy_form_cache);
     let table_formulas = table_formula_context(xml, &bookmarks);

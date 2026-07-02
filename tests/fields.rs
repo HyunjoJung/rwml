@@ -2338,6 +2338,23 @@ fn section_pages_stale_computed_field_marker_docx() -> Vec<u8> {
     ])
 }
 
+fn section_pages_empty_ref_result_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="1" w:name="EmptyTarget"/><w:bookmarkEnd w:id="1"/></w:p><w:p><w:fldSimple w:instr=" REF EmptyTarget "><w:r><w:t>stale empty section ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SECTIONPAGES "><w:r><w:t>cached section pages</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn style_ref_field_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -13194,6 +13211,37 @@ fn docx_section_pages_ignores_stale_note_mark_inside_computed_field_results() {
             && !main_text.contains("cached section pages")
             && !main_text.contains('\u{0002}'),
         "SECTIONPAGES should ignore stale markers hidden inside computed field results: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_section_pages_ignores_stale_empty_ref_result() {
+    let doc = Document::open(&section_pages_empty_ref_result_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::Ref);
+    assert_eq!(fields[0].instruction, "REF EmptyTarget");
+    assert_eq!(fields[0].result, "stale empty section ref");
+    assert_eq!(fields[0].computed_result.as_deref(), Some(""));
+    assert_eq!(
+        fields[1].kind,
+        FieldKind::DocumentStructure("SECTIONPAGES".to_string())
+    );
+    assert_eq!(fields[1].instruction, "SECTIONPAGES");
+    assert_eq!(fields[1].result, "cached section pages");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("1"));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains('1')
+            && !main_text.contains("stale empty section ref")
+            && !main_text.contains("cached section pages"),
+        "SECTIONPAGES should use computed empty REF output when deciding section content: {main_text:?}"
     );
 }
 
