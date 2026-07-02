@@ -1479,6 +1479,7 @@ struct ShapeFieldCursorField {
     phase: ShapeFieldCursorPhase,
     computed_result: Option<String>,
     legacy_form_indexed: bool,
+    result_text: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1530,6 +1531,7 @@ impl ShapeFieldCursor {
                     phase: ShapeFieldCursorPhase::Instruction,
                     computed_result: None,
                     legacy_form_indexed: false,
+                    result_text: String::new(),
                 });
             }
             Some("separate") => {
@@ -1579,6 +1581,14 @@ impl ShapeFieldCursor {
         }
     }
 
+    fn append_complex_result_text(&mut self, text: &str) {
+        if let Some(field) = self.complex_field.as_mut() {
+            if field.phase == ShapeFieldCursorPhase::Result && field.computed_result.is_none() {
+                field.result_text.push_str(text);
+            }
+        }
+    }
+
     fn computed_complex_source_order_result(&mut self) -> Option<String> {
         let field = self.complex_field.as_ref()?;
         if field.phase != ShapeFieldCursorPhase::Result || field.computed_result.is_some() {
@@ -1593,8 +1603,9 @@ impl ShapeFieldCursor {
     fn computed_complex_legacy_form_result(
         &mut self,
         legacy_forms: &fields::LegacyFormContext,
+        include_empty_text_form: bool,
     ) -> Option<String> {
-        let instruction = {
+        let (instruction, current_result) = {
             let field = self.complex_field.as_ref()?;
             if field.phase != ShapeFieldCursorPhase::Result
                 || field.computed_result.is_some()
@@ -1602,13 +1613,20 @@ impl ShapeFieldCursor {
             {
                 return None;
             }
-            field.instruction.clone()
+            (field.instruction.clone(), field.result_text.clone())
         };
+        let is_text_form = matches!(
+            FieldKind::from_instruction(&instruction),
+            FieldKind::FormField(kind) if kind == "FORMTEXT"
+        );
+        if is_text_form && (!include_empty_text_form || !current_result.is_empty()) {
+            return None;
+        }
         let index = self.next_legacy_form_index(&instruction)?;
         if let Some(field) = self.complex_field.as_mut() {
             field.legacy_form_indexed = true;
         }
-        fields::computed_legacy_form_result(&instruction, "", legacy_forms, index)
+        fields::computed_legacy_form_result(&instruction, &current_result, legacy_forms, index)
     }
 
     fn suppresses_complex_result(&self) -> bool {
@@ -1747,6 +1765,7 @@ fn read_floating_shape(
                     match name {
                         b"t" => {
                             let text = read_text(r);
+                            shape_field_cursor.append_complex_result_text(&text);
                             if !shape_field_cursor.suppresses_complex_result() {
                                 append_shape_text(&mut shape_text, &text);
                             }
@@ -1784,8 +1803,11 @@ fn read_floating_shape(
                             shape_field_cursor.append_instruction_text(&read_text(r));
                         }
                         b"sym" => {
-                            if !shape_field_cursor.suppresses_complex_result() {
-                                append_shape_symbol(&mut shape_text, &e);
+                            if let Some(text) = shape_symbol_text(&e) {
+                                shape_field_cursor.append_complex_result_text(&text);
+                                if !shape_field_cursor.suppresses_complex_result() {
+                                    append_shape_text(&mut shape_text, &text);
+                                }
                             }
                             skip_subtree(r);
                         }
@@ -1947,10 +1969,15 @@ fn append_shape_text(out: &mut String, text: &str) {
 }
 
 fn append_shape_symbol(out: &mut String, e: &BytesStart<'_>) {
-    if let Some(ch) = floating_run_symbol_char(e) {
-        let mut buf = [0; 4];
-        append_shape_text(out, ch.encode_utf8(&mut buf));
+    if let Some(text) = shape_symbol_text(e) {
+        append_shape_text(out, &text);
     }
+}
+
+fn shape_symbol_text(e: &BytesStart<'_>) -> Option<String> {
+    let ch = floating_run_symbol_char(e)?;
+    let mut buf = [0; 4];
+    Some(ch.encode_utf8(&mut buf).to_string())
 }
 
 fn computed_shape_ref_result(
@@ -2025,6 +2052,12 @@ fn apply_shape_field_char(
     legacy_forms: &fields::LegacyFormContext,
     shape_field_cursor: &mut ShapeFieldCursor,
 ) {
+    if field_char_type(e).as_deref() == Some("end") {
+        let computed = shape_field_cursor.computed_complex_legacy_form_result(legacy_forms, true);
+        if let Some(text) = computed {
+            shape_field_cursor.set_complex_result(text);
+        }
+    }
     let completed = shape_field_cursor.apply_field_char(e);
     let computed = shape_field_cursor
         .current_complex_instruction()
@@ -2037,7 +2070,7 @@ fn apply_shape_field_char(
             )
         })
         .or_else(|| shape_field_cursor.computed_complex_source_order_result())
-        .or_else(|| shape_field_cursor.computed_complex_legacy_form_result(legacy_forms));
+        .or_else(|| shape_field_cursor.computed_complex_legacy_form_result(legacy_forms, false));
     if let Some(text) = computed {
         shape_field_cursor.set_complex_result(text);
     }

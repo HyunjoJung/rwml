@@ -1773,6 +1773,7 @@ struct ComplexFieldTracker {
     instruction: String,
     phase: Option<ComplexFieldPhase>,
     result_runs: Vec<usize>,
+    result_text: String,
     result_start: Option<usize>,
     pending: Option<PendingComplexField>,
 }
@@ -1795,6 +1796,7 @@ impl ComplexFieldTracker {
     fn begin(&mut self) {
         self.instruction.clear();
         self.result_runs.clear();
+        self.result_text.clear();
         self.result_start = None;
         self.phase = Some(ComplexFieldPhase::Instruction);
         self.pending = None;
@@ -1811,8 +1813,7 @@ impl ComplexFieldTracker {
         if self.phase.is_some() {
             let instruction = normalized_field_instruction(&self.instruction);
             if !instruction.is_empty() {
-                let has_result_runs = !self.result_runs.is_empty();
-                let current_result = if has_result_runs { "\u{0}" } else { "" };
+                let current_result = self.result_text.as_str();
                 let text = computed_simple_field_result(&instruction, ctx, current_result);
                 let unsupported_reason = text
                     .is_none()
@@ -1830,6 +1831,7 @@ impl ComplexFieldTracker {
         }
         self.instruction.clear();
         self.result_runs.clear();
+        self.result_text.clear();
         self.result_start = None;
         self.phase = None;
     }
@@ -1844,9 +1846,10 @@ impl ComplexFieldTracker {
         self.phase == Some(ComplexFieldPhase::Result)
     }
 
-    fn push_result_run(&mut self, index: usize) {
+    fn push_result_run(&mut self, index: usize, text: &str) {
         if self.in_result() {
             self.result_runs.push(index);
+            self.result_text.push_str(text);
         }
     }
 
@@ -2890,7 +2893,7 @@ fn read_run(
     if !text.is_empty() {
         if text_is_field_result {
             if let Some(tracker) = complex_field {
-                tracker.push_result_run(base_index + runs.len());
+                tracker.push_result_run(base_index + runs.len(), &text);
             }
         }
         runs.push(Run {
