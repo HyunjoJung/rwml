@@ -429,6 +429,7 @@ fn computed_ref_target_field_result(
         .or_else(|| computed_numbering_result(&instruction, autonum_counter))
         .or_else(|| computed_listnum_result(&instruction, listnum_counter))
         .or_else(|| computed_sequence_result(&instruction, sequence_counters))
+        .or_else(|| computed_toc_entry_result(&instruction))
         .or_else(|| computed_dynamic_result_with_bookmarks(&instruction, &bookmarks))
         .or_else(|| computed_display_result(&instruction))
         .or_else(|| computed_action_result(&instruction))

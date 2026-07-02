@@ -864,6 +864,7 @@ fn computed_style_ref_source_field_result(
         .or_else(|| computed_numbering_result(&instruction, autonum_counter))
         .or_else(|| computed_listnum_result(&instruction, listnum_counter))
         .or_else(|| computed_sequence_result(&instruction, sequence_counters))
+        .or_else(|| computed_toc_entry_result(&instruction))
         .or_else(|| {
             computed_formula_result_with_bookmark_context(
                 &instruction,

@@ -1515,6 +1515,23 @@ fn formula_table_source_known_field_name_bookmark_docx() -> Vec<u8> {
     ])
 }
 
+fn formula_table_source_toc_entry_marker_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:tc><w:p><w:r><w:t>12</w:t></w:r><w:fldSimple w:instr=" TC &quot;Hidden&quot; \f m \l 1 "><w:r><w:t>999</w:t></w:r></w:fldSimple><w:r><w:t>3</w:t></w:r></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(LEFT) "><w:r><w:t>stale tc source sum</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn formula_table_source_field_symbol_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -2746,6 +2763,27 @@ fn style_ref_source_known_field_name_bookmark_docx() -> Vec<u8> {
     ])
 }
 
+fn style_ref_source_toc_entry_marker_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Chapter</w:t></w:r><w:fldSimple w:instr=" TC &quot;Hidden&quot; \f m \l 1 "><w:r><w:t>stale tc marker</w:t></w:r></w:fldSimple><w:r><w:t> Scope</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;heading 1&quot; "><w:r><w:t>stale tc style source</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn style_ref_complex_field_source_text_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -3627,6 +3665,23 @@ fn known_field_name_bookmark_ref_target_docx() -> Vec<u8> {
         (
             "word/document.xml",
             r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="PAGEREF"/><w:r><w:t>bookmark target</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:bookmarkStart w:id="8" w:name="ComputedTarget"/><w:fldSimple w:instr=" PAGEREF "><w:r><w:t>known field target</w:t></w:r></w:fldSimple><w:bookmarkEnd w:id="8"/></w:p><w:p><w:fldSimple w:instr=" REF ComputedTarget "><w:r><w:t>stale known field target ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn toc_entry_marker_ref_target_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="8" w:name="ComputedTarget"/><w:r><w:t>Alpha </w:t></w:r><w:fldSimple w:instr=" TC &quot;Hidden&quot; \f m \l 1 "><w:r><w:t>stale tc marker</w:t></w:r></w:fldSimple><w:r><w:t>Beta</w:t></w:r><w:bookmarkEnd w:id="8"/></w:p><w:p><w:fldSimple w:instr=" REF ComputedTarget "><w:r><w:t>stale tc target ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -10379,6 +10434,36 @@ fn docx_table_formula_source_field_keeps_known_field_names_cached() {
 }
 
 #[test]
+fn docx_table_formula_source_field_hides_toc_entry_marker_fields() {
+    let doc = Document::open(&formula_table_source_toc_entry_marker_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let marker = fields
+        .iter()
+        .find(|field| field.instruction == r#"TC "Hidden" \f m \l 1"#)
+        .expect("TC marker is recorded");
+    assert_eq!(marker.kind, FieldKind::TocEntry);
+    assert_eq!(marker.result, "999");
+    assert_eq!(marker.computed_result.as_deref(), Some(""));
+
+    let formula = fields
+        .iter()
+        .find(|field| field.instruction == r#"= SUM(LEFT)"#)
+        .expect("formula field is recorded");
+    assert_eq!(formula.kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(formula.result, "stale tc source sum");
+    assert_eq!(formula.computed_result.as_deref(), Some("123"));
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("123\t123")
+            && !main_text.contains("999")
+            && !main_text.contains("stale tc source sum"),
+        "table formula source text should hide TC marker fields instead of using cached marker text: {main_text:?}"
+    );
+}
+
+#[test]
 fn docx_table_formula_source_simple_field_preserves_supported_symbols() {
     let doc = Document::open(&formula_table_source_field_symbol_docx()).expect("fixture opens");
     let fields = doc.fields();
@@ -14240,6 +14325,34 @@ fn docx_style_ref_source_text_keeps_known_field_names_cached() {
         main_text.contains("Heading known field source ready")
             && !main_text.contains("stale known field style source"),
         "STYLEREF source text should keep known field cached text instead of bookmark text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_style_ref_source_text_hides_toc_entry_marker_fields() {
+    let doc = Document::open(&style_ref_source_toc_entry_marker_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let marker = fields
+        .iter()
+        .find(|field| field.instruction == r#"TC "Hidden" \f m \l 1"#)
+        .expect("TC marker is recorded");
+    assert_eq!(marker.kind, FieldKind::TocEntry);
+    assert_eq!(marker.result, "stale tc marker");
+    assert_eq!(marker.computed_result.as_deref(), Some(""));
+
+    let style_ref = fields
+        .iter()
+        .find(|field| field.instruction == "STYLEREF \"heading 1\"")
+        .expect("STYLEREF field is recorded");
+    assert_eq!(style_ref.computed_result.as_deref(), Some("Chapter Scope"));
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Chapter Scope")
+            && !main_text.contains("stale tc marker")
+            && !main_text.contains("stale tc style source"),
+        "STYLEREF source text should hide TC marker fields instead of leaking cached marker text: {main_text:?}"
     );
 }
 
@@ -18682,6 +18795,36 @@ fn docx_ref_targets_keep_known_field_names_cached() {
         main_text.contains("known field target")
             && !main_text.contains("stale known field target ref"),
         "REF target text should keep known field cached text instead of bookmark text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_ref_targets_hide_toc_entry_marker_fields() {
+    let doc = Document::open(&toc_entry_marker_ref_target_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let marker = fields
+        .iter()
+        .find(|field| field.instruction == r#"TC "Hidden" \f m \l 1"#)
+        .expect("TC marker is recorded");
+    assert_eq!(marker.kind, FieldKind::TocEntry);
+    assert_eq!(marker.result, "stale tc marker");
+    assert_eq!(marker.computed_result.as_deref(), Some(""));
+
+    let reference = fields
+        .iter()
+        .find(|field| field.instruction == "REF ComputedTarget")
+        .expect("REF field is recorded");
+    assert_eq!(reference.kind, FieldKind::Ref);
+    assert_eq!(reference.result, "stale tc target ref");
+    assert_eq!(reference.computed_result.as_deref(), Some("Alpha Beta"));
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Alpha Beta")
+            && !main_text.contains("stale tc marker")
+            && !main_text.contains("stale tc target ref"),
+        "REF target text should hide TC marker fields instead of leaking cached marker text: {main_text:?}"
     );
 }
 
