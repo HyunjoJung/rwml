@@ -3559,6 +3559,7 @@ fn unsupported_simple_field_reason_hint(
 }
 
 fn unsupported_ref_reason_hint(instruction: &str, ctx: &Ctx<'_>) -> Option<FieldUnsupportedReason> {
+    let field_bookmarks = ctx.field_bookmarks.borrow();
     let syntax = if FieldKind::from_instruction(instruction) == FieldKind::Ref {
         let Some(syntax) = ref_field_syntax(instruction) else {
             return Some(FieldUnsupportedReason::UnsupportedSwitch);
@@ -3566,12 +3567,14 @@ fn unsupported_ref_reason_hint(instruction: &str, ctx: &Ctx<'_>) -> Option<Field
         syntax
     } else {
         let syntax = direct_ref_field_syntax(instruction)?;
-        if !ctx.bookmark_names.contains(&syntax.target) {
+        if !ctx.bookmark_names.contains(&syntax.target)
+            && !field_bookmarks.contains_key(&syntax.target)
+        {
             return None;
         }
         syntax
     };
-    if ctx.bookmark_names.contains(&syntax.target) {
+    if ctx.bookmark_names.contains(&syntax.target) || field_bookmarks.contains_key(&syntax.target) {
         Some(FieldUnsupportedReason::NoComputedResult)
     } else {
         Some(FieldUnsupportedReason::UnresolvedBookmark)

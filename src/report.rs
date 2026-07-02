@@ -972,7 +972,7 @@ fn field_from_role(
             if instruction.is_empty() {
                 None
             } else {
-                let kind = model_field_kind(&instruction, bookmark_names);
+                let kind = model_field_kind(&instruction, bookmark_names, unsupported_reason);
                 Some(ModelFieldEntry {
                     field: Field {
                         kind,
@@ -997,11 +997,17 @@ fn field_from_role(
     }
 }
 
-fn model_field_kind(instruction: &str, bookmark_names: &HashSet<String>) -> FieldKind {
+fn model_field_kind(
+    instruction: &str,
+    bookmark_names: &HashSet<String>,
+    unsupported_reason: Option<FieldUnsupportedReason>,
+) -> FieldKind {
     let kind = FieldKind::from_instruction(instruction);
     if matches!(kind, FieldKind::Unknown(_))
-        && direct_ref_field_syntax(instruction)
-            .is_some_and(|syntax| bookmark_names.contains(&syntax.target))
+        && direct_ref_field_syntax(instruction).is_some_and(|syntax| {
+            bookmark_names.contains(&syntax.target)
+                || unsupported_reason == Some(FieldUnsupportedReason::NoComputedResult)
+        })
     {
         FieldKind::Ref
     } else {
