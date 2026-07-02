@@ -6,7 +6,7 @@ use quick_xml::Reader;
 use crate::annotation::{Revision, RevisionKind, RevisionView};
 use crate::text;
 
-use super::fields::computed_run_symbol_char;
+use super::fields::{computed_quote_result, computed_run_symbol_char};
 use super::xml_text::{
     inline_marker_text, read_text, skip_alternate_content_branch, skip_subtree,
     AlternateContentBranchState,
@@ -179,6 +179,17 @@ fn read_revision_text(r: &mut Xml<'_>, end_name: &[u8]) -> String {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"p" && embedded_body_depth == 0 => {
                 push_revision_paragraph_boundary(&mut text);
             }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"fldSimple" => {
+                if let Some(computed) = computed_revision_simple_field_text(&e) {
+                    text.push_str(&computed);
+                    skip_subtree(r);
+                }
+            }
+            Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"fldSimple" => {
+                if let Some(computed) = computed_revision_simple_field_text(&e) {
+                    text.push_str(&computed);
+                }
+            }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"t" => {
                 text.push_str(&read_text(r));
             }
@@ -237,6 +248,11 @@ fn revision_symbol_char(e: &BytesStart<'_>) -> Option<char> {
     let value = attr_local_trimmed(e, b"char")?;
     let font = attr_local_trimmed(e, b"font");
     computed_run_symbol_char(font.as_deref(), &value)
+}
+
+fn computed_revision_simple_field_text(e: &BytesStart<'_>) -> Option<String> {
+    let instruction = attr_local_trimmed(e, b"instr")?;
+    computed_quote_result(&instruction)
 }
 
 fn push_revision_text(out: &mut String, view: RevisionView, kind: RevisionKind, value: &str) {
