@@ -800,6 +800,23 @@ fn anchored_text_box_dynamic_field_anchor_docx() -> Vec<u8> {
     ])
 }
 
+fn anchored_text_box_local_field_bookmark_anchor_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:body><w:p><w:fldSimple w:instr=" SET Client &quot;Acme&quot; "/><w:fldSimple w:instr=" IF Client = &quot;Acme&quot; &quot;Fresh anchor&quot; &quot;stale branch&quot; "><w:r><w:t>stale anchor</w:t></w:r></w:fldSimple><w:r><w:t> </w:t></w:r><w:r><w:drawing><wp:anchor relativeHeight="7"><wp:docPr id="13" name="Anchored local state box"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>LOCAL BOX</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:t>After</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn duplicate_anchored_text_box_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -2808,6 +2825,19 @@ fn docx_anchored_text_box_anchor_uses_computed_dynamic_field_text() {
     let complex = text_boxes[1].anchor.as_ref().expect("complex anchor");
     assert_eq!(complex.id, "12");
     assert_eq!(complex.text, "Fresh complex After");
+}
+
+#[test]
+fn docx_anchored_text_box_anchor_uses_local_field_bookmarks_in_dynamic_field_text() {
+    let doc = Document::open(&anchored_text_box_local_field_bookmark_anchor_docx())
+        .expect("fixture opens");
+
+    let text_boxes = doc.text_boxes();
+    assert_eq!(text_boxes.len(), 1);
+    assert_eq!(text_boxes[0].text, "LOCAL BOX");
+    let anchor = text_boxes[0].anchor.as_ref().expect("local state anchor");
+    assert_eq!(anchor.id, "13");
+    assert_eq!(anchor.text, "Fresh anchor After");
 }
 
 #[test]
