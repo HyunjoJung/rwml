@@ -1537,10 +1537,12 @@ impl ShapeFieldCursor {
             }
             Some("end") => {
                 if let Some(field) = self.complex_field.take() {
-                    self.computed_sequence_result(&field.instruction);
-                    self.computed_autonum_result(&field.instruction);
-                    self.computed_listnum_result(&field.instruction);
-                    self.next_legacy_form_index(&field.instruction);
+                    if field.computed_result.is_none() {
+                        self.computed_sequence_result(&field.instruction);
+                        self.computed_autonum_result(&field.instruction);
+                        self.computed_listnum_result(&field.instruction);
+                        self.next_legacy_form_index(&field.instruction);
+                    }
                     return field.computed_result;
                 }
             }
@@ -1571,6 +1573,17 @@ impl ShapeFieldCursor {
                 field.computed_result = Some(text);
             }
         }
+    }
+
+    fn computed_complex_source_order_result(&mut self) -> Option<String> {
+        let field = self.complex_field.as_ref()?;
+        if field.phase != ShapeFieldCursorPhase::Result || field.computed_result.is_some() {
+            return None;
+        }
+        let instruction = field.instruction.clone();
+        self.computed_sequence_result(&instruction)
+            .or_else(|| self.computed_autonum_result(&instruction))
+            .or_else(|| self.computed_listnum_result(&instruction))
     }
 
     fn suppresses_complex_result(&self) -> bool {
@@ -1994,7 +2007,8 @@ fn apply_shape_field_char(
                 document_bookmarks,
                 field_bookmarks,
             )
-        });
+        })
+        .or_else(|| shape_field_cursor.computed_complex_source_order_result());
     if let Some(text) = computed {
         shape_field_cursor.set_complex_result(text);
     }
