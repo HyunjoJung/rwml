@@ -142,7 +142,7 @@ pub(crate) fn parse(
     let ref_positions = ref_position_context(xml, numbering);
     let ref_numbers = ref_number_context(xml, numbering);
     let page_refs = page_ref_context(xml, &bookmarks);
-    let note_refs = note_ref_context(xml);
+    let note_refs = note_ref_context(xml, &bookmarks);
     let sections = section_context(xml, &bookmarks);
     let style_refs = style_ref_context(xml, styles, numbering, &bookmarks);
     let legacy_forms = legacy_form_context(xml, preserve_legacy_form_cache);
@@ -2875,7 +2875,9 @@ mod tests {
         assert!(page_ref_context(xml, &ref_targets(xml))
             .target_position("Figure1")
             .is_some());
-        assert!(note_ref_context(xml).targets.contains_key("FootOne"));
+        assert!(note_ref_context(xml, &ref_targets(xml))
+            .targets
+            .contains_key("FootOne"));
         assert!(toc_entries(xml, &Styles::default(), &HashMap::new())
             .iter()
             .any(|entry| {

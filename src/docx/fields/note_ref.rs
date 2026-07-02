@@ -120,7 +120,10 @@ struct NoteRefCommentRangeTarget {
     end: usize,
 }
 
-pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
+pub(crate) fn note_ref_context(
+    xml: &str,
+    document_bookmarks: &HashMap<String, String>,
+) -> NoteRefContext {
     let mut r = Reader::from_str(xml);
     let mut targets = HashMap::new();
     let mut field_positions = Vec::new();
@@ -135,7 +138,7 @@ pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
     let mut endnote_number = 0usize;
     let mut comment_number = 0usize;
     let mut current: Option<NoteRefScanField> = None;
-    let mut computed_fields = NoteRefComputedFieldState::default();
+    let mut computed_fields = NoteRefComputedFieldState::new(document_bookmarks);
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
     loop {
@@ -503,20 +506,36 @@ pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
     }
 }
 
-#[derive(Debug, Default)]
-struct NoteRefComputedFieldState {
+#[derive(Debug)]
+struct NoteRefComputedFieldState<'a> {
+    document_bookmarks: &'a HashMap<String, String>,
     field_bookmarks: HashMap<String, String>,
     sequence_counters: HashMap<String, i64>,
     autonum_counter: i64,
     listnum_counter: i64,
 }
 
+impl<'a> NoteRefComputedFieldState<'a> {
+    fn new(document_bookmarks: &'a HashMap<String, String>) -> Self {
+        Self {
+            document_bookmarks,
+            field_bookmarks: HashMap::new(),
+            sequence_counters: HashMap::new(),
+            autonum_counter: 0,
+            listnum_counter: 0,
+        }
+    }
+}
+
 fn computed_note_ref_scan_field_result(
     instruction: Option<&str>,
-    state: &mut NoteRefComputedFieldState,
+    state: &mut NoteRefComputedFieldState<'_>,
 ) -> Option<String> {
     let instruction = normalize_instruction(instruction?);
     match FieldKind::from_instruction(&instruction) {
+        FieldKind::Ref => {
+            return computed_note_ref_scan_ref_result(&instruction, state);
+        }
         FieldKind::Dynamic(kind) if kind == "SET" => {
             return computed_set_result(&instruction, &mut state.field_bookmarks);
         }
@@ -535,6 +554,23 @@ fn computed_note_ref_scan_field_result(
         .or_else(|| computed_toc_entry_result(&instruction))
 }
 
+fn computed_note_ref_scan_ref_result(
+    instruction: &str,
+    state: &NoteRefComputedFieldState<'_>,
+) -> Option<String> {
+    let ref_positions = RefPositionContext::default();
+    let ref_numbers = RefNumberContext::empty();
+    let note_refs = NoteRefContext::empty();
+    let ctx = RefResultContext {
+        bookmarks: state.document_bookmarks,
+        ref_positions: &ref_positions,
+        ref_numbers: &ref_numbers,
+        note_refs: &note_refs,
+        field_bookmarks: &state.field_bookmarks,
+    };
+    computed_ref_result(instruction, &ctx, None, None)
+}
+
 fn suppresses_note_ref_complex_result_scan(current: &Option<NoteRefScanField>) -> bool {
     current
         .as_ref()
@@ -542,7 +578,8 @@ fn suppresses_note_ref_complex_result_scan(current: &Option<NoteRefScanField>) -
 }
 
 pub(crate) fn note_ref_target_names(xml: &str) -> HashSet<String> {
-    note_ref_context(xml)
+    let document_bookmarks = ref_targets(xml);
+    note_ref_context(xml, &document_bookmarks)
         .targets
         .into_iter()
         .filter_map(|(name, target)| target.is_note_marker().then_some(name))
@@ -734,7 +771,7 @@ fn apply_note_ref_scan_fld_char(
     field_positions: &mut Vec<NoteRefFieldPosition>,
     ref_field_positions: &mut Vec<NoteRefFieldPosition>,
     generated_ref_note_fields: &mut Vec<NoteRefGeneratedField>,
-    computed_fields: &mut NoteRefComputedFieldState,
+    computed_fields: &mut NoteRefComputedFieldState<'_>,
 ) {
     match field_char_type(e).as_deref() {
         Some("begin") => {
