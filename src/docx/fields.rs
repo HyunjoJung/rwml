@@ -151,8 +151,14 @@ pub(crate) fn parse(
     let page_refs = page_ref_context_with_properties(xml, &bookmarks, properties);
     let note_refs = note_ref_context_with_properties(xml, &bookmarks, properties);
     let sections = section_context_with_properties(xml, &bookmarks, properties);
-    let style_refs =
-        style_ref_context_with_properties(xml, styles, numbering, &bookmarks, properties);
+    let style_refs = style_ref_context_with_properties(
+        xml,
+        styles,
+        numbering,
+        &bookmarks,
+        properties,
+        preserve_legacy_form_cache,
+    );
     let legacy_forms = legacy_form_context(xml, preserve_legacy_form_cache);
     let table_formulas = table_formula_context_with_properties(
         xml,

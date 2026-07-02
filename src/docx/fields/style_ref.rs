@@ -91,6 +91,7 @@ pub(crate) fn style_ref_context(
             extended: &empty_properties,
             file_size_bytes: None,
         },
+        false,
     )
 }
 
@@ -100,7 +101,9 @@ pub(crate) fn style_ref_context_with_properties(
     numbering: &Numbering,
     document_bookmarks: &HashMap<String, String>,
     properties: FieldDocumentProperties<'_>,
+    preserve_legacy_form_cache: bool,
 ) -> StyleRefContext {
+    let legacy_forms = legacy_form_context(xml, preserve_legacy_form_cache);
     let mut r = Reader::from_str(xml);
     let mut entries = Vec::new();
     let mut field_positions = Vec::new();
@@ -109,6 +112,7 @@ pub(crate) fn style_ref_context_with_properties(
     let mut autonum_counter = 0i64;
     let mut listnum_counter = 0i64;
     let mut field_bookmarks = HashMap::new();
+    let mut form_field_index = 0usize;
     let mut next_order = 0usize;
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
@@ -147,6 +151,8 @@ pub(crate) fn style_ref_context_with_properties(
                             &mut autonum_counter,
                             &mut listnum_counter,
                             &mut field_bookmarks,
+                            &legacy_forms,
+                            &mut form_field_index,
                             properties,
                         );
                         consumed_element = true;
@@ -195,6 +201,8 @@ fn read_style_ref_paragraph(
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
+    legacy_forms: &LegacyFormContext,
+    form_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
 ) {
     let mut style_id = None;
@@ -253,6 +261,8 @@ fn read_style_ref_paragraph(
                                 autonum_counter,
                                 listnum_counter,
                                 field_bookmarks,
+                                legacy_forms,
+                                form_field_index,
                                 properties,
                             },
                         );
@@ -292,6 +302,8 @@ fn read_style_ref_paragraph(
                                 autonum_counter,
                                 listnum_counter,
                                 field_bookmarks,
+                                legacy_forms,
+                                form_field_index,
                                 properties,
                             ));
                         }
@@ -358,7 +370,10 @@ fn read_style_ref_paragraph(
                                 autonum_counter,
                                 listnum_counter,
                                 field_bookmarks,
+                                legacy_forms,
+                                form_field_index,
                                 properties,
+                                "",
                             ) {
                                 text.push_str(&computed);
                             }
@@ -425,6 +440,8 @@ struct StyleRefRunScan<'a> {
     autonum_counter: &'a mut i64,
     listnum_counter: &'a mut i64,
     field_bookmarks: &'a mut HashMap<String, String>,
+    legacy_forms: &'a LegacyFormContext,
+    form_field_index: &'a mut usize,
     properties: FieldDocumentProperties<'a>,
 }
 
@@ -442,6 +459,8 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
         autonum_counter,
         listnum_counter,
         field_bookmarks,
+        legacy_forms,
+        form_field_index,
         properties,
     } = scan;
     let mut run_style_id = None;
@@ -486,6 +505,8 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
                             autonum_counter,
                             listnum_counter,
                             field_bookmarks,
+                            legacy_forms,
+                            form_field_index,
                             properties,
                         );
                     }
@@ -553,6 +574,8 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
                             autonum_counter,
                             listnum_counter,
                             field_bookmarks,
+                            legacy_forms,
+                            form_field_index,
                             properties,
                         );
                     }
@@ -622,6 +645,8 @@ fn read_style_ref_simple_field_result(
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
+    legacy_forms: &LegacyFormContext,
+    form_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
 ) -> String {
     let mut text = String::new();
@@ -667,6 +692,8 @@ fn read_style_ref_simple_field_result(
                                 autonum_counter,
                                 listnum_counter,
                                 field_bookmarks,
+                                legacy_forms,
+                                form_field_index,
                                 properties,
                             },
                         );
@@ -695,6 +722,8 @@ fn read_style_ref_simple_field_result(
                             autonum_counter,
                             listnum_counter,
                             field_bookmarks,
+                            legacy_forms,
+                            form_field_index,
                             properties,
                         ));
                         consumed_element = true;
@@ -744,7 +773,10 @@ fn read_style_ref_simple_field_result(
                             autonum_counter,
                             listnum_counter,
                             field_bookmarks,
+                            legacy_forms,
+                            form_field_index,
                             properties,
+                            "",
                         ) {
                             text.push_str(&computed);
                         }
@@ -777,6 +809,7 @@ fn read_style_ref_simple_field_result(
             _ => {}
         }
     }
+    let cached_text = normalize_toc_text(&text);
     if let Some(computed) = computed_style_ref_source_field_result(
         instruction,
         document_bookmarks,
@@ -784,9 +817,11 @@ fn read_style_ref_simple_field_result(
         autonum_counter,
         listnum_counter,
         field_bookmarks,
+        legacy_forms,
+        form_field_index,
         properties,
+        &cached_text,
     ) {
-        let cached_text = normalize_toc_text(&text);
         replace_style_ref_source_entries_with_computed(
             entries,
             entry_start,
@@ -795,11 +830,7 @@ fn read_style_ref_simple_field_result(
         );
         return computed;
     }
-    collapse_style_ref_source_entries_for_cached_text(
-        entries,
-        entry_start,
-        &normalize_toc_text(&text),
-    );
+    collapse_style_ref_source_entries_for_cached_text(entries, entry_start, &cached_text);
     text
 }
 
@@ -886,7 +917,10 @@ fn computed_style_ref_source_field_result(
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
+    legacy_forms: &LegacyFormContext,
+    form_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
+    current_result: &str,
 ) -> Option<String> {
     let instruction = normalize_instruction(instruction?);
     if is_style_ref_field_instruction(&instruction) {
@@ -898,6 +932,11 @@ fn computed_style_ref_source_field_result(
         }
         FieldKind::Dynamic(kind) if kind == "SET" => {
             return computed_set_result(&instruction, field_bookmarks);
+        }
+        FieldKind::FormField(_) => {
+            let index = *form_field_index;
+            *form_field_index += 1;
+            return computed_legacy_form_result(&instruction, current_result, legacy_forms, index);
         }
         _ => {}
     }
@@ -1083,6 +1122,8 @@ fn apply_style_ref_scan_fld_char(
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
+    legacy_forms: &LegacyFormContext,
+    form_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
 ) {
     match field_char_type(e).as_deref() {
@@ -1103,8 +1144,12 @@ fn apply_style_ref_scan_fld_char(
         }
         Some("end") => {
             if let Some(field) = current.pop() {
-                if let (Some(start), Some(computed)) = (
-                    field.paragraph_result_start,
+                if let (Some(start), Some(computed)) = (field.paragraph_result_start, {
+                    let current_result = field
+                        .paragraph_result_start
+                        .and_then(|start| paragraph_text.get(start..))
+                        .map(normalize_toc_text)
+                        .unwrap_or_default();
                     computed_style_ref_source_field_result(
                         Some(&field.instruction),
                         document_bookmarks,
@@ -1112,9 +1157,12 @@ fn apply_style_ref_scan_fld_char(
                         autonum_counter,
                         listnum_counter,
                         field_bookmarks,
+                        legacy_forms,
+                        form_field_index,
                         properties,
-                    ),
-                ) {
+                        &current_result,
+                    )
+                }) {
                     let cached_text = normalize_toc_text(&paragraph_text[start..]);
                     if let Some(entry_start) = field.entry_result_start {
                         replace_style_ref_source_entries_with_computed(

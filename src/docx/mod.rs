@@ -300,6 +300,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         &numbering,
         &ref_targets,
         field_properties,
+        preserve_legacy_form_cache,
     );
     let legacy_form_context = fields::legacy_form_context(&doc_xml, preserve_legacy_form_cache);
     let table_formula_context = fields::table_formula_context_with_properties(
