@@ -20,9 +20,9 @@ use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 
 use crate::annotation::{
-    document_property_key, Comment, Field, FloatingShape, HeaderFooter, HeaderFooterKind, Note,
-    NoteKind, Revision, ShapeDistance, ShapeEffectExtent, ShapeExtent, ShapePoint, ShapePosition,
-    ShapeWrapping, TextAnchor, TextBox,
+    document_property_key, Comment, Field, FieldKind, FloatingShape, HeaderFooter,
+    HeaderFooterKind, Note, NoteKind, Revision, ShapeDistance, ShapeEffectExtent, ShapeExtent,
+    ShapePoint, ShapePosition, ShapeWrapping, TextAnchor, TextBox,
 };
 use crate::assemble;
 use crate::error::{Error, Result};
@@ -402,7 +402,12 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     note_part.fields.extend(endnote_part.fields);
     extend_missing_comment_anchors(&mut note_part.comment_anchors, endnote_part.comment_anchors);
     attach_note_reference_anchors(&mut note_part.records, &doc_xml);
-    let mut floating_shapes = read_floating_shapes(&doc_xml, field_properties, &ref_targets);
+    let mut floating_shapes = read_floating_shapes(
+        &doc_xml,
+        field_properties,
+        &ref_targets,
+        &legacy_form_context,
+    );
     floating_shapes.extend(note_part.floating_shapes);
     let mut text_boxes = read_text_boxes(&doc_xml, &ctx, &floating_shapes);
     text_boxes.extend(note_part.text_boxes);
@@ -917,6 +922,7 @@ fn read_hf_parts(
                     file_size_bytes: properties.file_size_bytes,
                 },
                 &ref_targets,
+                &legacy_form_context,
             ));
         }
         if seen_fields.insert((path.clone(), type_name.to_string())) {
@@ -1100,6 +1106,7 @@ fn read_notes(
             file_size_bytes: properties.file_size_bytes,
         },
         &ref_targets,
+        &legacy_form_context,
     );
     let text_box_id_prefix = format!("{name}-text-box");
     let text_boxes = read_text_boxes_with_prefix(&xml, &ctx, &floating_shapes, &text_box_id_prefix);
@@ -1217,9 +1224,11 @@ fn read_floating_shapes(
     doc_xml: &str,
     properties: fields::FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
+    legacy_forms: &fields::LegacyFormContext,
 ) -> Vec<FloatingShape> {
     let mut r = Reader::from_str(doc_xml);
     let mut shapes = Vec::new();
+    let mut legacy_form_cursor = LegacyFormCursor::default();
     let mut scan_depth = 0usize;
     let mut in_body = false;
     let mut body_depth = 0usize;
@@ -1253,6 +1262,11 @@ fn read_floating_shapes(
                         took_branch: false,
                     });
                 }
+                if name == b"fldSimple" {
+                    legacy_form_cursor.start_simple_field(&e, scan_depth + 1);
+                } else if name == b"fldChar" {
+                    legacy_form_cursor.apply_field_char(&e);
+                }
                 if name == b"body" {
                     in_body = true;
                     body_depth = 0;
@@ -1285,6 +1299,13 @@ fn read_floating_shapes(
                     }
                     body_depth += 1;
                 }
+                if name == b"instrText" {
+                    legacy_form_cursor.append_instruction_text(&read_text(&mut r));
+                    if in_body {
+                        body_depth = body_depth.saturating_sub(1);
+                    }
+                    continue;
+                }
                 if name == b"anchor" {
                     let index = shapes.len();
                     shapes.push(read_floating_shape(
@@ -1294,6 +1315,8 @@ fn read_floating_shapes(
                         current_body_block_index,
                         properties,
                         document_bookmarks,
+                        legacy_forms,
+                        &mut legacy_form_cursor,
                     ));
                     if current_body_block_index.is_some() {
                         current_body_block_shapes.push(FloatingShapeAnchorCandidate {
@@ -1341,10 +1364,16 @@ fn read_floating_shapes(
                 } else if in_body && current_body_block_index.is_some() {
                     append_floating_anchor_empty(&mut current_body_block_text, &e, name);
                 }
+                if name == b"fldSimple" {
+                    legacy_form_cursor.empty_simple_field(&e);
+                } else if name == b"fldChar" {
+                    legacy_form_cursor.apply_field_char(&e);
+                }
             }
             Ok(Event::End(e)) => {
                 let qname = e.name();
                 let name = local(qname.as_ref());
+                legacy_form_cursor.end_element(name, scan_depth);
                 if name == b"body" {
                     in_body = false;
                     body_depth = 0;
@@ -1434,6 +1463,104 @@ struct AlternateContentState {
     took_branch: bool,
 }
 
+#[derive(Debug, Default)]
+struct LegacyFormCursor {
+    next_index: usize,
+    simple_field_depth: Option<usize>,
+    complex_field: Option<LegacyFormCursorField>,
+}
+
+#[derive(Debug)]
+struct LegacyFormCursorField {
+    instruction: String,
+    phase: LegacyFormCursorPhase,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LegacyFormCursorPhase {
+    Instruction,
+    Result,
+}
+
+impl LegacyFormCursor {
+    fn start_simple_field(&mut self, e: &BytesStart<'_>, depth: usize) {
+        if self.simple_field_depth.is_some() {
+            return;
+        }
+        self.simple_field_depth = Some(depth);
+        if let Some(instruction) = attr_local(e, b"instr") {
+            self.next_legacy_form_index(&instruction);
+        }
+    }
+
+    fn empty_simple_field(&mut self, e: &BytesStart<'_>) {
+        if self.simple_field_depth.is_some() {
+            return;
+        }
+        if let Some(instruction) = attr_local(e, b"instr") {
+            self.next_legacy_form_index(&instruction);
+        }
+    }
+
+    fn end_element(&mut self, name: &[u8], depth: usize) {
+        if name == b"fldSimple" && self.simple_field_depth == Some(depth) {
+            self.simple_field_depth = None;
+        }
+    }
+
+    fn apply_field_char(&mut self, e: &BytesStart<'_>) {
+        if self.simple_field_depth.is_some() {
+            return;
+        }
+        match field_char_type(e).as_deref() {
+            Some("begin") => {
+                self.complex_field = Some(LegacyFormCursorField {
+                    instruction: String::new(),
+                    phase: LegacyFormCursorPhase::Instruction,
+                });
+            }
+            Some("separate") => {
+                if let Some(field) = self.complex_field.as_mut() {
+                    field.phase = LegacyFormCursorPhase::Result;
+                }
+            }
+            Some("end") => {
+                if let Some(field) = self.complex_field.take() {
+                    self.next_legacy_form_index(&field.instruction);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn append_instruction_text(&mut self, text: &str) {
+        if self.simple_field_depth.is_some() {
+            return;
+        }
+        if let Some(field) = self.complex_field.as_mut() {
+            if field.phase == LegacyFormCursorPhase::Instruction {
+                field.instruction.push_str(text);
+            }
+        }
+    }
+
+    fn next_legacy_form_index(&mut self, instruction: &str) -> Option<usize> {
+        if !is_legacy_form_field_instruction(instruction) {
+            return None;
+        }
+        let index = self.next_index;
+        self.next_index += 1;
+        Some(index)
+    }
+}
+
+fn is_legacy_form_field_instruction(instruction: &str) -> bool {
+    matches!(
+        FieldKind::from_instruction(instruction),
+        FieldKind::FormField(_)
+    )
+}
+
 fn should_skip_redundant_alternate_branch(
     stack: &mut [AlternateContentState],
     body_depth: usize,
@@ -1498,6 +1625,8 @@ fn read_floating_shape(
     anchor_block_index: Option<usize>,
     properties: fields::FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
+    legacy_forms: &fields::LegacyFormContext,
+    legacy_form_cursor: &mut LegacyFormCursor,
 ) -> FloatingShape {
     let mut shape = floating_shape_shell(index, start, anchor_block_index);
     let mut text_box_depth = 0usize;
@@ -1520,11 +1649,20 @@ fn read_floating_shape(
                                 properties,
                                 document_bookmarks,
                                 &mut field_bookmarks,
+                                legacy_forms,
+                                legacy_form_cursor,
                             ) {
                                 skip_subtree(r);
                             } else {
                                 text_box_depth += 1;
                             }
+                        }
+                        b"fldChar" => {
+                            legacy_form_cursor.apply_field_char(&e);
+                            text_box_depth += 1;
+                        }
+                        b"instrText" => {
+                            legacy_form_cursor.append_instruction_text(&read_text(r));
                         }
                         b"sym" => {
                             append_shape_symbol(&mut shape_text, &e);
@@ -1555,6 +1693,9 @@ fn read_floating_shape(
                 let qname = e.name();
                 let name = local(qname.as_ref());
                 if text_box_depth > 0 {
+                    if name == b"fldChar" {
+                        legacy_form_cursor.apply_field_char(&e);
+                    }
                     if name != b"fldSimple"
                         || !append_shape_simple_field(
                             &mut shape_text,
@@ -1562,6 +1703,8 @@ fn read_floating_shape(
                             properties,
                             document_bookmarks,
                             &mut field_bookmarks,
+                            legacy_forms,
+                            legacy_form_cursor,
                         )
                     {
                         append_shape_empty(&mut shape_text, &e, name);
@@ -1705,6 +1848,8 @@ fn append_shape_simple_field(
     properties: fields::FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
     field_bookmarks: &mut HashMap<String, String>,
+    legacy_forms: &fields::LegacyFormContext,
+    legacy_form_cursor: &mut LegacyFormCursor,
 ) -> bool {
     let Some(instruction) = attr_local(e, b"instr") else {
         return false;
@@ -1746,7 +1891,11 @@ fn append_shape_simple_field(
     .or_else(|| fields::computed_revision_number_result(&instruction, properties.core))
     .or_else(|| fields::computed_display_result(&instruction))
     .or_else(|| fields::computed_action_result(&instruction))
-    .or_else(|| fields::computed_reference_index_result(&instruction)) else {
+    .or_else(|| fields::computed_reference_index_result(&instruction))
+    .or_else(|| {
+        let index = legacy_form_cursor.next_legacy_form_index(&instruction)?;
+        fields::computed_legacy_form_result(&instruction, "", legacy_forms, index)
+    }) else {
         return false;
     };
     if !text.is_empty() {
