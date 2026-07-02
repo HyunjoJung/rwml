@@ -848,13 +848,6 @@ fn read_hf_parts(
             .map(|s| parse_rels(&s))
             .unwrap_or_default();
         let part_media = read_media(zip, &part_rels);
-        let ref_targets = HashMap::new();
-        let ref_position_context = fields::RefPositionContext::default();
-        let ref_number_context = fields::RefNumberContext::empty();
-        let page_ref_context = fields::PageRefContext::empty();
-        let note_ref_context = fields::NoteRefContext::empty();
-        let section_context = fields::SectionContext::empty();
-        let style_ref_context = fields::StyleRefContext::empty();
         let field_properties = fields::FieldDocumentProperties {
             core: properties.core,
             custom: properties.custom,
@@ -862,6 +855,14 @@ fn read_hf_parts(
             extended: properties.extended,
             file_size_bytes: properties.file_size_bytes,
         };
+        let ref_targets =
+            fields::ref_targets_with_properties(&xml, field_properties, preserve_legacy_form_cache);
+        let ref_position_context = fields::RefPositionContext::default();
+        let ref_number_context = fields::RefNumberContext::empty();
+        let page_ref_context = fields::PageRefContext::empty();
+        let note_ref_context = fields::NoteRefContext::empty();
+        let section_context = fields::SectionContext::empty();
+        let style_ref_context = fields::StyleRefContext::empty();
         let legacy_form_context = fields::legacy_form_context(&xml, preserve_legacy_form_cache);
         let table_formula_context = fields::table_formula_context_with_properties(
             &xml,
@@ -1059,13 +1060,6 @@ fn read_notes(
         .map(|s| parse_rels(&s))
         .unwrap_or_default();
     let part_media = read_media(zip, &part_rels);
-    let ref_targets = HashMap::new();
-    let ref_position_context = fields::RefPositionContext::default();
-    let ref_number_context = fields::RefNumberContext::empty();
-    let page_ref_context = fields::PageRefContext::empty();
-    let note_ref_context = fields::NoteRefContext::empty();
-    let section_context = fields::SectionContext::empty();
-    let style_ref_context = fields::StyleRefContext::empty();
     let field_properties = fields::FieldDocumentProperties {
         core: properties.core,
         custom: properties.custom,
@@ -1073,6 +1067,14 @@ fn read_notes(
         extended: properties.extended,
         file_size_bytes: properties.file_size_bytes,
     };
+    let ref_targets =
+        fields::ref_targets_with_properties(&xml, field_properties, preserve_legacy_form_cache);
+    let ref_position_context = fields::RefPositionContext::default();
+    let ref_number_context = fields::RefNumberContext::empty();
+    let page_ref_context = fields::PageRefContext::empty();
+    let note_ref_context = fields::NoteRefContext::empty();
+    let section_context = fields::SectionContext::empty();
+    let style_ref_context = fields::StyleRefContext::empty();
     let legacy_form_context = fields::legacy_form_context(&xml, preserve_legacy_form_cache);
     let table_formula_context = fields::table_formula_context_with_properties(
         &xml,
