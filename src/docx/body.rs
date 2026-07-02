@@ -2655,8 +2655,15 @@ fn read_run(
                     skip_subtree(r);
                 }
                 b"drawing" | b"pict" | b"object" => {
+                    let start = images.len();
                     let (img, txbx) = read_drawing(r, ctx, depth);
                     push_drawing_runs(&mut images, img, txbx);
+                    if complex_field
+                        .as_deref()
+                        .is_some_and(ComplexFieldTracker::in_result)
+                    {
+                        image_result_runs.extend(start..images.len());
+                    }
                 }
                 // AlternateContent can wrap either ordinary run children or the
                 // DrawingML/VML forms of the same shape; materialize one branch.
