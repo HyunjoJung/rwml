@@ -19,7 +19,11 @@ use super::{attr_local_trimmed, field_char_type, local};
 
 type Xml<'a> = Reader<&'a [u8]>;
 
-pub(crate) fn parse(xml: &str, properties: FieldDocumentProperties<'_>) -> Vec<Comment> {
+pub(crate) fn parse(
+    xml: &str,
+    properties: FieldDocumentProperties<'_>,
+    document_bookmarks: &HashMap<String, String>,
+) -> Vec<Comment> {
     let mut r = Reader::from_str(xml);
     let mut comments = Vec::new();
     let mut alternate_content_stack = Vec::new();
@@ -42,7 +46,7 @@ pub(crate) fn parse(xml: &str, properties: FieldDocumentProperties<'_>) -> Vec<C
                 alternate_content_stack.push(AlternateContentBranchState::default());
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"comment" => {
-                if let Some(comment) = read_comment(&mut r, &e, properties) {
+                if let Some(comment) = read_comment(&mut r, &e, properties, document_bookmarks) {
                     comments.push(comment);
                 }
             }
@@ -215,12 +219,14 @@ fn extended_comment_metadata(xml: &str) -> HashMap<String, CommentExMetadata> {
 pub(crate) fn parse_anchors(
     xml: &str,
     properties: FieldDocumentProperties<'_>,
+    document_bookmarks: &HashMap<String, String>,
 ) -> HashMap<String, TextAnchor> {
     let mut r = Reader::from_str(xml);
     let mut anchors: HashMap<String, TextAnchor> = HashMap::new();
     let mut active: Vec<(String, bool)> = Vec::new();
     let mut complex_field = CommentComplexField::default();
-    let mut field_state = ContextlessFieldState::with_document_properties(properties);
+    let mut field_state =
+        ContextlessFieldState::with_document_context(properties, document_bookmarks);
     let mut old_content_depth = 0usize;
     let mut embedded_body_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
@@ -356,10 +362,12 @@ fn read_comment(
     r: &mut Xml<'_>,
     start: &BytesStart<'_>,
     properties: FieldDocumentProperties<'_>,
+    document_bookmarks: &HashMap<String, String>,
 ) -> Option<Comment> {
     let mut c = comment_shell(start);
     let mut complex_field = CommentComplexField::default();
-    let mut field_state = ContextlessFieldState::with_document_properties(properties);
+    let mut field_state =
+        ContextlessFieldState::with_document_context(properties, document_bookmarks);
     let mut old_content_depth = 0usize;
     let mut embedded_body_depth = 0usize;
     let mut alternate_content_stack = Vec::new();

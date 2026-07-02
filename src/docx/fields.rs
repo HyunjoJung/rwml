@@ -1223,6 +1223,7 @@ pub(crate) fn computed_dynamic_result_with_bookmarks(
 #[derive(Debug, Default)]
 pub(crate) struct ContextlessFieldState<'a> {
     document_properties: Option<FieldDocumentProperties<'a>>,
+    document_bookmarks: Option<&'a HashMap<String, String>>,
     field_bookmarks: HashMap<String, String>,
     sequence_counters: HashMap<String, i64>,
     autonum_counter: i64,
@@ -1233,6 +1234,17 @@ impl<'a> ContextlessFieldState<'a> {
     pub(crate) fn with_document_properties(properties: FieldDocumentProperties<'a>) -> Self {
         Self {
             document_properties: Some(properties),
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn with_document_context(
+        properties: FieldDocumentProperties<'a>,
+        document_bookmarks: &'a HashMap<String, String>,
+    ) -> Self {
+        Self {
+            document_properties: Some(properties),
+            document_bookmarks: Some(document_bookmarks),
             ..Self::default()
         }
     }
@@ -1254,6 +1266,15 @@ pub(crate) fn computed_contextless_result(
     }
     if let Some(text) = computed_ask_result(instruction, &mut state.field_bookmarks) {
         return Some(text);
+    }
+    if let Some(document_bookmarks) = state.document_bookmarks {
+        if let Some(text) = computed_formula_result_with_bookmark_context(
+            instruction,
+            document_bookmarks,
+            &state.field_bookmarks,
+        ) {
+            return Some(text);
+        }
     }
     computed_dynamic_result_with_bookmarks(instruction, &state.field_bookmarks)
         .or_else(|| {

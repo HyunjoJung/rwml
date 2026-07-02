@@ -402,7 +402,12 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     note_part.text_boxes.extend(endnote_part.text_boxes);
     note_part.fields.extend(endnote_part.fields);
     extend_missing_comment_anchors(&mut note_part.comment_anchors, endnote_part.comment_anchors);
-    attach_note_reference_anchors(&mut note_part.records, &doc_xml, field_properties);
+    attach_note_reference_anchors(
+        &mut note_part.records,
+        &doc_xml,
+        field_properties,
+        &ref_targets,
+    );
     let mut floating_shapes = read_floating_shapes(
         &doc_xml,
         field_properties,
@@ -449,14 +454,14 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     let comments_ext_xml = part(&mut zip, "word/commentsExtended.xml");
     let mut comments = comments_xml
         .as_deref()
-        .map(|xml| comments::parse(xml, field_properties))
+        .map(|xml| comments::parse(xml, field_properties, &ref_targets))
         .unwrap_or_default();
     if let (Some(comments_xml), Some(comments_ext_xml)) =
         (comments_xml.as_deref(), comments_ext_xml.as_deref())
     {
         comments::apply_extended_parent_ids(&mut comments, comments_xml, comments_ext_xml);
     }
-    let mut comment_anchors = comments::parse_anchors(&doc_xml, field_properties);
+    let mut comment_anchors = comments::parse_anchors(&doc_xml, field_properties, &ref_targets);
     extend_missing_comment_anchors(&mut comment_anchors, note_part.comment_anchors);
     extend_missing_comment_anchors(&mut comment_anchors, header_footer_comment_anchors);
     for comment in &mut comments {
@@ -476,7 +481,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         },
         preserve_legacy_form_cache,
     );
-    let mut revisions = revisions::parse(&doc_xml, field_properties);
+    let mut revisions = revisions::parse(&doc_xml, field_properties, &ref_targets);
     revisions.extend(note_part.revisions);
     revisions.extend(header_footer_revisions);
     // Stats reflect the full visible content (body + notes).
@@ -937,7 +942,7 @@ fn read_hf_parts(
         let type_name = normalized_header_footer_type(&reference.type_name);
         extend_missing_comment_anchors(
             &mut comment_anchors,
-            comments::parse_anchors(&xml, field_properties),
+            comments::parse_anchors(&xml, field_properties, &ref_targets),
         );
         if seen_text_boxes.insert((path.clone(), type_name.to_string())) {
             text_boxes.extend(read_text_boxes_with_prefix(
@@ -948,7 +953,7 @@ fn read_hf_parts(
             ));
         }
         if seen_revisions.insert((path.clone(), type_name.to_string())) {
-            revisions.extend(revisions::parse(&xml, field_properties));
+            revisions.extend(revisions::parse(&xml, field_properties, &ref_targets));
         }
         if seen_floating_shapes.insert((path.clone(), type_name.to_string())) {
             floating_shapes.extend(read_floating_shapes(
@@ -1168,8 +1173,8 @@ fn read_notes(
     };
     let mut blocks = Vec::new();
     let mut records = Vec::new();
-    let comment_anchors = comments::parse_anchors(&xml, field_properties);
-    let revisions = revisions::parse(&xml, field_properties);
+    let comment_anchors = comments::parse_anchors(&xml, field_properties, &ref_targets);
+    let revisions = revisions::parse(&xml, field_properties, &ref_targets);
     let floating_shapes = read_floating_shapes(
         &xml,
         fields::FieldDocumentProperties {
@@ -1334,7 +1339,7 @@ fn read_floating_shapes(
     let mut current_body_block_shapes = Vec::new();
     let mut anchor_complex_field = FloatingAnchorComplexField::default();
     let mut anchor_field_state =
-        fields::ContextlessFieldState::with_document_properties(properties);
+        fields::ContextlessFieldState::with_document_context(properties, document_bookmarks);
     let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
@@ -3799,9 +3804,16 @@ fn attach_note_reference_anchors(
     notes: &mut [Note],
     doc_xml: &str,
     properties: fields::FieldDocumentProperties<'_>,
+    document_bookmarks: &HashMap<String, String>,
 ) {
-    let footnote_refs = body::scan_note_ref_anchors(doc_xml, b"footnoteReference", properties);
-    let endnote_refs = body::scan_note_ref_anchors(doc_xml, b"endnoteReference", properties);
+    let footnote_refs = body::scan_note_ref_anchors(
+        doc_xml,
+        b"footnoteReference",
+        properties,
+        document_bookmarks,
+    );
+    let endnote_refs =
+        body::scan_note_ref_anchors(doc_xml, b"endnoteReference", properties, document_bookmarks);
     for note in notes {
         let anchor_text = match note.kind {
             NoteKind::Footnote => footnote_refs.get(&note.id),
@@ -3861,11 +3873,14 @@ pub(crate) fn main_text_with_revision_view(state: &DocxState, view: crate::Revis
         .iter()
         .map(|(key, value)| (document_property_key(key), value.clone()))
         .collect::<HashMap<_, _>>();
-    let document_variables = state
-        .package
-        .part("word/settings.xml")
-        .map(|xml| parse_document_variables(&String::from_utf8_lossy(&xml)))
+    let settings_xml = state.package.part("word/settings.xml");
+    let document_variables = settings_xml
+        .as_deref()
+        .map(|xml| parse_document_variables(&String::from_utf8_lossy(xml)))
         .unwrap_or_default();
+    let preserve_legacy_form_cache = settings_xml
+        .as_deref()
+        .is_some_and(|xml| settings_preserves_legacy_form_cache(&String::from_utf8_lossy(xml)));
     let extended_properties = state
         .package
         .part("docProps/app.xml")
@@ -3878,7 +3893,9 @@ pub(crate) fn main_text_with_revision_view(state: &DocxState, view: crate::Revis
         extended: &extended_properties,
         file_size_bytes: None,
     };
-    revisions::main_text_with_view(&doc_xml, view, Some(properties))
+    let document_bookmarks =
+        fields::ref_targets_with_properties(&doc_xml, properties, preserve_legacy_form_cache);
+    revisions::main_text_with_view(&doc_xml, view, Some(properties), Some(&document_bookmarks))
 }
 
 fn flatten(blocks: &[Block], out: &mut String) {

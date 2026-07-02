@@ -2,6 +2,7 @@
 
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
+use std::collections::HashMap;
 
 use crate::annotation::{Revision, RevisionKind, RevisionView};
 use crate::text;
@@ -18,7 +19,11 @@ use super::{attr_local_trimmed, field_char_type, local};
 
 type Xml<'a> = Reader<&'a [u8]>;
 
-pub(crate) fn parse(xml: &str, properties: FieldDocumentProperties<'_>) -> Vec<Revision> {
+pub(crate) fn parse(
+    xml: &str,
+    properties: FieldDocumentProperties<'_>,
+    document_bookmarks: &HashMap<String, String>,
+) -> Vec<Revision> {
     let mut r = Reader::from_str(xml);
     let mut revisions = Vec::new();
     let mut alternate_content_stack = Vec::new();
@@ -42,7 +47,13 @@ pub(crate) fn parse(xml: &str, properties: FieldDocumentProperties<'_>) -> Vec<R
             }
             Ok(Event::Start(e)) => {
                 if let Some(kind) = revision_kind(local(e.name().as_ref())) {
-                    revisions.push(read_revision(&mut r, &e, kind, properties));
+                    revisions.push(read_revision(
+                        &mut r,
+                        &e,
+                        kind,
+                        properties,
+                        document_bookmarks,
+                    ));
                 }
             }
             Ok(Event::Empty(e)) => {
@@ -64,6 +75,7 @@ pub(crate) fn main_text_with_view(
     xml: &str,
     view: RevisionView,
     properties: Option<FieldDocumentProperties<'_>>,
+    document_bookmarks: Option<&HashMap<String, String>>,
 ) -> String {
     let mut r = Reader::from_str(xml);
     let mut out = String::new();
@@ -89,7 +101,12 @@ pub(crate) fn main_text_with_view(
             }
             Ok(Event::Start(e)) => {
                 if let Some(kind) = revision_kind(local(e.name().as_ref())) {
-                    let rev_text = read_revision_text(&mut r, local(e.name().as_ref()), properties);
+                    let rev_text = read_revision_text(
+                        &mut r,
+                        local(e.name().as_ref()),
+                        properties,
+                        document_bookmarks,
+                    );
                     push_revision_text(&mut out, view, kind, &rev_text);
                     inline_continuation = false;
                 } else if matches!(local(e.name().as_ref()), b"t" | b"delText") {
@@ -153,9 +170,10 @@ fn read_revision(
     start: &BytesStart<'_>,
     kind: RevisionKind,
     properties: FieldDocumentProperties<'_>,
+    document_bookmarks: &HashMap<String, String>,
 ) -> Revision {
     let end_name = local(start.name().as_ref()).to_vec();
-    let text = read_revision_text(r, &end_name, Some(properties));
+    let text = read_revision_text(r, &end_name, Some(properties), Some(document_bookmarks));
     revision_shell(start, kind, text)
 }
 
@@ -163,13 +181,18 @@ fn read_revision_text(
     r: &mut Xml<'_>,
     end_name: &[u8],
     properties: Option<FieldDocumentProperties<'_>>,
+    document_bookmarks: Option<&HashMap<String, String>>,
 ) -> String {
     let mut depth = 1usize;
     let mut text = String::new();
     let mut complex_field = RevisionComplexField::default();
-    let mut field_state = properties
-        .map(ContextlessFieldState::with_document_properties)
-        .unwrap_or_default();
+    let mut field_state = match (properties, document_bookmarks) {
+        (Some(properties), Some(document_bookmarks)) => {
+            ContextlessFieldState::with_document_context(properties, document_bookmarks)
+        }
+        (Some(properties), None) => ContextlessFieldState::with_document_properties(properties),
+        _ => ContextlessFieldState::default(),
+    };
     let mut embedded_body_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
     loop {
