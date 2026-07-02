@@ -2469,6 +2469,23 @@ fn section_pages_bookmark_if_result_docx() -> Vec<u8> {
     ])
 }
 
+fn section_pages_bookmark_formula_result_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" = InvoiceSubtotal + 8 "/></w:p><w:p><w:fldSimple w:instr=" SECTIONPAGES "><w:r><w:t>cached section formula pages</w:t></w:r></w:fldSimple></w:p><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/></w:sectPr></w:pPr></w:p><w:p><w:bookmarkStart w:id="7" w:name="InvoiceSubtotal"/><w:r><w:t>42</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:sectPr/></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn section_pages_empty_ref_result_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -4346,6 +4363,23 @@ fn note_ref_bookmark_compare_result_marker_docx() -> Vec<u8> {
     ])
 }
 
+fn note_ref_bookmark_formula_result_marker_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="ComputedNote"/><w:fldSimple w:instr=" = InvoiceSubtotal + 8 "><w:r><w:footnoteReference w:id="1"/></w:r><w:r><w:t>stale note formula</w:t></w:r></w:fldSimple><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" NOTEREF ComputedNote "><w:r><w:t>cached stale bookmark formula note ref</w:t></w:r></w:fldSimple></w:p><w:p><w:bookmarkStart w:id="8" w:name="InvoiceSubtotal"/><w:r><w:t>42</w:t></w:r><w:bookmarkEnd w:id="8"/></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn note_ref_stale_ref_result_marker_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -4980,6 +5014,23 @@ fn page_ref_bookmark_if_before_manual_break_docx() -> Vec<u8> {
         (
             "word/document.xml",
             r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" IF Gate = &quot;Ready&quot; &quot;&quot; &quot;&quot; "><w:r><w:t>stale page if</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:br w:type="page"/></w:r></w:p><w:p><w:bookmarkStart w:id="7" w:name="Gate"/><w:bookmarkStart w:id="8" w:name="AfterBookmarkIf"/><w:r><w:t>Ready</w:t></w:r><w:bookmarkEnd w:id="8"/><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF AfterBookmarkIf \h "><w:r><w:t>cached after bookmark if page</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn page_ref_bookmark_formula_rendered_break_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" = InvoiceSubtotal + 8 "><w:r><w:br w:type="page"/></w:r><w:r><w:t>stale page formula</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:lastRenderedPageBreak/></w:r></w:p><w:p><w:bookmarkStart w:id="7" w:name="InvoiceSubtotal"/><w:bookmarkStart w:id="8" w:name="AfterBookmarkFormula"/><w:r><w:t>42</w:t></w:r><w:bookmarkEnd w:id="8"/><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF AfterBookmarkFormula \h "><w:r><w:t>cached after bookmark formula page</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -21410,6 +21461,121 @@ fn docx_note_ref_uses_document_bookmark_compare_result_for_marker_scan() {
             && !main_text.contains("stale note compare")
             && !main_text.contains('\u{0002}'),
         "NOTEREF should not resolve a stale marker hidden inside document-bookmark COMPARE output: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_position_scanners_use_document_bookmark_formula_results() {
+    let page_doc = Document::open(&page_ref_bookmark_formula_rendered_break_docx())
+        .expect("page fixture opens");
+    let page_fields = page_doc.fields();
+
+    assert_eq!(page_fields.len(), 2);
+    assert_eq!(page_fields[0].kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(page_fields[0].instruction, "= InvoiceSubtotal + 8");
+    assert_eq!(page_fields[0].result, "\u{000c}stale page formula");
+    assert_eq!(page_fields[0].computed_result.as_deref(), Some("50"));
+    assert_eq!(page_fields[1].kind, FieldKind::PageRef);
+    assert_eq!(
+        page_fields[1].instruction,
+        "PAGEREF AfterBookmarkFormula \\h"
+    );
+    assert_eq!(page_fields[1].result, "cached after bookmark formula page");
+    assert_eq!(page_fields[1].computed_result.as_deref(), Some("2"));
+
+    let section_doc = Document::open(&section_pages_bookmark_formula_result_docx())
+        .expect("section fixture opens");
+    let section_fields = section_doc.fields();
+
+    assert_eq!(section_fields.len(), 2);
+    assert_eq!(section_fields[0].kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(section_fields[0].instruction, "= InvoiceSubtotal + 8");
+    assert_eq!(section_fields[0].result, "");
+    assert_eq!(section_fields[0].computed_result.as_deref(), Some("50"));
+    assert_eq!(
+        section_fields[1].kind,
+        FieldKind::DocumentStructure("SECTIONPAGES".to_string())
+    );
+    assert_eq!(section_fields[1].instruction, "SECTIONPAGES");
+    assert_eq!(section_fields[1].result, "cached section formula pages");
+    assert_eq!(section_fields[1].computed_result, None);
+
+    let note_doc = Document::open(&note_ref_bookmark_formula_result_marker_docx())
+        .expect("note fixture opens");
+    let note_fields = note_doc.fields();
+
+    assert_eq!(note_fields.len(), 2);
+    assert_eq!(note_fields[0].kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(note_fields[0].instruction, "= InvoiceSubtotal + 8");
+    assert_eq!(note_fields[0].result, "stale note formula");
+    assert_eq!(note_fields[0].computed_result.as_deref(), Some("50"));
+    assert_eq!(note_fields[1].kind, FieldKind::NoteRef);
+    assert_eq!(note_fields[1].instruction, "NOTEREF ComputedNote");
+    assert_eq!(
+        note_fields[1].result,
+        "cached stale bookmark formula note ref"
+    );
+    assert_eq!(note_fields[1].computed_result, None);
+
+    let page_report = page_doc.report();
+    assert!(page_report.features.unsupported_field_kinds.is_empty());
+    assert!(page_report.features.unsupported_field_reasons.is_empty());
+    let section_report = section_doc.report();
+    assert_eq!(
+        section_report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::DocumentStructure("SECTIONPAGES".to_string()),
+            count: 1,
+        }]
+    );
+    assert_eq!(
+        section_report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::NoComputedResult,
+            count: 1,
+        }]
+    );
+    let note_report = note_doc.report();
+    assert_eq!(
+        note_report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::NoteRef,
+            count: 1,
+        }]
+    );
+    assert_eq!(
+        note_report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::NoComputedResult,
+            count: 1,
+        }]
+    );
+
+    let page_text = page_doc.main_text();
+    assert!(
+        page_text.contains("50\n42\n2")
+            && !page_text.contains("stale page formula")
+            && !page_text.contains("cached after bookmark formula page"),
+        "PAGEREF should use computed document-bookmark formula output when scanning page markers: {page_text:?}"
+    );
+
+    let section_text = section_doc.main_text();
+    assert!(
+        section_text.contains("50")
+            && section_text.contains("cached section formula pages")
+            && section_text.contains("42")
+            && !section_text.contains('1'),
+        "SECTIONPAGES should treat computed document-bookmark formula output as visible section content: {section_text:?}"
+    );
+
+    let note_text = note_doc.main_text();
+    assert!(
+        note_text.contains("50")
+            && note_text.contains("cached stale bookmark formula note ref")
+            && !note_text.contains("stale note formula")
+            && !note_text.contains('\u{0002}')
+            && !note_text.contains('1'),
+        "NOTEREF should not resolve a stale marker hidden inside document-bookmark formula output: {note_text:?}"
     );
 }
 

@@ -580,6 +580,13 @@ fn computed_note_ref_scan_field_result(
         .or_else(|| computed_sequence_result(&instruction, &mut state.sequence_counters))
         .or_else(|| computed_dynamic_result_with_bookmarks(&instruction, &state.field_bookmarks))
         .or_else(|| {
+            computed_formula_result_with_bookmark_context(
+                &instruction,
+                state.document_bookmarks,
+                &state.field_bookmarks,
+            )
+        })
+        .or_else(|| {
             computed_if_compare_result_with_bookmark_context(
                 &instruction,
                 state.document_bookmarks,
