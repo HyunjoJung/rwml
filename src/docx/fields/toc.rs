@@ -132,6 +132,7 @@ fn read_toc_paragraph(
     let mut current = Vec::new();
     let mut result_starts: Vec<Option<usize>> = Vec::new();
     let mut sequence_identifiers = Vec::new();
+    let mut field_bookmarks = HashMap::new();
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
     loop {
@@ -183,6 +184,7 @@ fn read_toc_paragraph(
                                 autonum_counter,
                                 listnum_counter,
                                 &mut sequence_identifiers,
+                                &mut field_bookmarks,
                                 entries,
                                 ref_targets,
                             ));
@@ -199,6 +201,7 @@ fn read_toc_paragraph(
                             autonum_counter,
                             listnum_counter,
                             &mut sequence_identifiers,
+                            &mut field_bookmarks,
                             &mut text,
                             entries,
                             ref_targets,
@@ -265,6 +268,7 @@ fn read_toc_paragraph(
                                 ref_targets,
                                 autonum_counter,
                                 listnum_counter,
+                                &mut field_bookmarks,
                             ) {
                                 text.push_str(&computed);
                             }
@@ -280,6 +284,7 @@ fn read_toc_paragraph(
                             autonum_counter,
                             listnum_counter,
                             &mut sequence_identifiers,
+                            &mut field_bookmarks,
                             &mut text,
                             entries,
                             ref_targets,
@@ -375,6 +380,7 @@ fn read_toc_simple_field_result(
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
     sequence_identifiers: &mut Vec<String>,
+    field_bookmarks: &mut HashMap<String, String>,
     entries: &mut Vec<TocEntry>,
     ref_targets: &HashMap<String, String>,
 ) -> String {
@@ -430,6 +436,7 @@ fn read_toc_simple_field_result(
                                 autonum_counter,
                                 listnum_counter,
                                 sequence_identifiers,
+                                field_bookmarks,
                                 entries,
                                 ref_targets,
                             ));
@@ -446,6 +453,7 @@ fn read_toc_simple_field_result(
                             autonum_counter,
                             listnum_counter,
                             sequence_identifiers,
+                            field_bookmarks,
                             &mut text,
                             entries,
                             ref_targets,
@@ -520,6 +528,7 @@ fn read_toc_simple_field_result(
                                 ref_targets,
                                 autonum_counter,
                                 listnum_counter,
+                                field_bookmarks,
                             ) {
                                 text.push_str(&computed);
                             }
@@ -535,6 +544,7 @@ fn read_toc_simple_field_result(
                             autonum_counter,
                             listnum_counter,
                             sequence_identifiers,
+                            field_bookmarks,
                             &mut text,
                             entries,
                             ref_targets,
@@ -581,8 +591,14 @@ fn read_toc_simple_field_result(
             _ => {}
         }
     }
-    computed_toc_source_field_result(instruction, ref_targets, autonum_counter, listnum_counter)
-        .unwrap_or(text)
+    computed_toc_source_field_result(
+        instruction,
+        ref_targets,
+        autonum_counter,
+        listnum_counter,
+        field_bookmarks,
+    )
+    .unwrap_or(text)
 }
 
 fn toc_source_hidden_field_result(current: &[ComplexField]) -> bool {
@@ -608,6 +624,7 @@ fn apply_toc_fld_char(
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
     sequence_identifiers: &mut Vec<String>,
+    field_bookmarks: &mut HashMap<String, String>,
     text: &mut String,
     entries: &mut Vec<TocEntry>,
     ref_targets: &HashMap<String, String>,
@@ -646,6 +663,7 @@ fn apply_toc_fld_char(
             ref_targets,
             autonum_counter,
             listnum_counter,
+            field_bookmarks,
         );
     });
     if fld_type.as_deref() == Some("end") {
@@ -730,6 +748,7 @@ fn computed_toc_source_field_result(
     ref_targets: &HashMap<String, String>,
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
+    field_bookmarks: &mut HashMap<String, String>,
 ) -> Option<String> {
     let instruction = normalize_instruction(instruction?);
     if is_tc_instruction(&instruction)
@@ -737,44 +756,44 @@ fn computed_toc_source_field_result(
     {
         return None;
     }
-    let mut field_bookmarks = HashMap::new();
     match FieldKind::from_instruction(&instruction) {
         FieldKind::Dynamic(kind) if kind == "SET" => {
-            return super::computed_set_result(&instruction, &mut field_bookmarks);
+            return super::computed_set_result(&instruction, field_bookmarks);
         }
         FieldKind::Dynamic(kind) if kind == "ASK" => {
-            return super::computed_ask_result(&instruction, &mut field_bookmarks);
+            return super::computed_ask_result(&instruction, field_bookmarks);
         }
         _ => {}
     }
-    computed_toc_source_ref_result(&instruction, ref_targets)
+    computed_toc_source_ref_result(&instruction, ref_targets, field_bookmarks)
         .or_else(|| computed_numbering_result(&instruction, autonum_counter))
         .or_else(|| computed_listnum_result(&instruction, listnum_counter))
         .or_else(|| {
             super::computed_formula_result_with_bookmark_context(
                 &instruction,
                 ref_targets,
-                &field_bookmarks,
+                field_bookmarks,
             )
         })
         .or_else(|| super::computed_quote_result(&instruction))
         .or_else(|| super::computed_fill_in_result(&instruction))
-        .or_else(|| super::computed_if_result_with_bookmarks(&instruction, &field_bookmarks))
-        .or_else(|| super::computed_compare_result_with_bookmarks(&instruction, &field_bookmarks))
+        .or_else(|| super::computed_if_result_with_bookmarks(&instruction, field_bookmarks))
+        .or_else(|| super::computed_compare_result_with_bookmarks(&instruction, field_bookmarks))
         .or_else(|| {
-            super::computed_merge_control_result_with_bookmarks(&instruction, &field_bookmarks)
+            super::computed_merge_control_result_with_bookmarks(&instruction, field_bookmarks)
         })
         .or_else(|| computed_display_result(&instruction))
         .or_else(|| computed_action_result(&instruction))
         .or_else(|| computed_reference_index_result(&instruction))
 }
 
-// Plain-bookmark-text REF only, mirroring computed_style_ref_source_ref_result:
+// Plain document/field bookmark REF only, mirroring computed_style_ref_source_ref_result:
 // note/relative/paragraph-number/context REFs stay cached (return None) because
 // those are layout-derived and out of scope for source-text splicing.
 fn computed_toc_source_ref_result(
     instruction: &str,
     document_bookmarks: &HashMap<String, String>,
+    field_bookmarks: &HashMap<String, String>,
 ) -> Option<String> {
     let spec =
         ref_instruction(instruction).or_else(|| direct_bookmark_ref_instruction(instruction))?;
@@ -789,7 +808,9 @@ fn computed_toc_source_ref_result(
     if spec.sequence_separator {
         spec.sequence_separator_value.as_deref()?;
     }
-    let text = document_bookmarks.get(&spec.target)?;
+    let text = field_bookmarks
+        .get(&spec.target)
+        .or_else(|| document_bookmarks.get(&spec.target))?;
     let text = computed_ref_bookmark_text_result(text, spec.number_format)?;
     Some(apply_field_text_format(text, spec.text_format))
 }

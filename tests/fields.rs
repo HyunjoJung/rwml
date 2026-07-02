@@ -5114,6 +5114,27 @@ fn toc_heading_ref_field_source_docx() -> Vec<u8> {
     ])
 }
 
+fn toc_heading_set_ref_field_source_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Status </w:t></w:r><w:fldSimple w:instr=" SET Marker &quot;Ready&quot; "><w:r><w:t>stale set</w:t></w:r></w:fldSimple><w:fldSimple w:instr=" REF Marker "><w:r><w:t>stale ref</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TOC \o &quot;1-1&quot; "><w:r><w:t>stale set-ref-source toc</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn toc_property_revision_heading_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -16217,6 +16238,38 @@ fn docx_toc_heading_source_text_uses_computed_ref_field_results() {
     assert!(
         main_text.contains("Section Live Chapter") && !main_text.contains("stale ref"),
         "TOC source text should use the computed REF bookmark text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_toc_heading_source_text_resolves_prior_set_field_results() {
+    let doc = Document::open(&toc_heading_set_ref_field_source_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 3);
+    assert_eq!(fields[0].kind, FieldKind::Dynamic("SET".to_string()));
+    assert_eq!(fields[0].instruction, r#"SET Marker "Ready""#);
+    assert_eq!(fields[0].result, "stale set");
+    assert_eq!(fields[0].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[1].kind, FieldKind::Ref);
+    assert_eq!(fields[1].instruction, "REF Marker");
+    assert_eq!(fields[1].result, "stale ref");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("Ready"));
+    assert_eq!(fields[2].kind, FieldKind::Toc);
+    assert_eq!(fields[2].instruction, "TOC \\o \"1-1\"");
+    assert_eq!(fields[2].result, "stale set-ref-source toc");
+    assert_eq!(fields[2].computed_result.as_deref(), Some("Status Ready"));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Status Ready")
+            && !main_text.contains("Status stale ref")
+            && !main_text.contains("stale set-ref-source toc"),
+        "TOC source text should resolve source-order SET-backed REF text: {main_text:?}"
     );
 }
 
