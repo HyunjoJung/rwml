@@ -1692,6 +1692,13 @@ fn append_shape_simple_field(
         document_bookmarks,
         &field_bookmarks,
     )
+    .or_else(|| {
+        fields::computed_if_compare_result_with_bookmark_context(
+            &instruction,
+            document_bookmarks,
+            &field_bookmarks,
+        )
+    })
     .or_else(|| fields::computed_dynamic_result_with_bookmarks(&instruction, &field_bookmarks))
     .or_else(|| {
         fields::computed_document_info_result(
