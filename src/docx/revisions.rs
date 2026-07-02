@@ -11,7 +11,7 @@ use super::xml_text::{
     inline_marker_text, read_text, skip_alternate_content_branch, skip_subtree,
     AlternateContentBranchState,
 };
-use super::{attr_local_trimmed, local};
+use super::{attr_local_trimmed, field_char_type, local};
 
 type Xml<'a> = Reader<&'a [u8]>;
 
@@ -150,6 +150,7 @@ fn read_revision(r: &mut Xml<'_>, start: &BytesStart<'_>, kind: RevisionKind) ->
 fn read_revision_text(r: &mut Xml<'_>, end_name: &[u8]) -> String {
     let mut depth = 1usize;
     let mut text = String::new();
+    let mut complex_field = RevisionComplexField::default();
     let mut embedded_body_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
     loop {
@@ -176,6 +177,21 @@ fn read_revision_text(r: &mut Xml<'_>, end_name: &[u8]) -> String {
             Ok(Event::Start(e)) if is_revision_embedded_body(local(e.name().as_ref())) => {
                 embedded_body_depth += 1;
             }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"fldChar" => {
+                if let Some(computed) = complex_field.apply_field_char(&e) {
+                    text.push_str(&computed);
+                }
+                skip_subtree(r);
+            }
+            Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"fldChar" => {
+                if let Some(computed) = complex_field.apply_field_char(&e) {
+                    text.push_str(&computed);
+                }
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"instrText" => {
+                let instruction = read_text(r);
+                complex_field.append_instruction_text(&instruction);
+            }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"p" && embedded_body_depth == 0 => {
                 push_revision_paragraph_boundary(&mut text);
             }
@@ -191,28 +207,40 @@ fn read_revision_text(r: &mut Xml<'_>, end_name: &[u8]) -> String {
                 }
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"t" => {
-                text.push_str(&read_text(r));
+                let value = read_text(r);
+                if !complex_field.suppresses_result() {
+                    text.push_str(&value);
+                }
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"delText" => {
-                text.push_str(&read_text(r));
+                let value = read_text(r);
+                if !complex_field.suppresses_result() {
+                    text.push_str(&value);
+                }
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"sym" => {
-                if let Some(ch) = revision_symbol_char(&e) {
-                    text.push(ch);
+                if !complex_field.suppresses_result() {
+                    if let Some(ch) = revision_symbol_char(&e) {
+                        text.push(ch);
+                    }
                 }
                 skip_subtree(r);
             }
             Ok(Event::Start(e)) => {
-                if let Some(marker) = inline_marker_text(&e) {
-                    text.push_str(marker);
-                    skip_subtree(r);
+                if !complex_field.suppresses_result() {
+                    if let Some(marker) = inline_marker_text(&e) {
+                        text.push_str(marker);
+                        skip_subtree(r);
+                    }
                 }
             }
             Ok(Event::Empty(e)) => {
-                if let Some(marker) = inline_marker_text(&e) {
-                    text.push_str(marker);
-                } else if let Some(ch) = revision_symbol_char(&e) {
-                    text.push(ch);
+                if !complex_field.suppresses_result() {
+                    if let Some(marker) = inline_marker_text(&e) {
+                        text.push_str(marker);
+                    } else if let Some(ch) = revision_symbol_char(&e) {
+                        text.push(ch);
+                    }
                 }
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == end_name => {
@@ -253,6 +281,68 @@ fn revision_symbol_char(e: &BytesStart<'_>) -> Option<char> {
 fn computed_revision_simple_field_text(e: &BytesStart<'_>) -> Option<String> {
     let instruction = attr_local_trimmed(e, b"instr")?;
     computed_quote_result(&instruction)
+}
+
+#[derive(Default)]
+struct RevisionComplexField {
+    depth: usize,
+    instruction: String,
+    phase: Option<RevisionComplexFieldPhase>,
+    computed_result: Option<String>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RevisionComplexFieldPhase {
+    Instruction,
+    Result,
+}
+
+impl RevisionComplexField {
+    fn apply_field_char(&mut self, e: &BytesStart<'_>) -> Option<String> {
+        match field_char_type(e).as_deref() {
+            Some("begin") => {
+                if self.depth == 0 {
+                    self.instruction.clear();
+                    self.phase = Some(RevisionComplexFieldPhase::Instruction);
+                    self.computed_result = None;
+                }
+                self.depth += 1;
+                None
+            }
+            Some("separate")
+                if self.depth == 1
+                    && self.phase == Some(RevisionComplexFieldPhase::Instruction) =>
+            {
+                self.phase = Some(RevisionComplexFieldPhase::Result);
+                self.computed_result = computed_quote_result(&self.instruction);
+                self.computed_result.clone()
+            }
+            Some("end") => {
+                if self.depth > 0 {
+                    self.depth -= 1;
+                    if self.depth == 0 {
+                        self.instruction.clear();
+                        self.phase = None;
+                        self.computed_result = None;
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
+    fn append_instruction_text(&mut self, text: &str) {
+        if self.depth == 1 && self.phase == Some(RevisionComplexFieldPhase::Instruction) {
+            self.instruction.push_str(text);
+        }
+    }
+
+    fn suppresses_result(&self) -> bool {
+        self.depth > 0
+            && self.phase == Some(RevisionComplexFieldPhase::Result)
+            && self.computed_result.is_some()
+    }
 }
 
 fn push_revision_text(out: &mut String, view: RevisionView, kind: RevisionKind, value: &str) {
