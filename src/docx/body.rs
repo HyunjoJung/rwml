@@ -1022,6 +1022,7 @@ pub(crate) fn scan_note_ref_anchors(xml: &str, tag: &[u8]) -> HashMap<String, St
     let mut current_block_depth = None;
     let mut current_block_text = String::new();
     let mut current_block_refs = Vec::new();
+    let mut complex_field = NoteAnchorComplexField::default();
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => {
@@ -1051,6 +1052,7 @@ pub(crate) fn scan_note_ref_anchors(xml: &str, tag: &[u8]) -> HashMap<String, St
                         current_block_depth = Some(body_depth + 1);
                         current_block_text.clear();
                         current_block_refs.clear();
+                        complex_field = NoteAnchorComplexField::default();
                     }
                     body_depth += 1;
                 }
@@ -1061,21 +1063,41 @@ pub(crate) fn scan_note_ref_anchors(xml: &str, tag: &[u8]) -> HashMap<String, St
                         }
                         skip_subtree(&mut r);
                         body_depth = body_depth.saturating_sub(1);
+                    } else if name == b"fldChar" {
+                        if let Some(text) = complex_field.apply_field_char(&e) {
+                            current_block_text.push_str(&text);
+                        }
+                        skip_subtree(&mut r);
+                        body_depth = body_depth.saturating_sub(1);
+                    } else if name == b"instrText" {
+                        let instruction = read_text(&mut r);
+                        complex_field.append_instruction_text(&instruction);
+                        body_depth = body_depth.saturating_sub(1);
                     } else if name == b"fldSimple" {
-                        if let Some(text) = computed_note_anchor_simple_field_text(&e) {
+                        if complex_field.suppresses_result() {
+                            skip_subtree(&mut r);
+                            body_depth = body_depth.saturating_sub(1);
+                        } else if let Some(text) = computed_note_anchor_simple_field_text(&e) {
                             current_block_text.push_str(&text);
                             skip_subtree(&mut r);
                             body_depth = body_depth.saturating_sub(1);
                         }
                     } else if name == b"t" {
-                        current_block_text.push_str(&read_text(&mut r));
+                        let text = read_text(&mut r);
+                        if !complex_field.suppresses_result() {
+                            current_block_text.push_str(&text);
+                        }
                         body_depth = body_depth.saturating_sub(1);
                     } else if let Some(marker) = inline_marker_text(&e) {
-                        current_block_text.push_str(marker);
+                        if !complex_field.suppresses_result() {
+                            current_block_text.push_str(marker);
+                        }
                         skip_subtree(&mut r);
                         body_depth = body_depth.saturating_sub(1);
                     } else if name == b"sym" {
-                        append_run_symbol(&mut current_block_text, &e);
+                        if !complex_field.suppresses_result() {
+                            append_run_symbol(&mut current_block_text, &e);
+                        }
                         skip_subtree(&mut r);
                         body_depth = body_depth.saturating_sub(1);
                     } else if name == b"AlternateContent" {
@@ -1084,6 +1106,7 @@ pub(crate) fn scan_note_ref_anchors(xml: &str, tag: &[u8]) -> HashMap<String, St
                             tag,
                             &mut current_block_text,
                             &mut current_block_refs,
+                            &mut complex_field,
                             0,
                         );
                         body_depth = body_depth.saturating_sub(1);
@@ -1101,11 +1124,17 @@ pub(crate) fn scan_note_ref_anchors(xml: &str, tag: &[u8]) -> HashMap<String, St
                         if let Some(id) = attr_local_trimmed(&e, b"id") {
                             current_block_refs.push(id);
                         }
-                    } else if name == b"fldSimple" {
-                        if let Some(text) = computed_note_anchor_simple_field_text(&e) {
+                    } else if name == b"fldChar" {
+                        if let Some(text) = complex_field.apply_field_char(&e) {
                             current_block_text.push_str(&text);
                         }
-                    } else {
+                    } else if name == b"fldSimple" {
+                        if !complex_field.suppresses_result() {
+                            if let Some(text) = computed_note_anchor_simple_field_text(&e) {
+                                current_block_text.push_str(&text);
+                            }
+                        }
+                    } else if !complex_field.suppresses_result() {
                         append_note_anchor_empty(&mut current_block_text, &e, name);
                     }
                 }
@@ -1121,6 +1150,7 @@ pub(crate) fn scan_note_ref_anchors(xml: &str, tag: &[u8]) -> HashMap<String, St
                     current_block_depth = None;
                     current_block_text.clear();
                     current_block_refs.clear();
+                    complex_field = NoteAnchorComplexField::default();
                     continue;
                 }
                 if in_body {
@@ -1140,6 +1170,7 @@ pub(crate) fn scan_note_ref_anchors(xml: &str, tag: &[u8]) -> HashMap<String, St
                         current_block_depth = None;
                         current_block_text.clear();
                         current_block_refs.clear();
+                        complex_field = NoteAnchorComplexField::default();
                     }
                 }
             }
@@ -1148,6 +1179,68 @@ pub(crate) fn scan_note_ref_anchors(xml: &str, tag: &[u8]) -> HashMap<String, St
         }
     }
     anchors
+}
+
+#[derive(Default)]
+struct NoteAnchorComplexField {
+    depth: usize,
+    instruction: String,
+    phase: Option<NoteAnchorComplexFieldPhase>,
+    computed_result: Option<String>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum NoteAnchorComplexFieldPhase {
+    Instruction,
+    Result,
+}
+
+impl NoteAnchorComplexField {
+    fn apply_field_char(&mut self, e: &BytesStart<'_>) -> Option<String> {
+        match field_char_type(e).as_deref() {
+            Some("begin") => {
+                if self.depth == 0 {
+                    self.instruction.clear();
+                    self.phase = Some(NoteAnchorComplexFieldPhase::Instruction);
+                    self.computed_result = None;
+                }
+                self.depth += 1;
+                None
+            }
+            Some("separate")
+                if self.depth == 1
+                    && self.phase == Some(NoteAnchorComplexFieldPhase::Instruction) =>
+            {
+                self.phase = Some(NoteAnchorComplexFieldPhase::Result);
+                self.computed_result = computed_quote_result(&self.instruction);
+                self.computed_result.clone()
+            }
+            Some("end") => {
+                if self.depth > 0 {
+                    self.depth -= 1;
+                    if self.depth == 0 {
+                        self.instruction.clear();
+                        self.phase = None;
+                        self.computed_result = None;
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
+    fn append_instruction_text(&mut self, text: &str) {
+        if self.depth == 1 && self.phase == Some(NoteAnchorComplexFieldPhase::Instruction) {
+            self.instruction.push_str(text);
+        }
+    }
+
+    fn suppresses_result(&self) -> bool {
+        self.depth > 0
+            && self.phase == Some(NoteAnchorComplexFieldPhase::Result)
+            && self.computed_result.is_some()
+    }
 }
 
 fn is_note_anchor_body_block(name: &[u8]) -> bool {
@@ -1183,6 +1276,7 @@ fn append_note_anchor_alternate_content(
     tag: &[u8],
     text: &mut String,
     refs: &mut Vec<String>,
+    complex_field: &mut NoteAnchorComplexField,
     depth: u32,
 ) {
     if depth > MAX_DEPTH {
@@ -1195,7 +1289,7 @@ fn append_note_anchor_alternate_content(
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
                 b"Choice" | b"Fallback" if !took => {
                     took = true;
-                    append_note_anchor_content(r, tag, text, refs, depth + 1);
+                    append_note_anchor_content(r, tag, text, refs, complex_field, depth + 1);
                 }
                 _ => skip_subtree(r),
             },
@@ -1210,6 +1304,7 @@ fn append_note_anchor_content(
     tag: &[u8],
     text: &mut String,
     refs: &mut Vec<String>,
+    complex_field: &mut NoteAnchorComplexField,
     depth: u32,
 ) {
     if depth > MAX_DEPTH {
@@ -1226,27 +1321,51 @@ fn append_note_anchor_content(
                         refs.push(id);
                     }
                     skip_subtree(r);
+                } else if name == b"fldChar" {
+                    if let Some(computed) = complex_field.apply_field_char(&e) {
+                        text.push_str(&computed);
+                    }
+                    skip_subtree(r);
+                } else if name == b"instrText" {
+                    let instruction = read_text(r);
+                    complex_field.append_instruction_text(&instruction);
                 } else if name == b"fldSimple" {
-                    if let Some(computed) = computed_note_anchor_simple_field_text(&e) {
+                    if complex_field.suppresses_result() {
+                        skip_subtree(r);
+                    } else if let Some(computed) = computed_note_anchor_simple_field_text(&e) {
                         text.push_str(&computed);
                         skip_subtree(r);
                     } else {
-                        append_note_anchor_content(r, tag, text, refs, depth + 1);
+                        append_note_anchor_content(r, tag, text, refs, complex_field, depth + 1);
                     }
                 } else if name == b"t" {
-                    text.push_str(&read_text(r));
+                    let value = read_text(r);
+                    if !complex_field.suppresses_result() {
+                        text.push_str(&value);
+                    }
                 } else if let Some(marker) = inline_marker_text(&e) {
-                    text.push_str(marker);
+                    if !complex_field.suppresses_result() {
+                        text.push_str(marker);
+                    }
                     skip_subtree(r);
                 } else if name == b"sym" {
-                    append_run_symbol(text, &e);
+                    if !complex_field.suppresses_result() {
+                        append_run_symbol(text, &e);
+                    }
                     skip_subtree(r);
                 } else if name == b"AlternateContent" {
-                    append_note_anchor_alternate_content(r, tag, text, refs, depth + 1);
+                    append_note_anchor_alternate_content(
+                        r,
+                        tag,
+                        text,
+                        refs,
+                        complex_field,
+                        depth + 1,
+                    );
                 } else if is_note_anchor_embedded_body(name) {
                     skip_subtree(r);
                 } else {
-                    append_note_anchor_content(r, tag, text, refs, depth + 1);
+                    append_note_anchor_content(r, tag, text, refs, complex_field, depth + 1);
                 }
             }
             Ok(Event::Empty(e)) => {
@@ -1256,11 +1375,17 @@ fn append_note_anchor_content(
                     if let Some(id) = attr_local_trimmed(&e, b"id") {
                         refs.push(id);
                     }
-                } else if name == b"fldSimple" {
-                    if let Some(computed) = computed_note_anchor_simple_field_text(&e) {
+                } else if name == b"fldChar" {
+                    if let Some(computed) = complex_field.apply_field_char(&e) {
                         text.push_str(&computed);
                     }
-                } else {
+                } else if name == b"fldSimple" {
+                    if !complex_field.suppresses_result() {
+                        if let Some(computed) = computed_note_anchor_simple_field_text(&e) {
+                            text.push_str(&computed);
+                        }
+                    }
+                } else if !complex_field.suppresses_result() {
                     append_note_anchor_empty(text, &e, name);
                 }
             }
