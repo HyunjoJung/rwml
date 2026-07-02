@@ -3383,6 +3383,23 @@ fn legacy_form_field_docx() -> Vec<u8> {
     ])
 }
 
+fn legacy_form_ref_target_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" FORMDROPDOWN "><w:ffData><w:ddList><w:result w:val="1"/><w:listEntry w:val="Prior A"/><w:listEntry w:val="Prior B"/></w:ddList></w:ffData><w:r><w:t>stale prior option</w:t></w:r></w:fldSimple></w:p><w:p><w:bookmarkStart w:id="11" w:name="SelectedOption"/><w:fldSimple w:instr=" FORMDROPDOWN "><w:ffData><w:ddList><w:result w:val="1"/><w:listEntry w:val="Target A"/><w:listEntry w:val="Target B"/></w:ddList></w:ffData><w:r><w:t>stale target option</w:t></w:r></w:fldSimple><w:bookmarkEnd w:id="11"/></w:p><w:p><w:fldSimple w:instr=" REF SelectedOption "><w:r><w:t>cached form ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn legacy_form_deleted_field_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -16619,6 +16636,43 @@ fn docx_legacy_form_fields_materialize_deterministic_values() {
             && !main_text.contains("stale default option")
             && !main_text.contains("stale invalid option"),
         "computed legacy form field results should replace stale cached text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_ref_targets_use_computed_legacy_form_results() {
+    let doc = Document::open(&legacy_form_ref_target_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 3);
+    assert_eq!(
+        fields[0].kind,
+        FieldKind::FormField("FORMDROPDOWN".to_string())
+    );
+    assert_eq!(fields[0].result, "stale prior option");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("Prior B"));
+    assert_eq!(
+        fields[1].kind,
+        FieldKind::FormField("FORMDROPDOWN".to_string())
+    );
+    assert_eq!(fields[1].result, "stale target option");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("Target B"));
+    assert_eq!(fields[2].kind, FieldKind::Ref);
+    assert_eq!(fields[2].instruction, "REF SelectedOption");
+    assert_eq!(fields[2].result, "cached form ref");
+    assert_eq!(fields[2].computed_result.as_deref(), Some("Target B"));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Prior B")
+            && main_text.contains("Target B")
+            && !main_text.contains("stale target option")
+            && !main_text.contains("cached form ref"),
+        "REF target scanner should reuse computed legacy form values: {main_text:?}"
     );
 }
 

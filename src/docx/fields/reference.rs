@@ -12,13 +12,16 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
             extended: &empty_properties,
             file_size_bytes: None,
         },
+        false,
     )
 }
 
 pub(crate) fn ref_targets_with_properties(
     xml: &str,
     properties: FieldDocumentProperties<'_>,
+    preserve_legacy_form_cache: bool,
 ) -> HashMap<String, String> {
+    let legacy_forms = legacy_form_context(xml, preserve_legacy_form_cache);
     let mut r = Reader::from_str(xml);
     let mut active: Vec<(String, String)> = Vec::new();
     let mut out: HashMap<String, String> = HashMap::new();
@@ -29,6 +32,7 @@ pub(crate) fn ref_targets_with_properties(
     let mut listnum_counter = 0i64;
     let mut sequence_counters = HashMap::new();
     let mut field_bookmarks = HashMap::new();
+    let mut form_field_index = 0usize;
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => {
@@ -58,6 +62,8 @@ pub(crate) fn ref_targets_with_properties(
                             &mut listnum_counter,
                             &mut sequence_counters,
                             &mut field_bookmarks,
+                            &legacy_forms,
+                            &mut form_field_index,
                             properties,
                             &mut r,
                             &e,
@@ -73,6 +79,8 @@ pub(crate) fn ref_targets_with_properties(
                             &mut listnum_counter,
                             &mut sequence_counters,
                             &mut field_bookmarks,
+                            &legacy_forms,
+                            &mut form_field_index,
                             properties,
                             &mut r,
                             &e,
@@ -93,9 +101,33 @@ pub(crate) fn ref_targets_with_properties(
                             &mut listnum_counter,
                             &mut sequence_counters,
                             &mut field_bookmarks,
+                            &legacy_forms,
+                            &mut form_field_index,
                             properties,
+                            &field.result,
                         )
                         .unwrap_or(field.result);
+                        continue;
+                    }
+                    b"fldSimple"
+                        if is_legacy_form_field_instruction(
+                            attr_local(&e, b"instr").as_deref(),
+                        ) =>
+                    {
+                        let field = read_simple_field(&mut r, &e);
+                        let _ = computed_ref_target_field_result(
+                            &field.instruction,
+                            &out,
+                            &[],
+                            &mut autonum_counter,
+                            &mut listnum_counter,
+                            &mut sequence_counters,
+                            &mut field_bookmarks,
+                            &legacy_forms,
+                            &mut form_field_index,
+                            properties,
+                            &field.result,
+                        );
                         continue;
                     }
                     b"fldChar" => {
@@ -108,6 +140,8 @@ pub(crate) fn ref_targets_with_properties(
                             &mut listnum_counter,
                             &mut sequence_counters,
                             &mut field_bookmarks,
+                            &legacy_forms,
+                            &mut form_field_index,
                             properties,
                         );
                     }
@@ -189,6 +223,8 @@ pub(crate) fn ref_targets_with_properties(
                             &mut listnum_counter,
                             &mut sequence_counters,
                             &mut field_bookmarks,
+                            &legacy_forms,
+                            &mut form_field_index,
                             properties,
                         );
                     }
@@ -206,7 +242,29 @@ pub(crate) fn ref_targets_with_properties(
                             &mut listnum_counter,
                             &mut sequence_counters,
                             &mut field_bookmarks,
+                            &legacy_forms,
+                            &mut form_field_index,
                             properties,
+                            "",
+                        );
+                    }
+                    b"fldSimple"
+                        if is_legacy_form_field_instruction(
+                            attr_local(&e, b"instr").as_deref(),
+                        ) =>
+                    {
+                        let _ = computed_ref_target_field_result(
+                            attr_local(&e, b"instr").as_deref().unwrap_or_default(),
+                            &out,
+                            &[],
+                            &mut autonum_counter,
+                            &mut listnum_counter,
+                            &mut sequence_counters,
+                            &mut field_bookmarks,
+                            &legacy_forms,
+                            &mut form_field_index,
+                            properties,
+                            "",
                         );
                     }
                     b"fldChar" => {
@@ -219,6 +277,8 @@ pub(crate) fn ref_targets_with_properties(
                             &mut listnum_counter,
                             &mut sequence_counters,
                             &mut field_bookmarks,
+                            &legacy_forms,
+                            &mut form_field_index,
                             properties,
                         );
                     }
@@ -271,6 +331,8 @@ fn apply_ref_target_fld_char(
     listnum_counter: &mut i64,
     sequence_counters: &mut HashMap<String, i64>,
     field_bookmarks: &mut HashMap<String, String>,
+    legacy_forms: &LegacyFormContext,
+    form_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
 ) {
     match field_char_type(e).as_deref() {
@@ -287,6 +349,7 @@ fn apply_ref_target_fld_char(
                 let field = &current[0];
                 if field.active.is_empty()
                     && !is_ref_target_source_order_field_instruction(Some(&field.instruction))
+                    && !is_legacy_form_field_instruction(Some(&field.instruction))
                 {
                     current.pop();
                     return;
@@ -308,7 +371,10 @@ fn apply_ref_target_fld_char(
                 listnum_counter,
                 sequence_counters,
                 field_bookmarks,
+                legacy_forms,
+                form_field_index,
                 properties,
+                &field.result,
             )
             .unwrap_or(field.result);
             if let Some(parent) = current.last_mut() {
@@ -378,12 +444,14 @@ fn append_ref_simple_field_result(
     listnum_counter: &mut i64,
     sequence_counters: &mut HashMap<String, i64>,
     field_bookmarks: &mut HashMap<String, String>,
+    legacy_forms: &LegacyFormContext,
+    form_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
     r: &mut Xml<'_>,
     e: &BytesStart<'_>,
 ) {
     let excluded = ref_target_excluded_bookmarks(active, current);
-    let (instruction, result) = read_simple_field_result(r, e, |instruction, _| {
+    let (instruction, result) = read_simple_field_result(r, e, |instruction, result| {
         computed_ref_target_field_result(
             instruction,
             out,
@@ -392,7 +460,10 @@ fn append_ref_simple_field_result(
             listnum_counter,
             sequence_counters,
             field_bookmarks,
+            legacy_forms,
+            form_field_index,
             properties,
+            result,
         )
     });
     let text = computed_ref_target_field_result(
@@ -403,7 +474,10 @@ fn append_ref_simple_field_result(
         listnum_counter,
         sequence_counters,
         field_bookmarks,
+        legacy_forms,
+        form_field_index,
         properties,
+        &result,
     )
     .unwrap_or(result);
     append_ref_target_text(active, current, out, &text);
@@ -418,6 +492,8 @@ fn append_ref_empty_simple_field_result(
     listnum_counter: &mut i64,
     sequence_counters: &mut HashMap<String, i64>,
     field_bookmarks: &mut HashMap<String, String>,
+    legacy_forms: &LegacyFormContext,
+    form_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
 ) {
     let instruction = instruction.unwrap_or_default();
@@ -430,7 +506,10 @@ fn append_ref_empty_simple_field_result(
         listnum_counter,
         sequence_counters,
         field_bookmarks,
+        legacy_forms,
+        form_field_index,
         properties,
+        "",
     )
     .unwrap_or_default();
     append_ref_target_text(active, current, out, &text);
@@ -444,7 +523,10 @@ fn computed_ref_target_field_result(
     listnum_counter: &mut i64,
     sequence_counters: &mut HashMap<String, i64>,
     field_bookmarks: &mut HashMap<String, String>,
+    legacy_forms: &LegacyFormContext,
+    form_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
+    current_result: &str,
 ) -> Option<String> {
     let available_bookmarks = ref_target_available_bookmarks(bookmarks, excluded);
     let instruction = normalize_instruction(instruction);
@@ -454,6 +536,11 @@ fn computed_ref_target_field_result(
         }
         FieldKind::Dynamic(kind) if kind == "SET" => {
             return computed_set_result(&instruction, field_bookmarks);
+        }
+        FieldKind::FormField(_) => {
+            let index = *form_field_index;
+            *form_field_index += 1;
+            return computed_legacy_form_result(&instruction, current_result, legacy_forms, index);
         }
         _ => {}
     }
@@ -516,6 +603,18 @@ fn is_ref_target_source_order_field_instruction(instruction: Option<&str>) -> bo
                 _ => false,
             },
         )
+}
+
+fn is_legacy_form_field_instruction(instruction: Option<&str>) -> bool {
+    instruction
+        .map(normalize_instruction)
+        .as_deref()
+        .is_some_and(|instruction| {
+            matches!(
+                FieldKind::from_instruction(instruction),
+                FieldKind::FormField(_)
+            )
+        })
 }
 
 fn ref_target_merged_bookmarks(

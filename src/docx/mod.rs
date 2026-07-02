@@ -284,7 +284,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         extended: document_properties.extended,
         file_size_bytes: document_properties.file_size_bytes,
     };
-    let ref_targets = fields::ref_targets_with_properties(&doc_xml, field_properties);
+    let ref_targets =
+        fields::ref_targets_with_properties(&doc_xml, field_properties, preserve_legacy_form_cache);
     let ref_position_context = fields::ref_position_context(&doc_xml, &numbering);
     let ref_number_context = fields::ref_number_context(&doc_xml, &numbering);
     let page_ref_context =

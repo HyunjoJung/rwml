@@ -144,7 +144,7 @@ pub(crate) fn parse(
     properties: FieldDocumentProperties<'_>,
     preserve_legacy_form_cache: bool,
 ) -> Vec<Field> {
-    let bookmarks = ref_targets_with_properties(xml, properties);
+    let bookmarks = ref_targets_with_properties(xml, properties, preserve_legacy_form_cache);
     let all_bookmark_names = bookmark_names(xml);
     let ref_positions = ref_position_context(xml, numbering);
     let ref_numbers = ref_number_context(xml, numbering);
