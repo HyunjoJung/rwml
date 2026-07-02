@@ -1275,6 +1275,20 @@ pub(crate) fn computed_contextless_result(
         ) {
             return Some(text);
         }
+        if let Some(text) = computed_if_compare_result_with_bookmark_context(
+            instruction,
+            document_bookmarks,
+            &state.field_bookmarks,
+        ) {
+            return Some(text);
+        }
+        if let Some(text) = computed_merge_control_result_with_bookmark_context(
+            instruction,
+            document_bookmarks,
+            &state.field_bookmarks,
+        ) {
+            return Some(text);
+        }
     }
     computed_dynamic_result_with_bookmarks(instruction, &state.field_bookmarks)
         .or_else(|| {

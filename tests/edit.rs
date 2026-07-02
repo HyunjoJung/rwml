@@ -703,6 +703,31 @@ fn notes_with_document_bookmark_formula_field_anchor_text_docx() -> Vec<u8> {
     ])
 }
 
+fn notes_with_document_bookmark_merge_control_anchor_text_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="1" w:name="Gate"/><w:r><w:t>Ready</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p><w:p><w:r><w:t>before </w:t></w:r><w:fldSimple w:instr=" NEXTIF Gate = &quot;Ready&quot; "><w:r><w:t>stale foot nextif </w:t></w:r></w:fldSimple><w:r><w:footnoteReference w:id="7"/></w:r><w:r><w:t>foot after</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="7"><w:p><w:r><w:t>Foot body</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+    ])
+}
+
 fn notes_with_symbol_anchor_text_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -1081,6 +1106,23 @@ fn anchored_text_box_document_bookmark_formula_field_anchor_docx() -> Vec<u8> {
         (
             "word/document.xml",
             r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:body><w:p><w:bookmarkStart w:id="1" w:name="InvoiceSubtotal"/><w:r><w:t>42</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p><w:p><w:fldSimple w:instr=" = InvoiceSubtotal + 8 "><w:r><w:t>stale anchor formula</w:t></w:r></w:fldSimple><w:r><w:t> </w:t></w:r><w:r><w:drawing><wp:anchor relativeHeight="19"><wp:docPr id="19" name="Anchored formula box"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>FORMULA BOX</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:t>After</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn anchored_text_box_document_bookmark_merge_control_anchor_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:body><w:p><w:bookmarkStart w:id="1" w:name="Gate"/><w:r><w:t>Ready</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p><w:p><w:r><w:t>Before</w:t></w:r><w:fldSimple w:instr=" SKIPIF Gate &lt;&gt; &quot;Ready&quot; "><w:r><w:t>stale anchor skipif</w:t></w:r></w:fldSimple><w:r><w:t> </w:t></w:r><w:r><w:drawing><wp:anchor relativeHeight="20"><wp:docPr id="20" name="Anchored merge control box"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>MERGE CONTROL BOX</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:t>After</w:t></w:r></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -3189,6 +3231,19 @@ fn docx_anchored_text_box_anchor_uses_document_bookmark_formula_field_text() {
 }
 
 #[test]
+fn docx_anchored_text_box_anchor_uses_document_bookmark_merge_control_field_text() {
+    let doc = Document::open(&anchored_text_box_document_bookmark_merge_control_anchor_docx())
+        .expect("fixture opens");
+
+    let text_boxes = doc.text_boxes();
+    assert_eq!(text_boxes.len(), 1);
+    assert_eq!(text_boxes[0].text, "MERGE CONTROL BOX");
+    let anchor = text_boxes[0].anchor.as_ref().expect("merge control anchor");
+    assert_eq!(anchor.id, "20");
+    assert_eq!(anchor.text, "Before After");
+}
+
+#[test]
 fn docx_duplicate_anchored_text_boxes_keep_distinct_body_anchors() {
     let doc = Document::open(&duplicate_anchored_text_box_docx()).expect("fixture opens");
 
@@ -3481,6 +3536,21 @@ fn docx_note_reference_anchors_use_document_bookmark_formula_field_text() {
     assert_eq!(
         notes[0].anchor.as_ref().map(|a| a.text.as_str()),
         Some("50 before foot after")
+    );
+}
+
+#[test]
+fn docx_note_reference_anchors_use_document_bookmark_merge_control_field_text() {
+    let doc = Document::open(&notes_with_document_bookmark_merge_control_anchor_text_docx())
+        .expect("fixture opens");
+
+    let notes = doc.notes();
+    assert_eq!(notes.len(), 1);
+    assert_eq!(notes[0].id, "7");
+    assert_eq!(notes[0].kind, NoteKind::Footnote);
+    assert_eq!(
+        notes[0].anchor.as_ref().map(|a| a.text.as_str()),
+        Some("before foot after")
     );
 }
 

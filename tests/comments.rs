@@ -1007,6 +1007,41 @@ fn docx_comments_use_document_bookmark_formula_field_text() {
 }
 
 #[test]
+fn docx_comments_use_document_bookmark_conditional_field_text() {
+    let docx = docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="comments.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="1" w:name="InvoiceTier"/><w:r><w:t>Gold</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p><w:p><w:commentRangeStart w:id="15"/><w:fldSimple w:instr=" COMPARE InvoiceTier = &quot;Gold&quot; "><w:r><w:t>stale anchor compare</w:t></w:r></w:fldSimple><w:r><w:t> Anchor</w:t></w:r><w:commentRangeEnd w:id="15"/><w:r><w:commentReference w:id="15"/></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/comments.xml",
+            r#"<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:comment w:id="15" w:author="Reviewer"><w:p><w:fldSimple w:instr=" IF InvoiceTier = &quot;Gold&quot; &quot;ship&quot; &quot;hold&quot; "><w:r><w:t>stale comment if</w:t></w:r></w:fldSimple><w:r><w:t> note</w:t></w:r></w:p></w:comment></w:comments>"#,
+        ),
+    ]);
+    let doc = Document::open(&docx).expect("fixture opens");
+    let comments = doc.comments();
+
+    assert_eq!(comments.len(), 1);
+    assert_eq!(comments[0].text, "ship note");
+    assert_eq!(
+        comments[0].anchor.as_ref().map(|a| a.text.as_str()),
+        Some("1 Anchor")
+    );
+}
+
+#[test]
 fn docx_comments_preserve_supported_symbols_in_text_and_anchor() {
     let docx = docx_fixture(&[
         (
