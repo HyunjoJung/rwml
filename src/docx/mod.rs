@@ -31,7 +31,7 @@ use crate::text;
 use crate::CoreProperties;
 
 pub(crate) use self::xml_text::skip_subtree as skip_xml_subtree;
-use self::xml_text::{read_i64_text, read_text, skip_subtree};
+use self::xml_text::{inline_marker_text, read_i64_text, read_text, skip_subtree};
 
 mod body;
 mod comments;
@@ -1454,6 +1454,14 @@ fn read_floating_shapes(
                     body_depth = body_depth.saturating_sub(1);
                     continue;
                 }
+                if in_body && current_body_block_index.is_some() {
+                    if let Some(marker) = inline_marker_text(&e) {
+                        append_floating_anchor_text(&mut current_body_block_text, marker);
+                        skip_subtree(&mut r);
+                        body_depth = body_depth.saturating_sub(1);
+                        continue;
+                    }
+                }
                 if in_body && current_body_block_index.is_some() && name == b"sym" {
                     append_floating_anchor_symbol(&mut current_body_block_text, &e);
                     skip_subtree(&mut r);
@@ -1574,18 +1582,8 @@ fn append_floating_anchor_symbol(out: &mut String, e: &BytesStart<'_>) {
 fn append_floating_anchor_empty(out: &mut String, e: &BytesStart<'_>, name: &[u8]) {
     if name == b"sym" {
         append_floating_anchor_symbol(out, e);
-    } else {
-        append_floating_anchor_empty_marker(out, name);
-    }
-}
-
-fn append_floating_anchor_empty_marker(out: &mut String, name: &[u8]) {
-    match name {
-        b"tab" => out.push('\t'),
-        b"br" | b"cr" => out.push('\n'),
-        b"noBreakHyphen" => out.push('-'),
-        b"softHyphen" => out.push('\u{00ad}'),
-        _ => {}
+    } else if let Some(marker) = inline_marker_text(e) {
+        append_floating_anchor_text(out, marker);
     }
 }
 

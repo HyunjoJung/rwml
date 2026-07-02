@@ -56,6 +56,23 @@ fn floating_shape_symbol_text_docx() -> Vec<u8> {
     ])
 }
 
+fn floating_shape_expanded_anchor_markers_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:body><w:p><w:r><w:t>Lead</w:t><w:tab></w:tab><w:t>Tab</w:t><w:br></w:br><w:t>Line</w:t><w:br w:type="page"></w:br><w:t>Page</w:t><w:noBreakHyphen></w:noBreakHyphen><w:t>Hard</w:t><w:softHyphen></w:softHyphen><w:t>Soft </w:t></w:r><w:r><w:drawing><wp:anchor relativeHeight="117" behindDoc="0"><wp:extent cx="914400" cy="457200"/><wp:docPr id="117" name="Expanded marker float"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>Shape body</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:t>After</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn floating_shape_computed_simple_field_text_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -972,6 +989,25 @@ fn docx_floating_shape_preserves_supported_symbols_in_metadata_text() {
     assert_eq!(
         shapes[0].anchor_char_offset,
         Some("Before \u{2022} anchor ".chars().count())
+    );
+}
+
+#[test]
+fn docx_floating_shape_anchor_preserves_expanded_inline_markers() {
+    let doc =
+        Document::open(&floating_shape_expanded_anchor_markers_docx()).expect("fixture opens");
+    let shapes = doc.floating_shapes();
+
+    assert_eq!(shapes.len(), 1);
+    assert_eq!(shapes[0].name.as_deref(), Some("Expanded marker float"));
+    assert_eq!(shapes[0].text.as_deref(), Some("Shape body"));
+    assert_eq!(
+        shapes[0].anchor_text.as_deref(),
+        Some("Lead\tTab\nLine\nPage-Hard\u{00ad}Soft After")
+    );
+    assert_eq!(
+        shapes[0].anchor_char_offset,
+        Some("Lead\tTab\nLine\nPage-Hard\u{00ad}Soft ".chars().count())
     );
 }
 
