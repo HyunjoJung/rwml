@@ -491,6 +491,35 @@ fn notes_with_expanded_symbol_anchor_text_docx() -> Vec<u8> {
     ])
 }
 
+fn notes_with_expanded_marker_anchor_text_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rIdEnd" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:p><w:r><w:t>Foot</w:t><w:tab></w:tab><w:t>Tab</w:t><w:br></w:br><w:t>Line</w:t><w:noBreakHyphen></w:noBreakHyphen><w:t>Hard</w:t><w:softHyphen></w:softHyphen><w:t>Soft </w:t></w:r><w:r><w:footnoteReference w:id="7"/></w:r><w:r><w:t>foot after</w:t></w:r></w:p><w:p><w:r><w:t>End</w:t><mc:AlternateContent><mc:Choice Requires="wps"><w:tab></w:tab><w:t>Tab</w:t><w:br w:type="page"></w:br><w:t>Page</w:t><w:noBreakHyphen></w:noBreakHyphen><w:t>Hard</w:t><w:softHyphen></w:softHyphen><w:t>Soft </w:t></mc:Choice><mc:Fallback><w:t>fallback </w:t></mc:Fallback></mc:AlternateContent></w:r><w:r><w:endnoteReference w:id="8"/></w:r><w:r><w:t>end after</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="7"><w:p><w:r><w:t>Foot body</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+        (
+            "word/endnotes.xml",
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="8"><w:p><w:r><w:t>End body</w:t></w:r></w:p></w:endnote></w:endnotes>"#,
+        ),
+    ])
+}
+
 fn notes_with_revision_wrapped_anchor_text_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -2728,6 +2757,27 @@ fn docx_note_reference_anchors_preserve_expanded_supported_symbols() {
     assert_eq!(
         notes[1].anchor.as_ref().map(|a| a.text.as_str()),
         Some("End • before end after")
+    );
+}
+
+#[test]
+fn docx_note_reference_anchors_preserve_expanded_inline_markers() {
+    let doc =
+        Document::open(&notes_with_expanded_marker_anchor_text_docx()).expect("fixture opens");
+
+    let notes = doc.notes();
+    assert_eq!(notes.len(), 2);
+    assert_eq!(notes[0].id, "7");
+    assert_eq!(notes[0].kind, NoteKind::Footnote);
+    assert_eq!(
+        notes[0].anchor.as_ref().map(|a| a.text.as_str()),
+        Some("Foot\tTab\nLine-Hard\u{00ad}Soft foot after")
+    );
+    assert_eq!(notes[1].id, "8");
+    assert_eq!(notes[1].kind, NoteKind::Endnote);
+    assert_eq!(
+        notes[1].anchor.as_ref().map(|a| a.text.as_str()),
+        Some("End\tTab\nPage-Hard\u{00ad}Soft end after")
     );
 }
 

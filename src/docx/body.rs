@@ -18,7 +18,7 @@ use super::fields::{computed_run_symbol_char, TocEntry};
 use super::numbering::Numbering;
 use super::parse_rgb_hex_color;
 use super::styles::Styles;
-use super::xml_text::{read_i64_text, read_text, skip_subtree};
+use super::xml_text::{inline_marker_text, read_i64_text, read_text, skip_subtree};
 use super::{
     attr_f32, attr_i32, attr_i64, attr_local, attr_local_trimmed, attr_u16, attr_u32, attr_u8,
     field_char_type, is_page_break_type, local, toggle_on,
@@ -1064,6 +1064,10 @@ pub(crate) fn scan_note_ref_anchors(xml: &str, tag: &[u8]) -> HashMap<String, St
                     } else if name == b"t" {
                         current_block_text.push_str(&read_text(&mut r));
                         body_depth = body_depth.saturating_sub(1);
+                    } else if let Some(marker) = inline_marker_text(&e) {
+                        current_block_text.push_str(marker);
+                        skip_subtree(&mut r);
+                        body_depth = body_depth.saturating_sub(1);
                     } else if name == b"sym" {
                         append_run_symbol(&mut current_block_text, &e);
                         skip_subtree(&mut r);
@@ -1151,21 +1155,11 @@ fn is_note_anchor_embedded_body(name: &[u8]) -> bool {
     matches!(name, b"drawing" | b"pict" | b"object")
 }
 
-fn append_note_anchor_empty_marker(out: &mut String, name: &[u8]) {
-    match name {
-        b"tab" => out.push('\t'),
-        b"br" | b"cr" => out.push('\n'),
-        b"noBreakHyphen" => out.push('-'),
-        b"softHyphen" => out.push('\u{00ad}'),
-        _ => {}
-    }
-}
-
 fn append_note_anchor_empty(out: &mut String, e: &BytesStart<'_>, name: &[u8]) {
     if name == b"sym" {
         append_run_symbol(out, e);
-    } else {
-        append_note_anchor_empty_marker(out, name);
+    } else if let Some(marker) = inline_marker_text(e) {
+        out.push_str(marker);
     }
 }
 
@@ -1219,6 +1213,9 @@ fn append_note_anchor_content(
                     skip_subtree(r);
                 } else if name == b"t" {
                     text.push_str(&read_text(r));
+                } else if let Some(marker) = inline_marker_text(&e) {
+                    text.push_str(marker);
+                    skip_subtree(r);
                 } else if name == b"sym" {
                     append_run_symbol(text, &e);
                     skip_subtree(r);
