@@ -1607,7 +1607,8 @@ fn read_paragraph(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Paragraph, Opt
                     );
                     apply_active_bookmark(&mut runs, start, &bookmarks);
                 }
-                b"ins" | b"moveTo" | b"smartTag" | b"sdtContent" | b"bdo" | b"dir" => {
+                b"customXml" | b"ins" | b"moveTo" | b"smartTag" | b"sdtContent" | b"bdo"
+                | b"dir" => {
                     let start = runs.len();
                     append_runs_container_with_complex(
                         r,
@@ -2042,7 +2043,8 @@ fn append_runs_container_with_complex(
                     runs,
                     complex_field,
                 ),
-                b"ins" | b"moveTo" | b"smartTag" | b"sdtContent" | b"bdo" | b"dir" => {
+                b"customXml" | b"ins" | b"moveTo" | b"smartTag" | b"sdtContent" | b"bdo"
+                | b"dir" => {
                     append_runs_container_with_complex(r, ctx, link, depth + 1, runs, complex_field)
                 }
                 b"AlternateContent" => append_alternate_content_runs_with_complex(
@@ -2112,7 +2114,7 @@ fn append_content_control_runs_with_complex(
                     runs,
                     complex_field,
                 ),
-                b"ins" | b"moveTo" | b"smartTag" | b"bdo" | b"dir" => {
+                b"customXml" | b"ins" | b"moveTo" | b"smartTag" | b"bdo" | b"dir" => {
                     append_runs_container_with_complex(r, ctx, link, depth + 1, runs, complex_field)
                 }
                 b"AlternateContent" => append_content_control_runs_alternate_content_with_complex(
@@ -2223,7 +2225,7 @@ fn append_content_control_runs_alternate_content_branch_with_complex(
                     runs,
                     complex_field,
                 ),
-                b"ins" | b"moveTo" | b"smartTag" | b"bdo" | b"dir" => {
+                b"customXml" | b"ins" | b"moveTo" | b"smartTag" | b"bdo" | b"dir" => {
                     append_runs_container_with_complex(r, ctx, link, depth + 1, runs, complex_field)
                 }
                 b"AlternateContent" => append_content_control_runs_alternate_content_with_complex(
@@ -3020,7 +3022,8 @@ fn append_run_alternate_content_branch(
                         image_result_runs.extend(start..images.len());
                     }
                 }
-                b"ins" | b"moveTo" | b"smartTag" | b"sdtContent" | b"bdo" | b"dir" => {
+                b"customXml" | b"ins" | b"moveTo" | b"smartTag" | b"sdtContent" | b"bdo"
+                | b"dir" => {
                     let start = images.len();
                     let mut nested_complex_field = ComplexFieldTracker::default();
                     append_runs_container_with_complex(
