@@ -2414,6 +2414,27 @@ fn section_pages_empty_document_info_result_docx() -> Vec<u8> {
     ])
 }
 
+fn section_pages_empty_revision_number_result_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rIdCore" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>"#,
+        ),
+        (
+            "docProps/core.xml",
+            r#"<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"><cp:revision/></cp:coreProperties>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" REVNUM "><w:r><w:t>stale section revision</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SECTIONPAGES "><w:r><w:t>cached section revision pages</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn section_pages_empty_ref_result_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -3570,6 +3591,31 @@ fn document_info_ref_target_docx() -> Vec<u8> {
     ])
 }
 
+fn revision_number_source_scanners_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rIdCore" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>"#,
+        ),
+        (
+            "docProps/core.xml",
+            r#"<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"><cp:revision>12</cp:revision></cp:coreProperties>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="ComputedRevision"/><w:fldSimple w:instr=" REVNUM "><w:r><w:t>stale ref revision</w:t></w:r></w:fldSimple><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" REF ComputedRevision "><w:r><w:t>stale revision ref</w:t></w:r></w:fldSimple></w:p><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Release </w:t></w:r><w:fldSimple w:instr=" REVNUM "><w:r><w:t>stale style revision</w:t></w:r></w:fldSimple><w:r><w:t> Notes</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;heading 1&quot; "><w:r><w:t>stale revision style source</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TOC \o &quot;1-1&quot; "><w:r><w:t>stale revision toc source</w:t></w:r></w:fldSimple></w:p><w:tbl><w:tr><w:tc><w:p><w:fldSimple w:instr=" REVNUM "><w:r><w:t>99</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(LEFT) "><w:r><w:t>stale revision source sum</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn nested_empty_simple_field_inside_ref_target_result_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -4194,6 +4240,27 @@ fn note_ref_empty_document_info_result_marker_docx() -> Vec<u8> {
     ])
 }
 
+fn note_ref_empty_revision_number_result_marker_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rIdCore" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>"#,
+        ),
+        (
+            "docProps/core.xml",
+            r#"<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"><cp:revision/></cp:coreProperties>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="ComputedNote"/><w:fldSimple w:instr=" REVNUM "><w:r><w:footnoteReference w:id="1"/></w:r><w:r><w:t>stale note revision</w:t></w:r></w:fldSimple><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" NOTEREF ComputedNote "><w:r><w:t>cached stale revision note ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn note_ref_stale_ref_result_marker_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -4773,6 +4840,27 @@ fn page_ref_empty_document_info_before_manual_break_docx() -> Vec<u8> {
         (
             "word/document.xml",
             r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" TITLE "><w:r><w:t>stale page title</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:br w:type="page"/></w:r></w:p><w:p><w:bookmarkStart w:id="7" w:name="AfterEmptyTitle"/><w:r><w:t>After empty title</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF AfterEmptyTitle \h "><w:r><w:t>cached after title page</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn page_ref_empty_revision_number_before_manual_break_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rIdCore" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>"#,
+        ),
+        (
+            "docProps/core.xml",
+            r#"<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"><cp:revision/></cp:coreProperties>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" REVNUM "><w:r><w:t>stale page revision</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:br w:type="page"/></w:r></w:p><w:p><w:bookmarkStart w:id="7" w:name="AfterEmptyRevision"/><w:r><w:t>After empty revision</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF AfterEmptyRevision \h "><w:r><w:t>cached after revision page</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -18760,6 +18848,77 @@ fn docx_ref_targets_compute_document_info_field_results() {
 }
 
 #[test]
+fn docx_source_scanners_use_computed_revision_number_results() {
+    let doc = Document::open(&revision_number_source_scanners_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let revision_fields = fields
+        .iter()
+        .filter(|field| field.kind == FieldKind::DocumentStructure("REVNUM".to_string()))
+        .collect::<Vec<_>>();
+    assert_eq!(revision_fields.len(), 3);
+    assert!(revision_fields
+        .iter()
+        .all(|field| field.computed_result.as_deref() == Some("12")));
+
+    let reference = fields
+        .iter()
+        .find(|field| field.instruction == "REF ComputedRevision")
+        .expect("REF field is recorded");
+    assert_eq!(reference.kind, FieldKind::Ref);
+    assert_eq!(reference.result, "stale revision ref");
+    assert_eq!(reference.computed_result.as_deref(), Some("12"));
+
+    let style_ref = fields
+        .iter()
+        .find(|field| field.instruction == "STYLEREF \"heading 1\"")
+        .expect("STYLEREF field is recorded");
+    assert_eq!(
+        style_ref.kind,
+        FieldKind::DocumentStructure("STYLEREF".to_string())
+    );
+    assert_eq!(style_ref.result, "stale revision style source");
+    assert_eq!(
+        style_ref.computed_result.as_deref(),
+        Some("Release 12 Notes")
+    );
+
+    let toc = fields
+        .iter()
+        .find(|field| field.kind == FieldKind::Toc)
+        .expect("TOC field is recorded");
+    assert_eq!(toc.instruction, "TOC \\o \"1-1\"");
+    assert_eq!(toc.result, "stale revision toc source");
+    assert_eq!(toc.computed_result.as_deref(), Some("Release 12 Notes"));
+
+    let formula = fields
+        .iter()
+        .find(|field| field.instruction == r#"= SUM(LEFT)"#)
+        .expect("table formula field is recorded");
+    assert_eq!(formula.kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(formula.result, "stale revision source sum");
+    assert_eq!(formula.computed_result.as_deref(), Some("12"));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("12")
+            && main_text.contains("Release 12 Notes")
+            && !main_text.contains("stale ref revision")
+            && !main_text.contains("stale revision ref")
+            && !main_text.contains("stale style revision")
+            && !main_text.contains("stale revision style source")
+            && !main_text.contains("stale revision toc source")
+            && !main_text.contains("stale revision source sum")
+            && !main_text.contains("99"),
+        "source scanners should use computed REVNUM output: {main_text:?}"
+    );
+}
+
+#[test]
 fn docx_ref_targets_compute_empty_simple_fields_inside_field_results() {
     let doc = Document::open(&nested_empty_simple_field_inside_ref_target_result_docx())
         .expect("fixture opens");
@@ -20812,6 +20971,84 @@ fn docx_page_ref_uses_empty_document_info_result_before_manual_break() {
             && !main_text.contains("stale page title")
             && !main_text.contains("cached after title page"),
         "PAGEREF should use computed empty document-info output when deciding hard-break trust: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_position_scanners_use_empty_revision_number_results() {
+    let page_doc = Document::open(&page_ref_empty_revision_number_before_manual_break_docx())
+        .expect("page fixture opens");
+    let page_fields = page_doc.fields();
+
+    assert_eq!(page_fields.len(), 2);
+    assert_eq!(
+        page_fields[0].kind,
+        FieldKind::DocumentStructure("REVNUM".to_string())
+    );
+    assert_eq!(page_fields[0].instruction, "REVNUM");
+    assert_eq!(page_fields[0].result, "stale page revision");
+    assert_eq!(page_fields[0].computed_result.as_deref(), Some(""));
+    assert_eq!(page_fields[1].kind, FieldKind::PageRef);
+    assert_eq!(page_fields[1].instruction, "PAGEREF AfterEmptyRevision \\h");
+    assert_eq!(page_fields[1].result, "cached after revision page");
+    assert_eq!(page_fields[1].computed_result.as_deref(), Some("2"));
+
+    let section_doc = Document::open(&section_pages_empty_revision_number_result_docx())
+        .expect("section fixture opens");
+    let section_fields = section_doc.fields();
+
+    assert_eq!(section_fields.len(), 2);
+    assert_eq!(
+        section_fields[0].kind,
+        FieldKind::DocumentStructure("REVNUM".to_string())
+    );
+    assert_eq!(section_fields[0].instruction, "REVNUM");
+    assert_eq!(section_fields[0].result, "stale section revision");
+    assert_eq!(section_fields[0].computed_result.as_deref(), Some(""));
+    assert_eq!(
+        section_fields[1].kind,
+        FieldKind::DocumentStructure("SECTIONPAGES".to_string())
+    );
+    assert_eq!(section_fields[1].instruction, "SECTIONPAGES");
+    assert_eq!(section_fields[1].result, "cached section revision pages");
+    assert_eq!(section_fields[1].computed_result.as_deref(), Some("1"));
+
+    let note_doc = Document::open(&note_ref_empty_revision_number_result_marker_docx())
+        .expect("note fixture opens");
+    let note_fields = note_doc.fields();
+
+    assert_eq!(note_fields.len(), 2);
+    assert_eq!(
+        note_fields[0].kind,
+        FieldKind::DocumentStructure("REVNUM".to_string())
+    );
+    assert_eq!(note_fields[0].instruction, "REVNUM");
+    assert_eq!(note_fields[0].result, "stale note revision");
+    assert_eq!(note_fields[0].computed_result.as_deref(), Some(""));
+    assert_eq!(note_fields[1].kind, FieldKind::NoteRef);
+    assert_eq!(note_fields[1].instruction, "NOTEREF ComputedNote");
+    assert_eq!(note_fields[1].result, "cached stale revision note ref");
+    assert_eq!(note_fields[1].computed_result, None);
+
+    for doc in [&page_doc, &section_doc] {
+        let report = doc.report();
+        assert!(report.features.unsupported_field_kinds.is_empty());
+        assert!(report.features.unsupported_field_reasons.is_empty());
+    }
+    let note_report = note_doc.report();
+    assert_eq!(
+        note_report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::NoteRef,
+            count: 1,
+        }]
+    );
+    assert_eq!(
+        note_report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::NoComputedResult,
+            count: 1,
+        }]
     );
 }
 

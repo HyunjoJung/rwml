@@ -464,6 +464,7 @@ fn computed_ref_target_field_result(
         .or_else(|| computed_sequence_result(&instruction, sequence_counters))
         .or_else(|| computed_toc_entry_result(&instruction))
         .or_else(|| computed_dynamic_result_with_bookmarks(&instruction, &bookmarks))
+        .or_else(|| computed_revision_number_result(&instruction, properties.core))
         .or_else(|| {
             computed_document_info_result(
                 &instruction,

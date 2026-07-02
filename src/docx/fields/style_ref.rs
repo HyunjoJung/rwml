@@ -930,6 +930,7 @@ fn computed_style_ref_source_field_result(
         })
         .or_else(|| computed_display_result(&instruction))
         .or_else(|| computed_action_result(&instruction))
+        .or_else(|| computed_revision_number_result(&instruction, properties.core))
         .or_else(|| {
             computed_document_info_result(
                 &instruction,

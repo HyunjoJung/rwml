@@ -20,10 +20,11 @@ use super::{
     computed_fill_in_result, computed_formula_result_with_bookmark_context,
     computed_if_compare_result_with_bookmark_context, computed_listnum_result,
     computed_merge_control_result_with_bookmark_context, computed_numbering_result,
-    computed_quote_result, computed_reference_index_result, computed_run_symbol_char,
-    computed_sequence_result, computed_set_result, computed_toc_entry_result, inline_marker_text,
-    normalize_instruction, should_skip_alternate_branch, skip_element, AlternateContentBranchState,
-    ComplexField, FieldDocumentProperties, FieldPhase,
+    computed_quote_result, computed_reference_index_result, computed_revision_number_result,
+    computed_run_symbol_char, computed_sequence_result, computed_set_result,
+    computed_toc_entry_result, inline_marker_text, normalize_instruction,
+    should_skip_alternate_branch, skip_element, AlternateContentBranchState, ComplexField,
+    FieldDocumentProperties, FieldPhase,
 };
 
 type Xml<'a> = Reader<&'a [u8]>;
@@ -1158,6 +1159,7 @@ fn computed_table_formula_source_field_result(
         })
         .or_else(|| computed_display_result(instruction))
         .or_else(|| computed_action_result(instruction))
+        .or_else(|| computed_revision_number_result(instruction, properties.core))
         .or_else(|| {
             computed_document_info_result(
                 instruction,

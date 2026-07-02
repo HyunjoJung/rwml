@@ -458,6 +458,7 @@ fn computed_section_scan_field_result(
         .or_else(|| computed_dynamic_result_with_bookmarks(&instruction, &state.field_bookmarks))
         .or_else(|| computed_display_result(&instruction))
         .or_else(|| computed_action_result(&instruction))
+        .or_else(|| computed_revision_number_result(&instruction, state.properties.core))
         .or_else(|| {
             computed_document_info_result(
                 &instruction,
