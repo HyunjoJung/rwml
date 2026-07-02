@@ -95,6 +95,8 @@ pub(crate) struct NoteRefFieldPosition {
 struct NoteRefScanField {
     instruction: String,
     phase: FieldPhase,
+    suppress_result: bool,
+    nested_suppressed_fields: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -145,6 +147,26 @@ pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
                     skip_subtree(&mut r);
                     continue;
                 }
+                if suppresses_note_ref_complex_result_scan(&current) {
+                    match name {
+                        b"fldChar" => apply_note_ref_scan_fld_char(
+                            &e,
+                            &mut source_order,
+                            &mut current,
+                            &mut field_positions,
+                            &mut ref_field_positions,
+                            &mut generated_ref_note_fields,
+                            &mut computed_fields,
+                        ),
+                        b"instrText" | b"t" => {
+                            let _ = read_text(&mut r);
+                            continue;
+                        }
+                        _ => {}
+                    }
+                    xml_depth = xml_depth.saturating_add(1);
+                    continue;
+                }
                 match name {
                     b"del" | b"moveFrom" => {
                         skip_subtree(&mut r);
@@ -182,6 +204,7 @@ pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
                         &mut field_positions,
                         &mut ref_field_positions,
                         &mut generated_ref_note_fields,
+                        &mut computed_fields,
                     ),
                     b"instrText" => {
                         let text = read_text(&mut r);
@@ -313,6 +336,20 @@ pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
                 if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
                     continue;
                 }
+                if suppresses_note_ref_complex_result_scan(&current) {
+                    if name == b"fldChar" {
+                        apply_note_ref_scan_fld_char(
+                            &e,
+                            &mut source_order,
+                            &mut current,
+                            &mut field_positions,
+                            &mut ref_field_positions,
+                            &mut generated_ref_note_fields,
+                            &mut computed_fields,
+                        );
+                    }
+                    continue;
+                }
                 match name {
                     b"fldSimple" => {
                         if let Some(text) = computed_note_ref_scan_field_result(
@@ -339,6 +376,7 @@ pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
                         &mut field_positions,
                         &mut ref_field_positions,
                         &mut generated_ref_note_fields,
+                        &mut computed_fields,
                     ),
                     b"bookmarkStart" => {
                         if let Some((id, name)) = bookmark_start(&e) {
@@ -443,6 +481,10 @@ pub(crate) fn note_ref_context(xml: &str) -> NoteRefContext {
                 }
             }
             Ok(Event::End(e)) => {
+                if suppresses_note_ref_complex_result_scan(&current) {
+                    xml_depth = xml_depth.saturating_sub(1);
+                    continue;
+                }
                 if local(e.name().as_ref()) == b"AlternateContent" {
                     alternate_content_stack.pop();
                 }
@@ -491,6 +533,12 @@ fn computed_note_ref_scan_field_result(
         .or_else(|| computed_action_result(&instruction))
         .or_else(|| computed_reference_index_result(&instruction))
         .or_else(|| computed_toc_entry_result(&instruction))
+}
+
+fn suppresses_note_ref_complex_result_scan(current: &Option<NoteRefScanField>) -> bool {
+    current
+        .as_ref()
+        .is_some_and(|field| field.phase == FieldPhase::Result && field.suppress_result)
 }
 
 pub(crate) fn note_ref_target_names(xml: &str) -> HashSet<String> {
@@ -686,20 +734,47 @@ fn apply_note_ref_scan_fld_char(
     field_positions: &mut Vec<NoteRefFieldPosition>,
     ref_field_positions: &mut Vec<NoteRefFieldPosition>,
     generated_ref_note_fields: &mut Vec<NoteRefGeneratedField>,
+    computed_fields: &mut NoteRefComputedFieldState,
 ) {
     match field_char_type(e).as_deref() {
         Some("begin") => {
+            if let Some(field) = current.as_mut() {
+                if field.phase == FieldPhase::Result && field.suppress_result {
+                    field.nested_suppressed_fields =
+                        field.nested_suppressed_fields.saturating_add(1);
+                    return;
+                }
+            }
             *current = Some(NoteRefScanField {
                 instruction: String::new(),
                 phase: FieldPhase::Instruction,
+                suppress_result: false,
+                nested_suppressed_fields: 0,
             });
         }
         Some("separate") => {
             if let Some(field) = current.as_mut() {
+                if field.suppress_result {
+                    return;
+                }
+                if let Some(text) =
+                    computed_note_ref_scan_field_result(Some(&field.instruction), computed_fields)
+                {
+                    if !text.is_empty() {
+                        *source_order += 1;
+                    }
+                    field.suppress_result = true;
+                }
                 field.phase = FieldPhase::Result;
             }
         }
         Some("end") => {
+            if let Some(field) = current.as_mut() {
+                if field.suppress_result && field.nested_suppressed_fields > 0 {
+                    field.nested_suppressed_fields -= 1;
+                    return;
+                }
+            }
             if let Some(field) = current.take() {
                 record_note_ref_scan_field_position(
                     Some(&field.instruction),
