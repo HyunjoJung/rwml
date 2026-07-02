@@ -407,6 +407,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         field_properties,
         &ref_targets,
         &legacy_form_context,
+        &toc_entries,
+        &bookmark_names,
     );
     floating_shapes.extend(note_part.floating_shapes);
     let mut text_boxes = read_text_boxes(&doc_xml, &ctx, &floating_shapes);
@@ -923,6 +925,8 @@ fn read_hf_parts(
                 },
                 &ref_targets,
                 &legacy_form_context,
+                &toc_entries,
+                &bookmark_names,
             ));
         }
         if seen_fields.insert((path.clone(), type_name.to_string())) {
@@ -1107,6 +1111,8 @@ fn read_notes(
         },
         &ref_targets,
         &legacy_form_context,
+        &toc_entries,
+        &bookmark_names,
     );
     let text_box_id_prefix = format!("{name}-text-box");
     let text_boxes = read_text_boxes_with_prefix(&xml, &ctx, &floating_shapes, &text_box_id_prefix);
@@ -1225,6 +1231,8 @@ fn read_floating_shapes(
     properties: fields::FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
     legacy_forms: &fields::LegacyFormContext,
+    toc_entries: &[fields::TocEntry],
+    bookmark_names: &HashSet<String>,
 ) -> Vec<FloatingShape> {
     let mut r = Reader::from_str(doc_xml);
     let mut shapes = Vec::new();
@@ -1316,6 +1324,8 @@ fn read_floating_shapes(
                         properties,
                         document_bookmarks,
                         legacy_forms,
+                        toc_entries,
+                        bookmark_names,
                         &mut shape_field_cursor,
                     ));
                     if current_body_block_index.is_some() {
@@ -1816,6 +1826,8 @@ fn read_floating_shape(
     properties: fields::FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
     legacy_forms: &fields::LegacyFormContext,
+    toc_entries: &[fields::TocEntry],
+    bookmark_names: &HashSet<String>,
     shape_field_cursor: &mut ShapeFieldCursor,
 ) -> FloatingShape {
     let mut shape = floating_shape_shell(index, start, anchor_block_index);
@@ -1852,6 +1864,8 @@ fn read_floating_shape(
                                 document_bookmarks,
                                 &mut field_bookmarks,
                                 legacy_forms,
+                                toc_entries,
+                                bookmark_names,
                                 shape_field_cursor,
                                 Some(text_box_depth + 1),
                             ) {
@@ -1868,6 +1882,8 @@ fn read_floating_shape(
                                 document_bookmarks,
                                 &mut field_bookmarks,
                                 legacy_forms,
+                                toc_entries,
+                                bookmark_names,
                                 shape_field_cursor,
                             );
                             text_box_depth += 1;
@@ -1919,6 +1935,8 @@ fn read_floating_shape(
                             document_bookmarks,
                             &mut field_bookmarks,
                             legacy_forms,
+                            toc_entries,
+                            bookmark_names,
                             shape_field_cursor,
                         );
                     }
@@ -1936,6 +1954,8 @@ fn read_floating_shape(
                                 document_bookmarks,
                                 &mut field_bookmarks,
                                 legacy_forms,
+                                toc_entries,
+                                bookmark_names,
                                 shape_field_cursor,
                                 None,
                             ))
@@ -2107,6 +2127,8 @@ fn computed_shape_context_field_result(
     properties: fields::FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
     field_bookmarks: &mut HashMap<String, String>,
+    toc_entries: &[fields::TocEntry],
+    bookmark_names: &HashSet<String>,
 ) -> Option<String> {
     if update_field_bookmarks_from_instruction(instruction, field_bookmarks) {
         return Some(String::new());
@@ -2147,6 +2169,7 @@ fn computed_shape_context_field_result(
     .or_else(|| fields::computed_display_result(instruction))
     .or_else(|| fields::computed_action_result(instruction))
     .or_else(|| fields::computed_reference_index_result(instruction))
+    .or_else(|| fields::computed_toc_result(instruction, toc_entries, bookmark_names))
 }
 
 fn apply_shape_field_char(
@@ -2156,6 +2179,8 @@ fn apply_shape_field_char(
     document_bookmarks: &HashMap<String, String>,
     field_bookmarks: &mut HashMap<String, String>,
     legacy_forms: &fields::LegacyFormContext,
+    toc_entries: &[fields::TocEntry],
+    bookmark_names: &HashSet<String>,
     shape_field_cursor: &mut ShapeFieldCursor,
 ) {
     if field_char_type(e).as_deref() == Some("end") {
@@ -2173,6 +2198,8 @@ fn apply_shape_field_char(
                 properties,
                 document_bookmarks,
                 field_bookmarks,
+                toc_entries,
+                bookmark_names,
             )
         })
         .or_else(|| shape_field_cursor.computed_complex_source_order_result())
@@ -2194,6 +2221,8 @@ fn append_shape_simple_field(
     document_bookmarks: &HashMap<String, String>,
     field_bookmarks: &mut HashMap<String, String>,
     legacy_forms: &fields::LegacyFormContext,
+    toc_entries: &[fields::TocEntry],
+    bookmark_names: &HashSet<String>,
     shape_field_cursor: &mut ShapeFieldCursor,
     simple_text_form_depth: Option<usize>,
 ) -> bool {
@@ -2213,6 +2242,8 @@ fn append_shape_simple_field(
         properties,
         document_bookmarks,
         field_bookmarks,
+        toc_entries,
+        bookmark_names,
     )
     .or_else(|| shape_field_cursor.computed_sequence_result(&instruction))
     .or_else(|| shape_field_cursor.computed_autonum_result(&instruction))

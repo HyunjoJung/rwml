@@ -421,6 +421,23 @@ fn floating_shape_toc_entry_marker_field_text_docx() -> Vec<u8> {
     ])
 }
 
+fn floating_shape_toc_field_text_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:body><w:p><w:pPr><w:outlineLvl w:val="0"/></w:pPr><w:r><w:t>Executive Summary</w:t></w:r></w:p><w:p><w:pPr><w:outlineLvl w:val="1"/></w:pPr><w:r><w:t>Risks</w:t></w:r></w:p><w:p><w:pPr><w:outlineLvl w:val="3"/></w:pPr><w:r><w:t>Excluded Detail</w:t></w:r></w:p><w:p><w:r><w:t>Before </w:t></w:r><w:r><w:drawing><wp:anchor relativeHeight="35" behindDoc="0"><wp:extent cx="914400" cy="457200"/><wp:docPr id="35" name="TOC float"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:fldSimple w:instr=" TOC \o &quot;1-2&quot; "><w:r><w:t>stale shape toc</w:t></w:r></w:fldSimple><w:r><w:t> body</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:t>after</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn header_footer_floating_shape_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -1078,6 +1095,25 @@ fn docx_floating_shape_metadata_hides_toc_entry_marker_field_text() {
     assert_eq!(shapes.len(), 1);
     assert_eq!(shapes[0].name.as_deref(), Some("TOC entry float"));
     assert_eq!(shapes[0].text.as_deref(), Some("body"));
+}
+
+#[test]
+fn docx_floating_shape_metadata_uses_toc_field_text() {
+    let doc = Document::open(&floating_shape_toc_field_text_docx()).expect("fixture opens");
+    let shapes = doc.floating_shapes();
+    let main_text = doc.main_text();
+
+    assert!(
+        main_text.contains("Executive Summary\nRisks body")
+            && !main_text.contains("stale shape toc"),
+        "body text should use computed TOC text inside shapes: {main_text:?}"
+    );
+    assert_eq!(shapes.len(), 1);
+    assert_eq!(shapes[0].name.as_deref(), Some("TOC float"));
+    assert_eq!(
+        shapes[0].text.as_deref(),
+        Some("Executive Summary\n  Risks body")
+    );
 }
 
 #[test]
