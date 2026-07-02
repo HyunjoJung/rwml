@@ -532,7 +532,8 @@ fn computed_note_ref_scan_field_result(
     state: &mut NoteRefComputedFieldState<'_>,
 ) -> Option<String> {
     let instruction = normalize_instruction(instruction?);
-    match FieldKind::from_instruction(&instruction) {
+    let kind = FieldKind::from_instruction(&instruction);
+    match &kind {
         FieldKind::Ref => {
             return computed_note_ref_scan_ref_result(&instruction, state);
         }
@@ -543,6 +544,11 @@ fn computed_note_ref_scan_field_result(
             return computed_ask_result(&instruction, &mut state.field_bookmarks);
         }
         _ => {}
+    }
+    if matches!(kind, FieldKind::Unknown(_)) {
+        if let Some(text) = computed_note_ref_scan_direct_bookmark_ref_result(&instruction, state) {
+            return Some(text);
+        }
     }
     computed_numbering_result(&instruction, &mut state.autonum_counter)
         .or_else(|| computed_listnum_result(&instruction, &mut state.listnum_counter))
@@ -569,6 +575,23 @@ fn computed_note_ref_scan_ref_result(
         field_bookmarks: &state.field_bookmarks,
     };
     computed_ref_result(instruction, &ctx, None, None)
+}
+
+fn computed_note_ref_scan_direct_bookmark_ref_result(
+    instruction: &str,
+    state: &NoteRefComputedFieldState<'_>,
+) -> Option<String> {
+    let ref_positions = RefPositionContext::default();
+    let ref_numbers = RefNumberContext::empty();
+    let note_refs = NoteRefContext::empty();
+    let ctx = RefResultContext {
+        bookmarks: state.document_bookmarks,
+        ref_positions: &ref_positions,
+        ref_numbers: &ref_numbers,
+        note_refs: &note_refs,
+        field_bookmarks: &state.field_bookmarks,
+    };
+    computed_direct_bookmark_ref_result(instruction, &ctx, None, None)
 }
 
 fn suppresses_note_ref_complex_result_scan(current: &Option<NoteRefScanField>) -> bool {
