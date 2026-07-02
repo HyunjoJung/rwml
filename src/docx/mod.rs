@@ -1477,6 +1477,7 @@ struct ShapeFieldCursor {
 struct ShapeFieldCursorField {
     instruction: String,
     phase: ShapeFieldCursorPhase,
+    computed_result: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1517,15 +1518,16 @@ impl ShapeFieldCursor {
         }
     }
 
-    fn apply_field_char(&mut self, e: &BytesStart<'_>) {
+    fn apply_field_char(&mut self, e: &BytesStart<'_>) -> Option<String> {
         if self.simple_field_depth.is_some() {
-            return;
+            return None;
         }
         match field_char_type(e).as_deref() {
             Some("begin") => {
                 self.complex_field = Some(ShapeFieldCursorField {
                     instruction: String::new(),
                     phase: ShapeFieldCursorPhase::Instruction,
+                    computed_result: None,
                 });
             }
             Some("separate") => {
@@ -1539,10 +1541,12 @@ impl ShapeFieldCursor {
                     self.computed_autonum_result(&field.instruction);
                     self.computed_listnum_result(&field.instruction);
                     self.next_legacy_form_index(&field.instruction);
+                    return field.computed_result;
                 }
             }
             _ => {}
         }
+        None
     }
 
     fn append_instruction_text(&mut self, text: &str) {
@@ -1554,6 +1558,25 @@ impl ShapeFieldCursor {
                 field.instruction.push_str(text);
             }
         }
+    }
+
+    fn current_complex_instruction(&self) -> Option<&str> {
+        let field = self.complex_field.as_ref()?;
+        (field.phase == ShapeFieldCursorPhase::Result).then_some(field.instruction.as_str())
+    }
+
+    fn set_complex_result(&mut self, text: String) {
+        if let Some(field) = self.complex_field.as_mut() {
+            if field.phase == ShapeFieldCursorPhase::Result {
+                field.computed_result = Some(text);
+            }
+        }
+    }
+
+    fn suppresses_complex_result(&self) -> bool {
+        self.complex_field.as_ref().is_some_and(|field| {
+            field.phase == ShapeFieldCursorPhase::Result && field.computed_result.is_some()
+        })
     }
 
     fn next_legacy_form_index(&mut self, instruction: &str) -> Option<usize> {
@@ -1684,9 +1707,16 @@ fn read_floating_shape(
                 let name = local(qname.as_ref());
                 if text_box_depth > 0 {
                     match name {
-                        b"t" => append_shape_text(&mut shape_text, &read_text(r)),
+                        b"t" => {
+                            let text = read_text(r);
+                            if !shape_field_cursor.suppresses_complex_result() {
+                                append_shape_text(&mut shape_text, &text);
+                            }
+                        }
                         b"fldSimple" => {
-                            if append_shape_simple_field(
+                            if shape_field_cursor.suppresses_complex_result() {
+                                skip_subtree(r);
+                            } else if append_shape_simple_field(
                                 &mut shape_text,
                                 &e,
                                 properties,
@@ -1701,14 +1731,23 @@ fn read_floating_shape(
                             }
                         }
                         b"fldChar" => {
-                            shape_field_cursor.apply_field_char(&e);
+                            apply_shape_field_char(
+                                &mut shape_text,
+                                &e,
+                                properties,
+                                document_bookmarks,
+                                &mut field_bookmarks,
+                                shape_field_cursor,
+                            );
                             text_box_depth += 1;
                         }
                         b"instrText" => {
                             shape_field_cursor.append_instruction_text(&read_text(r));
                         }
                         b"sym" => {
-                            append_shape_symbol(&mut shape_text, &e);
+                            if !shape_field_cursor.suppresses_complex_result() {
+                                append_shape_symbol(&mut shape_text, &e);
+                            }
                             skip_subtree(r);
                         }
                         _ => text_box_depth += 1,
@@ -1737,18 +1776,26 @@ fn read_floating_shape(
                 let name = local(qname.as_ref());
                 if text_box_depth > 0 {
                     if name == b"fldChar" {
-                        shape_field_cursor.apply_field_char(&e);
-                    }
-                    if name != b"fldSimple"
-                        || !append_shape_simple_field(
+                        apply_shape_field_char(
                             &mut shape_text,
                             &e,
                             properties,
                             document_bookmarks,
                             &mut field_bookmarks,
-                            legacy_forms,
                             shape_field_cursor,
-                        )
+                        );
+                    }
+                    if !shape_field_cursor.suppresses_complex_result()
+                        && (name != b"fldSimple"
+                            || !append_shape_simple_field(
+                                &mut shape_text,
+                                &e,
+                                properties,
+                                document_bookmarks,
+                                &mut field_bookmarks,
+                                legacy_forms,
+                                shape_field_cursor,
+                            ))
                     {
                         append_shape_empty(&mut shape_text, &e, name);
                     }
@@ -1885,6 +1932,79 @@ fn computed_shape_ref_result(
         .or_else(|| fields::computed_direct_bookmark_ref_result(instruction, &ctx, None, None))
 }
 
+fn computed_shape_context_field_result(
+    instruction: &str,
+    properties: fields::FieldDocumentProperties<'_>,
+    document_bookmarks: &HashMap<String, String>,
+    field_bookmarks: &mut HashMap<String, String>,
+) -> Option<String> {
+    fields::computed_formula_result_with_bookmark_context(
+        instruction,
+        document_bookmarks,
+        field_bookmarks,
+    )
+    .or_else(|| {
+        fields::computed_if_compare_result_with_bookmark_context(
+            instruction,
+            document_bookmarks,
+            field_bookmarks,
+        )
+    })
+    .or_else(|| {
+        fields::computed_merge_control_result_with_bookmark_context(
+            instruction,
+            document_bookmarks,
+            field_bookmarks,
+        )
+    })
+    .or_else(|| computed_shape_ref_result(instruction, document_bookmarks, field_bookmarks))
+    .or_else(|| fields::computed_dynamic_result_with_bookmarks(instruction, field_bookmarks))
+    .or_else(|| fields::computed_toc_entry_result(instruction))
+    .or_else(|| {
+        fields::computed_document_info_result(
+            instruction,
+            properties.core,
+            properties.custom,
+            properties.variables,
+            properties.extended,
+            properties.file_size_bytes,
+        )
+    })
+    .or_else(|| fields::computed_revision_number_result(instruction, properties.core))
+    .or_else(|| fields::computed_display_result(instruction))
+    .or_else(|| fields::computed_action_result(instruction))
+    .or_else(|| fields::computed_reference_index_result(instruction))
+}
+
+fn apply_shape_field_char(
+    out: &mut String,
+    e: &BytesStart<'_>,
+    properties: fields::FieldDocumentProperties<'_>,
+    document_bookmarks: &HashMap<String, String>,
+    field_bookmarks: &mut HashMap<String, String>,
+    shape_field_cursor: &mut ShapeFieldCursor,
+) {
+    let completed = shape_field_cursor.apply_field_char(e);
+    let computed = shape_field_cursor
+        .current_complex_instruction()
+        .and_then(|instruction| {
+            computed_shape_context_field_result(
+                instruction,
+                properties,
+                document_bookmarks,
+                field_bookmarks,
+            )
+        });
+    if let Some(text) = computed {
+        shape_field_cursor.set_complex_result(text);
+    }
+    if let Some(text) = completed {
+        if !text.is_empty() {
+            append_shape_text(out, &text);
+        }
+    }
+}
+
 fn append_shape_simple_field(
     out: &mut String,
     e: &BytesStart<'_>,
@@ -1900,49 +2020,20 @@ fn append_shape_simple_field(
     if update_field_bookmarks_from_instruction(&instruction, field_bookmarks) {
         return true;
     }
-    let Some(text) = fields::computed_formula_result_with_bookmark_context(
+    let text = computed_shape_context_field_result(
         &instruction,
+        properties,
         document_bookmarks,
         field_bookmarks,
     )
-    .or_else(|| {
-        fields::computed_if_compare_result_with_bookmark_context(
-            &instruction,
-            document_bookmarks,
-            field_bookmarks,
-        )
-    })
-    .or_else(|| {
-        fields::computed_merge_control_result_with_bookmark_context(
-            &instruction,
-            document_bookmarks,
-            field_bookmarks,
-        )
-    })
-    .or_else(|| computed_shape_ref_result(&instruction, document_bookmarks, field_bookmarks))
-    .or_else(|| fields::computed_dynamic_result_with_bookmarks(&instruction, field_bookmarks))
-    .or_else(|| fields::computed_toc_entry_result(&instruction))
-    .or_else(|| {
-        fields::computed_document_info_result(
-            &instruction,
-            properties.core,
-            properties.custom,
-            properties.variables,
-            properties.extended,
-            properties.file_size_bytes,
-        )
-    })
-    .or_else(|| fields::computed_revision_number_result(&instruction, properties.core))
-    .or_else(|| fields::computed_display_result(&instruction))
-    .or_else(|| fields::computed_action_result(&instruction))
-    .or_else(|| fields::computed_reference_index_result(&instruction))
     .or_else(|| shape_field_cursor.computed_sequence_result(&instruction))
     .or_else(|| shape_field_cursor.computed_autonum_result(&instruction))
     .or_else(|| shape_field_cursor.computed_listnum_result(&instruction))
     .or_else(|| {
         let index = shape_field_cursor.next_legacy_form_index(&instruction)?;
         fields::computed_legacy_form_result(&instruction, "", legacy_forms, index)
-    }) else {
+    });
+    let Some(text) = text else {
         return false;
     };
     if !text.is_empty() {
