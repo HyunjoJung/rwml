@@ -5830,6 +5830,27 @@ fn toc_heading_simple_field_source_docx() -> Vec<u8> {
     ])
 }
 
+fn toc_heading_legacy_form_source_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" FORMDROPDOWN "><w:ffData><w:ddList><w:result w:val="1"/><w:listEntry w:val="1"/><w:listEntry w:val="99"/></w:ddList></w:ffData><w:r><w:t>stale prior form</w:t></w:r></w:fldSimple></w:p><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Choice </w:t></w:r><w:fldSimple w:instr=" FORMDROPDOWN "><w:ffData><w:ddList><w:result w:val="1"/><w:listEntry w:val="3"/><w:listEntry w:val="7"/></w:ddList></w:ffData><w:r><w:t>stale source form</w:t></w:r></w:fldSimple><w:r><w:t> ready</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" TOC \o &quot;1-1&quot; "><w:r><w:t>stale legacy form toc source</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TOC \o &quot;1-1&quot; \* Upper "><w:r><w:t>stale upper legacy form toc source</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn toc_heading_numbering_field_source_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -17529,6 +17550,52 @@ fn docx_toc_heading_source_text_uses_computed_simple_field_results() {
             && !main_text.contains("stale heading quote")
             && !main_text.contains("stale simple-field heading toc"),
         "TOC source text should use computed simple-field heading text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_toc_heading_source_text_uses_computed_legacy_form_results() {
+    let doc = Document::open(&toc_heading_legacy_form_source_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let form_fields = fields
+        .iter()
+        .filter(|field| field.kind == FieldKind::FormField("FORMDROPDOWN".to_string()))
+        .collect::<Vec<_>>();
+    assert_eq!(form_fields.len(), 2);
+    assert_eq!(form_fields[0].result, "stale prior form");
+    assert_eq!(form_fields[0].computed_result.as_deref(), Some("99"));
+    assert_eq!(form_fields[1].result, "stale source form");
+    assert_eq!(form_fields[1].computed_result.as_deref(), Some("7"));
+
+    let toc_fields = fields
+        .iter()
+        .filter(|field| field.kind == FieldKind::Toc)
+        .collect::<Vec<_>>();
+    assert_eq!(toc_fields.len(), 2);
+    assert_eq!(toc_fields[0].instruction, "TOC \\o \"1-1\"");
+    assert_eq!(
+        toc_fields[0].computed_result.as_deref(),
+        Some("Choice 7 ready")
+    );
+    assert_eq!(toc_fields[1].instruction, "TOC \\o \"1-1\" \\* Upper");
+    assert_eq!(
+        toc_fields[1].computed_result.as_deref(),
+        Some("CHOICE 7 READY")
+    );
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Choice 7 ready")
+            && main_text.contains("CHOICE 7 READY")
+            && !main_text.contains("stale source form")
+            && !main_text.contains("stale legacy form toc source")
+            && !main_text.contains("stale upper legacy form toc source"),
+        "TOC source text should use computed legacy form heading text: {main_text:?}"
     );
 }
 

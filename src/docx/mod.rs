@@ -309,8 +309,13 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         field_properties,
         preserve_legacy_form_cache,
     );
-    let toc_entries =
-        fields::toc_entries_with_properties(&doc_xml, &styles, &ref_targets, field_properties);
+    let toc_entries = fields::toc_entries_with_properties(
+        &doc_xml,
+        &styles,
+        &ref_targets,
+        field_properties,
+        preserve_legacy_form_cache,
+    );
     let bookmark_names = fields::bookmark_names(&doc_xml);
 
     let ctx = body::Ctx {
@@ -835,6 +840,7 @@ fn read_hf_parts(
                 extended: properties.extended,
                 file_size_bytes: properties.file_size_bytes,
             },
+            preserve_legacy_form_cache,
         );
         let bookmark_names = fields::bookmark_names(&xml);
         let hf_ctx = body::Ctx {
@@ -1017,6 +1023,7 @@ fn read_notes(
             extended: properties.extended,
             file_size_bytes: properties.file_size_bytes,
         },
+        preserve_legacy_form_cache,
     );
     let bookmark_names = fields::bookmark_names(&xml);
     let ctx = body::Ctx {

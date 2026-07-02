@@ -44,6 +44,7 @@ pub(crate) fn toc_entries(
             extended: &empty_properties,
             file_size_bytes: None,
         },
+        false,
     )
 }
 
@@ -52,7 +53,9 @@ pub(crate) fn toc_entries_with_properties(
     styles: &Styles,
     ref_targets: &HashMap<String, String>,
     properties: FieldDocumentProperties<'_>,
+    preserve_legacy_form_cache: bool,
 ) -> Vec<TocEntry> {
+    let legacy_forms = legacy_form_context(xml, preserve_legacy_form_cache);
     let mut r = Reader::from_str(xml);
     let mut entries = Vec::new();
     let mut active_bookmarks = Vec::new();
@@ -60,6 +63,7 @@ pub(crate) fn toc_entries_with_properties(
     let mut autonum_counter = 0i64;
     let mut listnum_counter = 0i64;
     let mut field_bookmarks = HashMap::new();
+    let mut form_field_index = 0usize;
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
     loop {
@@ -95,6 +99,8 @@ pub(crate) fn toc_entries_with_properties(
                             &mut entries,
                             ref_targets,
                             properties,
+                            &legacy_forms,
+                            &mut form_field_index,
                         );
                         consumed_element = true;
                     }
@@ -152,6 +158,8 @@ fn read_toc_paragraph(
     entries: &mut Vec<TocEntry>,
     ref_targets: &HashMap<String, String>,
     properties: FieldDocumentProperties<'_>,
+    legacy_forms: &LegacyFormContext,
+    form_field_index: &mut usize,
 ) {
     let mut style_id: Option<String> = None;
     let mut outline: Option<u8> = None;
@@ -215,6 +223,8 @@ fn read_toc_paragraph(
                                 entries,
                                 ref_targets,
                                 properties,
+                                legacy_forms,
+                                form_field_index,
                             ));
                             consumed_element = true;
                         }
@@ -234,6 +244,8 @@ fn read_toc_paragraph(
                             entries,
                             ref_targets,
                             properties,
+                            legacy_forms,
+                            form_field_index,
                         );
                     }
                     b"instrText" => {
@@ -299,6 +311,9 @@ fn read_toc_paragraph(
                                 listnum_counter,
                                 field_bookmarks,
                                 properties,
+                                legacy_forms,
+                                form_field_index,
+                                "",
                             ) {
                                 text.push_str(&computed);
                             }
@@ -319,6 +334,8 @@ fn read_toc_paragraph(
                             entries,
                             ref_targets,
                             properties,
+                            legacy_forms,
+                            form_field_index,
                         );
                     }
                     b"sym" => {
@@ -415,6 +432,8 @@ fn read_toc_simple_field_result(
     entries: &mut Vec<TocEntry>,
     ref_targets: &HashMap<String, String>,
     properties: FieldDocumentProperties<'_>,
+    legacy_forms: &LegacyFormContext,
+    form_field_index: &mut usize,
 ) -> String {
     let mut text = String::new();
     let mut current = Vec::new();
@@ -472,6 +491,8 @@ fn read_toc_simple_field_result(
                                 entries,
                                 ref_targets,
                                 properties,
+                                legacy_forms,
+                                form_field_index,
                             ));
                         }
                         consumed_element = true;
@@ -491,6 +512,8 @@ fn read_toc_simple_field_result(
                             entries,
                             ref_targets,
                             properties,
+                            legacy_forms,
+                            form_field_index,
                         );
                     }
                     b"instrText" => {
@@ -564,6 +587,9 @@ fn read_toc_simple_field_result(
                                 listnum_counter,
                                 field_bookmarks,
                                 properties,
+                                legacy_forms,
+                                form_field_index,
+                                "",
                             ) {
                                 text.push_str(&computed);
                             }
@@ -584,6 +610,8 @@ fn read_toc_simple_field_result(
                             entries,
                             ref_targets,
                             properties,
+                            legacy_forms,
+                            form_field_index,
                         );
                     }
                     b"sym" => {
@@ -627,6 +655,7 @@ fn read_toc_simple_field_result(
             _ => {}
         }
     }
+    let cached_text = normalize_toc_text(&text);
     computed_toc_source_field_result(
         instruction,
         ref_targets,
@@ -634,6 +663,9 @@ fn read_toc_simple_field_result(
         listnum_counter,
         field_bookmarks,
         properties,
+        legacy_forms,
+        form_field_index,
+        &cached_text,
     )
     .unwrap_or(text)
 }
@@ -666,6 +698,8 @@ fn apply_toc_fld_char(
     entries: &mut Vec<TocEntry>,
     ref_targets: &HashMap<String, String>,
     properties: FieldDocumentProperties<'_>,
+    legacy_forms: &LegacyFormContext,
+    form_field_index: &mut usize,
 ) {
     // Track where each complex field's result text begins in `text`, so a
     // deterministic source-field result can overwrite the leaked cached runs on
@@ -696,6 +730,12 @@ fn apply_toc_fld_char(
             push_unique(sequence_identifiers, identifier);
             return;
         }
+        let current_result = result_starts
+            .last()
+            .and_then(|start| *start)
+            .and_then(|start| text.get(start..))
+            .map(normalize_toc_text)
+            .unwrap_or_default();
         computed_source = computed_toc_source_field_result(
             Some(&field.instruction),
             ref_targets,
@@ -703,6 +743,9 @@ fn apply_toc_fld_char(
             listnum_counter,
             field_bookmarks,
             properties,
+            legacy_forms,
+            form_field_index,
+            &current_result,
         );
     });
     if fld_type.as_deref() == Some("end") {
@@ -789,6 +832,9 @@ fn computed_toc_source_field_result(
     listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
     properties: FieldDocumentProperties<'_>,
+    legacy_forms: &LegacyFormContext,
+    form_field_index: &mut usize,
+    current_result: &str,
 ) -> Option<String> {
     let instruction = normalize_instruction(instruction?);
     if is_tc_instruction(&instruction)
@@ -802,6 +848,11 @@ fn computed_toc_source_field_result(
         }
         FieldKind::Dynamic(kind) if kind == "ASK" => {
             return super::computed_ask_result(&instruction, field_bookmarks);
+        }
+        FieldKind::FormField(_) => {
+            let index = *form_field_index;
+            *form_field_index += 1;
+            return computed_legacy_form_result(&instruction, current_result, legacy_forms, index);
         }
         _ => {}
     }
