@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use crate::annotation::{Comment, TextAnchor};
 
-use super::fields::{computed_quote_result, computed_run_symbol_char};
+use super::fields::{computed_dynamic_result_with_bookmarks, computed_run_symbol_char};
 use super::xml_text::{
     inline_marker_text, read_text, skip_alternate_content_branch, skip_subtree,
     AlternateContentBranchState,
@@ -472,7 +472,11 @@ fn comment_symbol_char(e: &BytesStart<'_>) -> Option<char> {
 
 fn computed_comment_simple_field_text(e: &BytesStart<'_>) -> Option<String> {
     let instruction = attr_local_trimmed(e, b"instr")?;
-    computed_quote_result(&instruction)
+    computed_comment_field_text(&instruction)
+}
+
+fn computed_comment_field_text(instruction: &str) -> Option<String> {
+    computed_dynamic_result_with_bookmarks(instruction, &HashMap::new())
 }
 
 #[derive(Default)]
@@ -509,7 +513,7 @@ impl CommentComplexField {
                 if self.depth == 1 && self.phase == Some(CommentComplexFieldPhase::Instruction) =>
             {
                 self.phase = Some(CommentComplexFieldPhase::Result);
-                self.computed_result = computed_quote_result(&self.instruction);
+                self.computed_result = computed_comment_field_text(&self.instruction);
                 self.computed_result.clone()
             }
             Some("end") => {
