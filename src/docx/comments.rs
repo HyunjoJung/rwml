@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use crate::annotation::{Comment, TextAnchor};
 
-use super::fields::{computed_contextless_result_with_bookmarks, computed_run_symbol_char};
+use super::fields::{computed_contextless_result, computed_run_symbol_char, ContextlessFieldState};
 use super::xml_text::{
     inline_marker_text, read_text, skip_alternate_content_branch, skip_subtree,
     AlternateContentBranchState,
@@ -214,7 +214,7 @@ pub(crate) fn parse_anchors(xml: &str) -> HashMap<String, TextAnchor> {
     let mut anchors: HashMap<String, TextAnchor> = HashMap::new();
     let mut active: Vec<(String, bool)> = Vec::new();
     let mut complex_field = CommentComplexField::default();
-    let mut field_bookmarks = HashMap::new();
+    let mut field_state = ContextlessFieldState::default();
     let mut old_content_depth = 0usize;
     let mut embedded_body_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
@@ -244,7 +244,7 @@ pub(crate) fn parse_anchors(xml: &str) -> HashMap<String, TextAnchor> {
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"fldChar" => {
                 if old_content_depth == 0 && (!active.is_empty() || complex_field.is_active()) {
-                    if let Some(text) = complex_field.apply_field_char(&e, &mut field_bookmarks) {
+                    if let Some(text) = complex_field.apply_field_char(&e, &mut field_state) {
                         push_anchor_text(&active, &mut anchors, &text);
                     }
                 }
@@ -252,7 +252,7 @@ pub(crate) fn parse_anchors(xml: &str) -> HashMap<String, TextAnchor> {
             }
             Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"fldChar" => {
                 if old_content_depth == 0 && (!active.is_empty() || complex_field.is_active()) {
-                    if let Some(text) = complex_field.apply_field_char(&e, &mut field_bookmarks) {
+                    if let Some(text) = complex_field.apply_field_char(&e, &mut field_state) {
                         push_anchor_text(&active, &mut anchors, &text);
                     }
                 }
@@ -286,8 +286,7 @@ pub(crate) fn parse_anchors(xml: &str) -> HashMap<String, TextAnchor> {
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"fldSimple" => {
                 if old_content_depth == 0 {
-                    if let Some(text) = computed_comment_simple_field_text(&e, &mut field_bookmarks)
-                    {
+                    if let Some(text) = computed_comment_simple_field_text(&e, &mut field_state) {
                         push_anchor_text(&active, &mut anchors, &text);
                         skip_subtree(&mut r);
                     }
@@ -295,8 +294,7 @@ pub(crate) fn parse_anchors(xml: &str) -> HashMap<String, TextAnchor> {
             }
             Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"fldSimple" => {
                 if old_content_depth == 0 {
-                    if let Some(text) = computed_comment_simple_field_text(&e, &mut field_bookmarks)
-                    {
+                    if let Some(text) = computed_comment_simple_field_text(&e, &mut field_state) {
                         push_anchor_text(&active, &mut anchors, &text);
                     }
                 }
@@ -351,7 +349,7 @@ pub(crate) fn parse_anchors(xml: &str) -> HashMap<String, TextAnchor> {
 fn read_comment(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Option<Comment> {
     let mut c = comment_shell(start);
     let mut complex_field = CommentComplexField::default();
-    let mut field_bookmarks = HashMap::new();
+    let mut field_state = ContextlessFieldState::default();
     let mut old_content_depth = 0usize;
     let mut embedded_body_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
@@ -381,7 +379,7 @@ fn read_comment(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Option<Comment> {
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"fldChar" => {
                 if old_content_depth == 0 {
-                    if let Some(text) = complex_field.apply_field_char(&e, &mut field_bookmarks) {
+                    if let Some(text) = complex_field.apply_field_char(&e, &mut field_state) {
                         if let Some(c) = c.as_mut() {
                             c.text.push_str(&text);
                         }
@@ -391,7 +389,7 @@ fn read_comment(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Option<Comment> {
             }
             Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"fldChar" => {
                 if old_content_depth == 0 {
-                    if let Some(text) = complex_field.apply_field_char(&e, &mut field_bookmarks) {
+                    if let Some(text) = complex_field.apply_field_char(&e, &mut field_state) {
                         if let Some(c) = c.as_mut() {
                             c.text.push_str(&text);
                         }
@@ -415,8 +413,7 @@ fn read_comment(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Option<Comment> {
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"fldSimple" => {
                 if old_content_depth == 0 {
-                    if let Some(text) = computed_comment_simple_field_text(&e, &mut field_bookmarks)
-                    {
+                    if let Some(text) = computed_comment_simple_field_text(&e, &mut field_state) {
                         if let Some(c) = c.as_mut() {
                             c.text.push_str(&text);
                         }
@@ -426,8 +423,7 @@ fn read_comment(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Option<Comment> {
             }
             Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"fldSimple" => {
                 if old_content_depth == 0 {
-                    if let Some(text) = computed_comment_simple_field_text(&e, &mut field_bookmarks)
-                    {
+                    if let Some(text) = computed_comment_simple_field_text(&e, &mut field_state) {
                         if let Some(c) = c.as_mut() {
                             c.text.push_str(&text);
                         }
@@ -478,17 +474,17 @@ fn comment_symbol_char(e: &BytesStart<'_>) -> Option<char> {
 
 fn computed_comment_simple_field_text(
     e: &BytesStart<'_>,
-    field_bookmarks: &mut HashMap<String, String>,
+    field_state: &mut ContextlessFieldState,
 ) -> Option<String> {
     let instruction = attr_local_trimmed(e, b"instr")?;
-    computed_comment_field_text(&instruction, field_bookmarks)
+    computed_comment_field_text(&instruction, field_state)
 }
 
 fn computed_comment_field_text(
     instruction: &str,
-    field_bookmarks: &mut HashMap<String, String>,
+    field_state: &mut ContextlessFieldState,
 ) -> Option<String> {
-    computed_contextless_result_with_bookmarks(instruction, field_bookmarks)
+    computed_contextless_result(instruction, field_state)
 }
 
 #[derive(Default)]
@@ -513,7 +509,7 @@ impl CommentComplexField {
     fn apply_field_char(
         &mut self,
         e: &BytesStart<'_>,
-        field_bookmarks: &mut HashMap<String, String>,
+        field_state: &mut ContextlessFieldState,
     ) -> Option<String> {
         match field_char_type(e).as_deref() {
             Some("begin") => {
@@ -529,8 +525,7 @@ impl CommentComplexField {
                 if self.depth == 1 && self.phase == Some(CommentComplexFieldPhase::Instruction) =>
             {
                 self.phase = Some(CommentComplexFieldPhase::Result);
-                self.computed_result =
-                    computed_comment_field_text(&self.instruction, field_bookmarks);
+                self.computed_result = computed_comment_field_text(&self.instruction, field_state);
                 self.computed_result.clone()
             }
             Some("end") => {

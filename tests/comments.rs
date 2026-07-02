@@ -856,6 +856,42 @@ fn docx_comments_hide_supported_toc_and_index_marker_field_text() {
 }
 
 #[test]
+fn docx_comments_use_supported_source_order_numbering_field_text() {
+    let docx = docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="comments.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:commentRangeStart w:id="11"/><w:fldSimple w:instr=" AUTONUM "><w:r><w:t>stale anchor one</w:t></w:r></w:fldSimple><w:r><w:t> </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> AUTONUM </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale anchor two</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> Anchor</w:t></w:r><w:commentRangeEnd w:id="11"/><w:r><w:commentReference w:id="11"/></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/comments.xml",
+            r#"<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:comment w:id="11" w:author="Reviewer"><w:p><w:fldSimple w:instr=" AUTONUM "><w:r><w:t>stale comment one</w:t></w:r></w:fldSimple><w:r><w:t> </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> AUTONUM </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale comment two</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> note</w:t></w:r></w:p></w:comment></w:comments>"#,
+        ),
+    ]);
+    let doc = Document::open(&docx).expect("fixture opens");
+    let comments = doc.comments();
+
+    assert_eq!(doc.main_text(), "1 2 Anchor");
+    assert_eq!(comments.len(), 1);
+    assert_eq!(comments[0].text, "1 2 note");
+    assert_eq!(
+        comments[0].anchor.as_ref().map(|a| a.text.as_str()),
+        Some("1 2 Anchor")
+    );
+}
+
+#[test]
 fn docx_comments_preserve_supported_symbols_in_text_and_anchor() {
     let docx = docx_fixture(&[
         (

@@ -1220,18 +1220,63 @@ pub(crate) fn computed_dynamic_result_with_bookmarks(
         .or_else(|| computed_merge_control_result_with_bookmarks(instruction, field_bookmarks))
 }
 
-pub(crate) fn computed_contextless_result_with_bookmarks(
+#[derive(Debug, Default)]
+pub(crate) struct ContextlessFieldState {
+    field_bookmarks: HashMap<String, String>,
+    sequence_counters: HashMap<String, i64>,
+    autonum_counter: i64,
+    listnum_counter: i64,
+}
+
+impl ContextlessFieldState {
+    pub(crate) fn clear(&mut self) {
+        *self = Self::default();
+    }
+}
+
+pub(crate) fn computed_contextless_result(
     instruction: &str,
-    field_bookmarks: &mut HashMap<String, String>,
+    state: &mut ContextlessFieldState,
 ) -> Option<String> {
-    if let Some(text) = computed_set_result(instruction, field_bookmarks) {
+    if let Some(text) = computed_set_result(instruction, &mut state.field_bookmarks) {
         return Some(text);
     }
-    if let Some(text) = computed_ask_result(instruction, field_bookmarks) {
+    if let Some(text) = computed_ask_result(instruction, &mut state.field_bookmarks) {
         return Some(text);
     }
-    computed_dynamic_result_with_bookmarks(instruction, field_bookmarks)
+    computed_dynamic_result_with_bookmarks(instruction, &state.field_bookmarks)
+        .or_else(|| {
+            if FieldKind::from_instruction(instruction) == FieldKind::Sequence {
+                computed_sequence_result(instruction, &mut state.sequence_counters)
+            } else {
+                None
+            }
+        })
         .or_else(|| computed_toc_entry_result(instruction))
+        .or_else(|| {
+            if matches!(
+                FieldKind::from_instruction(instruction),
+                FieldKind::Numbering(kind)
+                    if kind == "AUTONUM"
+                        || kind == "AUTONUMLGL"
+                        || kind == "AUTONUMOUT"
+                        || kind == "BIDIOUTLINE"
+            ) {
+                computed_numbering_result(instruction, &mut state.autonum_counter)
+            } else {
+                None
+            }
+        })
+        .or_else(|| {
+            if matches!(
+                FieldKind::from_instruction(instruction),
+                FieldKind::Numbering(kind) if kind == "LISTNUM"
+            ) {
+                computed_listnum_result(instruction, &mut state.listnum_counter)
+            } else {
+                None
+            }
+        })
         .or_else(|| computed_display_result(instruction))
         .or_else(|| computed_action_result(instruction))
         .or_else(|| computed_reference_index_result(instruction))

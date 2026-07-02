@@ -1330,7 +1330,7 @@ fn read_floating_shapes(
     let mut current_body_block_text = String::new();
     let mut current_body_block_shapes = Vec::new();
     let mut anchor_complex_field = FloatingAnchorComplexField::default();
-    let mut anchor_field_bookmarks = HashMap::new();
+    let mut anchor_field_state = fields::ContextlessFieldState::default();
     let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
@@ -1389,7 +1389,7 @@ fn read_floating_shapes(
                     current_body_block_text.clear();
                     current_body_block_shapes.clear();
                     anchor_complex_field = FloatingAnchorComplexField::default();
-                    anchor_field_bookmarks.clear();
+                    anchor_field_state.clear();
                     alternate_content_stack.clear();
                     scan_depth += 1;
                     continue;
@@ -1410,28 +1410,31 @@ fn read_floating_shapes(
                         current_body_block_text.clear();
                         current_body_block_shapes.clear();
                         anchor_complex_field = FloatingAnchorComplexField::default();
-                        anchor_field_bookmarks.clear();
+                        anchor_field_state.clear();
                         next_body_block_index += 1;
                     }
                     body_depth += 1;
                 }
                 if in_body && current_body_block_index.is_some() && name == b"fldSimple" {
+                    let simple_field_depth = scan_depth + 1;
                     if anchor_complex_field.suppresses_result() {
                         skip_subtree(&mut r);
+                        shape_field_cursor.end_element(b"fldSimple", simple_field_depth);
                         body_depth = body_depth.saturating_sub(1);
                         continue;
                     } else if let Some(text) =
-                        computed_floating_anchor_simple_field_text(&e, &mut anchor_field_bookmarks)
+                        computed_floating_anchor_simple_field_text(&e, &mut anchor_field_state)
                     {
                         append_floating_anchor_text(&mut current_body_block_text, &text);
                         skip_subtree(&mut r);
+                        shape_field_cursor.end_element(b"fldSimple", simple_field_depth);
                         body_depth = body_depth.saturating_sub(1);
                         continue;
                     }
                 }
                 if in_body && current_body_block_index.is_some() && name == b"fldChar" {
                     if let Some(text) =
-                        anchor_complex_field.apply_field_char(&e, &mut anchor_field_bookmarks)
+                        anchor_complex_field.apply_field_char(&e, &mut anchor_field_state)
                     {
                         append_floating_anchor_text(&mut current_body_block_text, &text);
                     }
@@ -1533,7 +1536,7 @@ fn read_floating_shapes(
                 } else if in_body && current_body_block_index.is_some() {
                     if name == b"fldChar" {
                         if let Some(text) =
-                            anchor_complex_field.apply_field_char(&e, &mut anchor_field_bookmarks)
+                            anchor_complex_field.apply_field_char(&e, &mut anchor_field_state)
                         {
                             append_floating_anchor_text(&mut current_body_block_text, &text);
                         }
@@ -1542,7 +1545,7 @@ fn read_floating_shapes(
                             &mut current_body_block_text,
                             &e,
                             name,
-                            &mut anchor_field_bookmarks,
+                            &mut anchor_field_state,
                         );
                     }
                 }
@@ -1584,7 +1587,7 @@ fn read_floating_shapes(
                     current_body_block_text.clear();
                     current_body_block_shapes.clear();
                     anchor_complex_field = FloatingAnchorComplexField::default();
-                    anchor_field_bookmarks.clear();
+                    anchor_field_state.clear();
                     alternate_content_stack.clear();
                     scan_depth = scan_depth.saturating_sub(1);
                     continue;
@@ -1615,7 +1618,7 @@ fn read_floating_shapes(
                         current_body_block_text.clear();
                         current_body_block_shapes.clear();
                         anchor_complex_field = FloatingAnchorComplexField::default();
-                        anchor_field_bookmarks.clear();
+                        anchor_field_state.clear();
                     }
                 }
                 scan_depth = scan_depth.saturating_sub(1);
@@ -1641,10 +1644,10 @@ fn append_floating_anchor_empty(
     out: &mut String,
     e: &BytesStart<'_>,
     name: &[u8],
-    field_bookmarks: &mut HashMap<String, String>,
+    field_state: &mut fields::ContextlessFieldState,
 ) {
     if name == b"fldSimple" {
-        if let Some(text) = computed_floating_anchor_simple_field_text(e, field_bookmarks) {
+        if let Some(text) = computed_floating_anchor_simple_field_text(e, field_state) {
             append_floating_anchor_text(out, &text);
         }
     } else if name == b"sym" {
@@ -1656,17 +1659,17 @@ fn append_floating_anchor_empty(
 
 fn computed_floating_anchor_simple_field_text(
     e: &BytesStart<'_>,
-    field_bookmarks: &mut HashMap<String, String>,
+    field_state: &mut fields::ContextlessFieldState,
 ) -> Option<String> {
     let instruction = attr_local_trimmed(e, b"instr")?;
-    computed_floating_anchor_field_text(&instruction, field_bookmarks)
+    computed_floating_anchor_field_text(&instruction, field_state)
 }
 
 fn computed_floating_anchor_field_text(
     instruction: &str,
-    field_bookmarks: &mut HashMap<String, String>,
+    field_state: &mut fields::ContextlessFieldState,
 ) -> Option<String> {
-    fields::computed_contextless_result_with_bookmarks(instruction, field_bookmarks)
+    fields::computed_contextless_result(instruction, field_state)
 }
 
 #[derive(Default)]
@@ -1687,7 +1690,7 @@ impl FloatingAnchorComplexField {
     fn apply_field_char(
         &mut self,
         e: &BytesStart<'_>,
-        field_bookmarks: &mut HashMap<String, String>,
+        field_state: &mut fields::ContextlessFieldState,
     ) -> Option<String> {
         match field_char_type(e).as_deref() {
             Some("begin") => {
@@ -1705,7 +1708,7 @@ impl FloatingAnchorComplexField {
             {
                 self.phase = Some(FloatingAnchorComplexFieldPhase::Result);
                 self.computed_result =
-                    computed_floating_anchor_field_text(&self.instruction, field_bookmarks);
+                    computed_floating_anchor_field_text(&self.instruction, field_state);
                 self.computed_result.clone()
             }
             Some("end") => {
