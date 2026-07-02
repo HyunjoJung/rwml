@@ -5383,7 +5383,7 @@ mod tests {
         let section_context = super::super::fields::SectionContext::empty();
         let style_ref_context = super::super::fields::StyleRefContext::empty();
         let legacy_form_context = super::super::fields::LegacyFormContext::default();
-        let table_formula_context = super::super::fields::TableFormulaContext::empty();
+        let table_formula_context = super::super::fields::TableFormulaContext::default();
         let toc_entries = Vec::new();
         let bookmark_names = HashSet::new();
         let core_properties = crate::CoreProperties::default();
@@ -5962,7 +5962,7 @@ mod tests {
         let section_context = super::super::fields::SectionContext::empty();
         let style_ref_context = super::super::fields::StyleRefContext::empty();
         let legacy_form_context = super::super::fields::LegacyFormContext::default();
-        let table_formula_context = super::super::fields::TableFormulaContext::empty();
+        let table_formula_context = super::super::fields::TableFormulaContext::default();
         let toc_entries = Vec::new();
         let bookmark_names = HashSet::new();
         let core_properties = crate::CoreProperties::default();
@@ -6038,7 +6038,7 @@ mod tests {
         let section_context = super::super::fields::SectionContext::empty();
         let style_ref_context = super::super::fields::StyleRefContext::empty();
         let legacy_form_context = super::super::fields::LegacyFormContext::default();
-        let table_formula_context = super::super::fields::TableFormulaContext::empty();
+        let table_formula_context = super::super::fields::TableFormulaContext::default();
         let toc_entries = Vec::new();
         let bookmark_names = HashSet::new();
         let core_properties = crate::CoreProperties::default();
@@ -6127,7 +6127,7 @@ mod tests {
         let section_context = super::super::fields::SectionContext::empty();
         let style_ref_context = super::super::fields::StyleRefContext::empty();
         let legacy_form_context = super::super::fields::LegacyFormContext::default();
-        let table_formula_context = super::super::fields::TableFormulaContext::empty();
+        let table_formula_context = super::super::fields::TableFormulaContext::default();
         let toc_entries = Vec::new();
         let bookmark_names = HashSet::new();
         let core_properties = crate::CoreProperties::default();

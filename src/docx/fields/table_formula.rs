@@ -35,10 +35,6 @@ pub(crate) struct TableFormulaContext {
 }
 
 impl TableFormulaContext {
-    pub(crate) fn empty() -> Self {
-        Self::default()
-    }
-
     pub(crate) fn field_result(&self, index: usize) -> Option<String> {
         self.results.get(index).and_then(Clone::clone)
     }

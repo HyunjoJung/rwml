@@ -855,20 +855,26 @@ fn read_hf_parts(
         let note_ref_context = fields::NoteRefContext::empty();
         let section_context = fields::SectionContext::empty();
         let style_ref_context = fields::StyleRefContext::empty();
+        let field_properties = fields::FieldDocumentProperties {
+            core: properties.core,
+            custom: properties.custom,
+            variables: properties.variables,
+            extended: properties.extended,
+            file_size_bytes: properties.file_size_bytes,
+        };
         let legacy_form_context = fields::legacy_form_context(&xml, preserve_legacy_form_cache);
-        let table_formula_context = fields::TableFormulaContext::empty();
+        let table_formula_context = fields::table_formula_context_with_properties(
+            &xml,
+            &ref_targets,
+            field_properties,
+            preserve_legacy_form_cache,
+        );
         let sequence_heading_context = fields::sequence_heading_context(&xml, styles);
         let toc_entries = fields::toc_entries_with_properties(
             &xml,
             styles,
             &ref_targets,
-            fields::FieldDocumentProperties {
-                core: properties.core,
-                custom: properties.custom,
-                variables: properties.variables,
-                extended: properties.extended,
-                file_size_bytes: properties.file_size_bytes,
-            },
+            field_properties,
             preserve_legacy_form_cache,
         );
         let bookmark_names = fields::bookmark_names(&xml);
@@ -1060,20 +1066,26 @@ fn read_notes(
     let note_ref_context = fields::NoteRefContext::empty();
     let section_context = fields::SectionContext::empty();
     let style_ref_context = fields::StyleRefContext::empty();
+    let field_properties = fields::FieldDocumentProperties {
+        core: properties.core,
+        custom: properties.custom,
+        variables: properties.variables,
+        extended: properties.extended,
+        file_size_bytes: properties.file_size_bytes,
+    };
     let legacy_form_context = fields::legacy_form_context(&xml, preserve_legacy_form_cache);
-    let table_formula_context = fields::TableFormulaContext::empty();
+    let table_formula_context = fields::table_formula_context_with_properties(
+        &xml,
+        &ref_targets,
+        field_properties,
+        preserve_legacy_form_cache,
+    );
     let sequence_heading_context = fields::sequence_heading_context(&xml, styles);
     let toc_entries = fields::toc_entries_with_properties(
         &xml,
         styles,
         &ref_targets,
-        fields::FieldDocumentProperties {
-            core: properties.core,
-            custom: properties.custom,
-            variables: properties.variables,
-            extended: properties.extended,
-            file_size_bytes: properties.file_size_bytes,
-        },
+        field_properties,
         preserve_legacy_form_cache,
     );
     let bookmark_names = fields::bookmark_names(&xml);
