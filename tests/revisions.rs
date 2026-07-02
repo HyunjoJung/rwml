@@ -116,6 +116,23 @@ fn inline_marker_revised_docx() -> Vec<u8> {
     ])
 }
 
+fn unchanged_inline_marker_revision_view_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Lead</w:t><w:tab/><w:t>Tab</w:t><w:br/><w:t>Line</w:t><w:br w:type="page"/><w:t>Page</w:t><w:noBreakHyphen/><w:t>Hard</w:t><w:softHyphen/><w:t>Soft</w:t></w:r><w:ins w:id="7"><w:r><w:t>Added</w:t></w:r></w:ins><w:del w:id="8"><w:r><w:delText>Removed</w:delText></w:r></w:del></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 #[test]
 fn docx_revisions_are_extracted() {
     let doc = Document::open(&revised_docx()).expect("fixture opens");
@@ -251,5 +268,23 @@ fn docx_revision_text_preserves_inline_markers() {
     assert_eq!(
         doc.main_text_with_revision_view(RevisionView::Original),
         "Old\tText\nEnd\u{00ad}Soft"
+    );
+}
+
+#[test]
+fn docx_revision_views_preserve_unchanged_inline_markers() {
+    let doc = Document::open(&unchanged_inline_marker_revision_view_docx()).expect("fixture opens");
+
+    assert_eq!(
+        doc.main_text_with_revision_view(RevisionView::Accepted),
+        "Lead\tTab\nLine\nPage-Hard\u{00ad}Soft Added"
+    );
+    assert_eq!(
+        doc.main_text_with_revision_view(RevisionView::Original),
+        "Lead\tTab\nLine\nPage-Hard\u{00ad}Soft Removed"
+    );
+    assert_eq!(
+        doc.main_text_with_revision_view(RevisionView::Annotated),
+        "Lead\tTab\nLine\nPage-Hard\u{00ad}Soft [+Added] [-Removed]"
     );
 }

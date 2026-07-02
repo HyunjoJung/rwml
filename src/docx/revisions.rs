@@ -61,6 +61,7 @@ pub(crate) fn main_text_with_view(xml: &str, view: RevisionView) -> String {
     let mut r = Reader::from_str(xml);
     let mut out = String::new();
     let mut alternate_content_stack = Vec::new();
+    let mut inline_continuation = false;
     loop {
         match r.read_event() {
             Ok(Event::Start(e))
@@ -83,16 +84,31 @@ pub(crate) fn main_text_with_view(xml: &str, view: RevisionView) -> String {
                 if let Some(kind) = revision_kind(local(e.name().as_ref())) {
                     let rev_text = read_revision_text(&mut r, local(e.name().as_ref()));
                     push_revision_text(&mut out, view, kind, &rev_text);
+                    inline_continuation = false;
                 } else if matches!(local(e.name().as_ref()), b"t" | b"delText") {
-                    push_segment(&mut out, &read_text(&mut r));
+                    push_text_segment(&mut out, &read_text(&mut r), &mut inline_continuation);
+                } else if let Some(marker) = inline_marker_text(&e) {
+                    push_inline_segment(&mut out, marker, &mut inline_continuation);
+                    skip_subtree(&mut r);
+                } else if local(e.name().as_ref()) == b"sym" {
+                    if let Some(ch) = revision_symbol_char(&e) {
+                        let text = ch.to_string();
+                        push_segment(&mut out, &text);
+                        inline_continuation = false;
+                    }
+                    skip_subtree(&mut r);
                 }
             }
             Ok(Event::Empty(e)) => {
                 if let Some(kind) = revision_kind(local(e.name().as_ref())) {
                     push_revision_text(&mut out, view, kind, "");
+                    inline_continuation = false;
+                } else if let Some(marker) = inline_marker_text(&e) {
+                    push_inline_segment(&mut out, marker, &mut inline_continuation);
                 } else if let Some(ch) = revision_symbol_char(&e) {
                     let text = ch.to_string();
                     push_segment(&mut out, &text);
+                    inline_continuation = false;
                 }
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
@@ -232,6 +248,25 @@ fn push_marker(out: &mut String, prefix: &str, value: &str, suffix: &str) {
     out.push_str(prefix);
     out.push_str(value);
     out.push_str(suffix);
+}
+
+fn push_text_segment(out: &mut String, value: &str, inline_continuation: &mut bool) {
+    if value.is_empty() {
+        return;
+    }
+    if !out.is_empty() && !*inline_continuation {
+        out.push(' ');
+    }
+    out.push_str(value);
+    *inline_continuation = false;
+}
+
+fn push_inline_segment(out: &mut String, value: &str, inline_continuation: &mut bool) {
+    if value.is_empty() {
+        return;
+    }
+    out.push_str(value);
+    *inline_continuation = true;
 }
 
 fn push_segment(out: &mut String, value: &str) {
