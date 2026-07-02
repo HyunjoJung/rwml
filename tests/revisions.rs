@@ -210,6 +210,27 @@ fn document_info_field_revision_docx() -> Vec<u8> {
     ])
 }
 
+fn revision_number_field_revision_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rIdCore" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>"#,
+        ),
+        (
+            "docProps/core.xml",
+            r#"<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"><cp:revision>17</cp:revision></cp:coreProperties>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:ins w:id="45" w:author="Alice"><w:fldSimple w:instr=" REVNUM "><w:r><w:t>stale insert revision</w:t></w:r></w:fldSimple><w:r><w:t> added</w:t></w:r></w:ins><w:del w:id="46" w:author="Bob"><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> REVNUM </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:delText>stale delete revision</w:delText></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:delText> removed</w:delText></w:r></w:del></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn note_revised_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -572,6 +593,23 @@ fn docx_revision_text_uses_supported_document_info_field_text() {
     assert_eq!(
         doc.main_text_with_revision_view(RevisionView::Original),
         "Side Table Plan removed"
+    );
+}
+
+#[test]
+fn docx_revision_text_uses_supported_revision_number_field_text() {
+    let doc = Document::open(&revision_number_field_revision_docx()).expect("fixture opens");
+    let revisions = doc.revisions();
+
+    assert_eq!(doc.main_text(), "17 added");
+    assert_eq!(revisions.len(), 2);
+    assert_eq!(revisions[0].kind, RevisionKind::Insertion);
+    assert_eq!(revisions[0].text, "17 added");
+    assert_eq!(revisions[1].kind, RevisionKind::Deletion);
+    assert_eq!(revisions[1].text, "17 removed");
+    assert_eq!(
+        doc.main_text_with_revision_view(RevisionView::Original),
+        "17 removed"
     );
 }
 

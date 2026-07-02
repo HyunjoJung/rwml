@@ -1299,6 +1299,10 @@ pub(crate) fn computed_contextless_result(
                 properties.file_size_bytes,
             )
         })
+        .or_else(|| {
+            let properties = state.document_properties?;
+            computed_revision_number_result(instruction, properties.core)
+        })
         .or_else(|| computed_display_result(instruction))
         .or_else(|| computed_action_result(instruction))
         .or_else(|| computed_reference_index_result(instruction))

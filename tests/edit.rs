@@ -649,6 +649,35 @@ fn notes_with_document_info_field_anchor_text_docx() -> Vec<u8> {
     ])
 }
 
+fn notes_with_revision_number_field_anchor_text_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rIdCore" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "docProps/core.xml",
+            r#"<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"><cp:revision>17</cp:revision></cp:coreProperties>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" REVNUM "><w:r><w:t>stale foot revision</w:t></w:r></w:fldSimple><w:r><w:t> before </w:t></w:r><w:r><w:footnoteReference w:id="7"/></w:r><w:r><w:t>foot after</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="7"><w:p><w:r><w:t>Foot body</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+    ])
+}
+
 fn notes_with_symbol_anchor_text_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -989,6 +1018,27 @@ fn anchored_text_box_document_info_field_anchor_docx() -> Vec<u8> {
         (
             "word/document.xml",
             r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:body><w:p><w:fldSimple w:instr=" TITLE "><w:r><w:t>stale anchor title</w:t></w:r></w:fldSimple><w:r><w:t> </w:t></w:r><w:r><w:drawing><wp:anchor relativeHeight="11"><wp:docPr id="17" name="Anchored document info box"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>DOCUMENT INFO BOX</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:t>After</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn anchored_text_box_revision_number_field_anchor_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rIdCore" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>"#,
+        ),
+        (
+            "docProps/core.xml",
+            r#"<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"><cp:revision>17</cp:revision></cp:coreProperties>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:body><w:p><w:fldSimple w:instr=" REVNUM "><w:r><w:t>stale anchor revision</w:t></w:r></w:fldSimple><w:r><w:t> </w:t></w:r><w:r><w:drawing><wp:anchor relativeHeight="18"><wp:docPr id="18" name="Anchored revision box"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>REVISION BOX</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:t>After</w:t></w:r></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -3071,6 +3121,19 @@ fn docx_anchored_text_box_anchor_uses_supported_document_info_field_text() {
 }
 
 #[test]
+fn docx_anchored_text_box_anchor_uses_supported_revision_number_field_text() {
+    let doc = Document::open(&anchored_text_box_revision_number_field_anchor_docx())
+        .expect("fixture opens");
+
+    let text_boxes = doc.text_boxes();
+    assert_eq!(text_boxes.len(), 1);
+    assert_eq!(text_boxes[0].text, "REVISION BOX");
+    let anchor = text_boxes[0].anchor.as_ref().expect("revision anchor");
+    assert_eq!(anchor.id, "18");
+    assert_eq!(anchor.text, "17 After");
+}
+
+#[test]
 fn docx_duplicate_anchored_text_boxes_keep_distinct_body_anchors() {
     let doc = Document::open(&duplicate_anchored_text_box_docx()).expect("fixture opens");
 
@@ -3332,6 +3395,22 @@ fn docx_note_reference_anchors_use_supported_document_info_field_text() {
     assert_eq!(
         notes[0].anchor.as_ref().map(|a| a.text.as_str()),
         Some("Side Table Plan before foot after")
+    );
+}
+
+#[test]
+fn docx_note_reference_anchors_use_supported_revision_number_field_text() {
+    let doc = Document::open(&notes_with_revision_number_field_anchor_text_docx())
+        .expect("fixture opens");
+
+    assert_eq!(doc.main_text(), "17 before foot after");
+    let notes = doc.notes();
+    assert_eq!(notes.len(), 1);
+    assert_eq!(notes[0].id, "7");
+    assert_eq!(notes[0].kind, NoteKind::Footnote);
+    assert_eq!(
+        notes[0].anchor.as_ref().map(|a| a.text.as_str()),
+        Some("17 before foot after")
     );
 }
 
