@@ -2982,6 +2982,24 @@ fn append_run_alternate_content_branch(
                         image_result_runs.extend(start..images.len());
                     }
                 }
+                b"sdt" => {
+                    let start = images.len();
+                    let mut nested_complex_field = ComplexFieldTracker::default();
+                    append_content_control_runs_with_complex(
+                        r,
+                        ctx,
+                        None,
+                        depth + 1,
+                        images,
+                        &mut nested_complex_field,
+                    );
+                    if complex_field
+                        .as_deref()
+                        .is_some_and(ComplexFieldTracker::in_result)
+                    {
+                        image_result_runs.extend(start..images.len());
+                    }
+                }
                 b"AlternateContent" => append_run_alternate_content(
                     r,
                     ctx,
