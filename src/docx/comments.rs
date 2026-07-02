@@ -214,6 +214,7 @@ pub(crate) fn parse_anchors(xml: &str) -> HashMap<String, TextAnchor> {
     let mut anchors: HashMap<String, TextAnchor> = HashMap::new();
     let mut active: Vec<(String, bool)> = Vec::new();
     let mut old_content_depth = 0usize;
+    let mut embedded_body_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
@@ -235,6 +236,16 @@ pub(crate) fn parse_anchors(xml: &str) -> HashMap<String, TextAnchor> {
             }
             Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
                 old_content_depth += 1;
+            }
+            Ok(Event::Start(e)) if is_comment_anchor_embedded_body(local(e.name().as_ref())) => {
+                embedded_body_depth += 1;
+            }
+            Ok(Event::Start(e))
+                if local(e.name().as_ref()) == b"p"
+                    && old_content_depth == 0
+                    && embedded_body_depth == 0 =>
+            {
+                push_anchor_paragraph_boundary(&active, &mut anchors);
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"commentRangeStart" =>
@@ -282,6 +293,9 @@ pub(crate) fn parse_anchors(xml: &str) -> HashMap<String, TextAnchor> {
             Ok(Event::End(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
                 old_content_depth = old_content_depth.saturating_sub(1);
             }
+            Ok(Event::End(e)) if is_comment_anchor_embedded_body(local(e.name().as_ref())) => {
+                embedded_body_depth = embedded_body_depth.saturating_sub(1);
+            }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
                 alternate_content_stack.pop();
             }
@@ -295,6 +309,7 @@ pub(crate) fn parse_anchors(xml: &str) -> HashMap<String, TextAnchor> {
 fn read_comment(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Option<Comment> {
     let mut c = comment_shell(start);
     let mut old_content_depth = 0usize;
+    let mut embedded_body_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
@@ -316,6 +331,18 @@ fn read_comment(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Option<Comment> {
             }
             Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
                 old_content_depth += 1;
+            }
+            Ok(Event::Start(e)) if is_comment_anchor_embedded_body(local(e.name().as_ref())) => {
+                embedded_body_depth += 1;
+            }
+            Ok(Event::Start(e))
+                if local(e.name().as_ref()) == b"p"
+                    && old_content_depth == 0
+                    && embedded_body_depth == 0 =>
+            {
+                if let Some(c) = c.as_mut() {
+                    push_comment_paragraph_boundary(&mut c.text);
+                }
             }
             Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"t" | b"delText") => {
                 let text = read_text(r);
@@ -339,6 +366,9 @@ fn read_comment(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Option<Comment> {
             Ok(Event::End(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
                 old_content_depth = old_content_depth.saturating_sub(1);
             }
+            Ok(Event::End(e)) if is_comment_anchor_embedded_body(local(e.name().as_ref())) => {
+                embedded_body_depth = embedded_body_depth.saturating_sub(1);
+            }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
                 alternate_content_stack.pop();
             }
@@ -354,6 +384,30 @@ fn comment_symbol_char(e: &BytesStart<'_>) -> Option<char> {
     let value = attr_local_trimmed(e, b"char")?;
     let font = attr_local_trimmed(e, b"font");
     computed_run_symbol_char(font.as_deref(), &value)
+}
+
+fn is_comment_anchor_embedded_body(name: &[u8]) -> bool {
+    matches!(name, b"drawing" | b"pict" | b"object" | b"txbxContent")
+}
+
+fn push_comment_paragraph_boundary(text: &mut String) {
+    if !text.is_empty() {
+        text.push('\n');
+    }
+}
+
+fn push_anchor_paragraph_boundary(
+    active: &[(String, bool)],
+    anchors: &mut HashMap<String, TextAnchor>,
+) {
+    for (id, visible) in active {
+        if !visible {
+            continue;
+        }
+        if let Some(anchor) = anchors.get_mut(id) {
+            push_comment_paragraph_boundary(&mut anchor.text);
+        }
+    }
 }
 
 fn push_anchor_text(
