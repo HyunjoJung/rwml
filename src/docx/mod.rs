@@ -1530,6 +1530,7 @@ struct AlternateContentState {
 #[derive(Debug, Default)]
 struct ShapeFieldCursor {
     next_index: usize,
+    ref_index: usize,
     sequence_counters: HashMap<String, i64>,
     autonum_counter: i64,
     listnum_counter: i64,
@@ -1557,6 +1558,7 @@ struct ShapeFieldCursorField {
     instruction: String,
     phase: ShapeFieldCursorPhase,
     computed_result: Option<String>,
+    ref_indexed: bool,
     legacy_form_indexed: bool,
     style_ref_indexed: bool,
     page_indexed: bool,
@@ -1592,6 +1594,7 @@ impl ShapeFieldCursor {
             self.computed_sequence_result(&instruction);
             self.computed_autonum_result(&instruction);
             self.computed_listnum_result(&instruction);
+            self.next_ref_note_position(&instruction, note_refs);
             self.next_style_ref_field_position(&instruction, style_refs);
             self.next_page_field_position(&instruction, page_refs);
             self.next_page_ref_field_context(&instruction, page_refs);
@@ -1618,6 +1621,7 @@ impl ShapeFieldCursor {
             self.computed_sequence_result(&instruction);
             self.computed_autonum_result(&instruction);
             self.computed_listnum_result(&instruction);
+            self.next_ref_note_position(&instruction, note_refs);
             self.next_style_ref_field_position(&instruction, style_refs);
             self.next_page_field_position(&instruction, page_refs);
             self.next_page_ref_field_context(&instruction, page_refs);
@@ -1704,6 +1708,7 @@ impl ShapeFieldCursor {
                     instruction: String::new(),
                     phase: ShapeFieldCursorPhase::Instruction,
                     computed_result: None,
+                    ref_indexed: false,
                     legacy_form_indexed: false,
                     style_ref_indexed: false,
                     page_indexed: false,
@@ -1725,6 +1730,9 @@ impl ShapeFieldCursor {
                         self.computed_sequence_result(&field.instruction);
                         self.computed_autonum_result(&field.instruction);
                         self.computed_listnum_result(&field.instruction);
+                        if !field.ref_indexed {
+                            self.next_ref_note_position(&field.instruction, note_refs);
+                        }
                         if !field.style_ref_indexed {
                             self.next_style_ref_field_position(&field.instruction, style_refs);
                         }
@@ -1805,6 +1813,29 @@ impl ShapeFieldCursor {
         if let Some(field) = self.complex_field.as_mut() {
             if FieldKind::from_instruction(&instruction) == FieldKind::Page {
                 field.page_indexed = true;
+            }
+        }
+        position
+    }
+
+    fn current_complex_ref_note_position(
+        &mut self,
+        note_refs: &fields::NoteRefContext,
+    ) -> Option<fields::NoteRefFieldPosition> {
+        let instruction = {
+            let field = self.complex_field.as_ref()?;
+            if field.phase != ShapeFieldCursorPhase::Result
+                || field.computed_result.is_some()
+                || field.ref_indexed
+            {
+                return None;
+            }
+            field.instruction.clone()
+        };
+        let position = self.next_ref_note_position(&instruction, note_refs);
+        if let Some(field) = self.complex_field.as_mut() {
+            if FieldKind::from_instruction(&instruction) == FieldKind::Ref {
+                field.ref_indexed = true;
             }
         }
         position
@@ -1986,6 +2017,19 @@ impl ShapeFieldCursor {
         let index = self.style_ref_index;
         self.style_ref_index += 1;
         style_refs.field_position(index)
+    }
+
+    fn next_ref_note_position(
+        &mut self,
+        instruction: &str,
+        note_refs: &fields::NoteRefContext,
+    ) -> Option<fields::NoteRefFieldPosition> {
+        if FieldKind::from_instruction(instruction) != FieldKind::Ref {
+            return None;
+        }
+        let index = self.ref_index;
+        self.ref_index += 1;
+        note_refs.ref_field_position(index)
     }
 
     fn next_page_field_position(
@@ -2480,19 +2524,21 @@ fn computed_shape_ref_result(
     instruction: &str,
     document_bookmarks: &HashMap<String, String>,
     field_bookmarks: &HashMap<String, String>,
+    note_refs: &fields::NoteRefContext,
+    note_ref_position: Option<fields::NoteRefFieldPosition>,
 ) -> Option<String> {
     let ref_positions = fields::RefPositionContext::default();
     let ref_numbers = fields::RefNumberContext::empty();
-    let note_refs = fields::NoteRefContext::empty();
     let ctx = fields::RefResultContext {
         bookmarks: document_bookmarks,
         ref_positions: &ref_positions,
         ref_numbers: &ref_numbers,
-        note_refs: &note_refs,
+        note_refs,
         field_bookmarks,
     };
-    fields::computed_ref_result(instruction, &ctx, None, None)
-        .or_else(|| fields::computed_direct_bookmark_ref_result(instruction, &ctx, None, None))
+    fields::computed_ref_result(instruction, &ctx, None, note_ref_position).or_else(|| {
+        fields::computed_direct_bookmark_ref_result(instruction, &ctx, None, note_ref_position)
+    })
 }
 
 fn computed_shape_context_field_result(
@@ -2506,6 +2552,7 @@ fn computed_shape_context_field_result(
     page_ref_position: Option<fields::PageRefPosition>,
     page_ref_order: Option<usize>,
     note_ref_position: Option<fields::NoteRefFieldPosition>,
+    ref_note_position: Option<fields::NoteRefFieldPosition>,
     section_position: Option<fields::SectionFieldPosition>,
     toc_entries: &[fields::TocEntry],
     bookmark_names: &HashSet<String>,
@@ -2540,7 +2587,15 @@ fn computed_shape_context_field_result(
             field_bookmarks,
         )
     })
-    .or_else(|| computed_shape_ref_result(instruction, document_bookmarks, field_bookmarks))
+    .or_else(|| {
+        computed_shape_ref_result(
+            instruction,
+            document_bookmarks,
+            field_bookmarks,
+            note_refs,
+            ref_note_position,
+        )
+    })
     .or_else(|| fields::computed_dynamic_result_with_bookmarks(instruction, field_bookmarks))
     .or_else(|| fields::computed_toc_entry_result(instruction))
     .or_else(|| {
@@ -2596,6 +2651,7 @@ fn apply_shape_field_char(
         .map(str::to_string)
         .and_then(|instruction| {
             let page_position = shape_field_cursor.current_complex_page_field_position(page_refs);
+            let ref_note_position = shape_field_cursor.current_complex_ref_note_position(note_refs);
             let (page_ref_position, page_ref_order) =
                 shape_field_cursor.current_complex_page_ref_field_context(page_refs);
             let note_ref_position =
@@ -2618,6 +2674,7 @@ fn apply_shape_field_char(
                         page_ref_position,
                         page_ref_order,
                         note_ref_position,
+                        ref_note_position,
                         section_position,
                         toc_entries,
                         bookmark_names,
@@ -2667,6 +2724,7 @@ fn append_shape_simple_field(
         }
     }
     let page_position = shape_field_cursor.next_page_field_position(&instruction, page_refs);
+    let ref_note_position = shape_field_cursor.next_ref_note_position(&instruction, note_refs);
     let (page_ref_position, page_ref_order) =
         shape_field_cursor.next_page_ref_field_context(&instruction, page_refs);
     let note_ref_position =
@@ -2688,6 +2746,7 @@ fn append_shape_simple_field(
                 page_ref_position,
                 page_ref_order,
                 note_ref_position,
+                ref_note_position,
                 section_position,
                 toc_entries,
                 bookmark_names,
