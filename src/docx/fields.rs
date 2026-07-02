@@ -1289,6 +1289,10 @@ pub(crate) fn computed_contextless_result(
         ) {
             return Some(text);
         }
+        if let Some(text) = computed_contextless_ref_result(instruction, document_bookmarks, state)
+        {
+            return Some(text);
+        }
     }
     computed_dynamic_result_with_bookmarks(instruction, &state.field_bookmarks)
         .or_else(|| {
@@ -1341,6 +1345,25 @@ pub(crate) fn computed_contextless_result(
         .or_else(|| computed_display_result(instruction))
         .or_else(|| computed_action_result(instruction))
         .or_else(|| computed_reference_index_result(instruction))
+}
+
+fn computed_contextless_ref_result(
+    instruction: &str,
+    document_bookmarks: &HashMap<String, String>,
+    state: &ContextlessFieldState<'_>,
+) -> Option<String> {
+    let ref_positions = RefPositionContext::default();
+    let ref_numbers = RefNumberContext::empty();
+    let note_refs = NoteRefContext::empty();
+    let ctx = RefResultContext {
+        bookmarks: document_bookmarks,
+        ref_positions: &ref_positions,
+        ref_numbers: &ref_numbers,
+        note_refs: &note_refs,
+        field_bookmarks: &state.field_bookmarks,
+    };
+    computed_ref_result(instruction, &ctx, None, None)
+        .or_else(|| computed_direct_bookmark_ref_result(instruction, &ctx, None, None))
 }
 
 pub(crate) fn computed_formula_result_with_bookmark_context(
