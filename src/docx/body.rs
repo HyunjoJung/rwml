@@ -2715,6 +2715,15 @@ fn read_run(
                     }
                     skip_subtree(r);
                 }
+                b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"softHyphen" => {
+                    append_run_inline_marker(
+                        &mut text,
+                        &e,
+                        complex_field.as_deref(),
+                        &mut text_is_field_result,
+                    );
+                    skip_subtree(r);
+                }
                 b"drawing" | b"pict" | b"object" => {
                     let start = images.len();
                     let (img, txbx) = read_drawing(r, ctx, depth);
@@ -2747,44 +2756,13 @@ fn read_run(
                 b"fldChar" => {
                     apply_complex_field_char(&e, ctx, complex_field.as_deref_mut(), base_index)
                 }
-                b"tab" => {
-                    mark_complex_field_result_text(
+                b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"softHyphen" => {
+                    append_run_inline_marker(
+                        &mut text,
+                        &e,
                         complex_field.as_deref(),
                         &mut text_is_field_result,
                     );
-                    text.push('\t');
-                }
-                b"br" => {
-                    mark_complex_field_result_text(
-                        complex_field.as_deref(),
-                        &mut text_is_field_result,
-                    );
-                    if is_page_break_type(&e) {
-                        text.push(PAGE_BREAK_MARKER);
-                    } else {
-                        text.push('\n');
-                    }
-                }
-                b"cr" => {
-                    mark_complex_field_result_text(
-                        complex_field.as_deref(),
-                        &mut text_is_field_result,
-                    );
-                    text.push('\n');
-                }
-                b"noBreakHyphen" => {
-                    mark_complex_field_result_text(
-                        complex_field.as_deref(),
-                        &mut text_is_field_result,
-                    );
-                    text.push('-');
-                }
-                b"softHyphen" => {
-                    mark_complex_field_result_text(
-                        complex_field.as_deref(),
-                        &mut text_is_field_result,
-                    );
-                    text.push('\u{00ad}');
                 }
                 b"sym" => {
                     if append_run_symbol(&mut text, &e) {
@@ -2839,6 +2817,33 @@ fn read_run(
     }
     runs.extend(images);
     runs
+}
+
+fn append_run_inline_marker(
+    text: &mut String,
+    e: &BytesStart<'_>,
+    complex_field: Option<&ComplexFieldTracker>,
+    text_is_field_result: &mut bool,
+) -> bool {
+    let marker = match local(e.name().as_ref()) {
+        b"tab" => Some('\t'),
+        b"br" => Some(if is_page_break_type(e) {
+            PAGE_BREAK_MARKER
+        } else {
+            '\n'
+        }),
+        b"cr" => Some('\n'),
+        b"noBreakHyphen" => Some('-'),
+        b"softHyphen" => Some('\u{00ad}'),
+        _ => None,
+    };
+    if let Some(marker) = marker {
+        mark_complex_field_result_text(complex_field, text_is_field_result);
+        text.push(marker);
+        true
+    } else {
+        false
+    }
 }
 
 fn mark_complex_field_result_text(
@@ -2973,6 +2978,15 @@ fn append_run_alternate_content_branch(
                     }
                     skip_subtree(r);
                 }
+                b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"softHyphen" => {
+                    append_run_inline_marker(
+                        text,
+                        &e,
+                        complex_field.as_deref(),
+                        text_is_field_result,
+                    );
+                    skip_subtree(r);
+                }
                 b"drawing" | b"pict" | b"object" => {
                     let start = images.len();
                     let (img, txbx) = read_drawing(r, ctx, depth);
@@ -3058,29 +3072,13 @@ fn append_run_alternate_content_branch(
                 b"fldChar" => {
                     apply_complex_field_char(&e, ctx, complex_field.as_deref_mut(), base_index)
                 }
-                b"tab" => {
-                    mark_complex_field_result_text(complex_field.as_deref(), text_is_field_result);
-                    text.push('\t');
-                }
-                b"br" => {
-                    mark_complex_field_result_text(complex_field.as_deref(), text_is_field_result);
-                    if is_page_break_type(&e) {
-                        text.push(PAGE_BREAK_MARKER);
-                    } else {
-                        text.push('\n');
-                    }
-                }
-                b"cr" => {
-                    mark_complex_field_result_text(complex_field.as_deref(), text_is_field_result);
-                    text.push('\n');
-                }
-                b"noBreakHyphen" => {
-                    mark_complex_field_result_text(complex_field.as_deref(), text_is_field_result);
-                    text.push('-');
-                }
-                b"softHyphen" => {
-                    mark_complex_field_result_text(complex_field.as_deref(), text_is_field_result);
-                    text.push('\u{00ad}');
+                b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"softHyphen" => {
+                    append_run_inline_marker(
+                        text,
+                        &e,
+                        complex_field.as_deref(),
+                        text_is_field_result,
+                    );
                 }
                 b"sym" => {
                     if append_run_symbol(text, &e) {
