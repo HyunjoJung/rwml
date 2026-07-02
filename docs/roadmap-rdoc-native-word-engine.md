@@ -537,8 +537,9 @@ Initial status:
 - `Document::notes()` exposes non-empty legacy `.doc` footnote and endnote
   regions as recovered note records with stable synthetic ids, note kind, and
   visible note text plus best-effort source-region anchors. A single
-  unambiguous legacy footnote marker is promoted to its containing body-text
-  anchor; broader legacy note/endnote reference anchors are not yet recovered.
+  unambiguous legacy footnote or endnote marker is promoted to its containing
+  body-text anchor; broader legacy note/endnote reference anchors are not yet
+  recovered.
 - `Document::text_boxes()` exposes non-empty legacy `.doc` text-box regions as
   recovered text-box records with stable synthetic ids, visible text, and
   best-effort source-region anchors. Exact legacy shape anchors are not yet

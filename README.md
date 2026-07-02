@@ -875,10 +875,10 @@ code points.
   Non-empty annotation regions are exposed through `comments()` as best-effort
   recovered comments with source-region anchors, and footnote/endnote regions
   are exposed through `notes()` as best-effort recovered note records. A single
-  unambiguous legacy footnote marker anchors to its containing body text;
-  broader note/endnote cases keep source-region anchors. Text-box regions are
-  exposed through `text_boxes()` as best-effort recovered text-box records with
-  source-region anchors.
+  unambiguous legacy footnote or endnote marker anchors to its containing body
+  text; broader ambiguous note/endnote cases keep source-region anchors.
+  Text-box regions are exposed through `text_boxes()` as best-effort recovered
+  text-box records with source-region anchors.
   Header/footer regions are exposed through `header_footers()` as best-effort
   recovered records; when legacy `PlcfHdd` story boundaries are available, rdoc
   splits stories and classifies exact even-page, odd-page, and first-page

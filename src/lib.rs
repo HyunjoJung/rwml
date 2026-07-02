@@ -658,11 +658,12 @@ impl Document {
     ///
     /// Legacy `.doc` notes are recovered from exact FIB footnote/endnote
     /// subdocument regions with synthetic ids, visible note text, and
-    /// best-effort source-region anchors. Exact body reference markers are not
-    /// recovered yet. `.docx` notes are recovered from
-    /// `word/footnotes.xml` and `word/endnotes.xml` with their Word ids, note
-    /// kind, visible text, and reference id anchors when the body references
-    /// them.
+    /// best-effort source-region anchors. A single unambiguous legacy footnote
+    /// or endnote marker is promoted to its containing body-text anchor;
+    /// broader legacy note-reference anchors are not recovered yet. `.docx`
+    /// notes are recovered from `word/footnotes.xml` and `word/endnotes.xml`
+    /// with their Word ids, note kind, visible text, and reference id anchors
+    /// when the body references them.
     pub fn notes(&self) -> Vec<Note> {
         match &self.backend {
             Backend::Doc(d) => legacy_doc_notes_from_state(d),
@@ -2592,6 +2593,7 @@ fn legacy_doc_notes_from_state(state: &DocState) -> Vec<Note> {
     let model = doc_model_from_doc_state(state);
     let mut notes = legacy_doc_notes_from_model(&model);
     attach_legacy_doc_footnote_marker_anchors(&mut notes, state);
+    attach_legacy_doc_endnote_marker_anchors(&mut notes, state);
     notes
 }
 
@@ -2660,18 +2662,40 @@ struct LegacyDocBodyMarkerAnchor {
 }
 
 fn attach_legacy_doc_footnote_marker_anchors(notes: &mut [Note], state: &DocState) {
+    if notes.iter().any(|note| note.kind == NoteKind::Endnote) {
+        return;
+    }
     let mut footnotes: Vec<_> = notes
         .iter_mut()
         .filter(|note| note.kind == NoteKind::Footnote)
         .collect();
-    if footnotes.is_empty() {
+    attach_legacy_doc_body_marker_anchors_to_notes(&mut footnotes, state, 0x0002);
+}
+
+fn attach_legacy_doc_endnote_marker_anchors(notes: &mut [Note], state: &DocState) {
+    if notes.iter().any(|note| note.kind == NoteKind::Footnote) {
         return;
     }
-    let anchors = legacy_doc_body_marker_anchors(state, 0x0002);
-    if anchors.len() != footnotes.len() {
+    let mut endnotes: Vec<_> = notes
+        .iter_mut()
+        .filter(|note| note.kind == NoteKind::Endnote)
+        .collect();
+    attach_legacy_doc_body_marker_anchors_to_notes(&mut endnotes, state, 0x0002);
+}
+
+fn attach_legacy_doc_body_marker_anchors_to_notes(
+    notes: &mut [&mut Note],
+    state: &DocState,
+    marker: u16,
+) {
+    if notes.is_empty() {
         return;
     }
-    for (note, anchor) in footnotes.iter_mut().zip(anchors) {
+    let anchors = legacy_doc_body_marker_anchors(state, marker);
+    if anchors.len() != notes.len() {
+        return;
+    }
+    for (note, anchor) in notes.iter_mut().zip(anchors) {
         note.anchor = Some(TextAnchor {
             id: format!("{}@body-cp{}", note.id, anchor.source_cp),
             text: anchor.text,
@@ -4438,6 +4462,47 @@ mod tests {
         assert_eq!(
             notes[0].anchor.as_ref().map(|anchor| anchor.text.as_str()),
             Some("BODY")
+        );
+    }
+
+    #[test]
+    fn legacy_doc_single_endnote_marker_anchors_note_to_body_text() {
+        let bytes = synth_doc_with_ccp("BO\u{0002}DYEND", "", 0x00C1, 0, 0, [5, 0, 0, 0, 3, 0]);
+        let doc = Document::open(&bytes).unwrap();
+
+        assert_eq!(doc.main_text(), "BODY");
+        let notes = doc.notes();
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].id, "legacy-doc-endnote-0");
+        assert_eq!(notes[0].kind, NoteKind::Endnote);
+        assert_eq!(notes[0].text, "END");
+        assert_eq!(
+            notes[0].anchor.as_ref().map(|anchor| anchor.id.as_str()),
+            Some("legacy-doc-endnote-0@body-cp2")
+        );
+        assert_eq!(
+            notes[0].anchor.as_ref().map(|anchor| anchor.text.as_str()),
+            Some("BODY")
+        );
+    }
+
+    #[test]
+    fn legacy_doc_mixed_note_marker_keeps_source_region_anchor_when_kind_is_ambiguous() {
+        let bytes = synth_doc_with_ccp("BO\u{0002}DYFTNEND", "", 0x00C1, 0, 0, [5, 3, 0, 0, 3, 0]);
+        let doc = Document::open(&bytes).unwrap();
+
+        assert_eq!(doc.main_text(), "BODY");
+        let notes = doc.notes();
+        assert_eq!(notes.len(), 2);
+        assert_eq!(notes[0].kind, NoteKind::Footnote);
+        assert_eq!(
+            notes[0].anchor.as_ref().map(|anchor| anchor.id.as_str()),
+            Some("legacy-doc-footnote-0@cp5+3")
+        );
+        assert_eq!(notes[1].kind, NoteKind::Endnote);
+        assert_eq!(
+            notes[1].anchor.as_ref().map(|anchor| anchor.id.as_str()),
+            Some("legacy-doc-endnote-0@cp8+3")
         );
     }
 

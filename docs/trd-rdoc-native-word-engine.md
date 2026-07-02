@@ -919,7 +919,7 @@ Implementation:
   metadata can be recovered;
 - expose non-empty legacy footnote/endnote regions through `Document::notes()`
   with best-effort source-region anchors, promoting a single unambiguous legacy
-  footnote marker to its containing body-text anchor while broader
+  footnote or endnote marker to its containing body-text anchor while broader
   note-reference anchors remain future work;
 - expose non-empty legacy text-box regions through `Document::text_boxes()`
   with best-effort source-region anchors until richer shape anchors can be
