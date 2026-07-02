@@ -3,10 +3,12 @@
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 
+use std::collections::HashMap;
+
 use crate::annotation::{Revision, RevisionKind, RevisionView};
 use crate::text;
 
-use super::fields::{computed_quote_result, computed_run_symbol_char};
+use super::fields::{computed_dynamic_result_with_bookmarks, computed_run_symbol_char};
 use super::xml_text::{
     inline_marker_text, read_text, skip_alternate_content_branch, skip_subtree,
     AlternateContentBranchState,
@@ -280,7 +282,11 @@ fn revision_symbol_char(e: &BytesStart<'_>) -> Option<char> {
 
 fn computed_revision_simple_field_text(e: &BytesStart<'_>) -> Option<String> {
     let instruction = attr_local_trimmed(e, b"instr")?;
-    computed_quote_result(&instruction)
+    computed_revision_field_text(&instruction)
+}
+
+fn computed_revision_field_text(instruction: &str) -> Option<String> {
+    computed_dynamic_result_with_bookmarks(instruction, &HashMap::new())
 }
 
 #[derive(Default)]
@@ -314,7 +320,7 @@ impl RevisionComplexField {
                     && self.phase == Some(RevisionComplexFieldPhase::Instruction) =>
             {
                 self.phase = Some(RevisionComplexFieldPhase::Result);
-                self.computed_result = computed_quote_result(&self.instruction);
+                self.computed_result = computed_revision_field_text(&self.instruction);
                 self.computed_result.clone()
             }
             Some("end") => {
