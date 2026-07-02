@@ -1682,6 +1682,7 @@ fn append_shape_simple_field(
                 properties.file_size_bytes,
             )
         })
+        .or_else(|| fields::computed_revision_number_result(&instruction, properties.core))
         .or_else(|| fields::computed_display_result(&instruction))
         .or_else(|| fields::computed_action_result(&instruction))
         .or_else(|| fields::computed_reference_index_result(&instruction))
