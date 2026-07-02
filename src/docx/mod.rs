@@ -1467,6 +1467,7 @@ struct AlternateContentState {
 struct ShapeFieldCursor {
     next_index: usize,
     sequence_counters: HashMap<String, i64>,
+    autonum_counter: i64,
     simple_field_depth: Option<usize>,
     complex_field: Option<ShapeFieldCursorField>,
 }
@@ -1491,6 +1492,7 @@ impl ShapeFieldCursor {
         self.simple_field_depth = Some(depth);
         if let Some(instruction) = attr_local(e, b"instr") {
             self.computed_sequence_result(&instruction);
+            self.computed_autonum_result(&instruction);
             self.next_legacy_form_index(&instruction);
         }
     }
@@ -1501,6 +1503,7 @@ impl ShapeFieldCursor {
         }
         if let Some(instruction) = attr_local(e, b"instr") {
             self.computed_sequence_result(&instruction);
+            self.computed_autonum_result(&instruction);
             self.next_legacy_form_index(&instruction);
         }
     }
@@ -1530,6 +1533,7 @@ impl ShapeFieldCursor {
             Some("end") => {
                 if let Some(field) = self.complex_field.take() {
                     self.computed_sequence_result(&field.instruction);
+                    self.computed_autonum_result(&field.instruction);
                     self.next_legacy_form_index(&field.instruction);
                 }
             }
@@ -1562,6 +1566,20 @@ impl ShapeFieldCursor {
             return None;
         }
         fields::computed_sequence_result(instruction, &mut self.sequence_counters)
+    }
+
+    fn computed_autonum_result(&mut self, instruction: &str) -> Option<String> {
+        if !matches!(
+            FieldKind::from_instruction(instruction),
+            FieldKind::Numbering(kind)
+                if kind == "AUTONUM"
+                    || kind == "AUTONUMLGL"
+                    || kind == "AUTONUMOUT"
+                    || kind == "BIDIOUTLINE"
+        ) {
+            return None;
+        }
+        fields::computed_numbering_result(instruction, &mut self.autonum_counter)
     }
 }
 
@@ -1904,6 +1922,7 @@ fn append_shape_simple_field(
     .or_else(|| fields::computed_action_result(&instruction))
     .or_else(|| fields::computed_reference_index_result(&instruction))
     .or_else(|| shape_field_cursor.computed_sequence_result(&instruction))
+    .or_else(|| shape_field_cursor.computed_autonum_result(&instruction))
     .or_else(|| {
         let index = shape_field_cursor.next_legacy_form_index(&instruction)?;
         fields::computed_legacy_form_result(&instruction, "", legacy_forms, index)
