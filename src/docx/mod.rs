@@ -860,7 +860,12 @@ fn read_hf_parts(
         let ref_position_context = fields::ref_position_context(&xml, numbering);
         let ref_number_context = fields::ref_number_context(&xml, numbering);
         let page_ref_context = fields::PageRefContext::empty();
-        let note_ref_context = fields::NoteRefContext::empty();
+        let note_ref_context = fields::note_ref_context_with_properties(
+            &xml,
+            &ref_targets,
+            field_properties,
+            preserve_legacy_form_cache,
+        );
         let section_context = fields::SectionContext::empty();
         let style_ref_context = fields::style_ref_context_with_properties(
             &xml,
@@ -1079,7 +1084,12 @@ fn read_notes(
     let ref_position_context = fields::ref_position_context(&xml, numbering);
     let ref_number_context = fields::ref_number_context(&xml, numbering);
     let page_ref_context = fields::PageRefContext::empty();
-    let note_ref_context = fields::NoteRefContext::empty();
+    let note_ref_context = fields::note_ref_context_with_properties(
+        &xml,
+        &ref_targets,
+        field_properties,
+        preserve_legacy_form_cache,
+    );
     let section_context = fields::SectionContext::empty();
     let style_ref_context = fields::style_ref_context_with_properties(
         &xml,
