@@ -1876,7 +1876,9 @@ impl ComplexFieldTracker {
                 continue;
             };
             if let Some(text) = computed.text.as_deref() {
-                run.field = if text.is_empty()
+                run.field = if matches!(run.field, FieldRole::Hyperlink { .. }) {
+                    run.field.clone()
+                } else if text.is_empty()
                     && offset == 0
                     && preserves_computed_empty_field_instruction(&computed.instruction)
                 {
@@ -1961,41 +1963,6 @@ struct PPr {
     section: Option<SectionSetup>,
 }
 
-/// Collect runs from a run-bearing wrapper (`w:hyperlink`, `w:ins`, `w:sdt`, …)
-/// until its `End`, carrying an optional hyperlink `url` onto the text runs.
-fn read_runs_container(r: &mut Xml<'_>, ctx: &Ctx<'_>, link: Option<&str>, depth: u32) -> Vec<Run> {
-    if depth > MAX_DEPTH {
-        skip_subtree(r);
-        return Vec::new();
-    }
-    let mut runs = Vec::new();
-    loop {
-        match r.read_event() {
-            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
-                b"r" => runs.extend(read_run(r, ctx, link, depth + 1, None, 0)),
-                b"hyperlink" => runs.extend(read_hyperlink(r, &e, ctx, depth)),
-                b"fldSimple" => runs.extend(read_fldsimple(r, &e, ctx, depth)),
-                b"sdt" => runs.extend(read_content_control_runs(r, ctx, link, depth + 1)),
-                b"ins" | b"moveTo" | b"smartTag" | b"sdtContent" | b"bdo" | b"dir" => {
-                    runs.extend(read_runs_container(r, ctx, link, depth + 1))
-                }
-                b"AlternateContent" => {
-                    runs.extend(read_alternate_content_runs(r, ctx, link, depth + 1))
-                }
-                _ => skip_subtree(r),
-            },
-            Ok(Event::Empty(e)) => {
-                if local(e.name().as_ref()) == b"fldSimple" {
-                    push_empty_fldsimple_run(&mut runs, &e, ctx);
-                }
-            }
-            Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
-            _ => {}
-        }
-    }
-    runs
-}
-
 fn read_runs_container_with_complex(
     r: &mut Xml<'_>,
     ctx: &Ctx<'_>,
@@ -2057,141 +2024,6 @@ fn append_runs_container_with_complex(
                 }
             }
             Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
-            _ => {}
-        }
-    }
-}
-
-fn read_content_control_runs(
-    r: &mut Xml<'_>,
-    ctx: &Ctx<'_>,
-    link: Option<&str>,
-    depth: u32,
-) -> Vec<Run> {
-    if depth > MAX_DEPTH {
-        skip_subtree(r);
-        return Vec::new();
-    }
-    let mut control = None;
-    let mut runs = Vec::new();
-    loop {
-        match r.read_event() {
-            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
-                b"sdtPr" => control = read_content_control_pr(r),
-                b"sdtContent" => runs.extend(read_runs_container(r, ctx, link, depth + 1)),
-                b"r" => runs.extend(read_run(r, ctx, link, depth + 1, None, 0)),
-                b"hyperlink" => runs.extend(read_hyperlink(r, &e, ctx, depth)),
-                b"fldSimple" => runs.extend(read_fldsimple(r, &e, ctx, depth)),
-                b"sdt" => runs.extend(read_content_control_runs(r, ctx, link, depth + 1)),
-                b"ins" | b"moveTo" | b"smartTag" | b"bdo" | b"dir" => {
-                    runs.extend(read_runs_container(r, ctx, link, depth + 1))
-                }
-                b"AlternateContent" => {
-                    read_content_control_runs_alternate_content(
-                        r,
-                        ctx,
-                        link,
-                        depth + 1,
-                        &mut control,
-                        &mut runs,
-                    );
-                }
-                _ => skip_subtree(r),
-            },
-            Ok(Event::Empty(e)) => {
-                if local(e.name().as_ref()) == b"fldSimple" {
-                    push_empty_fldsimple_run(&mut runs, &e, ctx);
-                }
-            }
-            Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
-            _ => {}
-        }
-    }
-    apply_content_control(&mut runs, control);
-    runs
-}
-
-fn read_content_control_runs_alternate_content(
-    r: &mut Xml<'_>,
-    ctx: &Ctx<'_>,
-    link: Option<&str>,
-    depth: u32,
-    control: &mut Option<AuthoredContentControl>,
-    runs: &mut Vec<Run>,
-) {
-    if depth > MAX_DEPTH {
-        skip_subtree(r);
-        return;
-    }
-    let mut took = false;
-    loop {
-        match r.read_event() {
-            Ok(Event::Start(e)) => {
-                let qname = e.name();
-                let name = local(qname.as_ref());
-                match name {
-                    b"Choice" | b"Fallback" if !took => {
-                        took = true;
-                        read_content_control_runs_alternate_content_branch(
-                            r,
-                            ctx,
-                            link,
-                            depth + 1,
-                            control,
-                            runs,
-                            name,
-                        );
-                    }
-                    _ => skip_subtree(r),
-                }
-            }
-            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
-            Ok(Event::Eof) | Err(_) => break,
-            _ => {}
-        }
-    }
-}
-
-fn read_content_control_runs_alternate_content_branch(
-    r: &mut Xml<'_>,
-    ctx: &Ctx<'_>,
-    link: Option<&str>,
-    depth: u32,
-    control: &mut Option<AuthoredContentControl>,
-    runs: &mut Vec<Run>,
-    branch: &[u8],
-) {
-    loop {
-        match r.read_event() {
-            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
-                b"sdtPr" => *control = read_content_control_pr(r),
-                b"sdtContent" => runs.extend(read_runs_container(r, ctx, link, depth + 1)),
-                b"r" => runs.extend(read_run(r, ctx, link, depth + 1, None, 0)),
-                b"hyperlink" => runs.extend(read_hyperlink(r, &e, ctx, depth)),
-                b"fldSimple" => runs.extend(read_fldsimple(r, &e, ctx, depth)),
-                b"sdt" => runs.extend(read_content_control_runs(r, ctx, link, depth + 1)),
-                b"ins" | b"moveTo" | b"smartTag" | b"bdo" | b"dir" => {
-                    runs.extend(read_runs_container(r, ctx, link, depth + 1))
-                }
-                b"AlternateContent" => {
-                    read_content_control_runs_alternate_content(
-                        r,
-                        ctx,
-                        link,
-                        depth + 1,
-                        control,
-                        runs,
-                    );
-                }
-                _ => skip_subtree(r),
-            },
-            Ok(Event::Empty(e)) => {
-                if local(e.name().as_ref()) == b"fldSimple" {
-                    push_empty_fldsimple_run(runs, &e, ctx);
-                }
-            }
-            Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
-            Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
     }
@@ -2358,34 +2190,6 @@ fn append_content_control_runs_alternate_content_branch_with_complex(
             _ => {}
         }
     }
-}
-
-fn read_alternate_content_runs(
-    r: &mut Xml<'_>,
-    ctx: &Ctx<'_>,
-    link: Option<&str>,
-    depth: u32,
-) -> Vec<Run> {
-    if depth > MAX_DEPTH {
-        skip_subtree(r);
-        return Vec::new();
-    }
-    let mut runs = Vec::new();
-    let mut took = false;
-    loop {
-        match r.read_event() {
-            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
-                b"Choice" | b"Fallback" if !took => {
-                    took = true;
-                    runs.extend(read_runs_container(r, ctx, link, depth + 1));
-                }
-                _ => skip_subtree(r),
-            },
-            Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
-            _ => {}
-        }
-    }
-    runs
 }
 
 fn append_alternate_content_runs_with_complex(
@@ -3413,7 +3217,7 @@ fn blip_image(e: &BytesStart<'_>, ctx: &Ctx<'_>) -> Option<Image> {
 /// and tag its runs with the link.
 fn read_hyperlink(r: &mut Xml<'_>, start: &BytesStart<'_>, ctx: &Ctx<'_>, depth: u32) -> Vec<Run> {
     let url = hyperlink_url(start, ctx);
-    read_runs_container(r, ctx, url.as_deref(), depth + 1)
+    read_runs_container_with_complex(r, ctx, url.as_deref(), depth + 1)
 }
 
 fn hyperlink_url(start: &BytesStart<'_>, ctx: &Ctx<'_>) -> Option<String> {
