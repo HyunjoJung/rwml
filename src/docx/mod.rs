@@ -862,7 +862,14 @@ fn read_hf_parts(
         let page_ref_context = fields::PageRefContext::empty();
         let note_ref_context = fields::NoteRefContext::empty();
         let section_context = fields::SectionContext::empty();
-        let style_ref_context = fields::StyleRefContext::empty();
+        let style_ref_context = fields::style_ref_context_with_properties(
+            &xml,
+            styles,
+            numbering,
+            &ref_targets,
+            field_properties,
+            preserve_legacy_form_cache,
+        );
         let legacy_form_context = fields::legacy_form_context(&xml, preserve_legacy_form_cache);
         let table_formula_context = fields::table_formula_context_with_properties(
             &xml,
@@ -1074,7 +1081,14 @@ fn read_notes(
     let page_ref_context = fields::PageRefContext::empty();
     let note_ref_context = fields::NoteRefContext::empty();
     let section_context = fields::SectionContext::empty();
-    let style_ref_context = fields::StyleRefContext::empty();
+    let style_ref_context = fields::style_ref_context_with_properties(
+        &xml,
+        styles,
+        numbering,
+        &ref_targets,
+        field_properties,
+        preserve_legacy_form_cache,
+    );
     let legacy_form_context = fields::legacy_form_context(&xml, preserve_legacy_form_cache);
     let table_formula_context = fields::table_formula_context_with_properties(
         &xml,

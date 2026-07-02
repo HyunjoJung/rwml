@@ -5381,7 +5381,7 @@ mod tests {
         let page_ref_context = super::super::fields::PageRefContext::empty();
         let note_ref_context = super::super::fields::NoteRefContext::empty();
         let section_context = super::super::fields::SectionContext::empty();
-        let style_ref_context = super::super::fields::StyleRefContext::empty();
+        let style_ref_context = super::super::fields::StyleRefContext::default();
         let legacy_form_context = super::super::fields::LegacyFormContext::default();
         let table_formula_context = super::super::fields::TableFormulaContext::default();
         let toc_entries = Vec::new();
@@ -5960,7 +5960,7 @@ mod tests {
         let page_ref_context = super::super::fields::PageRefContext::empty();
         let note_ref_context = super::super::fields::NoteRefContext::empty();
         let section_context = super::super::fields::SectionContext::empty();
-        let style_ref_context = super::super::fields::StyleRefContext::empty();
+        let style_ref_context = super::super::fields::StyleRefContext::default();
         let legacy_form_context = super::super::fields::LegacyFormContext::default();
         let table_formula_context = super::super::fields::TableFormulaContext::default();
         let toc_entries = Vec::new();
@@ -6036,7 +6036,7 @@ mod tests {
         let page_ref_context = super::super::fields::PageRefContext::empty();
         let note_ref_context = super::super::fields::NoteRefContext::empty();
         let section_context = super::super::fields::SectionContext::empty();
-        let style_ref_context = super::super::fields::StyleRefContext::empty();
+        let style_ref_context = super::super::fields::StyleRefContext::default();
         let legacy_form_context = super::super::fields::LegacyFormContext::default();
         let table_formula_context = super::super::fields::TableFormulaContext::default();
         let toc_entries = Vec::new();
@@ -6125,7 +6125,7 @@ mod tests {
         let page_ref_context = super::super::fields::PageRefContext::empty();
         let note_ref_context = super::super::fields::NoteRefContext::empty();
         let section_context = super::super::fields::SectionContext::empty();
-        let style_ref_context = super::super::fields::StyleRefContext::empty();
+        let style_ref_context = super::super::fields::StyleRefContext::default();
         let legacy_form_context = super::super::fields::LegacyFormContext::default();
         let table_formula_context = super::super::fields::TableFormulaContext::default();
         let toc_entries = Vec::new();

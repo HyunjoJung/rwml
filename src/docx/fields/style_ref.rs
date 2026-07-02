@@ -10,10 +10,6 @@ pub(crate) struct StyleRefContext {
 }
 
 impl StyleRefContext {
-    pub(crate) fn empty() -> Self {
-        Self::default()
-    }
-
     pub(crate) fn field_position(&self, index: usize) -> Option<StyleRefFieldPosition> {
         self.field_positions.get(index).cloned()
     }
