@@ -287,9 +287,12 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     let ref_targets = fields::ref_targets_with_properties(&doc_xml, field_properties);
     let ref_position_context = fields::ref_position_context(&doc_xml, &numbering);
     let ref_number_context = fields::ref_number_context(&doc_xml, &numbering);
-    let page_ref_context = fields::page_ref_context(&doc_xml, &ref_targets);
-    let note_ref_context = fields::note_ref_context(&doc_xml, &ref_targets);
-    let section_context = fields::section_context(&doc_xml, &ref_targets);
+    let page_ref_context =
+        fields::page_ref_context_with_properties(&doc_xml, &ref_targets, field_properties);
+    let note_ref_context =
+        fields::note_ref_context_with_properties(&doc_xml, &ref_targets, field_properties);
+    let section_context =
+        fields::section_context_with_properties(&doc_xml, &ref_targets, field_properties);
     let style_ref_context = fields::style_ref_context_with_properties(
         &doc_xml,
         &styles,

@@ -124,6 +124,26 @@ pub(crate) fn note_ref_context(
     xml: &str,
     document_bookmarks: &HashMap<String, String>,
 ) -> NoteRefContext {
+    let core_properties = CoreProperties::default();
+    let empty_properties = HashMap::new();
+    note_ref_context_with_properties(
+        xml,
+        document_bookmarks,
+        FieldDocumentProperties {
+            core: &core_properties,
+            custom: &empty_properties,
+            variables: &empty_properties,
+            extended: &empty_properties,
+            file_size_bytes: None,
+        },
+    )
+}
+
+pub(crate) fn note_ref_context_with_properties(
+    xml: &str,
+    document_bookmarks: &HashMap<String, String>,
+    properties: FieldDocumentProperties<'_>,
+) -> NoteRefContext {
     let mut r = Reader::from_str(xml);
     let mut targets = HashMap::new();
     let mut field_positions = Vec::new();
@@ -138,7 +158,7 @@ pub(crate) fn note_ref_context(
     let mut endnote_number = 0usize;
     let mut comment_number = 0usize;
     let mut current: Option<NoteRefScanField> = None;
-    let mut computed_fields = NoteRefComputedFieldState::new(document_bookmarks);
+    let mut computed_fields = NoteRefComputedFieldState::new(document_bookmarks, properties);
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
     loop {
@@ -509,6 +529,7 @@ pub(crate) fn note_ref_context(
 #[derive(Debug)]
 struct NoteRefComputedFieldState<'a> {
     document_bookmarks: &'a HashMap<String, String>,
+    properties: FieldDocumentProperties<'a>,
     field_bookmarks: HashMap<String, String>,
     sequence_counters: HashMap<String, i64>,
     autonum_counter: i64,
@@ -516,9 +537,13 @@ struct NoteRefComputedFieldState<'a> {
 }
 
 impl<'a> NoteRefComputedFieldState<'a> {
-    fn new(document_bookmarks: &'a HashMap<String, String>) -> Self {
+    fn new(
+        document_bookmarks: &'a HashMap<String, String>,
+        properties: FieldDocumentProperties<'a>,
+    ) -> Self {
         Self {
             document_bookmarks,
+            properties,
             field_bookmarks: HashMap::new(),
             sequence_counters: HashMap::new(),
             autonum_counter: 0,
@@ -556,6 +581,16 @@ fn computed_note_ref_scan_field_result(
         .or_else(|| computed_dynamic_result_with_bookmarks(&instruction, &state.field_bookmarks))
         .or_else(|| computed_display_result(&instruction))
         .or_else(|| computed_action_result(&instruction))
+        .or_else(|| {
+            computed_document_info_result(
+                &instruction,
+                state.properties.core,
+                state.properties.custom,
+                state.properties.variables,
+                state.properties.extended,
+                state.properties.file_size_bytes,
+            )
+        })
         .or_else(|| computed_reference_index_result(&instruction))
         .or_else(|| computed_toc_entry_result(&instruction))
 }

@@ -307,6 +307,26 @@ pub(crate) fn page_ref_context(
     xml: &str,
     document_bookmarks: &HashMap<String, String>,
 ) -> PageRefContext {
+    let core_properties = CoreProperties::default();
+    let empty_properties = HashMap::new();
+    page_ref_context_with_properties(
+        xml,
+        document_bookmarks,
+        FieldDocumentProperties {
+            core: &core_properties,
+            custom: &empty_properties,
+            variables: &empty_properties,
+            extended: &empty_properties,
+            file_size_bytes: None,
+        },
+    )
+}
+
+pub(crate) fn page_ref_context_with_properties(
+    xml: &str,
+    document_bookmarks: &HashMap<String, String>,
+    properties: FieldDocumentProperties<'_>,
+) -> PageRefContext {
     let mut r = Reader::from_str(xml);
     let mut targets = HashMap::new();
     let (initial_page_number_start, initial_page_number_format) =
@@ -326,7 +346,7 @@ pub(crate) fn page_ref_context(
     let mut field_orders = Vec::new();
     let mut page_field_positions = Vec::new();
     let mut current: Option<PageRefScanField> = None;
-    let mut computed_fields = PageRefComputedFieldState::new(document_bookmarks);
+    let mut computed_fields = PageRefComputedFieldState::new(document_bookmarks, properties);
     let mut paragraph_depth = 0usize;
     let mut paragraph_properties_depth = 0usize;
     let mut section_properties_depth = 0usize;
@@ -1123,6 +1143,7 @@ fn record_page_ref_field_position(
 #[derive(Debug)]
 struct PageRefComputedFieldState<'a> {
     document_bookmarks: &'a HashMap<String, String>,
+    properties: FieldDocumentProperties<'a>,
     field_bookmarks: HashMap<String, String>,
     sequence_counters: HashMap<String, i64>,
     autonum_counter: i64,
@@ -1130,9 +1151,13 @@ struct PageRefComputedFieldState<'a> {
 }
 
 impl<'a> PageRefComputedFieldState<'a> {
-    fn new(document_bookmarks: &'a HashMap<String, String>) -> Self {
+    fn new(
+        document_bookmarks: &'a HashMap<String, String>,
+        properties: FieldDocumentProperties<'a>,
+    ) -> Self {
         Self {
             document_bookmarks,
+            properties,
             field_bookmarks: HashMap::new(),
             sequence_counters: HashMap::new(),
             autonum_counter: 0,
@@ -1171,6 +1196,16 @@ fn computed_page_ref_scan_field_result(
         .or_else(|| computed_dynamic_result_with_bookmarks(&instruction, &state.field_bookmarks))
         .or_else(|| computed_display_result(&instruction))
         .or_else(|| computed_action_result(&instruction))
+        .or_else(|| {
+            computed_document_info_result(
+                &instruction,
+                state.properties.core,
+                state.properties.custom,
+                state.properties.variables,
+                state.properties.extended,
+                state.properties.file_size_bytes,
+            )
+        })
         .or_else(|| computed_reference_index_result(&instruction))
         .or_else(|| computed_toc_entry_result(&instruction))
 }

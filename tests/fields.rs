@@ -2393,6 +2393,27 @@ fn section_pages_stale_computed_field_marker_docx() -> Vec<u8> {
     ])
 }
 
+fn section_pages_empty_document_info_result_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rIdCore" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>"#,
+        ),
+        (
+            "docProps/core.xml",
+            r#"<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title/></cp:coreProperties>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" TITLE "><w:r><w:t>stale section title</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SECTIONPAGES "><w:r><w:t>cached section pages</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn section_pages_empty_ref_result_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -4152,6 +4173,27 @@ fn note_ref_stale_computed_field_result_marker_docx() -> Vec<u8> {
     ])
 }
 
+fn note_ref_empty_document_info_result_marker_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rIdCore" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>"#,
+        ),
+        (
+            "docProps/core.xml",
+            r#"<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title/></cp:coreProperties>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="ComputedNote"/><w:fldSimple w:instr=" TITLE "><w:r><w:footnoteReference w:id="1"/></w:r><w:r><w:t>stale note title</w:t></w:r></w:fldSimple><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" NOTEREF ComputedNote "><w:r><w:t>cached stale document-info note ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn note_ref_stale_ref_result_marker_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -4710,6 +4752,27 @@ fn page_ref_computed_field_markers_before_manual_break_docx() -> Vec<u8> {
         (
             "word/document.xml",
             r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SET SimpleHidden &quot;Plain&quot; "><w:r><w:footnoteReference w:id="1"/></w:r></w:fldSimple></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> SET ComplexHidden &quot;Plain&quot; </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:commentReference w:id="2"/></w:r><w:r><w:t>stale hidden field text</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:p><w:r><w:br w:type="page"/></w:r></w:p><w:p><w:bookmarkStart w:id="7" w:name="ComputedHiddenTarget"/><w:r><w:t>Computed hidden target</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF ComputedHiddenTarget \h "><w:r><w:t>cached hidden page ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn page_ref_empty_document_info_before_manual_break_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rIdCore" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>"#,
+        ),
+        (
+            "docProps/core.xml",
+            r#"<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title/></cp:coreProperties>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" TITLE "><w:r><w:t>stale page title</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:br w:type="page"/></w:r></w:p><w:p><w:bookmarkStart w:id="7" w:name="AfterEmptyTitle"/><w:r><w:t>After empty title</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF AfterEmptyTitle \h "><w:r><w:t>cached after title page</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -13633,6 +13696,38 @@ fn docx_section_pages_ignores_stale_note_mark_inside_computed_field_results() {
 }
 
 #[test]
+fn docx_section_pages_uses_empty_document_info_result_for_content_scan() {
+    let doc =
+        Document::open(&section_pages_empty_document_info_result_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::DocumentInfo("TITLE".to_string()));
+    assert_eq!(fields[0].instruction, "TITLE");
+    assert_eq!(fields[0].result, "stale section title");
+    assert_eq!(fields[0].computed_result.as_deref(), Some(""));
+    assert_eq!(
+        fields[1].kind,
+        FieldKind::DocumentStructure("SECTIONPAGES".to_string())
+    );
+    assert_eq!(fields[1].instruction, "SECTIONPAGES");
+    assert_eq!(fields[1].result, "cached section pages");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("1"));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains('1')
+            && !main_text.contains("stale section title")
+            && !main_text.contains("cached section pages"),
+        "SECTIONPAGES should use computed empty document-info output when deciding section content: {main_text:?}"
+    );
+}
+
+#[test]
 fn docx_section_pages_ignores_stale_empty_ref_result() {
     let doc = Document::open(&section_pages_empty_ref_result_docx()).expect("fixture opens");
     let fields = doc.fields();
@@ -19719,6 +19814,47 @@ fn docx_note_ref_ignores_stale_note_mark_inside_computed_field_result() {
 }
 
 #[test]
+fn docx_note_ref_uses_empty_document_info_result_for_marker_scan() {
+    let doc =
+        Document::open(&note_ref_empty_document_info_result_marker_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::DocumentInfo("TITLE".to_string()));
+    assert_eq!(fields[0].instruction, "TITLE");
+    assert_eq!(fields[0].result, "stale note title");
+    assert_eq!(fields[0].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[1].kind, FieldKind::NoteRef);
+    assert_eq!(fields[1].instruction, "NOTEREF ComputedNote");
+    assert_eq!(fields[1].result, "cached stale document-info note ref");
+    assert_eq!(fields[1].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::NoteRef,
+            count: 1,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::NoComputedResult,
+            count: 1,
+        }]
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("cached stale document-info note ref")
+            && !main_text.contains("stale note title")
+            && !main_text.contains('1'),
+        "NOTEREF should not resolve a note mark hidden inside a computed document-info result: {main_text:?}"
+    );
+}
+
+#[test]
 fn docx_note_ref_ignores_stale_note_mark_inside_computed_ref_result() {
     let doc = Document::open(&note_ref_stale_ref_result_marker_docx()).expect("fixture opens");
     let fields = doc.fields();
@@ -20647,6 +20783,35 @@ fn docx_page_ref_ignores_stale_markers_inside_computed_field_results_before_manu
             && !main_text.contains("stale hidden field text")
             && !main_text.contains('\u{0002}'),
         "PAGEREF should ignore stale markers hidden inside computed field results: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_page_ref_uses_empty_document_info_result_before_manual_break() {
+    let doc = Document::open(&page_ref_empty_document_info_before_manual_break_docx())
+        .expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::DocumentInfo("TITLE".to_string()));
+    assert_eq!(fields[0].instruction, "TITLE");
+    assert_eq!(fields[0].result, "stale page title");
+    assert_eq!(fields[0].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[1].kind, FieldKind::PageRef);
+    assert_eq!(fields[1].instruction, "PAGEREF AfterEmptyTitle \\h");
+    assert_eq!(fields[1].result, "cached after title page");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("2"));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("After empty title\n2")
+            && !main_text.contains("stale page title")
+            && !main_text.contains("cached after title page"),
+        "PAGEREF should use computed empty document-info output when deciding hard-break trust: {main_text:?}"
     );
 }
 

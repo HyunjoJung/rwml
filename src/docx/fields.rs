@@ -68,10 +68,12 @@ pub(crate) use self::legacy_form::{
     computed_legacy_form_result, legacy_form_context, LegacyFormContext,
 };
 #[cfg(test)]
+use self::note_ref::note_ref_context;
+#[cfg(test)]
 use self::note_ref::note_ref_instruction;
 pub(crate) use self::note_ref::{
-    computed_note_ref_result, note_ref_context, note_ref_target_names, NoteRefContext,
-    NoteRefFieldPosition,
+    computed_note_ref_result, note_ref_context_with_properties, note_ref_target_names,
+    NoteRefContext, NoteRefFieldPosition,
 };
 use self::page_ref::{
     accept_page_field_format_switch_for_tail, format_page_number, page_after_section_break,
@@ -82,8 +84,8 @@ use self::page_ref::{
 use self::page_ref::{cardinal_page_number_text, ordinal_page_number_text, page_ref_instruction};
 #[allow(unused_imports)]
 pub(crate) use self::page_ref::{
-    computed_page_ref_result, computed_page_result, page_ref_context, supports_page_field_syntax,
-    PageRefContext, PageRefPosition,
+    computed_page_ref_result, computed_page_result, page_ref_context,
+    page_ref_context_with_properties, supports_page_field_syntax, PageRefContext, PageRefPosition,
 };
 #[cfg(test)]
 use self::reference::ref_instruction;
@@ -99,7 +101,8 @@ use self::reference::{
     relative_context_ref_number,
 };
 pub(crate) use self::section::{
-    computed_section_result, is_section_field_instruction, section_context, SectionContext,
+    computed_section_result, is_section_field_instruction, section_context_with_properties,
+    SectionContext,
 };
 #[cfg(test)]
 use self::style_ref::style_ref_instruction;
@@ -145,9 +148,9 @@ pub(crate) fn parse(
     let all_bookmark_names = bookmark_names(xml);
     let ref_positions = ref_position_context(xml, numbering);
     let ref_numbers = ref_number_context(xml, numbering);
-    let page_refs = page_ref_context(xml, &bookmarks);
-    let note_refs = note_ref_context(xml, &bookmarks);
-    let sections = section_context(xml, &bookmarks);
+    let page_refs = page_ref_context_with_properties(xml, &bookmarks, properties);
+    let note_refs = note_ref_context_with_properties(xml, &bookmarks, properties);
+    let sections = section_context_with_properties(xml, &bookmarks, properties);
     let style_refs =
         style_ref_context_with_properties(xml, styles, numbering, &bookmarks, properties);
     let legacy_forms = legacy_form_context(xml, preserve_legacy_form_cache);
@@ -283,7 +286,7 @@ pub(crate) fn parse(
     fields
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct FieldDocumentProperties<'a> {
     pub(crate) core: &'a CoreProperties,
     pub(crate) custom: &'a HashMap<String, String>,
