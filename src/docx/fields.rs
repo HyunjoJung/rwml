@@ -1220,6 +1220,23 @@ pub(crate) fn computed_dynamic_result_with_bookmarks(
         .or_else(|| computed_merge_control_result_with_bookmarks(instruction, field_bookmarks))
 }
 
+pub(crate) fn computed_contextless_result_with_bookmarks(
+    instruction: &str,
+    field_bookmarks: &mut HashMap<String, String>,
+) -> Option<String> {
+    if let Some(text) = computed_set_result(instruction, field_bookmarks) {
+        return Some(text);
+    }
+    if let Some(text) = computed_ask_result(instruction, field_bookmarks) {
+        return Some(text);
+    }
+    computed_dynamic_result_with_bookmarks(instruction, field_bookmarks)
+        .or_else(|| computed_toc_entry_result(instruction))
+        .or_else(|| computed_display_result(instruction))
+        .or_else(|| computed_action_result(instruction))
+        .or_else(|| computed_reference_index_result(instruction))
+}
+
 pub(crate) fn computed_formula_result_with_bookmark_context(
     instruction: &str,
     document_bookmarks: &HashMap<String, String>,

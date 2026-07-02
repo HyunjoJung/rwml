@@ -8,10 +8,7 @@ use std::collections::HashMap;
 use crate::annotation::{Revision, RevisionKind, RevisionView};
 use crate::text;
 
-use super::fields::{
-    computed_action_result, computed_ask_result, computed_display_result,
-    computed_dynamic_result_with_bookmarks, computed_run_symbol_char, computed_set_result,
-};
+use super::fields::{computed_contextless_result_with_bookmarks, computed_run_symbol_char};
 use super::xml_text::{
     inline_marker_text, read_text, skip_alternate_content_branch, skip_subtree,
     AlternateContentBranchState,
@@ -300,15 +297,7 @@ fn computed_revision_field_text(
     instruction: &str,
     field_bookmarks: &mut HashMap<String, String>,
 ) -> Option<String> {
-    if let Some(text) = computed_set_result(instruction, field_bookmarks) {
-        return Some(text);
-    }
-    if let Some(text) = computed_ask_result(instruction, field_bookmarks) {
-        return Some(text);
-    }
-    computed_dynamic_result_with_bookmarks(instruction, field_bookmarks)
-        .or_else(|| computed_display_result(instruction))
-        .or_else(|| computed_action_result(instruction))
+    computed_contextless_result_with_bookmarks(instruction, field_bookmarks)
 }
 
 #[derive(Default)]

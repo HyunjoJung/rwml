@@ -1666,15 +1666,7 @@ fn computed_floating_anchor_field_text(
     instruction: &str,
     field_bookmarks: &mut HashMap<String, String>,
 ) -> Option<String> {
-    if let Some(text) = fields::computed_set_result(instruction, field_bookmarks) {
-        return Some(text);
-    }
-    if let Some(text) = fields::computed_ask_result(instruction, field_bookmarks) {
-        return Some(text);
-    }
-    fields::computed_dynamic_result_with_bookmarks(instruction, field_bookmarks)
-        .or_else(|| fields::computed_display_result(instruction))
-        .or_else(|| fields::computed_action_result(instruction))
+    fields::computed_contextless_result_with_bookmarks(instruction, field_bookmarks)
 }
 
 #[derive(Default)]

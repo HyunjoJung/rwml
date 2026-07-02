@@ -15,9 +15,7 @@ use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 
 use super::fields::{
-    computed_action_result, computed_ask_result, computed_display_result,
-    computed_dynamic_result_with_bookmarks, computed_run_symbol_char, computed_set_result,
-    TocEntry,
+    computed_contextless_result_with_bookmarks, computed_run_symbol_char, TocEntry,
 };
 use super::numbering::Numbering;
 use super::parse_rgb_hex_color;
@@ -1291,15 +1289,7 @@ fn computed_note_anchor_field_text(
     instruction: &str,
     field_bookmarks: &mut HashMap<String, String>,
 ) -> Option<String> {
-    if let Some(text) = computed_set_result(instruction, field_bookmarks) {
-        return Some(text);
-    }
-    if let Some(text) = computed_ask_result(instruction, field_bookmarks) {
-        return Some(text);
-    }
-    computed_dynamic_result_with_bookmarks(instruction, field_bookmarks)
-        .or_else(|| computed_display_result(instruction))
-        .or_else(|| computed_action_result(instruction))
+    computed_contextless_result_with_bookmarks(instruction, field_bookmarks)
 }
 
 fn append_note_anchor_empty(out: &mut String, e: &BytesStart<'_>, name: &[u8]) {
