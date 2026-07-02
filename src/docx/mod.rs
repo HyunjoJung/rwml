@@ -1478,6 +1478,7 @@ struct ShapeFieldCursorField {
     instruction: String,
     phase: ShapeFieldCursorPhase,
     computed_result: Option<String>,
+    legacy_form_indexed: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1528,6 +1529,7 @@ impl ShapeFieldCursor {
                     instruction: String::new(),
                     phase: ShapeFieldCursorPhase::Instruction,
                     computed_result: None,
+                    legacy_form_indexed: false,
                 });
             }
             Some("separate") => {
@@ -1541,7 +1543,9 @@ impl ShapeFieldCursor {
                         self.computed_sequence_result(&field.instruction);
                         self.computed_autonum_result(&field.instruction);
                         self.computed_listnum_result(&field.instruction);
-                        self.next_legacy_form_index(&field.instruction);
+                        if !field.legacy_form_indexed {
+                            self.next_legacy_form_index(&field.instruction);
+                        }
                     }
                     return field.computed_result;
                 }
@@ -1584,6 +1588,27 @@ impl ShapeFieldCursor {
         self.computed_sequence_result(&instruction)
             .or_else(|| self.computed_autonum_result(&instruction))
             .or_else(|| self.computed_listnum_result(&instruction))
+    }
+
+    fn computed_complex_legacy_form_result(
+        &mut self,
+        legacy_forms: &fields::LegacyFormContext,
+    ) -> Option<String> {
+        let instruction = {
+            let field = self.complex_field.as_ref()?;
+            if field.phase != ShapeFieldCursorPhase::Result
+                || field.computed_result.is_some()
+                || field.legacy_form_indexed
+            {
+                return None;
+            }
+            field.instruction.clone()
+        };
+        let index = self.next_legacy_form_index(&instruction)?;
+        if let Some(field) = self.complex_field.as_mut() {
+            field.legacy_form_indexed = true;
+        }
+        fields::computed_legacy_form_result(&instruction, "", legacy_forms, index)
     }
 
     fn suppresses_complex_result(&self) -> bool {
@@ -1750,6 +1775,7 @@ fn read_floating_shape(
                                 properties,
                                 document_bookmarks,
                                 &mut field_bookmarks,
+                                legacy_forms,
                                 shape_field_cursor,
                             );
                             text_box_depth += 1;
@@ -1795,6 +1821,7 @@ fn read_floating_shape(
                             properties,
                             document_bookmarks,
                             &mut field_bookmarks,
+                            legacy_forms,
                             shape_field_cursor,
                         );
                     }
@@ -1995,6 +2022,7 @@ fn apply_shape_field_char(
     properties: fields::FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
     field_bookmarks: &mut HashMap<String, String>,
+    legacy_forms: &fields::LegacyFormContext,
     shape_field_cursor: &mut ShapeFieldCursor,
 ) {
     let completed = shape_field_cursor.apply_field_char(e);
@@ -2008,7 +2036,8 @@ fn apply_shape_field_char(
                 field_bookmarks,
             )
         })
-        .or_else(|| shape_field_cursor.computed_complex_source_order_result());
+        .or_else(|| shape_field_cursor.computed_complex_source_order_result())
+        .or_else(|| shape_field_cursor.computed_complex_legacy_form_result(legacy_forms));
     if let Some(text) = computed {
         shape_field_cursor.set_complex_result(text);
     }
