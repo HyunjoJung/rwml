@@ -1921,6 +1921,7 @@ fn append_shape_simple_field(
     })
     .or_else(|| computed_shape_ref_result(&instruction, document_bookmarks, field_bookmarks))
     .or_else(|| fields::computed_dynamic_result_with_bookmarks(&instruction, field_bookmarks))
+    .or_else(|| fields::computed_toc_entry_result(&instruction))
     .or_else(|| {
         fields::computed_document_info_result(
             &instruction,
