@@ -139,6 +139,13 @@ pub(crate) fn section_context(xml: &str) -> SectionContext {
                             simple_section_field_result_depth,
                         );
                     }
+                    _ if is_visible_reference_mark(name) => {
+                        mark_visible_section_content(
+                            &mut section_has_visible_content,
+                            &current,
+                            simple_section_field_result_depth,
+                        );
+                    }
                     b"tab" | b"cr" | b"noBreakHyphen" | b"softHyphen" | b"drawing" | b"pict"
                     | b"object" => {
                         mark_visible_section_content(
@@ -203,6 +210,13 @@ pub(crate) fn section_context(xml: &str) -> SectionContext {
                         current_page += 1;
                     }
                     b"sym" if is_supported_run_symbol(&e) => {
+                        mark_visible_section_content(
+                            &mut section_has_visible_content,
+                            &current,
+                            simple_section_field_result_depth,
+                        );
+                    }
+                    _ if is_visible_reference_mark(name) => {
                         mark_visible_section_content(
                             &mut section_has_visible_content,
                             &current,

@@ -2287,6 +2287,40 @@ fn section_pages_symbol_content_docx() -> Vec<u8> {
     ])
 }
 
+fn section_pages_note_mark_content_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:footnoteReference w:id="1"/></w:r></w:p><w:p><w:fldSimple w:instr=" SECTIONPAGES "></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn section_pages_endnote_mark_content_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:endnoteReference w:id="2"/></w:r></w:p><w:p><w:fldSimple w:instr=" SECTIONPAGES "></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn style_ref_field_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -4312,6 +4346,40 @@ fn page_ref_symbol_before_manual_break_docx() -> Vec<u8> {
         (
             "word/document.xml",
             r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:sym w:font="Symbol" w:char="F0B7"/><w:br w:type="page"/></w:r></w:p><w:p><w:bookmarkStart w:id="7" w:name="FigureSymbol"/><w:r><w:t>Figure symbol</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF FigureSymbol \h "><w:r><w:t>99</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn page_ref_note_mark_before_manual_break_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:footnoteReference w:id="1"/><w:br w:type="page"/></w:r></w:p><w:p><w:bookmarkStart w:id="7" w:name="FigureNote"/><w:r><w:t>Figure note</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF FigureNote \h "><w:r><w:t>99</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn page_ref_comment_mark_before_manual_break_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:commentReference w:id="1"/><w:br w:type="page"/></w:r></w:p><w:p><w:bookmarkStart w:id="7" w:name="FigureComment"/><w:r><w:t>Figure comment</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF FigureComment \h "><w:r><w:t>99</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -12949,6 +13017,68 @@ fn docx_section_pages_symbol_content_keeps_cached_text() {
 }
 
 #[test]
+fn docx_section_pages_note_mark_content_keeps_cached_text() {
+    let doc = Document::open(&section_pages_note_mark_content_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(
+        fields[0].kind,
+        FieldKind::DocumentStructure("SECTIONPAGES".to_string())
+    );
+    assert_eq!(fields[0].instruction, "SECTIONPAGES");
+    assert_eq!(fields[0].result, "");
+    assert_eq!(fields[0].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::DocumentStructure("SECTIONPAGES".to_string()),
+            count: 1,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::NoComputedResult,
+            count: 1,
+        }]
+    );
+}
+
+#[test]
+fn docx_section_pages_endnote_mark_content_keeps_cached_text() {
+    let doc = Document::open(&section_pages_endnote_mark_content_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(
+        fields[0].kind,
+        FieldKind::DocumentStructure("SECTIONPAGES".to_string())
+    );
+    assert_eq!(fields[0].instruction, "SECTIONPAGES");
+    assert_eq!(fields[0].result, "");
+    assert_eq!(fields[0].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::DocumentStructure("SECTIONPAGES".to_string()),
+            count: 1,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::NoComputedResult,
+            count: 1,
+        }]
+    );
+}
+
+#[test]
 fn docx_style_ref_field_computes_nearest_paragraph_style_text() {
     let doc = Document::open(&style_ref_field_docx()).expect("fixture opens");
     let fields = doc.fields();
@@ -19344,6 +19474,64 @@ fn docx_page_ref_symbol_before_manual_break_keeps_cached_page_text() {
     assert_eq!(fields.len(), 1);
     assert_eq!(fields[0].kind, FieldKind::PageRef);
     assert_eq!(fields[0].instruction, "PAGEREF FigureSymbol \\h");
+    assert_eq!(fields[0].result, "99");
+    assert_eq!(fields[0].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::PageRef,
+            count: 1,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::NoComputedResult,
+            count: 1,
+        }]
+    );
+}
+
+#[test]
+fn docx_page_ref_note_mark_before_manual_break_keeps_cached_page_text() {
+    let doc =
+        Document::open(&page_ref_note_mark_before_manual_break_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::PageRef);
+    assert_eq!(fields[0].instruction, "PAGEREF FigureNote \\h");
+    assert_eq!(fields[0].result, "99");
+    assert_eq!(fields[0].computed_result, None);
+
+    let report = doc.report();
+    assert_eq!(
+        report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::PageRef,
+            count: 1,
+        }]
+    );
+    assert_eq!(
+        report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::NoComputedResult,
+            count: 1,
+        }]
+    );
+}
+
+#[test]
+fn docx_page_ref_comment_mark_before_manual_break_keeps_cached_page_text() {
+    let doc =
+        Document::open(&page_ref_comment_mark_before_manual_break_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::PageRef);
+    assert_eq!(fields[0].instruction, "PAGEREF FigureComment \\h");
     assert_eq!(fields[0].result, "99");
     assert_eq!(fields[0].computed_result, None);
 

@@ -690,6 +690,13 @@ fn is_supported_run_symbol(e: &BytesStart<'_>) -> bool {
     local(e.name().as_ref()) == b"sym" && field_result_symbol_char(e).is_some()
 }
 
+fn is_visible_reference_mark(name: &[u8]) -> bool {
+    matches!(
+        name,
+        b"footnoteReference" | b"endnoteReference" | b"commentReference"
+    )
+}
+
 fn inline_marker_text(e: &BytesStart<'_>) -> Option<&'static str> {
     match local(e.name().as_ref()) {
         b"tab" => Some("\t"),
