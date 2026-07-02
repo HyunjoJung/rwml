@@ -2677,17 +2677,45 @@ fn read_run(
                 b"fldChar" => {
                     apply_complex_field_char(&e, ctx, complex_field.as_deref_mut(), base_index)
                 }
-                b"tab" => text.push('\t'),
+                b"tab" => {
+                    mark_complex_field_result_text(
+                        complex_field.as_deref(),
+                        &mut text_is_field_result,
+                    );
+                    text.push('\t');
+                }
                 b"br" => {
+                    mark_complex_field_result_text(
+                        complex_field.as_deref(),
+                        &mut text_is_field_result,
+                    );
                     if is_page_break_type(&e) {
                         text.push(PAGE_BREAK_MARKER);
                     } else {
                         text.push('\n');
                     }
                 }
-                b"cr" => text.push('\n'),
-                b"noBreakHyphen" => text.push('-'),
-                b"softHyphen" => text.push('\u{00ad}'),
+                b"cr" => {
+                    mark_complex_field_result_text(
+                        complex_field.as_deref(),
+                        &mut text_is_field_result,
+                    );
+                    text.push('\n');
+                }
+                b"noBreakHyphen" => {
+                    mark_complex_field_result_text(
+                        complex_field.as_deref(),
+                        &mut text_is_field_result,
+                    );
+                    text.push('-');
+                }
+                b"softHyphen" => {
+                    mark_complex_field_result_text(
+                        complex_field.as_deref(),
+                        &mut text_is_field_result,
+                    );
+                    text.push('\u{00ad}');
+                }
                 b"sym" => {
                     if append_run_symbol(&mut text, &e) {
                         let in_result = complex_field
@@ -2730,6 +2758,15 @@ fn read_run(
     }
     runs.extend(images);
     runs
+}
+
+fn mark_complex_field_result_text(
+    complex_field: Option<&ComplexFieldTracker>,
+    text_is_field_result: &mut bool,
+) {
+    if complex_field.is_some_and(ComplexFieldTracker::in_result) {
+        *text_is_field_result = true;
+    }
 }
 
 fn append_run_symbol(text: &mut String, e: &BytesStart<'_>) -> bool {
@@ -2853,17 +2890,30 @@ fn append_run_alternate_content_branch(
                 b"fldChar" => {
                     apply_complex_field_char(&e, ctx, complex_field.as_deref_mut(), base_index)
                 }
-                b"tab" => text.push('\t'),
+                b"tab" => {
+                    mark_complex_field_result_text(complex_field.as_deref(), text_is_field_result);
+                    text.push('\t');
+                }
                 b"br" => {
+                    mark_complex_field_result_text(complex_field.as_deref(), text_is_field_result);
                     if is_page_break_type(&e) {
                         text.push(PAGE_BREAK_MARKER);
                     } else {
                         text.push('\n');
                     }
                 }
-                b"cr" => text.push('\n'),
-                b"noBreakHyphen" => text.push('-'),
-                b"softHyphen" => text.push('\u{00ad}'),
+                b"cr" => {
+                    mark_complex_field_result_text(complex_field.as_deref(), text_is_field_result);
+                    text.push('\n');
+                }
+                b"noBreakHyphen" => {
+                    mark_complex_field_result_text(complex_field.as_deref(), text_is_field_result);
+                    text.push('-');
+                }
+                b"softHyphen" => {
+                    mark_complex_field_result_text(complex_field.as_deref(), text_is_field_result);
+                    text.push('\u{00ad}');
+                }
                 b"sym" => {
                     if append_run_symbol(text, &e) {
                         let in_result = complex_field
