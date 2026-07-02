@@ -1097,7 +1097,7 @@ pub(crate) fn computed_direct_bookmark_ref_result(
     field_position: Option<RefFieldPosition>,
     note_ref_field_position: Option<NoteRefFieldPosition>,
 ) -> Option<String> {
-    let spec = direct_bookmark_ref_instruction(instruction)?;
+    let spec = unknown_direct_bookmark_ref_instruction(instruction)?;
     let text =
         computed_ref_instruction_result(&spec, ctx, field_position, note_ref_field_position)?;
     Some(apply_field_text_format(text, spec.text_format))
@@ -1227,13 +1227,11 @@ pub(super) fn relative_context_ref_number(target: &str, field: &str) -> String {
 }
 
 pub(crate) fn is_ref_position_field_instruction(instruction: &str) -> bool {
-    field_kind(instruction) == FieldKind::Ref
-        || direct_bookmark_ref_instruction(instruction).is_some()
+    ref_or_unknown_direct_bookmark_instruction(instruction).is_some()
 }
 
 pub(crate) fn is_direct_bookmark_ref_field_instruction(instruction: &str) -> bool {
-    field_kind(instruction) != FieldKind::Ref
-        && direct_bookmark_ref_instruction(instruction).is_some()
+    unknown_direct_bookmark_ref_instruction(instruction).is_some()
 }
 
 fn computed_relative_ref_result(
@@ -1272,17 +1270,19 @@ pub(super) fn direct_bookmark_ref_instruction(instruction: &str) -> Option<RefIn
     ref_instruction_from_syntax(direct_ref_field_syntax(instruction)?)
 }
 
+fn unknown_direct_bookmark_ref_instruction(instruction: &str) -> Option<RefInstruction> {
+    matches!(
+        FieldKind::from_instruction(instruction),
+        FieldKind::Unknown(_)
+    )
+    .then(|| direct_bookmark_ref_instruction(instruction))
+    .flatten()
+}
+
 pub(super) fn ref_or_unknown_direct_bookmark_instruction(
     instruction: &str,
 ) -> Option<RefInstruction> {
-    ref_instruction(instruction).or_else(|| {
-        matches!(
-            FieldKind::from_instruction(instruction),
-            FieldKind::Unknown(_)
-        )
-        .then(|| direct_bookmark_ref_instruction(instruction))
-        .flatten()
-    })
+    ref_instruction(instruction).or_else(|| unknown_direct_bookmark_ref_instruction(instruction))
 }
 
 fn ref_instruction_from_syntax(
@@ -1306,7 +1306,6 @@ fn ref_instruction_from_syntax(
 }
 
 pub(super) fn ref_note_field_target(instruction: &str) -> Option<String> {
-    let spec =
-        ref_instruction(instruction).or_else(|| direct_bookmark_ref_instruction(instruction))?;
+    let spec = ref_or_unknown_direct_bookmark_instruction(instruction)?;
     (spec.note_reference && !spec.sequence_separator).then_some(spec.target)
 }
