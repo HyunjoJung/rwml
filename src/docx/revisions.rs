@@ -8,7 +8,10 @@ use std::collections::HashMap;
 use crate::annotation::{Revision, RevisionKind, RevisionView};
 use crate::text;
 
-use super::fields::{computed_dynamic_result_with_bookmarks, computed_run_symbol_char};
+use super::fields::{
+    computed_ask_result, computed_dynamic_result_with_bookmarks, computed_run_symbol_char,
+    computed_set_result,
+};
 use super::xml_text::{
     inline_marker_text, read_text, skip_alternate_content_branch, skip_subtree,
     AlternateContentBranchState,
@@ -153,6 +156,7 @@ fn read_revision_text(r: &mut Xml<'_>, end_name: &[u8]) -> String {
     let mut depth = 1usize;
     let mut text = String::new();
     let mut complex_field = RevisionComplexField::default();
+    let mut field_bookmarks = HashMap::new();
     let mut embedded_body_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
     loop {
@@ -180,13 +184,13 @@ fn read_revision_text(r: &mut Xml<'_>, end_name: &[u8]) -> String {
                 embedded_body_depth += 1;
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"fldChar" => {
-                if let Some(computed) = complex_field.apply_field_char(&e) {
+                if let Some(computed) = complex_field.apply_field_char(&e, &mut field_bookmarks) {
                     text.push_str(&computed);
                 }
                 skip_subtree(r);
             }
             Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"fldChar" => {
-                if let Some(computed) = complex_field.apply_field_char(&e) {
+                if let Some(computed) = complex_field.apply_field_char(&e, &mut field_bookmarks) {
                     text.push_str(&computed);
                 }
             }
@@ -198,13 +202,17 @@ fn read_revision_text(r: &mut Xml<'_>, end_name: &[u8]) -> String {
                 push_revision_paragraph_boundary(&mut text);
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"fldSimple" => {
-                if let Some(computed) = computed_revision_simple_field_text(&e) {
+                if let Some(computed) =
+                    computed_revision_simple_field_text(&e, &mut field_bookmarks)
+                {
                     text.push_str(&computed);
                     skip_subtree(r);
                 }
             }
             Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"fldSimple" => {
-                if let Some(computed) = computed_revision_simple_field_text(&e) {
+                if let Some(computed) =
+                    computed_revision_simple_field_text(&e, &mut field_bookmarks)
+                {
                     text.push_str(&computed);
                 }
             }
@@ -280,13 +288,25 @@ fn revision_symbol_char(e: &BytesStart<'_>) -> Option<char> {
     computed_run_symbol_char(font.as_deref(), &value)
 }
 
-fn computed_revision_simple_field_text(e: &BytesStart<'_>) -> Option<String> {
+fn computed_revision_simple_field_text(
+    e: &BytesStart<'_>,
+    field_bookmarks: &mut HashMap<String, String>,
+) -> Option<String> {
     let instruction = attr_local_trimmed(e, b"instr")?;
-    computed_revision_field_text(&instruction)
+    computed_revision_field_text(&instruction, field_bookmarks)
 }
 
-fn computed_revision_field_text(instruction: &str) -> Option<String> {
-    computed_dynamic_result_with_bookmarks(instruction, &HashMap::new())
+fn computed_revision_field_text(
+    instruction: &str,
+    field_bookmarks: &mut HashMap<String, String>,
+) -> Option<String> {
+    if let Some(text) = computed_set_result(instruction, field_bookmarks) {
+        return Some(text);
+    }
+    if let Some(text) = computed_ask_result(instruction, field_bookmarks) {
+        return Some(text);
+    }
+    computed_dynamic_result_with_bookmarks(instruction, field_bookmarks)
 }
 
 #[derive(Default)]
@@ -304,7 +324,11 @@ enum RevisionComplexFieldPhase {
 }
 
 impl RevisionComplexField {
-    fn apply_field_char(&mut self, e: &BytesStart<'_>) -> Option<String> {
+    fn apply_field_char(
+        &mut self,
+        e: &BytesStart<'_>,
+        field_bookmarks: &mut HashMap<String, String>,
+    ) -> Option<String> {
         match field_char_type(e).as_deref() {
             Some("begin") => {
                 if self.depth == 0 {
@@ -320,7 +344,8 @@ impl RevisionComplexField {
                     && self.phase == Some(RevisionComplexFieldPhase::Instruction) =>
             {
                 self.phase = Some(RevisionComplexFieldPhase::Result);
-                self.computed_result = computed_revision_field_text(&self.instruction);
+                self.computed_result =
+                    computed_revision_field_text(&self.instruction, field_bookmarks);
                 self.computed_result.clone()
             }
             Some("end") => {
