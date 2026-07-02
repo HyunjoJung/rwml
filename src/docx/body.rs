@@ -14,7 +14,7 @@ use std::collections::{HashMap, HashSet};
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 
-use super::fields::{computed_run_symbol_char, TocEntry};
+use super::fields::{computed_quote_result, computed_run_symbol_char, TocEntry};
 use super::numbering::Numbering;
 use super::parse_rgb_hex_color;
 use super::styles::Styles;
@@ -1061,6 +1061,12 @@ pub(crate) fn scan_note_ref_anchors(xml: &str, tag: &[u8]) -> HashMap<String, St
                         }
                         skip_subtree(&mut r);
                         body_depth = body_depth.saturating_sub(1);
+                    } else if name == b"fldSimple" {
+                        if let Some(text) = computed_note_anchor_simple_field_text(&e) {
+                            current_block_text.push_str(&text);
+                            skip_subtree(&mut r);
+                            body_depth = body_depth.saturating_sub(1);
+                        }
                     } else if name == b"t" {
                         current_block_text.push_str(&read_text(&mut r));
                         body_depth = body_depth.saturating_sub(1);
@@ -1094,6 +1100,10 @@ pub(crate) fn scan_note_ref_anchors(xml: &str, tag: &[u8]) -> HashMap<String, St
                     if name == tag {
                         if let Some(id) = attr_local_trimmed(&e, b"id") {
                             current_block_refs.push(id);
+                        }
+                    } else if name == b"fldSimple" {
+                        if let Some(text) = computed_note_anchor_simple_field_text(&e) {
+                            current_block_text.push_str(&text);
                         }
                     } else {
                         append_note_anchor_empty(&mut current_block_text, &e, name);
@@ -1155,6 +1165,11 @@ fn is_note_anchor_embedded_body(name: &[u8]) -> bool {
     matches!(name, b"drawing" | b"pict" | b"object")
 }
 
+fn computed_note_anchor_simple_field_text(e: &BytesStart<'_>) -> Option<String> {
+    let instruction = attr_local_trimmed(e, b"instr")?;
+    computed_quote_result(&instruction)
+}
+
 fn append_note_anchor_empty(out: &mut String, e: &BytesStart<'_>, name: &[u8]) {
     if name == b"sym" {
         append_run_symbol(out, e);
@@ -1211,6 +1226,13 @@ fn append_note_anchor_content(
                         refs.push(id);
                     }
                     skip_subtree(r);
+                } else if name == b"fldSimple" {
+                    if let Some(computed) = computed_note_anchor_simple_field_text(&e) {
+                        text.push_str(&computed);
+                        skip_subtree(r);
+                    } else {
+                        append_note_anchor_content(r, tag, text, refs, depth + 1);
+                    }
                 } else if name == b"t" {
                     text.push_str(&read_text(r));
                 } else if let Some(marker) = inline_marker_text(&e) {
@@ -1233,6 +1255,10 @@ fn append_note_anchor_content(
                 if name == tag {
                     if let Some(id) = attr_local_trimmed(&e, b"id") {
                         refs.push(id);
+                    }
+                } else if name == b"fldSimple" {
+                    if let Some(computed) = computed_note_anchor_simple_field_text(&e) {
+                        text.push_str(&computed);
                     }
                 } else {
                     append_note_anchor_empty(text, &e, name);
