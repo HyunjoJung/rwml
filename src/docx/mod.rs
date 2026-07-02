@@ -866,7 +866,12 @@ fn read_hf_parts(
             field_properties,
             preserve_legacy_form_cache,
         );
-        let section_context = fields::SectionContext::empty();
+        let section_context = fields::section_context_with_properties(
+            &xml,
+            &ref_targets,
+            field_properties,
+            preserve_legacy_form_cache,
+        );
         let style_ref_context = fields::style_ref_context_with_properties(
             &xml,
             styles,
@@ -1090,7 +1095,12 @@ fn read_notes(
         field_properties,
         preserve_legacy_form_cache,
     );
-    let section_context = fields::SectionContext::empty();
+    let section_context = fields::section_context_with_properties(
+        &xml,
+        &ref_targets,
+        field_properties,
+        preserve_legacy_form_cache,
+    );
     let style_ref_context = fields::style_ref_context_with_properties(
         &xml,
         styles,
