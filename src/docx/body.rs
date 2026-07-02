@@ -14,7 +14,10 @@ use std::collections::{HashMap, HashSet};
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 
-use super::fields::{computed_dynamic_result_with_bookmarks, computed_run_symbol_char, TocEntry};
+use super::fields::{
+    computed_ask_result, computed_dynamic_result_with_bookmarks, computed_run_symbol_char,
+    computed_set_result, TocEntry,
+};
 use super::numbering::Numbering;
 use super::parse_rgb_hex_color;
 use super::styles::Styles;
@@ -1023,6 +1026,7 @@ pub(crate) fn scan_note_ref_anchors(xml: &str, tag: &[u8]) -> HashMap<String, St
     let mut current_block_text = String::new();
     let mut current_block_refs = Vec::new();
     let mut complex_field = NoteAnchorComplexField::default();
+    let mut field_bookmarks = HashMap::new();
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => {
@@ -1036,6 +1040,7 @@ pub(crate) fn scan_note_ref_anchors(xml: &str, tag: &[u8]) -> HashMap<String, St
                     current_block_depth = None;
                     current_block_text.clear();
                     current_block_refs.clear();
+                    field_bookmarks.clear();
                     continue;
                 }
                 if in_body {
@@ -1053,6 +1058,7 @@ pub(crate) fn scan_note_ref_anchors(xml: &str, tag: &[u8]) -> HashMap<String, St
                         current_block_text.clear();
                         current_block_refs.clear();
                         complex_field = NoteAnchorComplexField::default();
+                        field_bookmarks.clear();
                     }
                     body_depth += 1;
                 }
@@ -1064,7 +1070,8 @@ pub(crate) fn scan_note_ref_anchors(xml: &str, tag: &[u8]) -> HashMap<String, St
                         skip_subtree(&mut r);
                         body_depth = body_depth.saturating_sub(1);
                     } else if name == b"fldChar" {
-                        if let Some(text) = complex_field.apply_field_char(&e) {
+                        if let Some(text) = complex_field.apply_field_char(&e, &mut field_bookmarks)
+                        {
                             current_block_text.push_str(&text);
                         }
                         skip_subtree(&mut r);
@@ -1077,7 +1084,9 @@ pub(crate) fn scan_note_ref_anchors(xml: &str, tag: &[u8]) -> HashMap<String, St
                         if complex_field.suppresses_result() {
                             skip_subtree(&mut r);
                             body_depth = body_depth.saturating_sub(1);
-                        } else if let Some(text) = computed_note_anchor_simple_field_text(&e) {
+                        } else if let Some(text) =
+                            computed_note_anchor_simple_field_text(&e, &mut field_bookmarks)
+                        {
                             current_block_text.push_str(&text);
                             skip_subtree(&mut r);
                             body_depth = body_depth.saturating_sub(1);
@@ -1107,6 +1116,7 @@ pub(crate) fn scan_note_ref_anchors(xml: &str, tag: &[u8]) -> HashMap<String, St
                             &mut current_block_text,
                             &mut current_block_refs,
                             &mut complex_field,
+                            &mut field_bookmarks,
                             0,
                         );
                         body_depth = body_depth.saturating_sub(1);
@@ -1125,12 +1135,15 @@ pub(crate) fn scan_note_ref_anchors(xml: &str, tag: &[u8]) -> HashMap<String, St
                             current_block_refs.push(id);
                         }
                     } else if name == b"fldChar" {
-                        if let Some(text) = complex_field.apply_field_char(&e) {
+                        if let Some(text) = complex_field.apply_field_char(&e, &mut field_bookmarks)
+                        {
                             current_block_text.push_str(&text);
                         }
                     } else if name == b"fldSimple" {
                         if !complex_field.suppresses_result() {
-                            if let Some(text) = computed_note_anchor_simple_field_text(&e) {
+                            if let Some(text) =
+                                computed_note_anchor_simple_field_text(&e, &mut field_bookmarks)
+                            {
                                 current_block_text.push_str(&text);
                             }
                         }
@@ -1151,6 +1164,7 @@ pub(crate) fn scan_note_ref_anchors(xml: &str, tag: &[u8]) -> HashMap<String, St
                     current_block_text.clear();
                     current_block_refs.clear();
                     complex_field = NoteAnchorComplexField::default();
+                    field_bookmarks.clear();
                     continue;
                 }
                 if in_body {
@@ -1171,6 +1185,7 @@ pub(crate) fn scan_note_ref_anchors(xml: &str, tag: &[u8]) -> HashMap<String, St
                         current_block_text.clear();
                         current_block_refs.clear();
                         complex_field = NoteAnchorComplexField::default();
+                        field_bookmarks.clear();
                     }
                 }
             }
@@ -1196,7 +1211,11 @@ enum NoteAnchorComplexFieldPhase {
 }
 
 impl NoteAnchorComplexField {
-    fn apply_field_char(&mut self, e: &BytesStart<'_>) -> Option<String> {
+    fn apply_field_char(
+        &mut self,
+        e: &BytesStart<'_>,
+        field_bookmarks: &mut HashMap<String, String>,
+    ) -> Option<String> {
         match field_char_type(e).as_deref() {
             Some("begin") => {
                 if self.depth == 0 {
@@ -1212,7 +1231,8 @@ impl NoteAnchorComplexField {
                     && self.phase == Some(NoteAnchorComplexFieldPhase::Instruction) =>
             {
                 self.phase = Some(NoteAnchorComplexFieldPhase::Result);
-                self.computed_result = computed_note_anchor_field_text(&self.instruction);
+                self.computed_result =
+                    computed_note_anchor_field_text(&self.instruction, field_bookmarks);
                 self.computed_result.clone()
             }
             Some("end") => {
@@ -1258,13 +1278,25 @@ fn is_note_anchor_embedded_body(name: &[u8]) -> bool {
     matches!(name, b"drawing" | b"pict" | b"object")
 }
 
-fn computed_note_anchor_simple_field_text(e: &BytesStart<'_>) -> Option<String> {
+fn computed_note_anchor_simple_field_text(
+    e: &BytesStart<'_>,
+    field_bookmarks: &mut HashMap<String, String>,
+) -> Option<String> {
     let instruction = attr_local_trimmed(e, b"instr")?;
-    computed_note_anchor_field_text(&instruction)
+    computed_note_anchor_field_text(&instruction, field_bookmarks)
 }
 
-fn computed_note_anchor_field_text(instruction: &str) -> Option<String> {
-    computed_dynamic_result_with_bookmarks(instruction, &HashMap::new())
+fn computed_note_anchor_field_text(
+    instruction: &str,
+    field_bookmarks: &mut HashMap<String, String>,
+) -> Option<String> {
+    if let Some(text) = computed_set_result(instruction, field_bookmarks) {
+        return Some(text);
+    }
+    if let Some(text) = computed_ask_result(instruction, field_bookmarks) {
+        return Some(text);
+    }
+    computed_dynamic_result_with_bookmarks(instruction, field_bookmarks)
 }
 
 fn append_note_anchor_empty(out: &mut String, e: &BytesStart<'_>, name: &[u8]) {
@@ -1281,6 +1313,7 @@ fn append_note_anchor_alternate_content(
     text: &mut String,
     refs: &mut Vec<String>,
     complex_field: &mut NoteAnchorComplexField,
+    field_bookmarks: &mut HashMap<String, String>,
     depth: u32,
 ) {
     if depth > MAX_DEPTH {
@@ -1293,7 +1326,15 @@ fn append_note_anchor_alternate_content(
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
                 b"Choice" | b"Fallback" if !took => {
                     took = true;
-                    append_note_anchor_content(r, tag, text, refs, complex_field, depth + 1);
+                    append_note_anchor_content(
+                        r,
+                        tag,
+                        text,
+                        refs,
+                        complex_field,
+                        field_bookmarks,
+                        depth + 1,
+                    );
                 }
                 _ => skip_subtree(r),
             },
@@ -1309,6 +1350,7 @@ fn append_note_anchor_content(
     text: &mut String,
     refs: &mut Vec<String>,
     complex_field: &mut NoteAnchorComplexField,
+    field_bookmarks: &mut HashMap<String, String>,
     depth: u32,
 ) {
     if depth > MAX_DEPTH {
@@ -1326,7 +1368,7 @@ fn append_note_anchor_content(
                     }
                     skip_subtree(r);
                 } else if name == b"fldChar" {
-                    if let Some(computed) = complex_field.apply_field_char(&e) {
+                    if let Some(computed) = complex_field.apply_field_char(&e, field_bookmarks) {
                         text.push_str(&computed);
                     }
                     skip_subtree(r);
@@ -1336,11 +1378,21 @@ fn append_note_anchor_content(
                 } else if name == b"fldSimple" {
                     if complex_field.suppresses_result() {
                         skip_subtree(r);
-                    } else if let Some(computed) = computed_note_anchor_simple_field_text(&e) {
+                    } else if let Some(computed) =
+                        computed_note_anchor_simple_field_text(&e, field_bookmarks)
+                    {
                         text.push_str(&computed);
                         skip_subtree(r);
                     } else {
-                        append_note_anchor_content(r, tag, text, refs, complex_field, depth + 1);
+                        append_note_anchor_content(
+                            r,
+                            tag,
+                            text,
+                            refs,
+                            complex_field,
+                            field_bookmarks,
+                            depth + 1,
+                        );
                     }
                 } else if name == b"t" {
                     let value = read_text(r);
@@ -1364,12 +1416,21 @@ fn append_note_anchor_content(
                         text,
                         refs,
                         complex_field,
+                        field_bookmarks,
                         depth + 1,
                     );
                 } else if is_note_anchor_embedded_body(name) {
                     skip_subtree(r);
                 } else {
-                    append_note_anchor_content(r, tag, text, refs, complex_field, depth + 1);
+                    append_note_anchor_content(
+                        r,
+                        tag,
+                        text,
+                        refs,
+                        complex_field,
+                        field_bookmarks,
+                        depth + 1,
+                    );
                 }
             }
             Ok(Event::Empty(e)) => {
@@ -1380,12 +1441,14 @@ fn append_note_anchor_content(
                         refs.push(id);
                     }
                 } else if name == b"fldChar" {
-                    if let Some(computed) = complex_field.apply_field_char(&e) {
+                    if let Some(computed) = complex_field.apply_field_char(&e, field_bookmarks) {
                         text.push_str(&computed);
                     }
                 } else if name == b"fldSimple" {
                     if !complex_field.suppresses_result() {
-                        if let Some(computed) = computed_note_anchor_simple_field_text(&e) {
+                        if let Some(computed) =
+                            computed_note_anchor_simple_field_text(&e, field_bookmarks)
+                        {
                             text.push_str(&computed);
                         }
                     }
