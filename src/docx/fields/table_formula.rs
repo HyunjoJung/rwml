@@ -18,13 +18,13 @@ use super::{
     apply_complex_field_scan_fld_char, apply_field_text_format, computed_action_result,
     computed_ask_result, computed_display_result, computed_document_info_result,
     computed_fill_in_result, computed_formula_result_with_bookmark_context,
-    computed_if_compare_result_with_bookmark_context, computed_listnum_result,
-    computed_merge_control_result_with_bookmark_context, computed_numbering_result,
-    computed_quote_result, computed_reference_index_result, computed_revision_number_result,
-    computed_run_symbol_char, computed_sequence_result, computed_set_result,
-    computed_toc_entry_result, inline_marker_text, normalize_instruction,
-    should_skip_alternate_branch, skip_element, AlternateContentBranchState, ComplexField,
-    FieldDocumentProperties, FieldPhase,
+    computed_if_compare_result_with_bookmark_context, computed_legacy_form_result,
+    computed_listnum_result, computed_merge_control_result_with_bookmark_context,
+    computed_numbering_result, computed_quote_result, computed_reference_index_result,
+    computed_revision_number_result, computed_run_symbol_char, computed_sequence_result,
+    computed_set_result, computed_toc_entry_result, inline_marker_text, legacy_form_context,
+    normalize_instruction, should_skip_alternate_branch, skip_element, AlternateContentBranchState,
+    ComplexField, FieldDocumentProperties, FieldPhase, LegacyFormContext,
 };
 
 type Xml<'a> = Reader<&'a [u8]>;
@@ -61,6 +61,7 @@ pub(crate) fn table_formula_context(
             extended: &empty_properties,
             file_size_bytes: None,
         },
+        false,
     )
 }
 
@@ -68,7 +69,9 @@ pub(crate) fn table_formula_context_with_properties(
     xml: &str,
     document_bookmarks: &HashMap<String, String>,
     properties: FieldDocumentProperties<'_>,
+    preserve_legacy_form_cache: bool,
 ) -> TableFormulaContext {
+    let legacy_forms = legacy_form_context(xml, preserve_legacy_form_cache);
     let mut r = Reader::from_str(xml);
     let mut results = Vec::new();
     let mut current = Vec::new();
@@ -76,6 +79,7 @@ pub(crate) fn table_formula_context_with_properties(
     let mut autonum_counter = 0i64;
     let mut listnum_counter = 0i64;
     let mut field_bookmarks = HashMap::new();
+    let mut form_field_index = 0usize;
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
     loop {
@@ -107,6 +111,8 @@ pub(crate) fn table_formula_context_with_properties(
                             &mut autonum_counter,
                             &mut listnum_counter,
                             &mut field_bookmarks,
+                            &legacy_forms,
+                            &mut form_field_index,
                             properties,
                         ));
                         consumed_element = true;
@@ -126,7 +132,10 @@ pub(crate) fn table_formula_context_with_properties(
                                 &mut autonum_counter,
                                 &mut listnum_counter,
                                 &mut field_bookmarks,
+                                &legacy_forms,
+                                &mut form_field_index,
                                 properties,
+                                &result_text,
                             )
                             .unwrap_or(result_text);
                         }
@@ -141,6 +150,8 @@ pub(crate) fn table_formula_context_with_properties(
                             &mut autonum_counter,
                             &mut listnum_counter,
                             &mut field_bookmarks,
+                            &legacy_forms,
+                            &mut form_field_index,
                             properties,
                             |_, _| results.push(None),
                         );
@@ -180,7 +191,10 @@ pub(crate) fn table_formula_context_with_properties(
                                 &mut autonum_counter,
                                 &mut listnum_counter,
                                 &mut field_bookmarks,
+                                &legacy_forms,
+                                &mut form_field_index,
                                 properties,
+                                "",
                             );
                         }
                     }
@@ -193,6 +207,8 @@ pub(crate) fn table_formula_context_with_properties(
                             &mut autonum_counter,
                             &mut listnum_counter,
                             &mut field_bookmarks,
+                            &legacy_forms,
+                            &mut form_field_index,
                             properties,
                             |_, _| results.push(None),
                         );
@@ -240,6 +256,8 @@ fn read_table_formula_table(
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
+    legacy_forms: &LegacyFormContext,
+    form_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
 ) -> Vec<Option<String>> {
     let mut rows = Vec::new();
@@ -280,6 +298,8 @@ fn read_table_formula_table(
                             autonum_counter,
                             listnum_counter,
                             field_bookmarks,
+                            legacy_forms,
+                            form_field_index,
                             properties,
                         );
                         for cell in &mut row {
@@ -368,6 +388,8 @@ fn read_table_formula_row(
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
+    legacy_forms: &LegacyFormContext,
+    form_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
 ) -> Vec<TableFormulaCell> {
     let mut row: Vec<TableFormulaCell> = Vec::new();
@@ -415,6 +437,8 @@ fn read_table_formula_row(
                             autonum_counter,
                             listnum_counter,
                             field_bookmarks,
+                            legacy_forms,
+                            form_field_index,
                             properties,
                         );
                         cell.is_header_row = is_header_row;
@@ -543,6 +567,8 @@ fn read_table_formula_cell(
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
+    legacy_forms: &LegacyFormContext,
+    form_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
 ) -> TableFormulaCell {
     let mut cell = TableFormulaCell::default();
@@ -582,6 +608,8 @@ fn read_table_formula_cell(
                             autonum_counter,
                             listnum_counter,
                             field_bookmarks,
+                            legacy_forms,
+                            form_field_index,
                             properties,
                         ) {
                             cell.records.push(TableFormulaRecord::Nested(result));
@@ -608,6 +636,8 @@ fn read_table_formula_cell(
                                 autonum_counter,
                                 listnum_counter,
                                 field_bookmarks,
+                                legacy_forms,
+                                form_field_index,
                                 properties,
                             )
                         };
@@ -630,7 +660,10 @@ fn read_table_formula_cell(
                                 autonum_counter,
                                 listnum_counter,
                                 field_bookmarks,
+                                legacy_forms,
+                                form_field_index,
                                 properties,
+                                &result_text,
                             )
                             .unwrap_or(result_text)
                         };
@@ -649,6 +682,8 @@ fn read_table_formula_cell(
                             autonum_counter,
                             listnum_counter,
                             field_bookmarks,
+                            legacy_forms,
+                            form_field_index,
                             properties,
                         );
                     }
@@ -704,7 +739,10 @@ fn read_table_formula_cell(
                                 autonum_counter,
                                 listnum_counter,
                                 field_bookmarks,
+                                legacy_forms,
+                                form_field_index,
                                 properties,
+                                "",
                             )
                             .unwrap_or_default();
                             append_table_formula_cell_text(&mut cell.text, &mut current, &text);
@@ -722,6 +760,8 @@ fn read_table_formula_cell(
                             autonum_counter,
                             listnum_counter,
                             field_bookmarks,
+                            legacy_forms,
+                            form_field_index,
                             properties,
                         );
                     }
@@ -834,9 +874,11 @@ fn read_table_formula_source_field_result_text(
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
+    legacy_forms: &LegacyFormContext,
+    form_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
 ) -> String {
-    read_field_result_text_with_nested_fields(r, |instruction, _| {
+    read_field_result_text_with_nested_fields(r, |instruction, current_result| {
         let instruction = normalize_instruction(instruction);
         computed_table_formula_source_field_result(
             Some(&instruction),
@@ -845,7 +887,10 @@ fn read_table_formula_source_field_result_text(
             autonum_counter,
             listnum_counter,
             field_bookmarks,
+            legacy_forms,
+            form_field_index,
             properties,
+            current_result,
         )
     })
 }
@@ -1036,6 +1081,8 @@ fn apply_table_formula_cell_fld_char(
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
+    legacy_forms: &LegacyFormContext,
+    form_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
 ) {
     match field_char_type(e).as_deref() {
@@ -1075,7 +1122,10 @@ fn apply_table_formula_cell_fld_char(
                     autonum_counter,
                     listnum_counter,
                     field_bookmarks,
+                    legacy_forms,
+                    form_field_index,
                     properties,
+                    &field.result,
                 )
                 .unwrap_or(field.result)
             };
@@ -1116,7 +1166,10 @@ fn computed_table_formula_source_field_result(
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
+    legacy_forms: &LegacyFormContext,
+    form_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
+    current_result: &str,
 ) -> Option<String> {
     let instruction = instruction?;
     match FieldKind::from_instruction(instruction) {
@@ -1126,6 +1179,11 @@ fn computed_table_formula_source_field_result(
         }
         FieldKind::Dynamic(kind) if kind == "SET" => {
             return computed_set_result(instruction, field_bookmarks);
+        }
+        FieldKind::FormField(_) => {
+            let index = *form_field_index;
+            *form_field_index += 1;
+            return computed_legacy_form_result(instruction, current_result, legacy_forms, index);
         }
         _ => {}
     }
@@ -1226,6 +1284,8 @@ fn apply_table_formula_scan_fld_char(
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
+    legacy_forms: &LegacyFormContext,
+    form_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
     mut record: impl FnMut(&str, &str),
 ) {
@@ -1241,7 +1301,10 @@ fn apply_table_formula_scan_fld_char(
                 autonum_counter,
                 listnum_counter,
                 field_bookmarks,
+                legacy_forms,
+                form_field_index,
                 properties,
+                &field.result,
             )
             .unwrap_or(field.result);
         }

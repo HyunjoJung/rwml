@@ -302,8 +302,12 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         field_properties,
     );
     let legacy_form_context = fields::legacy_form_context(&doc_xml, preserve_legacy_form_cache);
-    let table_formula_context =
-        fields::table_formula_context_with_properties(&doc_xml, &ref_targets, field_properties);
+    let table_formula_context = fields::table_formula_context_with_properties(
+        &doc_xml,
+        &ref_targets,
+        field_properties,
+        preserve_legacy_form_cache,
+    );
     let toc_entries =
         fields::toc_entries_with_properties(&doc_xml, &styles, &ref_targets, field_properties);
     let bookmark_names = fields::bookmark_names(&doc_xml);

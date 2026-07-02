@@ -154,7 +154,12 @@ pub(crate) fn parse(
     let style_refs =
         style_ref_context_with_properties(xml, styles, numbering, &bookmarks, properties);
     let legacy_forms = legacy_form_context(xml, preserve_legacy_form_cache);
-    let table_formulas = table_formula_context_with_properties(xml, &bookmarks, properties);
+    let table_formulas = table_formula_context_with_properties(
+        xml,
+        &bookmarks,
+        properties,
+        preserve_legacy_form_cache,
+    );
     let sequence_headings = sequence_heading_context(xml, styles);
     let mut r = Reader::from_str(xml);
     let mut fields = Vec::new();
