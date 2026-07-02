@@ -1,5 +1,5 @@
 use super::reference::{
-    computed_ref_bookmark_text_result, direct_bookmark_ref_instruction, ref_instruction,
+    computed_ref_bookmark_text_result, ref_or_unknown_direct_bookmark_instruction,
 };
 use super::*;
 
@@ -806,8 +806,7 @@ fn computed_toc_source_ref_result(
     document_bookmarks: &HashMap<String, String>,
     field_bookmarks: &HashMap<String, String>,
 ) -> Option<String> {
-    let spec =
-        ref_instruction(instruction).or_else(|| direct_bookmark_ref_instruction(instruction))?;
+    let spec = ref_or_unknown_direct_bookmark_instruction(instruction)?;
     if spec.note_reference
         || spec.relative
         || spec.paragraph_number

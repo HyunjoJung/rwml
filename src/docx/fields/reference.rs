@@ -439,8 +439,7 @@ fn computed_ref_target_ref_result(
     instruction: &str,
     bookmarks: &HashMap<String, String>,
 ) -> Option<String> {
-    let spec =
-        ref_instruction(instruction).or_else(|| direct_bookmark_ref_instruction(instruction))?;
+    let spec = ref_or_unknown_direct_bookmark_instruction(instruction)?;
     if spec.note_reference
         || spec.relative
         || spec.paragraph_number
@@ -1271,6 +1270,19 @@ pub(super) fn ref_instruction(instruction: &str) -> Option<RefInstruction> {
 
 pub(super) fn direct_bookmark_ref_instruction(instruction: &str) -> Option<RefInstruction> {
     ref_instruction_from_syntax(direct_ref_field_syntax(instruction)?)
+}
+
+pub(super) fn ref_or_unknown_direct_bookmark_instruction(
+    instruction: &str,
+) -> Option<RefInstruction> {
+    ref_instruction(instruction).or_else(|| {
+        matches!(
+            FieldKind::from_instruction(instruction),
+            FieldKind::Unknown(_)
+        )
+        .then(|| direct_bookmark_ref_instruction(instruction))
+        .flatten()
+    })
 }
 
 fn ref_instruction_from_syntax(

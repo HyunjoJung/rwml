@@ -1498,6 +1498,23 @@ fn formula_table_source_field_prior_complex_set_docx() -> Vec<u8> {
     ])
 }
 
+fn formula_table_source_known_field_name_bookmark_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="PAGEREF"/><w:r><w:t>999</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:tbl><w:tr><w:tc><w:p><w:fldSimple w:instr=" PAGEREF "><w:r><w:t>123</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(LEFT) "><w:r><w:t>stale known field source sum</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn formula_table_source_field_symbol_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -2708,6 +2725,27 @@ fn style_ref_source_ref_bookmark_field_docx() -> Vec<u8> {
     ])
 }
 
+fn style_ref_source_known_field_name_bookmark_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="PAGEREF"/><w:r><w:t>bookmark target</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Heading </w:t></w:r><w:fldSimple w:instr=" PAGEREF "><w:r><w:t>known field source</w:t></w:r></w:fldSimple><w:r><w:t> ready</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;heading 1&quot; "><w:r><w:t>stale known field style source</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn style_ref_complex_field_source_text_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -3572,6 +3610,23 @@ fn nested_complex_set_operand_field_ref_bookmark_docx() -> Vec<u8> {
         (
             "word/document.xml",
             r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> SET ClientTotal 40 </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>cached complex set total</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:p><w:bookmarkStart w:id="8" w:name="ComputedTotal"/><w:fldSimple w:instr=" = ClientTotal + 8 "><w:r><w:t>stale complex set nested formula</w:t></w:r></w:fldSimple><w:bookmarkEnd w:id="8"/></w:p><w:p><w:fldSimple w:instr=" REF ComputedTotal "><w:r><w:t>stale complex set total ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn known_field_name_bookmark_ref_target_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="PAGEREF"/><w:r><w:t>bookmark target</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:bookmarkStart w:id="8" w:name="ComputedTarget"/><w:fldSimple w:instr=" PAGEREF "><w:r><w:t>known field target</w:t></w:r></w:fldSimple><w:bookmarkEnd w:id="8"/></w:p><w:p><w:fldSimple w:instr=" REF ComputedTarget "><w:r><w:t>stale known field target ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -5382,6 +5437,27 @@ fn toc_heading_ref_field_source_docx() -> Vec<u8> {
         (
             "word/document.xml",
             r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="1" w:name="ChapTitle"/><w:r><w:t>Live Chapter</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Section </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> REF ChapTitle </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale ref</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:p><w:fldSimple w:instr=" TOC \o &quot;1-1&quot; "><w:r><w:t>stale toc</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn toc_heading_known_field_name_bookmark_source_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="PAGEREF"/><w:r><w:t>bookmark target</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Heading </w:t></w:r><w:fldSimple w:instr=" PAGEREF "><w:r><w:t>known field source</w:t></w:r></w:fldSimple><w:r><w:t> ready</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" TOC \o &quot;1-1&quot; "><w:r><w:t>stale known field source toc</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -10258,6 +10334,34 @@ fn docx_table_formula_source_field_resolves_prior_complex_set_bookmark_operands(
 }
 
 #[test]
+fn docx_table_formula_source_field_keeps_known_field_names_cached() {
+    let doc = Document::open(&formula_table_source_known_field_name_bookmark_docx())
+        .expect("fixture opens");
+    let fields = doc.fields();
+
+    let source = fields
+        .iter()
+        .find(|field| field.instruction == "PAGEREF")
+        .expect("known source field is recorded");
+    assert_eq!(source.kind, FieldKind::PageRef);
+    assert_eq!(source.result, "123");
+
+    let formula = fields
+        .iter()
+        .find(|field| field.instruction == r#"= SUM(LEFT)"#)
+        .expect("formula field is recorded");
+    assert_eq!(formula.kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(formula.result, "stale known field source sum");
+    assert_eq!(formula.computed_result.as_deref(), Some("123"));
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("\t123") && !main_text.contains("stale known field source sum"),
+        "table formula source text should keep known field cached text instead of bookmark text: {main_text:?}"
+    );
+}
+
+#[test]
 fn docx_table_formula_source_simple_field_preserves_supported_symbols() {
     let doc = Document::open(&formula_table_source_field_symbol_docx()).expect("fixture opens");
     let fields = doc.fields();
@@ -14093,6 +14197,36 @@ fn docx_style_ref_source_text_resolves_ref_bookmark_fields() {
 }
 
 #[test]
+fn docx_style_ref_source_text_keeps_known_field_names_cached() {
+    let doc =
+        Document::open(&style_ref_source_known_field_name_bookmark_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let source = fields
+        .iter()
+        .find(|field| field.instruction == "PAGEREF")
+        .expect("known source field is recorded");
+    assert_eq!(source.kind, FieldKind::PageRef);
+    assert_eq!(source.result, "known field source");
+
+    let style_ref = fields
+        .iter()
+        .find(|field| field.instruction == "STYLEREF \"heading 1\"")
+        .expect("STYLEREF field is recorded");
+    assert_eq!(
+        style_ref.computed_result.as_deref(),
+        Some("Heading known field source ready")
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Heading known field source ready")
+            && !main_text.contains("stale known field style source"),
+        "STYLEREF source text should keep known field cached text instead of bookmark text: {main_text:?}"
+    );
+}
+
+#[test]
 fn docx_style_ref_source_text_includes_visible_complex_field_results() {
     let doc = Document::open(&style_ref_complex_field_source_text_docx()).expect("fixture opens");
     let fields = doc.fields();
@@ -16744,6 +16878,36 @@ fn docx_toc_heading_source_text_uses_computed_ref_field_results() {
 }
 
 #[test]
+fn docx_toc_heading_source_text_keeps_known_field_names_cached() {
+    let doc = Document::open(&toc_heading_known_field_name_bookmark_source_docx())
+        .expect("fixture opens");
+    let fields = doc.fields();
+
+    let source = fields
+        .iter()
+        .find(|field| field.instruction == "PAGEREF")
+        .expect("known source field is recorded");
+    assert_eq!(source.kind, FieldKind::PageRef);
+    assert_eq!(source.result, "known field source");
+
+    let toc = fields
+        .iter()
+        .find(|field| field.instruction == "TOC \\o \"1-1\"")
+        .expect("TOC field is recorded");
+    assert_eq!(
+        toc.computed_result.as_deref(),
+        Some("Heading known field source ready")
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Heading known field source ready")
+            && !main_text.contains("stale known field source toc"),
+        "TOC source text should keep known field cached text instead of bookmark text: {main_text:?}"
+    );
+}
+
+#[test]
 fn docx_toc_heading_source_text_resolves_bookmark_comparison_operands() {
     let doc = Document::open(&toc_heading_bookmark_comparison_field_source_docx())
         .expect("fixture opens");
@@ -18470,6 +18634,37 @@ fn docx_ref_targets_resolve_prior_complex_set_operands_in_nested_field_results()
             && !main_text.contains("stale complex set nested formula")
             && !main_text.contains("stale complex set total ref"),
         "REF targets should compute nested field results with prior complex SET operands: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_ref_targets_keep_known_field_names_cached() {
+    let doc = Document::open(&known_field_name_bookmark_ref_target_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let source = fields
+        .iter()
+        .find(|field| field.instruction == "PAGEREF")
+        .expect("known target field is recorded");
+    assert_eq!(source.kind, FieldKind::PageRef);
+    assert_eq!(source.result, "known field target");
+
+    let reference = fields
+        .iter()
+        .find(|field| field.instruction == "REF ComputedTarget")
+        .expect("REF field is recorded");
+    assert_eq!(reference.kind, FieldKind::Ref);
+    assert_eq!(reference.result, "stale known field target ref");
+    assert_eq!(
+        reference.computed_result.as_deref(),
+        Some("known field target")
+    );
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("known field target")
+            && !main_text.contains("stale known field target ref"),
+        "REF target text should keep known field cached text instead of bookmark text: {main_text:?}"
     );
 }
 
