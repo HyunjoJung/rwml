@@ -1329,6 +1329,7 @@ fn read_floating_shapes(
     let mut current_body_block_depth = None;
     let mut current_body_block_text = String::new();
     let mut current_body_block_shapes = Vec::new();
+    let mut anchor_complex_field = FloatingAnchorComplexField::default();
     let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
@@ -1386,6 +1387,7 @@ fn read_floating_shapes(
                     current_body_block_depth = None;
                     current_body_block_text.clear();
                     current_body_block_shapes.clear();
+                    anchor_complex_field = FloatingAnchorComplexField::default();
                     alternate_content_stack.clear();
                     scan_depth += 1;
                     continue;
@@ -1405,20 +1407,37 @@ fn read_floating_shapes(
                         current_body_block_depth = Some(body_depth + 1);
                         current_body_block_text.clear();
                         current_body_block_shapes.clear();
+                        anchor_complex_field = FloatingAnchorComplexField::default();
                         next_body_block_index += 1;
                     }
                     body_depth += 1;
                 }
                 if in_body && current_body_block_index.is_some() && name == b"fldSimple" {
-                    if let Some(text) = computed_floating_anchor_simple_field_text(&e) {
+                    if anchor_complex_field.suppresses_result() {
+                        skip_subtree(&mut r);
+                        body_depth = body_depth.saturating_sub(1);
+                        continue;
+                    } else if let Some(text) = computed_floating_anchor_simple_field_text(&e) {
                         append_floating_anchor_text(&mut current_body_block_text, &text);
                         skip_subtree(&mut r);
                         body_depth = body_depth.saturating_sub(1);
                         continue;
                     }
                 }
+                if in_body && current_body_block_index.is_some() && name == b"fldChar" {
+                    if let Some(text) = anchor_complex_field.apply_field_char(&e) {
+                        append_floating_anchor_text(&mut current_body_block_text, &text);
+                    }
+                    skip_subtree(&mut r);
+                    body_depth = body_depth.saturating_sub(1);
+                    continue;
+                }
                 if name == b"instrText" {
-                    shape_field_cursor.append_instruction_text(&read_text(&mut r));
+                    let instruction = read_text(&mut r);
+                    shape_field_cursor.append_instruction_text(&instruction);
+                    if in_body && current_body_block_index.is_some() {
+                        anchor_complex_field.append_instruction_text(&instruction);
+                    }
                     if in_body {
                         body_depth = body_depth.saturating_sub(1);
                     }
@@ -1458,20 +1477,27 @@ fn read_floating_shapes(
                     continue;
                 }
                 if in_body && current_body_block_index.is_some() && name == b"t" {
-                    append_floating_anchor_text(&mut current_body_block_text, &read_text(&mut r));
+                    let text = read_text(&mut r);
+                    if !anchor_complex_field.suppresses_result() {
+                        append_floating_anchor_text(&mut current_body_block_text, &text);
+                    }
                     body_depth = body_depth.saturating_sub(1);
                     continue;
                 }
                 if in_body && current_body_block_index.is_some() {
                     if let Some(marker) = inline_marker_text(&e) {
-                        append_floating_anchor_text(&mut current_body_block_text, marker);
+                        if !anchor_complex_field.suppresses_result() {
+                            append_floating_anchor_text(&mut current_body_block_text, marker);
+                        }
                         skip_subtree(&mut r);
                         body_depth = body_depth.saturating_sub(1);
                         continue;
                     }
                 }
                 if in_body && current_body_block_index.is_some() && name == b"sym" {
-                    append_floating_anchor_symbol(&mut current_body_block_text, &e);
+                    if !anchor_complex_field.suppresses_result() {
+                        append_floating_anchor_symbol(&mut current_body_block_text, &e);
+                    }
                     skip_subtree(&mut r);
                     body_depth = body_depth.saturating_sub(1);
                     continue;
@@ -1498,7 +1524,13 @@ fn read_floating_shapes(
                         });
                     }
                 } else if in_body && current_body_block_index.is_some() {
-                    append_floating_anchor_empty(&mut current_body_block_text, &e, name);
+                    if name == b"fldChar" {
+                        if let Some(text) = anchor_complex_field.apply_field_char(&e) {
+                            append_floating_anchor_text(&mut current_body_block_text, &text);
+                        }
+                    } else if !anchor_complex_field.suppresses_result() {
+                        append_floating_anchor_empty(&mut current_body_block_text, &e, name);
+                    }
                 }
                 if name == b"fldSimple" {
                     shape_field_cursor.empty_simple_field(
@@ -1537,6 +1569,7 @@ fn read_floating_shapes(
                     current_body_block_depth = None;
                     current_body_block_text.clear();
                     current_body_block_shapes.clear();
+                    anchor_complex_field = FloatingAnchorComplexField::default();
                     alternate_content_stack.clear();
                     scan_depth = scan_depth.saturating_sub(1);
                     continue;
@@ -1566,6 +1599,7 @@ fn read_floating_shapes(
                         current_body_block_depth = None;
                         current_body_block_text.clear();
                         current_body_block_shapes.clear();
+                        anchor_complex_field = FloatingAnchorComplexField::default();
                     }
                 }
                 scan_depth = scan_depth.saturating_sub(1);
@@ -1602,6 +1636,68 @@ fn append_floating_anchor_empty(out: &mut String, e: &BytesStart<'_>, name: &[u8
 fn computed_floating_anchor_simple_field_text(e: &BytesStart<'_>) -> Option<String> {
     let instruction = attr_local_trimmed(e, b"instr")?;
     fields::computed_quote_result(&instruction)
+}
+
+#[derive(Default)]
+struct FloatingAnchorComplexField {
+    depth: usize,
+    instruction: String,
+    phase: Option<FloatingAnchorComplexFieldPhase>,
+    computed_result: Option<String>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FloatingAnchorComplexFieldPhase {
+    Instruction,
+    Result,
+}
+
+impl FloatingAnchorComplexField {
+    fn apply_field_char(&mut self, e: &BytesStart<'_>) -> Option<String> {
+        match field_char_type(e).as_deref() {
+            Some("begin") => {
+                if self.depth == 0 {
+                    self.instruction.clear();
+                    self.phase = Some(FloatingAnchorComplexFieldPhase::Instruction);
+                    self.computed_result = None;
+                }
+                self.depth += 1;
+                None
+            }
+            Some("separate")
+                if self.depth == 1
+                    && self.phase == Some(FloatingAnchorComplexFieldPhase::Instruction) =>
+            {
+                self.phase = Some(FloatingAnchorComplexFieldPhase::Result);
+                self.computed_result = fields::computed_quote_result(&self.instruction);
+                self.computed_result.clone()
+            }
+            Some("end") => {
+                if self.depth > 0 {
+                    self.depth -= 1;
+                    if self.depth == 0 {
+                        self.instruction.clear();
+                        self.phase = None;
+                        self.computed_result = None;
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
+    fn append_instruction_text(&mut self, text: &str) {
+        if self.depth == 1 && self.phase == Some(FloatingAnchorComplexFieldPhase::Instruction) {
+            self.instruction.push_str(text);
+        }
+    }
+
+    fn suppresses_result(&self) -> bool {
+        self.depth > 0
+            && self.phase == Some(FloatingAnchorComplexFieldPhase::Result)
+            && self.computed_result.is_some()
+    }
 }
 
 #[derive(Debug, Clone)]
