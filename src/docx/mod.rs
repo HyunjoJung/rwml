@@ -402,7 +402,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     note_part.fields.extend(endnote_part.fields);
     extend_missing_comment_anchors(&mut note_part.comment_anchors, endnote_part.comment_anchors);
     attach_note_reference_anchors(&mut note_part.records, &doc_xml);
-    let mut floating_shapes = read_floating_shapes(&doc_xml, field_properties);
+    let mut floating_shapes = read_floating_shapes(&doc_xml, field_properties, &ref_targets);
     floating_shapes.extend(note_part.floating_shapes);
     let mut text_boxes = read_text_boxes(&doc_xml, &ctx, &floating_shapes);
     text_boxes.extend(note_part.text_boxes);
@@ -916,6 +916,7 @@ fn read_hf_parts(
                     extended: properties.extended,
                     file_size_bytes: properties.file_size_bytes,
                 },
+                &ref_targets,
             ));
         }
         if seen_fields.insert((path.clone(), type_name.to_string())) {
@@ -1098,6 +1099,7 @@ fn read_notes(
             extended: properties.extended,
             file_size_bytes: properties.file_size_bytes,
         },
+        &ref_targets,
     );
     let text_box_id_prefix = format!("{name}-text-box");
     let text_boxes = read_text_boxes_with_prefix(&xml, &ctx, &floating_shapes, &text_box_id_prefix);
@@ -1214,6 +1216,7 @@ fn text_anchor_from_shape(shape: &FloatingShape) -> Option<TextAnchor> {
 fn read_floating_shapes(
     doc_xml: &str,
     properties: fields::FieldDocumentProperties<'_>,
+    document_bookmarks: &HashMap<String, String>,
 ) -> Vec<FloatingShape> {
     let mut r = Reader::from_str(doc_xml);
     let mut shapes = Vec::new();
@@ -1290,6 +1293,7 @@ fn read_floating_shapes(
                         index,
                         current_body_block_index,
                         properties,
+                        document_bookmarks,
                     ));
                     if current_body_block_index.is_some() {
                         current_body_block_shapes.push(FloatingShapeAnchorCandidate {
@@ -1493,6 +1497,7 @@ fn read_floating_shape(
     index: usize,
     anchor_block_index: Option<usize>,
     properties: fields::FieldDocumentProperties<'_>,
+    document_bookmarks: &HashMap<String, String>,
 ) -> FloatingShape {
     let mut shape = floating_shape_shell(index, start, anchor_block_index);
     let mut text_box_depth = 0usize;
@@ -1508,7 +1513,12 @@ fn read_floating_shape(
                     match name {
                         b"t" => append_shape_text(&mut shape_text, &read_text(r)),
                         b"fldSimple" => {
-                            if append_shape_simple_field(&mut shape_text, &e, properties) {
+                            if append_shape_simple_field(
+                                &mut shape_text,
+                                &e,
+                                properties,
+                                document_bookmarks,
+                            ) {
                                 skip_subtree(r);
                             } else {
                                 text_box_depth += 1;
@@ -1544,7 +1554,12 @@ fn read_floating_shape(
                 let name = local(qname.as_ref());
                 if text_box_depth > 0 {
                     if name != b"fldSimple"
-                        || !append_shape_simple_field(&mut shape_text, &e, properties)
+                        || !append_shape_simple_field(
+                            &mut shape_text,
+                            &e,
+                            properties,
+                            document_bookmarks,
+                        )
                     {
                         append_shape_empty(&mut shape_text, &e, name);
                     }
@@ -1666,27 +1681,32 @@ fn append_shape_simple_field(
     out: &mut String,
     e: &BytesStart<'_>,
     properties: fields::FieldDocumentProperties<'_>,
+    document_bookmarks: &HashMap<String, String>,
 ) -> bool {
     let Some(instruction) = attr_local(e, b"instr") else {
         return false;
     };
     let field_bookmarks = HashMap::new();
-    let Some(text) = fields::computed_dynamic_result_with_bookmarks(&instruction, &field_bookmarks)
-        .or_else(|| {
-            fields::computed_document_info_result(
-                &instruction,
-                properties.core,
-                properties.custom,
-                properties.variables,
-                properties.extended,
-                properties.file_size_bytes,
-            )
-        })
-        .or_else(|| fields::computed_revision_number_result(&instruction, properties.core))
-        .or_else(|| fields::computed_display_result(&instruction))
-        .or_else(|| fields::computed_action_result(&instruction))
-        .or_else(|| fields::computed_reference_index_result(&instruction))
-    else {
+    let Some(text) = fields::computed_formula_result_with_bookmark_context(
+        &instruction,
+        document_bookmarks,
+        &field_bookmarks,
+    )
+    .or_else(|| fields::computed_dynamic_result_with_bookmarks(&instruction, &field_bookmarks))
+    .or_else(|| {
+        fields::computed_document_info_result(
+            &instruction,
+            properties.core,
+            properties.custom,
+            properties.variables,
+            properties.extended,
+            properties.file_size_bytes,
+        )
+    })
+    .or_else(|| fields::computed_revision_number_result(&instruction, properties.core))
+    .or_else(|| fields::computed_display_result(&instruction))
+    .or_else(|| fields::computed_action_result(&instruction))
+    .or_else(|| fields::computed_reference_index_result(&instruction)) else {
         return false;
     };
     if !text.is_empty() {
