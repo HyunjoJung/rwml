@@ -131,6 +131,15 @@ pub(crate) fn supports_set_field_syntax(instruction: &str) -> bool {
     fields::supports_set_field_syntax(instruction)
 }
 
+pub(crate) fn update_field_bookmarks_from_instruction(
+    instruction: &str,
+    field_bookmarks: &mut HashMap<String, String>,
+) -> bool {
+    fields::computed_set_result(instruction, field_bookmarks)
+        .or_else(|| fields::computed_ask_result(instruction, field_bookmarks))
+        .is_some()
+}
+
 pub(crate) fn supports_merge_control_field_syntax(instruction: &str) -> bool {
     fields::supports_merge_control_field_syntax(instruction)
 }

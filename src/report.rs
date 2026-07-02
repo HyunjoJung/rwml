@@ -45,7 +45,7 @@ use crate::model::{Block, FieldRole, FieldUnsupportedReason, Stats, Table};
 use crate::CoreProperties;
 #[cfg(feature = "docx")]
 use crate::RevisionKind;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 #[cfg(feature = "docx")]
 use std::io::Read;
 
@@ -1813,6 +1813,7 @@ fn count_docx_unsupported_field_reasons(
         .map(crate::docx::page_field_unsupported_display_formats);
     let mut counts: Vec<FieldEvaluationReasonCount> = Vec::new();
     let mut page_field_index = 0usize;
+    let mut field_bookmarks = HashMap::new();
     for field in fields {
         let page_field_unsupported_display_format = if field.kind == FieldKind::Page {
             let unsupported = page_field_unsupported_display_formats
@@ -1825,15 +1826,29 @@ fn count_docx_unsupported_field_reasons(
         } else {
             false
         };
+        let merged_ref_bookmark_names;
+        let bookmark_names_for_field =
+            if field.kind == FieldKind::Ref && !field_bookmarks.is_empty() {
+                let mut names = bookmark_names.as_ref().cloned().unwrap_or_default();
+                names.extend(field_bookmarks.keys().cloned());
+                merged_ref_bookmark_names = names;
+                Some(&merged_ref_bookmark_names)
+            } else {
+                bookmark_names.as_ref()
+            };
         if let Some(reason) = unsupported_docx_field_reason(
             field,
-            bookmark_names.as_ref(),
+            bookmark_names_for_field,
             note_ref_target_names.as_ref(),
             unsupported_page_ref_section_format_targets.as_ref(),
             page_field_unsupported_display_format,
         ) {
             increment_field_evaluation_reason_count(&mut counts, reason);
         }
+        crate::docx::update_field_bookmarks_from_instruction(
+            &field.instruction,
+            &mut field_bookmarks,
+        );
     }
     counts
 }
