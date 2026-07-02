@@ -6,7 +6,10 @@ use quick_xml::Reader;
 use crate::annotation::{Revision, RevisionKind, RevisionView};
 use crate::text;
 
-use super::fields::{computed_contextless_result, computed_run_symbol_char, ContextlessFieldState};
+use super::fields::{
+    computed_contextless_result, computed_run_symbol_char, ContextlessFieldState,
+    FieldDocumentProperties,
+};
 use super::xml_text::{
     inline_marker_text, read_text, skip_alternate_content_branch, skip_subtree,
     AlternateContentBranchState,
@@ -15,7 +18,7 @@ use super::{attr_local_trimmed, field_char_type, local};
 
 type Xml<'a> = Reader<&'a [u8]>;
 
-pub(crate) fn parse(xml: &str) -> Vec<Revision> {
+pub(crate) fn parse(xml: &str, properties: FieldDocumentProperties<'_>) -> Vec<Revision> {
     let mut r = Reader::from_str(xml);
     let mut revisions = Vec::new();
     let mut alternate_content_stack = Vec::new();
@@ -39,7 +42,7 @@ pub(crate) fn parse(xml: &str) -> Vec<Revision> {
             }
             Ok(Event::Start(e)) => {
                 if let Some(kind) = revision_kind(local(e.name().as_ref())) {
-                    revisions.push(read_revision(&mut r, &e, kind));
+                    revisions.push(read_revision(&mut r, &e, kind, properties));
                 }
             }
             Ok(Event::Empty(e)) => {
@@ -57,7 +60,11 @@ pub(crate) fn parse(xml: &str) -> Vec<Revision> {
     revisions
 }
 
-pub(crate) fn main_text_with_view(xml: &str, view: RevisionView) -> String {
+pub(crate) fn main_text_with_view(
+    xml: &str,
+    view: RevisionView,
+    properties: Option<FieldDocumentProperties<'_>>,
+) -> String {
     let mut r = Reader::from_str(xml);
     let mut out = String::new();
     let mut alternate_content_stack = Vec::new();
@@ -82,7 +89,7 @@ pub(crate) fn main_text_with_view(xml: &str, view: RevisionView) -> String {
             }
             Ok(Event::Start(e)) => {
                 if let Some(kind) = revision_kind(local(e.name().as_ref())) {
-                    let rev_text = read_revision_text(&mut r, local(e.name().as_ref()));
+                    let rev_text = read_revision_text(&mut r, local(e.name().as_ref()), properties);
                     push_revision_text(&mut out, view, kind, &rev_text);
                     inline_continuation = false;
                 } else if matches!(local(e.name().as_ref()), b"t" | b"delText") {
@@ -141,17 +148,28 @@ fn revision_shell(e: &BytesStart<'_>, kind: RevisionKind, text: String) -> Revis
     }
 }
 
-fn read_revision(r: &mut Xml<'_>, start: &BytesStart<'_>, kind: RevisionKind) -> Revision {
+fn read_revision(
+    r: &mut Xml<'_>,
+    start: &BytesStart<'_>,
+    kind: RevisionKind,
+    properties: FieldDocumentProperties<'_>,
+) -> Revision {
     let end_name = local(start.name().as_ref()).to_vec();
-    let text = read_revision_text(r, &end_name);
+    let text = read_revision_text(r, &end_name, Some(properties));
     revision_shell(start, kind, text)
 }
 
-fn read_revision_text(r: &mut Xml<'_>, end_name: &[u8]) -> String {
+fn read_revision_text(
+    r: &mut Xml<'_>,
+    end_name: &[u8],
+    properties: Option<FieldDocumentProperties<'_>>,
+) -> String {
     let mut depth = 1usize;
     let mut text = String::new();
     let mut complex_field = RevisionComplexField::default();
-    let mut field_state = ContextlessFieldState::default();
+    let mut field_state = properties
+        .map(ContextlessFieldState::with_document_properties)
+        .unwrap_or_default();
     let mut embedded_body_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
     loop {
@@ -281,7 +299,7 @@ fn revision_symbol_char(e: &BytesStart<'_>) -> Option<char> {
 
 fn computed_revision_simple_field_text(
     e: &BytesStart<'_>,
-    field_state: &mut ContextlessFieldState,
+    field_state: &mut ContextlessFieldState<'_>,
 ) -> Option<String> {
     let instruction = attr_local_trimmed(e, b"instr")?;
     computed_revision_field_text(&instruction, field_state)
@@ -289,7 +307,7 @@ fn computed_revision_simple_field_text(
 
 fn computed_revision_field_text(
     instruction: &str,
-    field_state: &mut ContextlessFieldState,
+    field_state: &mut ContextlessFieldState<'_>,
 ) -> Option<String> {
     computed_contextless_result(instruction, field_state)
 }
@@ -312,7 +330,7 @@ impl RevisionComplexField {
     fn apply_field_char(
         &mut self,
         e: &BytesStart<'_>,
-        field_state: &mut ContextlessFieldState,
+        field_state: &mut ContextlessFieldState<'_>,
     ) -> Option<String> {
         match field_char_type(e).as_deref() {
             Some("begin") => {

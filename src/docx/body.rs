@@ -15,7 +15,8 @@ use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 
 use super::fields::{
-    computed_contextless_result, computed_run_symbol_char, ContextlessFieldState, TocEntry,
+    computed_contextless_result, computed_run_symbol_char, ContextlessFieldState,
+    FieldDocumentProperties, TocEntry,
 };
 use super::numbering::Numbering;
 use super::parse_rgb_hex_color;
@@ -1015,7 +1016,11 @@ fn read_note_entry(
 
 /// Scan `word/document.xml` for note reference ids and the containing top-level
 /// body block text. `tag` is `b"footnoteReference"` or `b"endnoteReference"`.
-pub(crate) fn scan_note_ref_anchors(xml: &str, tag: &[u8]) -> HashMap<String, String> {
+pub(crate) fn scan_note_ref_anchors(
+    xml: &str,
+    tag: &[u8],
+    properties: FieldDocumentProperties<'_>,
+) -> HashMap<String, String> {
     let mut r = Reader::from_str(xml);
     let mut anchors = HashMap::new();
     let mut in_body = false;
@@ -1025,7 +1030,7 @@ pub(crate) fn scan_note_ref_anchors(xml: &str, tag: &[u8]) -> HashMap<String, St
     let mut current_block_text = String::new();
     let mut current_block_refs = Vec::new();
     let mut complex_field = NoteAnchorComplexField::default();
-    let mut field_state = ContextlessFieldState::default();
+    let mut field_state = ContextlessFieldState::with_document_properties(properties);
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => {
@@ -1211,7 +1216,7 @@ impl NoteAnchorComplexField {
     fn apply_field_char(
         &mut self,
         e: &BytesStart<'_>,
-        field_state: &mut ContextlessFieldState,
+        field_state: &mut ContextlessFieldState<'_>,
     ) -> Option<String> {
         match field_char_type(e).as_deref() {
             Some("begin") => {
@@ -1277,7 +1282,7 @@ fn is_note_anchor_embedded_body(name: &[u8]) -> bool {
 
 fn computed_note_anchor_simple_field_text(
     e: &BytesStart<'_>,
-    field_state: &mut ContextlessFieldState,
+    field_state: &mut ContextlessFieldState<'_>,
 ) -> Option<String> {
     let instruction = attr_local_trimmed(e, b"instr")?;
     computed_note_anchor_field_text(&instruction, field_state)
@@ -1285,7 +1290,7 @@ fn computed_note_anchor_simple_field_text(
 
 fn computed_note_anchor_field_text(
     instruction: &str,
-    field_state: &mut ContextlessFieldState,
+    field_state: &mut ContextlessFieldState<'_>,
 ) -> Option<String> {
     computed_contextless_result(instruction, field_state)
 }
@@ -1304,7 +1309,7 @@ fn append_note_anchor_alternate_content(
     text: &mut String,
     refs: &mut Vec<String>,
     complex_field: &mut NoteAnchorComplexField,
-    field_state: &mut ContextlessFieldState,
+    field_state: &mut ContextlessFieldState<'_>,
     depth: u32,
 ) {
     if depth > MAX_DEPTH {
@@ -1341,7 +1346,7 @@ fn append_note_anchor_content(
     text: &mut String,
     refs: &mut Vec<String>,
     complex_field: &mut NoteAnchorComplexField,
-    field_state: &mut ContextlessFieldState,
+    field_state: &mut ContextlessFieldState<'_>,
     depth: u32,
 ) {
     if depth > MAX_DEPTH {

@@ -1221,22 +1221,33 @@ pub(crate) fn computed_dynamic_result_with_bookmarks(
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct ContextlessFieldState {
+pub(crate) struct ContextlessFieldState<'a> {
+    document_properties: Option<FieldDocumentProperties<'a>>,
     field_bookmarks: HashMap<String, String>,
     sequence_counters: HashMap<String, i64>,
     autonum_counter: i64,
     listnum_counter: i64,
 }
 
-impl ContextlessFieldState {
+impl<'a> ContextlessFieldState<'a> {
+    pub(crate) fn with_document_properties(properties: FieldDocumentProperties<'a>) -> Self {
+        Self {
+            document_properties: Some(properties),
+            ..Self::default()
+        }
+    }
+
     pub(crate) fn clear(&mut self) {
-        *self = Self::default();
+        self.field_bookmarks.clear();
+        self.sequence_counters.clear();
+        self.autonum_counter = 0;
+        self.listnum_counter = 0;
     }
 }
 
 pub(crate) fn computed_contextless_result(
     instruction: &str,
-    state: &mut ContextlessFieldState,
+    state: &mut ContextlessFieldState<'_>,
 ) -> Option<String> {
     if let Some(text) = computed_set_result(instruction, &mut state.field_bookmarks) {
         return Some(text);
@@ -1276,6 +1287,17 @@ pub(crate) fn computed_contextless_result(
             } else {
                 None
             }
+        })
+        .or_else(|| {
+            let properties = state.document_properties?;
+            computed_document_info_result(
+                instruction,
+                properties.core,
+                properties.custom,
+                properties.variables,
+                properties.extended,
+                properties.file_size_bytes,
+            )
         })
         .or_else(|| computed_display_result(instruction))
         .or_else(|| computed_action_result(instruction))

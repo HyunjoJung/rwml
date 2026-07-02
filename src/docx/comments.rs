@@ -7,7 +7,10 @@ use std::collections::HashMap;
 
 use crate::annotation::{Comment, TextAnchor};
 
-use super::fields::{computed_contextless_result, computed_run_symbol_char, ContextlessFieldState};
+use super::fields::{
+    computed_contextless_result, computed_run_symbol_char, ContextlessFieldState,
+    FieldDocumentProperties,
+};
 use super::xml_text::{
     inline_marker_text, read_text, skip_alternate_content_branch, skip_subtree,
     AlternateContentBranchState,
@@ -16,7 +19,7 @@ use super::{attr_local_trimmed, field_char_type, local};
 
 type Xml<'a> = Reader<&'a [u8]>;
 
-pub(crate) fn parse(xml: &str) -> Vec<Comment> {
+pub(crate) fn parse(xml: &str, properties: FieldDocumentProperties<'_>) -> Vec<Comment> {
     let mut r = Reader::from_str(xml);
     let mut comments = Vec::new();
     let mut alternate_content_stack = Vec::new();
@@ -39,7 +42,7 @@ pub(crate) fn parse(xml: &str) -> Vec<Comment> {
                 alternate_content_stack.push(AlternateContentBranchState::default());
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"comment" => {
-                if let Some(comment) = read_comment(&mut r, &e) {
+                if let Some(comment) = read_comment(&mut r, &e, properties) {
                     comments.push(comment);
                 }
             }
@@ -209,12 +212,15 @@ fn extended_comment_metadata(xml: &str) -> HashMap<String, CommentExMetadata> {
     ids
 }
 
-pub(crate) fn parse_anchors(xml: &str) -> HashMap<String, TextAnchor> {
+pub(crate) fn parse_anchors(
+    xml: &str,
+    properties: FieldDocumentProperties<'_>,
+) -> HashMap<String, TextAnchor> {
     let mut r = Reader::from_str(xml);
     let mut anchors: HashMap<String, TextAnchor> = HashMap::new();
     let mut active: Vec<(String, bool)> = Vec::new();
     let mut complex_field = CommentComplexField::default();
-    let mut field_state = ContextlessFieldState::default();
+    let mut field_state = ContextlessFieldState::with_document_properties(properties);
     let mut old_content_depth = 0usize;
     let mut embedded_body_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
@@ -346,10 +352,14 @@ pub(crate) fn parse_anchors(xml: &str) -> HashMap<String, TextAnchor> {
     anchors
 }
 
-fn read_comment(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Option<Comment> {
+fn read_comment(
+    r: &mut Xml<'_>,
+    start: &BytesStart<'_>,
+    properties: FieldDocumentProperties<'_>,
+) -> Option<Comment> {
     let mut c = comment_shell(start);
     let mut complex_field = CommentComplexField::default();
-    let mut field_state = ContextlessFieldState::default();
+    let mut field_state = ContextlessFieldState::with_document_properties(properties);
     let mut old_content_depth = 0usize;
     let mut embedded_body_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
@@ -474,7 +484,7 @@ fn comment_symbol_char(e: &BytesStart<'_>) -> Option<char> {
 
 fn computed_comment_simple_field_text(
     e: &BytesStart<'_>,
-    field_state: &mut ContextlessFieldState,
+    field_state: &mut ContextlessFieldState<'_>,
 ) -> Option<String> {
     let instruction = attr_local_trimmed(e, b"instr")?;
     computed_comment_field_text(&instruction, field_state)
@@ -482,7 +492,7 @@ fn computed_comment_simple_field_text(
 
 fn computed_comment_field_text(
     instruction: &str,
-    field_state: &mut ContextlessFieldState,
+    field_state: &mut ContextlessFieldState<'_>,
 ) -> Option<String> {
     computed_contextless_result(instruction, field_state)
 }
@@ -509,7 +519,7 @@ impl CommentComplexField {
     fn apply_field_char(
         &mut self,
         e: &BytesStart<'_>,
-        field_state: &mut ContextlessFieldState,
+        field_state: &mut ContextlessFieldState<'_>,
     ) -> Option<String> {
         match field_char_type(e).as_deref() {
             Some("begin") => {

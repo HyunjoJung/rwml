@@ -402,7 +402,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     note_part.text_boxes.extend(endnote_part.text_boxes);
     note_part.fields.extend(endnote_part.fields);
     extend_missing_comment_anchors(&mut note_part.comment_anchors, endnote_part.comment_anchors);
-    attach_note_reference_anchors(&mut note_part.records, &doc_xml);
+    attach_note_reference_anchors(&mut note_part.records, &doc_xml, field_properties);
     let mut floating_shapes = read_floating_shapes(
         &doc_xml,
         field_properties,
@@ -449,14 +449,14 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     let comments_ext_xml = part(&mut zip, "word/commentsExtended.xml");
     let mut comments = comments_xml
         .as_deref()
-        .map(comments::parse)
+        .map(|xml| comments::parse(xml, field_properties))
         .unwrap_or_default();
     if let (Some(comments_xml), Some(comments_ext_xml)) =
         (comments_xml.as_deref(), comments_ext_xml.as_deref())
     {
         comments::apply_extended_parent_ids(&mut comments, comments_xml, comments_ext_xml);
     }
-    let mut comment_anchors = comments::parse_anchors(&doc_xml);
+    let mut comment_anchors = comments::parse_anchors(&doc_xml, field_properties);
     extend_missing_comment_anchors(&mut comment_anchors, note_part.comment_anchors);
     extend_missing_comment_anchors(&mut comment_anchors, header_footer_comment_anchors);
     for comment in &mut comments {
@@ -476,7 +476,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         },
         preserve_legacy_form_cache,
     );
-    let mut revisions = revisions::parse(&doc_xml);
+    let mut revisions = revisions::parse(&doc_xml, field_properties);
     revisions.extend(note_part.revisions);
     revisions.extend(header_footer_revisions);
     // Stats reflect the full visible content (body + notes).
@@ -935,7 +935,10 @@ fn read_hf_parts(
             counters: Default::default(),
         };
         let type_name = normalized_header_footer_type(&reference.type_name);
-        extend_missing_comment_anchors(&mut comment_anchors, comments::parse_anchors(&xml));
+        extend_missing_comment_anchors(
+            &mut comment_anchors,
+            comments::parse_anchors(&xml, field_properties),
+        );
         if seen_text_boxes.insert((path.clone(), type_name.to_string())) {
             text_boxes.extend(read_text_boxes_with_prefix(
                 &xml,
@@ -945,7 +948,7 @@ fn read_hf_parts(
             ));
         }
         if seen_revisions.insert((path.clone(), type_name.to_string())) {
-            revisions.extend(revisions::parse(&xml));
+            revisions.extend(revisions::parse(&xml, field_properties));
         }
         if seen_floating_shapes.insert((path.clone(), type_name.to_string())) {
             floating_shapes.extend(read_floating_shapes(
@@ -1165,8 +1168,8 @@ fn read_notes(
     };
     let mut blocks = Vec::new();
     let mut records = Vec::new();
-    let comment_anchors = comments::parse_anchors(&xml);
-    let revisions = revisions::parse(&xml);
+    let comment_anchors = comments::parse_anchors(&xml, field_properties);
+    let revisions = revisions::parse(&xml, field_properties);
     let floating_shapes = read_floating_shapes(
         &xml,
         fields::FieldDocumentProperties {
@@ -1330,7 +1333,8 @@ fn read_floating_shapes(
     let mut current_body_block_text = String::new();
     let mut current_body_block_shapes = Vec::new();
     let mut anchor_complex_field = FloatingAnchorComplexField::default();
-    let mut anchor_field_state = fields::ContextlessFieldState::default();
+    let mut anchor_field_state =
+        fields::ContextlessFieldState::with_document_properties(properties);
     let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
@@ -1644,7 +1648,7 @@ fn append_floating_anchor_empty(
     out: &mut String,
     e: &BytesStart<'_>,
     name: &[u8],
-    field_state: &mut fields::ContextlessFieldState,
+    field_state: &mut fields::ContextlessFieldState<'_>,
 ) {
     if name == b"fldSimple" {
         if let Some(text) = computed_floating_anchor_simple_field_text(e, field_state) {
@@ -1659,7 +1663,7 @@ fn append_floating_anchor_empty(
 
 fn computed_floating_anchor_simple_field_text(
     e: &BytesStart<'_>,
-    field_state: &mut fields::ContextlessFieldState,
+    field_state: &mut fields::ContextlessFieldState<'_>,
 ) -> Option<String> {
     let instruction = attr_local_trimmed(e, b"instr")?;
     computed_floating_anchor_field_text(&instruction, field_state)
@@ -1667,7 +1671,7 @@ fn computed_floating_anchor_simple_field_text(
 
 fn computed_floating_anchor_field_text(
     instruction: &str,
-    field_state: &mut fields::ContextlessFieldState,
+    field_state: &mut fields::ContextlessFieldState<'_>,
 ) -> Option<String> {
     fields::computed_contextless_result(instruction, field_state)
 }
@@ -1690,7 +1694,7 @@ impl FloatingAnchorComplexField {
     fn apply_field_char(
         &mut self,
         e: &BytesStart<'_>,
-        field_state: &mut fields::ContextlessFieldState,
+        field_state: &mut fields::ContextlessFieldState<'_>,
     ) -> Option<String> {
         match field_char_type(e).as_deref() {
             Some("begin") => {
@@ -3791,9 +3795,13 @@ fn blocks_text(blocks: &[Block]) -> String {
     text::finalize(&raw)
 }
 
-fn attach_note_reference_anchors(notes: &mut [Note], doc_xml: &str) {
-    let footnote_refs = body::scan_note_ref_anchors(doc_xml, b"footnoteReference");
-    let endnote_refs = body::scan_note_ref_anchors(doc_xml, b"endnoteReference");
+fn attach_note_reference_anchors(
+    notes: &mut [Note],
+    doc_xml: &str,
+    properties: fields::FieldDocumentProperties<'_>,
+) {
+    let footnote_refs = body::scan_note_ref_anchors(doc_xml, b"footnoteReference", properties);
+    let endnote_refs = body::scan_note_ref_anchors(doc_xml, b"endnoteReference", properties);
     for note in notes {
         let anchor_text = match note.kind {
             NoteKind::Footnote => footnote_refs.get(&note.id),
@@ -3835,11 +3843,42 @@ fn flatten_header_footer_surfaces(model: &DocModel, out: &mut String) {
 }
 
 pub(crate) fn main_text_with_revision_view(state: &DocxState, view: crate::RevisionView) -> String {
-    state
+    let Some(doc_xml) = state.package.part("word/document.xml") else {
+        return state.main_text.clone();
+    };
+    let doc_xml = String::from_utf8_lossy(&doc_xml);
+    let core_properties = state
         .package
-        .part("word/document.xml")
-        .map(|xml| revisions::main_text_with_view(&String::from_utf8_lossy(&xml), view))
-        .unwrap_or_else(|| state.main_text.clone())
+        .part("docProps/core.xml")
+        .map(|xml| parse_core_properties(&String::from_utf8_lossy(&xml)))
+        .unwrap_or_else(|| state.core_properties.clone());
+    let custom_properties = state
+        .package
+        .part("docProps/custom.xml")
+        .map(|xml| parse_custom_properties(&String::from_utf8_lossy(&xml)))
+        .unwrap_or_default();
+    let custom_property_fields = custom_properties
+        .iter()
+        .map(|(key, value)| (document_property_key(key), value.clone()))
+        .collect::<HashMap<_, _>>();
+    let document_variables = state
+        .package
+        .part("word/settings.xml")
+        .map(|xml| parse_document_variables(&String::from_utf8_lossy(&xml)))
+        .unwrap_or_default();
+    let extended_properties = state
+        .package
+        .part("docProps/app.xml")
+        .map(|xml| parse_extended_properties(&String::from_utf8_lossy(&xml)))
+        .unwrap_or_default();
+    let properties = fields::FieldDocumentProperties {
+        core: &core_properties,
+        custom: &custom_property_fields,
+        variables: &document_variables,
+        extended: &extended_properties,
+        file_size_bytes: None,
+    };
+    revisions::main_text_with_view(&doc_xml, view, Some(properties))
 }
 
 fn flatten(blocks: &[Block], out: &mut String) {
