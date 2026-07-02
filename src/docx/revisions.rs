@@ -9,8 +9,8 @@ use crate::annotation::{Revision, RevisionKind, RevisionView};
 use crate::text;
 
 use super::fields::{
-    computed_ask_result, computed_dynamic_result_with_bookmarks, computed_run_symbol_char,
-    computed_set_result,
+    computed_action_result, computed_ask_result, computed_display_result,
+    computed_dynamic_result_with_bookmarks, computed_run_symbol_char, computed_set_result,
 };
 use super::xml_text::{
     inline_marker_text, read_text, skip_alternate_content_branch, skip_subtree,
@@ -307,6 +307,8 @@ fn computed_revision_field_text(
         return Some(text);
     }
     computed_dynamic_result_with_bookmarks(instruction, field_bookmarks)
+        .or_else(|| computed_display_result(instruction))
+        .or_else(|| computed_action_result(instruction))
 }
 
 #[derive(Default)]
