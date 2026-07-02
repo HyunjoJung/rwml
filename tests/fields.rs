@@ -6200,6 +6200,27 @@ fn toc_heading_inline_break_docx() -> Vec<u8> {
     ])
 }
 
+fn toc_heading_hidden_result_markers_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Executive </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> SEQ Figure </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:tab/><w:br/><w:noBreakHyphen/><w:softHyphen/><w:t>stale hidden seq result</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:p><w:fldSimple w:instr=" TOC \o &quot;1-1&quot; "><w:r><w:t>stale outer toc</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn toc_heading_symbol_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -18786,6 +18807,30 @@ fn docx_toc_field_normalizes_inline_tabs_and_breaks_in_heading_text() {
     assert!(
         main_text.contains("Executive Summary Detail-Follow-up"),
         "{main_text:?}"
+    );
+}
+
+#[test]
+fn docx_toc_field_ignores_hidden_result_markers_in_heading_text() {
+    let doc = Document::open(&toc_heading_hidden_result_markers_docx()).expect("fixture opens");
+    let fields = doc.fields();
+    let field = fields
+        .iter()
+        .find(|field| field.result == "stale outer toc")
+        .expect("outer TOC field is recorded");
+
+    assert_eq!(field.kind, FieldKind::Toc);
+    assert_eq!(field.instruction, "TOC \\o \"1-1\"");
+    assert_eq!(field.computed_result.as_deref(), Some("Executive 1"));
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Executive 1"),
+        "resolved TOC should retain the visible heading text: {main_text:?}"
+    );
+    assert!(
+        !main_text.contains("stale hidden seq result") && !main_text.contains("stale outer toc"),
+        "resolved TOC should not display hidden cached result text: {main_text:?}"
     );
 }
 

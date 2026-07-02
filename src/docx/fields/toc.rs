@@ -272,9 +272,9 @@ fn read_toc_paragraph(
                             }
                         }
                     }
-                    b"tab" | b"br" | b"cr" => text.push(' '),
-                    b"noBreakHyphen" => text.push('-'),
-                    b"softHyphen" => text.push('\u{00ad}'),
+                    b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"softHyphen" => {
+                        push_toc_source_marker_text(&mut text, name, &current);
+                    }
                     b"bookmarkStart" => {
                         if let Some(name) = push_active_bookmark(active_bookmarks, &e) {
                             push_unique(&mut bookmarks, name);
@@ -345,9 +345,9 @@ fn read_toc_paragraph(
                             }
                         }
                     }
-                    b"tab" | b"br" | b"cr" => text.push(' '),
-                    b"noBreakHyphen" => text.push('-'),
-                    b"softHyphen" => text.push('\u{00ad}'),
+                    b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"softHyphen" => {
+                        push_toc_source_marker_text(&mut text, name, &current);
+                    }
                     b"bookmarkStart" => {
                         if let Some(name) = push_active_bookmark(active_bookmarks, &e) {
                             push_unique(&mut bookmarks, name);
@@ -539,9 +539,9 @@ fn read_toc_simple_field_result(
                             }
                         }
                     }
-                    b"tab" | b"br" | b"cr" => text.push(' '),
-                    b"noBreakHyphen" => text.push('-'),
-                    b"softHyphen" => text.push('\u{00ad}'),
+                    b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"softHyphen" => {
+                        push_toc_source_marker_text(&mut text, name, &current);
+                    }
                     b"bookmarkStart" => {
                         if let Some(name) = push_active_bookmark(active_bookmarks, &e) {
                             push_unique(bookmarks, name);
@@ -621,9 +621,9 @@ fn read_toc_simple_field_result(
                             }
                         }
                     }
-                    b"tab" | b"br" | b"cr" => text.push(' '),
-                    b"noBreakHyphen" => text.push('-'),
-                    b"softHyphen" => text.push('\u{00ad}'),
+                    b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"softHyphen" => {
+                        push_toc_source_marker_text(&mut text, name, &current);
+                    }
                     b"bookmarkStart" => {
                         if let Some(name) = push_active_bookmark(active_bookmarks, &e) {
                             push_unique(bookmarks, name);
@@ -676,6 +676,18 @@ fn toc_source_hidden_field_result(current: &[ComplexField]) -> bool {
             && (toc_entry_field_syntax(&field.instruction).is_some()
                 || seq_identifier_from_instruction(Some(&field.instruction)).is_some())
     })
+}
+
+fn push_toc_source_marker_text(text: &mut String, name: &[u8], current: &[ComplexField]) {
+    if toc_source_hidden_field_result(current) {
+        return;
+    }
+    match name {
+        b"tab" | b"br" | b"cr" => text.push(' '),
+        b"noBreakHyphen" => text.push('-'),
+        b"softHyphen" => text.push('\u{00ad}'),
+        _ => {}
+    }
 }
 
 fn toc_symbol_char(e: &BytesStart<'_>) -> Option<char> {
