@@ -1635,7 +1635,11 @@ fn append_floating_anchor_empty(out: &mut String, e: &BytesStart<'_>, name: &[u8
 
 fn computed_floating_anchor_simple_field_text(e: &BytesStart<'_>) -> Option<String> {
     let instruction = attr_local_trimmed(e, b"instr")?;
-    fields::computed_quote_result(&instruction)
+    computed_floating_anchor_field_text(&instruction)
+}
+
+fn computed_floating_anchor_field_text(instruction: &str) -> Option<String> {
+    fields::computed_dynamic_result_with_bookmarks(instruction, &HashMap::new())
 }
 
 #[derive(Default)]
@@ -1669,7 +1673,7 @@ impl FloatingAnchorComplexField {
                     && self.phase == Some(FloatingAnchorComplexFieldPhase::Instruction) =>
             {
                 self.phase = Some(FloatingAnchorComplexFieldPhase::Result);
-                self.computed_result = fields::computed_quote_result(&self.instruction);
+                self.computed_result = computed_floating_anchor_field_text(&self.instruction);
                 self.computed_result.clone()
             }
             Some("end") => {
