@@ -402,7 +402,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     note_part.fields.extend(endnote_part.fields);
     extend_missing_comment_anchors(&mut note_part.comment_anchors, endnote_part.comment_anchors);
     attach_note_reference_anchors(&mut note_part.records, &doc_xml);
-    let mut floating_shapes = read_floating_shapes(&doc_xml);
+    let mut floating_shapes = read_floating_shapes(&doc_xml, field_properties);
     floating_shapes.extend(note_part.floating_shapes);
     let mut text_boxes = read_text_boxes(&doc_xml, &ctx, &floating_shapes);
     text_boxes.extend(note_part.text_boxes);
@@ -907,7 +907,16 @@ fn read_hf_parts(
             revisions.extend(revisions::parse(&xml));
         }
         if seen_floating_shapes.insert((path.clone(), type_name.to_string())) {
-            floating_shapes.extend(read_floating_shapes(&xml));
+            floating_shapes.extend(read_floating_shapes(
+                &xml,
+                fields::FieldDocumentProperties {
+                    core: properties.core,
+                    custom: properties.custom,
+                    variables: properties.variables,
+                    extended: properties.extended,
+                    file_size_bytes: properties.file_size_bytes,
+                },
+            ));
         }
         if seen_fields.insert((path.clone(), type_name.to_string())) {
             field_entries.extend(fields::parse(
@@ -1080,7 +1089,16 @@ fn read_notes(
     let mut records = Vec::new();
     let comment_anchors = comments::parse_anchors(&xml);
     let revisions = revisions::parse(&xml);
-    let floating_shapes = read_floating_shapes(&xml);
+    let floating_shapes = read_floating_shapes(
+        &xml,
+        fields::FieldDocumentProperties {
+            core: properties.core,
+            custom: properties.custom,
+            variables: properties.variables,
+            extended: properties.extended,
+            file_size_bytes: properties.file_size_bytes,
+        },
+    );
     let text_box_id_prefix = format!("{name}-text-box");
     let text_boxes = read_text_boxes_with_prefix(&xml, &ctx, &floating_shapes, &text_box_id_prefix);
     let fields = fields::parse(
@@ -1193,7 +1211,10 @@ fn text_anchor_from_shape(shape: &FloatingShape) -> Option<TextAnchor> {
     })
 }
 
-fn read_floating_shapes(doc_xml: &str) -> Vec<FloatingShape> {
+fn read_floating_shapes(
+    doc_xml: &str,
+    properties: fields::FieldDocumentProperties<'_>,
+) -> Vec<FloatingShape> {
     let mut r = Reader::from_str(doc_xml);
     let mut shapes = Vec::new();
     let mut scan_depth = 0usize;
@@ -1268,6 +1289,7 @@ fn read_floating_shapes(doc_xml: &str) -> Vec<FloatingShape> {
                         &e,
                         index,
                         current_body_block_index,
+                        properties,
                     ));
                     if current_body_block_index.is_some() {
                         current_body_block_shapes.push(FloatingShapeAnchorCandidate {
@@ -1470,6 +1492,7 @@ fn read_floating_shape(
     start: &BytesStart<'_>,
     index: usize,
     anchor_block_index: Option<usize>,
+    properties: fields::FieldDocumentProperties<'_>,
 ) -> FloatingShape {
     let mut shape = floating_shape_shell(index, start, anchor_block_index);
     let mut text_box_depth = 0usize;
@@ -1485,7 +1508,7 @@ fn read_floating_shape(
                     match name {
                         b"t" => append_shape_text(&mut shape_text, &read_text(r)),
                         b"fldSimple" => {
-                            if append_shape_simple_field(&mut shape_text, &e) {
+                            if append_shape_simple_field(&mut shape_text, &e, properties) {
                                 skip_subtree(r);
                             } else {
                                 text_box_depth += 1;
@@ -1520,7 +1543,9 @@ fn read_floating_shape(
                 let qname = e.name();
                 let name = local(qname.as_ref());
                 if text_box_depth > 0 {
-                    if name != b"fldSimple" || !append_shape_simple_field(&mut shape_text, &e) {
+                    if name != b"fldSimple"
+                        || !append_shape_simple_field(&mut shape_text, &e, properties)
+                    {
                         append_shape_empty(&mut shape_text, &e, name);
                     }
                     continue;
@@ -1637,12 +1662,26 @@ fn append_shape_symbol(out: &mut String, e: &BytesStart<'_>) {
     }
 }
 
-fn append_shape_simple_field(out: &mut String, e: &BytesStart<'_>) -> bool {
+fn append_shape_simple_field(
+    out: &mut String,
+    e: &BytesStart<'_>,
+    properties: fields::FieldDocumentProperties<'_>,
+) -> bool {
     let Some(instruction) = attr_local(e, b"instr") else {
         return false;
     };
     let field_bookmarks = HashMap::new();
     let Some(text) = fields::computed_dynamic_result_with_bookmarks(&instruction, &field_bookmarks)
+        .or_else(|| {
+            fields::computed_document_info_result(
+                &instruction,
+                properties.core,
+                properties.custom,
+                properties.variables,
+                properties.extended,
+                properties.file_size_bytes,
+            )
+        })
         .or_else(|| fields::computed_display_result(&instruction))
         .or_else(|| fields::computed_action_result(&instruction))
         .or_else(|| fields::computed_reference_index_result(&instruction))
