@@ -2430,6 +2430,18 @@ fn read_floating_shape(
                             }
                             skip_subtree(r);
                         }
+                        b"tab" | b"br" | b"cr" | b"noBreakHyphen" | b"softHyphen" => {
+                            if let Some(text) = shape_empty_text(&e, name) {
+                                if shape_field_cursor.append_simple_text_form_result_text(&text) {
+                                    skip_subtree(r);
+                                    continue;
+                                }
+                            }
+                            if !shape_field_cursor.suppresses_complex_result() {
+                                append_shape_empty(&mut shape_text, &e, name);
+                            }
+                            skip_subtree(r);
+                        }
                         _ => text_box_depth += 1,
                     }
                     continue;
