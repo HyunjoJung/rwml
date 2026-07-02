@@ -277,25 +277,31 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         extended: &extended_properties,
         file_size_bytes: Some(bytes.len()),
     };
-    let ref_targets = fields::ref_targets_with_properties(
-        &doc_xml,
-        fields::FieldDocumentProperties {
-            core: document_properties.core,
-            custom: document_properties.custom,
-            variables: document_properties.variables,
-            extended: document_properties.extended,
-            file_size_bytes: document_properties.file_size_bytes,
-        },
-    );
+    let field_properties = fields::FieldDocumentProperties {
+        core: document_properties.core,
+        custom: document_properties.custom,
+        variables: document_properties.variables,
+        extended: document_properties.extended,
+        file_size_bytes: document_properties.file_size_bytes,
+    };
+    let ref_targets = fields::ref_targets_with_properties(&doc_xml, field_properties);
     let ref_position_context = fields::ref_position_context(&doc_xml, &numbering);
     let ref_number_context = fields::ref_number_context(&doc_xml, &numbering);
     let page_ref_context = fields::page_ref_context(&doc_xml, &ref_targets);
     let note_ref_context = fields::note_ref_context(&doc_xml, &ref_targets);
     let section_context = fields::section_context(&doc_xml, &ref_targets);
-    let style_ref_context = fields::style_ref_context(&doc_xml, &styles, &numbering, &ref_targets);
+    let style_ref_context = fields::style_ref_context_with_properties(
+        &doc_xml,
+        &styles,
+        &numbering,
+        &ref_targets,
+        field_properties,
+    );
     let legacy_form_context = fields::legacy_form_context(&doc_xml, preserve_legacy_form_cache);
-    let table_formula_context = fields::table_formula_context(&doc_xml, &ref_targets);
-    let toc_entries = fields::toc_entries(&doc_xml, &styles, &ref_targets);
+    let table_formula_context =
+        fields::table_formula_context_with_properties(&doc_xml, &ref_targets, field_properties);
+    let toc_entries =
+        fields::toc_entries_with_properties(&doc_xml, &styles, &ref_targets, field_properties);
     let bookmark_names = fields::bookmark_names(&doc_xml);
 
     let ctx = body::Ctx {
@@ -809,7 +815,18 @@ fn read_hf_parts(
         let style_ref_context = fields::StyleRefContext::empty();
         let legacy_form_context = fields::legacy_form_context(&xml, preserve_legacy_form_cache);
         let table_formula_context = fields::TableFormulaContext::empty();
-        let toc_entries = fields::toc_entries(&xml, styles, &ref_targets);
+        let toc_entries = fields::toc_entries_with_properties(
+            &xml,
+            styles,
+            &ref_targets,
+            fields::FieldDocumentProperties {
+                core: properties.core,
+                custom: properties.custom,
+                variables: properties.variables,
+                extended: properties.extended,
+                file_size_bytes: properties.file_size_bytes,
+            },
+        );
         let bookmark_names = fields::bookmark_names(&xml);
         let hf_ctx = body::Ctx {
             styles,
@@ -980,7 +997,18 @@ fn read_notes(
     let style_ref_context = fields::StyleRefContext::empty();
     let legacy_form_context = fields::legacy_form_context(&xml, preserve_legacy_form_cache);
     let table_formula_context = fields::TableFormulaContext::empty();
-    let toc_entries = fields::toc_entries(&xml, styles, &ref_targets);
+    let toc_entries = fields::toc_entries_with_properties(
+        &xml,
+        styles,
+        &ref_targets,
+        fields::FieldDocumentProperties {
+            core: properties.core,
+            custom: properties.custom,
+            variables: properties.variables,
+            extended: properties.extended,
+            file_size_bytes: properties.file_size_bytes,
+        },
+    );
     let bookmark_names = fields::bookmark_names(&xml);
     let ctx = body::Ctx {
         styles,

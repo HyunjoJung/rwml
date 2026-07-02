@@ -25,10 +25,33 @@ pub(crate) enum TocEntrySource {
     SequenceField,
 }
 
+#[cfg(test)]
 pub(crate) fn toc_entries(
     xml: &str,
     styles: &Styles,
     ref_targets: &HashMap<String, String>,
+) -> Vec<TocEntry> {
+    let core_properties = CoreProperties::default();
+    let empty_properties = HashMap::new();
+    toc_entries_with_properties(
+        xml,
+        styles,
+        ref_targets,
+        FieldDocumentProperties {
+            core: &core_properties,
+            custom: &empty_properties,
+            variables: &empty_properties,
+            extended: &empty_properties,
+            file_size_bytes: None,
+        },
+    )
+}
+
+pub(crate) fn toc_entries_with_properties(
+    xml: &str,
+    styles: &Styles,
+    ref_targets: &HashMap<String, String>,
+    properties: FieldDocumentProperties<'_>,
 ) -> Vec<TocEntry> {
     let mut r = Reader::from_str(xml);
     let mut entries = Vec::new();
@@ -71,6 +94,7 @@ pub(crate) fn toc_entries(
                             &mut field_bookmarks,
                             &mut entries,
                             ref_targets,
+                            properties,
                         );
                         consumed_element = true;
                     }
@@ -127,6 +151,7 @@ fn read_toc_paragraph(
     field_bookmarks: &mut HashMap<String, String>,
     entries: &mut Vec<TocEntry>,
     ref_targets: &HashMap<String, String>,
+    properties: FieldDocumentProperties<'_>,
 ) {
     let mut style_id: Option<String> = None;
     let mut outline: Option<u8> = None;
@@ -189,6 +214,7 @@ fn read_toc_paragraph(
                                 field_bookmarks,
                                 entries,
                                 ref_targets,
+                                properties,
                             ));
                             consumed_element = true;
                         }
@@ -207,6 +233,7 @@ fn read_toc_paragraph(
                             &mut text,
                             entries,
                             ref_targets,
+                            properties,
                         );
                     }
                     b"instrText" => {
@@ -271,6 +298,7 @@ fn read_toc_paragraph(
                                 autonum_counter,
                                 listnum_counter,
                                 field_bookmarks,
+                                properties,
                             ) {
                                 text.push_str(&computed);
                             }
@@ -290,6 +318,7 @@ fn read_toc_paragraph(
                             &mut text,
                             entries,
                             ref_targets,
+                            properties,
                         );
                     }
                     b"sym" => {
@@ -385,6 +414,7 @@ fn read_toc_simple_field_result(
     field_bookmarks: &mut HashMap<String, String>,
     entries: &mut Vec<TocEntry>,
     ref_targets: &HashMap<String, String>,
+    properties: FieldDocumentProperties<'_>,
 ) -> String {
     let mut text = String::new();
     let mut current = Vec::new();
@@ -441,6 +471,7 @@ fn read_toc_simple_field_result(
                                 field_bookmarks,
                                 entries,
                                 ref_targets,
+                                properties,
                             ));
                         }
                         consumed_element = true;
@@ -459,6 +490,7 @@ fn read_toc_simple_field_result(
                             &mut text,
                             entries,
                             ref_targets,
+                            properties,
                         );
                     }
                     b"instrText" => {
@@ -531,6 +563,7 @@ fn read_toc_simple_field_result(
                                 autonum_counter,
                                 listnum_counter,
                                 field_bookmarks,
+                                properties,
                             ) {
                                 text.push_str(&computed);
                             }
@@ -550,6 +583,7 @@ fn read_toc_simple_field_result(
                             &mut text,
                             entries,
                             ref_targets,
+                            properties,
                         );
                     }
                     b"sym" => {
@@ -599,6 +633,7 @@ fn read_toc_simple_field_result(
         autonum_counter,
         listnum_counter,
         field_bookmarks,
+        properties,
     )
     .unwrap_or(text)
 }
@@ -630,6 +665,7 @@ fn apply_toc_fld_char(
     text: &mut String,
     entries: &mut Vec<TocEntry>,
     ref_targets: &HashMap<String, String>,
+    properties: FieldDocumentProperties<'_>,
 ) {
     // Track where each complex field's result text begins in `text`, so a
     // deterministic source-field result can overwrite the leaked cached runs on
@@ -666,6 +702,7 @@ fn apply_toc_fld_char(
             autonum_counter,
             listnum_counter,
             field_bookmarks,
+            properties,
         );
     });
     if fld_type.as_deref() == Some("end") {
@@ -751,6 +788,7 @@ fn computed_toc_source_field_result(
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
+    properties: FieldDocumentProperties<'_>,
 ) -> Option<String> {
     let instruction = normalize_instruction(instruction?);
     if is_tc_instruction(&instruction)
@@ -795,6 +833,16 @@ fn computed_toc_source_field_result(
         })
         .or_else(|| computed_display_result(&instruction))
         .or_else(|| computed_action_result(&instruction))
+        .or_else(|| {
+            computed_document_info_result(
+                &instruction,
+                properties.core,
+                properties.custom,
+                properties.variables,
+                properties.extended,
+                properties.file_size_bytes,
+            )
+        })
         .or_else(|| computed_reference_index_result(&instruction))
 }
 

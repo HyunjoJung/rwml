@@ -16,14 +16,14 @@ use super::reference::{
 };
 use super::{
     apply_complex_field_scan_fld_char, apply_field_text_format, computed_action_result,
-    computed_ask_result, computed_display_result, computed_fill_in_result,
-    computed_formula_result_with_bookmark_context,
+    computed_ask_result, computed_display_result, computed_document_info_result,
+    computed_fill_in_result, computed_formula_result_with_bookmark_context,
     computed_if_compare_result_with_bookmark_context, computed_listnum_result,
     computed_merge_control_result_with_bookmark_context, computed_numbering_result,
     computed_quote_result, computed_reference_index_result, computed_run_symbol_char,
     computed_sequence_result, computed_set_result, computed_toc_entry_result, inline_marker_text,
     normalize_instruction, should_skip_alternate_branch, skip_element, AlternateContentBranchState,
-    ComplexField, FieldPhase,
+    ComplexField, FieldDocumentProperties, FieldPhase,
 };
 
 type Xml<'a> = Reader<&'a [u8]>;
@@ -43,9 +43,30 @@ impl TableFormulaContext {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn table_formula_context(
     xml: &str,
     document_bookmarks: &HashMap<String, String>,
+) -> TableFormulaContext {
+    let core_properties = crate::CoreProperties::default();
+    let empty_properties = HashMap::new();
+    table_formula_context_with_properties(
+        xml,
+        document_bookmarks,
+        FieldDocumentProperties {
+            core: &core_properties,
+            custom: &empty_properties,
+            variables: &empty_properties,
+            extended: &empty_properties,
+            file_size_bytes: None,
+        },
+    )
+}
+
+pub(crate) fn table_formula_context_with_properties(
+    xml: &str,
+    document_bookmarks: &HashMap<String, String>,
+    properties: FieldDocumentProperties<'_>,
 ) -> TableFormulaContext {
     let mut r = Reader::from_str(xml);
     let mut results = Vec::new();
@@ -85,6 +106,7 @@ pub(crate) fn table_formula_context(
                             &mut autonum_counter,
                             &mut listnum_counter,
                             &mut field_bookmarks,
+                            properties,
                         ));
                         consumed_element = true;
                     }
@@ -103,6 +125,7 @@ pub(crate) fn table_formula_context(
                                 &mut autonum_counter,
                                 &mut listnum_counter,
                                 &mut field_bookmarks,
+                                properties,
                             )
                             .unwrap_or(result_text);
                         }
@@ -117,6 +140,7 @@ pub(crate) fn table_formula_context(
                             &mut autonum_counter,
                             &mut listnum_counter,
                             &mut field_bookmarks,
+                            properties,
                             |_, _| results.push(None),
                         );
                     }
@@ -155,6 +179,7 @@ pub(crate) fn table_formula_context(
                                 &mut autonum_counter,
                                 &mut listnum_counter,
                                 &mut field_bookmarks,
+                                properties,
                             );
                         }
                     }
@@ -167,6 +192,7 @@ pub(crate) fn table_formula_context(
                             &mut autonum_counter,
                             &mut listnum_counter,
                             &mut field_bookmarks,
+                            properties,
                             |_, _| results.push(None),
                         );
                     }
@@ -213,6 +239,7 @@ fn read_table_formula_table(
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
+    properties: FieldDocumentProperties<'_>,
 ) -> Vec<Option<String>> {
     let mut rows = Vec::new();
     let mut records = Vec::new();
@@ -252,6 +279,7 @@ fn read_table_formula_table(
                             autonum_counter,
                             listnum_counter,
                             field_bookmarks,
+                            properties,
                         );
                         for cell in &mut row {
                             records.append(&mut cell.records);
@@ -339,6 +367,7 @@ fn read_table_formula_row(
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
+    properties: FieldDocumentProperties<'_>,
 ) -> Vec<TableFormulaCell> {
     let mut row: Vec<TableFormulaCell> = Vec::new();
     let mut is_header_row = false;
@@ -385,6 +414,7 @@ fn read_table_formula_row(
                             autonum_counter,
                             listnum_counter,
                             field_bookmarks,
+                            properties,
                         );
                         cell.is_header_row = is_header_row;
                         row.push(cell);
@@ -512,6 +542,7 @@ fn read_table_formula_cell(
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
+    properties: FieldDocumentProperties<'_>,
 ) -> TableFormulaCell {
     let mut cell = TableFormulaCell::default();
     let mut current = Vec::new();
@@ -550,6 +581,7 @@ fn read_table_formula_cell(
                             autonum_counter,
                             listnum_counter,
                             field_bookmarks,
+                            properties,
                         ) {
                             cell.records.push(TableFormulaRecord::Nested(result));
                         }
@@ -575,6 +607,7 @@ fn read_table_formula_cell(
                                 autonum_counter,
                                 listnum_counter,
                                 field_bookmarks,
+                                properties,
                             )
                         };
                         if is_local_formula && current.is_empty() {
@@ -596,6 +629,7 @@ fn read_table_formula_cell(
                                 autonum_counter,
                                 listnum_counter,
                                 field_bookmarks,
+                                properties,
                             )
                             .unwrap_or(result_text)
                         };
@@ -614,6 +648,7 @@ fn read_table_formula_cell(
                             autonum_counter,
                             listnum_counter,
                             field_bookmarks,
+                            properties,
                         );
                     }
                     b"instrText" => {
@@ -668,6 +703,7 @@ fn read_table_formula_cell(
                                 autonum_counter,
                                 listnum_counter,
                                 field_bookmarks,
+                                properties,
                             )
                             .unwrap_or_default();
                             append_table_formula_cell_text(&mut cell.text, &mut current, &text);
@@ -685,6 +721,7 @@ fn read_table_formula_cell(
                             autonum_counter,
                             listnum_counter,
                             field_bookmarks,
+                            properties,
                         );
                     }
                     _ => {
@@ -796,6 +833,7 @@ fn read_table_formula_source_field_result_text(
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
+    properties: FieldDocumentProperties<'_>,
 ) -> String {
     read_field_result_text_with_nested_fields(r, |instruction, _| {
         let instruction = normalize_instruction(instruction);
@@ -806,6 +844,7 @@ fn read_table_formula_source_field_result_text(
             autonum_counter,
             listnum_counter,
             field_bookmarks,
+            properties,
         )
     })
 }
@@ -996,6 +1035,7 @@ fn apply_table_formula_cell_fld_char(
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
+    properties: FieldDocumentProperties<'_>,
 ) {
     match field_char_type(e).as_deref() {
         Some("begin") => current.push(ComplexField {
@@ -1034,6 +1074,7 @@ fn apply_table_formula_cell_fld_char(
                     autonum_counter,
                     listnum_counter,
                     field_bookmarks,
+                    properties,
                 )
                 .unwrap_or(field.result)
             };
@@ -1074,6 +1115,7 @@ fn computed_table_formula_source_field_result(
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
+    properties: FieldDocumentProperties<'_>,
 ) -> Option<String> {
     let instruction = instruction?;
     match FieldKind::from_instruction(instruction) {
@@ -1116,6 +1158,16 @@ fn computed_table_formula_source_field_result(
         })
         .or_else(|| computed_display_result(instruction))
         .or_else(|| computed_action_result(instruction))
+        .or_else(|| {
+            computed_document_info_result(
+                instruction,
+                properties.core,
+                properties.custom,
+                properties.variables,
+                properties.extended,
+                properties.file_size_bytes,
+            )
+        })
         .or_else(|| computed_reference_index_result(instruction))
 }
 
@@ -1172,6 +1224,7 @@ fn apply_table_formula_scan_fld_char(
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
+    properties: FieldDocumentProperties<'_>,
     mut record: impl FnMut(&str, &str),
 ) {
     apply_complex_field_scan_fld_char(e, current, |field| {
@@ -1186,6 +1239,7 @@ fn apply_table_formula_scan_fld_char(
                 autonum_counter,
                 listnum_counter,
                 field_bookmarks,
+                properties,
             )
             .unwrap_or(field.result);
         }

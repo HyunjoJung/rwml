@@ -105,13 +105,17 @@ pub(crate) use self::section::{
 use self::style_ref::style_ref_instruction;
 #[allow(unused_imports)]
 pub(crate) use self::style_ref::{
-    computed_style_ref_result, is_style_ref_field_instruction, style_ref_context,
+    computed_style_ref_result, is_style_ref_field_instruction, style_ref_context_with_properties,
     supports_style_ref_field_syntax, StyleRefContext, StyleRefFieldPosition,
 };
-pub(crate) use self::table_formula::{table_formula_context, TableFormulaContext};
+#[cfg(test)]
+use self::table_formula::table_formula_context;
+pub(crate) use self::table_formula::{table_formula_context_with_properties, TableFormulaContext};
+#[cfg(test)]
+use self::toc::toc_entries;
 pub(crate) use self::toc::{
-    computed_toc_entry_result, computed_toc_result, supports_toc_entry_field_syntax, toc_entries,
-    TocEntry,
+    computed_toc_entry_result, computed_toc_result, supports_toc_entry_field_syntax,
+    toc_entries_with_properties, TocEntry,
 };
 #[cfg(test)]
 use self::toc::{seq_identifier_from_instruction, toc_spec, TocEntrySource};
@@ -144,9 +148,10 @@ pub(crate) fn parse(
     let page_refs = page_ref_context(xml, &bookmarks);
     let note_refs = note_ref_context(xml, &bookmarks);
     let sections = section_context(xml, &bookmarks);
-    let style_refs = style_ref_context(xml, styles, numbering, &bookmarks);
+    let style_refs =
+        style_ref_context_with_properties(xml, styles, numbering, &bookmarks, properties);
     let legacy_forms = legacy_form_context(xml, preserve_legacy_form_cache);
-    let table_formulas = table_formula_context(xml, &bookmarks);
+    let table_formulas = table_formula_context_with_properties(xml, &bookmarks, properties);
     let sequence_headings = sequence_heading_context(xml, styles);
     let mut r = Reader::from_str(xml);
     let mut fields = Vec::new();

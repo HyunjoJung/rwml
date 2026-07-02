@@ -1447,6 +1447,27 @@ fn formula_table_source_field_document_bookmark_docx() -> Vec<u8> {
     ])
 }
 
+fn formula_table_source_field_document_info_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rIdCore" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>"#,
+        ),
+        (
+            "docProps/core.xml",
+            r#"<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"><cp:version>123</cp:version></cp:coreProperties>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:tc><w:p><w:fldSimple w:instr=" VERSION "><w:r><w:t>999</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(LEFT) "><w:r><w:t>stale document-info source sum</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn formula_table_source_field_ref_bookmark_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -2717,6 +2738,31 @@ fn style_ref_source_document_bookmark_operand_docx() -> Vec<u8> {
         (
             "word/document.xml",
             r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="InvoiceSubtotal"/><w:r><w:t>40</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Total </w:t></w:r><w:fldSimple w:instr=" = InvoiceSubtotal + 8 "><w:r><w:t>stale bookmark style formula</w:t></w:r></w:fldSimple><w:r><w:t> due</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;heading 1&quot; "><w:r><w:t>stale bookmark style source</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;heading 1&quot; \* Upper "><w:r><w:t>stale upper bookmark style source</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn style_ref_source_document_info_field_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rIdCore" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>"#,
+        ),
+        (
+            "docProps/core.xml",
+            r#"<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Quarter Plan</dc:title></cp:coreProperties>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Topic </w:t></w:r><w:fldSimple w:instr=" TITLE "><w:r><w:t>stale style title</w:t></w:r></w:fldSimple><w:r><w:t> Scope</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;heading 1&quot; "><w:r><w:t>stale document-info style source</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;heading 1&quot; \* Upper "><w:r><w:t>stale upper document-info style source</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -5530,6 +5576,31 @@ fn toc_heading_ref_field_source_docx() -> Vec<u8> {
         (
             "word/document.xml",
             r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="1" w:name="ChapTitle"/><w:r><w:t>Live Chapter</w:t></w:r><w:bookmarkEnd w:id="1"/></w:p><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Section </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> REF ChapTitle </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale ref</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:p><w:fldSimple w:instr=" TOC \o &quot;1-1&quot; "><w:r><w:t>stale toc</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn toc_heading_document_info_field_source_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rIdCore" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>"#,
+        ),
+        (
+            "docProps/core.xml",
+            r#"<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Quarter Plan</dc:title></cp:coreProperties>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Topic </w:t></w:r><w:fldSimple w:instr=" TITLE "><w:r><w:t>stale toc title</w:t></w:r></w:fldSimple><w:r><w:t> Review</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" TOC \o &quot;1-1&quot; "><w:r><w:t>stale document-info toc source</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -10290,6 +10361,41 @@ fn docx_table_formula_source_field_resolves_document_bookmark_operands() {
 }
 
 #[test]
+fn docx_table_formula_source_field_uses_computed_document_info_results() {
+    let doc =
+        Document::open(&formula_table_source_field_document_info_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let source = fields
+        .iter()
+        .find(|field| field.instruction == "VERSION")
+        .expect("document-info source field is recorded");
+    assert_eq!(source.kind, FieldKind::DocumentInfo("VERSION".to_string()));
+    assert_eq!(source.result, "999");
+    assert_eq!(source.computed_result.as_deref(), Some("123"));
+
+    let formula = fields
+        .iter()
+        .find(|field| field.instruction == r#"= SUM(LEFT)"#)
+        .expect("formula field is recorded");
+    assert_eq!(formula.kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(formula.result, "stale document-info source sum");
+    assert_eq!(formula.computed_result.as_deref(), Some("123"));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("123\t123")
+            && !main_text.contains("999")
+            && !main_text.contains("stale document-info source sum"),
+        "table formula source text should use computed document-info source field output: {main_text:?}"
+    );
+}
+
+#[test]
 fn docx_table_formula_source_field_resolves_ref_bookmark_sources() {
     let doc =
         Document::open(&formula_table_source_field_ref_bookmark_docx()).expect("fixture opens");
@@ -14260,6 +14366,54 @@ fn docx_style_ref_source_text_resolves_document_bookmark_operands() {
 }
 
 #[test]
+fn docx_style_ref_source_text_uses_computed_document_info_results() {
+    let doc = Document::open(&style_ref_source_document_info_field_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let source = fields
+        .iter()
+        .find(|field| field.instruction == "TITLE")
+        .expect("document-info source field is recorded");
+    assert_eq!(source.kind, FieldKind::DocumentInfo("TITLE".to_string()));
+    assert_eq!(source.result, "stale style title");
+    assert_eq!(source.computed_result.as_deref(), Some("Quarter Plan"));
+
+    let style_ref_fields = fields
+        .iter()
+        .filter(|field| field.kind == FieldKind::DocumentStructure("STYLEREF".to_string()))
+        .collect::<Vec<_>>();
+
+    assert_eq!(style_ref_fields.len(), 2);
+    assert_eq!(style_ref_fields[0].instruction, "STYLEREF \"heading 1\"");
+    assert_eq!(
+        style_ref_fields[0].computed_result.as_deref(),
+        Some("Topic Quarter Plan Scope")
+    );
+    assert_eq!(
+        style_ref_fields[1].instruction,
+        "STYLEREF \"heading 1\" \\* Upper"
+    );
+    assert_eq!(
+        style_ref_fields[1].computed_result.as_deref(),
+        Some("TOPIC QUARTER PLAN SCOPE")
+    );
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Topic Quarter Plan Scope")
+            && main_text.contains("TOPIC QUARTER PLAN SCOPE")
+            && !main_text.contains("stale style title")
+            && !main_text.contains("stale document-info style source")
+            && !main_text.contains("stale upper document-info style source"),
+        "STYLEREF source context should use computed document-info field output: {main_text:?}"
+    );
+}
+
+#[test]
 fn docx_style_ref_source_text_resolves_ref_bookmark_fields() {
     let doc = Document::open(&style_ref_source_ref_bookmark_field_docx()).expect("fixture opens");
     let fields = doc.fields();
@@ -17025,6 +17179,38 @@ fn docx_toc_heading_source_text_uses_computed_ref_field_results() {
     assert!(
         main_text.contains("Section Live Chapter") && !main_text.contains("stale ref"),
         "TOC source text should use the computed REF bookmark text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_toc_heading_source_text_uses_computed_document_info_results() {
+    let doc =
+        Document::open(&toc_heading_document_info_field_source_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::DocumentInfo("TITLE".to_string()));
+    assert_eq!(fields[0].instruction, "TITLE");
+    assert_eq!(fields[0].result, "stale toc title");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("Quarter Plan"));
+    assert_eq!(fields[1].kind, FieldKind::Toc);
+    assert_eq!(fields[1].instruction, "TOC \\o \"1-1\"");
+    assert_eq!(fields[1].result, "stale document-info toc source");
+    assert_eq!(
+        fields[1].computed_result.as_deref(),
+        Some("Topic Quarter Plan Review")
+    );
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Topic Quarter Plan Review")
+            && !main_text.contains("stale toc title")
+            && !main_text.contains("stale document-info toc source"),
+        "TOC source text should use computed document-info field output: {main_text:?}"
     );
 }
 

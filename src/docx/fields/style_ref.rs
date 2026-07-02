@@ -69,11 +69,37 @@ struct StyleRefParagraphNumber {
     full_context: Option<String>,
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 pub(crate) fn style_ref_context(
     xml: &str,
     styles: &Styles,
     numbering: &Numbering,
     document_bookmarks: &HashMap<String, String>,
+) -> StyleRefContext {
+    let core_properties = CoreProperties::default();
+    let empty_properties = HashMap::new();
+    style_ref_context_with_properties(
+        xml,
+        styles,
+        numbering,
+        document_bookmarks,
+        FieldDocumentProperties {
+            core: &core_properties,
+            custom: &empty_properties,
+            variables: &empty_properties,
+            extended: &empty_properties,
+            file_size_bytes: None,
+        },
+    )
+}
+
+pub(crate) fn style_ref_context_with_properties(
+    xml: &str,
+    styles: &Styles,
+    numbering: &Numbering,
+    document_bookmarks: &HashMap<String, String>,
+    properties: FieldDocumentProperties<'_>,
 ) -> StyleRefContext {
     let mut r = Reader::from_str(xml);
     let mut entries = Vec::new();
@@ -121,6 +147,7 @@ pub(crate) fn style_ref_context(
                             &mut autonum_counter,
                             &mut listnum_counter,
                             &mut field_bookmarks,
+                            properties,
                         );
                         consumed_element = true;
                     }
@@ -168,6 +195,7 @@ fn read_style_ref_paragraph(
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
+    properties: FieldDocumentProperties<'_>,
 ) {
     let mut style_id = None;
     let mut num_id = None;
@@ -225,6 +253,7 @@ fn read_style_ref_paragraph(
                                 autonum_counter,
                                 listnum_counter,
                                 field_bookmarks,
+                                properties,
                             },
                         );
                         consumed_element = true;
@@ -263,6 +292,7 @@ fn read_style_ref_paragraph(
                                 autonum_counter,
                                 listnum_counter,
                                 field_bookmarks,
+                                properties,
                             ));
                         }
                         consumed_element = true;
@@ -328,6 +358,7 @@ fn read_style_ref_paragraph(
                                 autonum_counter,
                                 listnum_counter,
                                 field_bookmarks,
+                                properties,
                             ) {
                                 text.push_str(&computed);
                             }
@@ -394,6 +425,7 @@ struct StyleRefRunScan<'a> {
     autonum_counter: &'a mut i64,
     listnum_counter: &'a mut i64,
     field_bookmarks: &'a mut HashMap<String, String>,
+    properties: FieldDocumentProperties<'a>,
 }
 
 fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
@@ -410,6 +442,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
         autonum_counter,
         listnum_counter,
         field_bookmarks,
+        properties,
     } = scan;
     let mut run_style_id = None;
     let mut run_text = String::new();
@@ -453,6 +486,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
                             autonum_counter,
                             listnum_counter,
                             field_bookmarks,
+                            properties,
                         );
                     }
                     b"instrText" => {
@@ -519,6 +553,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
                             autonum_counter,
                             listnum_counter,
                             field_bookmarks,
+                            properties,
                         );
                     }
                     b"sym" => {
@@ -587,6 +622,7 @@ fn read_style_ref_simple_field_result(
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
+    properties: FieldDocumentProperties<'_>,
 ) -> String {
     let mut text = String::new();
     let mut current = Vec::new();
@@ -631,6 +667,7 @@ fn read_style_ref_simple_field_result(
                                 autonum_counter,
                                 listnum_counter,
                                 field_bookmarks,
+                                properties,
                             },
                         );
                         consumed_element = true;
@@ -658,6 +695,7 @@ fn read_style_ref_simple_field_result(
                             autonum_counter,
                             listnum_counter,
                             field_bookmarks,
+                            properties,
                         ));
                         consumed_element = true;
                     }
@@ -706,6 +744,7 @@ fn read_style_ref_simple_field_result(
                             autonum_counter,
                             listnum_counter,
                             field_bookmarks,
+                            properties,
                         ) {
                             text.push_str(&computed);
                         }
@@ -745,6 +784,7 @@ fn read_style_ref_simple_field_result(
         autonum_counter,
         listnum_counter,
         field_bookmarks,
+        properties,
     ) {
         let cached_text = normalize_toc_text(&text);
         replace_style_ref_source_entries_with_computed(
@@ -846,6 +886,7 @@ fn computed_style_ref_source_field_result(
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
+    properties: FieldDocumentProperties<'_>,
 ) -> Option<String> {
     let instruction = normalize_instruction(instruction?);
     if is_style_ref_field_instruction(&instruction) {
@@ -889,6 +930,16 @@ fn computed_style_ref_source_field_result(
         })
         .or_else(|| computed_display_result(&instruction))
         .or_else(|| computed_action_result(&instruction))
+        .or_else(|| {
+            computed_document_info_result(
+                &instruction,
+                properties.core,
+                properties.custom,
+                properties.variables,
+                properties.extended,
+                properties.file_size_bytes,
+            )
+        })
         .or_else(|| computed_reference_index_result(&instruction))
 }
 
@@ -1031,6 +1082,7 @@ fn apply_style_ref_scan_fld_char(
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
+    properties: FieldDocumentProperties<'_>,
 ) {
     match field_char_type(e).as_deref() {
         Some("begin") => {
@@ -1059,6 +1111,7 @@ fn apply_style_ref_scan_fld_char(
                         autonum_counter,
                         listnum_counter,
                         field_bookmarks,
+                        properties,
                     ),
                 ) {
                     let cached_text = normalize_toc_text(&paragraph_text[start..]);
