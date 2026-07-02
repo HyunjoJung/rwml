@@ -102,7 +102,7 @@ use self::reference::{
 };
 pub(crate) use self::section::{
     computed_section_result, is_section_field_instruction, section_context_with_properties,
-    SectionContext,
+    SectionContext, SectionFieldPosition,
 };
 #[cfg(test)]
 use self::style_ref::style_ref_instruction;
