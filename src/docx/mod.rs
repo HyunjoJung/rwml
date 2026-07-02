@@ -1502,6 +1502,7 @@ fn read_floating_shape(
     let mut shape = floating_shape_shell(index, start, anchor_block_index);
     let mut text_box_depth = 0usize;
     let mut shape_text = String::new();
+    let mut field_bookmarks = HashMap::new();
     let mut outline_depth = 0usize;
     let mut solid_fill = None;
     loop {
@@ -1518,6 +1519,7 @@ fn read_floating_shape(
                                 &e,
                                 properties,
                                 document_bookmarks,
+                                &mut field_bookmarks,
                             ) {
                                 skip_subtree(r);
                             } else {
@@ -1559,6 +1561,7 @@ fn read_floating_shape(
                             &e,
                             properties,
                             document_bookmarks,
+                            &mut field_bookmarks,
                         )
                     {
                         append_shape_empty(&mut shape_text, &e, name);
@@ -1682,31 +1685,34 @@ fn append_shape_simple_field(
     e: &BytesStart<'_>,
     properties: fields::FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
+    field_bookmarks: &mut HashMap<String, String>,
 ) -> bool {
     let Some(instruction) = attr_local(e, b"instr") else {
         return false;
     };
-    let field_bookmarks = HashMap::new();
+    if update_field_bookmarks_from_instruction(&instruction, field_bookmarks) {
+        return true;
+    }
     let Some(text) = fields::computed_formula_result_with_bookmark_context(
         &instruction,
         document_bookmarks,
-        &field_bookmarks,
+        field_bookmarks,
     )
     .or_else(|| {
         fields::computed_if_compare_result_with_bookmark_context(
             &instruction,
             document_bookmarks,
-            &field_bookmarks,
+            field_bookmarks,
         )
     })
     .or_else(|| {
         fields::computed_merge_control_result_with_bookmark_context(
             &instruction,
             document_bookmarks,
-            &field_bookmarks,
+            field_bookmarks,
         )
     })
-    .or_else(|| fields::computed_dynamic_result_with_bookmarks(&instruction, &field_bookmarks))
+    .or_else(|| fields::computed_dynamic_result_with_bookmarks(&instruction, field_bookmarks))
     .or_else(|| {
         fields::computed_document_info_result(
             &instruction,
