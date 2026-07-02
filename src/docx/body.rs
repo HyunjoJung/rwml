@@ -1996,6 +1996,18 @@ fn read_runs_container(r: &mut Xml<'_>, ctx: &Ctx<'_>, link: Option<&str>, depth
     runs
 }
 
+fn read_runs_container_with_complex(
+    r: &mut Xml<'_>,
+    ctx: &Ctx<'_>,
+    link: Option<&str>,
+    depth: u32,
+) -> Vec<Run> {
+    let mut runs = Vec::new();
+    let mut complex_field = ComplexFieldTracker::default();
+    append_runs_container_with_complex(r, ctx, link, depth, &mut runs, &mut complex_field);
+    runs
+}
+
 fn append_runs_container_with_complex(
     r: &mut Xml<'_>,
     ctx: &Ctx<'_>,
@@ -3418,7 +3430,7 @@ fn hyperlink_url(start: &BytesStart<'_>, ctx: &Ctx<'_>) -> Option<String> {
 fn read_fldsimple(r: &mut Xml<'_>, start: &BytesStart<'_>, ctx: &Ctx<'_>, depth: u32) -> Vec<Run> {
     let instruction = attr_local(start, b"instr").unwrap_or_default();
     let url = hyperlink_instr_url(&instruction);
-    let mut runs = read_runs_container(r, ctx, url.as_deref(), depth + 1);
+    let mut runs = read_runs_container_with_complex(r, ctx, url.as_deref(), depth + 1);
     if url.is_none() {
         let instruction = normalized_field_instruction(&instruction);
         if !instruction.is_empty() {

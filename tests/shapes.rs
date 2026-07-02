@@ -90,6 +90,23 @@ fn floating_shape_computed_complex_field_text_docx() -> Vec<u8> {
     ])
 }
 
+fn floating_shape_nested_complex_field_inside_simple_result_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:body><w:p><w:r><w:t>Before </w:t></w:r><w:r><w:drawing><wp:anchor relativeHeight="39" behindDoc="0"><wp:extent cx="914400" cy="457200"/><wp:docPr id="39" name="Nested complex field float"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:fldSimple w:instr=" CUSTOM outer "><w:r><w:t>Prefix </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> QUOTE &quot;Inner target&quot; </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale inner target</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> Suffix</w:t></w:r></w:fldSimple><w:r><w:t> body</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:t>after</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn floating_shape_document_info_field_text_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -972,6 +989,29 @@ fn docx_floating_shape_metadata_uses_computed_complex_field_text() {
     assert_eq!(shapes.len(), 1);
     assert_eq!(shapes[0].name.as_deref(), Some("Complex field float"));
     assert_eq!(shapes[0].text.as_deref(), Some("Fresh complex shape body"));
+}
+
+#[test]
+fn docx_floating_shape_metadata_computes_nested_complex_fields_inside_simple_results() {
+    let doc = Document::open(&floating_shape_nested_complex_field_inside_simple_result_docx())
+        .expect("fixture opens");
+    let shapes = doc.floating_shapes();
+    let main_text = doc.main_text();
+
+    assert!(
+        main_text.contains("Prefix Inner target Suffix body")
+            && !main_text.contains("stale inner target"),
+        "body text should use computed nested complex field text inside shape simple-field results: {main_text:?}"
+    );
+    assert_eq!(shapes.len(), 1);
+    assert_eq!(
+        shapes[0].name.as_deref(),
+        Some("Nested complex field float")
+    );
+    assert_eq!(
+        shapes[0].text.as_deref(),
+        Some("Prefix Inner target Suffix body")
+    );
 }
 
 #[test]
