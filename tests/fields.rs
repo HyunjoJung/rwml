@@ -3482,6 +3482,27 @@ fn nested_empty_simple_field_ref_bookmark_docx() -> Vec<u8> {
     ])
 }
 
+fn document_info_ref_target_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rIdCore" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>"#,
+        ),
+        (
+            "docProps/core.xml",
+            r#"<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Quarter Plan</dc:title></cp:coreProperties>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="ComputedTitle"/><w:fldSimple w:instr=" TITLE "><w:r><w:t>stale nested title</w:t></w:r></w:fldSimple><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" REF ComputedTitle "><w:r><w:t>stale title ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn nested_empty_simple_field_inside_ref_target_result_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -18426,6 +18447,34 @@ fn docx_ref_targets_use_computed_nested_empty_simple_field_results() {
     assert!(
         main_text.contains("Current target") && !main_text.contains("stale empty outer ref"),
         "REF targets should use deterministic empty simple-field output, not omit source text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_ref_targets_compute_document_info_field_results() {
+    let doc = Document::open(&document_info_ref_target_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::DocumentInfo("TITLE".to_string()));
+    assert_eq!(fields[0].instruction, "TITLE");
+    assert_eq!(fields[0].result, "stale nested title");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("Quarter Plan"));
+    assert_eq!(fields[1].kind, FieldKind::Ref);
+    assert_eq!(fields[1].instruction, "REF ComputedTitle");
+    assert_eq!(fields[1].result, "stale title ref");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("Quarter Plan"));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Quarter Plan")
+            && !main_text.contains("stale nested title")
+            && !main_text.contains("stale title ref"),
+        "REF targets should use computed document-info source text, not stale cached text: {main_text:?}"
     );
 }
 

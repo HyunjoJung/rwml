@@ -90,8 +90,8 @@ use self::reference::ref_instruction;
 pub(crate) use self::reference::{
     computed_direct_bookmark_ref_result, computed_ref_result,
     is_direct_bookmark_ref_field_instruction, is_ref_position_field_instruction,
-    ref_number_context, ref_position_context, ref_targets, RefFieldPosition, RefNumberContext,
-    RefPositionContext, RefResultContext,
+    ref_number_context, ref_position_context, ref_targets, ref_targets_with_properties,
+    RefFieldPosition, RefNumberContext, RefPositionContext, RefResultContext,
 };
 use self::reference::{
     computed_ref_instruction_result, direct_bookmark_ref_instruction, ref_instruction_target_known,
@@ -137,7 +137,7 @@ pub(crate) fn parse(
     properties: FieldDocumentProperties<'_>,
     preserve_legacy_form_cache: bool,
 ) -> Vec<Field> {
-    let bookmarks = ref_targets(xml);
+    let bookmarks = ref_targets_with_properties(xml, properties);
     let all_bookmark_names = bookmark_names(xml);
     let ref_positions = ref_position_context(xml, numbering);
     let ref_numbers = ref_number_context(xml, numbering);

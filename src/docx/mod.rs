@@ -270,7 +270,23 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     let preserve_legacy_form_cache = settings_xml
         .as_deref()
         .is_some_and(settings_preserves_legacy_form_cache);
-    let ref_targets = fields::ref_targets(&doc_xml);
+    let document_properties = DocumentPropertyRefs {
+        core: &core_properties,
+        custom: &custom_property_fields,
+        variables: &document_variables,
+        extended: &extended_properties,
+        file_size_bytes: Some(bytes.len()),
+    };
+    let ref_targets = fields::ref_targets_with_properties(
+        &doc_xml,
+        fields::FieldDocumentProperties {
+            core: document_properties.core,
+            custom: document_properties.custom,
+            variables: document_properties.variables,
+            extended: document_properties.extended,
+            file_size_bytes: document_properties.file_size_bytes,
+        },
+    );
     let ref_position_context = fields::ref_position_context(&doc_xml, &numbering);
     let ref_number_context = fields::ref_number_context(&doc_xml, &numbering);
     let page_ref_context = fields::page_ref_context(&doc_xml, &ref_targets);
@@ -281,13 +297,6 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     let table_formula_context = fields::table_formula_context(&doc_xml, &ref_targets);
     let toc_entries = fields::toc_entries(&doc_xml, &styles, &ref_targets);
     let bookmark_names = fields::bookmark_names(&doc_xml);
-    let document_properties = DocumentPropertyRefs {
-        core: &core_properties,
-        custom: &custom_property_fields,
-        variables: &document_variables,
-        extended: &extended_properties,
-        file_size_bytes: Some(bytes.len()),
-    };
 
     let ctx = body::Ctx {
         styles: &styles,

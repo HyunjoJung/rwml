@@ -1,6 +1,24 @@
 use super::*;
 
 pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
+    let core_properties = CoreProperties::default();
+    let empty_properties = HashMap::new();
+    ref_targets_with_properties(
+        xml,
+        FieldDocumentProperties {
+            core: &core_properties,
+            custom: &empty_properties,
+            variables: &empty_properties,
+            extended: &empty_properties,
+            file_size_bytes: None,
+        },
+    )
+}
+
+pub(crate) fn ref_targets_with_properties(
+    xml: &str,
+    properties: FieldDocumentProperties<'_>,
+) -> HashMap<String, String> {
     let mut r = Reader::from_str(xml);
     let mut active: Vec<(String, String)> = Vec::new();
     let mut out: HashMap<String, String> = HashMap::new();
@@ -40,6 +58,7 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
                             &mut listnum_counter,
                             &mut sequence_counters,
                             &mut field_bookmarks,
+                            properties,
                             &mut r,
                             &e,
                         );
@@ -54,6 +73,7 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
                             &mut listnum_counter,
                             &mut sequence_counters,
                             &mut field_bookmarks,
+                            properties,
                             &mut r,
                             &e,
                         );
@@ -73,6 +93,7 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
                             &mut listnum_counter,
                             &mut sequence_counters,
                             &mut field_bookmarks,
+                            properties,
                         )
                         .unwrap_or(field.result);
                         continue;
@@ -87,6 +108,7 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
                             &mut listnum_counter,
                             &mut sequence_counters,
                             &mut field_bookmarks,
+                            properties,
                         );
                     }
                     b"p" => append_ref_target_paragraph_breaks(&active, &mut current, &mut out),
@@ -167,6 +189,7 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
                             &mut listnum_counter,
                             &mut sequence_counters,
                             &mut field_bookmarks,
+                            properties,
                         );
                     }
                     b"fldSimple"
@@ -183,6 +206,7 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
                             &mut listnum_counter,
                             &mut sequence_counters,
                             &mut field_bookmarks,
+                            properties,
                         );
                     }
                     b"fldChar" => {
@@ -195,6 +219,7 @@ pub(crate) fn ref_targets(xml: &str) -> HashMap<String, String> {
                             &mut listnum_counter,
                             &mut sequence_counters,
                             &mut field_bookmarks,
+                            properties,
                         );
                     }
                     b"tab" => append_ref_target_text(&active, &mut current, &mut out, "\t"),
@@ -246,6 +271,7 @@ fn apply_ref_target_fld_char(
     listnum_counter: &mut i64,
     sequence_counters: &mut HashMap<String, i64>,
     field_bookmarks: &mut HashMap<String, String>,
+    properties: FieldDocumentProperties<'_>,
 ) {
     match field_char_type(e).as_deref() {
         Some("begin") => {
@@ -282,6 +308,7 @@ fn apply_ref_target_fld_char(
                 listnum_counter,
                 sequence_counters,
                 field_bookmarks,
+                properties,
             )
             .unwrap_or(field.result);
             if let Some(parent) = current.last_mut() {
@@ -351,6 +378,7 @@ fn append_ref_simple_field_result(
     listnum_counter: &mut i64,
     sequence_counters: &mut HashMap<String, i64>,
     field_bookmarks: &mut HashMap<String, String>,
+    properties: FieldDocumentProperties<'_>,
     r: &mut Xml<'_>,
     e: &BytesStart<'_>,
 ) {
@@ -364,6 +392,7 @@ fn append_ref_simple_field_result(
             listnum_counter,
             sequence_counters,
             field_bookmarks,
+            properties,
         )
     });
     let text = computed_ref_target_field_result(
@@ -374,6 +403,7 @@ fn append_ref_simple_field_result(
         listnum_counter,
         sequence_counters,
         field_bookmarks,
+        properties,
     )
     .unwrap_or(result);
     append_ref_target_text(active, current, out, &text);
@@ -388,6 +418,7 @@ fn append_ref_empty_simple_field_result(
     listnum_counter: &mut i64,
     sequence_counters: &mut HashMap<String, i64>,
     field_bookmarks: &mut HashMap<String, String>,
+    properties: FieldDocumentProperties<'_>,
 ) {
     let instruction = instruction.unwrap_or_default();
     let excluded = ref_target_excluded_bookmarks(active, current);
@@ -399,6 +430,7 @@ fn append_ref_empty_simple_field_result(
         listnum_counter,
         sequence_counters,
         field_bookmarks,
+        properties,
     )
     .unwrap_or_default();
     append_ref_target_text(active, current, out, &text);
@@ -412,6 +444,7 @@ fn computed_ref_target_field_result(
     listnum_counter: &mut i64,
     sequence_counters: &mut HashMap<String, i64>,
     field_bookmarks: &mut HashMap<String, String>,
+    properties: FieldDocumentProperties<'_>,
 ) -> Option<String> {
     let available_bookmarks = ref_target_available_bookmarks(bookmarks, excluded);
     let instruction = normalize_instruction(instruction);
@@ -431,6 +464,16 @@ fn computed_ref_target_field_result(
         .or_else(|| computed_sequence_result(&instruction, sequence_counters))
         .or_else(|| computed_toc_entry_result(&instruction))
         .or_else(|| computed_dynamic_result_with_bookmarks(&instruction, &bookmarks))
+        .or_else(|| {
+            computed_document_info_result(
+                &instruction,
+                properties.core,
+                properties.custom,
+                properties.variables,
+                properties.extended,
+                properties.file_size_bytes,
+            )
+        })
         .or_else(|| computed_display_result(&instruction))
         .or_else(|| computed_action_result(&instruction))
         .or_else(|| computed_reference_index_result(&instruction))
