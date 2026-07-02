@@ -1586,11 +1586,13 @@ fn read_paragraph(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Paragraph, Opt
                 b"hyperlink" => {
                     let start = runs.len();
                     runs.extend(read_hyperlink(r, &e, ctx, depth));
+                    mark_complex_field_result_runs(&mut complex_field, &runs, start);
                     apply_active_bookmark(&mut runs, start, &bookmarks);
                 }
                 b"fldSimple" => {
                     let start = runs.len();
                     runs.extend(read_fldsimple(r, &e, ctx, depth));
+                    mark_complex_field_result_runs(&mut complex_field, &runs, start);
                     apply_active_bookmark(&mut runs, start, &bookmarks);
                 }
                 b"sdt" => {
@@ -1646,6 +1648,7 @@ fn read_paragraph(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Paragraph, Opt
                 b"fldSimple" => {
                     let start = runs.len();
                     push_empty_fldsimple_run(&mut runs, &e, ctx);
+                    mark_complex_field_result_runs(&mut complex_field, &runs, start);
                     apply_active_bookmark(&mut runs, start, &bookmarks);
                 }
                 _ => {}
@@ -1688,6 +1691,21 @@ fn apply_active_bookmark(runs: &mut [Run], start: usize, bookmarks: &[(String, S
     for run in runs.iter_mut().skip(start) {
         if run.bookmark.is_none() {
             run.bookmark = Some(name.clone());
+        }
+    }
+}
+
+fn mark_complex_field_result_runs(
+    complex_field: &mut ComplexFieldTracker,
+    runs: &[Run],
+    start: usize,
+) {
+    if !complex_field.in_result() {
+        return;
+    }
+    for (index, run) in runs.iter().enumerate().skip(start) {
+        if !run.text.is_empty() {
+            complex_field.push_result_run(index, &run.text);
         }
     }
 }
@@ -1995,8 +2013,16 @@ fn append_runs_container_with_complex(
                     runs.extend(next);
                     complex_field.apply_pending(runs);
                 }
-                b"hyperlink" => runs.extend(read_hyperlink(r, &e, ctx, depth)),
-                b"fldSimple" => runs.extend(read_fldsimple(r, &e, ctx, depth)),
+                b"hyperlink" => {
+                    let start = runs.len();
+                    runs.extend(read_hyperlink(r, &e, ctx, depth));
+                    mark_complex_field_result_runs(complex_field, runs, start);
+                }
+                b"fldSimple" => {
+                    let start = runs.len();
+                    runs.extend(read_fldsimple(r, &e, ctx, depth));
+                    mark_complex_field_result_runs(complex_field, runs, start);
+                }
                 b"sdt" => append_content_control_runs_with_complex(
                     r,
                     ctx,
@@ -2020,7 +2046,9 @@ fn append_runs_container_with_complex(
             },
             Ok(Event::Empty(e)) => {
                 if local(e.name().as_ref()) == b"fldSimple" {
+                    let start = runs.len();
                     push_empty_fldsimple_run(runs, &e, ctx);
+                    mark_complex_field_result_runs(complex_field, runs, start);
                 }
             }
             Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
@@ -2055,8 +2083,16 @@ fn append_content_control_runs_with_complex(
                     runs.extend(next);
                     complex_field.apply_pending(runs);
                 }
-                b"hyperlink" => runs.extend(read_hyperlink(r, &e, ctx, depth)),
-                b"fldSimple" => runs.extend(read_fldsimple(r, &e, ctx, depth)),
+                b"hyperlink" => {
+                    let start = runs.len();
+                    runs.extend(read_hyperlink(r, &e, ctx, depth));
+                    mark_complex_field_result_runs(complex_field, runs, start);
+                }
+                b"fldSimple" => {
+                    let start = runs.len();
+                    runs.extend(read_fldsimple(r, &e, ctx, depth));
+                    mark_complex_field_result_runs(complex_field, runs, start);
+                }
                 b"sdt" => append_content_control_runs_with_complex(
                     r,
                     ctx,
@@ -2081,7 +2117,9 @@ fn append_content_control_runs_with_complex(
             },
             Ok(Event::Empty(e)) => {
                 if local(e.name().as_ref()) == b"fldSimple" {
+                    let start = runs.len();
                     push_empty_fldsimple_run(runs, &e, ctx);
+                    mark_complex_field_result_runs(complex_field, runs, start);
                 }
             }
             Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
@@ -2156,8 +2194,16 @@ fn append_content_control_runs_alternate_content_branch_with_complex(
                     runs.extend(next);
                     complex_field.apply_pending(runs);
                 }
-                b"hyperlink" => runs.extend(read_hyperlink(r, &e, ctx, depth)),
-                b"fldSimple" => runs.extend(read_fldsimple(r, &e, ctx, depth)),
+                b"hyperlink" => {
+                    let start = runs.len();
+                    runs.extend(read_hyperlink(r, &e, ctx, depth));
+                    mark_complex_field_result_runs(complex_field, runs, start);
+                }
+                b"fldSimple" => {
+                    let start = runs.len();
+                    runs.extend(read_fldsimple(r, &e, ctx, depth));
+                    mark_complex_field_result_runs(complex_field, runs, start);
+                }
                 b"sdt" => append_content_control_runs_with_complex(
                     r,
                     ctx,
@@ -2182,7 +2228,9 @@ fn append_content_control_runs_alternate_content_branch_with_complex(
             },
             Ok(Event::Empty(e)) => {
                 if local(e.name().as_ref()) == b"fldSimple" {
+                    let start = runs.len();
                     push_empty_fldsimple_run(runs, &e, ctx);
+                    mark_complex_field_result_runs(complex_field, runs, start);
                 }
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
