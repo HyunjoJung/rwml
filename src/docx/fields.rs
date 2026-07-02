@@ -141,7 +141,7 @@ pub(crate) fn parse(
     let all_bookmark_names = bookmark_names(xml);
     let ref_positions = ref_position_context(xml, numbering);
     let ref_numbers = ref_number_context(xml, numbering);
-    let page_refs = page_ref_context(xml);
+    let page_refs = page_ref_context(xml, &bookmarks);
     let note_refs = note_ref_context(xml);
     let sections = section_context(xml);
     let style_refs = style_ref_context(xml, styles, numbering, &bookmarks);
@@ -2872,7 +2872,9 @@ mod tests {
         assert!(ref_position_context(xml, &Numbering::default())
             .target_position("Figure1")
             .is_some());
-        assert!(page_ref_context(xml).target_position("Figure1").is_some());
+        assert!(page_ref_context(xml, &ref_targets(xml))
+            .target_position("Figure1")
+            .is_some());
         assert!(note_ref_context(xml).targets.contains_key("FootOne"));
         assert!(toc_entries(xml, &Styles::default(), &HashMap::new())
             .iter()
