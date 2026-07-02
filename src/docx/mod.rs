@@ -321,6 +321,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         field_properties,
         preserve_legacy_form_cache,
     );
+    let sequence_heading_context = fields::sequence_heading_context(&doc_xml, &styles);
     let toc_entries = fields::toc_entries_with_properties(
         &doc_xml,
         &styles,
@@ -416,6 +417,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         &toc_entries,
         &bookmark_names,
         &style_ref_context,
+        &sequence_heading_context,
     );
     floating_shapes.extend(note_part.floating_shapes);
     let mut text_boxes = read_text_boxes(&doc_xml, &ctx, &floating_shapes);
@@ -855,6 +857,7 @@ fn read_hf_parts(
         let style_ref_context = fields::StyleRefContext::empty();
         let legacy_form_context = fields::legacy_form_context(&xml, preserve_legacy_form_cache);
         let table_formula_context = fields::TableFormulaContext::empty();
+        let sequence_heading_context = fields::sequence_heading_context(&xml, styles);
         let toc_entries = fields::toc_entries_with_properties(
             &xml,
             styles,
@@ -941,6 +944,7 @@ fn read_hf_parts(
                 &toc_entries,
                 &bookmark_names,
                 &style_ref_context,
+                &sequence_heading_context,
             ));
         }
         if seen_fields.insert((path.clone(), type_name.to_string())) {
@@ -1058,6 +1062,7 @@ fn read_notes(
     let style_ref_context = fields::StyleRefContext::empty();
     let legacy_form_context = fields::legacy_form_context(&xml, preserve_legacy_form_cache);
     let table_formula_context = fields::TableFormulaContext::empty();
+    let sequence_heading_context = fields::sequence_heading_context(&xml, styles);
     let toc_entries = fields::toc_entries_with_properties(
         &xml,
         styles,
@@ -1134,6 +1139,7 @@ fn read_notes(
         &toc_entries,
         &bookmark_names,
         &style_ref_context,
+        &sequence_heading_context,
     );
     let text_box_id_prefix = format!("{name}-text-box");
     let text_boxes = read_text_boxes_with_prefix(&xml, &ctx, &floating_shapes, &text_box_id_prefix);
@@ -1261,6 +1267,7 @@ fn read_floating_shapes(
     toc_entries: &[fields::TocEntry],
     bookmark_names: &HashSet<String>,
     style_refs: &fields::StyleRefContext,
+    sequence_headings: &fields::SequenceHeadingContext,
 ) -> Vec<FloatingShape> {
     let mut r = Reader::from_str(doc_xml);
     let mut shapes = Vec::new();
@@ -1308,6 +1315,7 @@ fn read_floating_shapes(
                         sections,
                         table_formulas,
                         style_refs,
+                        sequence_headings,
                     );
                 } else if name == b"fldChar" {
                     shape_field_cursor.apply_field_char(
@@ -1318,6 +1326,7 @@ fn read_floating_shapes(
                         sections,
                         table_formulas,
                         style_refs,
+                        sequence_headings,
                     );
                 }
                 if name == b"body" {
@@ -1378,6 +1387,7 @@ fn read_floating_shapes(
                         toc_entries,
                         bookmark_names,
                         style_refs,
+                        sequence_headings,
                         &mut shape_field_cursor,
                     ));
                     if current_body_block_index.is_some() {
@@ -1435,6 +1445,7 @@ fn read_floating_shapes(
                         sections,
                         table_formulas,
                         style_refs,
+                        sequence_headings,
                     );
                 } else if name == b"fldChar" {
                     shape_field_cursor.apply_field_char(
@@ -1445,6 +1456,7 @@ fn read_floating_shapes(
                         sections,
                         table_formulas,
                         style_refs,
+                        sequence_headings,
                     );
                 }
             }
@@ -1545,7 +1557,9 @@ struct AlternateContentState {
 struct ShapeFieldCursor {
     next_index: usize,
     ref_index: usize,
+    sequence_index: usize,
     sequence_counters: HashMap<String, i64>,
+    sequence_heading_scopes: HashMap<(String, u8), u32>,
     autonum_counter: i64,
     listnum_counter: i64,
     style_ref_index: usize,
@@ -1600,13 +1614,14 @@ impl ShapeFieldCursor {
         sections: &fields::SectionContext,
         table_formulas: &fields::TableFormulaContext,
         style_refs: &fields::StyleRefContext,
+        sequence_headings: &fields::SequenceHeadingContext,
     ) {
         if self.simple_field_depth.is_some() {
             return;
         }
         self.simple_field_depth = Some(depth);
         if let Some(instruction) = attr_local(e, b"instr") {
-            self.computed_sequence_result(&instruction);
+            self.computed_sequence_result(&instruction, sequence_headings);
             self.computed_autonum_result(&instruction);
             self.computed_listnum_result(&instruction);
             self.next_ref_field_context(&instruction, ref_positions, note_refs);
@@ -1629,12 +1644,13 @@ impl ShapeFieldCursor {
         sections: &fields::SectionContext,
         table_formulas: &fields::TableFormulaContext,
         style_refs: &fields::StyleRefContext,
+        sequence_headings: &fields::SequenceHeadingContext,
     ) {
         if self.simple_field_depth.is_some() {
             return;
         }
         if let Some(instruction) = attr_local(e, b"instr") {
-            self.computed_sequence_result(&instruction);
+            self.computed_sequence_result(&instruction, sequence_headings);
             self.computed_autonum_result(&instruction);
             self.computed_listnum_result(&instruction);
             self.next_ref_field_context(&instruction, ref_positions, note_refs);
@@ -1715,6 +1731,7 @@ impl ShapeFieldCursor {
         sections: &fields::SectionContext,
         table_formulas: &fields::TableFormulaContext,
         style_refs: &fields::StyleRefContext,
+        sequence_headings: &fields::SequenceHeadingContext,
     ) -> Option<String> {
         if self.simple_field_depth.is_some() {
             return None;
@@ -1744,7 +1761,7 @@ impl ShapeFieldCursor {
             Some("end") => {
                 if let Some(field) = self.complex_field.take() {
                     if field.computed_result.is_none() {
-                        self.computed_sequence_result(&field.instruction);
+                        self.computed_sequence_result(&field.instruction, sequence_headings);
                         self.computed_autonum_result(&field.instruction);
                         self.computed_listnum_result(&field.instruction);
                         if !field.ref_indexed {
@@ -1978,13 +1995,16 @@ impl ShapeFieldCursor {
         }
     }
 
-    fn computed_complex_source_order_result(&mut self) -> Option<String> {
+    fn computed_complex_source_order_result(
+        &mut self,
+        sequence_headings: &fields::SequenceHeadingContext,
+    ) -> Option<String> {
         let field = self.complex_field.as_ref()?;
         if field.phase != ShapeFieldCursorPhase::Result || field.computed_result.is_some() {
             return None;
         }
         let instruction = field.instruction.clone();
-        self.computed_sequence_result(&instruction)
+        self.computed_sequence_result(&instruction, sequence_headings)
             .or_else(|| self.computed_autonum_result(&instruction))
             .or_else(|| self.computed_listnum_result(&instruction))
     }
@@ -2134,11 +2154,23 @@ impl ShapeFieldCursor {
         table_formulas.field_result(index)
     }
 
-    fn computed_sequence_result(&mut self, instruction: &str) -> Option<String> {
+    fn computed_sequence_result(
+        &mut self,
+        instruction: &str,
+        sequence_headings: &fields::SequenceHeadingContext,
+    ) -> Option<String> {
         if FieldKind::from_instruction(instruction) != FieldKind::Sequence {
             return None;
         }
-        fields::computed_sequence_result(instruction, &mut self.sequence_counters)
+        let index = self.sequence_index;
+        self.sequence_index += 1;
+        let heading_scope = sequence_headings.field_scope(index);
+        fields::computed_sequence_result_with_heading_scope(
+            instruction,
+            &mut self.sequence_counters,
+            heading_scope,
+            &mut self.sequence_heading_scopes,
+        )
     }
 
     fn computed_autonum_result(&mut self, instruction: &str) -> Option<String> {
@@ -2261,6 +2293,7 @@ fn read_floating_shape(
     toc_entries: &[fields::TocEntry],
     bookmark_names: &HashSet<String>,
     style_refs: &fields::StyleRefContext,
+    sequence_headings: &fields::SequenceHeadingContext,
     shape_field_cursor: &mut ShapeFieldCursor,
 ) -> FloatingShape {
     let mut shape = floating_shape_shell(index, start, anchor_block_index);
@@ -2306,6 +2339,7 @@ fn read_floating_shape(
                                 toc_entries,
                                 bookmark_names,
                                 style_refs,
+                                sequence_headings,
                                 shape_field_cursor,
                                 Some(text_box_depth + 1),
                             ) {
@@ -2331,6 +2365,7 @@ fn read_floating_shape(
                                 toc_entries,
                                 bookmark_names,
                                 style_refs,
+                                sequence_headings,
                                 shape_field_cursor,
                             );
                             text_box_depth += 1;
@@ -2391,6 +2426,7 @@ fn read_floating_shape(
                             toc_entries,
                             bookmark_names,
                             style_refs,
+                            sequence_headings,
                             shape_field_cursor,
                         );
                     }
@@ -2417,6 +2453,7 @@ fn read_floating_shape(
                                 toc_entries,
                                 bookmark_names,
                                 style_refs,
+                                sequence_headings,
                                 shape_field_cursor,
                                 None,
                             ))
@@ -2690,6 +2727,7 @@ fn apply_shape_field_char(
     toc_entries: &[fields::TocEntry],
     bookmark_names: &HashSet<String>,
     style_refs: &fields::StyleRefContext,
+    sequence_headings: &fields::SequenceHeadingContext,
     shape_field_cursor: &mut ShapeFieldCursor,
 ) {
     if field_char_type(e).as_deref() == Some("end") {
@@ -2706,6 +2744,7 @@ fn apply_shape_field_char(
         sections,
         table_formulas,
         style_refs,
+        sequence_headings,
     );
     let computed = shape_field_cursor
         .current_complex_instruction()
@@ -2748,7 +2787,7 @@ fn apply_shape_field_char(
                     )
                 })
         })
-        .or_else(|| shape_field_cursor.computed_complex_source_order_result())
+        .or_else(|| shape_field_cursor.computed_complex_source_order_result(sequence_headings))
         .or_else(|| shape_field_cursor.computed_complex_legacy_form_result(legacy_forms, false));
     if let Some(text) = computed {
         shape_field_cursor.set_complex_result(text);
@@ -2776,6 +2815,7 @@ fn append_shape_simple_field(
     toc_entries: &[fields::TocEntry],
     bookmark_names: &HashSet<String>,
     style_refs: &fields::StyleRefContext,
+    sequence_headings: &fields::SequenceHeadingContext,
     shape_field_cursor: &mut ShapeFieldCursor,
     simple_text_form_depth: Option<usize>,
 ) -> bool {
@@ -2825,7 +2865,7 @@ fn append_shape_simple_field(
                 style_ref_position,
             )
         })
-        .or_else(|| shape_field_cursor.computed_sequence_result(&instruction))
+        .or_else(|| shape_field_cursor.computed_sequence_result(&instruction, sequence_headings))
         .or_else(|| shape_field_cursor.computed_autonum_result(&instruction))
         .or_else(|| shape_field_cursor.computed_listnum_result(&instruction))
         .or_else(|| {

@@ -476,6 +476,31 @@ fn floating_shape_sequence_field_text_docx() -> Vec<u8> {
     ])
 }
 
+fn floating_shape_sequence_heading_reset_field_text_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Chapter One</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" SEQ Figure \s 1 "><w:r><w:t>stale body heading seq</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:t>Shape anchor </w:t></w:r><w:r><w:drawing><wp:anchor relativeHeight="51" behindDoc="0"><wp:extent cx="914400" cy="457200"/><wp:docPr id="51" name="SEQ heading float"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:fldSimple w:instr=" SEQ Figure \s 1 "><w:r><w:t>stale shape heading seq</w:t></w:r></w:fldSimple><w:r><w:t> body</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn floating_shape_autonum_field_text_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -1332,6 +1357,26 @@ fn docx_floating_shape_metadata_uses_sequence_field_text() {
     assert_eq!(shapes.len(), 1);
     assert_eq!(shapes[0].name.as_deref(), Some("Sequence float"));
     assert_eq!(shapes[0].text.as_deref(), Some("Figure 2 body"));
+}
+
+#[test]
+fn docx_floating_shape_metadata_uses_sequence_heading_reset_field_text() {
+    let doc = Document::open(&floating_shape_sequence_heading_reset_field_text_docx())
+        .expect("fixture opens");
+    let shapes = doc.floating_shapes();
+    let main_text = doc.main_text();
+
+    assert!(
+        main_text.contains("Chapter One")
+            && main_text.contains("1")
+            && main_text.contains("Shape anchor 2 body")
+            && !main_text.contains("stale body heading seq")
+            && !main_text.contains("stale shape heading seq"),
+        "body text should use computed heading-reset sequence text inside shapes: {main_text:?}"
+    );
+    assert_eq!(shapes.len(), 1);
+    assert_eq!(shapes[0].name.as_deref(), Some("SEQ heading float"));
+    assert_eq!(shapes[0].text.as_deref(), Some("2 body"));
 }
 
 #[test]

@@ -737,12 +737,12 @@ fn inline_marker_text(e: &BytesStart<'_>) -> Option<&'static str> {
 }
 
 #[derive(Debug, Clone, Default)]
-struct SequenceHeadingContext {
+pub(crate) struct SequenceHeadingContext {
     field_scopes: Vec<[u32; 9]>,
 }
 
 impl SequenceHeadingContext {
-    fn field_scope(&self, index: usize) -> Option<[u32; 9]> {
+    pub(crate) fn field_scope(&self, index: usize) -> Option<[u32; 9]> {
         self.field_scopes.get(index).copied()
     }
 }
@@ -766,7 +766,7 @@ impl SequenceHeadingParagraph {
     }
 }
 
-fn sequence_heading_context(xml: &str, styles: &Styles) -> SequenceHeadingContext {
+pub(crate) fn sequence_heading_context(xml: &str, styles: &Styles) -> SequenceHeadingContext {
     let mut r = Reader::from_str(xml);
     let mut context = SequenceHeadingContext::default();
     let mut current = Vec::new();
@@ -2060,7 +2060,7 @@ pub(crate) fn computed_sequence_result(
     computed_sequence_instruction_result(instruction, counters)
 }
 
-pub(super) fn computed_sequence_result_with_heading_scope(
+pub(crate) fn computed_sequence_result_with_heading_scope(
     instruction: &str,
     counters: &mut HashMap<String, i64>,
     heading_scope: Option<[u32; 9]>,
