@@ -1861,7 +1861,7 @@ impl ShapeFieldCursor {
         };
         let context = self.next_ref_field_context(&instruction, ref_positions, note_refs);
         if let Some(field) = self.complex_field.as_mut() {
-            if FieldKind::from_instruction(&instruction) == FieldKind::Ref {
+            if fields::is_ref_position_field_instruction(&instruction) {
                 field.ref_indexed = true;
             }
         }
@@ -2055,7 +2055,7 @@ impl ShapeFieldCursor {
         Option<fields::RefFieldPosition>,
         Option<fields::NoteRefFieldPosition>,
     ) {
-        if FieldKind::from_instruction(instruction) != FieldKind::Ref {
+        if !fields::is_ref_position_field_instruction(instruction) {
             return (None, None);
         }
         let index = self.ref_index;
