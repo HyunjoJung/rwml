@@ -17956,6 +17956,15 @@ fn docx_computed_complex_field_replaces_paragraph_hyperlink_result() {
         field.instruction == r#"QUOTE "Outer""# && field.computed_result.as_deref() == Some("Outer")
     }));
     assert_eq!(doc.main_text(), "Outer");
+
+    let [Block::Paragraph(paragraph)] = &doc.model().blocks[..] else {
+        panic!("expected one paragraph");
+    };
+    let [run] = &paragraph.runs[..] else {
+        panic!("expected one computed run");
+    };
+    assert_eq!(run.text, "Outer");
+    assert!(matches!(run.field, FieldRole::Other));
 }
 
 #[test]

@@ -1705,7 +1705,7 @@ fn mark_complex_field_result_runs(
     }
     for (index, run) in runs.iter().enumerate().skip(start) {
         if !run.text.is_empty() {
-            complex_field.push_result_run(index, &run.text);
+            complex_field.push_result_run(index, &run.text, false);
         }
     }
 }
@@ -1790,7 +1790,7 @@ fn paragraph_has_field_runs(paragraph: &Paragraph) -> bool {
 struct ComplexFieldTracker {
     instruction: String,
     phase: Option<ComplexFieldPhase>,
-    result_runs: Vec<usize>,
+    result_runs: Vec<ComplexFieldResultRun>,
     result_text: String,
     result_start: Option<usize>,
     pending: Option<PendingComplexField>,
@@ -1806,8 +1806,14 @@ struct PendingComplexField {
     instruction: String,
     text: Option<String>,
     unsupported_reason: Option<FieldUnsupportedReason>,
-    result_runs: Vec<usize>,
+    result_runs: Vec<ComplexFieldResultRun>,
     insert_at: usize,
+}
+
+#[derive(Clone, Copy)]
+struct ComplexFieldResultRun {
+    index: usize,
+    preserve_hyperlink: bool,
 }
 
 impl ComplexFieldTracker {
@@ -1864,9 +1870,12 @@ impl ComplexFieldTracker {
         self.phase == Some(ComplexFieldPhase::Result)
     }
 
-    fn push_result_run(&mut self, index: usize, text: &str) {
+    fn push_result_run(&mut self, index: usize, text: &str, preserve_hyperlink: bool) {
         if self.in_result() {
-            self.result_runs.push(index);
+            self.result_runs.push(ComplexFieldResultRun {
+                index,
+                preserve_hyperlink,
+            });
             self.result_text.push_str(text);
         }
     }
@@ -1889,12 +1898,14 @@ impl ComplexFieldTracker {
             }
             return;
         }
-        for (offset, index) in computed.result_runs.iter().copied().enumerate() {
-            let Some(run) = runs.get_mut(index) else {
+        for (offset, result_run) in computed.result_runs.iter().copied().enumerate() {
+            let Some(run) = runs.get_mut(result_run.index) else {
                 continue;
             };
             if let Some(text) = computed.text.as_deref() {
-                run.field = if matches!(run.field, FieldRole::Hyperlink { .. }) {
+                run.field = if result_run.preserve_hyperlink
+                    && matches!(run.field, FieldRole::Hyperlink { .. })
+                {
                     run.field.clone()
                 } else if text.is_empty()
                     && offset == 0
@@ -2794,7 +2805,7 @@ fn read_run(
     if !text.is_empty() {
         if text_is_field_result {
             if let Some(tracker) = complex_field.as_deref_mut() {
-                tracker.push_result_run(base_index + runs.len(), &text);
+                tracker.push_result_run(base_index + runs.len(), &text, link.is_some());
             }
         }
         runs.push(Run {
@@ -2820,7 +2831,7 @@ fn read_run(
                 continue;
             };
             if !run.text.is_empty() {
-                tracker.push_result_run(base_index + image_start + image_index, &run.text);
+                tracker.push_result_run(base_index + image_start + image_index, &run.text, false);
             }
         }
     }
