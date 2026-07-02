@@ -2919,6 +2919,26 @@ fn append_run_alternate_content_branch(
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
+                b"r" => {
+                    let start = images.len();
+                    let mut nested_complex_field = ComplexFieldTracker::default();
+                    let next = read_run(
+                        r,
+                        ctx,
+                        None,
+                        depth + 1,
+                        Some(&mut nested_complex_field),
+                        images.len(),
+                    );
+                    images.extend(next);
+                    nested_complex_field.apply_pending(images);
+                    if complex_field
+                        .as_deref()
+                        .is_some_and(ComplexFieldTracker::in_result)
+                    {
+                        image_result_runs.extend(start..images.len());
+                    }
+                }
                 b"fldChar" => {
                     apply_complex_field_char(&e, ctx, complex_field.as_deref_mut(), base_index);
                     skip_subtree(r);
