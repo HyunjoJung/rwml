@@ -17434,6 +17434,58 @@ fn docx_non_body_style_ref_fields_materialize_local_source_text() {
 }
 
 #[test]
+fn docx_non_body_numbered_ref_fields_materialize_local_number_text() {
+    let doc = Document::open(&docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rIdFootnotes" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:r><w:t>Body</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r></w:p><w:sectPr><w:headerReference w:type="default" r:id="rIdHeader"/></w:sectPr></w:body></w:document>"#,
+        ),
+        (
+            "word/header1.xml",
+            r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="42"/></w:numPr></w:pPr><w:bookmarkStart w:id="21" w:name="HeaderClause"/><w:r><w:t>Header Clause</w:t></w:r><w:bookmarkEnd w:id="21"/></w:p><w:p><w:fldSimple w:instr=" REF HeaderClause \n "><w:r><w:t>stale header number</w:t></w:r></w:fldSimple></w:p></w:hdr>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:footnote><w:footnote w:id="1"><w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="77"/></w:numPr></w:pPr><w:bookmarkStart w:id="22" w:name="FootClause"/><w:r><w:t>Foot Clause</w:t></w:r><w:bookmarkEnd w:id="22"/></w:p><w:p><w:fldSimple w:instr=" REF FootClause \n "><w:r><w:t>stale footnote number</w:t></w:r></w:fldSimple></w:p></w:footnote></w:footnotes>"#,
+        ),
+        (
+            "word/numbering.xml",
+            r#"<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="9"><w:lvl w:ilvl="0"><w:start w:val="3"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum><w:num w:numId="42"><w:abstractNumId w:val="9"/></w:num><w:abstractNum w:abstractNumId="10"><w:lvl w:ilvl="0"><w:start w:val="8"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum><w:num w:numId="77"><w:abstractNumId w:val="10"/></w:num></w:numbering>"#,
+        ),
+    ]))
+    .expect("fixture opens");
+
+    let fields = doc.fields();
+    assert_eq!(fields.len(), 2);
+    assert!(fields.iter().any(|field| {
+        field.kind == FieldKind::Ref
+            && field.result == "stale header number"
+            && field.computed_result.as_deref() == Some("3")
+    }));
+    assert!(fields.iter().any(|field| {
+        field.kind == FieldKind::Ref
+            && field.result == "stale footnote number"
+            && field.computed_result.as_deref() == Some("8")
+    }));
+    assert!(doc.header_text().contains("3"));
+    assert!(doc.footnote_text().contains("8"));
+    assert!(!doc.text().contains("stale header number"));
+    assert!(!doc.text().contains("stale footnote number"));
+}
+
+#[test]
 fn docx_unenforced_legacy_form_protection_materializes_values() {
     let doc = Document::open(&docx_fixture(&[
         (
