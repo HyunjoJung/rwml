@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use crate::annotation::{Comment, TextAnchor};
 
-use super::fields::computed_run_symbol_char;
+use super::fields::{computed_quote_result, computed_run_symbol_char};
 use super::xml_text::{
     inline_marker_text, read_text, skip_alternate_content_branch, skip_subtree,
     AlternateContentBranchState,
@@ -261,6 +261,21 @@ pub(crate) fn parse_anchors(xml: &str) -> HashMap<String, TextAnchor> {
                     active.push((id, visible));
                 }
             }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"fldSimple" => {
+                if old_content_depth == 0 {
+                    if let Some(text) = computed_comment_simple_field_text(&e) {
+                        push_anchor_text(&active, &mut anchors, &text);
+                        skip_subtree(&mut r);
+                    }
+                }
+            }
+            Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"fldSimple" => {
+                if old_content_depth == 0 {
+                    if let Some(text) = computed_comment_simple_field_text(&e) {
+                        push_anchor_text(&active, &mut anchors, &text);
+                    }
+                }
+            }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"t" => {
                 let text = read_text(&mut r);
                 if old_content_depth == 0 {
@@ -344,6 +359,25 @@ fn read_comment(r: &mut Xml<'_>, start: &BytesStart<'_>) -> Option<Comment> {
                     push_comment_paragraph_boundary(&mut c.text);
                 }
             }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"fldSimple" => {
+                if old_content_depth == 0 {
+                    if let Some(text) = computed_comment_simple_field_text(&e) {
+                        if let Some(c) = c.as_mut() {
+                            c.text.push_str(&text);
+                        }
+                        skip_subtree(r);
+                    }
+                }
+            }
+            Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"fldSimple" => {
+                if old_content_depth == 0 {
+                    if let Some(text) = computed_comment_simple_field_text(&e) {
+                        if let Some(c) = c.as_mut() {
+                            c.text.push_str(&text);
+                        }
+                    }
+                }
+            }
             Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"t" | b"delText") => {
                 let text = read_text(r);
                 if old_content_depth == 0 {
@@ -384,6 +418,11 @@ fn comment_symbol_char(e: &BytesStart<'_>) -> Option<char> {
     let value = attr_local_trimmed(e, b"char")?;
     let font = attr_local_trimmed(e, b"font");
     computed_run_symbol_char(font.as_deref(), &value)
+}
+
+fn computed_comment_simple_field_text(e: &BytesStart<'_>) -> Option<String> {
+    let instruction = attr_local_trimmed(e, b"instr")?;
+    computed_quote_result(&instruction)
 }
 
 fn is_comment_anchor_embedded_body(name: &[u8]) -> bool {

@@ -1417,7 +1417,7 @@ fn set_value_literal(tokens: &[String]) -> Option<String> {
     (!values.is_empty()).then(|| values.join(" "))
 }
 
-fn computed_quote_result(instruction: &str) -> Option<String> {
+pub(crate) fn computed_quote_result(instruction: &str) -> Option<String> {
     let spec = quote_field_syntax(instruction)?;
     Some(apply_field_text_format(spec.text, spec.text_format))
 }
