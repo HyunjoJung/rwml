@@ -34,6 +34,8 @@ pub(crate) struct SectionFieldPosition {
 struct SectionScanField {
     instruction: String,
     phase: FieldPhase,
+    suppress_result: bool,
+    nested_suppressed_fields: usize,
 }
 
 pub(crate) fn section_context(xml: &str) -> SectionContext {
@@ -50,6 +52,7 @@ pub(crate) fn section_context(xml: &str) -> SectionContext {
     let mut section_type_seen = false;
     let mut section_properties_depth = 0usize;
     let mut current: Option<SectionScanField> = None;
+    let mut computed_fields = SectionComputedFieldState::default();
     let mut simple_section_field_result_depth: Option<usize> = None;
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
@@ -64,6 +67,25 @@ pub(crate) fn section_context(xml: &str) -> SectionContext {
                 }
                 if matches!(name, b"del" | b"moveFrom" | b"pPrChange") {
                     skip_subtree(&mut r);
+                    continue;
+                }
+                if suppresses_section_complex_result_scan(&current) {
+                    match name {
+                        b"fldChar" => apply_section_scan_fld_char(
+                            &e,
+                            current_section,
+                            &mut current,
+                            &mut field_sections,
+                            &mut section_has_visible_content,
+                            &mut computed_fields,
+                        ),
+                        b"instrText" | b"t" => {
+                            let _ = read_text(&mut r);
+                            continue;
+                        }
+                        _ => {}
+                    }
+                    xml_depth = xml_depth.saturating_add(1);
                     continue;
                 }
                 let mut consumed_element = false;
@@ -91,12 +113,22 @@ pub(crate) fn section_context(xml: &str) -> SectionContext {
                         current_page += 1;
                     }
                     b"fldSimple" => {
+                        let instruction = attr_local(&e, b"instr");
                         if record_section_field(
-                            attr_local(&e, b"instr").as_deref(),
+                            instruction.as_deref(),
                             current_section,
                             &mut field_sections,
                         ) {
                             simple_section_field_result_depth = Some(xml_depth + 1);
+                        } else if let Some(text) = computed_section_scan_field_result(
+                            instruction.as_deref(),
+                            &mut computed_fields,
+                        ) {
+                            if !text.is_empty() {
+                                section_has_visible_content = true;
+                            }
+                            skip_subtree(&mut r);
+                            continue;
                         }
                     }
                     b"fldChar" => {
@@ -105,6 +137,8 @@ pub(crate) fn section_context(xml: &str) -> SectionContext {
                             current_section,
                             &mut current,
                             &mut field_sections,
+                            &mut section_has_visible_content,
+                            &mut computed_fields,
                         );
                     }
                     b"instrText" => {
@@ -173,6 +207,19 @@ pub(crate) fn section_context(xml: &str) -> SectionContext {
                 if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
                     continue;
                 }
+                if suppresses_section_complex_result_scan(&current) {
+                    if name == b"fldChar" {
+                        apply_section_scan_fld_char(
+                            &e,
+                            current_section,
+                            &mut current,
+                            &mut field_sections,
+                            &mut section_has_visible_content,
+                            &mut computed_fields,
+                        );
+                    }
+                    continue;
+                }
                 match name {
                     b"sectPr" if paragraph_properties_depth > 0 => {
                         section_break_pending = true;
@@ -189,11 +236,21 @@ pub(crate) fn section_context(xml: &str) -> SectionContext {
                         current_page += 1;
                     }
                     b"fldSimple" => {
-                        record_section_field(
-                            attr_local(&e, b"instr").as_deref(),
+                        let instruction = attr_local(&e, b"instr");
+                        if !record_section_field(
+                            instruction.as_deref(),
                             current_section,
                             &mut field_sections,
-                        );
+                        ) {
+                            if let Some(text) = computed_section_scan_field_result(
+                                instruction.as_deref(),
+                                &mut computed_fields,
+                            ) {
+                                if !text.is_empty() {
+                                    section_has_visible_content = true;
+                                }
+                            }
+                        }
                     }
                     b"fldChar" => {
                         apply_section_scan_fld_char(
@@ -201,6 +258,8 @@ pub(crate) fn section_context(xml: &str) -> SectionContext {
                             current_section,
                             &mut current,
                             &mut field_sections,
+                            &mut section_has_visible_content,
+                            &mut computed_fields,
                         );
                     }
                     b"br" if is_page_break_type(&e) => {
@@ -237,6 +296,10 @@ pub(crate) fn section_context(xml: &str) -> SectionContext {
             Ok(Event::End(e)) => {
                 let qname = e.name();
                 let name = local(qname.as_ref());
+                if suppresses_section_complex_result_scan(&current) {
+                    xml_depth = xml_depth.saturating_sub(1);
+                    continue;
+                }
                 if name == b"AlternateContent" {
                     alternate_content_stack.pop();
                 }
@@ -312,6 +375,41 @@ fn record_section_field(
     is_section_field
 }
 
+#[derive(Debug, Default)]
+struct SectionComputedFieldState {
+    field_bookmarks: HashMap<String, String>,
+    sequence_counters: HashMap<String, i64>,
+    autonum_counter: i64,
+    listnum_counter: i64,
+}
+
+fn computed_section_scan_field_result(
+    instruction: Option<&str>,
+    state: &mut SectionComputedFieldState,
+) -> Option<String> {
+    let instruction = normalize_instruction(instruction?);
+    if is_section_scan_instruction(&instruction) {
+        return None;
+    }
+    match FieldKind::from_instruction(&instruction) {
+        FieldKind::Dynamic(kind) if kind == "SET" => {
+            return computed_set_result(&instruction, &mut state.field_bookmarks);
+        }
+        FieldKind::Dynamic(kind) if kind == "ASK" => {
+            return computed_ask_result(&instruction, &mut state.field_bookmarks);
+        }
+        _ => {}
+    }
+    computed_numbering_result(&instruction, &mut state.autonum_counter)
+        .or_else(|| computed_listnum_result(&instruction, &mut state.listnum_counter))
+        .or_else(|| computed_sequence_result(&instruction, &mut state.sequence_counters))
+        .or_else(|| computed_dynamic_result_with_bookmarks(&instruction, &state.field_bookmarks))
+        .or_else(|| computed_display_result(&instruction))
+        .or_else(|| computed_action_result(&instruction))
+        .or_else(|| computed_reference_index_result(&instruction))
+        .or_else(|| computed_toc_entry_result(&instruction))
+}
+
 fn section_field_result_content_is_hidden(
     current: &Option<SectionScanField>,
     simple_section_field_result_depth: Option<usize>,
@@ -332,6 +430,12 @@ fn mark_visible_section_content(
     }
 }
 
+fn suppresses_section_complex_result_scan(current: &Option<SectionScanField>) -> bool {
+    current
+        .as_ref()
+        .is_some_and(|field| field.phase == FieldPhase::Result && field.suppress_result)
+}
+
 fn is_section_scan_instruction(instruction: &str) -> bool {
     let instruction = normalize_instruction(instruction);
     section_instruction(&instruction).is_some()
@@ -342,20 +446,48 @@ fn apply_section_scan_fld_char(
     current_section: usize,
     current: &mut Option<SectionScanField>,
     field_sections: &mut Vec<usize>,
+    section_has_visible_content: &mut bool,
+    computed_fields: &mut SectionComputedFieldState,
 ) {
     match field_char_type(e).as_deref() {
         Some("begin") => {
+            if let Some(field) = current.as_mut() {
+                if field.phase == FieldPhase::Result && field.suppress_result {
+                    field.nested_suppressed_fields =
+                        field.nested_suppressed_fields.saturating_add(1);
+                    return;
+                }
+            }
             *current = Some(SectionScanField {
                 instruction: String::new(),
                 phase: FieldPhase::Instruction,
+                suppress_result: false,
+                nested_suppressed_fields: 0,
             });
         }
         Some("separate") => {
             if let Some(field) = current.as_mut() {
+                if field.suppress_result {
+                    return;
+                }
+                if let Some(text) =
+                    computed_section_scan_field_result(Some(&field.instruction), computed_fields)
+                {
+                    if !text.is_empty() {
+                        *section_has_visible_content = true;
+                    }
+                    field.suppress_result = true;
+                }
                 field.phase = FieldPhase::Result;
             }
         }
         Some("end") => {
+            if let Some(field) = current.as_mut() {
+                if field.suppress_result && field.nested_suppressed_fields > 0 {
+                    field.nested_suppressed_fields -= 1;
+                    return;
+                }
+            }
             if let Some(field) = current.take() {
                 record_section_field(Some(&field.instruction), current_section, field_sections);
             }
