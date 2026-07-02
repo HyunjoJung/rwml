@@ -1680,6 +1680,25 @@ fn append_shape_symbol(out: &mut String, e: &BytesStart<'_>) {
     }
 }
 
+fn computed_shape_ref_result(
+    instruction: &str,
+    document_bookmarks: &HashMap<String, String>,
+    field_bookmarks: &HashMap<String, String>,
+) -> Option<String> {
+    let ref_positions = fields::RefPositionContext::default();
+    let ref_numbers = fields::RefNumberContext::empty();
+    let note_refs = fields::NoteRefContext::empty();
+    let ctx = fields::RefResultContext {
+        bookmarks: document_bookmarks,
+        ref_positions: &ref_positions,
+        ref_numbers: &ref_numbers,
+        note_refs: &note_refs,
+        field_bookmarks,
+    };
+    fields::computed_ref_result(instruction, &ctx, None, None)
+        .or_else(|| fields::computed_direct_bookmark_ref_result(instruction, &ctx, None, None))
+}
+
 fn append_shape_simple_field(
     out: &mut String,
     e: &BytesStart<'_>,
@@ -1712,6 +1731,7 @@ fn append_shape_simple_field(
             field_bookmarks,
         )
     })
+    .or_else(|| computed_shape_ref_result(&instruction, document_bookmarks, field_bookmarks))
     .or_else(|| fields::computed_dynamic_result_with_bookmarks(&instruction, field_bookmarks))
     .or_else(|| {
         fields::computed_document_info_result(
