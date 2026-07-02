@@ -1484,6 +1484,13 @@ fn read_floating_shape(
                 if text_box_depth > 0 {
                     match name {
                         b"t" => append_shape_text(&mut shape_text, &read_text(r)),
+                        b"fldSimple" => {
+                            if append_shape_simple_field(&mut shape_text, &e) {
+                                skip_subtree(r);
+                            } else {
+                                text_box_depth += 1;
+                            }
+                        }
                         b"sym" => {
                             append_shape_symbol(&mut shape_text, &e);
                             skip_subtree(r);
@@ -1513,7 +1520,9 @@ fn read_floating_shape(
                 let qname = e.name();
                 let name = local(qname.as_ref());
                 if text_box_depth > 0 {
-                    append_shape_empty(&mut shape_text, &e, name);
+                    if name != b"fldSimple" || !append_shape_simple_field(&mut shape_text, &e) {
+                        append_shape_empty(&mut shape_text, &e, name);
+                    }
                     continue;
                 }
                 if name == b"srgbClr" {
@@ -1626,6 +1635,24 @@ fn append_shape_symbol(out: &mut String, e: &BytesStart<'_>) {
         let mut buf = [0; 4];
         append_shape_text(out, ch.encode_utf8(&mut buf));
     }
+}
+
+fn append_shape_simple_field(out: &mut String, e: &BytesStart<'_>) -> bool {
+    let Some(instruction) = attr_local(e, b"instr") else {
+        return false;
+    };
+    let field_bookmarks = HashMap::new();
+    let Some(text) = fields::computed_dynamic_result_with_bookmarks(&instruction, &field_bookmarks)
+        .or_else(|| fields::computed_display_result(&instruction))
+        .or_else(|| fields::computed_action_result(&instruction))
+        .or_else(|| fields::computed_reference_index_result(&instruction))
+    else {
+        return false;
+    };
+    if !text.is_empty() {
+        append_shape_text(out, &text);
+    }
+    true
 }
 
 fn append_shape_empty(out: &mut String, e: &BytesStart<'_>, name: &[u8]) {
