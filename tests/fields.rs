@@ -5114,6 +5114,27 @@ fn toc_heading_ref_field_source_docx() -> Vec<u8> {
     ])
 }
 
+fn toc_heading_bookmark_comparison_field_source_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="InvoiceTier"/><w:r><w:t>Gold</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:bookmarkStart w:id="8" w:name="InvoiceTotal"/><w:r><w:t>42</w:t></w:r><w:bookmarkEnd w:id="8"/></w:p><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Status </w:t></w:r><w:fldSimple w:instr=" IF InvoiceTier = &quot;Gold&quot; &quot;ship&quot; &quot;hold&quot; "><w:r><w:t>stale source if</w:t></w:r></w:fldSimple><w:r><w:t> </w:t></w:r><w:fldSimple w:instr=" COMPARE InvoiceTotal &gt;= 40 "><w:r><w:t>stale source compare</w:t></w:r></w:fldSimple><w:fldSimple w:instr=" NEXTIF InvoiceTier = &quot;Gold&quot; "><w:r><w:t>stale source nextif</w:t></w:r></w:fldSimple><w:fldSimple w:instr=" SKIPIF InvoiceTotal &lt; 40 "><w:r><w:t>stale source skipif</w:t></w:r></w:fldSimple><w:r><w:t> ready</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" TOC \o &quot;1-1&quot; "><w:r><w:t>stale bookmark-comparison-source toc</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn toc_heading_set_ref_field_source_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -16259,6 +16280,56 @@ fn docx_toc_heading_source_text_uses_computed_ref_field_results() {
     assert!(
         main_text.contains("Section Live Chapter") && !main_text.contains("stale ref"),
         "TOC source text should use the computed REF bookmark text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_toc_heading_source_text_resolves_bookmark_comparison_operands() {
+    let doc = Document::open(&toc_heading_bookmark_comparison_field_source_docx())
+        .expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 5);
+    assert_eq!(fields[0].kind, FieldKind::Dynamic("IF".to_string()));
+    assert_eq!(
+        fields[0].instruction,
+        r#"IF InvoiceTier = "Gold" "ship" "hold""#
+    );
+    assert_eq!(fields[0].result, "stale source if");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("ship"));
+    assert_eq!(fields[1].kind, FieldKind::Dynamic("COMPARE".to_string()));
+    assert_eq!(fields[1].instruction, "COMPARE InvoiceTotal >= 40");
+    assert_eq!(fields[1].result, "stale source compare");
+    assert_eq!(fields[1].computed_result.as_deref(), Some("1"));
+    assert_eq!(fields[2].kind, FieldKind::Dynamic("NEXTIF".to_string()));
+    assert_eq!(fields[2].instruction, r#"NEXTIF InvoiceTier = "Gold""#);
+    assert_eq!(fields[2].result, "stale source nextif");
+    assert_eq!(fields[2].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[3].kind, FieldKind::Dynamic("SKIPIF".to_string()));
+    assert_eq!(fields[3].instruction, "SKIPIF InvoiceTotal < 40");
+    assert_eq!(fields[3].result, "stale source skipif");
+    assert_eq!(fields[3].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[4].kind, FieldKind::Toc);
+    assert_eq!(fields[4].instruction, "TOC \\o \"1-1\"");
+    assert_eq!(fields[4].result, "stale bookmark-comparison-source toc");
+    assert_eq!(
+        fields[4].computed_result.as_deref(),
+        Some("Status ship 1 ready")
+    );
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Status ship 1 ready")
+            && !main_text.contains("stale source if")
+            && !main_text.contains("stale source compare")
+            && !main_text.contains("stale source nextif")
+            && !main_text.contains("stale source skipif")
+            && !main_text.contains("stale bookmark-comparison-source toc"),
+        "TOC source text should use document-bookmark-backed comparison fields: {main_text:?}"
     );
 }
 

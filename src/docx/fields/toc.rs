@@ -779,10 +779,19 @@ fn computed_toc_source_field_result(
         })
         .or_else(|| super::computed_quote_result(&instruction))
         .or_else(|| super::computed_fill_in_result(&instruction))
-        .or_else(|| super::computed_if_result_with_bookmarks(&instruction, field_bookmarks))
-        .or_else(|| super::computed_compare_result_with_bookmarks(&instruction, field_bookmarks))
         .or_else(|| {
-            super::computed_merge_control_result_with_bookmarks(&instruction, field_bookmarks)
+            super::computed_if_compare_result_with_bookmark_context(
+                &instruction,
+                ref_targets,
+                field_bookmarks,
+            )
+        })
+        .or_else(|| {
+            super::computed_merge_control_result_with_bookmark_context(
+                &instruction,
+                ref_targets,
+                field_bookmarks,
+            )
         })
         .or_else(|| computed_display_result(&instruction))
         .or_else(|| computed_action_result(&instruction))
