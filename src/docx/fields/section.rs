@@ -407,7 +407,8 @@ fn computed_section_scan_field_result(
     if is_section_scan_instruction(&instruction) {
         return None;
     }
-    match FieldKind::from_instruction(&instruction) {
+    let kind = FieldKind::from_instruction(&instruction);
+    match &kind {
         FieldKind::Ref => {
             return computed_section_scan_ref_result(&instruction, state);
         }
@@ -418,6 +419,11 @@ fn computed_section_scan_field_result(
             return computed_ask_result(&instruction, &mut state.field_bookmarks);
         }
         _ => {}
+    }
+    if matches!(kind, FieldKind::Unknown(_)) {
+        if let Some(text) = computed_section_scan_direct_bookmark_ref_result(&instruction, state) {
+            return Some(text);
+        }
     }
     computed_numbering_result(&instruction, &mut state.autonum_counter)
         .or_else(|| computed_listnum_result(&instruction, &mut state.listnum_counter))
@@ -444,6 +450,23 @@ fn computed_section_scan_ref_result(
         field_bookmarks: &state.field_bookmarks,
     };
     computed_ref_result(instruction, &ctx, None, None)
+}
+
+fn computed_section_scan_direct_bookmark_ref_result(
+    instruction: &str,
+    state: &SectionComputedFieldState<'_>,
+) -> Option<String> {
+    let ref_positions = RefPositionContext::default();
+    let ref_numbers = RefNumberContext::empty();
+    let note_refs = NoteRefContext::empty();
+    let ctx = RefResultContext {
+        bookmarks: state.document_bookmarks,
+        ref_positions: &ref_positions,
+        ref_numbers: &ref_numbers,
+        note_refs: &note_refs,
+        field_bookmarks: &state.field_bookmarks,
+    };
+    computed_direct_bookmark_ref_result(instruction, &ctx, None, None)
 }
 
 fn section_field_result_content_is_hidden(
