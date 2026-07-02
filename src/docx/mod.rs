@@ -1409,6 +1409,14 @@ fn read_floating_shapes(
                     }
                     body_depth += 1;
                 }
+                if in_body && current_body_block_index.is_some() && name == b"fldSimple" {
+                    if let Some(text) = computed_floating_anchor_simple_field_text(&e) {
+                        append_floating_anchor_text(&mut current_body_block_text, &text);
+                        skip_subtree(&mut r);
+                        body_depth = body_depth.saturating_sub(1);
+                        continue;
+                    }
+                }
                 if name == b"instrText" {
                     shape_field_cursor.append_instruction_text(&read_text(&mut r));
                     if in_body {
@@ -1580,11 +1588,20 @@ fn append_floating_anchor_symbol(out: &mut String, e: &BytesStart<'_>) {
 }
 
 fn append_floating_anchor_empty(out: &mut String, e: &BytesStart<'_>, name: &[u8]) {
-    if name == b"sym" {
+    if name == b"fldSimple" {
+        if let Some(text) = computed_floating_anchor_simple_field_text(e) {
+            append_floating_anchor_text(out, &text);
+        }
+    } else if name == b"sym" {
         append_floating_anchor_symbol(out, e);
     } else if let Some(marker) = inline_marker_text(e) {
         append_floating_anchor_text(out, marker);
     }
+}
+
+fn computed_floating_anchor_simple_field_text(e: &BytesStart<'_>) -> Option<String> {
+    let instruction = attr_local_trimmed(e, b"instr")?;
+    fields::computed_quote_result(&instruction)
 }
 
 #[derive(Debug, Clone)]
