@@ -17880,6 +17880,31 @@ fn docx_computed_complex_field_replaces_marker_only_cached_result() {
 }
 
 #[test]
+fn docx_computed_complex_field_replaces_run_alternate_content_field_result() {
+    let doc = Document::open(&docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> QUOTE &quot;Outer&quot; </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:fldSimple w:instr=" QUOTE &quot;Inner&quot; "><w:r><w:t>stale inner</w:t></w:r></w:fldSimple></mc:Choice><mc:Fallback><w:r><w:t>Fallback inner</w:t></w:r></mc:Fallback></mc:AlternateContent></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:body></w:document>"#,
+        ),
+    ]))
+    .expect("fixture opens");
+
+    let fields = doc.fields();
+    assert!(fields.iter().any(|field| {
+        field.instruction == r#"QUOTE "Outer""# && field.computed_result.as_deref() == Some("Outer")
+    }));
+    assert_eq!(doc.main_text(), "Outer");
+}
+
+#[test]
 fn docx_field_results_preserve_supported_symbols() {
     let doc = Document::open(&cached_field_result_symbol_docx()).expect("fixture opens");
     let fields = doc.fields();

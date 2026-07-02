@@ -2617,6 +2617,7 @@ fn read_run(
     let mut text = String::new();
     let mut text_is_field_result = false;
     let mut images: Vec<Run> = Vec::new();
+    let mut image_result_runs = Vec::new();
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
@@ -2669,6 +2670,7 @@ fn read_run(
                         &mut text,
                         &mut text_is_field_result,
                         &mut images,
+                        &mut image_result_runs,
                     );
                 }
                 _ => skip_subtree(r),
@@ -2736,7 +2738,7 @@ fn read_run(
     let mut runs = Vec::new();
     if !text.is_empty() {
         if text_is_field_result {
-            if let Some(tracker) = complex_field {
+            if let Some(tracker) = complex_field.as_deref_mut() {
                 tracker.push_result_run(base_index + runs.len(), &text);
             }
         }
@@ -2755,6 +2757,17 @@ fn read_run(
             bookmark: None,
             note: None,
         });
+    }
+    if let Some(tracker) = complex_field.as_deref_mut() {
+        let image_start = runs.len();
+        for image_index in image_result_runs {
+            let Some(run) = images.get(image_index) else {
+                continue;
+            };
+            if !run.text.is_empty() {
+                tracker.push_result_run(base_index + image_start + image_index, &run.text);
+            }
+        }
     }
     runs.extend(images);
     runs
@@ -2790,6 +2803,7 @@ fn append_run_alternate_content(
     text: &mut String,
     text_is_field_result: &mut bool,
     images: &mut Vec<Run>,
+    image_result_runs: &mut Vec<usize>,
 ) {
     if depth > MAX_DEPTH {
         skip_subtree(r);
@@ -2810,6 +2824,7 @@ fn append_run_alternate_content(
                         text,
                         text_is_field_result,
                         images,
+                        image_result_runs,
                     );
                 }
                 _ => skip_subtree(r),
@@ -2829,6 +2844,7 @@ fn append_run_alternate_content_branch(
     text: &mut String,
     text_is_field_result: &mut bool,
     images: &mut Vec<Run>,
+    image_result_runs: &mut Vec<usize>,
 ) {
     if depth > MAX_DEPTH {
         skip_subtree(r);
@@ -2870,10 +2886,26 @@ fn append_run_alternate_content_branch(
                     skip_subtree(r);
                 }
                 b"drawing" | b"pict" | b"object" => {
+                    let start = images.len();
                     let (img, txbx) = read_drawing(r, ctx, depth);
                     push_drawing_runs(images, img, txbx);
+                    if complex_field
+                        .as_deref()
+                        .is_some_and(ComplexFieldTracker::in_result)
+                    {
+                        image_result_runs.extend(start..images.len());
+                    }
                 }
-                b"fldSimple" => images.extend(read_fldsimple(r, &e, ctx, depth)),
+                b"fldSimple" => {
+                    let start = images.len();
+                    images.extend(read_fldsimple(r, &e, ctx, depth));
+                    if complex_field
+                        .as_deref()
+                        .is_some_and(ComplexFieldTracker::in_result)
+                    {
+                        image_result_runs.extend(start..images.len());
+                    }
+                }
                 b"AlternateContent" => append_run_alternate_content(
                     r,
                     ctx,
@@ -2883,6 +2915,7 @@ fn append_run_alternate_content_branch(
                     text,
                     text_is_field_result,
                     images,
+                    image_result_runs,
                 ),
                 _ => skip_subtree(r),
             },
