@@ -9,7 +9,7 @@ use crate::text;
 
 use super::fields::{
     computed_contextless_result, computed_run_symbol_char, ContextlessFieldState,
-    FieldDocumentProperties,
+    FieldDocumentProperties, NoteRefContext,
 };
 use super::xml_text::{
     inline_marker_text, read_text, skip_alternate_content_branch, skip_subtree,
@@ -23,6 +23,7 @@ pub(crate) fn parse(
     xml: &str,
     properties: FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
+    note_refs: &NoteRefContext,
 ) -> Vec<Revision> {
     let mut r = Reader::from_str(xml);
     let mut revisions = Vec::new();
@@ -53,6 +54,7 @@ pub(crate) fn parse(
                         kind,
                         properties,
                         document_bookmarks,
+                        note_refs,
                     ));
                 }
             }
@@ -76,6 +78,7 @@ pub(crate) fn main_text_with_view(
     view: RevisionView,
     properties: Option<FieldDocumentProperties<'_>>,
     document_bookmarks: Option<&HashMap<String, String>>,
+    note_refs: Option<&NoteRefContext>,
 ) -> String {
     let mut r = Reader::from_str(xml);
     let mut out = String::new();
@@ -106,6 +109,7 @@ pub(crate) fn main_text_with_view(
                         local(e.name().as_ref()),
                         properties,
                         document_bookmarks,
+                        note_refs,
                     );
                     push_revision_text(&mut out, view, kind, &rev_text);
                     inline_continuation = false;
@@ -171,9 +175,16 @@ fn read_revision(
     kind: RevisionKind,
     properties: FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
+    note_refs: &NoteRefContext,
 ) -> Revision {
     let end_name = local(start.name().as_ref()).to_vec();
-    let text = read_revision_text(r, &end_name, Some(properties), Some(document_bookmarks));
+    let text = read_revision_text(
+        r,
+        &end_name,
+        Some(properties),
+        Some(document_bookmarks),
+        Some(note_refs),
+    );
     revision_shell(start, kind, text)
 }
 
@@ -182,15 +193,23 @@ fn read_revision_text(
     end_name: &[u8],
     properties: Option<FieldDocumentProperties<'_>>,
     document_bookmarks: Option<&HashMap<String, String>>,
+    note_refs: Option<&NoteRefContext>,
 ) -> String {
     let mut depth = 1usize;
     let mut text = String::new();
     let mut complex_field = RevisionComplexField::default();
-    let mut field_state = match (properties, document_bookmarks) {
-        (Some(properties), Some(document_bookmarks)) => {
+    let mut field_state = match (properties, document_bookmarks, note_refs) {
+        (Some(properties), Some(document_bookmarks), Some(note_refs)) => {
+            ContextlessFieldState::with_document_and_note_context(
+                properties,
+                document_bookmarks,
+                note_refs,
+            )
+        }
+        (Some(properties), Some(document_bookmarks), None) => {
             ContextlessFieldState::with_document_context(properties, document_bookmarks)
         }
-        (Some(properties), None) => ContextlessFieldState::with_document_properties(properties),
+        (Some(properties), None, _) => ContextlessFieldState::with_document_properties(properties),
         _ => ContextlessFieldState::default(),
     };
     let mut embedded_body_depth = 0usize;

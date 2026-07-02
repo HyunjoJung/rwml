@@ -1021,6 +1021,7 @@ pub(crate) fn scan_note_ref_anchors(
     tag: &[u8],
     properties: FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
+    note_refs: &super::fields::NoteRefContext,
 ) -> HashMap<String, String> {
     let mut r = Reader::from_str(xml);
     let mut anchors = HashMap::new();
@@ -1031,8 +1032,11 @@ pub(crate) fn scan_note_ref_anchors(
     let mut current_block_text = String::new();
     let mut current_block_refs = Vec::new();
     let mut complex_field = NoteAnchorComplexField::default();
-    let mut field_state =
-        ContextlessFieldState::with_document_context(properties, document_bookmarks);
+    let mut field_state = ContextlessFieldState::with_document_and_note_context(
+        properties,
+        document_bookmarks,
+        note_refs,
+    );
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => {

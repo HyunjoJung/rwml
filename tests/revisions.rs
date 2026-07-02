@@ -282,6 +282,23 @@ fn document_bookmark_ref_field_revision_docx() -> Vec<u8> {
     ])
 }
 
+fn note_ref_field_revision_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="1" w:name="FootOne"/><w:r><w:footnoteReference w:id="1"/></w:r><w:bookmarkEnd w:id="1"/></w:p><w:p><w:ins w:id="53" w:author="Alice"><w:fldSimple w:instr=" NOTEREF FootOne "><w:r><w:t>stale insert note</w:t></w:r></w:fldSimple><w:r><w:t> added</w:t></w:r></w:ins><w:del w:id="54" w:author="Bob"><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> FTNREF FootOne </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:delText>stale delete note</w:delText></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:delText> removed</w:delText></w:r></w:del></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn note_revised_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -711,6 +728,22 @@ fn docx_revision_text_uses_document_bookmark_ref_field_text() {
     assert_eq!(
         doc.main_text_with_revision_view(RevisionView::Original),
         "clause one Clause one removed"
+    );
+}
+
+#[test]
+fn docx_revision_text_uses_document_note_ref_field_text() {
+    let doc = Document::open(&note_ref_field_revision_docx()).expect("fixture opens");
+    let revisions = doc.revisions();
+
+    assert_eq!(revisions.len(), 2);
+    assert_eq!(revisions[0].kind, RevisionKind::Insertion);
+    assert_eq!(revisions[0].text, "1 added");
+    assert_eq!(revisions[1].kind, RevisionKind::Deletion);
+    assert_eq!(revisions[1].text, "1 removed");
+    assert_eq!(
+        doc.main_text_with_revision_view(RevisionView::Original),
+        "1 removed"
     );
 }
 

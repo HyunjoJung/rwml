@@ -1224,6 +1224,7 @@ pub(crate) fn computed_dynamic_result_with_bookmarks(
 pub(crate) struct ContextlessFieldState<'a> {
     document_properties: Option<FieldDocumentProperties<'a>>,
     document_bookmarks: Option<&'a HashMap<String, String>>,
+    note_refs: Option<&'a NoteRefContext>,
     field_bookmarks: HashMap<String, String>,
     sequence_counters: HashMap<String, i64>,
     autonum_counter: i64,
@@ -1245,6 +1246,19 @@ impl<'a> ContextlessFieldState<'a> {
         Self {
             document_properties: Some(properties),
             document_bookmarks: Some(document_bookmarks),
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn with_document_and_note_context(
+        properties: FieldDocumentProperties<'a>,
+        document_bookmarks: &'a HashMap<String, String>,
+        note_refs: &'a NoteRefContext,
+    ) -> Self {
+        Self {
+            document_properties: Some(properties),
+            document_bookmarks: Some(document_bookmarks),
+            note_refs: Some(note_refs),
             ..Self::default()
         }
     }
@@ -1291,6 +1305,11 @@ pub(crate) fn computed_contextless_result(
         }
         if let Some(text) = computed_contextless_ref_result(instruction, document_bookmarks, state)
         {
+            return Some(text);
+        }
+    }
+    if let Some(note_refs) = state.note_refs {
+        if let Some(text) = computed_note_ref_result(instruction, note_refs, None) {
             return Some(text);
         }
     }
