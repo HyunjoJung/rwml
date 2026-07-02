@@ -750,6 +750,13 @@ fn computed_toc_source_field_result(
     computed_toc_source_ref_result(&instruction, ref_targets)
         .or_else(|| computed_numbering_result(&instruction, autonum_counter))
         .or_else(|| computed_listnum_result(&instruction, listnum_counter))
+        .or_else(|| {
+            super::computed_formula_result_with_bookmark_context(
+                &instruction,
+                ref_targets,
+                &field_bookmarks,
+            )
+        })
         .or_else(|| super::computed_quote_result(&instruction))
         .or_else(|| super::computed_fill_in_result(&instruction))
         .or_else(|| super::computed_if_result_with_bookmarks(&instruction, &field_bookmarks))
