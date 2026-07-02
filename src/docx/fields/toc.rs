@@ -36,6 +36,7 @@ pub(crate) fn toc_entries(
     let mut sequence_counters = HashMap::new();
     let mut autonum_counter = 0i64;
     let mut listnum_counter = 0i64;
+    let mut field_bookmarks = HashMap::new();
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
     loop {
@@ -67,6 +68,7 @@ pub(crate) fn toc_entries(
                             &mut sequence_counters,
                             &mut autonum_counter,
                             &mut listnum_counter,
+                            &mut field_bookmarks,
                             &mut entries,
                             ref_targets,
                         );
@@ -122,6 +124,7 @@ fn read_toc_paragraph(
     sequence_counters: &mut HashMap<String, i64>,
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
+    field_bookmarks: &mut HashMap<String, String>,
     entries: &mut Vec<TocEntry>,
     ref_targets: &HashMap<String, String>,
 ) {
@@ -132,7 +135,6 @@ fn read_toc_paragraph(
     let mut current = Vec::new();
     let mut result_starts: Vec<Option<usize>> = Vec::new();
     let mut sequence_identifiers = Vec::new();
-    let mut field_bookmarks = HashMap::new();
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
     loop {
@@ -184,7 +186,7 @@ fn read_toc_paragraph(
                                 autonum_counter,
                                 listnum_counter,
                                 &mut sequence_identifiers,
-                                &mut field_bookmarks,
+                                field_bookmarks,
                                 entries,
                                 ref_targets,
                             ));
@@ -201,7 +203,7 @@ fn read_toc_paragraph(
                             autonum_counter,
                             listnum_counter,
                             &mut sequence_identifiers,
-                            &mut field_bookmarks,
+                            field_bookmarks,
                             &mut text,
                             entries,
                             ref_targets,
@@ -268,7 +270,7 @@ fn read_toc_paragraph(
                                 ref_targets,
                                 autonum_counter,
                                 listnum_counter,
-                                &mut field_bookmarks,
+                                field_bookmarks,
                             ) {
                                 text.push_str(&computed);
                             }
@@ -284,7 +286,7 @@ fn read_toc_paragraph(
                             autonum_counter,
                             listnum_counter,
                             &mut sequence_identifiers,
-                            &mut field_bookmarks,
+                            field_bookmarks,
                             &mut text,
                             entries,
                             ref_targets,
