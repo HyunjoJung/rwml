@@ -406,6 +406,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         &doc_xml,
         field_properties,
         &ref_targets,
+        &ref_position_context,
         &page_ref_context,
         &note_ref_context,
         &section_context,
@@ -929,6 +930,7 @@ fn read_hf_parts(
                     file_size_bytes: properties.file_size_bytes,
                 },
                 &ref_targets,
+                &ref_position_context,
                 &page_ref_context,
                 &note_ref_context,
                 &section_context,
@@ -1120,6 +1122,7 @@ fn read_notes(
             file_size_bytes: properties.file_size_bytes,
         },
         &ref_targets,
+        &ref_position_context,
         &page_ref_context,
         &note_ref_context,
         &section_context,
@@ -1245,6 +1248,7 @@ fn read_floating_shapes(
     doc_xml: &str,
     properties: fields::FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
+    ref_positions: &fields::RefPositionContext,
     page_refs: &fields::PageRefContext,
     note_refs: &fields::NoteRefContext,
     sections: &fields::SectionContext,
@@ -1294,6 +1298,7 @@ fn read_floating_shapes(
                     shape_field_cursor.start_simple_field(
                         &e,
                         scan_depth + 1,
+                        ref_positions,
                         page_refs,
                         note_refs,
                         sections,
@@ -1303,6 +1308,7 @@ fn read_floating_shapes(
                 } else if name == b"fldChar" {
                     shape_field_cursor.apply_field_char(
                         &e,
+                        ref_positions,
                         page_refs,
                         note_refs,
                         sections,
@@ -1358,6 +1364,7 @@ fn read_floating_shapes(
                         current_body_block_index,
                         properties,
                         document_bookmarks,
+                        ref_positions,
                         page_refs,
                         note_refs,
                         sections,
@@ -1417,6 +1424,7 @@ fn read_floating_shapes(
                 if name == b"fldSimple" {
                     shape_field_cursor.empty_simple_field(
                         &e,
+                        ref_positions,
                         page_refs,
                         note_refs,
                         sections,
@@ -1426,6 +1434,7 @@ fn read_floating_shapes(
                 } else if name == b"fldChar" {
                     shape_field_cursor.apply_field_char(
                         &e,
+                        ref_positions,
                         page_refs,
                         note_refs,
                         sections,
@@ -1580,6 +1589,7 @@ impl ShapeFieldCursor {
         &mut self,
         e: &BytesStart<'_>,
         depth: usize,
+        ref_positions: &fields::RefPositionContext,
         page_refs: &fields::PageRefContext,
         note_refs: &fields::NoteRefContext,
         sections: &fields::SectionContext,
@@ -1594,7 +1604,7 @@ impl ShapeFieldCursor {
             self.computed_sequence_result(&instruction);
             self.computed_autonum_result(&instruction);
             self.computed_listnum_result(&instruction);
-            self.next_ref_note_position(&instruction, note_refs);
+            self.next_ref_field_context(&instruction, ref_positions, note_refs);
             self.next_style_ref_field_position(&instruction, style_refs);
             self.next_page_field_position(&instruction, page_refs);
             self.next_page_ref_field_context(&instruction, page_refs);
@@ -1608,6 +1618,7 @@ impl ShapeFieldCursor {
     fn empty_simple_field(
         &mut self,
         e: &BytesStart<'_>,
+        ref_positions: &fields::RefPositionContext,
         page_refs: &fields::PageRefContext,
         note_refs: &fields::NoteRefContext,
         sections: &fields::SectionContext,
@@ -1621,7 +1632,7 @@ impl ShapeFieldCursor {
             self.computed_sequence_result(&instruction);
             self.computed_autonum_result(&instruction);
             self.computed_listnum_result(&instruction);
-            self.next_ref_note_position(&instruction, note_refs);
+            self.next_ref_field_context(&instruction, ref_positions, note_refs);
             self.next_style_ref_field_position(&instruction, style_refs);
             self.next_page_field_position(&instruction, page_refs);
             self.next_page_ref_field_context(&instruction, page_refs);
@@ -1693,6 +1704,7 @@ impl ShapeFieldCursor {
     fn apply_field_char(
         &mut self,
         e: &BytesStart<'_>,
+        ref_positions: &fields::RefPositionContext,
         page_refs: &fields::PageRefContext,
         note_refs: &fields::NoteRefContext,
         sections: &fields::SectionContext,
@@ -1731,7 +1743,11 @@ impl ShapeFieldCursor {
                         self.computed_autonum_result(&field.instruction);
                         self.computed_listnum_result(&field.instruction);
                         if !field.ref_indexed {
-                            self.next_ref_note_position(&field.instruction, note_refs);
+                            self.next_ref_field_context(
+                                &field.instruction,
+                                ref_positions,
+                                note_refs,
+                            );
                         }
                         if !field.style_ref_indexed {
                             self.next_style_ref_field_position(&field.instruction, style_refs);
@@ -1818,27 +1834,33 @@ impl ShapeFieldCursor {
         position
     }
 
-    fn current_complex_ref_note_position(
+    fn current_complex_ref_field_context(
         &mut self,
+        ref_positions: &fields::RefPositionContext,
         note_refs: &fields::NoteRefContext,
-    ) -> Option<fields::NoteRefFieldPosition> {
+    ) -> (
+        Option<fields::RefFieldPosition>,
+        Option<fields::NoteRefFieldPosition>,
+    ) {
         let instruction = {
-            let field = self.complex_field.as_ref()?;
+            let Some(field) = self.complex_field.as_ref() else {
+                return (None, None);
+            };
             if field.phase != ShapeFieldCursorPhase::Result
                 || field.computed_result.is_some()
                 || field.ref_indexed
             {
-                return None;
+                return (None, None);
             }
             field.instruction.clone()
         };
-        let position = self.next_ref_note_position(&instruction, note_refs);
+        let context = self.next_ref_field_context(&instruction, ref_positions, note_refs);
         if let Some(field) = self.complex_field.as_mut() {
             if FieldKind::from_instruction(&instruction) == FieldKind::Ref {
                 field.ref_indexed = true;
             }
         }
-        position
+        context
     }
 
     fn current_complex_page_ref_field_context(
@@ -2019,17 +2041,24 @@ impl ShapeFieldCursor {
         style_refs.field_position(index)
     }
 
-    fn next_ref_note_position(
+    fn next_ref_field_context(
         &mut self,
         instruction: &str,
+        ref_positions: &fields::RefPositionContext,
         note_refs: &fields::NoteRefContext,
-    ) -> Option<fields::NoteRefFieldPosition> {
+    ) -> (
+        Option<fields::RefFieldPosition>,
+        Option<fields::NoteRefFieldPosition>,
+    ) {
         if FieldKind::from_instruction(instruction) != FieldKind::Ref {
-            return None;
+            return (None, None);
         }
         let index = self.ref_index;
         self.ref_index += 1;
-        note_refs.ref_field_position(index)
+        (
+            ref_positions.field_position(index),
+            note_refs.ref_field_position(index),
+        )
     }
 
     fn next_page_field_position(
@@ -2217,6 +2246,7 @@ fn read_floating_shape(
     anchor_block_index: Option<usize>,
     properties: fields::FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
+    ref_positions: &fields::RefPositionContext,
     page_refs: &fields::PageRefContext,
     note_refs: &fields::NoteRefContext,
     sections: &fields::SectionContext,
@@ -2260,6 +2290,7 @@ fn read_floating_shape(
                                 properties,
                                 document_bookmarks,
                                 &mut field_bookmarks,
+                                ref_positions,
                                 page_refs,
                                 note_refs,
                                 sections,
@@ -2283,6 +2314,7 @@ fn read_floating_shape(
                                 properties,
                                 document_bookmarks,
                                 &mut field_bookmarks,
+                                ref_positions,
                                 page_refs,
                                 note_refs,
                                 sections,
@@ -2341,6 +2373,7 @@ fn read_floating_shape(
                             properties,
                             document_bookmarks,
                             &mut field_bookmarks,
+                            ref_positions,
                             page_refs,
                             note_refs,
                             sections,
@@ -2365,6 +2398,7 @@ fn read_floating_shape(
                                 properties,
                                 document_bookmarks,
                                 &mut field_bookmarks,
+                                ref_positions,
                                 page_refs,
                                 note_refs,
                                 sections,
@@ -2524,21 +2558,29 @@ fn computed_shape_ref_result(
     instruction: &str,
     document_bookmarks: &HashMap<String, String>,
     field_bookmarks: &HashMap<String, String>,
+    ref_positions: &fields::RefPositionContext,
+    ref_position: Option<fields::RefFieldPosition>,
     note_refs: &fields::NoteRefContext,
     note_ref_position: Option<fields::NoteRefFieldPosition>,
 ) -> Option<String> {
-    let ref_positions = fields::RefPositionContext::default();
     let ref_numbers = fields::RefNumberContext::empty();
     let ctx = fields::RefResultContext {
         bookmarks: document_bookmarks,
-        ref_positions: &ref_positions,
+        ref_positions,
         ref_numbers: &ref_numbers,
         note_refs,
         field_bookmarks,
     };
-    fields::computed_ref_result(instruction, &ctx, None, note_ref_position).or_else(|| {
-        fields::computed_direct_bookmark_ref_result(instruction, &ctx, None, note_ref_position)
-    })
+    fields::computed_ref_result(instruction, &ctx, ref_position.clone(), note_ref_position).or_else(
+        || {
+            fields::computed_direct_bookmark_ref_result(
+                instruction,
+                &ctx,
+                ref_position,
+                note_ref_position,
+            )
+        },
+    )
 }
 
 fn computed_shape_context_field_result(
@@ -2546,8 +2588,10 @@ fn computed_shape_context_field_result(
     properties: fields::FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
     field_bookmarks: &mut HashMap<String, String>,
+    ref_positions: &fields::RefPositionContext,
     page_refs: &fields::PageRefContext,
     note_refs: &fields::NoteRefContext,
+    ref_position: Option<fields::RefFieldPosition>,
     page_position: Option<fields::PageRefPosition>,
     page_ref_position: Option<fields::PageRefPosition>,
     page_ref_order: Option<usize>,
@@ -2592,6 +2636,8 @@ fn computed_shape_context_field_result(
             instruction,
             document_bookmarks,
             field_bookmarks,
+            ref_positions,
+            ref_position,
             note_refs,
             ref_note_position,
         )
@@ -2622,6 +2668,7 @@ fn apply_shape_field_char(
     properties: fields::FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
     field_bookmarks: &mut HashMap<String, String>,
+    ref_positions: &fields::RefPositionContext,
     page_refs: &fields::PageRefContext,
     note_refs: &fields::NoteRefContext,
     sections: &fields::SectionContext,
@@ -2640,6 +2687,7 @@ fn apply_shape_field_char(
     }
     let completed = shape_field_cursor.apply_field_char(
         e,
+        ref_positions,
         page_refs,
         note_refs,
         sections,
@@ -2651,7 +2699,8 @@ fn apply_shape_field_char(
         .map(str::to_string)
         .and_then(|instruction| {
             let page_position = shape_field_cursor.current_complex_page_field_position(page_refs);
-            let ref_note_position = shape_field_cursor.current_complex_ref_note_position(note_refs);
+            let (ref_position, ref_note_position) =
+                shape_field_cursor.current_complex_ref_field_context(ref_positions, note_refs);
             let (page_ref_position, page_ref_order) =
                 shape_field_cursor.current_complex_page_ref_field_context(page_refs);
             let note_ref_position =
@@ -2668,8 +2717,10 @@ fn apply_shape_field_char(
                         properties,
                         document_bookmarks,
                         field_bookmarks,
+                        ref_positions,
                         page_refs,
                         note_refs,
+                        ref_position,
                         page_position,
                         page_ref_position,
                         page_ref_order,
@@ -2701,6 +2752,7 @@ fn append_shape_simple_field(
     properties: fields::FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
     field_bookmarks: &mut HashMap<String, String>,
+    ref_positions: &fields::RefPositionContext,
     page_refs: &fields::PageRefContext,
     note_refs: &fields::NoteRefContext,
     sections: &fields::SectionContext,
@@ -2724,7 +2776,8 @@ fn append_shape_simple_field(
         }
     }
     let page_position = shape_field_cursor.next_page_field_position(&instruction, page_refs);
-    let ref_note_position = shape_field_cursor.next_ref_note_position(&instruction, note_refs);
+    let (ref_position, ref_note_position) =
+        shape_field_cursor.next_ref_field_context(&instruction, ref_positions, note_refs);
     let (page_ref_position, page_ref_order) =
         shape_field_cursor.next_page_ref_field_context(&instruction, page_refs);
     let note_ref_position =
@@ -2740,8 +2793,10 @@ fn append_shape_simple_field(
                 properties,
                 document_bookmarks,
                 field_bookmarks,
+                ref_positions,
                 page_refs,
                 note_refs,
+                ref_position,
                 page_position,
                 page_ref_position,
                 page_ref_order,
