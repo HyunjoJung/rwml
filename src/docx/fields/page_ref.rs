@@ -1194,6 +1194,13 @@ fn computed_page_ref_scan_field_result(
         .or_else(|| computed_listnum_result(&instruction, &mut state.listnum_counter))
         .or_else(|| computed_sequence_result(&instruction, &mut state.sequence_counters))
         .or_else(|| computed_dynamic_result_with_bookmarks(&instruction, &state.field_bookmarks))
+        .or_else(|| {
+            computed_merge_control_result_with_bookmark_context(
+                &instruction,
+                state.document_bookmarks,
+                &state.field_bookmarks,
+            )
+        })
         .or_else(|| computed_display_result(&instruction))
         .or_else(|| computed_action_result(&instruction))
         .or_else(|| computed_revision_number_result(&instruction, state.properties.core))
