@@ -3689,6 +3689,9 @@ fn is_revision_property_change(name: &[u8]) -> bool {
             | b"tcPrChange"
             | b"sectPrChange"
             | b"numPrChange"
+            | b"cellIns"
+            | b"cellDel"
+            | b"cellMerge"
     )
 }
 

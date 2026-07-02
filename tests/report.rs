@@ -3541,6 +3541,35 @@ fn report_counts_docx_feature_markers() {
 
 #[cfg(feature = "docx")]
 #[test]
+fn report_counts_table_cell_revision_markers() {
+    let fixture = docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:tc><w:tcPr><w:cellIns w:id="1" w:author="A" w:date="2024-01-01T00:00:00Z"/></w:tcPr><w:p><w:r><w:t>a</w:t></w:r></w:p></w:tc><w:tc><w:tcPr><w:cellDel w:id="2" w:author="A" w:date="2024-01-01T00:00:00Z"/><w:cellMerge w:vMerge="rest" w:id="3" w:author="A" w:date="2024-01-01T00:00:00Z"/></w:tcPr><w:p><w:r><w:t>b</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+        ),
+    ]);
+    let doc = Document::open(&fixture).expect("fixture opens");
+    let report = doc.report();
+
+    assert_eq!(report.features.tracked_property_changes, 3);
+    assert!(report.warnings.iter().any(|warning| matches!(
+        warning,
+        DocumentWarning::IncompleteRevisionView {
+            property_changes: 3
+        }
+    )));
+}
+
+#[cfg(feature = "docx")]
+#[test]
 fn report_counts_feature_markers_in_docx_story_parts() {
     let doc = Document::open(&docx_fixture(&[
         (
