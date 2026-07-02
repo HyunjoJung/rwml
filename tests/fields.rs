@@ -17905,6 +17905,43 @@ fn docx_computed_complex_field_replaces_run_alternate_content_field_result() {
 }
 
 #[test]
+fn docx_complex_field_preserves_run_alternate_content_hyperlink_result() {
+    let doc = Document::open(&docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdLink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com" TargetMode="External"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> CUSTOM outer </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:hyperlink r:id="rIdLink"><w:r><w:t>stale link</w:t></w:r></w:hyperlink></mc:Choice><mc:Fallback><w:r><w:t>fallback link</w:t></w:r></mc:Fallback></mc:AlternateContent></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:body></w:document>"#,
+        ),
+    ]))
+    .expect("fixture opens");
+
+    let fields = doc.fields();
+    let field = fields
+        .iter()
+        .find(|field| field.instruction == "CUSTOM outer")
+        .expect("outer field is recorded");
+    assert_eq!(field.kind, FieldKind::Unknown("CUSTOM".to_string()));
+    assert_eq!(field.result, "stale link");
+    assert_eq!(field.computed_result, None);
+    assert_eq!(doc.main_text(), "stale link");
+    assert_eq!(
+        model_simple_field_reason_hints(&doc, |instruction| instruction == "CUSTOM outer"),
+        vec![("CUSTOM outer".to_string(), None)]
+    );
+}
+
+#[test]
 fn docx_computed_complex_field_replaces_paragraph_simple_field_result() {
     let doc = Document::open(&docx_fixture(&[
         (

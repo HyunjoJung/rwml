@@ -2972,6 +2972,16 @@ fn append_run_alternate_content_branch(
                         image_result_runs.extend(start..images.len());
                     }
                 }
+                b"hyperlink" => {
+                    let start = images.len();
+                    images.extend(read_hyperlink(r, &e, ctx, depth));
+                    if complex_field
+                        .as_deref()
+                        .is_some_and(ComplexFieldTracker::in_result)
+                    {
+                        image_result_runs.extend(start..images.len());
+                    }
+                }
                 b"AlternateContent" => append_run_alternate_content(
                     r,
                     ctx,
