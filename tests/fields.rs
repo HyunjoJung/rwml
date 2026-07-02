@@ -4435,6 +4435,23 @@ fn page_ref_comment_mark_before_manual_break_docx() -> Vec<u8> {
     ])
 }
 
+fn page_ref_computed_field_markers_before_manual_break_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SET SimpleHidden &quot;Plain&quot; "><w:r><w:footnoteReference w:id="1"/></w:r></w:fldSimple></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> SET ComplexHidden &quot;Plain&quot; </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:commentReference w:id="2"/></w:r><w:r><w:t>stale hidden field text</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p><w:p><w:r><w:br w:type="page"/></w:r></w:p><w:p><w:bookmarkStart w:id="7" w:name="ComputedHiddenTarget"/><w:r><w:t>Computed hidden target</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF ComputedHiddenTarget \h "><w:r><w:t>cached hidden page ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn page_ref_rendered_break_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -19728,6 +19745,38 @@ fn docx_page_ref_comment_mark_before_manual_break_keeps_cached_page_text() {
             reason: FieldEvaluationReason::NoComputedResult,
             count: 1,
         }]
+    );
+}
+
+#[test]
+fn docx_page_ref_ignores_stale_markers_inside_computed_field_results_before_manual_break() {
+    let doc = Document::open(&page_ref_computed_field_markers_before_manual_break_docx())
+        .expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 3);
+    assert_eq!(fields[0].kind, FieldKind::Dynamic("SET".to_string()));
+    assert_eq!(fields[0].instruction, r#"SET SimpleHidden "Plain""#);
+    assert_eq!(fields[0].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[1].kind, FieldKind::Dynamic("SET".to_string()));
+    assert_eq!(fields[1].instruction, r#"SET ComplexHidden "Plain""#);
+    assert_eq!(fields[1].computed_result.as_deref(), Some(""));
+    assert_eq!(fields[2].kind, FieldKind::PageRef);
+    assert_eq!(fields[2].instruction, "PAGEREF ComputedHiddenTarget \\h");
+    assert_eq!(fields[2].result, "cached hidden page ref");
+    assert_eq!(fields[2].computed_result.as_deref(), Some("2"));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Computed hidden target\n2")
+            && !main_text.contains("cached hidden page ref")
+            && !main_text.contains("stale hidden field text")
+            && !main_text.contains('\u{0002}'),
+        "PAGEREF should ignore stale markers hidden inside computed field results: {main_text:?}"
     );
 }
 

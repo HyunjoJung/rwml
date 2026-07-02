@@ -101,6 +101,8 @@ struct PageRefScanField {
     instruction: String,
     page_position: Option<PageRefPosition>,
     phase: FieldPhase,
+    suppress_result: bool,
+    nested_suppressed_fields: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -321,6 +323,7 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
     let mut field_orders = Vec::new();
     let mut page_field_positions = Vec::new();
     let mut current: Option<PageRefScanField> = None;
+    let mut computed_fields = PageRefComputedFieldState::default();
     let mut paragraph_depth = 0usize;
     let mut paragraph_properties_depth = 0usize;
     let mut section_properties_depth = 0usize;
@@ -350,6 +353,30 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                 }
                 if matches!(name, b"del" | b"moveFrom" | b"pPrChange") {
                     skip_subtree(&mut r);
+                    continue;
+                }
+                if suppresses_page_ref_complex_result_scan(&current) {
+                    match name {
+                        b"fldChar" => apply_page_ref_scan_fld_char(
+                            &e,
+                            current_page_ref_position(&pages, source_order),
+                            current_page_field_position(&pages, source_order),
+                            &mut source_order,
+                            &mut current,
+                            &mut field_positions,
+                            &mut field_orders,
+                            &mut page_field_positions,
+                            &mut saw_visible_content,
+                            &mut pages,
+                            &mut computed_fields,
+                        ),
+                        b"instrText" | b"t" => {
+                            let _ = read_text(&mut r);
+                            continue;
+                        }
+                        _ => {}
+                    }
+                    xml_depth = xml_depth.saturating_add(1);
                     continue;
                 }
                 let mut consumed_element = false;
@@ -397,15 +424,32 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                             section_page_number_format = page_ref_section_page_number_format(&e);
                         }
                     }
-                    b"fldSimple" => record_page_ref_field_position(
-                        attr_local(&e, b"instr").as_deref(),
-                        current_page_ref_position(&pages, source_order),
-                        current_page_field_position(&pages, source_order),
-                        &mut source_order,
-                        &mut field_positions,
-                        &mut field_orders,
-                        &mut page_field_positions,
-                    ),
+                    b"fldSimple" => {
+                        let instruction = attr_local(&e, b"instr");
+                        if !record_page_ref_field_position(
+                            instruction.as_deref(),
+                            current_page_ref_position(&pages, source_order),
+                            current_page_field_position(&pages, source_order),
+                            &mut source_order,
+                            &mut field_positions,
+                            &mut field_orders,
+                            &mut page_field_positions,
+                        ) {
+                            if let Some(text) = computed_page_ref_scan_field_result(
+                                instruction.as_deref(),
+                                &mut computed_fields,
+                            ) {
+                                note_page_ref_computed_scan_text(
+                                    &text,
+                                    &mut saw_visible_content,
+                                    &mut pages,
+                                    &mut source_order,
+                                );
+                                skip_subtree(&mut r);
+                                continue;
+                            }
+                        }
+                    }
                     b"fldChar" => apply_page_ref_scan_fld_char(
                         &e,
                         current_page_ref_position(&pages, source_order),
@@ -415,6 +459,9 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                         &mut field_positions,
                         &mut field_orders,
                         &mut page_field_positions,
+                        &mut saw_visible_content,
+                        &mut pages,
+                        &mut computed_fields,
                     ),
                     b"instrText" => {
                         let text = read_text(&mut r);
@@ -496,6 +543,24 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                 if should_skip_alternate_branch(&mut alternate_content_stack, xml_depth, name) {
                     continue;
                 }
+                if suppresses_page_ref_complex_result_scan(&current) {
+                    if name == b"fldChar" {
+                        apply_page_ref_scan_fld_char(
+                            &e,
+                            current_page_ref_position(&pages, source_order),
+                            current_page_field_position(&pages, source_order),
+                            &mut source_order,
+                            &mut current,
+                            &mut field_positions,
+                            &mut field_orders,
+                            &mut page_field_positions,
+                            &mut saw_visible_content,
+                            &mut pages,
+                            &mut computed_fields,
+                        );
+                    }
+                    continue;
+                }
                 match name {
                     b"pageBreakBefore"
                         if paragraph_properties_depth > 0 && page_ref_on_off_enabled(&e) =>
@@ -519,15 +584,30 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                             section_page_number_format = page_ref_section_page_number_format(&e);
                         }
                     }
-                    b"fldSimple" => record_page_ref_field_position(
-                        attr_local(&e, b"instr").as_deref(),
-                        current_page_ref_position(&pages, source_order),
-                        current_page_field_position(&pages, source_order),
-                        &mut source_order,
-                        &mut field_positions,
-                        &mut field_orders,
-                        &mut page_field_positions,
-                    ),
+                    b"fldSimple" => {
+                        let instruction = attr_local(&e, b"instr");
+                        if !record_page_ref_field_position(
+                            instruction.as_deref(),
+                            current_page_ref_position(&pages, source_order),
+                            current_page_field_position(&pages, source_order),
+                            &mut source_order,
+                            &mut field_positions,
+                            &mut field_orders,
+                            &mut page_field_positions,
+                        ) {
+                            if let Some(text) = computed_page_ref_scan_field_result(
+                                instruction.as_deref(),
+                                &mut computed_fields,
+                            ) {
+                                note_page_ref_computed_scan_text(
+                                    &text,
+                                    &mut saw_visible_content,
+                                    &mut pages,
+                                    &mut source_order,
+                                );
+                            }
+                        }
+                    }
                     b"fldChar" => apply_page_ref_scan_fld_char(
                         &e,
                         current_page_ref_position(&pages, source_order),
@@ -537,6 +617,9 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
                         &mut field_positions,
                         &mut field_orders,
                         &mut page_field_positions,
+                        &mut saw_visible_content,
+                        &mut pages,
+                        &mut computed_fields,
                     ),
                     b"bookmarkStart" => record_page_ref_bookmark_start(
                         &e,
@@ -589,6 +672,10 @@ pub(crate) fn page_ref_context(xml: &str) -> PageRefContext {
             Ok(Event::End(e)) => {
                 let qname = e.name();
                 let name = local(qname.as_ref());
+                if suppresses_page_ref_complex_result_scan(&current) {
+                    xml_depth = xml_depth.saturating_sub(1);
+                    continue;
+                }
                 match name {
                     b"AlternateContent" => {
                         alternate_content_stack.pop();
@@ -1009,7 +1096,7 @@ fn record_page_ref_field_position(
     field_positions: &mut Vec<Option<PageRefPosition>>,
     field_orders: &mut Vec<usize>,
     page_field_positions: &mut Vec<Option<PageRefPosition>>,
-) {
+) -> bool {
     match instruction
         .map(normalize_instruction)
         .as_deref()
@@ -1019,13 +1106,67 @@ fn record_page_ref_field_position(
             field_positions.push(page_ref_position);
             field_orders.push(*source_order);
             *source_order += 1;
+            true
         }
         Some(FieldKind::Page) => {
             page_field_positions.push(page_position);
             *source_order += 1;
+            true
+        }
+        _ => false,
+    }
+}
+
+#[derive(Debug, Default)]
+struct PageRefComputedFieldState {
+    field_bookmarks: HashMap<String, String>,
+    sequence_counters: HashMap<String, i64>,
+    autonum_counter: i64,
+    listnum_counter: i64,
+}
+
+fn computed_page_ref_scan_field_result(
+    instruction: Option<&str>,
+    state: &mut PageRefComputedFieldState,
+) -> Option<String> {
+    let instruction = normalize_instruction(instruction?);
+    match field_kind(&instruction) {
+        FieldKind::Page | FieldKind::PageRef => return None,
+        FieldKind::Dynamic(kind) if kind == "SET" => {
+            return computed_set_result(&instruction, &mut state.field_bookmarks);
+        }
+        FieldKind::Dynamic(kind) if kind == "ASK" => {
+            return computed_ask_result(&instruction, &mut state.field_bookmarks);
         }
         _ => {}
     }
+    computed_numbering_result(&instruction, &mut state.autonum_counter)
+        .or_else(|| computed_listnum_result(&instruction, &mut state.listnum_counter))
+        .or_else(|| computed_sequence_result(&instruction, &mut state.sequence_counters))
+        .or_else(|| computed_dynamic_result_with_bookmarks(&instruction, &state.field_bookmarks))
+        .or_else(|| computed_display_result(&instruction))
+        .or_else(|| computed_action_result(&instruction))
+        .or_else(|| computed_reference_index_result(&instruction))
+        .or_else(|| computed_toc_entry_result(&instruction))
+}
+
+fn note_page_ref_computed_scan_text(
+    text: &str,
+    saw_visible_content: &mut bool,
+    pages: &mut PageRefPageState,
+    source_order: &mut usize,
+) {
+    if !text.is_empty() {
+        *saw_visible_content = true;
+        pages.note_visible_content();
+        *source_order += 1;
+    }
+}
+
+fn suppresses_page_ref_complex_result_scan(current: &Option<PageRefScanField>) -> bool {
+    current
+        .as_ref()
+        .is_some_and(|field| field.phase == FieldPhase::Result && field.suppress_result)
 }
 
 fn apply_page_ref_scan_fld_char(
@@ -1037,23 +1178,55 @@ fn apply_page_ref_scan_fld_char(
     field_positions: &mut Vec<Option<PageRefPosition>>,
     field_orders: &mut Vec<usize>,
     page_field_positions: &mut Vec<Option<PageRefPosition>>,
+    saw_visible_content: &mut bool,
+    pages: &mut PageRefPageState,
+    computed_fields: &mut PageRefComputedFieldState,
 ) {
     match field_char_type(e).as_deref() {
         Some("begin") => {
+            if let Some(field) = current.as_mut() {
+                if field.phase == FieldPhase::Result && field.suppress_result {
+                    field.nested_suppressed_fields =
+                        field.nested_suppressed_fields.saturating_add(1);
+                    return;
+                }
+            }
             *current = Some(PageRefScanField {
                 instruction: String::new(),
                 page_position,
                 phase: FieldPhase::Instruction,
+                suppress_result: false,
+                nested_suppressed_fields: 0,
             });
         }
         Some("separate") => {
             if let Some(field) = current.as_mut() {
+                if field.suppress_result {
+                    return;
+                }
+                if let Some(text) =
+                    computed_page_ref_scan_field_result(Some(&field.instruction), computed_fields)
+                {
+                    note_page_ref_computed_scan_text(
+                        &text,
+                        saw_visible_content,
+                        pages,
+                        source_order,
+                    );
+                    field.suppress_result = true;
+                }
                 field.phase = FieldPhase::Result;
             }
         }
         Some("end") => {
+            if let Some(field) = current.as_mut() {
+                if field.suppress_result && field.nested_suppressed_fields > 0 {
+                    field.nested_suppressed_fields -= 1;
+                    return;
+                }
+            }
             if let Some(field) = current.take() {
-                record_page_ref_field_position(
+                let _ = record_page_ref_field_position(
                     Some(&field.instruction),
                     page_ref_position,
                     field.page_position,
