@@ -34,6 +34,8 @@ pub(crate) fn toc_entries(
     let mut entries = Vec::new();
     let mut active_bookmarks = Vec::new();
     let mut sequence_counters = HashMap::new();
+    let mut autonum_counter = 0i64;
+    let mut listnum_counter = 0i64;
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
     loop {
@@ -63,6 +65,8 @@ pub(crate) fn toc_entries(
                             styles,
                             &mut active_bookmarks,
                             &mut sequence_counters,
+                            &mut autonum_counter,
+                            &mut listnum_counter,
                             &mut entries,
                             ref_targets,
                         );
@@ -116,6 +120,8 @@ fn read_toc_paragraph(
     styles: &Styles,
     active_bookmarks: &mut Vec<(String, String)>,
     sequence_counters: &mut HashMap<String, i64>,
+    autonum_counter: &mut i64,
+    listnum_counter: &mut i64,
     entries: &mut Vec<TocEntry>,
     ref_targets: &HashMap<String, String>,
 ) {
@@ -174,6 +180,8 @@ fn read_toc_paragraph(
                                 active_bookmarks,
                                 &mut bookmarks,
                                 sequence_counters,
+                                autonum_counter,
+                                listnum_counter,
                                 &mut sequence_identifiers,
                                 entries,
                                 ref_targets,
@@ -188,6 +196,8 @@ fn read_toc_paragraph(
                             &mut result_starts,
                             &bookmarks,
                             sequence_counters,
+                            autonum_counter,
+                            listnum_counter,
                             &mut sequence_identifiers,
                             &mut text,
                             entries,
@@ -253,6 +263,8 @@ fn read_toc_paragraph(
                             if let Some(computed) = computed_toc_source_field_result(
                                 instruction.as_deref(),
                                 ref_targets,
+                                autonum_counter,
+                                listnum_counter,
                             ) {
                                 text.push_str(&computed);
                             }
@@ -265,6 +277,8 @@ fn read_toc_paragraph(
                             &mut result_starts,
                             &bookmarks,
                             sequence_counters,
+                            autonum_counter,
+                            listnum_counter,
                             &mut sequence_identifiers,
                             &mut text,
                             entries,
@@ -358,6 +372,8 @@ fn read_toc_simple_field_result(
     active_bookmarks: &mut Vec<(String, String)>,
     bookmarks: &mut Vec<String>,
     sequence_counters: &mut HashMap<String, i64>,
+    autonum_counter: &mut i64,
+    listnum_counter: &mut i64,
     sequence_identifiers: &mut Vec<String>,
     entries: &mut Vec<TocEntry>,
     ref_targets: &HashMap<String, String>,
@@ -411,6 +427,8 @@ fn read_toc_simple_field_result(
                                 active_bookmarks,
                                 bookmarks,
                                 sequence_counters,
+                                autonum_counter,
+                                listnum_counter,
                                 sequence_identifiers,
                                 entries,
                                 ref_targets,
@@ -425,6 +443,8 @@ fn read_toc_simple_field_result(
                             &mut result_starts,
                             bookmarks,
                             sequence_counters,
+                            autonum_counter,
+                            listnum_counter,
                             sequence_identifiers,
                             &mut text,
                             entries,
@@ -498,6 +518,8 @@ fn read_toc_simple_field_result(
                             if let Some(computed) = computed_toc_source_field_result(
                                 nested_instruction.as_deref(),
                                 ref_targets,
+                                autonum_counter,
+                                listnum_counter,
                             ) {
                                 text.push_str(&computed);
                             }
@@ -510,6 +532,8 @@ fn read_toc_simple_field_result(
                             &mut result_starts,
                             bookmarks,
                             sequence_counters,
+                            autonum_counter,
+                            listnum_counter,
                             sequence_identifiers,
                             &mut text,
                             entries,
@@ -557,7 +581,8 @@ fn read_toc_simple_field_result(
             _ => {}
         }
     }
-    computed_toc_source_field_result(instruction, ref_targets).unwrap_or(text)
+    computed_toc_source_field_result(instruction, ref_targets, autonum_counter, listnum_counter)
+        .unwrap_or(text)
 }
 
 fn toc_source_hidden_field_result(current: &[ComplexField]) -> bool {
@@ -580,6 +605,8 @@ fn apply_toc_fld_char(
     result_starts: &mut Vec<Option<usize>>,
     bookmarks: &[String],
     sequence_counters: &mut HashMap<String, i64>,
+    autonum_counter: &mut i64,
+    listnum_counter: &mut i64,
     sequence_identifiers: &mut Vec<String>,
     text: &mut String,
     entries: &mut Vec<TocEntry>,
@@ -614,7 +641,12 @@ fn apply_toc_fld_char(
             push_unique(sequence_identifiers, identifier);
             return;
         }
-        computed_source = computed_toc_source_field_result(Some(&field.instruction), ref_targets);
+        computed_source = computed_toc_source_field_result(
+            Some(&field.instruction),
+            ref_targets,
+            autonum_counter,
+            listnum_counter,
+        );
     });
     if fld_type.as_deref() == Some("end") {
         if let (Some(Some(start)), Some(computed)) = (result_starts.pop(), computed_source) {
@@ -696,6 +728,8 @@ fn push_computed_toc_sequence_result(
 fn computed_toc_source_field_result(
     instruction: Option<&str>,
     ref_targets: &HashMap<String, String>,
+    autonum_counter: &mut i64,
+    listnum_counter: &mut i64,
 ) -> Option<String> {
     let instruction = normalize_instruction(instruction?);
     if is_tc_instruction(&instruction)
@@ -714,6 +748,8 @@ fn computed_toc_source_field_result(
         _ => {}
     }
     computed_toc_source_ref_result(&instruction, ref_targets)
+        .or_else(|| computed_numbering_result(&instruction, autonum_counter))
+        .or_else(|| computed_listnum_result(&instruction, listnum_counter))
         .or_else(|| super::computed_quote_result(&instruction))
         .or_else(|| super::computed_fill_in_result(&instruction))
         .or_else(|| super::computed_if_result_with_bookmarks(&instruction, &field_bookmarks))
