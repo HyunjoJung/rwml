@@ -406,6 +406,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         &doc_xml,
         field_properties,
         &ref_targets,
+        &page_ref_context,
         &legacy_form_context,
         &table_formula_context,
         &toc_entries,
@@ -926,6 +927,7 @@ fn read_hf_parts(
                     file_size_bytes: properties.file_size_bytes,
                 },
                 &ref_targets,
+                &page_ref_context,
                 &legacy_form_context,
                 &table_formula_context,
                 &toc_entries,
@@ -1114,6 +1116,7 @@ fn read_notes(
             file_size_bytes: properties.file_size_bytes,
         },
         &ref_targets,
+        &page_ref_context,
         &legacy_form_context,
         &table_formula_context,
         &toc_entries,
@@ -1236,6 +1239,7 @@ fn read_floating_shapes(
     doc_xml: &str,
     properties: fields::FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
+    page_refs: &fields::PageRefContext,
     legacy_forms: &fields::LegacyFormContext,
     table_formulas: &fields::TableFormulaContext,
     toc_entries: &[fields::TocEntry],
@@ -1282,11 +1286,12 @@ fn read_floating_shapes(
                     shape_field_cursor.start_simple_field(
                         &e,
                         scan_depth + 1,
+                        page_refs,
                         table_formulas,
                         style_refs,
                     );
                 } else if name == b"fldChar" {
-                    shape_field_cursor.apply_field_char(&e, table_formulas, style_refs);
+                    shape_field_cursor.apply_field_char(&e, page_refs, table_formulas, style_refs);
                 }
                 if name == b"body" {
                     in_body = true;
@@ -1336,6 +1341,7 @@ fn read_floating_shapes(
                         current_body_block_index,
                         properties,
                         document_bookmarks,
+                        page_refs,
                         legacy_forms,
                         table_formulas,
                         toc_entries,
@@ -1390,9 +1396,14 @@ fn read_floating_shapes(
                     append_floating_anchor_empty(&mut current_body_block_text, &e, name);
                 }
                 if name == b"fldSimple" {
-                    shape_field_cursor.empty_simple_field(&e, table_formulas, style_refs);
+                    shape_field_cursor.empty_simple_field(
+                        &e,
+                        page_refs,
+                        table_formulas,
+                        style_refs,
+                    );
                 } else if name == b"fldChar" {
-                    shape_field_cursor.apply_field_char(&e, table_formulas, style_refs);
+                    shape_field_cursor.apply_field_char(&e, page_refs, table_formulas, style_refs);
                 }
             }
             Ok(Event::End(e)) => {
@@ -1495,6 +1506,7 @@ struct ShapeFieldCursor {
     autonum_counter: i64,
     listnum_counter: i64,
     style_ref_index: usize,
+    page_index: usize,
     formula_index: usize,
     simple_field_depth: Option<usize>,
     simple_text_form: Option<ShapeSimpleTextFormField>,
@@ -1516,6 +1528,7 @@ struct ShapeFieldCursorField {
     computed_result: Option<String>,
     legacy_form_indexed: bool,
     style_ref_indexed: bool,
+    page_indexed: bool,
     formula_indexed: bool,
     result_text: String,
 }
@@ -1531,6 +1544,7 @@ impl ShapeFieldCursor {
         &mut self,
         e: &BytesStart<'_>,
         depth: usize,
+        page_refs: &fields::PageRefContext,
         table_formulas: &fields::TableFormulaContext,
         style_refs: &fields::StyleRefContext,
     ) {
@@ -1543,6 +1557,7 @@ impl ShapeFieldCursor {
             self.computed_autonum_result(&instruction);
             self.computed_listnum_result(&instruction);
             self.next_style_ref_field_position(&instruction, style_refs);
+            self.next_page_field_position(&instruction, page_refs);
             self.next_table_formula_result(&instruction, table_formulas);
             self.next_legacy_form_index(&instruction);
         }
@@ -1551,6 +1566,7 @@ impl ShapeFieldCursor {
     fn empty_simple_field(
         &mut self,
         e: &BytesStart<'_>,
+        page_refs: &fields::PageRefContext,
         table_formulas: &fields::TableFormulaContext,
         style_refs: &fields::StyleRefContext,
     ) {
@@ -1562,6 +1578,7 @@ impl ShapeFieldCursor {
             self.computed_autonum_result(&instruction);
             self.computed_listnum_result(&instruction);
             self.next_style_ref_field_position(&instruction, style_refs);
+            self.next_page_field_position(&instruction, page_refs);
             self.next_table_formula_result(&instruction, table_formulas);
             self.next_legacy_form_index(&instruction);
         }
@@ -1628,6 +1645,7 @@ impl ShapeFieldCursor {
     fn apply_field_char(
         &mut self,
         e: &BytesStart<'_>,
+        page_refs: &fields::PageRefContext,
         table_formulas: &fields::TableFormulaContext,
         style_refs: &fields::StyleRefContext,
     ) -> Option<String> {
@@ -1642,6 +1660,7 @@ impl ShapeFieldCursor {
                     computed_result: None,
                     legacy_form_indexed: false,
                     style_ref_indexed: false,
+                    page_indexed: false,
                     formula_indexed: false,
                     result_text: String::new(),
                 });
@@ -1659,6 +1678,9 @@ impl ShapeFieldCursor {
                         self.computed_listnum_result(&field.instruction);
                         if !field.style_ref_indexed {
                             self.next_style_ref_field_position(&field.instruction, style_refs);
+                        }
+                        if !field.page_indexed {
+                            self.next_page_field_position(&field.instruction, page_refs);
                         }
                         if !field.formula_indexed {
                             self.next_table_formula_result(&field.instruction, table_formulas);
@@ -1705,6 +1727,29 @@ impl ShapeFieldCursor {
         }
         field.style_ref_indexed = true;
         self.next_style_ref_field_position(&instruction, style_refs)
+    }
+
+    fn current_complex_page_field_position(
+        &mut self,
+        page_refs: &fields::PageRefContext,
+    ) -> Option<fields::PageRefPosition> {
+        let instruction = {
+            let field = self.complex_field.as_ref()?;
+            if field.phase != ShapeFieldCursorPhase::Result
+                || field.computed_result.is_some()
+                || field.page_indexed
+            {
+                return None;
+            }
+            field.instruction.clone()
+        };
+        let position = self.next_page_field_position(&instruction, page_refs);
+        if let Some(field) = self.complex_field.as_mut() {
+            if FieldKind::from_instruction(&instruction) == FieldKind::Page {
+                field.page_indexed = true;
+            }
+        }
+        position
     }
 
     fn current_complex_table_formula_result(
@@ -1812,6 +1857,19 @@ impl ShapeFieldCursor {
         let index = self.style_ref_index;
         self.style_ref_index += 1;
         style_refs.field_position(index)
+    }
+
+    fn next_page_field_position(
+        &mut self,
+        instruction: &str,
+        page_refs: &fields::PageRefContext,
+    ) -> Option<fields::PageRefPosition> {
+        if FieldKind::from_instruction(instruction) != FieldKind::Page {
+            return None;
+        }
+        let index = self.page_index;
+        self.page_index += 1;
+        page_refs.page_field_position(index)
     }
 
     fn next_table_formula_result(
@@ -1944,6 +2002,7 @@ fn read_floating_shape(
     anchor_block_index: Option<usize>,
     properties: fields::FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
+    page_refs: &fields::PageRefContext,
     legacy_forms: &fields::LegacyFormContext,
     table_formulas: &fields::TableFormulaContext,
     toc_entries: &[fields::TocEntry],
@@ -1984,6 +2043,7 @@ fn read_floating_shape(
                                 properties,
                                 document_bookmarks,
                                 &mut field_bookmarks,
+                                page_refs,
                                 legacy_forms,
                                 table_formulas,
                                 toc_entries,
@@ -2004,6 +2064,7 @@ fn read_floating_shape(
                                 properties,
                                 document_bookmarks,
                                 &mut field_bookmarks,
+                                page_refs,
                                 legacy_forms,
                                 table_formulas,
                                 toc_entries,
@@ -2059,6 +2120,7 @@ fn read_floating_shape(
                             properties,
                             document_bookmarks,
                             &mut field_bookmarks,
+                            page_refs,
                             legacy_forms,
                             table_formulas,
                             toc_entries,
@@ -2080,6 +2142,7 @@ fn read_floating_shape(
                                 properties,
                                 document_bookmarks,
                                 &mut field_bookmarks,
+                                page_refs,
                                 legacy_forms,
                                 table_formulas,
                                 toc_entries,
@@ -2256,6 +2319,7 @@ fn computed_shape_context_field_result(
     properties: fields::FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
     field_bookmarks: &mut HashMap<String, String>,
+    page_position: Option<fields::PageRefPosition>,
     toc_entries: &[fields::TocEntry],
     bookmark_names: &HashSet<String>,
     style_refs: &fields::StyleRefContext,
@@ -2269,6 +2333,7 @@ fn computed_shape_context_field_result(
         document_bookmarks,
         field_bookmarks,
     )
+    .or_else(|| fields::computed_page_result(instruction, page_position))
     .or_else(|| {
         fields::computed_if_compare_result_with_bookmark_context(
             instruction,
@@ -2310,6 +2375,7 @@ fn apply_shape_field_char(
     properties: fields::FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
     field_bookmarks: &mut HashMap<String, String>,
+    page_refs: &fields::PageRefContext,
     legacy_forms: &fields::LegacyFormContext,
     table_formulas: &fields::TableFormulaContext,
     toc_entries: &[fields::TocEntry],
@@ -2323,11 +2389,12 @@ fn apply_shape_field_char(
             shape_field_cursor.set_complex_result(text);
         }
     }
-    let completed = shape_field_cursor.apply_field_char(e, table_formulas, style_refs);
+    let completed = shape_field_cursor.apply_field_char(e, page_refs, table_formulas, style_refs);
     let computed = shape_field_cursor
         .current_complex_instruction()
         .map(str::to_string)
         .and_then(|instruction| {
+            let page_position = shape_field_cursor.current_complex_page_field_position(page_refs);
             let style_ref_position =
                 shape_field_cursor.current_complex_style_ref_position(style_refs);
             shape_field_cursor
@@ -2338,6 +2405,7 @@ fn apply_shape_field_char(
                         properties,
                         document_bookmarks,
                         field_bookmarks,
+                        page_position,
                         toc_entries,
                         bookmark_names,
                         style_refs,
@@ -2363,6 +2431,7 @@ fn append_shape_simple_field(
     properties: fields::FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
     field_bookmarks: &mut HashMap<String, String>,
+    page_refs: &fields::PageRefContext,
     legacy_forms: &fields::LegacyFormContext,
     table_formulas: &fields::TableFormulaContext,
     toc_entries: &[fields::TocEntry],
@@ -2382,6 +2451,7 @@ fn append_shape_simple_field(
             return false;
         }
     }
+    let page_position = shape_field_cursor.next_page_field_position(&instruction, page_refs);
     let style_ref_position =
         shape_field_cursor.next_style_ref_field_position(&instruction, style_refs);
     let text = shape_field_cursor
@@ -2392,6 +2462,7 @@ fn append_shape_simple_field(
                 properties,
                 document_bookmarks,
                 field_bookmarks,
+                page_position,
                 toc_entries,
                 bookmark_names,
                 style_refs,

@@ -166,6 +166,23 @@ fn floating_shape_table_formula_field_text_docx() -> Vec<u8> {
     ])
 }
 
+fn floating_shape_page_field_text_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:body><w:p><w:fldSimple w:instr=" PAGE "><w:r><w:t>stale prior page</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:lastRenderedPageBreak/><w:t>Page two lead </w:t></w:r><w:r><w:drawing><wp:anchor relativeHeight="43" behindDoc="0"><wp:extent cx="914400" cy="457200"/><wp:docPr id="43" name="PAGE float"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:fldSimple w:instr=" PAGE "><w:r><w:t>stale shape page</w:t></w:r></w:fldSimple><w:r><w:t> body</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:t>after</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn floating_shape_bookmark_if_field_text_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -871,6 +888,24 @@ fn docx_floating_shape_metadata_uses_table_formula_text() {
     assert_eq!(shapes.len(), 1);
     assert_eq!(shapes[0].name.as_deref(), Some("Table formula float"));
     assert_eq!(shapes[0].text.as_deref(), Some("5 body"));
+}
+
+#[test]
+fn docx_floating_shape_metadata_uses_page_field_text() {
+    let doc = Document::open(&floating_shape_page_field_text_docx()).expect("fixture opens");
+    let shapes = doc.floating_shapes();
+    let main_text = doc.main_text();
+
+    assert!(
+        main_text.contains("1")
+            && main_text.contains("Page two lead 2 body")
+            && !main_text.contains("stale prior page")
+            && !main_text.contains("stale shape page"),
+        "body text should use computed PAGE text inside shapes: {main_text:?}"
+    );
+    assert_eq!(shapes.len(), 1);
+    assert_eq!(shapes[0].name.as_deref(), Some("PAGE float"));
+    assert_eq!(shapes[0].text.as_deref(), Some("2 body"));
 }
 
 #[test]
