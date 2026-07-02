@@ -148,9 +148,12 @@ pub(crate) fn parse(
     let all_bookmark_names = bookmark_names(xml);
     let ref_positions = ref_position_context(xml, numbering);
     let ref_numbers = ref_number_context(xml, numbering);
-    let page_refs = page_ref_context_with_properties(xml, &bookmarks, properties);
-    let note_refs = note_ref_context_with_properties(xml, &bookmarks, properties);
-    let sections = section_context_with_properties(xml, &bookmarks, properties);
+    let page_refs =
+        page_ref_context_with_properties(xml, &bookmarks, properties, preserve_legacy_form_cache);
+    let note_refs =
+        note_ref_context_with_properties(xml, &bookmarks, properties, preserve_legacy_form_cache);
+    let sections =
+        section_context_with_properties(xml, &bookmarks, properties, preserve_legacy_form_cache);
     let style_refs = style_ref_context_with_properties(
         xml,
         styles,

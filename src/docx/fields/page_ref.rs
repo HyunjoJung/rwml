@@ -319,6 +319,7 @@ pub(crate) fn page_ref_context(
             extended: &empty_properties,
             file_size_bytes: None,
         },
+        false,
     )
 }
 
@@ -326,6 +327,7 @@ pub(crate) fn page_ref_context_with_properties(
     xml: &str,
     document_bookmarks: &HashMap<String, String>,
     properties: FieldDocumentProperties<'_>,
+    preserve_legacy_form_cache: bool,
 ) -> PageRefContext {
     let mut r = Reader::from_str(xml);
     let mut targets = HashMap::new();
@@ -346,7 +348,11 @@ pub(crate) fn page_ref_context_with_properties(
     let mut field_orders = Vec::new();
     let mut page_field_positions = Vec::new();
     let mut current: Option<PageRefScanField> = None;
-    let mut computed_fields = PageRefComputedFieldState::new(document_bookmarks, properties);
+    let mut computed_fields = PageRefComputedFieldState::new(
+        document_bookmarks,
+        properties,
+        legacy_form_context(xml, preserve_legacy_form_cache),
+    );
     let mut paragraph_depth = 0usize;
     let mut paragraph_properties_depth = 0usize;
     let mut section_properties_depth = 0usize;
@@ -1144,24 +1150,29 @@ fn record_page_ref_field_position(
 struct PageRefComputedFieldState<'a> {
     document_bookmarks: &'a HashMap<String, String>,
     properties: FieldDocumentProperties<'a>,
+    legacy_forms: LegacyFormContext,
     field_bookmarks: HashMap<String, String>,
     sequence_counters: HashMap<String, i64>,
     autonum_counter: i64,
     listnum_counter: i64,
+    form_field_index: usize,
 }
 
 impl<'a> PageRefComputedFieldState<'a> {
     fn new(
         document_bookmarks: &'a HashMap<String, String>,
         properties: FieldDocumentProperties<'a>,
+        legacy_forms: LegacyFormContext,
     ) -> Self {
         Self {
             document_bookmarks,
             properties,
+            legacy_forms,
             field_bookmarks: HashMap::new(),
             sequence_counters: HashMap::new(),
             autonum_counter: 0,
             listnum_counter: 0,
+            form_field_index: 0,
         }
     }
 }
@@ -1182,6 +1193,16 @@ fn computed_page_ref_scan_field_result(
         }
         FieldKind::Dynamic(kind) if kind == "ASK" => {
             return computed_ask_result(&instruction, &mut state.field_bookmarks);
+        }
+        FieldKind::FormField(_) => {
+            let result = computed_legacy_form_result(
+                &instruction,
+                "",
+                &state.legacy_forms,
+                state.form_field_index,
+            );
+            state.form_field_index += 1;
+            return result;
         }
         _ => {}
     }

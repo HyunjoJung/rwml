@@ -136,6 +136,7 @@ pub(crate) fn note_ref_context(
             extended: &empty_properties,
             file_size_bytes: None,
         },
+        false,
     )
 }
 
@@ -143,6 +144,7 @@ pub(crate) fn note_ref_context_with_properties(
     xml: &str,
     document_bookmarks: &HashMap<String, String>,
     properties: FieldDocumentProperties<'_>,
+    preserve_legacy_form_cache: bool,
 ) -> NoteRefContext {
     let mut r = Reader::from_str(xml);
     let mut targets = HashMap::new();
@@ -158,7 +160,11 @@ pub(crate) fn note_ref_context_with_properties(
     let mut endnote_number = 0usize;
     let mut comment_number = 0usize;
     let mut current: Option<NoteRefScanField> = None;
-    let mut computed_fields = NoteRefComputedFieldState::new(document_bookmarks, properties);
+    let mut computed_fields = NoteRefComputedFieldState::new(
+        document_bookmarks,
+        properties,
+        legacy_form_context(xml, preserve_legacy_form_cache),
+    );
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
     loop {
@@ -530,24 +536,29 @@ pub(crate) fn note_ref_context_with_properties(
 struct NoteRefComputedFieldState<'a> {
     document_bookmarks: &'a HashMap<String, String>,
     properties: FieldDocumentProperties<'a>,
+    legacy_forms: LegacyFormContext,
     field_bookmarks: HashMap<String, String>,
     sequence_counters: HashMap<String, i64>,
     autonum_counter: i64,
     listnum_counter: i64,
+    form_field_index: usize,
 }
 
 impl<'a> NoteRefComputedFieldState<'a> {
     fn new(
         document_bookmarks: &'a HashMap<String, String>,
         properties: FieldDocumentProperties<'a>,
+        legacy_forms: LegacyFormContext,
     ) -> Self {
         Self {
             document_bookmarks,
             properties,
+            legacy_forms,
             field_bookmarks: HashMap::new(),
             sequence_counters: HashMap::new(),
             autonum_counter: 0,
             listnum_counter: 0,
+            form_field_index: 0,
         }
     }
 }
@@ -567,6 +578,16 @@ fn computed_note_ref_scan_field_result(
         }
         FieldKind::Dynamic(kind) if kind == "ASK" => {
             return computed_ask_result(&instruction, &mut state.field_bookmarks);
+        }
+        FieldKind::FormField(_) => {
+            let result = computed_legacy_form_result(
+                &instruction,
+                "",
+                &state.legacy_forms,
+                state.form_field_index,
+            );
+            state.form_field_index += 1;
+            return result;
         }
         _ => {}
     }

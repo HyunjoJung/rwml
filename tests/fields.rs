@@ -2452,6 +2452,23 @@ fn section_pages_empty_revision_number_result_docx() -> Vec<u8> {
     ])
 }
 
+fn section_pages_empty_legacy_form_result_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" FORMDROPDOWN "><w:ffData><w:ddList><w:result w:val="0"/><w:listEntry w:val=""/></w:ddList></w:ffData><w:r><w:t>stale section option</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" SECTIONPAGES "><w:r><w:t>cached section form pages</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn section_pages_bookmark_merge_control_result_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -4367,6 +4384,23 @@ fn note_ref_empty_revision_number_result_marker_docx() -> Vec<u8> {
     ])
 }
 
+fn note_ref_empty_legacy_form_result_marker_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="ComputedNote"/><w:fldSimple w:instr=" FORMDROPDOWN "><w:ffData><w:ddList><w:result w:val="0"/><w:listEntry w:val=""/></w:ddList></w:ffData><w:r><w:footnoteReference w:id="1"/></w:r><w:r><w:t>stale note option</w:t></w:r></w:fldSimple><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" NOTEREF ComputedNote "><w:r><w:t>cached stale legacy form note ref</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn note_ref_bookmark_merge_control_result_marker_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -5035,6 +5069,23 @@ fn page_ref_empty_revision_number_before_manual_break_docx() -> Vec<u8> {
         (
             "word/document.xml",
             r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" REVNUM "><w:r><w:t>stale page revision</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:br w:type="page"/></w:r></w:p><w:p><w:bookmarkStart w:id="7" w:name="AfterEmptyRevision"/><w:r><w:t>After empty revision</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF AfterEmptyRevision \h "><w:r><w:t>cached after revision page</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn page_ref_empty_legacy_form_before_manual_break_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" FORMDROPDOWN "><w:ffData><w:ddList><w:result w:val="0"/><w:listEntry w:val=""/></w:ddList></w:ffData><w:r><w:t>stale page option</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:br w:type="page"/></w:r></w:p><w:p><w:bookmarkStart w:id="7" w:name="AfterEmptyForm"/><w:r><w:t>After empty form</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:p><w:fldSimple w:instr=" PAGEREF AfterEmptyForm \h "><w:r><w:t>cached after form page</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
         ),
     ])
 }
@@ -21465,6 +21516,109 @@ fn docx_position_scanners_use_empty_revision_number_results() {
             reason: FieldEvaluationReason::NoComputedResult,
             count: 1,
         }]
+    );
+}
+
+#[test]
+fn docx_position_scanners_use_empty_legacy_form_results() {
+    let page_doc = Document::open(&page_ref_empty_legacy_form_before_manual_break_docx())
+        .expect("page fixture opens");
+    let page_fields = page_doc.fields();
+
+    assert_eq!(page_fields.len(), 2);
+    assert_eq!(
+        page_fields[0].kind,
+        FieldKind::FormField("FORMDROPDOWN".to_string())
+    );
+    assert_eq!(page_fields[0].instruction, "FORMDROPDOWN");
+    assert_eq!(page_fields[0].result, "stale page option");
+    assert_eq!(page_fields[0].computed_result.as_deref(), Some(""));
+    assert_eq!(page_fields[1].kind, FieldKind::PageRef);
+    assert_eq!(page_fields[1].instruction, "PAGEREF AfterEmptyForm \\h");
+    assert_eq!(page_fields[1].result, "cached after form page");
+    assert_eq!(page_fields[1].computed_result.as_deref(), Some("2"));
+
+    let section_doc = Document::open(&section_pages_empty_legacy_form_result_docx())
+        .expect("section fixture opens");
+    let section_fields = section_doc.fields();
+
+    assert_eq!(section_fields.len(), 2);
+    assert_eq!(
+        section_fields[0].kind,
+        FieldKind::FormField("FORMDROPDOWN".to_string())
+    );
+    assert_eq!(section_fields[0].instruction, "FORMDROPDOWN");
+    assert_eq!(section_fields[0].result, "stale section option");
+    assert_eq!(section_fields[0].computed_result.as_deref(), Some(""));
+    assert_eq!(
+        section_fields[1].kind,
+        FieldKind::DocumentStructure("SECTIONPAGES".to_string())
+    );
+    assert_eq!(section_fields[1].instruction, "SECTIONPAGES");
+    assert_eq!(section_fields[1].result, "cached section form pages");
+    assert_eq!(section_fields[1].computed_result.as_deref(), Some("1"));
+
+    let note_doc = Document::open(&note_ref_empty_legacy_form_result_marker_docx())
+        .expect("note fixture opens");
+    let note_fields = note_doc.fields();
+
+    assert_eq!(note_fields.len(), 2);
+    assert_eq!(
+        note_fields[0].kind,
+        FieldKind::FormField("FORMDROPDOWN".to_string())
+    );
+    assert_eq!(note_fields[0].instruction, "FORMDROPDOWN");
+    assert_eq!(note_fields[0].result, "stale note option");
+    assert_eq!(note_fields[0].computed_result.as_deref(), Some(""));
+    assert_eq!(note_fields[1].kind, FieldKind::NoteRef);
+    assert_eq!(note_fields[1].instruction, "NOTEREF ComputedNote");
+    assert_eq!(note_fields[1].result, "cached stale legacy form note ref");
+    assert_eq!(note_fields[1].computed_result, None);
+
+    for doc in [&page_doc, &section_doc] {
+        let report = doc.report();
+        assert!(report.features.unsupported_field_kinds.is_empty());
+        assert!(report.features.unsupported_field_reasons.is_empty());
+    }
+    let note_report = note_doc.report();
+    assert_eq!(
+        note_report.features.unsupported_field_kinds,
+        vec![FieldKindCount {
+            kind: FieldKind::NoteRef,
+            count: 1,
+        }]
+    );
+    assert_eq!(
+        note_report.features.unsupported_field_reasons,
+        vec![FieldEvaluationReasonCount {
+            reason: FieldEvaluationReason::NoComputedResult,
+            count: 1,
+        }]
+    );
+
+    let page_text = page_doc.main_text();
+    assert!(
+        page_text.contains("After empty form\n2")
+            && !page_text.contains("stale page option")
+            && !page_text.contains("cached after form page"),
+        "PAGEREF should use computed empty legacy-form output when deciding hard-break trust: {page_text:?}"
+    );
+
+    let section_text = section_doc.main_text();
+    assert!(
+        section_text.contains('1')
+            && !section_text.contains("stale section option")
+            && !section_text.contains("cached section form pages"),
+        "SECTIONPAGES should use computed empty legacy-form output when deciding section content: {section_text:?}"
+    );
+
+    let note_text = note_doc.main_text();
+    assert!(
+        note_text.contains("cached stale legacy form note ref")
+            && !note_text.contains("stale note option")
+            && !note_text.contains('\u{0002}')
+            && !note_text.contains('1'),
+        "NOTEREF should not resolve a stale marker hidden inside legacy-form output: {note_text:?}"
     );
 }
 

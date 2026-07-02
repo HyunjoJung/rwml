@@ -56,6 +56,7 @@ pub(crate) fn section_context(
             extended: &empty_properties,
             file_size_bytes: None,
         },
+        false,
     )
 }
 
@@ -63,6 +64,7 @@ pub(crate) fn section_context_with_properties(
     xml: &str,
     document_bookmarks: &HashMap<String, String>,
     properties: FieldDocumentProperties<'_>,
+    preserve_legacy_form_cache: bool,
 ) -> SectionContext {
     let mut r = Reader::from_str(xml);
     let mut field_sections = Vec::new();
@@ -77,7 +79,11 @@ pub(crate) fn section_context_with_properties(
     let mut section_type_seen = false;
     let mut section_properties_depth = 0usize;
     let mut current: Option<SectionScanField> = None;
-    let mut computed_fields = SectionComputedFieldState::new(document_bookmarks, properties);
+    let mut computed_fields = SectionComputedFieldState::new(
+        document_bookmarks,
+        properties,
+        legacy_form_context(xml, preserve_legacy_form_cache),
+    );
     let mut simple_section_field_result_depth: Option<usize> = None;
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
@@ -404,24 +410,29 @@ fn record_section_field(
 struct SectionComputedFieldState<'a> {
     document_bookmarks: &'a HashMap<String, String>,
     properties: FieldDocumentProperties<'a>,
+    legacy_forms: LegacyFormContext,
     field_bookmarks: HashMap<String, String>,
     sequence_counters: HashMap<String, i64>,
     autonum_counter: i64,
     listnum_counter: i64,
+    form_field_index: usize,
 }
 
 impl<'a> SectionComputedFieldState<'a> {
     fn new(
         document_bookmarks: &'a HashMap<String, String>,
         properties: FieldDocumentProperties<'a>,
+        legacy_forms: LegacyFormContext,
     ) -> Self {
         Self {
             document_bookmarks,
             properties,
+            legacy_forms,
             field_bookmarks: HashMap::new(),
             sequence_counters: HashMap::new(),
             autonum_counter: 0,
             listnum_counter: 0,
+            form_field_index: 0,
         }
     }
 }
@@ -444,6 +455,16 @@ fn computed_section_scan_field_result(
         }
         FieldKind::Dynamic(kind) if kind == "ASK" => {
             return computed_ask_result(&instruction, &mut state.field_bookmarks);
+        }
+        FieldKind::FormField(_) => {
+            let result = computed_legacy_form_result(
+                &instruction,
+                "",
+                &state.legacy_forms,
+                state.form_field_index,
+            );
+            state.form_field_index += 1;
+            return result;
         }
         _ => {}
     }
