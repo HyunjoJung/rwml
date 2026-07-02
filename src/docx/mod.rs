@@ -1470,7 +1470,16 @@ struct ShapeFieldCursor {
     autonum_counter: i64,
     listnum_counter: i64,
     simple_field_depth: Option<usize>,
+    simple_text_form: Option<ShapeSimpleTextFormField>,
     complex_field: Option<ShapeFieldCursorField>,
+}
+
+#[derive(Debug)]
+struct ShapeSimpleTextFormField {
+    instruction: String,
+    result_text: String,
+    legacy_form_index: usize,
+    depth: usize,
 }
 
 #[derive(Debug)]
@@ -1518,6 +1527,58 @@ impl ShapeFieldCursor {
         if name == b"fldSimple" && self.simple_field_depth == Some(depth) {
             self.simple_field_depth = None;
         }
+    }
+
+    fn start_simple_text_form_field(&mut self, instruction: &str, depth: usize) -> bool {
+        if self.simple_text_form.is_some() || !is_text_form_field_instruction(instruction) {
+            return false;
+        }
+        let Some(index) = self.next_legacy_form_index(instruction) else {
+            return false;
+        };
+        self.simple_text_form = Some(ShapeSimpleTextFormField {
+            instruction: instruction.to_string(),
+            result_text: String::new(),
+            legacy_form_index: index,
+            depth,
+        });
+        true
+    }
+
+    fn append_simple_text_form_result_text(&mut self, text: &str) -> bool {
+        let Some(field) = self.simple_text_form.as_mut() else {
+            return false;
+        };
+        field.result_text.push_str(text);
+        true
+    }
+
+    fn end_simple_text_form_field(
+        &mut self,
+        name: &[u8],
+        depth: usize,
+        legacy_forms: &fields::LegacyFormContext,
+    ) -> Option<String> {
+        if name != b"fldSimple"
+            || !self
+                .simple_text_form
+                .as_ref()
+                .is_some_and(|field| field.depth == depth)
+        {
+            return None;
+        }
+        let field = self.simple_text_form.take()?;
+        fields::computed_legacy_form_result(
+            &field.instruction,
+            &field.result_text,
+            legacy_forms,
+            field.legacy_form_index,
+        )
+        .or_else(|| (!field.result_text.is_empty()).then_some(field.result_text))
+    }
+
+    fn in_simple_text_form_field(&self) -> bool {
+        self.simple_text_form.is_some()
     }
 
     fn apply_field_char(&mut self, e: &BytesStart<'_>) -> Option<String> {
@@ -1683,6 +1744,13 @@ fn is_legacy_form_field_instruction(instruction: &str) -> bool {
     )
 }
 
+fn is_text_form_field_instruction(instruction: &str) -> bool {
+    matches!(
+        FieldKind::from_instruction(instruction),
+        FieldKind::FormField(kind) if kind == "FORMTEXT"
+    )
+}
+
 fn should_skip_redundant_alternate_branch(
     stack: &mut [AlternateContentState],
     body_depth: usize,
@@ -1765,14 +1833,18 @@ fn read_floating_shape(
                     match name {
                         b"t" => {
                             let text = read_text(r);
-                            shape_field_cursor.append_complex_result_text(&text);
-                            if !shape_field_cursor.suppresses_complex_result() {
+                            if !shape_field_cursor.append_simple_text_form_result_text(&text)
+                                && !shape_field_cursor.suppresses_complex_result()
+                            {
+                                shape_field_cursor.append_complex_result_text(&text);
                                 append_shape_text(&mut shape_text, &text);
                             }
                         }
                         b"fldSimple" => {
                             if shape_field_cursor.suppresses_complex_result() {
                                 skip_subtree(r);
+                            } else if shape_field_cursor.in_simple_text_form_field() {
+                                text_box_depth += 1;
                             } else if append_shape_simple_field(
                                 &mut shape_text,
                                 &e,
@@ -1781,6 +1853,7 @@ fn read_floating_shape(
                                 &mut field_bookmarks,
                                 legacy_forms,
                                 shape_field_cursor,
+                                Some(text_box_depth + 1),
                             ) {
                                 skip_subtree(r);
                             } else {
@@ -1804,8 +1877,10 @@ fn read_floating_shape(
                         }
                         b"sym" => {
                             if let Some(text) = shape_symbol_text(&e) {
-                                shape_field_cursor.append_complex_result_text(&text);
-                                if !shape_field_cursor.suppresses_complex_result() {
+                                if !shape_field_cursor.append_simple_text_form_result_text(&text)
+                                    && !shape_field_cursor.suppresses_complex_result()
+                                {
+                                    shape_field_cursor.append_complex_result_text(&text);
                                     append_shape_text(&mut shape_text, &text);
                                 }
                             }
@@ -1847,6 +1922,11 @@ fn read_floating_shape(
                             shape_field_cursor,
                         );
                     }
+                    if let Some(text) = shape_empty_text(&e, name) {
+                        if shape_field_cursor.append_simple_text_form_result_text(&text) {
+                            continue;
+                        }
+                    }
                     if !shape_field_cursor.suppresses_complex_result()
                         && (name != b"fldSimple"
                             || !append_shape_simple_field(
@@ -1857,6 +1937,7 @@ fn read_floating_shape(
                                 &mut field_bookmarks,
                                 legacy_forms,
                                 shape_field_cursor,
+                                None,
                             ))
                     {
                         append_shape_empty(&mut shape_text, &e, name);
@@ -1882,7 +1963,18 @@ fn read_floating_shape(
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"anchor" => break,
             Ok(Event::End(e)) if text_box_depth > 0 => {
-                if local(e.name().as_ref()) == b"p" {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if let Some(text) = shape_field_cursor.end_simple_text_form_field(
+                    name,
+                    text_box_depth,
+                    legacy_forms,
+                ) {
+                    if !text.is_empty() {
+                        append_shape_text(&mut shape_text, &text);
+                    }
+                }
+                if name == b"p" {
                     append_shape_paragraph_break(&mut shape_text);
                 }
                 text_box_depth = text_box_depth.saturating_sub(1);
@@ -1978,6 +2070,17 @@ fn shape_symbol_text(e: &BytesStart<'_>) -> Option<String> {
     let ch = floating_run_symbol_char(e)?;
     let mut buf = [0; 4];
     Some(ch.encode_utf8(&mut buf).to_string())
+}
+
+fn shape_empty_text(e: &BytesStart<'_>, name: &[u8]) -> Option<String> {
+    match name {
+        b"sym" => shape_symbol_text(e),
+        b"tab" => Some("\t".to_string()),
+        b"br" | b"cr" => Some("\n".to_string()),
+        b"noBreakHyphen" => Some("-".to_string()),
+        b"softHyphen" => Some("\u{00ad}".to_string()),
+        _ => None,
+    }
 }
 
 fn computed_shape_ref_result(
@@ -2089,12 +2192,18 @@ fn append_shape_simple_field(
     field_bookmarks: &mut HashMap<String, String>,
     legacy_forms: &fields::LegacyFormContext,
     shape_field_cursor: &mut ShapeFieldCursor,
+    simple_text_form_depth: Option<usize>,
 ) -> bool {
     let Some(instruction) = attr_local(e, b"instr") else {
         return false;
     };
     if update_field_bookmarks_from_instruction(&instruction, field_bookmarks) {
         return true;
+    }
+    if let Some(depth) = simple_text_form_depth {
+        if shape_field_cursor.start_simple_text_form_field(&instruction, depth) {
+            return false;
+        }
     }
     let text = computed_shape_context_field_result(
         &instruction,
