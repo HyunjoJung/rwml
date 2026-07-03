@@ -1507,11 +1507,31 @@ fn append_note_anchor_content(
                 } else if name == b"fldSimple" {
                     if complex_field.suppresses_result() {
                         skip_subtree(r);
-                    } else if let Some(computed) =
-                        computed_note_anchor_simple_field_text(&e, field_state)
-                    {
-                        text.push_str(&computed);
-                        skip_subtree(r);
+                    } else if let Some(instruction) = attr_local_trimmed(&e, b"instr") {
+                        if is_note_anchor_text_form_field_instruction(&instruction) {
+                            if let Some(computed) = computed_note_anchor_simple_text_form_field_text(
+                                r,
+                                &instruction,
+                                field_state,
+                            ) {
+                                text.push_str(&computed);
+                            }
+                        } else if let Some(computed) =
+                            computed_note_anchor_field_text(&instruction, field_state)
+                        {
+                            text.push_str(&computed);
+                            skip_subtree(r);
+                        } else {
+                            append_note_anchor_content(
+                                r,
+                                tag,
+                                text,
+                                refs,
+                                complex_field,
+                                field_state,
+                                depth + 1,
+                            );
+                        }
                     } else {
                         append_note_anchor_content(
                             r,

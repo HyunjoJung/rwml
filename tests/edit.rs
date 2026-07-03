@@ -778,6 +778,31 @@ fn notes_with_complex_text_form_field_anchor_text_docx() -> Vec<u8> {
     ])
 }
 
+fn notes_with_alternate_content_text_form_field_anchor_text_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:p><mc:AlternateContent><mc:Choice Requires="w14"><w:fldSimple w:instr=" FORMTEXT \*Upper "><w:ffData><w:textInput><w:default w:val="Anchor default"/></w:textInput></w:ffData><w:r><w:t>Anchor typed</w:t></w:r></w:fldSimple></mc:Choice><mc:Fallback><w:r><w:t>fallback anchor</w:t></w:r></mc:Fallback></mc:AlternateContent><w:r><w:t> before </w:t></w:r><w:r><w:footnoteReference w:id="7"/></w:r><w:r><w:t>foot after</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="7"><w:p><w:r><w:t>Foot body</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+    ])
+}
+
 fn notes_with_document_bookmark_formula_field_anchor_text_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -3933,6 +3958,22 @@ fn docx_note_reference_anchors_use_text_form_current_field_text() {
 #[test]
 fn docx_note_reference_anchors_use_complex_text_form_current_field_text() {
     let doc = Document::open(&notes_with_complex_text_form_field_anchor_text_docx())
+        .expect("fixture opens");
+
+    assert_eq!(doc.main_text(), "ANCHOR TYPED before foot after");
+    let notes = doc.notes();
+    assert_eq!(notes.len(), 1);
+    assert_eq!(notes[0].id, "7");
+    assert_eq!(notes[0].kind, NoteKind::Footnote);
+    assert_eq!(
+        notes[0].anchor.as_ref().map(|a| a.text.as_str()),
+        Some("ANCHOR TYPED before foot after")
+    );
+}
+
+#[test]
+fn docx_note_reference_anchors_use_alternate_content_text_form_current_field_text() {
+    let doc = Document::open(&notes_with_alternate_content_text_form_field_anchor_text_docx())
         .expect("fixture opens");
 
     assert_eq!(doc.main_text(), "ANCHOR TYPED before foot after");
