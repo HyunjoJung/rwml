@@ -35,11 +35,13 @@ pub(crate) fn toc_entries(
     let core_properties = CoreProperties::default();
     let empty_properties = HashMap::new();
     let note_refs = NoteRefContext::empty();
+    let sections = SectionContext::empty();
     toc_entries_with_properties(
         xml,
         styles,
         ref_targets,
         &note_refs,
+        &sections,
         FieldDocumentProperties {
             core: &core_properties,
             custom: &empty_properties,
@@ -56,6 +58,7 @@ pub(crate) fn toc_entries_with_properties(
     styles: &Styles,
     ref_targets: &HashMap<String, String>,
     note_refs: &NoteRefContext,
+    sections: &SectionContext,
     properties: FieldDocumentProperties<'_>,
     preserve_legacy_form_cache: bool,
 ) -> Vec<TocEntry> {
@@ -69,6 +72,7 @@ pub(crate) fn toc_entries_with_properties(
     let mut field_bookmarks = HashMap::new();
     let mut form_field_index = 0usize;
     let mut ref_field_index = 0usize;
+    let mut section_field_index = 0usize;
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
     loop {
@@ -104,10 +108,12 @@ pub(crate) fn toc_entries_with_properties(
                             &mut entries,
                             ref_targets,
                             note_refs,
+                            sections,
                             properties,
                             &legacy_forms,
                             &mut form_field_index,
                             &mut ref_field_index,
+                            &mut section_field_index,
                         );
                         consumed_element = true;
                     }
@@ -165,10 +171,12 @@ fn read_toc_paragraph(
     entries: &mut Vec<TocEntry>,
     ref_targets: &HashMap<String, String>,
     note_refs: &NoteRefContext,
+    sections: &SectionContext,
     properties: FieldDocumentProperties<'_>,
     legacy_forms: &LegacyFormContext,
     form_field_index: &mut usize,
     ref_field_index: &mut usize,
+    section_field_index: &mut usize,
 ) {
     let mut style_id: Option<String> = None;
     let mut outline: Option<u8> = None;
@@ -232,10 +240,12 @@ fn read_toc_paragraph(
                                 entries,
                                 ref_targets,
                                 note_refs,
+                                sections,
                                 properties,
                                 legacy_forms,
                                 form_field_index,
                                 ref_field_index,
+                                section_field_index,
                             ));
                             consumed_element = true;
                         }
@@ -255,10 +265,12 @@ fn read_toc_paragraph(
                             entries,
                             ref_targets,
                             note_refs,
+                            sections,
                             properties,
                             legacy_forms,
                             form_field_index,
                             ref_field_index,
+                            section_field_index,
                         );
                     }
                     b"instrText" => {
@@ -321,6 +333,7 @@ fn read_toc_paragraph(
                                 instruction.as_deref(),
                                 ref_targets,
                                 note_refs,
+                                sections,
                                 autonum_counter,
                                 listnum_counter,
                                 field_bookmarks,
@@ -328,6 +341,7 @@ fn read_toc_paragraph(
                                 legacy_forms,
                                 form_field_index,
                                 ref_field_index,
+                                section_field_index,
                                 "",
                             ) {
                                 text.push_str(&computed);
@@ -349,10 +363,12 @@ fn read_toc_paragraph(
                             entries,
                             ref_targets,
                             note_refs,
+                            sections,
                             properties,
                             legacy_forms,
                             form_field_index,
                             ref_field_index,
+                            section_field_index,
                         );
                     }
                     b"sym" => {
@@ -449,10 +465,12 @@ fn read_toc_simple_field_result(
     entries: &mut Vec<TocEntry>,
     ref_targets: &HashMap<String, String>,
     note_refs: &NoteRefContext,
+    sections: &SectionContext,
     properties: FieldDocumentProperties<'_>,
     legacy_forms: &LegacyFormContext,
     form_field_index: &mut usize,
     ref_field_index: &mut usize,
+    section_field_index: &mut usize,
 ) -> String {
     let mut text = String::new();
     let mut current = Vec::new();
@@ -510,10 +528,12 @@ fn read_toc_simple_field_result(
                                 entries,
                                 ref_targets,
                                 note_refs,
+                                sections,
                                 properties,
                                 legacy_forms,
                                 form_field_index,
                                 ref_field_index,
+                                section_field_index,
                             ));
                         }
                         consumed_element = true;
@@ -533,10 +553,12 @@ fn read_toc_simple_field_result(
                             entries,
                             ref_targets,
                             note_refs,
+                            sections,
                             properties,
                             legacy_forms,
                             form_field_index,
                             ref_field_index,
+                            section_field_index,
                         );
                     }
                     b"instrText" => {
@@ -607,6 +629,7 @@ fn read_toc_simple_field_result(
                                 nested_instruction.as_deref(),
                                 ref_targets,
                                 note_refs,
+                                sections,
                                 autonum_counter,
                                 listnum_counter,
                                 field_bookmarks,
@@ -614,6 +637,7 @@ fn read_toc_simple_field_result(
                                 legacy_forms,
                                 form_field_index,
                                 ref_field_index,
+                                section_field_index,
                                 "",
                             ) {
                                 text.push_str(&computed);
@@ -635,10 +659,12 @@ fn read_toc_simple_field_result(
                             entries,
                             ref_targets,
                             note_refs,
+                            sections,
                             properties,
                             legacy_forms,
                             form_field_index,
                             ref_field_index,
+                            section_field_index,
                         );
                     }
                     b"sym" => {
@@ -687,6 +713,7 @@ fn read_toc_simple_field_result(
         instruction,
         ref_targets,
         note_refs,
+        sections,
         autonum_counter,
         listnum_counter,
         field_bookmarks,
@@ -694,6 +721,7 @@ fn read_toc_simple_field_result(
         legacy_forms,
         form_field_index,
         ref_field_index,
+        section_field_index,
         &cached_text,
     )
     .unwrap_or(text)
@@ -739,10 +767,12 @@ fn apply_toc_fld_char(
     entries: &mut Vec<TocEntry>,
     ref_targets: &HashMap<String, String>,
     note_refs: &NoteRefContext,
+    sections: &SectionContext,
     properties: FieldDocumentProperties<'_>,
     legacy_forms: &LegacyFormContext,
     form_field_index: &mut usize,
     ref_field_index: &mut usize,
+    section_field_index: &mut usize,
 ) {
     // Track where each complex field's result text begins in `text`, so a
     // deterministic source-field result can overwrite the leaked cached runs on
@@ -783,6 +813,7 @@ fn apply_toc_fld_char(
             Some(&field.instruction),
             ref_targets,
             note_refs,
+            sections,
             autonum_counter,
             listnum_counter,
             field_bookmarks,
@@ -790,6 +821,7 @@ fn apply_toc_fld_char(
             legacy_forms,
             form_field_index,
             ref_field_index,
+            section_field_index,
             &current_result,
         );
     });
@@ -874,6 +906,7 @@ fn computed_toc_source_field_result(
     instruction: Option<&str>,
     ref_targets: &HashMap<String, String>,
     note_refs: &NoteRefContext,
+    sections: &SectionContext,
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
@@ -881,6 +914,7 @@ fn computed_toc_source_field_result(
     legacy_forms: &LegacyFormContext,
     form_field_index: &mut usize,
     ref_field_index: &mut usize,
+    section_field_index: &mut usize,
     current_result: &str,
 ) -> Option<String> {
     let instruction = normalize_instruction(instruction?);
@@ -900,6 +934,13 @@ fn computed_toc_source_field_result(
             let index = *form_field_index;
             *form_field_index += 1;
             return computed_legacy_form_result(&instruction, current_result, legacy_forms, index);
+        }
+        FieldKind::DocumentStructure(kind) if kind == "SECTION" || kind == "SECTIONPAGES" => {
+            if is_section_field_instruction(&instruction) {
+                let position = sections.field_position(*section_field_index);
+                *section_field_index += 1;
+                return computed_section_result(&instruction, position);
+            }
         }
         _ => {}
     }

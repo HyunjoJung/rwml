@@ -335,6 +335,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         &styles,
         &ref_targets,
         &note_ref_context,
+        &section_context,
         field_properties,
         preserve_legacy_form_cache,
     );
@@ -941,6 +942,7 @@ fn read_hf_parts(
             styles,
             &ref_targets,
             &note_ref_context,
+            &section_context,
             field_properties,
             preserve_legacy_form_cache,
         );
@@ -1196,6 +1198,7 @@ fn read_notes(
         styles,
         &ref_targets,
         &note_ref_context,
+        &section_context,
         field_properties,
         preserve_legacy_form_cache,
     );
@@ -4010,11 +4013,18 @@ pub(crate) fn main_text_with_revision_view(state: &DocxState, view: crate::Revis
         preserve_legacy_form_cache,
         &note_ref_context,
     );
+    let section_context = fields::section_context_with_properties(
+        &doc_xml,
+        &document_bookmarks,
+        properties,
+        preserve_legacy_form_cache,
+    );
     let toc_entries = fields::toc_entries_with_properties(
         &doc_xml,
         &styles,
         &document_bookmarks,
         &note_ref_context,
+        &section_context,
         properties,
         preserve_legacy_form_cache,
     );

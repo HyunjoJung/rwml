@@ -6298,6 +6298,27 @@ fn toc_heading_document_info_field_source_docx() -> Vec<u8> {
     ])
 }
 
+fn toc_heading_section_field_source_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Section </w:t></w:r><w:fldSimple w:instr=" SECTION "><w:r><w:t>99</w:t></w:r></w:fldSimple><w:r><w:t> Review</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" TOC \o &quot;1-1&quot; "><w:r><w:t>stale section toc source</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn toc_heading_known_field_name_bookmark_source_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -19097,6 +19118,40 @@ fn docx_toc_heading_source_text_uses_computed_document_info_results() {
             && !main_text.contains("stale toc title")
             && !main_text.contains("stale document-info toc source"),
         "TOC source text should use computed document-info field output: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_toc_heading_source_text_uses_computed_section_field_results() {
+    let doc = Document::open(&toc_heading_section_field_source_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(
+        fields[0].kind,
+        FieldKind::DocumentStructure("SECTION".to_string())
+    );
+    assert_eq!(fields[0].instruction, "SECTION");
+    assert_eq!(fields[0].result, "99");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("1"));
+    assert_eq!(fields[1].kind, FieldKind::Toc);
+    assert_eq!(fields[1].instruction, "TOC \\o \"1-1\"");
+    assert_eq!(fields[1].result, "stale section toc source");
+    assert_eq!(
+        fields[1].computed_result.as_deref(),
+        Some("Section 1 Review")
+    );
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Section 1 Review")
+            && !main_text.contains("Section 99 Review")
+            && !main_text.contains("stale section toc source"),
+        "TOC source text should use computed SECTION field output: {main_text:?}"
     );
 }
 
