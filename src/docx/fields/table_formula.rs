@@ -11,8 +11,10 @@ use super::formula::{
     eval_formula_function, format_formula_general_number, format_formula_number,
     formula_instruction, formula_number_text, formula_truthy, FormulaNumberFormat, FormulaParser,
 };
+use super::page_ref::format_page_number;
 use super::reference::{
-    computed_ref_bookmark_text_result, ref_or_unknown_direct_bookmark_instruction,
+    computed_ref_bookmark_text_result, direct_bookmark_ref_instruction,
+    is_ref_position_field_instruction, ref_instruction, ref_or_unknown_direct_bookmark_instruction,
 };
 use super::{
     apply_complex_field_scan_fld_char, apply_field_text_format, computed_action_result,
@@ -25,7 +27,7 @@ use super::{
     computed_sequence_result, computed_set_result, computed_toc_entry_result, inline_marker_text,
     legacy_form_context, normalize_instruction, should_skip_alternate_branch, skip_element,
     AlternateContentBranchState, ComplexField, FieldDocumentProperties, FieldPhase,
-    LegacyFormContext, NoteRefContext,
+    LegacyFormContext, NoteRefContext, NoteRefFieldPosition,
 };
 
 type Xml<'a> = Reader<&'a [u8]>;
@@ -80,6 +82,7 @@ pub(crate) fn table_formula_context_with_properties(
     let mut listnum_counter = 0i64;
     let mut field_bookmarks = HashMap::new();
     let mut form_field_index = 0usize;
+    let mut ref_field_index = 0usize;
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
     loop {
@@ -114,6 +117,7 @@ pub(crate) fn table_formula_context_with_properties(
                             &mut field_bookmarks,
                             &legacy_forms,
                             &mut form_field_index,
+                            &mut ref_field_index,
                             properties,
                         ));
                         consumed_element = true;
@@ -136,6 +140,7 @@ pub(crate) fn table_formula_context_with_properties(
                                 &mut field_bookmarks,
                                 &legacy_forms,
                                 &mut form_field_index,
+                                &mut ref_field_index,
                                 properties,
                                 &result_text,
                             )
@@ -155,6 +160,7 @@ pub(crate) fn table_formula_context_with_properties(
                             &mut field_bookmarks,
                             &legacy_forms,
                             &mut form_field_index,
+                            &mut ref_field_index,
                             properties,
                             |_, _| results.push(None),
                         );
@@ -197,6 +203,7 @@ pub(crate) fn table_formula_context_with_properties(
                                 &mut field_bookmarks,
                                 &legacy_forms,
                                 &mut form_field_index,
+                                &mut ref_field_index,
                                 properties,
                                 "",
                             );
@@ -214,6 +221,7 @@ pub(crate) fn table_formula_context_with_properties(
                             &mut field_bookmarks,
                             &legacy_forms,
                             &mut form_field_index,
+                            &mut ref_field_index,
                             properties,
                             |_, _| results.push(None),
                         );
@@ -264,6 +272,7 @@ fn read_table_formula_table(
     field_bookmarks: &mut HashMap<String, String>,
     legacy_forms: &LegacyFormContext,
     form_field_index: &mut usize,
+    ref_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
 ) -> Vec<Option<String>> {
     let mut rows = Vec::new();
@@ -307,6 +316,7 @@ fn read_table_formula_table(
                             field_bookmarks,
                             legacy_forms,
                             form_field_index,
+                            ref_field_index,
                             properties,
                         );
                         for cell in &mut row {
@@ -398,6 +408,7 @@ fn read_table_formula_row(
     field_bookmarks: &mut HashMap<String, String>,
     legacy_forms: &LegacyFormContext,
     form_field_index: &mut usize,
+    ref_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
 ) -> Vec<TableFormulaCell> {
     let mut row: Vec<TableFormulaCell> = Vec::new();
@@ -448,6 +459,7 @@ fn read_table_formula_row(
                             field_bookmarks,
                             legacy_forms,
                             form_field_index,
+                            ref_field_index,
                             properties,
                         );
                         cell.is_header_row = is_header_row;
@@ -579,6 +591,7 @@ fn read_table_formula_cell(
     field_bookmarks: &mut HashMap<String, String>,
     legacy_forms: &LegacyFormContext,
     form_field_index: &mut usize,
+    ref_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
 ) -> TableFormulaCell {
     let mut cell = TableFormulaCell::default();
@@ -621,6 +634,7 @@ fn read_table_formula_cell(
                             field_bookmarks,
                             legacy_forms,
                             form_field_index,
+                            ref_field_index,
                             properties,
                         ) {
                             cell.records.push(TableFormulaRecord::Nested(result));
@@ -650,6 +664,7 @@ fn read_table_formula_cell(
                                 field_bookmarks,
                                 legacy_forms,
                                 form_field_index,
+                                ref_field_index,
                                 properties,
                             )
                         };
@@ -675,6 +690,7 @@ fn read_table_formula_cell(
                                 field_bookmarks,
                                 legacy_forms,
                                 form_field_index,
+                                ref_field_index,
                                 properties,
                                 &result_text,
                             )
@@ -698,6 +714,7 @@ fn read_table_formula_cell(
                             field_bookmarks,
                             legacy_forms,
                             form_field_index,
+                            ref_field_index,
                             properties,
                         );
                     }
@@ -756,6 +773,7 @@ fn read_table_formula_cell(
                                 field_bookmarks,
                                 legacy_forms,
                                 form_field_index,
+                                ref_field_index,
                                 properties,
                                 "",
                             )
@@ -778,6 +796,7 @@ fn read_table_formula_cell(
                             field_bookmarks,
                             legacy_forms,
                             form_field_index,
+                            ref_field_index,
                             properties,
                         );
                     }
@@ -893,6 +912,7 @@ fn read_table_formula_source_field_result_text(
     field_bookmarks: &mut HashMap<String, String>,
     legacy_forms: &LegacyFormContext,
     form_field_index: &mut usize,
+    ref_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
 ) -> String {
     read_field_result_text_with_nested_fields(r, |instruction, current_result| {
@@ -907,6 +927,7 @@ fn read_table_formula_source_field_result_text(
             field_bookmarks,
             legacy_forms,
             form_field_index,
+            ref_field_index,
             properties,
             current_result,
         )
@@ -1102,6 +1123,7 @@ fn apply_table_formula_cell_fld_char(
     field_bookmarks: &mut HashMap<String, String>,
     legacy_forms: &LegacyFormContext,
     form_field_index: &mut usize,
+    ref_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
 ) {
     match field_char_type(e).as_deref() {
@@ -1144,6 +1166,7 @@ fn apply_table_formula_cell_fld_char(
                     field_bookmarks,
                     legacy_forms,
                     form_field_index,
+                    ref_field_index,
                     properties,
                     &field.result,
                 )
@@ -1189,6 +1212,7 @@ fn computed_table_formula_source_field_result(
     field_bookmarks: &mut HashMap<String, String>,
     legacy_forms: &LegacyFormContext,
     form_field_index: &mut usize,
+    ref_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
     current_result: &str,
 ) -> Option<String> {
@@ -1208,49 +1232,94 @@ fn computed_table_formula_source_field_result(
         }
         _ => {}
     }
-    computed_table_formula_source_ref_result(instruction, document_bookmarks, field_bookmarks)
-        .or_else(|| computed_note_ref_result(instruction, note_refs, None))
-        .or_else(|| computed_numbering_result(instruction, autonum_counter))
-        .or_else(|| computed_listnum_result(instruction, listnum_counter))
-        .or_else(|| computed_sequence_result(instruction, sequence_counters))
-        .or_else(|| computed_toc_entry_result(instruction))
-        .or_else(|| {
-            computed_formula_result_with_bookmark_context(
-                instruction,
-                document_bookmarks,
-                field_bookmarks,
-            )
-        })
-        .or_else(|| computed_quote_result(instruction))
-        .or_else(|| computed_fill_in_result(instruction))
-        .or_else(|| {
-            computed_if_compare_result_with_bookmark_context(
-                instruction,
-                document_bookmarks,
-                field_bookmarks,
-            )
-        })
-        .or_else(|| {
-            computed_merge_control_result_with_bookmark_context(
-                instruction,
-                document_bookmarks,
-                field_bookmarks,
-            )
-        })
-        .or_else(|| computed_display_result(instruction))
-        .or_else(|| computed_action_result(instruction))
-        .or_else(|| computed_revision_number_result(instruction, properties.core))
-        .or_else(|| {
-            computed_document_info_result(
-                instruction,
-                properties.core,
-                properties.custom,
-                properties.variables,
-                properties.extended,
-                properties.file_size_bytes,
-            )
-        })
-        .or_else(|| computed_reference_index_result(instruction))
+    if let Some(text) =
+        computed_table_formula_source_ref_result(instruction, document_bookmarks, field_bookmarks)
+    {
+        return Some(text);
+    }
+    let note_ref_field_position =
+        table_formula_source_note_ref_field_position(instruction, note_refs, ref_field_index);
+    computed_table_formula_source_ref_note_reference_result(
+        instruction,
+        note_refs,
+        note_ref_field_position,
+    )
+    .or_else(|| computed_note_ref_result(instruction, note_refs, None))
+    .or_else(|| computed_numbering_result(instruction, autonum_counter))
+    .or_else(|| computed_listnum_result(instruction, listnum_counter))
+    .or_else(|| computed_sequence_result(instruction, sequence_counters))
+    .or_else(|| computed_toc_entry_result(instruction))
+    .or_else(|| {
+        computed_formula_result_with_bookmark_context(
+            instruction,
+            document_bookmarks,
+            field_bookmarks,
+        )
+    })
+    .or_else(|| computed_quote_result(instruction))
+    .or_else(|| computed_fill_in_result(instruction))
+    .or_else(|| {
+        computed_if_compare_result_with_bookmark_context(
+            instruction,
+            document_bookmarks,
+            field_bookmarks,
+        )
+    })
+    .or_else(|| {
+        computed_merge_control_result_with_bookmark_context(
+            instruction,
+            document_bookmarks,
+            field_bookmarks,
+        )
+    })
+    .or_else(|| computed_display_result(instruction))
+    .or_else(|| computed_action_result(instruction))
+    .or_else(|| computed_revision_number_result(instruction, properties.core))
+    .or_else(|| {
+        computed_document_info_result(
+            instruction,
+            properties.core,
+            properties.custom,
+            properties.variables,
+            properties.extended,
+            properties.file_size_bytes,
+        )
+    })
+    .or_else(|| computed_reference_index_result(instruction))
+}
+
+fn computed_table_formula_source_ref_note_reference_result(
+    instruction: &str,
+    note_refs: &NoteRefContext,
+    note_ref_field_position: Option<NoteRefFieldPosition>,
+) -> Option<String> {
+    let spec =
+        ref_instruction(instruction).or_else(|| direct_bookmark_ref_instruction(instruction))?;
+    if !spec.note_reference
+        || spec.sequence_separator
+        || spec.relative
+        || spec.paragraph_number
+        || spec.full_context_number
+        || spec.relative_context_number
+    {
+        return None;
+    }
+    let number = note_refs.ref_note_number(&spec.target, note_ref_field_position)?;
+    let text = format_page_number(number, spec.number_format)?;
+    Some(apply_field_text_format(text, spec.text_format))
+}
+
+fn table_formula_source_note_ref_field_position(
+    instruction: &str,
+    note_refs: &NoteRefContext,
+    ref_field_index: &mut usize,
+) -> Option<NoteRefFieldPosition> {
+    if !is_ref_position_field_instruction(instruction) {
+        return None;
+    }
+    let position = note_refs.ref_field_position(*ref_field_index);
+    *ref_field_index += 1;
+    position
 }
 
 fn computed_table_formula_source_ref_result(
@@ -1309,6 +1378,7 @@ fn apply_table_formula_scan_fld_char(
     field_bookmarks: &mut HashMap<String, String>,
     legacy_forms: &LegacyFormContext,
     form_field_index: &mut usize,
+    ref_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
     mut record: impl FnMut(&str, &str),
 ) {
@@ -1327,6 +1397,7 @@ fn apply_table_formula_scan_fld_char(
                 field_bookmarks,
                 legacy_forms,
                 form_field_index,
+                ref_field_index,
                 properties,
                 &field.result,
             )

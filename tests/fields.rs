@@ -1472,6 +1472,31 @@ fn formula_table_source_field_note_ref_docx() -> Vec<u8> {
     ])
 }
 
+fn formula_table_source_field_ref_note_mark_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="FootOne"/><w:r><w:footnoteReference w:id="1"/></w:r><w:bookmarkEnd w:id="7"/></w:p><w:tbl><w:tr><w:tc><w:p><w:fldSimple w:instr=" REF FootOne \f "><w:r><w:t>stale ref note source</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(LEFT) "><w:r><w:t>stale ref note source sum</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:footnote><w:footnote w:id="1"><w:p><w:r><w:t>First footnote.</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+    ])
+}
+
 fn formula_table_source_field_document_bookmark_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -11089,6 +11114,41 @@ fn docx_table_formula_source_field_uses_computed_note_ref_results() {
             && !main_text.contains("stale note source")
             && !main_text.contains("stale note source sum"),
         "table formula source text should use computed NOTEREF source values: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_table_formula_source_field_uses_computed_ref_note_mark_results() {
+    let doc =
+        Document::open(&formula_table_source_field_ref_note_mark_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let ref_field = fields
+        .iter()
+        .find(|field| field.instruction == "REF FootOne \\f")
+        .expect("REF note mark source field is recorded");
+    assert_eq!(ref_field.kind, FieldKind::Ref);
+    assert_eq!(ref_field.result, "stale ref note source");
+    assert_eq!(ref_field.computed_result.as_deref(), Some("2"));
+
+    let formula = fields
+        .iter()
+        .find(|field| field.instruction == r#"= SUM(LEFT)"#)
+        .expect("formula field is recorded");
+    assert_eq!(formula.kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(formula.result, "stale ref note source sum");
+    assert_eq!(formula.computed_result.as_deref(), Some("2"));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("2\t2")
+            && !main_text.contains("stale ref note source")
+            && !main_text.contains("stale ref note source sum"),
+        "table formula source text should use computed REF note-reference marks: {main_text:?}"
     );
 }
 
