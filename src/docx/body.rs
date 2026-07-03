@@ -1022,6 +1022,8 @@ pub(crate) fn scan_note_ref_anchors(
     properties: FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
     note_refs: &super::fields::NoteRefContext,
+    toc_entries: &[TocEntry],
+    bookmark_names: &HashSet<String>,
 ) -> HashMap<String, String> {
     let mut r = Reader::from_str(xml);
     let mut anchors = HashMap::new();
@@ -1036,7 +1038,8 @@ pub(crate) fn scan_note_ref_anchors(
         properties,
         document_bookmarks,
         note_refs,
-    );
+    )
+    .with_toc_context(toc_entries, bookmark_names);
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => {

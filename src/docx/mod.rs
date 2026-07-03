@@ -408,6 +408,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         field_properties,
         &ref_targets,
         &note_ref_context,
+        &toc_entries,
+        &bookmark_names,
     );
     let mut floating_shapes = read_floating_shapes(
         &doc_xml,
@@ -455,15 +457,30 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     let comments_ext_xml = part(&mut zip, "word/commentsExtended.xml");
     let mut comments = comments_xml
         .as_deref()
-        .map(|xml| comments::parse(xml, field_properties, &ref_targets, &note_ref_context))
+        .map(|xml| {
+            comments::parse(
+                xml,
+                field_properties,
+                &ref_targets,
+                &note_ref_context,
+                &toc_entries,
+                &bookmark_names,
+            )
+        })
         .unwrap_or_default();
     if let (Some(comments_xml), Some(comments_ext_xml)) =
         (comments_xml.as_deref(), comments_ext_xml.as_deref())
     {
         comments::apply_extended_parent_ids(&mut comments, comments_xml, comments_ext_xml);
     }
-    let mut comment_anchors =
-        comments::parse_anchors(&doc_xml, field_properties, &ref_targets, &note_ref_context);
+    let mut comment_anchors = comments::parse_anchors(
+        &doc_xml,
+        field_properties,
+        &ref_targets,
+        &note_ref_context,
+        &toc_entries,
+        &bookmark_names,
+    );
     extend_missing_comment_anchors(&mut comment_anchors, note_part.comment_anchors);
     extend_missing_comment_anchors(&mut comment_anchors, header_footer_comment_anchors);
     for comment in &mut comments {
@@ -483,8 +500,14 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         },
         preserve_legacy_form_cache,
     );
-    let mut revisions =
-        revisions::parse(&doc_xml, field_properties, &ref_targets, &note_ref_context);
+    let mut revisions = revisions::parse(
+        &doc_xml,
+        field_properties,
+        &ref_targets,
+        &note_ref_context,
+        &toc_entries,
+        &bookmark_names,
+    );
     revisions.extend(note_part.revisions);
     revisions.extend(header_footer_revisions);
     // Stats reflect the full visible content (body + notes).
@@ -945,7 +968,14 @@ fn read_hf_parts(
         let type_name = normalized_header_footer_type(&reference.type_name);
         extend_missing_comment_anchors(
             &mut comment_anchors,
-            comments::parse_anchors(&xml, field_properties, &ref_targets, &note_ref_context),
+            comments::parse_anchors(
+                &xml,
+                field_properties,
+                &ref_targets,
+                &note_ref_context,
+                &toc_entries,
+                &bookmark_names,
+            ),
         );
         if seen_text_boxes.insert((path.clone(), type_name.to_string())) {
             text_boxes.extend(read_text_boxes_with_prefix(
@@ -961,6 +991,8 @@ fn read_hf_parts(
                 field_properties,
                 &ref_targets,
                 &note_ref_context,
+                &toc_entries,
+                &bookmark_names,
             ));
         }
         if seen_floating_shapes.insert((path.clone(), type_name.to_string())) {
@@ -1181,9 +1213,22 @@ fn read_notes(
     };
     let mut blocks = Vec::new();
     let mut records = Vec::new();
-    let comment_anchors =
-        comments::parse_anchors(&xml, field_properties, &ref_targets, &note_ref_context);
-    let revisions = revisions::parse(&xml, field_properties, &ref_targets, &note_ref_context);
+    let comment_anchors = comments::parse_anchors(
+        &xml,
+        field_properties,
+        &ref_targets,
+        &note_ref_context,
+        &toc_entries,
+        &bookmark_names,
+    );
+    let revisions = revisions::parse(
+        &xml,
+        field_properties,
+        &ref_targets,
+        &note_ref_context,
+        &toc_entries,
+        &bookmark_names,
+    );
     let floating_shapes = read_floating_shapes(
         &xml,
         fields::FieldDocumentProperties {
@@ -1351,7 +1396,8 @@ fn read_floating_shapes(
         properties,
         document_bookmarks,
         note_refs,
-    );
+    )
+    .with_toc_context(toc_entries, bookmark_names);
     let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
@@ -3818,6 +3864,8 @@ fn attach_note_reference_anchors(
     properties: fields::FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
     note_refs: &fields::NoteRefContext,
+    toc_entries: &[fields::TocEntry],
+    bookmark_names: &HashSet<String>,
 ) {
     let footnote_refs = body::scan_note_ref_anchors(
         doc_xml,
@@ -3825,6 +3873,8 @@ fn attach_note_reference_anchors(
         properties,
         document_bookmarks,
         note_refs,
+        toc_entries,
+        bookmark_names,
     );
     let endnote_refs = body::scan_note_ref_anchors(
         doc_xml,
@@ -3832,6 +3882,8 @@ fn attach_note_reference_anchors(
         properties,
         document_bookmarks,
         note_refs,
+        toc_entries,
+        bookmark_names,
     );
     for note in notes {
         let anchor_text = match note.kind {
@@ -3912,6 +3964,11 @@ pub(crate) fn main_text_with_revision_view(state: &DocxState, view: crate::Revis
         extended: &extended_properties,
         file_size_bytes: None,
     };
+    let styles = state
+        .package
+        .part("word/styles.xml")
+        .map(|xml| styles::parse(&String::from_utf8_lossy(&xml)))
+        .unwrap_or_default();
     let document_bookmarks =
         fields::ref_targets_with_properties(&doc_xml, properties, preserve_legacy_form_cache);
     let note_ref_context = fields::note_ref_context_with_properties(
@@ -3920,12 +3977,22 @@ pub(crate) fn main_text_with_revision_view(state: &DocxState, view: crate::Revis
         properties,
         preserve_legacy_form_cache,
     );
+    let toc_entries = fields::toc_entries_with_properties(
+        &doc_xml,
+        &styles,
+        &document_bookmarks,
+        properties,
+        preserve_legacy_form_cache,
+    );
+    let bookmark_names = fields::bookmark_names(&doc_xml);
     revisions::main_text_with_view(
         &doc_xml,
         view,
         Some(properties),
         Some(&document_bookmarks),
         Some(&note_ref_context),
+        Some(&toc_entries),
+        Some(&bookmark_names),
     )
 }
 

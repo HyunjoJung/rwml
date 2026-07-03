@@ -1225,6 +1225,8 @@ pub(crate) struct ContextlessFieldState<'a> {
     document_properties: Option<FieldDocumentProperties<'a>>,
     document_bookmarks: Option<&'a HashMap<String, String>>,
     note_refs: Option<&'a NoteRefContext>,
+    toc_entries: Option<&'a [TocEntry]>,
+    bookmark_names: Option<&'a HashSet<String>>,
     field_bookmarks: HashMap<String, String>,
     sequence_counters: HashMap<String, i64>,
     autonum_counter: i64,
@@ -1261,6 +1263,16 @@ impl<'a> ContextlessFieldState<'a> {
             note_refs: Some(note_refs),
             ..Self::default()
         }
+    }
+
+    pub(crate) fn with_toc_context(
+        mut self,
+        toc_entries: &'a [TocEntry],
+        bookmark_names: &'a HashSet<String>,
+    ) -> Self {
+        self.toc_entries = Some(toc_entries);
+        self.bookmark_names = Some(bookmark_names);
+        self
     }
 
     pub(crate) fn clear(&mut self) {
@@ -1322,6 +1334,7 @@ pub(crate) fn computed_contextless_result(
             }
         })
         .or_else(|| computed_toc_entry_result(instruction))
+        .or_else(|| computed_toc_result(instruction, state.toc_entries?, state.bookmark_names?))
         .or_else(|| {
             if matches!(
                 FieldKind::from_instruction(instruction),

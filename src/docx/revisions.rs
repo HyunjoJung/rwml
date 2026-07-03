@@ -2,14 +2,14 @@
 
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::annotation::{Revision, RevisionKind, RevisionView};
 use crate::text;
 
 use super::fields::{
     computed_contextless_result, computed_run_symbol_char, ContextlessFieldState,
-    FieldDocumentProperties, NoteRefContext,
+    FieldDocumentProperties, NoteRefContext, TocEntry,
 };
 use super::xml_text::{
     inline_marker_text, read_text, skip_alternate_content_branch, skip_subtree,
@@ -24,6 +24,8 @@ pub(crate) fn parse(
     properties: FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
     note_refs: &NoteRefContext,
+    toc_entries: &[TocEntry],
+    bookmark_names: &HashSet<String>,
 ) -> Vec<Revision> {
     let mut r = Reader::from_str(xml);
     let mut revisions = Vec::new();
@@ -55,6 +57,8 @@ pub(crate) fn parse(
                         properties,
                         document_bookmarks,
                         note_refs,
+                        toc_entries,
+                        bookmark_names,
                     ));
                 }
             }
@@ -79,6 +83,8 @@ pub(crate) fn main_text_with_view(
     properties: Option<FieldDocumentProperties<'_>>,
     document_bookmarks: Option<&HashMap<String, String>>,
     note_refs: Option<&NoteRefContext>,
+    toc_entries: Option<&[TocEntry]>,
+    bookmark_names: Option<&HashSet<String>>,
 ) -> String {
     let mut r = Reader::from_str(xml);
     let mut out = String::new();
@@ -110,6 +116,8 @@ pub(crate) fn main_text_with_view(
                         properties,
                         document_bookmarks,
                         note_refs,
+                        toc_entries,
+                        bookmark_names,
                     );
                     push_revision_text(&mut out, view, kind, &rev_text);
                     inline_continuation = false;
@@ -176,6 +184,8 @@ fn read_revision(
     properties: FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
     note_refs: &NoteRefContext,
+    toc_entries: &[TocEntry],
+    bookmark_names: &HashSet<String>,
 ) -> Revision {
     let end_name = local(start.name().as_ref()).to_vec();
     let text = read_revision_text(
@@ -184,6 +194,8 @@ fn read_revision(
         Some(properties),
         Some(document_bookmarks),
         Some(note_refs),
+        Some(toc_entries),
+        Some(bookmark_names),
     );
     revision_shell(start, kind, text)
 }
@@ -194,6 +206,8 @@ fn read_revision_text(
     properties: Option<FieldDocumentProperties<'_>>,
     document_bookmarks: Option<&HashMap<String, String>>,
     note_refs: Option<&NoteRefContext>,
+    toc_entries: Option<&[TocEntry]>,
+    bookmark_names: Option<&HashSet<String>>,
 ) -> String {
     let mut depth = 1usize;
     let mut text = String::new();
@@ -212,6 +226,9 @@ fn read_revision_text(
         (Some(properties), None, _) => ContextlessFieldState::with_document_properties(properties),
         _ => ContextlessFieldState::default(),
     };
+    if let (Some(toc_entries), Some(bookmark_names)) = (toc_entries, bookmark_names) {
+        field_state = field_state.with_toc_context(toc_entries, bookmark_names);
+    }
     let mut embedded_body_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
     loop {
