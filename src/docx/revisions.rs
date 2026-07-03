@@ -4,7 +4,9 @@ use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 use std::collections::{HashMap, HashSet};
 
-use crate::annotation::{legacy_form_field_syntax, Revision, RevisionKind, RevisionView};
+use crate::annotation::{
+    legacy_form_field_syntax, FieldKind, Revision, RevisionKind, RevisionView,
+};
 use crate::text;
 
 use super::fields::{
@@ -340,9 +342,21 @@ fn read_revision_text(
                 push_revision_paragraph_boundary(&mut text);
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"fldSimple" => {
-                if let Some(computed) = computed_revision_simple_field_text(&e, &mut field_state) {
-                    text.push_str(&computed);
-                    skip_subtree(r);
+                if let Some(instruction) = attr_local_trimmed(&e, b"instr") {
+                    if is_revision_text_form_field_instruction(&instruction) {
+                        if let Some(computed) = computed_revision_simple_text_form_field_text(
+                            r,
+                            &instruction,
+                            &mut field_state,
+                        ) {
+                            text.push_str(&computed);
+                        }
+                    } else if let Some(computed) =
+                        computed_revision_field_text(&instruction, &mut field_state)
+                    {
+                        text.push_str(&computed);
+                        skip_subtree(r);
+                    }
                 }
             }
             Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"fldSimple" => {
@@ -529,6 +543,64 @@ fn computed_revision_simple_field_text(
 ) -> Option<String> {
     let instruction = attr_local_trimmed(e, b"instr")?;
     computed_revision_field_text(&instruction, field_state)
+}
+
+fn is_revision_text_form_field_instruction(instruction: &str) -> bool {
+    matches!(
+        FieldKind::from_instruction(instruction),
+        FieldKind::FormField(kind) if kind == "FORMTEXT"
+    )
+}
+
+fn computed_revision_simple_text_form_field_text(
+    r: &mut Xml<'_>,
+    instruction: &str,
+    field_state: &mut ContextlessFieldState<'_>,
+) -> Option<String> {
+    let current_result = read_revision_simple_field_current_result(r);
+    field_state
+        .computed_legacy_text_form_current_result(instruction, &current_result)
+        .or_else(|| (!current_result.is_empty()).then_some(current_result))
+}
+
+fn read_revision_simple_field_current_result(r: &mut Xml<'_>) -> String {
+    let mut result = String::new();
+    let mut depth = 1usize;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if matches!(name, b"t" | b"delText") {
+                    result.push_str(&read_text(r));
+                } else if let Some(marker) = inline_marker_text(&e) {
+                    result.push_str(marker);
+                    skip_subtree(r);
+                } else if let Some(ch) = revision_symbol_char(&e) {
+                    result.push(ch);
+                    skip_subtree(r);
+                } else {
+                    depth += 1;
+                }
+            }
+            Ok(Event::Empty(e)) => {
+                if let Some(marker) = inline_marker_text(&e) {
+                    result.push_str(marker);
+                } else if let Some(ch) = revision_symbol_char(&e) {
+                    result.push(ch);
+                }
+            }
+            Ok(Event::End(_)) => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    break;
+                }
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    result
 }
 
 fn computed_revision_field_text(
