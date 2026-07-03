@@ -6,8 +6,9 @@
 //! ```
 
 use rdoc::{
-    Align, CellBuilder, Color, CommentBuilder, DocBuilder, ImageBuilder, PageSetup,
-    ParagraphBuilder, ParagraphStyleBuilder, RunBuilder, TableBuilder, VCell,
+    Align, CellBuilder, Color, CommentBuilder, DocBuilder, ImageBuilder, PageNumberFormat,
+    PageSetup, ParagraphBuilder, ParagraphStyleBuilder, RunBuilder, TableBuilder, TextDirection,
+    VCell,
 };
 
 const KR_FONT: &str = "맑은 고딕";
@@ -133,9 +134,24 @@ fn main() {
     let mut builder = DocBuilder::new()
         .title("분기 운영 리포트")
         .creator("rdoc")
+        .document_id("6ECD4467")
+        .web_extension_task_pane(
+            "{52811C31-4593-43B8-A697-EB873422D156}",
+            "af8fa5ba-4010-4bcc-9e03-a91ddadf6dd3",
+            "1.0.0.0",
+            "EXCatalog",
+            "EXCatalog",
+        )
         .margins_each_pt(54.0, 54.0, 54.0, 54.0)
+        .title_page()
+        .page_number_start(1)
+        .page_number_format(PageNumberFormat::UpperRoman)
         .header_runs([run("분기 운영 리포트").bold().color(navy).build()])
+        .first_header_runs([run("분기 운영 리포트 | 표지").bold().color(navy).build()])
+        .even_header_runs([run("분기 운영 리포트 | 검토본").bold().color(navy).build()])
         .footer_runs([run("Page ").italic().build()])
+        .first_footer_runs([run("대외 공유 전 내부 검토용").italic().build()])
+        .even_footer_runs([run("짝수 쪽 검토 주석").italic().build()])
         .page_numbers()
         .paragraph_style(
             ParagraphStyleBuilder::new("ReportTitle", "Report Title")
@@ -181,7 +197,7 @@ fn main() {
         .rich_paragraph(heading(2, "작업 목록", navy))
         .rich_table(task_table)
         .section_break()
-        .clear_header()
+        .clear_header_footer()
         .page_setup(PageSetup {
             width_pt: 792.0,
             height_pt: 612.0,
@@ -189,7 +205,18 @@ fn main() {
             landscape: true,
             ..PageSetup::default()
         })
+        .page_number_start(1)
+        .page_number_format(PageNumberFormat::Decimal)
         .header_runs([run("후속 조치").bold().color(navy).build()])
+        .first_header_runs([run("후속 조치 | 시작 쪽").bold().color(navy).build()])
+        .even_header_runs([run("후속 조치 | 짝수 쪽").bold().color(navy).build()])
+        .footer_runs([
+            run("후속 조치 - ").italic().build(),
+            run("Page ").italic().build(),
+        ])
+        .first_footer_runs([run("후속 조치 시작").italic().build()])
+        .even_footer_runs([run("후속 조치 짝수 쪽").italic().build()])
+        .page_numbers()
         .rich_paragraph(heading(2, "후속 조치", navy))
         .numbered_list(["문서 변환 점검 결과 확인", "릴리스 노트 초안 검토"])
         .bullet_list_level(1, ["담당자 확인"])
@@ -212,6 +239,65 @@ fn main() {
                 );
         }
     }
+
+    builder = builder
+        .section_break_even_page()
+        .clear_header_footer()
+        .page_setup(PageSetup {
+            width_pt: 595.3,
+            height_pt: 841.9,
+            margin_pt: 60.0,
+            ..PageSetup::default()
+        })
+        .columns(2)
+        .doc_grid_lines_and_chars(360, 120)
+        .text_direction(TextDirection::TopToBottomRightToLeft)
+        .page_number_start(1)
+        .page_number_format(PageNumberFormat::KoreanDigital)
+        .header_runs([run("배포 품질 기준").bold().color(navy).build()])
+        .first_header_runs([run("배포 품질 기준 | 첫 쪽").bold().color(navy).build()])
+        .even_header_runs([run("배포 품질 기준 | 짝수 쪽").bold().color(navy).build()])
+        .footer_runs([
+            run("품질 기준 - ").italic().build(),
+            run("Page ").italic().build(),
+        ])
+        .first_footer_runs([run("배포 기준 시작").italic().build()])
+        .even_footer_runs([run("배포 기준 짝수 쪽").italic().build()])
+        .page_numbers()
+        .rich_paragraph(heading(2, "배포 및 품질 기준", navy))
+        .rich_paragraph(ParagraphBuilder::new().spacing_after_pt(8.0).runs([
+            run("인쇄 검토 부록은 두 단 구성과 문서 그리드를 사용해 ").build(),
+            run("세로 배치").bold().color(navy).build(),
+            run(" 승인 메모가 본문과 같은 패키지에서 유지되는지 확인합니다.").build(),
+        ]))
+        .numbered_list([
+            "부서별 확인 의견은 같은 열 안에서 source-order 순서를 유지합니다.",
+            "대외 배포 전 자동 작업 창 패키지가 문서와 함께 열리는지 확인합니다.",
+        ])
+        .bullet_list_level(1, ["문서 ID와 페이지 번호 정책은 배포본 추적 기준으로 사용합니다."])
+        .section_break_odd_page()
+        .clear_header_footer()
+        .columns(1)
+        .doc_grid_lines(360)
+        .text_direction(TextDirection::LeftToRightTopToBottom)
+        .page_number_start(1)
+        .page_number_format(PageNumberFormat::DecimalZero)
+        .header_runs([run("승인 메모").bold().color(navy).build()])
+        .first_header_runs([run("승인 메모 | 첫 쪽").bold().color(navy).build()])
+        .even_header_runs([run("승인 메모 | 짝수 쪽").bold().color(navy).build()])
+        .footer_runs([
+            run("승인 메모 - ").italic().build(),
+            run("Page ").italic().build(),
+        ])
+        .first_footer_runs([run("최종 승인 시작").italic().build()])
+        .even_footer_runs([run("최종 승인 짝수 쪽").italic().build()])
+        .page_numbers()
+        .rich_paragraph(heading(2, "승인 메모", navy))
+        .rich_paragraph(ParagraphBuilder::new().spacing_after_pt(8.0).runs([
+            run("운영, 제품, 문서 담당자는 위 일정과 품질 기준을 기준으로 최종 배포 여부를 판단합니다.")
+                .build(),
+        ]))
+        .bullet_list(["승인 상태: 조건부 승인", "다음 검토: 2026-07-15"]);
 
     let model = builder.build();
     match std::fs::write(&out, rdoc::write_docx(&model)) {
