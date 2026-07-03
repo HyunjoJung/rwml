@@ -311,6 +311,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         &styles,
         &numbering,
         &ref_targets,
+        &note_ref_context,
         field_properties,
         preserve_legacy_form_cache,
     );
@@ -909,6 +910,7 @@ fn read_hf_parts(
             styles,
             numbering,
             &ref_targets,
+            &note_ref_context,
             field_properties,
             preserve_legacy_form_cache,
         );
@@ -1156,6 +1158,7 @@ fn read_notes(
         styles,
         numbering,
         &ref_targets,
+        &note_ref_context,
         field_properties,
         preserve_legacy_form_cache,
     );

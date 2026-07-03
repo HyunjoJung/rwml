@@ -159,6 +159,7 @@ pub(crate) fn parse(
         styles,
         numbering,
         &bookmarks,
+        &note_refs,
         properties,
         preserve_legacy_form_cache,
     );

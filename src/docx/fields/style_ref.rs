@@ -75,11 +75,13 @@ pub(crate) fn style_ref_context(
 ) -> StyleRefContext {
     let core_properties = CoreProperties::default();
     let empty_properties = HashMap::new();
+    let note_refs = NoteRefContext::empty();
     style_ref_context_with_properties(
         xml,
         styles,
         numbering,
         document_bookmarks,
+        &note_refs,
         FieldDocumentProperties {
             core: &core_properties,
             custom: &empty_properties,
@@ -96,6 +98,7 @@ pub(crate) fn style_ref_context_with_properties(
     styles: &Styles,
     numbering: &Numbering,
     document_bookmarks: &HashMap<String, String>,
+    note_refs: &NoteRefContext,
     properties: FieldDocumentProperties<'_>,
     preserve_legacy_form_cache: bool,
 ) -> StyleRefContext {
@@ -143,6 +146,7 @@ pub(crate) fn style_ref_context_with_properties(
                             &mut field_positions,
                             &mut next_order,
                             document_bookmarks,
+                            note_refs,
                             &mut sequence_counters,
                             &mut autonum_counter,
                             &mut listnum_counter,
@@ -193,6 +197,7 @@ fn read_style_ref_paragraph(
     field_positions: &mut Vec<StyleRefFieldPosition>,
     next_order: &mut usize,
     document_bookmarks: &HashMap<String, String>,
+    note_refs: &NoteRefContext,
     sequence_counters: &mut HashMap<String, i64>,
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
@@ -253,6 +258,7 @@ fn read_style_ref_paragraph(
                                 current: &mut current,
                                 paragraph_text: &mut text,
                                 document_bookmarks,
+                                note_refs,
                                 sequence_counters,
                                 autonum_counter,
                                 listnum_counter,
@@ -294,6 +300,7 @@ fn read_style_ref_paragraph(
                                 next_order,
                                 &number,
                                 document_bookmarks,
+                                note_refs,
                                 sequence_counters,
                                 autonum_counter,
                                 listnum_counter,
@@ -362,6 +369,7 @@ fn read_style_ref_paragraph(
                             if let Some(computed) = computed_style_ref_source_field_result(
                                 instruction.as_deref(),
                                 document_bookmarks,
+                                note_refs,
                                 sequence_counters,
                                 autonum_counter,
                                 listnum_counter,
@@ -432,6 +440,7 @@ struct StyleRefRunScan<'a> {
     current: &'a mut Vec<StyleRefScanField>,
     paragraph_text: &'a mut String,
     document_bookmarks: &'a HashMap<String, String>,
+    note_refs: &'a NoteRefContext,
     sequence_counters: &'a mut HashMap<String, i64>,
     autonum_counter: &'a mut i64,
     listnum_counter: &'a mut i64,
@@ -451,6 +460,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
         current,
         paragraph_text,
         document_bookmarks,
+        note_refs,
         sequence_counters,
         autonum_counter,
         listnum_counter,
@@ -497,6 +507,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
                             paragraph_text,
                             entries,
                             document_bookmarks,
+                            note_refs,
                             sequence_counters,
                             autonum_counter,
                             listnum_counter,
@@ -580,6 +591,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
                             paragraph_text,
                             entries,
                             document_bookmarks,
+                            note_refs,
                             sequence_counters,
                             autonum_counter,
                             listnum_counter,
@@ -659,6 +671,7 @@ fn read_style_ref_simple_field_result(
     next_order: &mut usize,
     paragraph_number: &Option<StyleRefParagraphNumber>,
     document_bookmarks: &HashMap<String, String>,
+    note_refs: &NoteRefContext,
     sequence_counters: &mut HashMap<String, i64>,
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
@@ -706,6 +719,7 @@ fn read_style_ref_simple_field_result(
                                 current: &mut current,
                                 paragraph_text: &mut text,
                                 document_bookmarks,
+                                note_refs,
                                 sequence_counters,
                                 autonum_counter,
                                 listnum_counter,
@@ -736,6 +750,7 @@ fn read_style_ref_simple_field_result(
                             next_order,
                             paragraph_number,
                             document_bookmarks,
+                            note_refs,
                             sequence_counters,
                             autonum_counter,
                             listnum_counter,
@@ -787,6 +802,7 @@ fn read_style_ref_simple_field_result(
                         if let Some(computed) = computed_style_ref_source_field_result(
                             attr_local(&e, b"instr").as_deref(),
                             document_bookmarks,
+                            note_refs,
                             sequence_counters,
                             autonum_counter,
                             listnum_counter,
@@ -831,6 +847,7 @@ fn read_style_ref_simple_field_result(
     if let Some(computed) = computed_style_ref_source_field_result(
         instruction,
         document_bookmarks,
+        note_refs,
         sequence_counters,
         autonum_counter,
         listnum_counter,
@@ -931,6 +948,7 @@ fn style_ref_entries_share_source_style(left: &StyleRefEntry, right: &StyleRefEn
 fn computed_style_ref_source_field_result(
     instruction: Option<&str>,
     document_bookmarks: &HashMap<String, String>,
+    note_refs: &NoteRefContext,
     sequence_counters: &mut HashMap<String, i64>,
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
@@ -959,6 +977,7 @@ fn computed_style_ref_source_field_result(
         _ => {}
     }
     computed_style_ref_source_ref_result(&instruction, document_bookmarks, field_bookmarks)
+        .or_else(|| computed_note_ref_result(&instruction, note_refs, None))
         .or_else(|| computed_numbering_result(&instruction, autonum_counter))
         .or_else(|| computed_listnum_result(&instruction, listnum_counter))
         .or_else(|| computed_sequence_result(&instruction, sequence_counters))
@@ -1136,6 +1155,7 @@ fn apply_style_ref_scan_fld_char(
     paragraph_text: &mut String,
     entries: &mut Vec<StyleRefEntry>,
     document_bookmarks: &HashMap<String, String>,
+    note_refs: &NoteRefContext,
     sequence_counters: &mut HashMap<String, i64>,
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
@@ -1171,6 +1191,7 @@ fn apply_style_ref_scan_fld_char(
                     computed_style_ref_source_field_result(
                         Some(&field.instruction),
                         document_bookmarks,
+                        note_refs,
                         sequence_counters,
                         autonum_counter,
                         listnum_counter,
