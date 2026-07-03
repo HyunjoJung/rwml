@@ -316,6 +316,8 @@ pub struct ParaProps {
     pub shading: Option<Color>,
     /// Force this paragraph to begin on a new page (`w:pageBreakBefore`).
     pub page_break_before: bool,
+    /// Right-to-left paragraph layout (`w:bidi`).
+    pub bidi: bool,
 }
 
 /// A paragraph style definition for generated `.docx` output.
@@ -708,6 +710,8 @@ pub struct CharProps {
     pub small_caps: bool,
     /// All caps (`w:caps`): text renders uppercased regardless of stored case.
     pub caps: bool,
+    /// Right-to-left run text (`w:rtl`).
+    pub rtl: bool,
 }
 
 /// Whether a run is plain text or the cached result of a field.
@@ -761,6 +765,8 @@ pub struct Table {
     pub indent_twips: Option<i32>,
     /// Table alignment, if explicitly set.
     pub align: Option<Align>,
+    /// Visual right-to-left table ordering (`w:bidiVisual`).
+    pub bidi_visual: bool,
     /// Uniform table border color, if explicitly set.
     pub border_color: Option<Color>,
     /// Side-specific table border colors, overriding `border_color` per side.

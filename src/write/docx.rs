@@ -812,11 +812,13 @@ impl Ctx {
             && !has_indent
             && pr.shading.is_none()
             && !pr.page_break_before
+            && !pr.bidi
         {
             return;
         }
         out.push_str("<w:pPr>");
-        // Schema order: pStyle, numPr, pageBreakBefore, shd, spacing, ind, jc, outlineLvl.
+        // Schema order: pStyle, numPr, pageBreakBefore, shd, bidi, spacing, ind,
+        // jc, outlineLvl.
         if let Some(s) = &style_id {
             self.has_styles = true;
             if generated_heading_style {
@@ -840,6 +842,9 @@ impl Ctx {
                 r#"<w:shd w:val="clear" w:color="auto" w:fill="{}"/>"#,
                 hex(c)
             ));
+        }
+        if pr.bidi {
+            out.push_str("<w:bidi/>");
         }
         write_spacing(out, sp);
         write_indent(out, ind);
@@ -1263,6 +1268,9 @@ impl Ctx {
 
         let ncols = ncols.max(1);
         out.push_str("<w:tbl><w:tblPr>");
+        if t.bidi_visual {
+            out.push_str("<w:bidiVisual/>");
+        }
         if let Some(width_pct) = t.width_pct {
             let w = (width_pct.clamp(0.0, 1.0) * 5000.0).round() as i64;
             out.push_str(&format!(r#"<w:tblW w:w="{w}" w:type="pct"/>"#));
@@ -1357,6 +1365,7 @@ fn write_rpr(out: &mut String, p: &CharProps) {
         || p.hidden
         || p.small_caps
         || p.caps
+        || p.rtl
         || font.is_some()
         || p.size_half_pt.is_some()
         || p.color.is_some()
@@ -1367,7 +1376,7 @@ fn write_rpr(out: &mut String, p: &CharProps) {
     }
     out.push_str("<w:rPr>");
     // Schema order: rFonts, b, i, smallCaps, strike, vanish, color, sz/szCs,
-    // highlight, u, vertAlign.
+    // highlight, u, vertAlign, rtl.
     if let Some(f) = font {
         let f = esc_attr(f);
         out.push_str(&format!(
@@ -1408,6 +1417,9 @@ fn write_rpr(out: &mut String, p: &CharProps) {
         VertAlign::Super => out.push_str(r#"<w:vertAlign w:val="superscript"/>"#),
         VertAlign::Sub => out.push_str(r#"<w:vertAlign w:val="subscript"/>"#),
         VertAlign::Baseline => {}
+    }
+    if p.rtl {
+        out.push_str("<w:rtl/>");
     }
     out.push_str("</w:rPr>");
 }

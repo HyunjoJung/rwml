@@ -57,6 +57,12 @@ impl RunBuilder {
         self
     }
 
+    /// Mark the run as right-to-left text.
+    pub fn rtl(mut self) -> Self {
+        self.run.props.rtl = true;
+        self
+    }
+
     /// Set the run font family.
     pub fn font(mut self, font: impl Into<String>) -> Self {
         let font = font.into().trim().to_string();
@@ -270,6 +276,12 @@ impl ParagraphBuilder {
     /// Force the paragraph to begin on a new page.
     pub fn page_break_before(mut self) -> Self {
         self.paragraph.props.page_break_before = true;
+        self
+    }
+
+    /// Use right-to-left paragraph layout.
+    pub fn bidi(mut self) -> Self {
+        self.paragraph.props.bidi = true;
         self
     }
 
@@ -1443,6 +1455,12 @@ impl TableBuilder {
     /// Use Word's fixed table layout algorithm.
     pub fn fixed_layout(mut self) -> Self {
         self.table.fixed_layout = true;
+        self
+    }
+
+    /// Use visual right-to-left table ordering.
+    pub fn bidi_visual(mut self) -> Self {
+        self.table.bidi_visual = true;
         self
     }
 

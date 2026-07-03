@@ -2360,6 +2360,7 @@ struct PPr {
     indent: Indent,
     shading: Option<Color>,
     page_break_before: bool,
+    bidi: bool,
     section: Option<SectionSetup>,
 }
 
@@ -2869,6 +2870,7 @@ fn read_ppr_item(pp: &mut PPr, e: &BytesStart<'_>, num_id: &mut Option<String>, 
         b"jc" => pp.jc = attr_local_trimmed(e, b"val"),
         b"outlineLvl" => pp.outline = attr_u8(e, b"val"),
         b"pageBreakBefore" => pp.page_break_before = toggle_on(attr_local(e, b"val")),
+        b"bidi" => pp.bidi = toggle_on(attr_local(e, b"val")),
         b"spacing" => {
             pp.spacing.before_pt = attr_local(e, b"before").and_then(|v| twips_to_pt(&v));
             pp.spacing.after_pt = attr_local(e, b"after").and_then(|v| twips_to_pt(&v));
@@ -3560,6 +3562,7 @@ fn apply_rpr_child(props: &mut CharProps, e: &BytesStart<'_>) {
         }
         b"smallCaps" => props.small_caps = toggle_on(attr_local(e, b"val")),
         b"caps" => props.caps = toggle_on(attr_local(e, b"val")),
+        b"rtl" => props.rtl = toggle_on(attr_local(e, b"val")),
         // Font family: prefer the East-Asian face (Korean) over the Latin one.
         b"rFonts" => {
             props.font =
@@ -4732,6 +4735,7 @@ fn finalize_paragraph(runs: Vec<Run>, pp: PPr, ctx: &Ctx<'_>) -> Paragraph {
         indent,
         shading,
         page_break_before,
+        bidi,
         section: _,
     } = pp;
     let heading_level = match outline {
@@ -4786,6 +4790,7 @@ fn finalize_paragraph(runs: Vec<Run>, pp: PPr, ctx: &Ctx<'_>) -> Paragraph {
             indent,
             shading,
             page_break_before,
+            bidi,
         },
         runs,
     }
@@ -4907,6 +4912,7 @@ fn read_table_alternate_content_branch_rows(
 
 #[derive(Default)]
 struct TableProps {
+    bidi_visual: bool,
     fixed_layout: bool,
     indent_twips: Option<i32>,
     align: Option<Align>,
@@ -4929,6 +4935,11 @@ fn read_tblpr(r: &mut Xml<'_>) -> TableProps {
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
                 read_tblpr_alternate_content(r, &mut props);
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if local(e.name().as_ref()) == b"bidiVisual" =>
+            {
+                props.bidi_visual = toggle_on(attr_local(&e, b"val"));
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"tblW"
@@ -5003,6 +5014,11 @@ fn read_tblpr_alternate_content_branch(r: &mut Xml<'_>, props: &mut TableProps, 
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
                 read_tblpr_alternate_content(r, props);
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if local(e.name().as_ref()) == b"bidiVisual" =>
+            {
+                props.bidi_visual = toggle_on(attr_local(&e, b"val"));
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"tblW"
@@ -5750,6 +5766,7 @@ fn build_table(raw_rows: Vec<(Vec<CellRaw>, bool)>, props: TableProps) -> Table 
     Table {
         rows,
         header_rows,
+        bidi_visual: props.bidi_visual,
         fixed_layout: props.fixed_layout,
         indent_twips: props.indent_twips,
         align: props.align,
@@ -6658,6 +6675,39 @@ mod tests {
         };
         assert!(!p.runs[0].props.underline);
         assert!(p.runs[1].props.underline);
+    }
+
+    #[test]
+    fn reads_rtl_onoff_properties() {
+        let xml = r#"<w:document><w:body>
+            <w:p><w:pPr><w:bidi/></w:pPr><w:r><w:rPr><w:rtl/></w:rPr><w:t>rtl</w:t></w:r></w:p>
+            <w:p><w:pPr><w:bidi w:val="0"/></w:pPr><w:r><w:rPr><w:rtl w:val="0"/></w:rPr><w:t>ltr</w:t></w:r></w:p>
+            <w:tbl><w:tblPr><w:bidiVisual/></w:tblPr><w:tr><w:tc><w:p><w:r><w:t>visual</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+            <w:tbl><w:tblPr><w:bidiVisual w:val="0"/></w:tblPr><w:tr><w:tc><w:p><w:r><w:t>logical</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+        </w:body></w:document>"#;
+        let blocks = parse(xml);
+
+        let Block::Paragraph(rtl_para) = &blocks[0] else {
+            panic!("rtl paragraph")
+        };
+        assert!(rtl_para.props.bidi);
+        assert!(rtl_para.runs[0].props.rtl);
+
+        let Block::Paragraph(ltr_para) = &blocks[1] else {
+            panic!("ltr paragraph")
+        };
+        assert!(!ltr_para.props.bidi);
+        assert!(!ltr_para.runs[0].props.rtl);
+
+        let Block::Table(visual_table) = &blocks[2] else {
+            panic!("visual table")
+        };
+        assert!(visual_table.bidi_visual);
+
+        let Block::Table(logical_table) = &blocks[3] else {
+            panic!("logical table")
+        };
+        assert!(!logical_table.bidi_visual);
     }
 
     #[test]

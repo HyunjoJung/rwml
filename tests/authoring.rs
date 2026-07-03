@@ -187,6 +187,7 @@ fn report() -> DocModel {
         fixed_layout: false,
         indent_twips: None,
         align: None,
+        bidi_visual: false,
         border_color: None,
         border_colors: Default::default(),
         border_size_eighths: None,
@@ -3544,6 +3545,45 @@ fn table_builder_adds_rich_table_cells() {
     assert_eq!(reopened_table.rows[1].cells[0].row_span, 2);
     assert_eq!(reopened_table.rows[1].cells[0].valign, VCell::Bottom);
     assert_eq!(reopened_table.rows[1].cells[1].text(), "Q1");
+}
+
+#[test]
+fn rtl_properties_round_trip_through_docx() {
+    let model = DocBuilder::new()
+        .rich_paragraph(
+            ParagraphBuilder::new()
+                .bidi()
+                .runs([RunBuilder::new("rtl text").rtl().build()]),
+        )
+        .rich_table(
+            TableBuilder::new()
+                .bidi_visual()
+                .row([CellBuilder::text("visual table")]),
+        )
+        .build();
+
+    let bytes = rdoc::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    assert!(
+        document_xml.contains("<w:bidi/>")
+            && document_xml.contains("<w:rtl/>")
+            && document_xml.contains("<w:bidiVisual/>"),
+        "RTL properties missing: {document_xml}"
+    );
+
+    let reopened = Document::open(&bytes).expect("RTL property .docx reopens");
+    let reopened_model = reopened.model();
+    let Block::Paragraph(paragraph) = &reopened_model.blocks[0] else {
+        panic!("expected reopened paragraph");
+    };
+    assert!(paragraph.props.bidi);
+    assert!(paragraph.runs[0].props.rtl);
+
+    let Block::Table(table) = &reopened_model.blocks[1] else {
+        panic!("expected reopened table");
+    };
+    assert!(table.bidi_visual);
 }
 
 #[test]
