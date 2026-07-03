@@ -9,7 +9,7 @@ use crate::annotation::{Comment, TextAnchor};
 
 use super::fields::{
     computed_contextless_result, computed_run_symbol_char, ContextlessFieldState,
-    FieldDocumentProperties, NoteRefContext, TocEntry,
+    FieldDocumentProperties, NoteRefContext, SectionContext, TocEntry,
 };
 use super::xml_text::{
     inline_marker_text, read_text, skip_alternate_content_branch, skip_subtree,
@@ -232,6 +232,7 @@ pub(crate) fn parse_anchors(
     properties: FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
     note_refs: &NoteRefContext,
+    sections: &SectionContext,
     toc_entries: &[TocEntry],
     bookmark_names: &HashSet<String>,
 ) -> HashMap<String, TextAnchor> {
@@ -244,7 +245,8 @@ pub(crate) fn parse_anchors(
         document_bookmarks,
         note_refs,
     )
-    .with_toc_context(toc_entries, bookmark_names);
+    .with_toc_context(toc_entries, bookmark_names)
+    .with_section_context(sections);
     let mut old_content_depth = 0usize;
     let mut embedded_body_depth = 0usize;
     let mut alternate_content_stack = Vec::new();

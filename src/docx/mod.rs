@@ -490,6 +490,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         field_properties,
         &ref_targets,
         &note_ref_context,
+        &section_context,
         &toc_entries,
         &bookmark_names,
     );
@@ -997,6 +998,7 @@ fn read_hf_parts(
                 field_properties,
                 &ref_targets,
                 &note_ref_context,
+                &section_context,
                 &toc_entries,
                 &bookmark_names,
             ),
@@ -1254,6 +1256,7 @@ fn read_notes(
         field_properties,
         &ref_targets,
         &note_ref_context,
+        &section_context,
         &toc_entries,
         &bookmark_names,
     );
