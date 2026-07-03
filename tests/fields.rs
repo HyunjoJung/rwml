@@ -1447,6 +1447,31 @@ fn formula_table_source_field_legacy_form_docx() -> Vec<u8> {
     ])
 }
 
+fn formula_table_source_field_note_ref_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7" w:name="FootOne"/><w:r><w:footnoteReference w:id="1"/></w:r><w:bookmarkEnd w:id="7"/></w:p><w:tbl><w:tr><w:tc><w:p><w:fldSimple w:instr=" NOTEREF FootOne "><w:r><w:t>stale note source</w:t></w:r></w:fldSimple></w:p></w:tc><w:tc><w:p><w:fldSimple w:instr=" = SUM(LEFT) "><w:r><w:t>stale note source sum</w:t></w:r></w:fldSimple></w:p></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:footnote><w:footnote w:id="1"><w:p><w:r><w:t>First footnote.</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+    ])
+}
+
 fn formula_table_source_field_document_bookmark_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -10922,6 +10947,40 @@ fn docx_table_formula_source_field_uses_computed_legacy_form_results() {
             && !main_text.contains("stale source form")
             && !main_text.contains("stale legacy form source sum"),
         "table formula source text should use computed legacy form source values: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_table_formula_source_field_uses_computed_note_ref_results() {
+    let doc = Document::open(&formula_table_source_field_note_ref_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    let note_ref = fields
+        .iter()
+        .find(|field| field.instruction == "NOTEREF FootOne")
+        .expect("note-ref source field is recorded");
+    assert_eq!(note_ref.kind, FieldKind::NoteRef);
+    assert_eq!(note_ref.result, "stale note source");
+    assert_eq!(note_ref.computed_result.as_deref(), Some("1"));
+
+    let formula = fields
+        .iter()
+        .find(|field| field.instruction == r#"= SUM(LEFT)"#)
+        .expect("formula field is recorded");
+    assert_eq!(formula.kind, FieldKind::Dynamic("=".to_string()));
+    assert_eq!(formula.result, "stale note source sum");
+    assert_eq!(formula.computed_result.as_deref(), Some("1"));
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("1\t1")
+            && !main_text.contains("stale note source")
+            && !main_text.contains("stale note source sum"),
+        "table formula source text should use computed NOTEREF source values: {main_text:?}"
     );
 }
 

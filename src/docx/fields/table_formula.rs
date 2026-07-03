@@ -20,11 +20,12 @@ use super::{
     computed_fill_in_result, computed_formula_result_with_bookmark_context,
     computed_if_compare_result_with_bookmark_context, computed_legacy_form_result,
     computed_listnum_result, computed_merge_control_result_with_bookmark_context,
-    computed_numbering_result, computed_quote_result, computed_reference_index_result,
-    computed_revision_number_result, computed_run_symbol_char, computed_sequence_result,
-    computed_set_result, computed_toc_entry_result, inline_marker_text, legacy_form_context,
-    normalize_instruction, should_skip_alternate_branch, skip_element, AlternateContentBranchState,
-    ComplexField, FieldDocumentProperties, FieldPhase, LegacyFormContext,
+    computed_note_ref_result, computed_numbering_result, computed_quote_result,
+    computed_reference_index_result, computed_revision_number_result, computed_run_symbol_char,
+    computed_sequence_result, computed_set_result, computed_toc_entry_result, inline_marker_text,
+    legacy_form_context, normalize_instruction, should_skip_alternate_branch, skip_element,
+    AlternateContentBranchState, ComplexField, FieldDocumentProperties, FieldPhase,
+    LegacyFormContext, NoteRefContext,
 };
 
 type Xml<'a> = Reader<&'a [u8]>;
@@ -47,9 +48,11 @@ pub(crate) fn table_formula_context(
 ) -> TableFormulaContext {
     let core_properties = crate::CoreProperties::default();
     let empty_properties = HashMap::new();
+    let note_refs = NoteRefContext::empty();
     table_formula_context_with_properties(
         xml,
         document_bookmarks,
+        &note_refs,
         FieldDocumentProperties {
             core: &core_properties,
             custom: &empty_properties,
@@ -64,6 +67,7 @@ pub(crate) fn table_formula_context(
 pub(crate) fn table_formula_context_with_properties(
     xml: &str,
     document_bookmarks: &HashMap<String, String>,
+    note_refs: &NoteRefContext,
     properties: FieldDocumentProperties<'_>,
     preserve_legacy_form_cache: bool,
 ) -> TableFormulaContext {
@@ -103,6 +107,7 @@ pub(crate) fn table_formula_context_with_properties(
                         results.extend(read_table_formula_table(
                             &mut r,
                             document_bookmarks,
+                            note_refs,
                             &mut sequence_counters,
                             &mut autonum_counter,
                             &mut listnum_counter,
@@ -124,6 +129,7 @@ pub(crate) fn table_formula_context_with_properties(
                             let _ = computed_table_formula_source_field_result(
                                 instruction.as_deref(),
                                 document_bookmarks,
+                                note_refs,
                                 &mut sequence_counters,
                                 &mut autonum_counter,
                                 &mut listnum_counter,
@@ -142,6 +148,7 @@ pub(crate) fn table_formula_context_with_properties(
                             &e,
                             &mut current,
                             document_bookmarks,
+                            note_refs,
                             &mut sequence_counters,
                             &mut autonum_counter,
                             &mut listnum_counter,
@@ -183,6 +190,7 @@ pub(crate) fn table_formula_context_with_properties(
                             let _ = computed_table_formula_source_field_result(
                                 instruction.as_deref(),
                                 document_bookmarks,
+                                note_refs,
                                 &mut sequence_counters,
                                 &mut autonum_counter,
                                 &mut listnum_counter,
@@ -199,6 +207,7 @@ pub(crate) fn table_formula_context_with_properties(
                             &e,
                             &mut current,
                             document_bookmarks,
+                            note_refs,
                             &mut sequence_counters,
                             &mut autonum_counter,
                             &mut listnum_counter,
@@ -248,6 +257,7 @@ struct TableFormulaCell {
 fn read_table_formula_table(
     r: &mut Xml<'_>,
     document_bookmarks: &HashMap<String, String>,
+    note_refs: &NoteRefContext,
     sequence_counters: &mut HashMap<String, i64>,
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
@@ -290,6 +300,7 @@ fn read_table_formula_table(
                             r,
                             row_index,
                             document_bookmarks,
+                            note_refs,
                             sequence_counters,
                             autonum_counter,
                             listnum_counter,
@@ -380,6 +391,7 @@ fn read_table_formula_row(
     r: &mut Xml<'_>,
     row_index: usize,
     document_bookmarks: &HashMap<String, String>,
+    note_refs: &NoteRefContext,
     sequence_counters: &mut HashMap<String, i64>,
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
@@ -429,6 +441,7 @@ fn read_table_formula_row(
                             row_index,
                             col_index,
                             document_bookmarks,
+                            note_refs,
                             sequence_counters,
                             autonum_counter,
                             listnum_counter,
@@ -559,6 +572,7 @@ fn read_table_formula_cell(
     row: usize,
     col: usize,
     document_bookmarks: &HashMap<String, String>,
+    note_refs: &NoteRefContext,
     sequence_counters: &mut HashMap<String, i64>,
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
@@ -600,6 +614,7 @@ fn read_table_formula_cell(
                         for result in read_table_formula_table(
                             r,
                             document_bookmarks,
+                            note_refs,
                             sequence_counters,
                             autonum_counter,
                             listnum_counter,
@@ -628,6 +643,7 @@ fn read_table_formula_cell(
                             read_table_formula_source_field_result_text(
                                 r,
                                 document_bookmarks,
+                                note_refs,
                                 sequence_counters,
                                 autonum_counter,
                                 listnum_counter,
@@ -652,6 +668,7 @@ fn read_table_formula_cell(
                             computed_table_formula_source_field_result(
                                 instruction.as_deref(),
                                 document_bookmarks,
+                                note_refs,
                                 sequence_counters,
                                 autonum_counter,
                                 listnum_counter,
@@ -674,6 +691,7 @@ fn read_table_formula_cell(
                             row,
                             col,
                             document_bookmarks,
+                            note_refs,
                             sequence_counters,
                             autonum_counter,
                             listnum_counter,
@@ -731,6 +749,7 @@ fn read_table_formula_cell(
                             let text = computed_table_formula_source_field_result(
                                 instruction.as_deref(),
                                 document_bookmarks,
+                                note_refs,
                                 sequence_counters,
                                 autonum_counter,
                                 listnum_counter,
@@ -752,6 +771,7 @@ fn read_table_formula_cell(
                             row,
                             col,
                             document_bookmarks,
+                            note_refs,
                             sequence_counters,
                             autonum_counter,
                             listnum_counter,
@@ -866,6 +886,7 @@ fn read_field_result_text(r: &mut Xml<'_>) -> String {
 fn read_table_formula_source_field_result_text(
     r: &mut Xml<'_>,
     document_bookmarks: &HashMap<String, String>,
+    note_refs: &NoteRefContext,
     sequence_counters: &mut HashMap<String, i64>,
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
@@ -879,6 +900,7 @@ fn read_table_formula_source_field_result_text(
         computed_table_formula_source_field_result(
             Some(&instruction),
             document_bookmarks,
+            note_refs,
             sequence_counters,
             autonum_counter,
             listnum_counter,
@@ -1073,6 +1095,7 @@ fn apply_table_formula_cell_fld_char(
     row: usize,
     col: usize,
     document_bookmarks: &HashMap<String, String>,
+    note_refs: &NoteRefContext,
     sequence_counters: &mut HashMap<String, i64>,
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
@@ -1114,6 +1137,7 @@ fn apply_table_formula_cell_fld_char(
                 computed_table_formula_source_field_result(
                     Some(&instruction),
                     document_bookmarks,
+                    note_refs,
                     sequence_counters,
                     autonum_counter,
                     listnum_counter,
@@ -1158,6 +1182,7 @@ fn append_table_formula_cell_inline(
 fn computed_table_formula_source_field_result(
     instruction: Option<&str>,
     document_bookmarks: &HashMap<String, String>,
+    note_refs: &NoteRefContext,
     sequence_counters: &mut HashMap<String, i64>,
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
@@ -1184,6 +1209,7 @@ fn computed_table_formula_source_field_result(
         _ => {}
     }
     computed_table_formula_source_ref_result(instruction, document_bookmarks, field_bookmarks)
+        .or_else(|| computed_note_ref_result(instruction, note_refs, None))
         .or_else(|| computed_numbering_result(instruction, autonum_counter))
         .or_else(|| computed_listnum_result(instruction, listnum_counter))
         .or_else(|| computed_sequence_result(instruction, sequence_counters))
@@ -1276,6 +1302,7 @@ fn apply_table_formula_scan_fld_char(
     e: &BytesStart<'_>,
     current: &mut Vec<ComplexField>,
     document_bookmarks: &HashMap<String, String>,
+    note_refs: &NoteRefContext,
     sequence_counters: &mut HashMap<String, i64>,
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
@@ -1293,6 +1320,7 @@ fn apply_table_formula_scan_fld_char(
             let _ = computed_table_formula_source_field_result(
                 Some(&instruction),
                 document_bookmarks,
+                note_refs,
                 sequence_counters,
                 autonum_counter,
                 listnum_counter,

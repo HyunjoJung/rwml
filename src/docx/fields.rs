@@ -167,6 +167,7 @@ pub(crate) fn parse(
     let table_formulas = table_formula_context_with_properties(
         xml,
         &bookmarks,
+        &note_refs,
         properties,
         preserve_legacy_form_cache,
     );

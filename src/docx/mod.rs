@@ -319,6 +319,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     let table_formula_context = fields::table_formula_context_with_properties(
         &doc_xml,
         &ref_targets,
+        &note_ref_context,
         field_properties,
         preserve_legacy_form_cache,
     );
@@ -918,6 +919,7 @@ fn read_hf_parts(
         let table_formula_context = fields::table_formula_context_with_properties(
             &xml,
             &ref_targets,
+            &note_ref_context,
             field_properties,
             preserve_legacy_form_cache,
         );
@@ -1166,6 +1168,7 @@ fn read_notes(
     let table_formula_context = fields::table_formula_context_with_properties(
         &xml,
         &ref_targets,
+        &note_ref_context,
         field_properties,
         preserve_legacy_form_cache,
     );
