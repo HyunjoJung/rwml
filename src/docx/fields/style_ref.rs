@@ -1,5 +1,6 @@
 use super::reference::{
-    computed_ref_bookmark_text_result, ref_or_unknown_direct_bookmark_instruction,
+    computed_ref_bookmark_text_result, direct_bookmark_ref_instruction,
+    is_ref_position_field_instruction, ref_instruction, ref_or_unknown_direct_bookmark_instruction,
 };
 use super::*;
 
@@ -112,6 +113,7 @@ pub(crate) fn style_ref_context_with_properties(
     let mut listnum_counter = 0i64;
     let mut field_bookmarks = HashMap::new();
     let mut form_field_index = 0usize;
+    let mut ref_field_index = 0usize;
     let mut next_order = 0usize;
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
@@ -153,6 +155,7 @@ pub(crate) fn style_ref_context_with_properties(
                             &mut field_bookmarks,
                             &legacy_forms,
                             &mut form_field_index,
+                            &mut ref_field_index,
                             properties,
                         );
                         consumed_element = true;
@@ -204,6 +207,7 @@ fn read_style_ref_paragraph(
     field_bookmarks: &mut HashMap<String, String>,
     legacy_forms: &LegacyFormContext,
     form_field_index: &mut usize,
+    ref_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
 ) {
     let mut style_id = None;
@@ -265,6 +269,7 @@ fn read_style_ref_paragraph(
                                 field_bookmarks,
                                 legacy_forms,
                                 form_field_index,
+                                ref_field_index,
                                 properties,
                             },
                         );
@@ -307,6 +312,7 @@ fn read_style_ref_paragraph(
                                 field_bookmarks,
                                 legacy_forms,
                                 form_field_index,
+                                ref_field_index,
                                 properties,
                             ));
                         }
@@ -376,6 +382,7 @@ fn read_style_ref_paragraph(
                                 field_bookmarks,
                                 legacy_forms,
                                 form_field_index,
+                                ref_field_index,
                                 properties,
                                 "",
                             ) {
@@ -447,6 +454,7 @@ struct StyleRefRunScan<'a> {
     field_bookmarks: &'a mut HashMap<String, String>,
     legacy_forms: &'a LegacyFormContext,
     form_field_index: &'a mut usize,
+    ref_field_index: &'a mut usize,
     properties: FieldDocumentProperties<'a>,
 }
 
@@ -467,6 +475,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
         field_bookmarks,
         legacy_forms,
         form_field_index,
+        ref_field_index,
         properties,
     } = scan;
     let mut run_style_id = None;
@@ -514,6 +523,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
                             field_bookmarks,
                             legacy_forms,
                             form_field_index,
+                            ref_field_index,
                             properties,
                         );
                     }
@@ -598,6 +608,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
                             field_bookmarks,
                             legacy_forms,
                             form_field_index,
+                            ref_field_index,
                             properties,
                         );
                     }
@@ -678,6 +689,7 @@ fn read_style_ref_simple_field_result(
     field_bookmarks: &mut HashMap<String, String>,
     legacy_forms: &LegacyFormContext,
     form_field_index: &mut usize,
+    ref_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
 ) -> String {
     let mut text = String::new();
@@ -726,6 +738,7 @@ fn read_style_ref_simple_field_result(
                                 field_bookmarks,
                                 legacy_forms,
                                 form_field_index,
+                                ref_field_index,
                                 properties,
                             },
                         );
@@ -757,6 +770,7 @@ fn read_style_ref_simple_field_result(
                             field_bookmarks,
                             legacy_forms,
                             form_field_index,
+                            ref_field_index,
                             properties,
                         ));
                         consumed_element = true;
@@ -809,6 +823,7 @@ fn read_style_ref_simple_field_result(
                             field_bookmarks,
                             legacy_forms,
                             form_field_index,
+                            ref_field_index,
                             properties,
                             "",
                         ) {
@@ -854,6 +869,7 @@ fn read_style_ref_simple_field_result(
         field_bookmarks,
         legacy_forms,
         form_field_index,
+        ref_field_index,
         properties,
         &cached_text,
     ) {
@@ -955,6 +971,7 @@ fn computed_style_ref_source_field_result(
     field_bookmarks: &mut HashMap<String, String>,
     legacy_forms: &LegacyFormContext,
     form_field_index: &mut usize,
+    ref_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
     current_result: &str,
 ) -> Option<String> {
@@ -976,48 +993,93 @@ fn computed_style_ref_source_field_result(
         }
         _ => {}
     }
-    computed_style_ref_source_ref_result(&instruction, document_bookmarks, field_bookmarks)
-        .or_else(|| computed_note_ref_result(&instruction, note_refs, None))
-        .or_else(|| computed_numbering_result(&instruction, autonum_counter))
-        .or_else(|| computed_listnum_result(&instruction, listnum_counter))
-        .or_else(|| computed_sequence_result(&instruction, sequence_counters))
-        .or_else(|| computed_toc_entry_result(&instruction))
-        .or_else(|| {
-            computed_formula_result_with_bookmark_context(
-                &instruction,
-                document_bookmarks,
-                field_bookmarks,
-            )
-        })
-        .or_else(|| super::computed_dynamic_result_with_bookmarks(&instruction, field_bookmarks))
-        .or_else(|| {
-            computed_if_compare_result_with_bookmark_context(
-                &instruction,
-                document_bookmarks,
-                field_bookmarks,
-            )
-        })
-        .or_else(|| {
-            computed_merge_control_result_with_bookmark_context(
-                &instruction,
-                document_bookmarks,
-                field_bookmarks,
-            )
-        })
-        .or_else(|| computed_display_result(&instruction))
-        .or_else(|| computed_action_result(&instruction))
-        .or_else(|| computed_revision_number_result(&instruction, properties.core))
-        .or_else(|| {
-            computed_document_info_result(
-                &instruction,
-                properties.core,
-                properties.custom,
-                properties.variables,
-                properties.extended,
-                properties.file_size_bytes,
-            )
-        })
-        .or_else(|| computed_reference_index_result(&instruction))
+    if let Some(text) =
+        computed_style_ref_source_ref_result(&instruction, document_bookmarks, field_bookmarks)
+    {
+        return Some(text);
+    }
+    let note_ref_field_position =
+        style_ref_source_note_ref_field_position(&instruction, note_refs, ref_field_index);
+    computed_style_ref_source_ref_note_reference_result(
+        &instruction,
+        note_refs,
+        note_ref_field_position,
+    )
+    .or_else(|| computed_note_ref_result(&instruction, note_refs, None))
+    .or_else(|| computed_numbering_result(&instruction, autonum_counter))
+    .or_else(|| computed_listnum_result(&instruction, listnum_counter))
+    .or_else(|| computed_sequence_result(&instruction, sequence_counters))
+    .or_else(|| computed_toc_entry_result(&instruction))
+    .or_else(|| {
+        computed_formula_result_with_bookmark_context(
+            &instruction,
+            document_bookmarks,
+            field_bookmarks,
+        )
+    })
+    .or_else(|| super::computed_dynamic_result_with_bookmarks(&instruction, field_bookmarks))
+    .or_else(|| {
+        computed_if_compare_result_with_bookmark_context(
+            &instruction,
+            document_bookmarks,
+            field_bookmarks,
+        )
+    })
+    .or_else(|| {
+        computed_merge_control_result_with_bookmark_context(
+            &instruction,
+            document_bookmarks,
+            field_bookmarks,
+        )
+    })
+    .or_else(|| computed_display_result(&instruction))
+    .or_else(|| computed_action_result(&instruction))
+    .or_else(|| computed_revision_number_result(&instruction, properties.core))
+    .or_else(|| {
+        computed_document_info_result(
+            &instruction,
+            properties.core,
+            properties.custom,
+            properties.variables,
+            properties.extended,
+            properties.file_size_bytes,
+        )
+    })
+    .or_else(|| computed_reference_index_result(&instruction))
+}
+
+fn computed_style_ref_source_ref_note_reference_result(
+    instruction: &str,
+    note_refs: &NoteRefContext,
+    note_ref_field_position: Option<NoteRefFieldPosition>,
+) -> Option<String> {
+    let spec =
+        ref_instruction(instruction).or_else(|| direct_bookmark_ref_instruction(instruction))?;
+    if !spec.note_reference
+        || spec.sequence_separator
+        || spec.relative
+        || spec.paragraph_number
+        || spec.full_context_number
+        || spec.relative_context_number
+    {
+        return None;
+    }
+    let number = note_refs.ref_note_number(&spec.target, note_ref_field_position)?;
+    let text = format_page_number(number, spec.number_format)?;
+    Some(apply_field_text_format(text, spec.text_format))
+}
+
+fn style_ref_source_note_ref_field_position(
+    instruction: &str,
+    note_refs: &NoteRefContext,
+    ref_field_index: &mut usize,
+) -> Option<NoteRefFieldPosition> {
+    if !is_ref_position_field_instruction(instruction) {
+        return None;
+    }
+    let position = note_refs.ref_field_position(*ref_field_index);
+    *ref_field_index += 1;
+    position
 }
 
 fn computed_style_ref_source_ref_result(
@@ -1162,6 +1224,7 @@ fn apply_style_ref_scan_fld_char(
     field_bookmarks: &mut HashMap<String, String>,
     legacy_forms: &LegacyFormContext,
     form_field_index: &mut usize,
+    ref_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
 ) {
     match field_char_type(e).as_deref() {
@@ -1198,6 +1261,7 @@ fn apply_style_ref_scan_fld_char(
                         field_bookmarks,
                         legacy_forms,
                         form_field_index,
+                        ref_field_index,
                         properties,
                         &current_result,
                     )
