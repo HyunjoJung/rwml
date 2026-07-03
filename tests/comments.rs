@@ -1101,6 +1101,37 @@ fn docx_comments_use_text_form_current_field_text() {
 }
 
 #[test]
+fn docx_comments_use_complex_text_form_current_field_text() {
+    let docx = docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="comments.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:commentRangeStart w:id="24"/><w:r><w:t>Anchor</w:t></w:r><w:commentRangeEnd w:id="24"/><w:r><w:commentReference w:id="24"/></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/comments.xml",
+            r#"<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:comment w:id="24" w:author="Reviewer"><w:p><w:r><w:fldChar w:fldCharType="begin"><w:ffData><w:textInput><w:default w:val="Comment default"/></w:textInput></w:ffData></w:fldChar></w:r><w:r><w:instrText> FORMTEXT \*Upper </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Comment typed</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> note</w:t></w:r></w:p></w:comment></w:comments>"#,
+        ),
+    ]);
+    let doc = Document::open(&docx).expect("fixture opens");
+    let comments = doc.comments();
+
+    assert_eq!(comments.len(), 1);
+    assert_eq!(comments[0].text, "COMMENT TYPED note");
+}
+
+#[test]
 fn docx_comments_use_document_bookmark_formula_field_text() {
     let docx = docx_fixture(&[
         (

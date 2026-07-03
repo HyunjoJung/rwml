@@ -341,14 +341,20 @@ pub(crate) fn parse_anchors(
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"t" => {
                 let text = read_text(&mut r);
-                if old_content_depth == 0 && !complex_field.suppresses_result() {
-                    push_anchor_text(&active, &mut anchors, &text);
+                if old_content_depth == 0 {
+                    complex_field.append_result_text(&text);
+                    if !complex_field.suppresses_result() {
+                        push_anchor_text(&active, &mut anchors, &text);
+                    }
                 }
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"delText" => {
                 let text = read_text(&mut r);
-                if old_content_depth == 0 && !complex_field.suppresses_result() {
-                    push_anchor_text(&active, &mut anchors, &text);
+                if old_content_depth == 0 {
+                    complex_field.append_result_text(&text);
+                    if !complex_field.suppresses_result() {
+                        push_anchor_text(&active, &mut anchors, &text);
+                    }
                 }
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
@@ -360,14 +366,18 @@ pub(crate) fn parse_anchors(
                     }
                 }
             }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e))
-                if old_content_depth == 0 && !complex_field.suppresses_result() =>
-            {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if old_content_depth == 0 => {
                 if let Some(text) = inline_marker_text(&e) {
-                    push_anchor_text(&active, &mut anchors, text);
+                    complex_field.append_result_text(text);
+                    if !complex_field.suppresses_result() {
+                        push_anchor_text(&active, &mut anchors, text);
+                    }
                 } else if let Some(ch) = comment_symbol_char(&e) {
-                    let text = ch.to_string();
-                    push_anchor_text(&active, &mut anchors, &text);
+                    complex_field.append_result_char(ch);
+                    if !complex_field.suppresses_result() {
+                        let text = ch.to_string();
+                        push_anchor_text(&active, &mut anchors, &text);
+                    }
                 }
             }
             Ok(Event::End(e)) if matches!(local(e.name().as_ref()), b"del" | b"moveFrom") => {
@@ -505,19 +515,30 @@ fn read_comment(
             }
             Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"t" | b"delText") => {
                 let text = read_text(r);
-                if old_content_depth == 0 && !complex_field.suppresses_result() {
-                    if let Some(c) = c.as_mut() {
-                        c.text.push_str(&text);
+                if old_content_depth == 0 {
+                    complex_field.append_result_text(&text);
+                    if !complex_field.suppresses_result() {
+                        if let Some(c) = c.as_mut() {
+                            c.text.push_str(&text);
+                        }
                     }
                 }
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
-                if old_content_depth == 0 && !complex_field.suppresses_result() {
-                    if let Some(c) = c.as_mut() {
-                        if let Some(text) = inline_marker_text(&e) {
-                            c.text.push_str(text);
-                        } else if let Some(ch) = comment_symbol_char(&e) {
-                            c.text.push(ch);
+                if old_content_depth == 0 {
+                    if let Some(text) = inline_marker_text(&e) {
+                        complex_field.append_result_text(text);
+                        if !complex_field.suppresses_result() {
+                            if let Some(c) = c.as_mut() {
+                                c.text.push_str(text);
+                            }
+                        }
+                    } else if let Some(ch) = comment_symbol_char(&e) {
+                        complex_field.append_result_char(ch);
+                        if !complex_field.suppresses_result() {
+                            if let Some(c) = c.as_mut() {
+                                c.text.push(ch);
+                            }
                         }
                     }
                 }
@@ -626,6 +647,7 @@ struct CommentComplexField {
     instruction: String,
     phase: Option<CommentComplexFieldPhase>,
     computed_result: Option<String>,
+    result_text: String,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -648,6 +670,7 @@ impl CommentComplexField {
             Some("begin") => {
                 if self.depth == 0 {
                     self.instruction.clear();
+                    self.result_text.clear();
                     self.phase = Some(CommentComplexFieldPhase::Instruction);
                     self.computed_result = None;
                 }
@@ -658,19 +681,39 @@ impl CommentComplexField {
                 if self.depth == 1 && self.phase == Some(CommentComplexFieldPhase::Instruction) =>
             {
                 self.phase = Some(CommentComplexFieldPhase::Result);
-                self.computed_result = computed_comment_field_text(&self.instruction, field_state);
+                if !is_comment_text_form_field_instruction(&self.instruction) {
+                    self.computed_result =
+                        computed_comment_field_text(&self.instruction, field_state);
+                }
                 self.computed_result.clone()
             }
             Some("end") => {
+                let computed_text_form = if self.depth == 1
+                    && self.phase == Some(CommentComplexFieldPhase::Result)
+                    && self.computed_result.is_none()
+                    && is_comment_text_form_field_instruction(&self.instruction)
+                {
+                    field_state
+                        .computed_legacy_text_form_current_result(
+                            &self.instruction,
+                            &self.result_text,
+                        )
+                        .or_else(|| {
+                            (!self.result_text.is_empty()).then_some(self.result_text.clone())
+                        })
+                } else {
+                    None
+                };
                 if self.depth > 0 {
                     self.depth -= 1;
                     if self.depth == 0 {
                         self.instruction.clear();
+                        self.result_text.clear();
                         self.phase = None;
                         self.computed_result = None;
                     }
                 }
-                None
+                computed_text_form
             }
             _ => None,
         }
@@ -685,7 +728,27 @@ impl CommentComplexField {
     fn suppresses_result(&self) -> bool {
         self.depth > 0
             && self.phase == Some(CommentComplexFieldPhase::Result)
-            && self.computed_result.is_some()
+            && (self.computed_result.is_some()
+                || is_comment_text_form_field_instruction(&self.instruction))
+    }
+
+    fn append_result_text(&mut self, text: &str) {
+        if self.collects_result_text() {
+            self.result_text.push_str(text);
+        }
+    }
+
+    fn append_result_char(&mut self, ch: char) {
+        if self.collects_result_text() {
+            self.result_text.push(ch);
+        }
+    }
+
+    fn collects_result_text(&self) -> bool {
+        self.depth > 0
+            && self.phase == Some(CommentComplexFieldPhase::Result)
+            && self.computed_result.is_none()
+            && is_comment_text_form_field_instruction(&self.instruction)
     }
 }
 
