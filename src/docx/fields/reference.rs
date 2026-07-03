@@ -56,6 +56,7 @@ fn ref_targets_with_optional_note_context(
     let mut sequence_counters = HashMap::new();
     let mut field_bookmarks = HashMap::new();
     let mut form_field_index = 0usize;
+    let mut ref_field_index = 0usize;
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => {
@@ -89,6 +90,7 @@ fn ref_targets_with_optional_note_context(
                             &mut form_field_index,
                             properties,
                             note_refs,
+                            &mut ref_field_index,
                             &mut r,
                             &e,
                         );
@@ -107,10 +109,22 @@ fn ref_targets_with_optional_note_context(
                             &mut form_field_index,
                             properties,
                             note_refs,
+                            &mut ref_field_index,
                             &mut r,
                             &e,
                         );
                         continue;
+                    }
+                    b"fldSimple"
+                        if is_ref_position_field_instruction(
+                            &attr_local(&e, b"instr").unwrap_or_default(),
+                        ) =>
+                    {
+                        let _ = ref_target_note_ref_field_position(
+                            attr_local(&e, b"instr").as_deref().unwrap_or_default(),
+                            note_refs,
+                            &mut ref_field_index,
+                        );
                     }
                     b"fldSimple"
                         if is_ref_target_source_order_field_instruction(
@@ -130,6 +144,7 @@ fn ref_targets_with_optional_note_context(
                             &mut form_field_index,
                             properties,
                             note_refs,
+                            None,
                             &field.result,
                         )
                         .unwrap_or(field.result);
@@ -153,6 +168,7 @@ fn ref_targets_with_optional_note_context(
                             &mut form_field_index,
                             properties,
                             note_refs,
+                            None,
                             &field.result,
                         );
                         continue;
@@ -171,6 +187,7 @@ fn ref_targets_with_optional_note_context(
                             &mut form_field_index,
                             properties,
                             note_refs,
+                            &mut ref_field_index,
                         );
                     }
                     b"p" => append_ref_target_paragraph_breaks(&active, &mut current, &mut out),
@@ -255,6 +272,18 @@ fn ref_targets_with_optional_note_context(
                             &mut form_field_index,
                             properties,
                             note_refs,
+                            &mut ref_field_index,
+                        );
+                    }
+                    b"fldSimple"
+                        if is_ref_position_field_instruction(
+                            &attr_local(&e, b"instr").unwrap_or_default(),
+                        ) =>
+                    {
+                        let _ = ref_target_note_ref_field_position(
+                            attr_local(&e, b"instr").as_deref().unwrap_or_default(),
+                            note_refs,
+                            &mut ref_field_index,
                         );
                     }
                     b"fldSimple"
@@ -275,6 +304,7 @@ fn ref_targets_with_optional_note_context(
                             &mut form_field_index,
                             properties,
                             note_refs,
+                            None,
                             "",
                         );
                     }
@@ -295,6 +325,7 @@ fn ref_targets_with_optional_note_context(
                             &mut form_field_index,
                             properties,
                             note_refs,
+                            None,
                             "",
                         );
                     }
@@ -312,6 +343,7 @@ fn ref_targets_with_optional_note_context(
                             &mut form_field_index,
                             properties,
                             note_refs,
+                            &mut ref_field_index,
                         );
                     }
                     b"tab" => append_ref_target_text(&active, &mut current, &mut out, "\t"),
@@ -352,6 +384,7 @@ struct RefTargetComplexField {
     instruction: String,
     result: String,
     phase: FieldPhase,
+    note_ref_field_position: Option<NoteRefFieldPosition>,
 }
 
 fn apply_ref_target_fld_char(
@@ -367,6 +400,7 @@ fn apply_ref_target_fld_char(
     form_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
     note_refs: Option<&NoteRefContext>,
+    ref_field_index: &mut usize,
 ) {
     match field_char_type(e).as_deref() {
         Some("begin") => {
@@ -375,11 +409,19 @@ fn apply_ref_target_fld_char(
                 instruction: String::new(),
                 result: String::new(),
                 phase: FieldPhase::Instruction,
+                note_ref_field_position: None,
             });
         }
         Some("separate") => {
+            let mut consumed_ref_position = false;
             if current.len() == 1 {
-                let field = &current[0];
+                let field = &mut current[0];
+                field.note_ref_field_position = ref_target_note_ref_field_position(
+                    &field.instruction,
+                    note_refs,
+                    ref_field_index,
+                );
+                consumed_ref_position = true;
                 if field.active.is_empty()
                     && !is_ref_target_source_order_field_instruction(Some(&field.instruction))
                     && !is_legacy_form_field_instruction(Some(&field.instruction))
@@ -389,6 +431,13 @@ fn apply_ref_target_fld_char(
                 }
             }
             if let Some(field) = current.last_mut() {
+                if !consumed_ref_position {
+                    field.note_ref_field_position = ref_target_note_ref_field_position(
+                        &field.instruction,
+                        note_refs,
+                        ref_field_index,
+                    );
+                }
                 field.phase = FieldPhase::Result;
             }
         }
@@ -408,6 +457,7 @@ fn apply_ref_target_fld_char(
                 form_field_index,
                 properties,
                 note_refs,
+                field.note_ref_field_position,
                 &field.result,
             )
             .unwrap_or(field.result);
@@ -482,11 +532,14 @@ fn append_ref_simple_field_result(
     form_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
     note_refs: Option<&NoteRefContext>,
+    ref_field_index: &mut usize,
     r: &mut Xml<'_>,
     e: &BytesStart<'_>,
 ) {
     let excluded = ref_target_excluded_bookmarks(active, current);
     let (instruction, result) = read_simple_field_result(r, e, |instruction, result| {
+        let note_ref_field_position =
+            ref_target_note_ref_field_position(instruction, note_refs, ref_field_index);
         computed_ref_target_field_result(
             instruction,
             out,
@@ -499,9 +552,12 @@ fn append_ref_simple_field_result(
             form_field_index,
             properties,
             note_refs,
+            note_ref_field_position,
             result,
         )
     });
+    let note_ref_field_position =
+        ref_target_note_ref_field_position(&instruction, note_refs, ref_field_index);
     let text = computed_ref_target_field_result(
         &instruction,
         out,
@@ -514,6 +570,7 @@ fn append_ref_simple_field_result(
         form_field_index,
         properties,
         note_refs,
+        note_ref_field_position,
         &result,
     )
     .unwrap_or(result);
@@ -533,9 +590,12 @@ fn append_ref_empty_simple_field_result(
     form_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
     note_refs: Option<&NoteRefContext>,
+    ref_field_index: &mut usize,
 ) {
     let instruction = instruction.unwrap_or_default();
     let excluded = ref_target_excluded_bookmarks(active, current);
+    let note_ref_field_position =
+        ref_target_note_ref_field_position(instruction, note_refs, ref_field_index);
     let text = computed_ref_target_field_result(
         instruction,
         out,
@@ -548,6 +608,7 @@ fn append_ref_empty_simple_field_result(
         form_field_index,
         properties,
         note_refs,
+        note_ref_field_position,
         "",
     )
     .unwrap_or_default();
@@ -566,6 +627,7 @@ fn computed_ref_target_field_result(
     form_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
     note_refs: Option<&NoteRefContext>,
+    note_ref_field_position: Option<NoteRefFieldPosition>,
     current_result: &str,
 ) -> Option<String> {
     let available_bookmarks = ref_target_available_bookmarks(bookmarks, excluded);
@@ -586,6 +648,13 @@ fn computed_ref_target_field_result(
     }
     let bookmarks = ref_target_merged_bookmarks(&available_bookmarks, field_bookmarks);
     computed_ref_target_ref_result(&instruction, &bookmarks)
+        .or_else(|| {
+            computed_ref_target_ref_note_reference_result(
+                &instruction,
+                note_refs,
+                note_ref_field_position,
+            )
+        })
         .or_else(|| {
             note_refs.and_then(|note_refs| computed_note_ref_result(&instruction, note_refs, None))
         })
@@ -629,6 +698,42 @@ fn computed_ref_target_ref_result(
     let text = bookmarks.get(&spec.target)?;
     let text = computed_ref_bookmark_text_result(text, spec.number_format)?;
     Some(apply_field_text_format(text, spec.text_format))
+}
+
+fn computed_ref_target_ref_note_reference_result(
+    instruction: &str,
+    note_refs: Option<&NoteRefContext>,
+    note_ref_field_position: Option<NoteRefFieldPosition>,
+) -> Option<String> {
+    let note_refs = note_refs?;
+    let spec =
+        ref_instruction(instruction).or_else(|| direct_bookmark_ref_instruction(instruction))?;
+    if !spec.note_reference
+        || spec.sequence_separator
+        || spec.relative
+        || spec.paragraph_number
+        || spec.full_context_number
+        || spec.relative_context_number
+    {
+        return None;
+    }
+    let number = note_refs.ref_note_number(&spec.target, note_ref_field_position)?;
+    let text = format_page_number(number, spec.number_format)?;
+    Some(apply_field_text_format(text, spec.text_format))
+}
+
+fn ref_target_note_ref_field_position(
+    instruction: &str,
+    note_refs: Option<&NoteRefContext>,
+    ref_field_index: &mut usize,
+) -> Option<NoteRefFieldPosition> {
+    let instruction = normalize_instruction(instruction);
+    if !is_ref_position_field_instruction(&instruction) {
+        return None;
+    }
+    let position = note_refs.and_then(|note_refs| note_refs.ref_field_position(*ref_field_index));
+    *ref_field_index += 1;
+    position
 }
 
 fn is_ref_target_source_order_field_instruction(instruction: Option<&str>) -> bool {
