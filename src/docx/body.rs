@@ -1120,17 +1120,20 @@ pub(crate) fn scan_note_ref_anchors(
                         }
                     } else if name == b"t" {
                         let text = read_text(&mut r);
+                        complex_field.append_result_text(&text);
                         if !complex_field.suppresses_result() {
                             current_block_text.push_str(&text);
                         }
                         body_depth = body_depth.saturating_sub(1);
                     } else if let Some(marker) = inline_marker_text(&e) {
+                        complex_field.append_result_text(marker);
                         if !complex_field.suppresses_result() {
                             current_block_text.push_str(marker);
                         }
                         skip_subtree(&mut r);
                         body_depth = body_depth.saturating_sub(1);
                     } else if name == b"sym" {
+                        complex_field.append_result_symbol(&e);
                         if !complex_field.suppresses_result() {
                             append_run_symbol(&mut current_block_text, &e);
                         }
@@ -1173,8 +1176,11 @@ pub(crate) fn scan_note_ref_anchors(
                                 current_block_text.push_str(&text);
                             }
                         }
-                    } else if !complex_field.suppresses_result() {
-                        append_note_anchor_empty(&mut current_block_text, &e, name);
+                    } else {
+                        complex_field.append_result_empty(&e, name);
+                        if !complex_field.suppresses_result() {
+                            append_note_anchor_empty(&mut current_block_text, &e, name);
+                        }
                     }
                 }
             }
@@ -1228,6 +1234,7 @@ struct NoteAnchorComplexField {
     instruction: String,
     phase: Option<NoteAnchorComplexFieldPhase>,
     computed_result: Option<String>,
+    result_text: String,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1246,6 +1253,7 @@ impl NoteAnchorComplexField {
             Some("begin") => {
                 if self.depth == 0 {
                     self.instruction.clear();
+                    self.result_text.clear();
                     self.phase = Some(NoteAnchorComplexFieldPhase::Instruction);
                     self.computed_result = None;
                 }
@@ -1257,20 +1265,39 @@ impl NoteAnchorComplexField {
                     && self.phase == Some(NoteAnchorComplexFieldPhase::Instruction) =>
             {
                 self.phase = Some(NoteAnchorComplexFieldPhase::Result);
-                self.computed_result =
-                    computed_note_anchor_field_text(&self.instruction, field_state);
+                if !is_note_anchor_text_form_field_instruction(&self.instruction) {
+                    self.computed_result =
+                        computed_note_anchor_field_text(&self.instruction, field_state);
+                }
                 self.computed_result.clone()
             }
             Some("end") => {
+                let computed_text_form = if self.depth == 1
+                    && self.phase == Some(NoteAnchorComplexFieldPhase::Result)
+                    && self.computed_result.is_none()
+                    && is_note_anchor_text_form_field_instruction(&self.instruction)
+                {
+                    field_state
+                        .computed_legacy_text_form_current_result(
+                            &self.instruction,
+                            &self.result_text,
+                        )
+                        .or_else(|| {
+                            (!self.result_text.is_empty()).then_some(self.result_text.clone())
+                        })
+                } else {
+                    None
+                };
                 if self.depth > 0 {
                     self.depth -= 1;
                     if self.depth == 0 {
                         self.instruction.clear();
+                        self.result_text.clear();
                         self.phase = None;
                         self.computed_result = None;
                     }
                 }
-                None
+                computed_text_form
             }
             _ => None,
         }
@@ -1285,7 +1312,33 @@ impl NoteAnchorComplexField {
     fn suppresses_result(&self) -> bool {
         self.depth > 0
             && self.phase == Some(NoteAnchorComplexFieldPhase::Result)
-            && self.computed_result.is_some()
+            && (self.computed_result.is_some()
+                || is_note_anchor_text_form_field_instruction(&self.instruction))
+    }
+
+    fn append_result_text(&mut self, text: &str) {
+        if self.collects_result_text() {
+            self.result_text.push_str(text);
+        }
+    }
+
+    fn append_result_symbol(&mut self, e: &BytesStart<'_>) {
+        if self.collects_result_text() {
+            append_run_symbol(&mut self.result_text, e);
+        }
+    }
+
+    fn append_result_empty(&mut self, e: &BytesStart<'_>, name: &[u8]) {
+        if self.collects_result_text() {
+            append_note_anchor_empty(&mut self.result_text, e, name);
+        }
+    }
+
+    fn collects_result_text(&self) -> bool {
+        self.depth > 0
+            && self.phase == Some(NoteAnchorComplexFieldPhase::Result)
+            && self.computed_result.is_none()
+            && is_note_anchor_text_form_field_instruction(&self.instruction)
     }
 }
 
@@ -1472,15 +1525,18 @@ fn append_note_anchor_content(
                     }
                 } else if name == b"t" {
                     let value = read_text(r);
+                    complex_field.append_result_text(&value);
                     if !complex_field.suppresses_result() {
                         text.push_str(&value);
                     }
                 } else if let Some(marker) = inline_marker_text(&e) {
+                    complex_field.append_result_text(marker);
                     if !complex_field.suppresses_result() {
                         text.push_str(marker);
                     }
                     skip_subtree(r);
                 } else if name == b"sym" {
+                    complex_field.append_result_symbol(&e);
                     if !complex_field.suppresses_result() {
                         append_run_symbol(text, &e);
                     }
@@ -1528,8 +1584,11 @@ fn append_note_anchor_content(
                             text.push_str(&computed);
                         }
                     }
-                } else if !complex_field.suppresses_result() {
-                    append_note_anchor_empty(text, &e, name);
+                } else {
+                    complex_field.append_result_empty(&e, name);
+                    if !complex_field.suppresses_result() {
+                        append_note_anchor_empty(text, &e, name);
+                    }
                 }
             }
             Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
