@@ -23,9 +23,9 @@ use crate::annotation::{
     reference_index_literal_operand, reference_index_literal_token,
     reference_index_plain_value_token, revision_number_field_text_format, sequence_field_syntax,
     set_field_syntax, strip_ascii_switch_prefix, style_ref_field_syntax, symbol_field_syntax,
-    toc_entry_field_syntax, toc_field_syntax, Field, FieldKind, FieldNumberFormat, FieldTextFormat,
-    PromptFieldSyntax, StyleRefFieldSyntax, StyleRefResult, TocFieldSyntax as TocSpec,
-    TocSequenceFilter, TocTcFilter as TcFilter,
+    toc_entry_field_syntax, toc_field_syntax, Field, FieldContext, FieldKind, FieldNumberFormat,
+    FieldTextFormat, PromptFieldSyntax, StyleRefFieldSyntax, StyleRefResult,
+    TocFieldSyntax as TocSpec, TocSequenceFilter, TocTcFilter as TcFilter,
 };
 use crate::CoreProperties;
 
@@ -57,8 +57,9 @@ pub(crate) use self::display::{computed_display_result, supports_display_field_s
 #[cfg(test)]
 use self::document_info::document_info_instruction;
 pub(crate) use self::document_info::{
-    computed_document_info_result, computed_revision_number_result,
-    supports_document_info_field_syntax, supports_revision_number_field_syntax,
+    computed_context_document_info_result, computed_document_info_result,
+    computed_revision_number_result, supports_document_info_field_syntax,
+    supports_revision_number_field_syntax,
 };
 #[cfg(test)]
 use self::formula::computed_formula_result;
@@ -133,6 +134,24 @@ struct ComplexField {
     instruction: String,
     result: String,
     phase: FieldPhase,
+}
+
+// Fill computed results for volatile fields the caller-supplied context makes
+// deterministic. Fields the default evaluation already computed are left
+// untouched, so context values never override document-derived results.
+pub(crate) fn apply_context_results(fields: &mut [Field], context: &FieldContext) {
+    for field in fields {
+        if field.computed_result.is_some() {
+            continue;
+        }
+        let FieldKind::DocumentInfo(kind) = &field.kind else {
+            continue;
+        };
+        if let Some(text) = computed_context_document_info_result(kind, &field.instruction, context)
+        {
+            field.computed_result = Some(text);
+        }
+    }
 }
 
 pub(crate) fn parse(

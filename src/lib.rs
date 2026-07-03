@@ -72,8 +72,8 @@ mod write;
 mod xmltree;
 
 pub use annotation::{
-    Comment, Field, FieldKind, FloatingShape, HeaderFooter, HeaderFooterKind, Note, NoteKind,
-    Revision, RevisionKind, RevisionView, ShapeDistance, ShapeEffectExtent, ShapeExtent,
+    Comment, Field, FieldContext, FieldKind, FloatingShape, HeaderFooter, HeaderFooterKind, Note,
+    NoteKind, Revision, RevisionKind, RevisionView, ShapeDistance, ShapeEffectExtent, ShapeExtent,
     ShapePoint, ShapePosition, ShapeWrapping, TextAnchor, TextBox,
 };
 pub use builder::{
@@ -731,6 +731,22 @@ impl Document {
             #[cfg(feature = "docx")]
             Backend::Docx(d) => d.fields.clone(),
         }
+    }
+
+    /// Extract fields like [`Document::fields`], additionally computing
+    /// volatile fields the caller-supplied [`FieldContext`] covers (`DATE`/
+    /// `TIME` with an explicit `\@` picture, `USERNAME`/`USERINITIALS`/
+    /// `USERADDRESS` without literal overrides).
+    ///
+    /// Results are deterministic given the same document and context: the
+    /// context values are inputs. Fields the default evaluation already
+    /// computes keep their document-derived results, and fields the context
+    /// does not cover keep cached text only.
+    #[cfg(feature = "docx")]
+    pub fn fields_with_context(&self, context: &FieldContext) -> Vec<Field> {
+        let mut fields = self.fields();
+        docx::fields::apply_context_results(&mut fields, context);
+        fields
     }
 
     /// Extract tracked revisions from `.docx` body/note/header/footer content.

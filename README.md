@@ -763,7 +763,11 @@ scopes with no matching entries compute as empty results. The same
 deterministic field evaluation also applies to side-table text surfaces —
 comment bodies and comment anchor text, tracked-change (revision) text, note
 anchors, floating-shape and text-box text, and TOC heading sources — so their
-exposed text uses computed results instead of stale cached field text. On a real
+exposed text uses computed results instead of stale cached field text.
+Volatile `DATE`/`TIME` (explicit `\@` picture) and `USERNAME`-family fields can
+be computed deterministically by supplying caller inputs via
+`FieldContext`/`fields_with_context` — the context is an input, so identical
+document plus identical context always yields identical results. On a real
 `.docx` corpus it reaches **~0.93 mean text recall** (extracting headers/footers,
 text boxes, nested tables, real list labels, caps; model-driven page geometry makes
 `.doc` page counts line up — mean `.doc` render recall ~0.96). It still trails

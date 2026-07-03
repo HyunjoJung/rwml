@@ -35,7 +35,7 @@ use self::xml_text::{inline_marker_text, read_i64_text, read_text, skip_subtree}
 
 mod body;
 mod comments;
-mod fields;
+pub(crate) mod fields;
 mod numbering;
 mod revisions;
 mod styles;

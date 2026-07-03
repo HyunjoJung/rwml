@@ -4184,6 +4184,58 @@ fn is_legacy_form_field(token: &str) -> bool {
     matches!(token, "FORMTEXT" | "FORMCHECKBOX" | "FORMDROPDOWN")
 }
 
+/// Caller-supplied evaluation context for volatile fields.
+///
+/// rdoc keeps fields whose value depends on runtime state (current date/time,
+/// user identity) cached-only by default so results stay deterministic. A
+/// `FieldContext` turns those into deterministic-given-inputs computations:
+/// the context values are inputs, so the same document plus the same context
+/// always yields the same results. Fields the context does not cover keep
+/// their default behavior.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FieldContext {
+    pub(crate) now: Option<String>,
+    pub(crate) user_name: Option<String>,
+    pub(crate) user_initials: Option<String>,
+    pub(crate) user_address: Option<String>,
+}
+
+impl FieldContext {
+    /// Empty context: `fields_with_context` behaves like [`Document::fields`].
+    ///
+    /// [`Document::fields`]: crate::Document::fields
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Current timestamp for `DATE`/`TIME` fields with an explicit `\@`
+    /// picture, in core-properties form (`yyyy-MM-ddTHH:mm:ss`, optional
+    /// trailing zone). Pictureless `DATE`/`TIME` stay cached because they
+    /// would need a locale-default picture.
+    pub fn with_now(mut self, now: impl Into<String>) -> Self {
+        self.now = Some(now.into());
+        self
+    }
+
+    /// User name for `USERNAME` fields without an explicit literal override.
+    pub fn with_user_name(mut self, name: impl Into<String>) -> Self {
+        self.user_name = Some(name.into());
+        self
+    }
+
+    /// User initials for `USERINITIALS` fields without an explicit override.
+    pub fn with_user_initials(mut self, initials: impl Into<String>) -> Self {
+        self.user_initials = Some(initials.into());
+        self
+    }
+
+    /// User address for `USERADDRESS` fields without an explicit override.
+    pub fn with_user_address(mut self, address: impl Into<String>) -> Self {
+        self.user_address = Some(address.into());
+        self
+    }
+}
+
 /// A Word field observed in a `.docx` body.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Field {

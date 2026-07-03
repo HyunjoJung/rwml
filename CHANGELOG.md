@@ -7,6 +7,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Caller-supplied field evaluation context.** `FieldContext` +
+  `Document::fields_with_context` compute volatile fields deterministically
+  from caller inputs: `DATE`/`TIME` with an explicit `\@` picture format the
+  supplied timestamp, and `USERNAME`/`USERINITIALS`/`USERADDRESS` without
+  literal overrides use the supplied identity. Context never overrides
+  document-derived computed results; `fields()` behavior is unchanged.
 - **Side-table field evaluation.** The deterministic field-evaluation subset
   that already applied to body text now also computes inside side-table text
   surfaces: comment bodies and comment anchor text, tracked-change (revision)

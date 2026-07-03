@@ -111,6 +111,42 @@ pub(crate) fn supports_document_info_field_syntax(instruction: &str) -> bool {
     document_info_instruction(instruction).is_some()
 }
 
+// Deterministic-given-inputs evaluation for volatile document-info fields: the
+// caller-supplied FieldContext is the input, so identical document + context
+// always yields identical results. Explicit literal overrides win over context.
+pub(crate) fn computed_context_document_info_result(
+    kind: &str,
+    instruction: &str,
+    context: &crate::annotation::FieldContext,
+) -> Option<String> {
+    let spec = document_info_instruction(instruction)?;
+    let text = match spec.property {
+        DocumentInfoProperty::DisplayOnly
+            if kind.eq_ignore_ascii_case("DATE") || kind.eq_ignore_ascii_case("TIME") =>
+        {
+            // A pictureless DATE/TIME needs a locale-default picture rdoc
+            // does not guess; require the explicit `\@` picture.
+            spec.date_format.as_deref()?;
+            context.now.clone()?
+        }
+        DocumentInfoProperty::UserName if spec.user_override.is_none() => {
+            context.user_name.clone()?
+        }
+        DocumentInfoProperty::UserInitials if spec.user_override.is_none() => {
+            context.user_initials.clone()?
+        }
+        DocumentInfoProperty::UserAddress if spec.user_override.is_none() => {
+            context.user_address.clone()?
+        }
+        _ => return None,
+    };
+    let text = match spec.date_format {
+        Some(format) => format_core_timestamp(&text, &format)?,
+        None => text,
+    };
+    Some(apply_field_text_format(text, spec.text_format))
+}
+
 pub(super) fn document_info_instruction(instruction: &str) -> Option<DocumentInfoInstruction> {
     let tokens = instruction_parts(instruction);
     let mut parts = tokens.iter().map(String::as_str).peekable();

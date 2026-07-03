@@ -2265,6 +2265,23 @@ fn doc_property_last_author_docx() -> Vec<u8> {
     ])
 }
 
+fn context_document_info_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" DATE \@ &quot;yyyy-MM-dd&quot; "><w:r><w:t>stale cached date</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" TIME \@ &quot;HH:mm&quot; "><w:r><w:t>stale cached time</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" DATE "><w:r><w:t>stale plain date</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" USERNAME "><w:r><w:t>stale user</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" USERNAME &quot;Override Name&quot; "><w:r><w:t>stale override</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn numeric_doc_info_star_format_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -14202,6 +14219,54 @@ fn docx_docproperty_last_author_matches_last_modified_by() {
         main_text.contains("Dana Reviewer") && !main_text.contains("stale author name"),
         "DOCPROPERTY Last Author should compute cp:lastModifiedBy: {main_text:?}"
     );
+}
+
+#[test]
+fn docx_fields_with_context_compute_date_time_and_user_fields() {
+    let doc = Document::open(&context_document_info_docx()).expect("fixture opens");
+
+    // Context-free extraction keeps volatile fields cached-only, except the
+    // explicit USERNAME literal override that already computes today.
+    let plain = doc.fields();
+    assert_eq!(plain.len(), 5);
+    assert_eq!(plain[0].computed_result, None);
+    assert_eq!(plain[1].computed_result, None);
+    assert_eq!(plain[2].computed_result, None);
+    assert_eq!(plain[3].computed_result, None);
+    assert_eq!(plain[4].computed_result.as_deref(), Some("Override Name"));
+
+    let context = rdoc::FieldContext::new()
+        .with_now("2026-07-03T10:30:00Z")
+        .with_user_name("Dana Reviewer");
+    let fields = doc.fields_with_context(&context);
+
+    assert_eq!(fields.len(), 5);
+    assert_eq!(fields[0].instruction, "DATE \\@ \"yyyy-MM-dd\"");
+    assert_eq!(fields[0].result, "stale cached date");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("2026-07-03"));
+    assert_eq!(fields[1].computed_result.as_deref(), Some("10:30"));
+    // A pictureless DATE would need a locale-default picture: stays cached.
+    assert_eq!(fields[2].computed_result, None);
+    assert_eq!(fields[3].computed_result.as_deref(), Some("Dana Reviewer"));
+    // Explicit literal overrides win over caller context.
+    assert_eq!(fields[4].computed_result.as_deref(), Some("Override Name"));
+}
+
+#[test]
+fn docx_fields_with_context_ignores_malformed_or_missing_context() {
+    let doc = Document::open(&context_document_info_docx()).expect("fixture opens");
+
+    let malformed = rdoc::FieldContext::new().with_now("not a timestamp");
+    let fields = doc.fields_with_context(&malformed);
+    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(fields[1].computed_result, None);
+    assert_eq!(fields[3].computed_result, None);
+
+    let empty = rdoc::FieldContext::new();
+    let fields = doc.fields_with_context(&empty);
+    assert_eq!(fields[0].computed_result, None);
+    assert_eq!(fields[3].computed_result, None);
+    assert_eq!(fields[4].computed_result.as_deref(), Some("Override Name"));
 }
 
 #[test]
