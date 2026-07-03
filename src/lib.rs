@@ -173,6 +173,25 @@ pub fn try_render_pdf_with_fonts(model: &DocModel, fonts: &[Vec<u8>]) -> Result<
     render::try_to_pdf_with_fonts(model, fonts)
 }
 
+/// Render a [`DocModel`] to PDF with rdoc's bundled Noto Sans KR subset
+/// registered first. The bundled subset covers KS X 1001 Korean and Basic
+/// Latin; other scripts fall back to system fonts exactly like
+/// [`render_pdf_with_fonts`]. Available with the `render` and `bundled-fonts`
+/// features.
+#[cfg(all(feature = "render", feature = "bundled-fonts"))]
+pub fn render_pdf_bundled(model: &DocModel) -> Vec<u8> {
+    let fonts = [rdoc_fonts::noto_sans_kr_subset().to_vec()];
+    render_pdf_with_fonts(model, &fonts)
+}
+
+/// Fallible variant of [`render_pdf_bundled`]. Available with the `render` and
+/// `bundled-fonts` features.
+#[cfg(all(feature = "render", feature = "bundled-fonts"))]
+pub fn try_render_pdf_bundled(model: &DocModel) -> Result<Vec<u8>> {
+    let fonts = [rdoc_fonts::noto_sans_kr_subset().to_vec()];
+    try_render_pdf_with_fonts(model, &fonts)
+}
+
 /// Render a [`DocModel`] to PDF and return renderer metrics/warnings produced by
 /// the same pagination pass. Available with the `render` feature.
 #[cfg(feature = "render")]

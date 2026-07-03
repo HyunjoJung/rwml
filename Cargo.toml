@@ -12,7 +12,7 @@ readme = "README.md"
 authors = ["Hyunjo Jung <mrjung0987@seoultech.ac.kr>"]
 keywords = ["doc", "docx", "msword", "ole2", "parser"]
 categories = ["parser-implementations", "text-processing"]
-exclude = [".github/"]
+exclude = [".github/", "rdoc-fonts/"]
 
 # Standalone, dependency-light, no workspace inheritance — this crate is meant
 # to be liftable into its own repository / crates.io as-is.
@@ -34,11 +34,13 @@ flate2 = { version = "1.0", optional = true }
 # Heavy + raises the MSRV to 1.88 (parley), so it is strictly opt-in.
 krilla = { version = "0.8", optional = true }
 parley = { version = "0.10", optional = true }
+rdoc-fonts = { version = "0.1.0", path = "rdoc-fonts", optional = true }
 
 [features]
 default = ["docx"]
 docx = ["dep:zip", "dep:quick-xml", "dep:flate2"]
 render = ["dep:krilla", "dep:parley"]
+bundled-fonts = ["render", "dep:rdoc-fonts"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
