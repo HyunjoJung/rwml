@@ -328,9 +328,21 @@ pub(crate) fn parse_anchors(
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"fldSimple" => {
                 if old_content_depth == 0 {
-                    if let Some(text) = computed_comment_simple_field_text(&e, &mut field_state) {
-                        push_anchor_text(&active, &mut anchors, &text);
-                        skip_subtree(&mut r);
+                    if let Some(instruction) = attr_local_trimmed(&e, b"instr") {
+                        if is_comment_text_form_field_instruction(&instruction) {
+                            if let Some(text) = computed_comment_simple_text_form_field_text(
+                                &mut r,
+                                &instruction,
+                                &mut field_state,
+                            ) {
+                                push_anchor_text(&active, &mut anchors, &text);
+                            }
+                        } else if let Some(text) =
+                            computed_comment_field_text(&instruction, &mut field_state)
+                        {
+                            push_anchor_text(&active, &mut anchors, &text);
+                            skip_subtree(&mut r);
+                        }
                     }
                 }
             }
