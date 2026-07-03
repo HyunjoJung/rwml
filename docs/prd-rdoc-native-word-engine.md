@@ -1,7 +1,7 @@
 # PRD - rdoc native Word engine
 
 **Status:** Draft, active implementation baseline
-**Updated:** 2026-06-29
+**Updated:** 2026-07-03
 **Owner:** rdoc
 **Scope:** long-term product direction for a native Rust Microsoft Word document
 engine, covering `.doc`, `.docx`, package-preserving editing, `.docx` authoring,
@@ -159,8 +159,9 @@ These are not rejected permanently, but they should not distort the core design.
 
 Deferred goals:
 
-- WASM viewer;
-- web demo;
+- a full WASM viewer/editing surface (a thin wasm-bindgen read/report adapter
+  in `src/wasm.rs` and the static `examples/wasm-demo` inspector are shipped;
+  only richer viewer/editor surfaces remain deferred);
 - editor-like surfaces;
 - plugin integrations;
 - exact visual diff infrastructure;
@@ -204,6 +205,11 @@ The first public maturity release should meet these requirements.
 - `.docx` field records follow the same accepted-current revision policy,
   including direct, inserted, and moved-to fields while omitting deleted and
   moved-from old fields.
+- Side-table text surfaces evaluate the same deterministic field subset as body
+  text: comment bodies and comment anchor text, tracked-change (revision) text,
+  note anchors, floating-shape and text-box text, and TOC heading sources use
+  computed results (including legacy-form, text-form, and `STYLEREF` field
+  text) instead of stale cached field text.
 - Legacy `.doc` annotation, note, and text-box side-table records expose
   best-effort source-region anchors when exact body or shape anchors are not yet
   decoded; a single unambiguous legacy footnote marker anchors to its containing
@@ -748,11 +754,18 @@ CLI flag only.
 
 ## 10. Open Questions
 
-- Should comments and tracked changes become first-class `DocModel` blocks, side
-  tables keyed by anchors, or both?
-- Should fields expose a common `Field` model across `.doc` and `.docx`, with
-  format-specific raw payloads?
+Resolved by shipped, tested behavior:
+
+- Comments and tracked changes are side tables keyed by anchors
+  (`comments()`/`revisions()` with `TextAnchor` records), not first-class
+  `DocModel` blocks.
+- Fields expose one unified `Field` record across `.doc` and `.docx`
+  (kind, instruction, cached result, computed result, diagnostics reason).
+- The first WASM target exposes read/report only (`src/wasm.rs`); editing from
+  WASM remains open.
+
+Still open:
+
 - Should renderer validation store golden PDFs, rendered images, hashes, or JSON
-  metrics?
-- Should the first WASM target expose only read/render, or include editing from
-  the start?
+  metrics? (Today: JSON metrics + aHash comparison via
+  `scripts/render_validate.py`; goldens remain optional.)

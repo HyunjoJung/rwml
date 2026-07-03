@@ -7,6 +7,47 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Side-table field evaluation.** The deterministic field-evaluation subset
+  that already applied to body text now also computes inside side-table text
+  surfaces: comment bodies and comment anchor text, tracked-change (revision)
+  text, note anchors, floating-shape and text-box text, and TOC heading
+  sources use computed results (including legacy-form, text-form, and
+  `STYLEREF` field text) instead of stale cached field text, with matching
+  document/render report parity.
+- **Section-qualified legacy header/footer records.** `HeaderFooter` gains a
+  public `section: Option<usize>` field; legacy `.doc` recovery derives it from
+  `PlcfHdd` story groups so multi-section even/odd/first header and footer
+  variants are distinguishable. Compatibility note: struct-literal constructors
+  of `HeaderFooter` must add the new field.
+- **Legacy `.doc` anchor promotion.** A single unambiguous legacy footnote or
+  endnote marker now anchors to its containing body text instead of a
+  source-region fallback.
+- **Comment resolved state.** `Comment` gains a public
+  `resolved: Option<bool>` field recovered from `commentsExtended.xml`
+  (`w15:done`), distinguishing resolved from open comments.
+- **PAGE/PAGEREF trusted-context expansion.** Continuous-section
+  `w:pgNumType` page-number restarts now compute for body `PAGE` fields, and
+  relative `PAGEREF \p` fields resolve "on page N" when an untrusted field
+  precedes a trusted later-page target.
+- **Numeric document-info number formats.** `NUMPAGES`/`NUMWORDS`/`NUMCHARS`/
+  `EDITTIME`/`FILESIZE`-family fields accept `\*` number-format switches
+  (roman, Arabic, Ordinal, …) like their PAGE/SECTION/SEQ siblings, and
+  `DOCPROPERTY RevisionNumber`/`"Last Author"` compute from core properties.
+- **Formula picture quoted literals.** Numeric `\#` pictures emit trailing
+  single-quoted literal text (for example `#,##0 'items'`) verbatim.
+- **Cell revision markers in diagnostics.** `w:cellIns`/`w:cellDel`/
+  `w:cellMerge` now count as tracked property changes and surface the
+  `IncompleteRevisionView` warning for cell-only revisions.
+
+### Removed
+- **The Phase-A model-overlay edit surface** (`Document::body_mut()` /
+  `apply_body_overlay`): regenerating `document.xml` from the lossy model
+  cannot preserve body-coordinated constructs, so package-preserving editing
+  is element-tree only (see the status notes in `docs/prd-rdoc-write-edit.md`
+  / `docs/trd-rdoc-write-edit.md`). The earlier Unreleased entry below that
+  describes the A-overlay is retained as history.
+
+### Added
 - **Custom properties in diagnostics.** `DocumentReport` and diagnostics JSON
   now expose parsed string custom document properties alongside core metadata.
 - **Floating-shape overlay ordering.** PDF previews now draw recovered

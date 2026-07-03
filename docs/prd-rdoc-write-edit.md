@@ -7,6 +7,13 @@
 > (`replace_body_text` / `add_image_png`, package-preserving), `write_docx`
 > (author/convert from a `DocModel`, intentionally lossy), and `save()` (passthrough).
 > The A→B narrative below is retained as design history.
+>
+> **Status: COMPLETE (B shipped, 2026-07-03).** Phase-B acceptance is met — the
+> shipped edit surface is the full `Document` method set documented in the README
+> Editing section (far beyond the two ops named above), validated by no-op
+> byte-stability, the public-corpus gate, and python-docx as the external checker.
+> Full chart authoring has since shipped via `ChartBuilder` (see the native-engine
+> PRD/TRD); §10 below reflects the 2026-06 scope.
 
 **Status:** Draft · **Owner:** rdoc · **Scope:** the `.docx` write/edit surface only
 (reading, rendering, and the `.doc` path are unchanged). · **Target end-state: B**
@@ -79,8 +86,10 @@ edit a foreign file.
   any edited part), so **unmodeled body content survives** — fields, bookmarks,
   content controls (`w:sdt`), `mc:AlternateContent` shapes, `w:del`, equations.
 - **G5 (B):** structural edits + new satellite parts (add image / comment /
-  footnote / header) with transactional reference integrity (part + content-type +
-  rels allocated together).
+  footnote / endnote) with transactional reference integrity (part +
+  content-type + rels allocated together). Header *addition* on opened
+  documents was re-scoped: header authoring ships via `DocBuilder`, and
+  existing-header text edits via `replace_header_footer_text`.
 - **G6:** fallible public API (`try_write_docx`/`save -> Result`) and builder
   authoring ergonomics; keep `#![forbid(unsafe_code)]`, panic-free, bounded.
 
@@ -269,8 +278,11 @@ by `DocModel` staying read-only-ish (the query/render view), never the B edit st
   the API makes that explicit.
 
 ## 10. Out of scope / future
-- `.doc` (binary) in-place editing; field/TOC recalculation; rendering of edits;
-  full DrawingML/chart authoring (preserved, not authored); a schema-complete model.
+- `.doc` (binary) in-place editing; field/TOC *recalculation on `save()`*
+  (read/render-time field evaluation is covered by the native-engine docs);
+  rendering of edits; a schema-complete model. (Chart authoring, listed here
+  in 2026-06 as out of scope, has since shipped via `ChartBuilder` — DrawingML
+  *shape* authoring remains out of scope.)
 
 ## References
 - python-docx (python-openxml/python-docx) — `Part.blob` passthrough; `default.docx`

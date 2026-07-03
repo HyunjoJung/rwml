@@ -8,7 +8,8 @@ more honest about what it supports.
 
 ## M0 - Public baseline and repository hygiene
 
-**Status:** mostly done.
+**Status:** done (hygiene audit, clean metadata, full gate, and README scope
+alignment are all verified by scripts and tests).
 
 Goals:
 
@@ -99,6 +100,11 @@ Initial status:
 ## M3 - `.docx` semantic read depth
 
 Goal: move comments, revisions, and fields from "preserved" to "understood".
+
+Side-table text views (comment bodies and anchors, notes and note anchors,
+revision text, text boxes, floating-shape text, and TOC heading sources)
+evaluate the same deterministic field subset as body text, carrying local
+field-bookmark state.
 
 Deliverables:
 
@@ -591,7 +597,9 @@ Goal: turn the current safe edit core into a broader editing engine.
 
 Deliverables:
 
-- package transaction layer for multi-part edits;
+- package transaction layer for multi-part edits (satisfied by per-edit
+  transactional clone-and-swap with rollback plus the `edited_parts()` dirty
+  set, not a named transaction type);
 - relationship/content-type validation before commit;
 - text replacement beyond body-only where safe;
 - header/footer text replacement;
@@ -765,7 +773,9 @@ Deliverables:
 - `RenderReport`;
 - render warnings tied to `FeatureInventory`;
 - page field rendering support where layout context is available;
-- font registration and bundled-font option;
+- font registration (the bundled-font option was intentionally dropped:
+  callers supply font bytes via `render_pdf_with_fonts` to keep the crate
+  dependency-light);
 - Symbol/Wingdings mapping;
 - floating shape placeholders, then basic placement;
 - selected golden render fixtures;
@@ -1233,39 +1243,42 @@ public-readiness gate, not as the current implementation stream.
 
 The active roadmap slices are:
 
-1. R2-a field report/evaluator parity: parser/evaluator/report parity for
-   value-changing fields where exact duplicated syntax logic remains, document
-   reports disagree with computation, or render-model reports can drift from the
-   opened-document report. Focused tests now cover `PAGEREF`, `REF`,
-   `NOTEREF`/`FTNREF`, and TOC computed/gap buckets across document and
-   render-model reports, plus empty unsupported simple/complex field inventory
-   preservation and supported hidden `RD`/`TA`/`XE` marker model/render
-   inventory preservation; keep this bucket open only for newly proven drift or
-   exact duplicated parser/report syntax.
-2. R2-b layout-derived `PAGE`/`PAGEREF`: contexts beyond trusted
-   leading/source-rendered, section-start, paragraph-end section-break target,
-   source-marker, display-only restart target/order, and hard-break cases,
-   including exact pagination current-page/page-reference values,
-   target-derived formatting where no trusted marker exists, and remaining
-   layout-dependent `\p` results.
-3. R2-c remaining `REF`/`NOTEREF`/`FTNREF`/TOC policy: broader `REF`
-   semantics beyond deterministic bookmark text, source-order, numbering, and
-   note/comment-reference mark subsets, unresolved or
-   unsupported `NOTEREF` switches beyond body
-   note-reference marks, and broader TOC/REF body evaluation.
-4. R2-d non-deterministic field families kept cached/reportable: remaining
-   data-, source-, layout-, action-, and generated-field families beyond the
-   deterministic subsets already listed above, including unknown fields,
-   dynamic/control fields that need external state or side effects, generated
-   reference/index output beyond hidden literal `RD`/`TA`/`XE` markers, richer
-   numbering/list semantics, display/layout fields beyond the deterministic
-   `ADVANCE`/`EQ`/`SYMBOL` subset, action/automation beyond display text and
-   validated hidden `PRINT`, compatibility/private payloads, barcode rendering,
-   and protected legacy form behavior.
-5. R2-e legacy `.doc` anchors/header-footer: exact body/shape anchors beyond the
-   current source-region anchors for comments, notes, and text boxes, plus
-   richer legacy multi-section header/footer application semantics beyond
-   recovered global default/first/even running stories.
+1. R2-a field report/evaluator parity — **closed** (2026-07-03). Focused tests
+   cover `PAGEREF`, `REF`, `NOTEREF`/`FTNREF`, and TOC computed/gap buckets
+   across document and render-model reports, side-table/model report alignment,
+   empty unsupported simple/complex field inventory preservation, and supported
+   hidden `RD`/`TA`/`XE` marker model/render inventory preservation. Reopen only
+   for newly proven drift or exact duplicated parser/report syntax.
+2. R2-b layout-derived `PAGE`/`PAGEREF` — **re-scoped as an inherent
+   limitation**: remaining exact-pagination current-page/page-reference values,
+   target-derived formatting without a trusted marker, and layout-dependent
+   `\p` results require a layout engine rdoc intentionally does not have.
+   The slice stays open only for newly proven deterministic trusted-context
+   expansions (the continuous-section restart and trusted later-page-target
+   cases are examples that were closed this way).
+3. R2-c remaining `REF`/`NOTEREF`/`FTNREF`/TOC policy: the deterministic
+   frontier now extends through side-table surfaces (comment bodies/anchors,
+   revision text, note anchors, floating-shape/text-box text, TOC heading
+   sources); what remains is broader `REF` semantics beyond deterministic
+   bookmark text, source-order, numbering, and note/comment-reference mark
+   subsets, unresolved or unsupported `NOTEREF` switches beyond body
+   note-reference marks, and broader TOC/REF body evaluation — most of which
+   is layout- or Word-behavior-dependent.
+4. R2-d non-deterministic field families — **complete as scoped**: these
+   families (unknown fields, dynamic/control fields needing external state or
+   side effects, generated reference/index output beyond hidden literal
+   `RD`/`TA`/`XE` markers, richer numbering/list semantics, display/layout
+   fields beyond the deterministic `ADVANCE`/`EQ`/`SYMBOL` subset,
+   action/automation beyond display text and validated hidden `PRINT`,
+   compatibility/private payloads, barcode rendering, and protected legacy
+   form behavior) stay cached/reportable by design, with reason diagnostics.
+5. R2-e legacy `.doc` anchors/header-footer: still open — exact body/shape
+   anchors beyond the current source-region anchors for comments, notes, and
+   text boxes, legacy comment author metadata, and per-section `DocSetup`
+   header/footer application. Section-qualified header/footer stories are
+   already recoverable via `header_footers()` records (`section` index from
+   `PlcfHdd` story groups); single unambiguous note markers already anchor to
+   body text.
 
 For each slice, preserve cached text until semantics are unambiguous,
 distinguish `UnsupportedSwitch` from `NoComputedResult`, and add focused `.docx`

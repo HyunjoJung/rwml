@@ -759,7 +759,11 @@ and existing explicit or direct non-note `REF \f` no-computed-result reasons,
 plus separate missing `NOTEREF`
 bookmark targets, existing non-note `NOTEREF` no-computed-result targets, and unsupported
 `NOTEREF` switch reasons, plus missing `TOC \b` scopes. Existing `TOC \b`
-scopes with no matching entries compute as empty results. On a real
+scopes with no matching entries compute as empty results. The same
+deterministic field evaluation also applies to side-table text surfaces —
+comment bodies and comment anchor text, tracked-change (revision) text, note
+anchors, floating-shape and text-box text, and TOC heading sources — so their
+exposed text uses computed results instead of stale cached field text. On a real
 `.docx` corpus it reaches **~0.93 mean text recall** (extracting headers/footers,
 text boxes, nested tables, real list labels, caps; model-driven page geometry makes
 `.doc` page counts line up — mean `.doc` render recall ~0.96). It still trails
@@ -891,8 +895,10 @@ code points.
   block stream;
   `Document::report()` emits `LegacyDocFlattenedSubdocuments` when FIB
   subdocument counts show that promotion is still incomplete.
-- *`.docx` read only:* comments and tracked-change *original* views; accepted
-  `main_text()`/`DocModel` content includes inline and block-level
+- *`.docx` read only:* an original-view `DocModel` (accepted-current is the only
+  modeled block view; original tracked-change text is exposed via
+  `main_text_with_revision_view()` and `revisions()`, comments via `comments()`);
+  accepted `main_text()`/`DocModel` content includes inline and block-level
   `w:ins`/`w:moveTo` current-content wrappers while omitting `w:del`/`w:moveFrom`
   old-content wrappers. Comment anchors plus `fields()`/`floating_shapes()` follow
   that same accepted-current policy, and `fields()` also uses the single-branch

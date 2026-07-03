@@ -4,7 +4,7 @@ Technical design for the long-term direction described in
 [`prd-rdoc-native-word-engine.md`](prd-rdoc-native-word-engine.md).
 
 **Status:** Draft, active implementation baseline
-**Updated:** 2026-06-29
+**Updated:** 2026-07-03
 **Scope:** architecture and implementation direction for reader depth,
 preservation editing, authoring, rendering, diagnostics, and validation.
 
@@ -147,6 +147,12 @@ pub struct AnnotationStore {
 This avoids prematurely inventing a perfect inline representation while still
 making features visible to callers.
 
+Shipped design note: the sketch above was realized with the side tables on
+`Document` (`comments()`, `notes()`, `text_boxes()`, `floating_shapes()`,
+`header_footers()`, `fields()`, `revisions()`) and `FeatureInventory` on
+`DocumentReport` rather than a `DocModel.features`/`AnnotationStore` field pair;
+the struct sketch is design history.
+
 ### 2.4 Edit surface
 
 Preservation edits must operate on retained package state.
@@ -205,6 +211,11 @@ struct PackageTransaction {
 ```
 
 The transaction commits only after all validation passes.
+
+Shipped design note: the transaction requirement is realized as per-edit
+snapshot/rollback plus the `edited_parts()` dirty set, not a named
+`PackageTransaction` type; multi-part edits (image/comment/note inserts) apply
+atomically or roll back.
 
 ### 2.5 Authoring surface
 
@@ -289,6 +300,9 @@ The renderer should eventually stop consuming only the simple `DocModel` directl
 It needs a layout-oriented IR that can represent pages, flow regions, anchors,
 and diagnostics.
 
+Status: this layout IR is post-R2 future work — the shipped renderer still
+consumes `DocModel` directly and remains preview-grade.
+
 Pipeline:
 
 ```text
@@ -339,16 +353,21 @@ pub struct DocumentReport {
 }
 ```
 
-Example warnings:
+Shipped warnings:
 
-- `UnsupportedFieldEvaluation { kind: "CUSTOM" }`;
-- `TrackedChangesOriginalViewUnavailable`;
-- `FloatingShapePlaceholderOnly`;
+- `UnsupportedFieldEvaluation { count, field_kinds }`;
+- `TrackedChangesPresent { insertions, deletions, moves }`;
+- `IncompleteRevisionView { property_changes }`;
+- `FloatingShapePlaceholderOnly { count }`;
+- `ChartsPreservedButNotModeled` / `OleObjectsPreservedButNotModeled`;
 - `UnsupportedMetafileImages { count }`, with details in
   `FeatureInventory::metafiles`;
-- `EncryptedDocumentRejected`;
-- `MalformedXmlRecovered { part }`;
+- `LegacyDocFlattenedSubdocuments`;
 - `PackageReadOnly { reason }`.
+
+Encrypted/XOR-obfuscated files surface as `Error::Encrypted` (not a warning);
+original revision views are supported via `main_text_with_revision_view()`;
+malformed XML is refused with an `Error`, not recovered.
 
 Expose:
 
@@ -383,7 +402,8 @@ Implementation:
   text is omitted;
 - preserve raw comments part on save;
 - expose counts and orphan markers through diagnostics;
-- later add `add_comment`.
+- `add_comment_on_text` and `set_comment_text` are the shipped comment edit
+  surfaces.
 
 Acceptance:
 
@@ -439,6 +459,10 @@ Implementation:
 - keep cached result text in visible runs and in `Field::result`, preserving
   simple inline tabs, line breaks, and no-break/soft hyphens for simple and common
   complex body fields;
+- apply the same deterministic evaluation to side-table text surfaces: comment
+  bodies and comment anchor text, tracked-change (revision) text, note anchors,
+  floating-shape and text-box text, and TOC heading sources use computed results
+  instead of stale cached field text;
 - parse field kind and raw instruction;
 - compute only low-risk fields at first (`PAGE` in renderer context and trusted
   structural/source-rendered reader current-page context, field-code
@@ -1326,11 +1350,12 @@ open and edit the chart data.
 
 ### R4. Font and script support
 
-- bundled font option behind a feature or explicit font registration;
+- bundled font option: not started backlog — callers supply font bytes via
+  `render_pdf_with_fonts` today, which keeps the crate dependency-light;
 - extend the partial common Symbol/Wingdings mapping beyond current
   display/render code points;
 - CJK fallback stability;
-- RTL as a separate milestone, not incidental line-breaking.
+- RTL as a separate milestone, not incidental line-breaking (not started).
 
 ### R5. Layout validation
 
@@ -1451,42 +1476,17 @@ before publishing to crates.io.
 
 ### 8.4 Fuzzing
 
-Targets:
+Shipped targets (`fuzz/fuzz_targets/`):
 
-- `.doc` open;
-- `.docx` open;
-- OPC package parse;
-- XML tree parse/serialize;
-- `replace_body_text`;
-- `set_field_result`;
-- `fill_content_control_by_tag`;
-- `fill_content_controls_by_tag`;
-- `fill_template_fields`;
-- `accept_all_revisions`;
-- `reject_all_revisions`;
-- `set_hyperlink_target`;
-- `set_comment_text`;
-- `add_comment_on_text`;
-- `set_table_cell_text`;
-- `add_footnote_on_text`;
-- `add_endnote_on_text`;
-- `replace_header_footer_text`;
-- `replace_text_in_part`;
-- `replace_note_text`;
-- `add_image_png`;
-- `replace_image_png`;
-- `add_image_jpeg`;
-- `replace_image_jpeg`;
-- `add_image_gif`;
-- `replace_image_gif`;
-- `add_image_bmp`;
-- `replace_image_bmp`;
-- `add_image_tiff`;
-- `replace_image_tiff`;
-- `add_image_webp`;
-- `replace_image_webp`;
-- `set_core_property`;
-- render from arbitrary bounded `DocModel`.
+- `parse` — `.doc` and `.docx` open over arbitrary bytes (covers OPC package
+  parse and XML tree parse on the open path);
+- `render` — render from arbitrary bytes behind the `render` feature.
+
+Planned: one edit-surface target that runs a short scripted edit sequence
+(for example `replace_body_text` + `set_field_result` + `add_image_png`) over
+arbitrary input so XmlTree promotion/serialize and transactional rollback are
+fuzzed directly; the per-method target list is intentionally collapsed into
+that single scripted target rather than ~30 separate bins.
 
 Fuzz findings should become regression tests when practical.
 

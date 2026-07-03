@@ -7,6 +7,21 @@
 > `replace_body_text` / `add_image_png`) plus `write_docx` (lossy author/convert) and
 > passthrough `save()`. References to A / `body_mut` / `apply_body_overlay` below are
 > design history.
+>
+> **Status: COMPLETE (B shipped, 2026-07-03).** Also superseded as design
+> history: the §5.2 `ParaRef`/`RunRef`/`set_run_text`/`insert_paragraph_after`
+> handle API sketch — the shipped surface is the targeted `Document` edit
+> method set (`replace_body_text`, `set_field_result`,
+> `fill_content_control(s)_by_tag`, `fill_template_fields`,
+> `set_hyperlink_target`, `set_comment_text`, `add_comment_on_text`,
+> `set_table_cell_text`, `replace_note_text`, `replace_header_footer_text`,
+> `replace_text_in_part`, `accept/reject_all_revisions`, `set_core_property`,
+> plus the image/footnote/endnote insert family). §2's module layout shipped
+> as single modules (`src/opc.rs`, `src/xmltree.rs`) with the edit surface on
+> `impl Document` in `src/lib.rs`; `src/write/opc.rs` remains the independent
+> from-scratch generator. XmlTree round-trip is unit-tested (idempotent
+> serialize, depth caps); the package open→save path is fuzzed via the `parse`
+> target, with a scripted edit-surface fuzz target planned.
 
 Technical design for [`prd-rdoc-write-edit.md`](prd-rdoc-write-edit.md). Implements
 **A** (passthrough-save + retained package + targeted body edits + template
