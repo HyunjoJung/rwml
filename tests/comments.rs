@@ -1007,6 +1007,38 @@ fn docx_comment_anchor_uses_computed_section_field_text() {
 }
 
 #[test]
+fn docx_comments_use_computed_section_field_text() {
+    let docx = docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="comments.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:commentRangeStart w:id="20"/><w:r><w:t>First anchor</w:t></w:r><w:commentRangeEnd w:id="20"/><w:r><w:commentReference w:id="20"/></w:r></w:p><w:p><w:commentRangeStart w:id="21"/><w:r><w:t>Second anchor</w:t></w:r><w:commentRangeEnd w:id="21"/><w:r><w:commentReference w:id="21"/></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/comments.xml",
+            r#"<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:comment w:id="20" w:author="Reviewer"><w:p><w:fldSimple w:instr=" SECTION "><w:r><w:t>stale first comment section</w:t></w:r></w:fldSimple><w:r><w:t> note</w:t></w:r></w:p></w:comment><w:comment w:id="21" w:author="Reviewer"><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/></w:sectPr></w:pPr></w:p><w:p><w:fldSimple w:instr=" SECTION "><w:r><w:t>stale second comment section</w:t></w:r></w:fldSimple><w:r><w:t> note</w:t></w:r></w:p></w:comment></w:comments>"#,
+        ),
+    ]);
+    let doc = Document::open(&docx).expect("fixture opens");
+    let comments = doc.comments();
+
+    assert_eq!(comments.len(), 2);
+    assert_eq!(comments[0].text, "1 note");
+    assert_eq!(comments[1].text, "2 note");
+}
+
+#[test]
 fn docx_comments_use_document_bookmark_formula_field_text() {
     let docx = docx_fixture(&[
         (

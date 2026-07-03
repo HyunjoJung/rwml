@@ -1282,9 +1282,22 @@ impl<'a> ContextlessFieldState<'a> {
         self
     }
 
-    pub(crate) fn with_section_context(mut self, sections: &'a SectionContext) -> Self {
+    pub(crate) fn with_section_context(self, sections: &'a SectionContext) -> Self {
+        self.with_section_context_from(sections, 0)
+    }
+
+    pub(crate) fn with_section_context_from(
+        mut self,
+        sections: &'a SectionContext,
+        section_field_index: usize,
+    ) -> Self {
         self.sections = Some(sections);
+        self.section_field_index = section_field_index;
         self
+    }
+
+    pub(crate) fn section_field_index(&self) -> usize {
+        self.section_field_index
     }
 
     pub(crate) fn clear(&mut self) {

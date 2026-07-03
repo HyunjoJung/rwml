@@ -24,12 +24,14 @@ pub(crate) fn parse(
     properties: FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
     note_refs: &NoteRefContext,
+    sections: &SectionContext,
     toc_entries: &[TocEntry],
     bookmark_names: &HashSet<String>,
 ) -> Vec<Comment> {
     let mut r = Reader::from_str(xml);
     let mut comments = Vec::new();
     let mut alternate_content_stack = Vec::new();
+    let mut section_field_index = 0usize;
     loop {
         match r.read_event() {
             Ok(Event::Start(e))
@@ -55,6 +57,8 @@ pub(crate) fn parse(
                     properties,
                     document_bookmarks,
                     note_refs,
+                    sections,
+                    &mut section_field_index,
                     toc_entries,
                     bookmark_names,
                 ) {
@@ -384,6 +388,8 @@ fn read_comment(
     properties: FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
     note_refs: &NoteRefContext,
+    sections: &SectionContext,
+    section_field_index: &mut usize,
     toc_entries: &[TocEntry],
     bookmark_names: &HashSet<String>,
 ) -> Option<Comment> {
@@ -394,7 +400,8 @@ fn read_comment(
         document_bookmarks,
         note_refs,
     )
-    .with_toc_context(toc_entries, bookmark_names);
+    .with_toc_context(toc_entries, bookmark_names)
+    .with_section_context_from(sections, *section_field_index);
     let mut old_content_depth = 0usize;
     let mut embedded_body_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
@@ -508,6 +515,7 @@ fn read_comment(
             _ => {}
         }
     }
+    *section_field_index = field_state.section_field_index();
     c
 }
 

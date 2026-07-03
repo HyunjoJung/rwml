@@ -468,19 +468,25 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     apply_section_header_footers(&mut blocks, &section_header_footers);
     let comments_xml = part(&mut zip, "word/comments.xml");
     let comments_ext_xml = part(&mut zip, "word/commentsExtended.xml");
-    let mut comments = comments_xml
-        .as_deref()
-        .map(|xml| {
-            comments::parse(
-                xml,
-                field_properties,
-                &ref_targets,
-                &note_ref_context,
-                &toc_entries,
-                &bookmark_names,
-            )
-        })
-        .unwrap_or_default();
+    let mut comments = if let Some(xml) = comments_xml.as_deref() {
+        let comments_section_context = fields::section_context_with_properties(
+            xml,
+            &ref_targets,
+            field_properties,
+            preserve_legacy_form_cache,
+        );
+        comments::parse(
+            xml,
+            field_properties,
+            &ref_targets,
+            &note_ref_context,
+            &comments_section_context,
+            &toc_entries,
+            &bookmark_names,
+        )
+    } else {
+        Vec::new()
+    };
     if let (Some(comments_xml), Some(comments_ext_xml)) =
         (comments_xml.as_deref(), comments_ext_xml.as_deref())
     {
