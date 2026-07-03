@@ -52,6 +52,10 @@ BINARY_SUFFIXES = {
     ".zip",
 }
 
+PROVENANCED_BINARY_FILES = {
+    "rdoc-fonts/fonts/NotoSansKR-rdoc-subset.ttf": "rdoc-fonts/PROVENANCE.md",
+}
+
 SECRET_PATTERNS = [
     ("openai_api_key", re.compile(r"\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b")),
     ("github_token", re.compile(r"\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{30,}\b")),
@@ -154,6 +158,9 @@ def should_skip(path: Path) -> bool:
     rel = path.relative_to(REPO)
     if any(part in SKIP_DIRS for part in rel.parts):
         return True
+    provenance = PROVENANCED_BINARY_FILES.get(rel.as_posix())
+    if provenance is not None and path.suffix.lower() == ".ttf":
+        return (REPO / provenance).is_file()
     if path.suffix.lower() in BINARY_SUFFIXES:
         return True
     return not path.is_file()

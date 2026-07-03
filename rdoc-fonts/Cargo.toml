@@ -1,0 +1,18 @@
+[package]
+name = "rdoc-fonts"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.74"
+license = "OFL-1.1"
+description = "Bundled OFL font subset (Noto Sans KR, KS X 1001) for rdoc's PDF renderer"
+repository = "https://github.com/HyunjoJung/rdoc"
+include = [
+    "src/**",
+    "fonts/NotoSansKR-rdoc-subset.ttf",
+    "OFL.txt",
+    "PROVENANCE.md",
+    "scripts/make_font_subset.py",
+]
+
+[lib]
+crate-type = ["rlib"]

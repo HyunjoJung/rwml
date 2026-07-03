@@ -262,6 +262,21 @@ class PublicHygieneAuditTests(unittest.TestCase):
                 self.assertTrue(public_hygiene_audit.should_skip(target_file))
                 self.assertFalse(public_hygiene_audit.should_skip(source_file))
 
+    def test_skip_policy_ignores_only_provenanced_bundled_font(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            bundled_font = root / "rdoc-fonts" / "fonts" / "NotoSansKR-rdoc-subset.ttf"
+            other_font = root / "rdoc-fonts" / "fonts" / "other.ttf"
+            provenance = root / "rdoc-fonts" / "PROVENANCE.md"
+            bundled_font.parent.mkdir(parents=True)
+            bundled_font.write_bytes(b"\x00\x01\x00\x00")
+            other_font.write_bytes(b"\x00\x01\x00\x00")
+            provenance.write_text("font provenance\n", encoding="utf-8")
+
+            with audit_root(root):
+                self.assertTrue(public_hygiene_audit.should_skip(bundled_font))
+                self.assertFalse(public_hygiene_audit.should_skip(other_font))
+
     def test_docx_audit_scans_package_member_paths(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
