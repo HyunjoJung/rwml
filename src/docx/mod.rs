@@ -1433,7 +1433,8 @@ fn read_floating_shapes(
         document_bookmarks,
         note_refs,
     )
-    .with_toc_context(toc_entries, bookmark_names);
+    .with_toc_context(toc_entries, bookmark_names)
+    .with_section_context(sections);
     let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {

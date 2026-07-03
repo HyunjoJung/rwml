@@ -1230,9 +1230,11 @@ pub(crate) struct ContextlessFieldState<'a> {
     document_properties: Option<FieldDocumentProperties<'a>>,
     document_bookmarks: Option<&'a HashMap<String, String>>,
     note_refs: Option<&'a NoteRefContext>,
+    sections: Option<&'a SectionContext>,
     toc_entries: Option<&'a [TocEntry]>,
     bookmark_names: Option<&'a HashSet<String>>,
     field_bookmarks: HashMap<String, String>,
+    section_field_index: usize,
     sequence_counters: HashMap<String, i64>,
     autonum_counter: i64,
     listnum_counter: i64,
@@ -1277,6 +1279,11 @@ impl<'a> ContextlessFieldState<'a> {
     ) -> Self {
         self.toc_entries = Some(toc_entries);
         self.bookmark_names = Some(bookmark_names);
+        self
+    }
+
+    pub(crate) fn with_section_context(mut self, sections: &'a SectionContext) -> Self {
+        self.sections = Some(sections);
         self
     }
 
@@ -1328,6 +1335,15 @@ pub(crate) fn computed_contextless_result(
     if let Some(note_refs) = state.note_refs {
         if let Some(text) = computed_note_ref_result(instruction, note_refs, None) {
             return Some(text);
+        }
+    }
+    if let Some(sections) = state.sections {
+        if is_section_field_instruction(instruction) {
+            let position = sections.field_position(state.section_field_index);
+            state.section_field_index += 1;
+            if let Some(text) = computed_section_result(instruction, position) {
+                return Some(text);
+            }
         }
     }
     computed_dynamic_result_with_bookmarks(instruction, &state.field_bookmarks)
