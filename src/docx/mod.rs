@@ -476,6 +476,16 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
             field_properties,
             preserve_legacy_form_cache,
         );
+        let comments_style_ref_context = fields::style_ref_context_with_properties(
+            xml,
+            &styles,
+            &numbering,
+            &ref_targets,
+            &note_ref_context,
+            &comments_section_context,
+            field_properties,
+            preserve_legacy_form_cache,
+        );
         let comments_legacy_form_context =
             fields::legacy_form_context(xml, preserve_legacy_form_cache);
         comments::parse(
@@ -484,6 +494,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
             &ref_targets,
             &note_ref_context,
             &comments_section_context,
+            &comments_style_ref_context,
             &comments_legacy_form_context,
             &toc_entries,
             &bookmark_names,

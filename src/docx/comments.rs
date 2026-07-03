@@ -9,7 +9,8 @@ use crate::annotation::{Comment, FieldKind, TextAnchor};
 
 use super::fields::{
     computed_contextless_result, computed_run_symbol_char, ContextlessFieldState,
-    FieldDocumentProperties, LegacyFormContext, NoteRefContext, SectionContext, TocEntry,
+    FieldDocumentProperties, LegacyFormContext, NoteRefContext, SectionContext, StyleRefContext,
+    TocEntry,
 };
 use super::xml_text::{
     inline_marker_text, read_text, skip_alternate_content_branch, skip_subtree,
@@ -25,6 +26,7 @@ pub(crate) fn parse(
     document_bookmarks: &HashMap<String, String>,
     note_refs: &NoteRefContext,
     sections: &SectionContext,
+    style_refs: &StyleRefContext,
     legacy_forms: &LegacyFormContext,
     toc_entries: &[TocEntry],
     bookmark_names: &HashSet<String>,
@@ -33,6 +35,7 @@ pub(crate) fn parse(
     let mut comments = Vec::new();
     let mut alternate_content_stack = Vec::new();
     let mut section_field_index = 0usize;
+    let mut style_ref_field_index = 0usize;
     let mut form_field_index = 0usize;
     loop {
         match r.read_event() {
@@ -61,6 +64,8 @@ pub(crate) fn parse(
                     note_refs,
                     sections,
                     &mut section_field_index,
+                    style_refs,
+                    &mut style_ref_field_index,
                     legacy_forms,
                     &mut form_field_index,
                     toc_entries,
@@ -418,6 +423,8 @@ fn read_comment(
     note_refs: &NoteRefContext,
     sections: &SectionContext,
     section_field_index: &mut usize,
+    style_refs: &StyleRefContext,
+    style_ref_field_index: &mut usize,
     legacy_forms: &LegacyFormContext,
     form_field_index: &mut usize,
     toc_entries: &[TocEntry],
@@ -432,6 +439,7 @@ fn read_comment(
     )
     .with_toc_context(toc_entries, bookmark_names)
     .with_section_context_from(sections, *section_field_index)
+    .with_style_ref_context_from(style_refs, *style_ref_field_index)
     .with_legacy_form_context_from(legacy_forms, *form_field_index);
     let mut old_content_depth = 0usize;
     let mut embedded_body_depth = 0usize;
@@ -572,6 +580,7 @@ fn read_comment(
         }
     }
     *section_field_index = field_state.section_field_index();
+    *style_ref_field_index = field_state.style_ref_field_index();
     *form_field_index = field_state.form_field_index();
     c
 }

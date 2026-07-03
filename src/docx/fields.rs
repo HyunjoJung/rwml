@@ -1231,11 +1231,13 @@ pub(crate) struct ContextlessFieldState<'a> {
     document_bookmarks: Option<&'a HashMap<String, String>>,
     note_refs: Option<&'a NoteRefContext>,
     sections: Option<&'a SectionContext>,
+    style_refs: Option<&'a StyleRefContext>,
     legacy_forms: Option<&'a LegacyFormContext>,
     toc_entries: Option<&'a [TocEntry]>,
     bookmark_names: Option<&'a HashSet<String>>,
     field_bookmarks: HashMap<String, String>,
     section_field_index: usize,
+    style_ref_field_index: usize,
     form_field_index: usize,
     sequence_counters: HashMap<String, i64>,
     autonum_counter: i64,
@@ -1300,6 +1302,20 @@ impl<'a> ContextlessFieldState<'a> {
 
     pub(crate) fn section_field_index(&self) -> usize {
         self.section_field_index
+    }
+
+    pub(crate) fn with_style_ref_context_from(
+        mut self,
+        style_refs: &'a StyleRefContext,
+        style_ref_field_index: usize,
+    ) -> Self {
+        self.style_refs = Some(style_refs);
+        self.style_ref_field_index = style_ref_field_index;
+        self
+    }
+
+    pub(crate) fn style_ref_field_index(&self) -> usize {
+        self.style_ref_field_index
     }
 
     pub(crate) fn with_legacy_form_context_from(
@@ -1386,6 +1402,15 @@ pub(crate) fn computed_contextless_result(
             let position = sections.field_position(state.section_field_index);
             state.section_field_index += 1;
             if let Some(text) = computed_section_result(instruction, position) {
+                return Some(text);
+            }
+        }
+    }
+    if let Some(style_refs) = state.style_refs {
+        if is_style_ref_field_instruction(instruction) {
+            let position = style_refs.field_position(state.style_ref_field_index);
+            state.style_ref_field_index += 1;
+            if let Some(text) = computed_style_ref_result(instruction, style_refs, position) {
                 return Some(text);
             }
         }
