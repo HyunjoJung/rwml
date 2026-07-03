@@ -1454,7 +1454,8 @@ fn read_floating_shapes(
         note_refs,
     )
     .with_toc_context(toc_entries, bookmark_names)
-    .with_section_context(sections);
+    .with_section_context(sections)
+    .with_legacy_form_context_from(legacy_forms, 0);
     let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {

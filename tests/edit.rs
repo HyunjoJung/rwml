@@ -1328,6 +1328,23 @@ fn anchored_text_box_toc_anchor_docx() -> Vec<u8> {
     ])
 }
 
+fn anchored_text_box_legacy_form_anchor_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"><w:body><w:p><w:fldSimple w:instr=" FORMDROPDOWN "><w:ffData><w:ddList><w:result w:val="1"/><w:listEntry w:val="Direct A"/><w:listEntry w:val="Direct B"/></w:ddList></w:ffData><w:r><w:t>stale direct option</w:t></w:r></w:fldSimple></w:p><w:p><w:fldSimple w:instr=" FORMDROPDOWN "><w:ffData><w:ddList><w:result w:val="1"/><w:listEntry w:val="Anchor A"/><w:listEntry w:val="Anchor B"/></w:ddList></w:ffData><w:r><w:t>stale anchor option</w:t></w:r></w:fldSimple><w:r><w:t> </w:t></w:r><w:r><w:drawing><wp:anchor relativeHeight="24"><wp:docPr id="24" name="Anchored legacy form box"/><wps:wsp><wps:txbx><w:txbxContent><w:p><w:r><w:t>LEGACY FORM BOX</w:t></w:r></w:p></w:txbxContent></wps:txbx></wps:wsp></wp:anchor></w:drawing></w:r><w:r><w:t>After</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn duplicate_anchored_text_box_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -3479,6 +3496,25 @@ fn docx_anchored_text_box_anchor_uses_document_toc_field_text() {
     let anchor = text_boxes[0].anchor.as_ref().expect("toc anchor");
     assert_eq!(anchor.id, "23");
     assert_eq!(anchor.text, "Executive Summary After");
+}
+
+#[test]
+fn docx_anchored_text_box_anchor_uses_legacy_form_dropdown_field_text() {
+    let doc = Document::open(&anchored_text_box_legacy_form_anchor_docx()).expect("fixture opens");
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Direct B")
+            && main_text.contains("Anchor B")
+            && !main_text.contains("stale anchor option"),
+        "main text should use computed legacy-form text: {main_text:?}"
+    );
+    let text_boxes = doc.text_boxes();
+    assert_eq!(text_boxes.len(), 1);
+    assert_eq!(text_boxes[0].text, "LEGACY FORM BOX");
+    let anchor = text_boxes[0].anchor.as_ref().expect("legacy form anchor");
+    assert_eq!(anchor.id, "24");
+    assert_eq!(anchor.text, "Anchor B After");
 }
 
 #[test]
