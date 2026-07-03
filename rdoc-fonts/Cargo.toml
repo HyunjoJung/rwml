@@ -9,6 +9,7 @@ repository = "https://github.com/HyunjoJung/rdoc"
 include = [
     "src/**",
     "fonts/NotoSansKR-rdoc-subset.ttf",
+    "fonts/NotoSansKR-rdoc-subset-full.ttf",
     "OFL.txt",
     "PROVENANCE.md",
     "scripts/make_font_subset.py",

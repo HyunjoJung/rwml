@@ -54,6 +54,7 @@ BINARY_SUFFIXES = {
 
 PROVENANCED_BINARY_FILES = {
     "rdoc-fonts/fonts/NotoSansKR-rdoc-subset.ttf": "rdoc-fonts/PROVENANCE.md",
+    "rdoc-fonts/fonts/NotoSansKR-rdoc-subset-full.ttf": "rdoc-fonts/PROVENANCE.md",
 }
 
 SECRET_PATTERNS = [

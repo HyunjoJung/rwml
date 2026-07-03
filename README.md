@@ -280,7 +280,7 @@ eprintln!(
 );
 ```
 
-For portable Korean PDF rendering, enable `bundled-fonts` to opt into the separate OFL-licensed `rdoc-fonts` crate: it registers a Noto Sans KR subset covering KS X 1001 Korean plus Latin while `rdoc` itself remains MIT-licensed. Other scripts still use system font fallback, matching `render_pdf_with_fonts`.
+For portable Korean PDF rendering, enable `bundled-fonts` to opt into the separate OFL-licensed `rdoc-fonts` crate: it registers a Noto Sans KR subset covering KS X 1001 Hangul + hanja plus Latin while `rdoc` itself remains MIT-licensed. Other scripts still use system font fallback, matching `render_pdf_with_fonts`.
 
 You can also convert a parsed document straight to PDF:
 `Document::open(&bytes)?.to_pdf()` / `try_to_pdf()`, pass font blobs with
@@ -325,7 +325,7 @@ python scripts/release_manifest.py --version 0.1.0 --git-rev "$(git rev-parse HE
 |---|:--:|---|---|
 | `docx`   | ✅ | `zip`, `quick-xml`, `flate2` | `.docx` read, `write_docx`, **and package-preserving edit/`save`** |
 | `render` |    | `parley`, `krilla` | `render_pdf` / `to_pdf` (MSRV 1.88) |
-| `bundled-fonts` |    | `render`, `rdoc-fonts` | `render_pdf_bundled` with an OFL Noto Sans KR subset |
+| `bundled-fonts` |    | `render`, `rdoc-fonts` | `render_pdf_bundled` with an OFL Noto Sans KR subset covering KS X 1001 Hangul + hanja |
 
 The library also emits an `rlib` plus `cdylib`; on `wasm32` it uses a
 target-specific `wasm-bindgen` dependency for the thin `rdoc::wasm` read/report

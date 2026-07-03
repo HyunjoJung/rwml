@@ -9,8 +9,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - **Bundled Korean PDF font feature.** The opt-in `bundled-fonts` feature pulls
   the separate OFL-licensed `rdoc-fonts` companion crate and exposes
-  `render_pdf_bundled` / `try_render_pdf_bundled` for KS X 1001 Korean plus
-  Latin PDF rendering without changing rdoc's MIT license.
+  `render_pdf_bundled` / `try_render_pdf_bundled` for KS X 1001 Hangul plus
+  KS X 1001 hanja coverage and Latin PDF rendering without changing rdoc's MIT
+  license.
 - **Caller-supplied field evaluation context.** `FieldContext` +
   `Document::fields_with_context` compute volatile fields deterministically
   from caller inputs: `DATE`/`TIME` with an explicit `\@` picture format the

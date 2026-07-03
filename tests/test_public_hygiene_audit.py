@@ -266,15 +266,20 @@ class PublicHygieneAuditTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
             bundled_font = root / "rdoc-fonts" / "fonts" / "NotoSansKR-rdoc-subset.ttf"
+            bundled_full_font = (
+                root / "rdoc-fonts" / "fonts" / "NotoSansKR-rdoc-subset-full.ttf"
+            )
             other_font = root / "rdoc-fonts" / "fonts" / "other.ttf"
             provenance = root / "rdoc-fonts" / "PROVENANCE.md"
             bundled_font.parent.mkdir(parents=True)
             bundled_font.write_bytes(b"\x00\x01\x00\x00")
+            bundled_full_font.write_bytes(b"\x00\x01\x00\x00")
             other_font.write_bytes(b"\x00\x01\x00\x00")
             provenance.write_text("font provenance\n", encoding="utf-8")
 
             with audit_root(root):
                 self.assertTrue(public_hygiene_audit.should_skip(bundled_font))
+                self.assertTrue(public_hygiene_audit.should_skip(bundled_full_font))
                 self.assertFalse(public_hygiene_audit.should_skip(other_font))
 
     def test_docx_audit_scans_package_member_paths(self):
