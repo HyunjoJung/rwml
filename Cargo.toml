@@ -42,6 +42,9 @@ docx = ["dep:zip", "dep:quick-xml", "dep:flate2"]
 render = ["dep:krilla", "dep:parley"]
 bundled-fonts = ["render", "dep:rdoc-fonts"]
 
+[dev-dependencies]
+rdoc-fonts = { path = "rdoc-fonts" }
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
 

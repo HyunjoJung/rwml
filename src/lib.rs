@@ -90,6 +90,8 @@ pub use model::{
     TableBorderSide, TableBorderSizes, TableBorderStyle, TableBorderStyles, TextDirection, VCell,
     VertAlign, WebExtensionTaskPane,
 };
+#[cfg(feature = "render")]
+pub use render::LayoutPages;
 pub use report::{
     DocumentFormat, DocumentReport, DocumentWarning, EditCapability, EditReadOnlyReason,
     FeatureInventory, FieldEvaluationReason, FieldEvaluationReasonCount, FieldKindCount,
@@ -171,6 +173,18 @@ pub fn render_pdf_with_fonts(model: &DocModel, fonts: &[Vec<u8>]) -> Vec<u8> {
 #[cfg(feature = "render")]
 pub fn try_render_pdf_with_fonts(model: &DocModel, fonts: &[Vec<u8>]) -> Result<Vec<u8>> {
     render::try_to_pdf_with_fonts(model, fonts)
+}
+
+/// Return layout-derived page numbers from rdoc's preview-grade pagination.
+///
+/// This matches rdoc's own PDF output, not Microsoft Word's pagination. Page
+/// indices are physical, 1-based page numbers; section page-number restarts and
+/// formats are intentionally not applied. The supplied fonts are used strictly:
+/// system fonts are disabled and only successfully registered caller bytes are
+/// considered. Available with the `render` feature.
+#[cfg(feature = "render")]
+pub fn layout_pages_with_fonts(model: &DocModel, fonts: &[Vec<u8>]) -> Result<LayoutPages> {
+    render::layout_pages_with_fonts(model, fonts)
 }
 
 /// Render a [`DocModel`] to PDF with rdoc's bundled Noto Sans KR subset
@@ -2414,6 +2428,18 @@ impl Document {
             features,
             &shapes,
         )
+    }
+
+    /// Return layout-derived page numbers from rdoc's preview-grade pagination.
+    ///
+    /// This matches rdoc's own PDF output, not Microsoft Word's pagination. Page
+    /// indices are physical, 1-based page numbers; section page-number restarts
+    /// and formats are intentionally not applied. The supplied fonts are used
+    /// strictly: system fonts are disabled and only successfully registered
+    /// caller bytes are considered. Available with the `render` feature.
+    #[cfg(feature = "render")]
+    pub fn layout_pages_with_fonts(&self, fonts: &[Vec<u8>]) -> Result<LayoutPages> {
+        layout_pages_with_fonts(&self.model(), fonts)
     }
 
     /// Render this document to PDF and return renderer metrics/warnings produced

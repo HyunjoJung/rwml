@@ -131,6 +131,7 @@ enum DynamicTextKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DynamicTextRun {
     kind: DynamicTextKind,
+    page_field_index: Option<usize>,
     props: CharProps,
 }
 
@@ -212,6 +213,30 @@ enum FlowItem {
         w: f32,
         h: f32,
     },
+}
+
+#[derive(Default)]
+struct LayoutCapture {
+    collect_page_fields: bool,
+    page_fields: Vec<Option<usize>>,
+}
+
+impl LayoutCapture {
+    fn page_fields() -> Self {
+        Self {
+            collect_page_fields: true,
+            page_fields: Vec::new(),
+        }
+    }
+
+    fn register_page_field(&mut self) -> Option<usize> {
+        if !self.collect_page_fields {
+            return None;
+        }
+        let index = self.page_fields.len();
+        self.page_fields.push(None);
+        Some(index)
+    }
 }
 
 #[derive(Clone)]
@@ -918,13 +943,34 @@ fn page_field_text(
     }
 }
 
-fn dynamic_text_for_field(field: &FieldRole, props: &CharProps) -> Option<DynamicTextRun> {
+fn is_page_field(field: &FieldRole) -> bool {
+    matches!(
+        field,
+        FieldRole::Simple { instruction }
+            if FieldKind::from_instruction(instruction) == FieldKind::Page
+    )
+}
+
+fn page_field_index_for_field(field: &FieldRole, capture: &mut LayoutCapture) -> Option<usize> {
+    if is_page_field(field) {
+        capture.register_page_field()
+    } else {
+        None
+    }
+}
+
+fn dynamic_text_for_field(
+    field: &FieldRole,
+    props: &CharProps,
+    page_field_index: Option<usize>,
+) -> Option<DynamicTextRun> {
     match field {
         FieldRole::Simple { instruction }
             if FieldKind::from_instruction(instruction) == FieldKind::Page =>
         {
             Some(DynamicTextRun {
                 kind: DynamicTextKind::PageNumber,
+                page_field_index,
                 props: props.clone(),
             })
         }
@@ -1265,6 +1311,7 @@ fn layout_paragraph(
     font_cx: &mut FontContext,
     layout_cx: &mut LayoutContext<rgb::Color>,
     font_cache: &mut HashMap<u64, Font>,
+    capture: &mut LayoutCapture,
 ) {
     let list_level = p.props.list.as_ref().map(|l| l.level).unwrap_or(0) as f32;
     let left = p.props.indent.left_pt.unwrap_or(0.0).max(0.0) + list_level * LIST_INDENT;
@@ -1289,6 +1336,7 @@ fn layout_paragraph(
         if let Some(img) = &r.image {
             images.push(img);
         }
+        let page_field_index = page_field_index_for_field(&r.field, capture);
         if r.text.is_empty() {
             continue;
         }
@@ -1298,7 +1346,7 @@ fn layout_paragraph(
         if let FieldRole::Hyperlink { url } = &r.field {
             links.push((s, text.len(), Rc::from(url.as_str())));
         }
-        if let Some(dynamic) = dynamic_text_for_field(&r.field, &r.props) {
+        if let Some(dynamic) = dynamic_text_for_field(&r.field, &r.props, page_field_index) {
             dynamic_ranges.push((s, text.len(), dynamic));
         }
     }
@@ -1443,6 +1491,7 @@ fn shape_cell(
     font_cx: &mut FontContext,
     layout_cx: &mut LayoutContext<rgb::Color>,
     font_cache: &mut HashMap<u64, Font>,
+    capture: &mut LayoutCapture,
 ) -> Vec<LineLayout> {
     let mut lines = Vec::new();
     if depth > MAX_CELL_DEPTH {
@@ -1460,6 +1509,7 @@ fn shape_cell(
                 let mut links: Vec<(usize, usize, Rc<str>)> = Vec::new();
                 let mut dynamic_ranges: Vec<(usize, usize, DynamicTextRun)> = Vec::new();
                 for r in &p.runs {
+                    let page_field_index = page_field_index_for_field(&r.field, capture);
                     if r.text.is_empty() {
                         continue;
                     }
@@ -1469,7 +1519,9 @@ fn shape_cell(
                     if let FieldRole::Hyperlink { url } = &r.field {
                         links.push((s, text.len(), Rc::from(url.as_str())));
                     }
-                    if let Some(dynamic) = dynamic_text_for_field(&r.field, &r.props) {
+                    if let Some(dynamic) =
+                        dynamic_text_for_field(&r.field, &r.props, page_field_index)
+                    {
                         dynamic_ranges.push((s, text.len(), dynamic));
                     }
                 }
@@ -1505,6 +1557,7 @@ fn shape_cell(
                             font_cx,
                             layout_cx,
                             font_cache,
+                            capture,
                         ));
                     }
                 }
@@ -1528,6 +1581,7 @@ fn layout_table(
     font_cx: &mut FontContext,
     layout_cx: &mut LayoutContext<rgb::Color>,
     font_cache: &mut HashMap<u64, Font>,
+    capture: &mut LayoutCapture,
 ) {
     let (grid, ncols) = reconstruct_grid(t);
     let content_w = geom.content_w();
@@ -1583,6 +1637,7 @@ fn layout_table(
                         font_cx,
                         layout_cx,
                         font_cache,
+                        capture,
                     );
                     let shading = c.shading.map(|s| rgb::Color::new(s.r, s.g, s.b));
                     (lines, shading, c.valign)
@@ -1686,7 +1741,16 @@ fn layout_lines(
     font_cache: &mut HashMap<u64, Font>,
 ) -> Vec<LineLayout> {
     let mut items = Vec::new();
-    collect_blocks(blocks, &mut items, geom, font_cx, layout_cx, font_cache);
+    let mut capture = LayoutCapture::default();
+    collect_blocks(
+        blocks,
+        &mut items,
+        geom,
+        font_cx,
+        layout_cx,
+        font_cache,
+        &mut capture,
+    );
     items
         .into_iter()
         .filter_map(|i| match i {
@@ -1846,8 +1910,11 @@ fn collect_blocks(
     font_cx: &mut FontContext,
     layout_cx: &mut LayoutContext<rgb::Color>,
     font_cache: &mut HashMap<u64, Font>,
+    capture: &mut LayoutCapture,
 ) {
-    collect_blocks_inner(blocks, out, geom, font_cx, layout_cx, font_cache, false);
+    collect_blocks_inner(
+        blocks, out, geom, font_cx, layout_cx, font_cache, capture, false,
+    );
 }
 
 fn collect_blocks_with_block_anchors(
@@ -1857,8 +1924,11 @@ fn collect_blocks_with_block_anchors(
     font_cx: &mut FontContext,
     layout_cx: &mut LayoutContext<rgb::Color>,
     font_cache: &mut HashMap<u64, Font>,
+    capture: &mut LayoutCapture,
 ) {
-    collect_blocks_inner(blocks, out, geom, font_cx, layout_cx, font_cache, true);
+    collect_blocks_inner(
+        blocks, out, geom, font_cx, layout_cx, font_cache, capture, true,
+    );
 }
 
 fn collect_blocks_inner(
@@ -1868,6 +1938,7 @@ fn collect_blocks_inner(
     font_cx: &mut FontContext,
     layout_cx: &mut LayoutContext<rgb::Color>,
     font_cache: &mut HashMap<u64, Font>,
+    capture: &mut LayoutCapture,
     include_block_anchors: bool,
 ) {
     let mut lists = ListState::default();
@@ -1900,6 +1971,7 @@ fn collect_blocks_inner(
                     font_cx,
                     layout_cx,
                     font_cache,
+                    capture,
                 );
                 let after = p
                     .props
@@ -1910,7 +1982,7 @@ fn collect_blocks_inner(
                 out.push(FlowItem::Gap(after));
             }
             Block::Table(t) => {
-                layout_table(t, out, geom, font_cx, layout_cx, font_cache);
+                layout_table(t, out, geom, font_cx, layout_cx, font_cache, capture);
                 out.push(FlowItem::Gap(PARA_GAP));
             }
             Block::Image(img) => {
@@ -3532,9 +3604,31 @@ fn draw_run_with_page_context(
 
 type Pages = Vec<Vec<(f32, FlowItem)>>;
 
+/// Layout-derived page map from rdoc's preview-grade pagination.
+///
+/// This matches rdoc's own PDF output, not Microsoft Word's pagination. Page
+/// indices are physical, 1-based page numbers; section page-number restarts and
+/// formats are intentionally not applied.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LayoutPages {
+    /// Total number of physical pages produced by rdoc's preview paginator.
+    pub pages: usize,
+    /// First physical page each top-level body block touches, in model order.
+    pub block_pages: Vec<Option<usize>>,
+    /// Physical page for each body `PAGE` field occurrence, in model order.
+    pub page_fields: Vec<Option<usize>>,
+}
+
 struct PdfRender {
     pdf: Vec<u8>,
     pages: usize,
+}
+
+struct Pagination {
+    pages: Pages,
+    page_sections: Vec<Option<RenderPageSection>>,
+    block_pages: HashMap<usize, usize>,
+    final_section_start_page_index: usize,
 }
 
 fn page_nonempty(pages: &Pages) -> bool {
@@ -3642,6 +3736,315 @@ fn record_pending_block_page(
     if let Some(block_index) = pending_block.take() {
         block_pages.entry(block_index).or_insert(page_index);
     }
+}
+
+fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup) -> Pagination {
+    // Paginate: flow items top-to-bottom onto pages sized by `geom`. Tables repeat
+    // their header rows after each break and split rows taller than a page.
+    let mut pages: Pages = vec![Vec::new()];
+    let mut page_sections: Vec<Option<RenderPageSection>> = vec![None];
+    let mut section_start_page_index = 0usize;
+    let mut y = geom.top();
+    let mut block_pages = HashMap::new();
+    let mut pending_block = None;
+    for item in items {
+        match item {
+            FlowItem::BlockStart(block_index) => {
+                record_pending_block_page(
+                    &mut block_pages,
+                    &mut pending_block,
+                    pages.len().saturating_sub(1),
+                );
+                pending_block = Some(block_index);
+            }
+            FlowItem::Gap(g) => y += g,
+            FlowItem::Line(l) => {
+                let h = l.height;
+                ensure(&mut pages, &mut y, h, geom);
+                record_pending_block_page(
+                    &mut block_pages,
+                    &mut pending_block,
+                    pages.len().saturating_sub(1),
+                );
+                place_item(&mut pages, &mut y, FlowItem::Line(l), h);
+            }
+            FlowItem::Picture { image, w, h } => {
+                ensure(&mut pages, &mut y, h, geom);
+                record_pending_block_page(
+                    &mut block_pages,
+                    &mut pending_block,
+                    pages.len().saturating_sub(1),
+                );
+                place_item(&mut pages, &mut y, FlowItem::Picture { image, w, h }, h);
+            }
+            FlowItem::Chart { chart, w, h } => {
+                ensure(&mut pages, &mut y, h, geom);
+                record_pending_block_page(
+                    &mut block_pages,
+                    &mut pending_block,
+                    pages.len().saturating_sub(1),
+                );
+                place_item(&mut pages, &mut y, FlowItem::Chart { chart, w, h }, h);
+            }
+            FlowItem::Table { rows, header_rows } => {
+                record_pending_block_page(
+                    &mut block_pages,
+                    &mut pending_block,
+                    pages.len().saturating_sub(1),
+                );
+                place_table(&mut pages, &mut y, rows, header_rows, geom);
+            }
+            FlowItem::PageBreak => {
+                pages.push(Vec::new());
+                page_sections.push(None);
+                y = geom.top();
+                record_pending_block_page(
+                    &mut block_pages,
+                    &mut pending_block,
+                    pages.len().saturating_sub(1),
+                );
+            }
+            FlowItem::SectionBreak(section) => {
+                let section_end_page_index = pages.len().saturating_sub(1);
+                assign_section_to_render_pages(
+                    &mut page_sections,
+                    section_start_page_index,
+                    section_end_page_index,
+                    &section,
+                );
+                pages.push(Vec::new());
+                page_sections.push(None);
+                y = geom.top();
+                record_pending_block_page(
+                    &mut block_pages,
+                    &mut pending_block,
+                    pages.len().saturating_sub(1),
+                );
+                section_start_page_index = pages.len().saturating_sub(1);
+            }
+            // Rows reach pagination only inside a Table; place defensively.
+            FlowItem::Row(r) => {
+                let h = r.height;
+                ensure(&mut pages, &mut y, h, geom);
+                record_pending_block_page(
+                    &mut block_pages,
+                    &mut pending_block,
+                    pages.len().saturating_sub(1),
+                );
+                place_item(&mut pages, &mut y, FlowItem::Row(r), h);
+            }
+        }
+    }
+    record_pending_block_page(
+        &mut block_pages,
+        &mut pending_block,
+        pages.len().saturating_sub(1),
+    );
+    assign_section_to_render_pages(
+        &mut page_sections,
+        section_start_page_index,
+        pages.len().saturating_sub(1),
+        final_section_setup,
+    );
+    Pagination {
+        pages,
+        page_sections,
+        block_pages,
+        final_section_start_page_index: section_start_page_index,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn collect_pdf_flow_items(
+    model: &DocModel,
+    geom: Geom,
+    font_cx: &mut FontContext,
+    layout_cx: &mut LayoutContext<rgb::Color>,
+    font_cache: &mut HashMap<u64, Font>,
+    capture: &mut LayoutCapture,
+    unsupported_features: Option<&FeatureInventory>,
+    floating_shape_overlay_count: usize,
+) -> Vec<FlowItem> {
+    let mut items: Vec<FlowItem> = Vec::new();
+    collect_blocks_with_block_anchors(
+        &model.blocks,
+        &mut items,
+        geom,
+        font_cx,
+        layout_cx,
+        font_cache,
+        capture,
+    );
+    if let Some(features) = unsupported_features {
+        let placeholders = unsupported_placeholder_blocks(features, floating_shape_overlay_count);
+        if !placeholders.is_empty() {
+            if !items.is_empty() {
+                items.push(FlowItem::Gap(PARA_GAP));
+            }
+            collect_blocks(
+                &placeholders,
+                &mut items,
+                geom,
+                font_cx,
+                layout_cx,
+                font_cache,
+                capture,
+            );
+        }
+    }
+    let missing_image_placeholders =
+        missing_image_placeholder_blocks(count_missing_image_bytes(&model.blocks));
+    if !missing_image_placeholders.is_empty() {
+        if !items.is_empty() {
+            items.push(FlowItem::Gap(PARA_GAP));
+        }
+        collect_blocks(
+            &missing_image_placeholders,
+            &mut items,
+            geom,
+            font_cx,
+            layout_cx,
+            font_cache,
+            capture,
+        );
+    }
+    let undecodable_placeholders =
+        undecodable_image_placeholder_blocks(count_undecodable_images(&model.blocks));
+    if !undecodable_placeholders.is_empty() {
+        if !items.is_empty() {
+            items.push(FlowItem::Gap(PARA_GAP));
+        }
+        collect_blocks(
+            &undecodable_placeholders,
+            &mut items,
+            geom,
+            font_cx,
+            layout_cx,
+            font_cache,
+            capture,
+        );
+    }
+    items
+}
+
+fn strict_font_context(fonts: &[Vec<u8>]) -> Result<FontContext> {
+    use parley::fontique::{Blob, Collection, CollectionOptions, SourceCache};
+
+    if fonts.is_empty() {
+        return Err(Error::Render(
+            "layout page calculation requires at least one font".to_string(),
+        ));
+    }
+
+    let mut collection = Collection::new(CollectionOptions {
+        shared: false,
+        system_fonts: false,
+    });
+    let mut registered = 0usize;
+    for font in fonts {
+        if font.is_empty() {
+            continue;
+        }
+        registered += collection
+            .register_fonts(Blob::from(font.clone()), None)
+            .into_iter()
+            .map(|(_, fonts)| fonts.len())
+            .sum::<usize>();
+    }
+    if registered == 0 {
+        return Err(Error::Render(
+            "layout page calculation could not register any supplied fonts".to_string(),
+        ));
+    }
+
+    Ok(FontContext {
+        collection,
+        source_cache: SourceCache::default(),
+    })
+}
+
+fn record_line_page_fields(
+    line: &LineLayout,
+    page_number: usize,
+    page_fields: &mut [Option<usize>],
+) {
+    for run in &line.runs {
+        let Some(index) = run
+            .dynamic
+            .as_ref()
+            .and_then(|dynamic| dynamic.page_field_index)
+        else {
+            continue;
+        };
+        if let Some(slot) = page_fields.get_mut(index) {
+            if slot.is_none() {
+                *slot = Some(page_number);
+            }
+        }
+    }
+}
+
+fn record_page_fields(pages: &Pages, page_fields: &mut [Option<usize>]) {
+    for (page_index, page_items) in pages.iter().enumerate() {
+        let page_number = page_index + 1;
+        for (_, item) in page_items {
+            match item {
+                FlowItem::Line(line) => record_line_page_fields(line, page_number, page_fields),
+                FlowItem::Row(row) => {
+                    for cell in &row.cells {
+                        for line in &cell.lines {
+                            record_line_page_fields(line, page_number, page_fields);
+                        }
+                    }
+                }
+                FlowItem::BlockStart(_)
+                | FlowItem::Gap(_)
+                | FlowItem::PageBreak
+                | FlowItem::SectionBreak(_)
+                | FlowItem::Table { .. }
+                | FlowItem::Picture { .. }
+                | FlowItem::Chart { .. } => {}
+            }
+        }
+    }
+}
+
+/// Return layout-derived page numbers from rdoc's preview-grade pagination.
+///
+/// This matches rdoc's own PDF output, not Microsoft Word's pagination. Page
+/// indices are physical, 1-based page numbers; section page-number restarts and
+/// formats are intentionally not applied. The supplied fonts are used strictly:
+/// system fonts are disabled and only successfully registered caller bytes are
+/// considered.
+pub fn layout_pages_with_fonts(model: &DocModel, fonts: &[Vec<u8>]) -> Result<LayoutPages> {
+    let mut font_cx = strict_font_context(fonts)?;
+    let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+    let mut font_cache: HashMap<u64, Font> = HashMap::new();
+    let geom = Geom::from_setup(&model.setup.page);
+    let mut capture = LayoutCapture::page_fields();
+    let items = collect_pdf_flow_items(
+        model,
+        geom,
+        &mut font_cx,
+        &mut layout_cx,
+        &mut font_cache,
+        &mut capture,
+        None,
+        0,
+    );
+    let final_section_setup = SectionSetup::from(&model.setup);
+    let pagination = paginate(items, geom, &final_section_setup);
+    let mut page_fields = capture.page_fields;
+    record_page_fields(&pagination.pages, &mut page_fields);
+    let block_pages = (0..model.blocks.len())
+        .map(|index| pagination.block_pages.get(&index).map(|page| page + 1))
+        .collect();
+
+    Ok(LayoutPages {
+        pages: pagination.pages.len(),
+        block_pages,
+        page_fields,
+    })
 }
 
 /// Render a [`DocModel`] to a single-column A4 PDF using system fonts.
@@ -3763,171 +4166,24 @@ fn render_pdf(
     let geom = Geom::from_setup(&model.setup.page);
     let floating_shape_overlay_count = floating_shapes.len().min(MAX_FLOATING_SHAPE_OVERLAYS);
 
-    let mut items: Vec<FlowItem> = Vec::new();
-    collect_blocks_with_block_anchors(
-        &model.blocks,
-        &mut items,
+    let mut capture = LayoutCapture::default();
+    let items = collect_pdf_flow_items(
+        model,
         geom,
         &mut font_cx,
         &mut layout_cx,
         &mut font_cache,
-    );
-    if let Some(features) = unsupported_features {
-        let placeholders = unsupported_placeholder_blocks(features, floating_shape_overlay_count);
-        if !placeholders.is_empty() {
-            if !items.is_empty() {
-                items.push(FlowItem::Gap(PARA_GAP));
-            }
-            collect_blocks(
-                &placeholders,
-                &mut items,
-                geom,
-                &mut font_cx,
-                &mut layout_cx,
-                &mut font_cache,
-            );
-        }
-    }
-    let missing_image_placeholders =
-        missing_image_placeholder_blocks(count_missing_image_bytes(&model.blocks));
-    if !missing_image_placeholders.is_empty() {
-        if !items.is_empty() {
-            items.push(FlowItem::Gap(PARA_GAP));
-        }
-        collect_blocks(
-            &missing_image_placeholders,
-            &mut items,
-            geom,
-            &mut font_cx,
-            &mut layout_cx,
-            &mut font_cache,
-        );
-    }
-    let undecodable_placeholders =
-        undecodable_image_placeholder_blocks(count_undecodable_images(&model.blocks));
-    if !undecodable_placeholders.is_empty() {
-        if !items.is_empty() {
-            items.push(FlowItem::Gap(PARA_GAP));
-        }
-        collect_blocks(
-            &undecodable_placeholders,
-            &mut items,
-            geom,
-            &mut font_cx,
-            &mut layout_cx,
-            &mut font_cache,
-        );
-    }
-    // Paginate: flow items top-to-bottom onto pages sized by `geom`. Tables repeat
-    // their header rows after each break and split rows taller than a page.
-    let mut pages: Pages = vec![Vec::new()];
-    let mut page_sections: Vec<Option<RenderPageSection>> = vec![None];
-    let mut section_start_page_index = 0usize;
-    let mut y = geom.top();
-    let mut block_pages = HashMap::new();
-    let mut pending_block = None;
-    for item in items {
-        match item {
-            FlowItem::BlockStart(block_index) => {
-                record_pending_block_page(
-                    &mut block_pages,
-                    &mut pending_block,
-                    pages.len().saturating_sub(1),
-                );
-                pending_block = Some(block_index);
-            }
-            FlowItem::Gap(g) => y += g,
-            FlowItem::Line(l) => {
-                let h = l.height;
-                ensure(&mut pages, &mut y, h, geom);
-                record_pending_block_page(
-                    &mut block_pages,
-                    &mut pending_block,
-                    pages.len().saturating_sub(1),
-                );
-                place_item(&mut pages, &mut y, FlowItem::Line(l), h);
-            }
-            FlowItem::Picture { image, w, h } => {
-                ensure(&mut pages, &mut y, h, geom);
-                record_pending_block_page(
-                    &mut block_pages,
-                    &mut pending_block,
-                    pages.len().saturating_sub(1),
-                );
-                place_item(&mut pages, &mut y, FlowItem::Picture { image, w, h }, h);
-            }
-            FlowItem::Chart { chart, w, h } => {
-                ensure(&mut pages, &mut y, h, geom);
-                record_pending_block_page(
-                    &mut block_pages,
-                    &mut pending_block,
-                    pages.len().saturating_sub(1),
-                );
-                place_item(&mut pages, &mut y, FlowItem::Chart { chart, w, h }, h);
-            }
-            FlowItem::Table { rows, header_rows } => {
-                record_pending_block_page(
-                    &mut block_pages,
-                    &mut pending_block,
-                    pages.len().saturating_sub(1),
-                );
-                place_table(&mut pages, &mut y, rows, header_rows, geom);
-            }
-            FlowItem::PageBreak => {
-                pages.push(Vec::new());
-                page_sections.push(None);
-                y = geom.top();
-                record_pending_block_page(
-                    &mut block_pages,
-                    &mut pending_block,
-                    pages.len().saturating_sub(1),
-                );
-            }
-            FlowItem::SectionBreak(section) => {
-                let section_end_page_index = pages.len().saturating_sub(1);
-                assign_section_to_render_pages(
-                    &mut page_sections,
-                    section_start_page_index,
-                    section_end_page_index,
-                    &section,
-                );
-                pages.push(Vec::new());
-                page_sections.push(None);
-                y = geom.top();
-                record_pending_block_page(
-                    &mut block_pages,
-                    &mut pending_block,
-                    pages.len().saturating_sub(1),
-                );
-                section_start_page_index = pages.len().saturating_sub(1);
-            }
-            // Rows reach pagination only inside a Table; place defensively.
-            FlowItem::Row(r) => {
-                let h = r.height;
-                ensure(&mut pages, &mut y, h, geom);
-                record_pending_block_page(
-                    &mut block_pages,
-                    &mut pending_block,
-                    pages.len().saturating_sub(1),
-                );
-                place_item(&mut pages, &mut y, FlowItem::Row(r), h);
-            }
-        }
-    }
-    record_pending_block_page(
-        &mut block_pages,
-        &mut pending_block,
-        pages.len().saturating_sub(1),
+        &mut capture,
+        unsupported_features,
+        floating_shape_overlay_count,
     );
     let final_section_setup = SectionSetup::from(&model.setup);
-    assign_section_to_render_pages(
-        &mut page_sections,
-        section_start_page_index,
-        pages.len().saturating_sub(1),
-        &final_section_setup,
-    );
+    let pagination = paginate(items, geom, &final_section_setup);
+    let pages = pagination.pages;
+    let page_sections = pagination.page_sections;
+    let section_start_page_index = pagination.final_section_start_page_index;
     let floating_shape_overlays =
-        floating_shape_overlays_for_pages(floating_shapes, geom, &block_pages);
+        floating_shape_overlays_for_pages(floating_shapes, geom, &pagination.block_pages);
 
     // Emit.
     let mut document = PdfDoc::new();
@@ -4175,12 +4431,13 @@ fn render_pdf(
 
 #[cfg(test)]
 mod tests {
+    use parley::fontique::{Blob, Collection, CollectionOptions, SourceCache};
     use parley::{FontContext, LayoutContext};
     use std::collections::HashMap;
 
     use super::{
         assign_section_to_render_pages, display_text, layout_page_number_line, page_field_text,
-        rgb, running_header_footer_blocks_for_page, unsupported_placeholder_texts, Geom,
+        rgb, running_header_footer_blocks_for_page, shape, unsupported_placeholder_texts, Geom,
     };
     use crate::model::{
         Block, Cell, CharProps, Color, DocModel, FieldRole, PageSetup, ParaProps, Paragraph, Row,
@@ -4188,6 +4445,73 @@ mod tests {
     };
     use crate::report::FeatureInventory;
     use crate::{FloatingShape, ShapeEffectExtent, ShapeExtent, ShapePoint, ShapePosition};
+
+    fn strict_font_context(fonts: &[Vec<u8>]) -> FontContext {
+        let mut collection = Collection::new(CollectionOptions {
+            shared: false,
+            system_fonts: false,
+        });
+        for font in fonts {
+            collection.register_fonts(Blob::from(font.clone()), None);
+        }
+        FontContext {
+            collection,
+            source_cache: SourceCache::default(),
+        }
+    }
+
+    #[test]
+    fn strict_registered_font_shapes_latin_and_korean() {
+        let fonts = vec![rdoc_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+
+        let lines = shape(
+            "Latin 한글 paragraph",
+            &[(0, "Latin 한글 paragraph".len(), CharProps::default())],
+            &[],
+            &[],
+            None,
+            parley::layout::Alignment::Start,
+            320.0,
+            &mut font_cx,
+            &mut layout_cx,
+            &mut font_cache,
+        );
+
+        assert!(
+            !lines.is_empty(),
+            "strict registered font produced no lines"
+        );
+        assert!(
+            lines.iter().map(|line| line.height).sum::<f32>() > 0.0,
+            "strict registered font produced zero layout height"
+        );
+    }
+
+    #[test]
+    fn strict_garbage_font_bytes_do_not_panic() {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut font_cx = strict_font_context(&[vec![1, 2, 3, 4, 5]]);
+            let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+            let mut font_cache = HashMap::new();
+            let _ = shape(
+                "Latin 한글 paragraph",
+                &[(0, "Latin 한글 paragraph".len(), CharProps::default())],
+                &[],
+                &[],
+                None,
+                parley::layout::Alignment::Start,
+                320.0,
+                &mut font_cx,
+                &mut layout_cx,
+                &mut font_cache,
+            );
+        }));
+
+        assert!(result.is_ok(), "garbage strict font bytes panicked");
+    }
 
     #[test]
     fn color_and_link_lookup_are_correct_after_binary_search() {
