@@ -1231,10 +1231,12 @@ pub(crate) struct ContextlessFieldState<'a> {
     document_bookmarks: Option<&'a HashMap<String, String>>,
     note_refs: Option<&'a NoteRefContext>,
     sections: Option<&'a SectionContext>,
+    legacy_forms: Option<&'a LegacyFormContext>,
     toc_entries: Option<&'a [TocEntry]>,
     bookmark_names: Option<&'a HashSet<String>>,
     field_bookmarks: HashMap<String, String>,
     section_field_index: usize,
+    form_field_index: usize,
     sequence_counters: HashMap<String, i64>,
     autonum_counter: i64,
     listnum_counter: i64,
@@ -1300,6 +1302,20 @@ impl<'a> ContextlessFieldState<'a> {
         self.section_field_index
     }
 
+    pub(crate) fn with_legacy_form_context_from(
+        mut self,
+        legacy_forms: &'a LegacyFormContext,
+        form_field_index: usize,
+    ) -> Self {
+        self.legacy_forms = Some(legacy_forms);
+        self.form_field_index = form_field_index;
+        self
+    }
+
+    pub(crate) fn form_field_index(&self) -> usize {
+        self.form_field_index
+    }
+
     pub(crate) fn clear(&mut self) {
         self.field_bookmarks.clear();
         self.sequence_counters.clear();
@@ -1356,6 +1372,19 @@ pub(crate) fn computed_contextless_result(
             state.section_field_index += 1;
             if let Some(text) = computed_section_result(instruction, position) {
                 return Some(text);
+            }
+        }
+    }
+    if let Some(legacy_forms) = state.legacy_forms {
+        if let Some(spec) = legacy_form_field_syntax(instruction) {
+            let field_index = state.form_field_index;
+            state.form_field_index += 1;
+            if spec.kind != "FORMTEXT" {
+                if let Some(text) =
+                    computed_legacy_form_result(instruction, "", legacy_forms, field_index)
+                {
+                    return Some(text);
+                }
             }
         }
     }
