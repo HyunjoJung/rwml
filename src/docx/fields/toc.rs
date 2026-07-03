@@ -1,5 +1,6 @@
 use super::reference::{
-    computed_ref_bookmark_text_result, ref_or_unknown_direct_bookmark_instruction,
+    computed_ref_bookmark_text_result, direct_bookmark_ref_instruction,
+    is_ref_position_field_instruction, ref_instruction, ref_or_unknown_direct_bookmark_instruction,
 };
 use super::*;
 
@@ -67,6 +68,7 @@ pub(crate) fn toc_entries_with_properties(
     let mut listnum_counter = 0i64;
     let mut field_bookmarks = HashMap::new();
     let mut form_field_index = 0usize;
+    let mut ref_field_index = 0usize;
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
     loop {
@@ -105,6 +107,7 @@ pub(crate) fn toc_entries_with_properties(
                             properties,
                             &legacy_forms,
                             &mut form_field_index,
+                            &mut ref_field_index,
                         );
                         consumed_element = true;
                     }
@@ -165,6 +168,7 @@ fn read_toc_paragraph(
     properties: FieldDocumentProperties<'_>,
     legacy_forms: &LegacyFormContext,
     form_field_index: &mut usize,
+    ref_field_index: &mut usize,
 ) {
     let mut style_id: Option<String> = None;
     let mut outline: Option<u8> = None;
@@ -231,6 +235,7 @@ fn read_toc_paragraph(
                                 properties,
                                 legacy_forms,
                                 form_field_index,
+                                ref_field_index,
                             ));
                             consumed_element = true;
                         }
@@ -253,6 +258,7 @@ fn read_toc_paragraph(
                             properties,
                             legacy_forms,
                             form_field_index,
+                            ref_field_index,
                         );
                     }
                     b"instrText" => {
@@ -321,6 +327,7 @@ fn read_toc_paragraph(
                                 properties,
                                 legacy_forms,
                                 form_field_index,
+                                ref_field_index,
                                 "",
                             ) {
                                 text.push_str(&computed);
@@ -345,6 +352,7 @@ fn read_toc_paragraph(
                             properties,
                             legacy_forms,
                             form_field_index,
+                            ref_field_index,
                         );
                     }
                     b"sym" => {
@@ -444,6 +452,7 @@ fn read_toc_simple_field_result(
     properties: FieldDocumentProperties<'_>,
     legacy_forms: &LegacyFormContext,
     form_field_index: &mut usize,
+    ref_field_index: &mut usize,
 ) -> String {
     let mut text = String::new();
     let mut current = Vec::new();
@@ -504,6 +513,7 @@ fn read_toc_simple_field_result(
                                 properties,
                                 legacy_forms,
                                 form_field_index,
+                                ref_field_index,
                             ));
                         }
                         consumed_element = true;
@@ -526,6 +536,7 @@ fn read_toc_simple_field_result(
                             properties,
                             legacy_forms,
                             form_field_index,
+                            ref_field_index,
                         );
                     }
                     b"instrText" => {
@@ -602,6 +613,7 @@ fn read_toc_simple_field_result(
                                 properties,
                                 legacy_forms,
                                 form_field_index,
+                                ref_field_index,
                                 "",
                             ) {
                                 text.push_str(&computed);
@@ -626,6 +638,7 @@ fn read_toc_simple_field_result(
                             properties,
                             legacy_forms,
                             form_field_index,
+                            ref_field_index,
                         );
                     }
                     b"sym" => {
@@ -680,6 +693,7 @@ fn read_toc_simple_field_result(
         properties,
         legacy_forms,
         form_field_index,
+        ref_field_index,
         &cached_text,
     )
     .unwrap_or(text)
@@ -728,6 +742,7 @@ fn apply_toc_fld_char(
     properties: FieldDocumentProperties<'_>,
     legacy_forms: &LegacyFormContext,
     form_field_index: &mut usize,
+    ref_field_index: &mut usize,
 ) {
     // Track where each complex field's result text begins in `text`, so a
     // deterministic source-field result can overwrite the leaked cached runs on
@@ -774,6 +789,7 @@ fn apply_toc_fld_char(
             properties,
             legacy_forms,
             form_field_index,
+            ref_field_index,
             &current_result,
         );
     });
@@ -864,6 +880,7 @@ fn computed_toc_source_field_result(
     properties: FieldDocumentProperties<'_>,
     legacy_forms: &LegacyFormContext,
     form_field_index: &mut usize,
+    ref_field_index: &mut usize,
     current_result: &str,
 ) -> Option<String> {
     let instruction = normalize_instruction(instruction?);
@@ -886,7 +903,12 @@ fn computed_toc_source_field_result(
         }
         _ => {}
     }
-    computed_toc_source_ref_result(&instruction, ref_targets, field_bookmarks)
+    if let Some(text) = computed_toc_source_ref_result(&instruction, ref_targets, field_bookmarks) {
+        return Some(text);
+    }
+    let note_ref_field_position =
+        toc_source_note_ref_field_position(&instruction, note_refs, ref_field_index);
+    computed_toc_source_ref_note_reference_result(&instruction, note_refs, note_ref_field_position)
         .or_else(|| computed_note_ref_result(&instruction, note_refs, None))
         .or_else(|| computed_numbering_result(&instruction, autonum_counter))
         .or_else(|| computed_listnum_result(&instruction, listnum_counter))
@@ -927,6 +949,40 @@ fn computed_toc_source_field_result(
             )
         })
         .or_else(|| computed_reference_index_result(&instruction))
+}
+
+fn computed_toc_source_ref_note_reference_result(
+    instruction: &str,
+    note_refs: &NoteRefContext,
+    note_ref_field_position: Option<NoteRefFieldPosition>,
+) -> Option<String> {
+    let spec =
+        ref_instruction(instruction).or_else(|| direct_bookmark_ref_instruction(instruction))?;
+    if !spec.note_reference
+        || spec.sequence_separator
+        || spec.relative
+        || spec.paragraph_number
+        || spec.full_context_number
+        || spec.relative_context_number
+    {
+        return None;
+    }
+    let number = note_refs.ref_note_number(&spec.target, note_ref_field_position)?;
+    let text = format_page_number(number, spec.number_format)?;
+    Some(apply_field_text_format(text, spec.text_format))
+}
+
+fn toc_source_note_ref_field_position(
+    instruction: &str,
+    note_refs: &NoteRefContext,
+    ref_field_index: &mut usize,
+) -> Option<NoteRefFieldPosition> {
+    if !is_ref_position_field_instruction(instruction) {
+        return None;
+    }
+    let position = note_refs.ref_field_position(*ref_field_index);
+    *ref_field_index += 1;
+    position
 }
 
 // Plain document/field bookmark REF only, mirroring computed_style_ref_source_ref_result:
