@@ -525,6 +525,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         field_properties,
         &ref_targets,
         &note_ref_context,
+        &section_context,
         &toc_entries,
         &bookmark_names,
     );
@@ -1024,6 +1025,7 @@ fn read_hf_parts(
                 field_properties,
                 &ref_targets,
                 &note_ref_context,
+                &section_context,
                 &toc_entries,
                 &bookmark_names,
             ));
@@ -1272,6 +1274,7 @@ fn read_notes(
         field_properties,
         &ref_targets,
         &note_ref_context,
+        &section_context,
         &toc_entries,
         &bookmark_names,
     );
@@ -4055,6 +4058,7 @@ pub(crate) fn main_text_with_revision_view(state: &DocxState, view: crate::Revis
         Some(properties),
         Some(&document_bookmarks),
         Some(&note_ref_context),
+        Some(&section_context),
         Some(&toc_entries),
         Some(&bookmark_names),
     )

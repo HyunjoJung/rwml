@@ -8,8 +8,8 @@ use crate::annotation::{Revision, RevisionKind, RevisionView};
 use crate::text;
 
 use super::fields::{
-    computed_contextless_result, computed_run_symbol_char, ContextlessFieldState,
-    FieldDocumentProperties, NoteRefContext, TocEntry,
+    computed_contextless_result, computed_run_symbol_char, is_section_field_instruction,
+    ContextlessFieldState, FieldDocumentProperties, NoteRefContext, SectionContext, TocEntry,
 };
 use super::xml_text::{
     inline_marker_text, read_text, skip_alternate_content_branch, skip_subtree,
@@ -24,12 +24,14 @@ pub(crate) fn parse(
     properties: FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
     note_refs: &NoteRefContext,
+    sections: &SectionContext,
     toc_entries: &[TocEntry],
     bookmark_names: &HashSet<String>,
 ) -> Vec<Revision> {
     let mut r = Reader::from_str(xml);
     let mut revisions = Vec::new();
     let mut alternate_content_stack = Vec::new();
+    let mut section_cursor = RevisionSectionCursor::default();
     loop {
         match r.read_event() {
             Ok(Event::Start(e))
@@ -48,6 +50,9 @@ pub(crate) fn parse(
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
                 alternate_content_stack.push(AlternateContentBranchState::default());
             }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"pPrChange" => {
+                skip_subtree(&mut r);
+            }
             Ok(Event::Start(e)) => {
                 if let Some(kind) = revision_kind(local(e.name().as_ref())) {
                     revisions.push(read_revision(
@@ -57,14 +62,20 @@ pub(crate) fn parse(
                         properties,
                         document_bookmarks,
                         note_refs,
+                        sections,
+                        &mut section_cursor.field_index,
                         toc_entries,
                         bookmark_names,
                     ));
+                } else {
+                    section_cursor.apply_start(&mut r, &e);
                 }
             }
             Ok(Event::Empty(e)) => {
                 if let Some(kind) = revision_kind(local(e.name().as_ref())) {
                     revisions.push(revision_shell(&e, kind, String::new()));
+                } else {
+                    section_cursor.apply_empty(&e);
                 }
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
@@ -83,6 +94,7 @@ pub(crate) fn main_text_with_view(
     properties: Option<FieldDocumentProperties<'_>>,
     document_bookmarks: Option<&HashMap<String, String>>,
     note_refs: Option<&NoteRefContext>,
+    sections: Option<&SectionContext>,
     toc_entries: Option<&[TocEntry]>,
     bookmark_names: Option<&HashSet<String>>,
 ) -> String {
@@ -90,6 +102,7 @@ pub(crate) fn main_text_with_view(
     let mut out = String::new();
     let mut alternate_content_stack = Vec::new();
     let mut inline_continuation = false;
+    let mut section_cursor = RevisionSectionCursor::default();
     loop {
         match r.read_event() {
             Ok(Event::Start(e))
@@ -108,21 +121,32 @@ pub(crate) fn main_text_with_view(
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
                 alternate_content_stack.push(AlternateContentBranchState::default());
             }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"pPrChange" => {
+                skip_subtree(&mut r);
+            }
             Ok(Event::Start(e)) => {
                 if let Some(kind) = revision_kind(local(e.name().as_ref())) {
-                    let rev_text = read_revision_text(
+                    let use_sections = sections.filter(|_| revision_kind_is_current(kind));
+                    let (rev_text, next_section_field_index) = read_revision_text(
                         &mut r,
                         local(e.name().as_ref()),
                         properties,
                         document_bookmarks,
                         note_refs,
+                        use_sections,
+                        section_cursor.field_index,
                         toc_entries,
                         bookmark_names,
                     );
+                    if use_sections.is_some() {
+                        section_cursor.field_index = next_section_field_index;
+                    }
                     push_revision_text(&mut out, view, kind, &rev_text);
                     inline_continuation = false;
                 } else if matches!(local(e.name().as_ref()), b"t" | b"delText") {
                     push_text_segment(&mut out, &read_text(&mut r), &mut inline_continuation);
+                } else if sections.is_some() && section_cursor.apply_start(&mut r, &e) {
+                    inline_continuation = false;
                 } else if let Some(marker) = inline_marker_text(&e) {
                     push_inline_segment(&mut out, marker, &mut inline_continuation);
                     skip_subtree(&mut r);
@@ -138,6 +162,8 @@ pub(crate) fn main_text_with_view(
             Ok(Event::Empty(e)) => {
                 if let Some(kind) = revision_kind(local(e.name().as_ref())) {
                     push_revision_text(&mut out, view, kind, "");
+                    inline_continuation = false;
+                } else if sections.is_some() && section_cursor.apply_empty(&e) {
                     inline_continuation = false;
                 } else if let Some(marker) = inline_marker_text(&e) {
                     push_inline_segment(&mut out, marker, &mut inline_continuation);
@@ -184,19 +210,27 @@ fn read_revision(
     properties: FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
     note_refs: &NoteRefContext,
+    sections: &SectionContext,
+    section_field_index: &mut usize,
     toc_entries: &[TocEntry],
     bookmark_names: &HashSet<String>,
 ) -> Revision {
     let end_name = local(start.name().as_ref()).to_vec();
-    let text = read_revision_text(
+    let use_sections = revision_kind_is_current(kind).then_some(sections);
+    let (text, next_section_field_index) = read_revision_text(
         r,
         &end_name,
         Some(properties),
         Some(document_bookmarks),
         Some(note_refs),
+        use_sections,
+        *section_field_index,
         Some(toc_entries),
         Some(bookmark_names),
     );
+    if use_sections.is_some() {
+        *section_field_index = next_section_field_index;
+    }
     revision_shell(start, kind, text)
 }
 
@@ -206,9 +240,11 @@ fn read_revision_text(
     properties: Option<FieldDocumentProperties<'_>>,
     document_bookmarks: Option<&HashMap<String, String>>,
     note_refs: Option<&NoteRefContext>,
+    sections: Option<&SectionContext>,
+    section_field_index: usize,
     toc_entries: Option<&[TocEntry]>,
     bookmark_names: Option<&HashSet<String>>,
-) -> String {
+) -> (String, usize) {
     let mut depth = 1usize;
     let mut text = String::new();
     let mut complex_field = RevisionComplexField::default();
@@ -228,6 +264,9 @@ fn read_revision_text(
     };
     if let (Some(toc_entries), Some(bookmark_names)) = (toc_entries, bookmark_names) {
         field_state = field_state.with_toc_context(toc_entries, bookmark_names);
+    }
+    if let Some(sections) = sections {
+        field_state = field_state.with_section_context_from(sections, section_field_index);
     }
     let mut embedded_body_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
@@ -337,11 +376,101 @@ fn read_revision_text(
             _ => {}
         }
     }
-    text
+    (text, field_state.section_field_index())
 }
 
 fn is_revision_embedded_body(name: &[u8]) -> bool {
     matches!(name, b"drawing" | b"pict" | b"object" | b"txbxContent")
+}
+
+fn revision_kind_is_current(kind: RevisionKind) -> bool {
+    matches!(kind, RevisionKind::Insertion | RevisionKind::MoveTo)
+}
+
+#[derive(Default)]
+struct RevisionSectionCursor {
+    field_index: usize,
+    complex_depth: usize,
+    complex_instruction: String,
+    complex_phase: Option<RevisionComplexFieldPhase>,
+}
+
+impl RevisionSectionCursor {
+    fn apply_start(&mut self, r: &mut Xml<'_>, e: &BytesStart<'_>) -> bool {
+        match local(e.name().as_ref()) {
+            b"fldSimple" => self.apply_simple_field(e),
+            b"fldChar" => {
+                self.apply_field_char(e);
+                false
+            }
+            b"instrText" => {
+                let text = read_text(r);
+                self.append_instruction_text(&text);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn apply_empty(&mut self, e: &BytesStart<'_>) -> bool {
+        match local(e.name().as_ref()) {
+            b"fldSimple" => self.apply_simple_field(e),
+            b"fldChar" => {
+                self.apply_field_char(e);
+                false
+            }
+            _ => false,
+        }
+    }
+
+    fn apply_simple_field(&mut self, e: &BytesStart<'_>) -> bool {
+        let Some(instruction) = attr_local_trimmed(e, b"instr") else {
+            return false;
+        };
+        if is_section_field_instruction(&instruction) {
+            self.field_index += 1;
+        }
+        false
+    }
+
+    fn apply_field_char(&mut self, e: &BytesStart<'_>) {
+        match field_char_type(e).as_deref() {
+            Some("begin") => {
+                if self.complex_depth == 0 {
+                    self.complex_instruction.clear();
+                    self.complex_phase = Some(RevisionComplexFieldPhase::Instruction);
+                }
+                self.complex_depth += 1;
+            }
+            Some("separate")
+                if self.complex_depth == 1
+                    && self.complex_phase == Some(RevisionComplexFieldPhase::Instruction) =>
+            {
+                self.complex_phase = Some(RevisionComplexFieldPhase::Result);
+            }
+            Some("end") => {
+                if self.complex_depth > 0 {
+                    self.complex_depth -= 1;
+                    if self.complex_depth == 0 {
+                        if is_section_field_instruction(&self.complex_instruction) {
+                            self.field_index += 1;
+                        }
+                        self.complex_instruction.clear();
+                        self.complex_phase = None;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn append_instruction_text(&mut self, text: &str) {
+        if self.complex_depth == 1
+            && self.complex_phase == Some(RevisionComplexFieldPhase::Instruction)
+        {
+            self.complex_instruction.push_str(text);
+        }
+    }
 }
 
 fn push_revision_paragraph_boundary(text: &mut String) {
