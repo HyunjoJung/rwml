@@ -87,8 +87,6 @@ pub(crate) use self::page_ref::{
     computed_page_ref_result, computed_page_result, page_ref_context,
     page_ref_context_with_properties, supports_page_field_syntax, PageRefContext, PageRefPosition,
 };
-#[cfg(test)]
-use self::reference::ref_instruction;
 pub(crate) use self::reference::{
     computed_direct_bookmark_ref_result, computed_ref_result,
     is_direct_bookmark_ref_field_instruction, is_ref_position_field_instruction,
@@ -97,9 +95,9 @@ pub(crate) use self::reference::{
     RefResultContext,
 };
 use self::reference::{
-    computed_ref_instruction_result, direct_bookmark_ref_instruction, ref_instruction_target_known,
-    ref_note_field_target, ref_numeric_paragraph_number, ref_paragraph_number,
-    relative_context_ref_number,
+    computed_ref_instruction_result, direct_bookmark_ref_instruction, ref_instruction,
+    ref_instruction_target_known, ref_note_field_target, ref_numeric_paragraph_number,
+    ref_paragraph_number, relative_context_ref_number,
 };
 pub(crate) use self::section::{
     computed_section_result, is_section_field_instruction, section_context_with_properties,
@@ -1391,16 +1389,38 @@ fn computed_contextless_ref_result(
 ) -> Option<String> {
     let ref_positions = RefPositionContext::default();
     let ref_numbers = RefNumberContext::empty();
-    let note_refs = NoteRefContext::empty();
+    let empty_note_refs = NoteRefContext::empty();
+    let note_refs = state.note_refs.unwrap_or(&empty_note_refs);
     let ctx = RefResultContext {
         bookmarks: document_bookmarks,
         ref_positions: &ref_positions,
         ref_numbers: &ref_numbers,
-        note_refs: &note_refs,
+        note_refs,
         field_bookmarks: &state.field_bookmarks,
     };
     computed_ref_result(instruction, &ctx, None, None)
         .or_else(|| computed_direct_bookmark_ref_result(instruction, &ctx, None, None))
+        .or_else(|| computed_contextless_ref_note_reference_result(instruction, note_refs))
+}
+
+fn computed_contextless_ref_note_reference_result(
+    instruction: &str,
+    note_refs: &NoteRefContext,
+) -> Option<String> {
+    let spec =
+        ref_instruction(instruction).or_else(|| direct_bookmark_ref_instruction(instruction))?;
+    if !spec.note_reference
+        || spec.sequence_separator
+        || spec.relative
+        || spec.paragraph_number
+        || spec.full_context_number
+        || spec.relative_context_number
+    {
+        return None;
+    }
+    let number = note_refs.target_reference_number(&spec.target)?;
+    let text = format_page_number(number, spec.number_format)?;
+    Some(apply_field_text_format(text, spec.text_format))
 }
 
 pub(crate) fn computed_formula_result_with_bookmark_context(

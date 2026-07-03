@@ -30,6 +30,10 @@ impl NoteRefContext {
         self.target(name).is_some_and(NoteRefTarget::is_note_marker)
     }
 
+    pub(super) fn target_reference_number(&self, name: &str) -> Option<usize> {
+        Some(self.target(name)?.number)
+    }
+
     pub(super) fn ref_note_number(
         &self,
         name: &str,
