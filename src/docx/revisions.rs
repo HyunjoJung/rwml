@@ -366,17 +366,22 @@ fn read_revision_text(
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"t" => {
                 let value = read_text(r);
+                complex_field.append_result_text(&value);
                 if !complex_field.suppresses_result() {
                     text.push_str(&value);
                 }
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"delText" => {
                 let value = read_text(r);
+                complex_field.append_result_text(&value);
                 if !complex_field.suppresses_result() {
                     text.push_str(&value);
                 }
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"sym" => {
+                if let Some(ch) = revision_symbol_char(&e) {
+                    complex_field.append_result_char(ch);
+                }
                 if !complex_field.suppresses_result() {
                     if let Some(ch) = revision_symbol_char(&e) {
                         text.push(ch);
@@ -385,6 +390,9 @@ fn read_revision_text(
                 skip_subtree(r);
             }
             Ok(Event::Start(e)) => {
+                if let Some(marker) = inline_marker_text(&e) {
+                    complex_field.append_result_text(marker);
+                }
                 if !complex_field.suppresses_result() {
                     if let Some(marker) = inline_marker_text(&e) {
                         text.push_str(marker);
@@ -393,6 +401,11 @@ fn read_revision_text(
                 }
             }
             Ok(Event::Empty(e)) => {
+                if let Some(marker) = inline_marker_text(&e) {
+                    complex_field.append_result_text(marker);
+                } else if let Some(ch) = revision_symbol_char(&e) {
+                    complex_field.append_result_char(ch);
+                }
                 if !complex_field.suppresses_result() {
                     if let Some(marker) = inline_marker_text(&e) {
                         text.push_str(marker);
@@ -616,6 +629,7 @@ struct RevisionComplexField {
     instruction: String,
     phase: Option<RevisionComplexFieldPhase>,
     computed_result: Option<String>,
+    result_text: String,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -634,6 +648,7 @@ impl RevisionComplexField {
             Some("begin") => {
                 if self.depth == 0 {
                     self.instruction.clear();
+                    self.result_text.clear();
                     self.phase = Some(RevisionComplexFieldPhase::Instruction);
                     self.computed_result = None;
                 }
@@ -645,19 +660,39 @@ impl RevisionComplexField {
                     && self.phase == Some(RevisionComplexFieldPhase::Instruction) =>
             {
                 self.phase = Some(RevisionComplexFieldPhase::Result);
-                self.computed_result = computed_revision_field_text(&self.instruction, field_state);
+                if !is_revision_text_form_field_instruction(&self.instruction) {
+                    self.computed_result =
+                        computed_revision_field_text(&self.instruction, field_state);
+                }
                 self.computed_result.clone()
             }
             Some("end") => {
+                let computed_text_form = if self.depth == 1
+                    && self.phase == Some(RevisionComplexFieldPhase::Result)
+                    && self.computed_result.is_none()
+                    && is_revision_text_form_field_instruction(&self.instruction)
+                {
+                    field_state
+                        .computed_legacy_text_form_current_result(
+                            &self.instruction,
+                            &self.result_text,
+                        )
+                        .or_else(|| {
+                            (!self.result_text.is_empty()).then_some(self.result_text.clone())
+                        })
+                } else {
+                    None
+                };
                 if self.depth > 0 {
                     self.depth -= 1;
                     if self.depth == 0 {
                         self.instruction.clear();
+                        self.result_text.clear();
                         self.phase = None;
                         self.computed_result = None;
                     }
                 }
-                None
+                computed_text_form
             }
             _ => None,
         }
@@ -672,7 +707,27 @@ impl RevisionComplexField {
     fn suppresses_result(&self) -> bool {
         self.depth > 0
             && self.phase == Some(RevisionComplexFieldPhase::Result)
-            && self.computed_result.is_some()
+            && (self.computed_result.is_some()
+                || is_revision_text_form_field_instruction(&self.instruction))
+    }
+
+    fn append_result_text(&mut self, text: &str) {
+        if self.collects_result_text() {
+            self.result_text.push_str(text);
+        }
+    }
+
+    fn append_result_char(&mut self, ch: char) {
+        if self.collects_result_text() {
+            self.result_text.push(ch);
+        }
+    }
+
+    fn collects_result_text(&self) -> bool {
+        self.depth > 0
+            && self.phase == Some(RevisionComplexFieldPhase::Result)
+            && self.computed_result.is_none()
+            && is_revision_text_form_field_instruction(&self.instruction)
     }
 }
 

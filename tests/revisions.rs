@@ -282,6 +282,23 @@ fn text_form_field_revision_docx() -> Vec<u8> {
     ])
 }
 
+fn complex_text_form_field_revision_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" FORMTEXT \*Upper "><w:ffData><w:textInput><w:default w:val="Direct default"/></w:textInput></w:ffData><w:r><w:t>Direct typed</w:t></w:r></w:fldSimple></w:p><w:p><w:ins w:id="50" w:author="Alice"><w:r><w:fldChar w:fldCharType="begin"><w:ffData><w:textInput><w:default w:val="Insert default"/></w:textInput></w:ffData></w:fldChar></w:r><w:r><w:instrText> FORMTEXT \*Upper </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Insert typed</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> added</w:t></w:r></w:ins></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn document_bookmark_formula_field_revision_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -781,6 +798,24 @@ fn docx_revision_text_uses_text_form_current_field_text() {
             && !main_text.contains("Direct default")
             && !main_text.contains("Insert default"),
         "main text should use formatted text-form current text: {main_text:?}"
+    );
+    assert_eq!(revisions.len(), 1);
+    assert_eq!(revisions[0].kind, RevisionKind::Insertion);
+    assert_eq!(revisions[0].text, "INSERT TYPED added");
+}
+
+#[test]
+fn docx_revision_text_uses_complex_text_form_current_field_text() {
+    let doc = Document::open(&complex_text_form_field_revision_docx()).expect("fixture opens");
+    let revisions = doc.revisions();
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("DIRECT TYPED")
+            && main_text.contains("INSERT TYPED added")
+            && !main_text.contains("Direct default")
+            && !main_text.contains("Insert default"),
+        "main text should use formatted complex text-form current text: {main_text:?}"
     );
     assert_eq!(revisions.len(), 1);
     assert_eq!(revisions[0].kind, RevisionKind::Insertion);
