@@ -82,6 +82,45 @@ rendering moving toward one coherent Rust-native document model.
   small deterministic parser/evaluator gaps that can be proven faster with local
   `rg` plus one red test.
 
+## Parallel Batches (multiple writable agents)
+
+Parallel writable lanes collide on a few hot files, not on the module
+architecture. Contention map (line counts as of 2026-07-03):
+`tests/fields.rs` (~25k, every field slice), `tests/report.rs` (~11k),
+`src/docx/body.rs` (~7k), `src/lib.rs` (~6k), `src/report.rs` (~5k),
+`src/docx/fields.rs` dispatcher (~4k), plus README/CHANGELOG/docs prose.
+
+- **P0 prerequisite (run alone, before any parallel fan-out): split the test
+  monoliths.** Move `tests/fields.rs` into per-family files —
+  `tests/fields_docinfo.rs`, `fields_formula.rs`, `fields_ref.rs`,
+  `fields_noteref.rs`, `fields_pageref.rs`, `fields_toc.rs`,
+  `fields_styleref.rs`, `fields_numbering.rs`, `fields_display.rs`,
+  `fields_form.rs`, `fields_dynamic.rs`, `fields_misc.rs` — with shared
+  helpers (`docx_fixture`, shared fixture fns) in `tests/field_support/mod.rs`
+  included via `#[path]`/`mod field_support;` from each file. Do the split
+  with a script over top-level items (fixture fns + `#[test]` fns), not by
+  hand; a fixture used by two families moves to `field_support`. Verify by
+  test-count parity: the sum of `cargo test --test fields_<f> -- --list | wc -l`
+  must equal the pre-split `cargo test --test fields -- --list | wc -l`, then
+  run `cargo test --all-targets`. Split `tests/report.rs` the same way as a
+  follow-up (P0b) when report-lane parallelism is needed.
+- **Lane ownership.** One lane = one field family or subsystem. At lane start,
+  declare the owned files; a lane edits only its evaluator submodule
+  (`src/docx/fields/<family>.rs`) and its own test file. Never two lanes on
+  one file.
+- **Serial-only files.** `src/docx/fields.rs` (dispatcher), `src/lib.rs`,
+  `src/docx/body.rs`, `src/report.rs`, `README.md`, `CHANGELOG.md`, `docs/*`,
+  `Cargo.toml`. If a slice needs a dispatcher/public-surface line, keep that
+  hunk minimal and rebase immediately before pushing; batch README/CHANGELOG
+  wording into a single serial docs commit instead of per-lane edits.
+- **Sync protocol.** `git fetch && git rebase origin/main` before every commit;
+  push immediately after the focused gate is green; on a rebase conflict in a
+  file the lane does not own, abort and re-pick the slice. Keep one bounded
+  slice per commit.
+- **Coordinator duties.** A single coordinating session appends to the
+  outside-repo ledger, owns serial-file batches, and assigns families to lanes
+  from the roadmap Near-Term Cut so no two lanes share a family.
+
 ## Project Invariants
 
 - Preserve package data by default. `.docx` edits should reserialize only touched
