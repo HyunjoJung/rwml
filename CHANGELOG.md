@@ -7,6 +7,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Layout-derived page numbers (opt-in, `render` feature).**
+  `layout_pages_with_fonts` / `Document::layout_pages_with_fonts` report the
+  page count and the page each body `PAGE` field and top-level block lands on
+  in rdoc's own preview-grade pagination — matching rdoc's PDF output, not
+  Microsoft Word's pagination. Fonts are used strictly (system fonts disabled),
+  so identical document + font bytes yield identical results; values live in a
+  separate `LayoutPages` record and never touch `Field::computed_result`.
+- **RTL property plumbing.** `ParaProps.bidi` (`w:bidi`), `CharProps.rtl`
+  (`w:rtl`), and `Table.bidi_visual` (`w:bidiVisual`) are read from `.docx`,
+  round-trip through `write_docx`, and get builder setters. Shaping and
+  alignment mirroring in the renderer are a later milestone.
+- **Edit-surface fuzz target.** New `edit` fuzz bin runs a scripted
+  preservation-edit sequence over arbitrary bytes so XmlTree
+  promotion/serialize and transactional rollback paths are fuzzed; wired into
+  the fuzz CI smoke workflow.
 - **Bundled Korean PDF font feature.** The opt-in `bundled-fonts` feature pulls
   the separate OFL-licensed `rdoc-fonts` companion crate and exposes
   `render_pdf_bundled` / `try_render_pdf_bundled` for KS X 1001 Hangul plus

@@ -282,6 +282,14 @@ eprintln!(
 
 For portable Korean PDF rendering, enable `bundled-fonts` to opt into the separate OFL-licensed `rdoc-fonts` crate: it registers a Noto Sans KR subset covering KS X 1001 Hangul + hanja plus Latin while `rdoc` itself remains MIT-licensed. Other scripts still use system font fallback, matching `render_pdf_with_fonts`.
 
+`layout_pages_with_fonts` exposes **layout-derived page numbers** from the same
+preview-grade pagination: the page count plus the page each body `PAGE` field
+and top-level block lands on — matching rdoc's own PDF output, **not**
+Microsoft Word's pagination. Supplied fonts are used strictly (system fonts
+disabled), so identical document + font bytes give identical pages; results
+live in a separate `LayoutPages` record and never overwrite reader-path
+`computed_result` semantics.
+
 You can also convert a parsed document straight to PDF:
 `Document::open(&bytes)?.to_pdf()` / `try_to_pdf()`, pass font blobs with
 `to_pdf_with_fonts()` / `try_to_pdf_with_fonts()`, or use

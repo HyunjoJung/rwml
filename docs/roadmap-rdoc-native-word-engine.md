@@ -1255,7 +1255,12 @@ The active roadmap slices are:
    `\p` results require a layout engine rdoc intentionally does not have.
    The slice stays open only for newly proven deterministic trusted-context
    expansions (the continuous-section restart and trusted later-page-target
-   cases are examples that were closed this way).
+   cases are examples that were closed this way). Partially reopened
+   2026-07-04 as a render-gated opt-in companion: `layout_pages_with_fonts`
+   reports rdoc's own preview-grade pagination (page count, per-`PAGE`-field
+   and per-block pages), explicitly labeled layout-derived / not Word-exact,
+   with strict caller-supplied fonts; reader-path `computed_result` promotion
+   rules are unchanged.
 3. R2-c remaining `REF`/`NOTEREF`/`FTNREF`/TOC policy: the deterministic
    frontier now extends through side-table surfaces (comment bodies/anchors,
    revision text, note anchors, floating-shape/text-box text, TOC heading

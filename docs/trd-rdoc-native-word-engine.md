@@ -1355,7 +1355,10 @@ open and edit the chart data.
 - extend the partial common Symbol/Wingdings mapping beyond current
   display/render code points;
 - CJK fallback stability;
-- RTL as a separate milestone, not incidental line-breaking (not started).
+- RTL as a separate milestone, not incidental line-breaking. Property plumbing
+  shipped (`w:bidi`/`w:rtl`/`w:bidiVisual` read, `write_docx` round-trip, and
+  builder setters); renderer base-direction/shaping and alignment mirroring
+  remain open.
 
 ### R5. Layout validation
 
