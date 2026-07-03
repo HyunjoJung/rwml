@@ -1580,7 +1580,7 @@ fn read_floating_shapes(
                 }
                 if name == b"anchor" {
                     let index = shapes.len();
-                    shapes.push(read_floating_shape(
+                    let shape = read_floating_shape(
                         &mut r,
                         &e,
                         index,
@@ -1599,7 +1599,12 @@ fn read_floating_shapes(
                         style_refs,
                         sequence_headings,
                         &mut shape_field_cursor,
-                    ));
+                    );
+                    anchor_field_state = anchor_field_state.with_legacy_form_context_from(
+                        legacy_forms,
+                        shape_field_cursor.next_legacy_form_position(),
+                    );
+                    shapes.push(shape);
                     if current_body_block_index.is_some() {
                         current_body_block_shapes.push(FloatingShapeAnchorCandidate {
                             shape_index: index,
@@ -2374,6 +2379,10 @@ impl ShapeFieldCursor {
         let index = self.next_index;
         self.next_index += 1;
         Some(index)
+    }
+
+    fn next_legacy_form_position(&self) -> usize {
+        self.next_index
     }
 
     fn next_style_ref_field_position(
