@@ -421,6 +421,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         &ref_targets,
         &note_ref_context,
         &section_context,
+        &legacy_form_context,
         &toc_entries,
         &bookmark_names,
     );
@@ -3921,6 +3922,7 @@ fn attach_note_reference_anchors(
     document_bookmarks: &HashMap<String, String>,
     note_refs: &fields::NoteRefContext,
     sections: &fields::SectionContext,
+    legacy_forms: &fields::LegacyFormContext,
     toc_entries: &[fields::TocEntry],
     bookmark_names: &HashSet<String>,
 ) {
@@ -3931,6 +3933,7 @@ fn attach_note_reference_anchors(
         document_bookmarks,
         note_refs,
         sections,
+        legacy_forms,
         toc_entries,
         bookmark_names,
     );
@@ -3941,6 +3944,7 @@ fn attach_note_reference_anchors(
         document_bookmarks,
         note_refs,
         sections,
+        legacy_forms,
         toc_entries,
         bookmark_names,
     );
