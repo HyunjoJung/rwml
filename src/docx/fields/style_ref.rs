@@ -993,13 +993,13 @@ fn computed_style_ref_source_field_result(
         }
         _ => {}
     }
+    let note_ref_field_position =
+        style_ref_source_note_ref_field_position(&instruction, note_refs, ref_field_index);
     if let Some(text) =
         computed_style_ref_source_ref_result(&instruction, document_bookmarks, field_bookmarks)
     {
         return Some(text);
     }
-    let note_ref_field_position =
-        style_ref_source_note_ref_field_position(&instruction, note_refs, ref_field_index);
     computed_style_ref_source_ref_note_reference_result(
         &instruction,
         note_refs,

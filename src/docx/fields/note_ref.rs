@@ -100,6 +100,7 @@ struct NoteRefScanField {
     instruction: String,
     phase: FieldPhase,
     suppress_result: bool,
+    position_recorded: bool,
     nested_suppressed_fields: usize,
 }
 
@@ -216,7 +217,14 @@ pub(crate) fn note_ref_context_with_properties(
                             attr_local(&e, b"instr").as_deref(),
                             &mut computed_fields,
                         ) {
-                            if !text.is_empty() {
+                            let recorded = record_note_ref_scan_field_position(
+                                attr_local(&e, b"instr").as_deref(),
+                                &mut source_order,
+                                &mut field_positions,
+                                &mut ref_field_positions,
+                                &mut generated_ref_note_fields,
+                            );
+                            if !recorded && !text.is_empty() {
                                 source_order += 1;
                             }
                             skip_subtree(&mut r);
@@ -389,7 +397,14 @@ pub(crate) fn note_ref_context_with_properties(
                             attr_local(&e, b"instr").as_deref(),
                             &mut computed_fields,
                         ) {
-                            if !text.is_empty() {
+                            let recorded = record_note_ref_scan_field_position(
+                                attr_local(&e, b"instr").as_deref(),
+                                &mut source_order,
+                                &mut field_positions,
+                                &mut ref_field_positions,
+                                &mut generated_ref_note_fields,
+                            );
+                            if !recorded && !text.is_empty() {
                                 source_order += 1;
                             }
                         } else {
@@ -841,9 +856,9 @@ fn record_note_ref_scan_field_position(
     field_positions: &mut Vec<NoteRefFieldPosition>,
     ref_field_positions: &mut Vec<NoteRefFieldPosition>,
     generated_ref_note_fields: &mut Vec<NoteRefGeneratedField>,
-) {
+) -> bool {
     let Some(instruction) = instruction.map(normalize_instruction) else {
-        return;
+        return false;
     };
     let mut recorded = false;
     if field_kind(&instruction) == FieldKind::NoteRef {
@@ -867,6 +882,7 @@ fn record_note_ref_scan_field_position(
     if recorded {
         *source_order += 1;
     }
+    recorded
 }
 
 fn apply_note_ref_scan_fld_char(
@@ -891,6 +907,7 @@ fn apply_note_ref_scan_fld_char(
                 instruction: String::new(),
                 phase: FieldPhase::Instruction,
                 suppress_result: false,
+                position_recorded: false,
                 nested_suppressed_fields: 0,
             });
         }
@@ -902,9 +919,17 @@ fn apply_note_ref_scan_fld_char(
                 if let Some(text) =
                     computed_note_ref_scan_field_result(Some(&field.instruction), computed_fields)
                 {
-                    if !text.is_empty() {
+                    let recorded = record_note_ref_scan_field_position(
+                        Some(&field.instruction),
+                        source_order,
+                        field_positions,
+                        ref_field_positions,
+                        generated_ref_note_fields,
+                    );
+                    if !recorded && !text.is_empty() {
                         *source_order += 1;
                     }
+                    field.position_recorded = recorded;
                     field.suppress_result = true;
                 }
                 field.phase = FieldPhase::Result;
@@ -918,13 +943,15 @@ fn apply_note_ref_scan_fld_char(
                 }
             }
             if let Some(field) = current.take() {
-                record_note_ref_scan_field_position(
-                    Some(&field.instruction),
-                    source_order,
-                    field_positions,
-                    ref_field_positions,
-                    generated_ref_note_fields,
-                );
+                if !field.position_recorded {
+                    record_note_ref_scan_field_position(
+                        Some(&field.instruction),
+                        source_order,
+                        field_positions,
+                        ref_field_positions,
+                        generated_ref_note_fields,
+                    );
+                }
             }
         }
         _ => {}

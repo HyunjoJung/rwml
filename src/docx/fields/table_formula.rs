@@ -1232,13 +1232,13 @@ fn computed_table_formula_source_field_result(
         }
         _ => {}
     }
+    let note_ref_field_position =
+        table_formula_source_note_ref_field_position(instruction, note_refs, ref_field_index);
     if let Some(text) =
         computed_table_formula_source_ref_result(instruction, document_bookmarks, field_bookmarks)
     {
         return Some(text);
     }
-    let note_ref_field_position =
-        table_formula_source_note_ref_field_position(instruction, note_refs, ref_field_index);
     computed_table_formula_source_ref_note_reference_result(
         instruction,
         note_refs,

@@ -903,11 +903,11 @@ fn computed_toc_source_field_result(
         }
         _ => {}
     }
+    let note_ref_field_position =
+        toc_source_note_ref_field_position(&instruction, note_refs, ref_field_index);
     if let Some(text) = computed_toc_source_ref_result(&instruction, ref_targets, field_bookmarks) {
         return Some(text);
     }
-    let note_ref_field_position =
-        toc_source_note_ref_field_position(&instruction, note_refs, ref_field_index);
     computed_toc_source_ref_note_reference_result(&instruction, note_refs, note_ref_field_position)
         .or_else(|| computed_note_ref_result(&instruction, note_refs, None))
         .or_else(|| computed_numbering_result(&instruction, autonum_counter))
