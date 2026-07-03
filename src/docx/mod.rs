@@ -529,6 +529,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         &ref_targets,
         &note_ref_context,
         &section_context,
+        &legacy_form_context,
         &toc_entries,
         &bookmark_names,
     );
@@ -1029,6 +1030,7 @@ fn read_hf_parts(
                 &ref_targets,
                 &note_ref_context,
                 &section_context,
+                &legacy_form_context,
                 &toc_entries,
                 &bookmark_names,
             ));
@@ -1278,6 +1280,7 @@ fn read_notes(
         &ref_targets,
         &note_ref_context,
         &section_context,
+        &legacy_form_context,
         &toc_entries,
         &bookmark_names,
     );
@@ -4054,6 +4057,7 @@ pub(crate) fn main_text_with_revision_view(state: &DocxState, view: crate::Revis
         properties,
         preserve_legacy_form_cache,
     );
+    let legacy_form_context = fields::legacy_form_context(&doc_xml, preserve_legacy_form_cache);
     let bookmark_names = fields::bookmark_names(&doc_xml);
     revisions::main_text_with_view(
         &doc_xml,
@@ -4062,6 +4066,7 @@ pub(crate) fn main_text_with_revision_view(state: &DocxState, view: crate::Revis
         Some(&document_bookmarks),
         Some(&note_ref_context),
         Some(&section_context),
+        Some(&legacy_form_context),
         Some(&toc_entries),
         Some(&bookmark_names),
     )

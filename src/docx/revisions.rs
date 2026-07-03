@@ -4,12 +4,13 @@ use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 use std::collections::{HashMap, HashSet};
 
-use crate::annotation::{Revision, RevisionKind, RevisionView};
+use crate::annotation::{legacy_form_field_syntax, Revision, RevisionKind, RevisionView};
 use crate::text;
 
 use super::fields::{
     computed_contextless_result, computed_run_symbol_char, is_section_field_instruction,
-    ContextlessFieldState, FieldDocumentProperties, NoteRefContext, SectionContext, TocEntry,
+    ContextlessFieldState, FieldDocumentProperties, LegacyFormContext, NoteRefContext,
+    SectionContext, TocEntry,
 };
 use super::xml_text::{
     inline_marker_text, read_text, skip_alternate_content_branch, skip_subtree,
@@ -25,13 +26,14 @@ pub(crate) fn parse(
     document_bookmarks: &HashMap<String, String>,
     note_refs: &NoteRefContext,
     sections: &SectionContext,
+    legacy_forms: &LegacyFormContext,
     toc_entries: &[TocEntry],
     bookmark_names: &HashSet<String>,
 ) -> Vec<Revision> {
     let mut r = Reader::from_str(xml);
     let mut revisions = Vec::new();
     let mut alternate_content_stack = Vec::new();
-    let mut section_cursor = RevisionSectionCursor::default();
+    let mut field_cursor = RevisionFieldCursor::default();
     loop {
         match r.read_event() {
             Ok(Event::Start(e))
@@ -63,19 +65,20 @@ pub(crate) fn parse(
                         document_bookmarks,
                         note_refs,
                         sections,
-                        &mut section_cursor.field_index,
+                        legacy_forms,
+                        &mut field_cursor,
                         toc_entries,
                         bookmark_names,
                     ));
                 } else {
-                    section_cursor.apply_start(&mut r, &e);
+                    field_cursor.apply_start(&mut r, &e);
                 }
             }
             Ok(Event::Empty(e)) => {
                 if let Some(kind) = revision_kind(local(e.name().as_ref())) {
                     revisions.push(revision_shell(&e, kind, String::new()));
                 } else {
-                    section_cursor.apply_empty(&e);
+                    field_cursor.apply_empty(&e);
                 }
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
@@ -95,6 +98,7 @@ pub(crate) fn main_text_with_view(
     document_bookmarks: Option<&HashMap<String, String>>,
     note_refs: Option<&NoteRefContext>,
     sections: Option<&SectionContext>,
+    legacy_forms: Option<&LegacyFormContext>,
     toc_entries: Option<&[TocEntry]>,
     bookmark_names: Option<&HashSet<String>>,
 ) -> String {
@@ -102,7 +106,7 @@ pub(crate) fn main_text_with_view(
     let mut out = String::new();
     let mut alternate_content_stack = Vec::new();
     let mut inline_continuation = false;
-    let mut section_cursor = RevisionSectionCursor::default();
+    let mut field_cursor = RevisionFieldCursor::default();
     loop {
         match r.read_event() {
             Ok(Event::Start(e))
@@ -127,25 +131,34 @@ pub(crate) fn main_text_with_view(
             Ok(Event::Start(e)) => {
                 if let Some(kind) = revision_kind(local(e.name().as_ref())) {
                     let use_sections = sections.filter(|_| revision_kind_is_current(kind));
-                    let (rev_text, next_section_field_index) = read_revision_text(
-                        &mut r,
-                        local(e.name().as_ref()),
-                        properties,
-                        document_bookmarks,
-                        note_refs,
-                        use_sections,
-                        section_cursor.field_index,
-                        toc_entries,
-                        bookmark_names,
-                    );
+                    let use_legacy_forms = legacy_forms.filter(|_| revision_kind_is_current(kind));
+                    let (rev_text, next_section_field_index, next_form_field_index) =
+                        read_revision_text(
+                            &mut r,
+                            local(e.name().as_ref()),
+                            properties,
+                            document_bookmarks,
+                            note_refs,
+                            use_sections,
+                            field_cursor.section_field_index,
+                            use_legacy_forms,
+                            field_cursor.form_field_index,
+                            toc_entries,
+                            bookmark_names,
+                        );
                     if use_sections.is_some() {
-                        section_cursor.field_index = next_section_field_index;
+                        field_cursor.section_field_index = next_section_field_index;
+                    }
+                    if use_legacy_forms.is_some() {
+                        field_cursor.form_field_index = next_form_field_index;
                     }
                     push_revision_text(&mut out, view, kind, &rev_text);
                     inline_continuation = false;
                 } else if matches!(local(e.name().as_ref()), b"t" | b"delText") {
                     push_text_segment(&mut out, &read_text(&mut r), &mut inline_continuation);
-                } else if sections.is_some() && section_cursor.apply_start(&mut r, &e) {
+                } else if (sections.is_some() || legacy_forms.is_some())
+                    && field_cursor.apply_start(&mut r, &e)
+                {
                     inline_continuation = false;
                 } else if let Some(marker) = inline_marker_text(&e) {
                     push_inline_segment(&mut out, marker, &mut inline_continuation);
@@ -163,7 +176,9 @@ pub(crate) fn main_text_with_view(
                 if let Some(kind) = revision_kind(local(e.name().as_ref())) {
                     push_revision_text(&mut out, view, kind, "");
                     inline_continuation = false;
-                } else if sections.is_some() && section_cursor.apply_empty(&e) {
+                } else if (sections.is_some() || legacy_forms.is_some())
+                    && field_cursor.apply_empty(&e)
+                {
                     inline_continuation = false;
                 } else if let Some(marker) = inline_marker_text(&e) {
                     push_inline_segment(&mut out, marker, &mut inline_continuation);
@@ -211,25 +226,32 @@ fn read_revision(
     document_bookmarks: &HashMap<String, String>,
     note_refs: &NoteRefContext,
     sections: &SectionContext,
-    section_field_index: &mut usize,
+    legacy_forms: &LegacyFormContext,
+    field_cursor: &mut RevisionFieldCursor,
     toc_entries: &[TocEntry],
     bookmark_names: &HashSet<String>,
 ) -> Revision {
     let end_name = local(start.name().as_ref()).to_vec();
     let use_sections = revision_kind_is_current(kind).then_some(sections);
-    let (text, next_section_field_index) = read_revision_text(
+    let use_legacy_forms = revision_kind_is_current(kind).then_some(legacy_forms);
+    let (text, next_section_field_index, next_form_field_index) = read_revision_text(
         r,
         &end_name,
         Some(properties),
         Some(document_bookmarks),
         Some(note_refs),
         use_sections,
-        *section_field_index,
+        field_cursor.section_field_index,
+        use_legacy_forms,
+        field_cursor.form_field_index,
         Some(toc_entries),
         Some(bookmark_names),
     );
     if use_sections.is_some() {
-        *section_field_index = next_section_field_index;
+        field_cursor.section_field_index = next_section_field_index;
+    }
+    if use_legacy_forms.is_some() {
+        field_cursor.form_field_index = next_form_field_index;
     }
     revision_shell(start, kind, text)
 }
@@ -242,9 +264,11 @@ fn read_revision_text(
     note_refs: Option<&NoteRefContext>,
     sections: Option<&SectionContext>,
     section_field_index: usize,
+    legacy_forms: Option<&LegacyFormContext>,
+    form_field_index: usize,
     toc_entries: Option<&[TocEntry]>,
     bookmark_names: Option<&HashSet<String>>,
-) -> (String, usize) {
+) -> (String, usize, usize) {
     let mut depth = 1usize;
     let mut text = String::new();
     let mut complex_field = RevisionComplexField::default();
@@ -267,6 +291,9 @@ fn read_revision_text(
     }
     if let Some(sections) = sections {
         field_state = field_state.with_section_context_from(sections, section_field_index);
+    }
+    if let Some(legacy_forms) = legacy_forms {
+        field_state = field_state.with_legacy_form_context_from(legacy_forms, form_field_index);
     }
     let mut embedded_body_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
@@ -376,7 +403,11 @@ fn read_revision_text(
             _ => {}
         }
     }
-    (text, field_state.section_field_index())
+    (
+        text,
+        field_state.section_field_index(),
+        field_state.form_field_index(),
+    )
 }
 
 fn is_revision_embedded_body(name: &[u8]) -> bool {
@@ -388,14 +419,15 @@ fn revision_kind_is_current(kind: RevisionKind) -> bool {
 }
 
 #[derive(Default)]
-struct RevisionSectionCursor {
-    field_index: usize,
+struct RevisionFieldCursor {
+    section_field_index: usize,
+    form_field_index: usize,
     complex_depth: usize,
     complex_instruction: String,
     complex_phase: Option<RevisionComplexFieldPhase>,
 }
 
-impl RevisionSectionCursor {
+impl RevisionFieldCursor {
     fn apply_start(&mut self, r: &mut Xml<'_>, e: &BytesStart<'_>) -> bool {
         match local(e.name().as_ref()) {
             b"fldSimple" => self.apply_simple_field(e),
@@ -428,7 +460,10 @@ impl RevisionSectionCursor {
             return false;
         };
         if is_section_field_instruction(&instruction) {
-            self.field_index += 1;
+            self.section_field_index += 1;
+        }
+        if legacy_form_field_syntax(&instruction).is_some() {
+            self.form_field_index += 1;
         }
         false
     }
@@ -453,7 +488,10 @@ impl RevisionSectionCursor {
                     self.complex_depth -= 1;
                     if self.complex_depth == 0 {
                         if is_section_field_instruction(&self.complex_instruction) {
-                            self.field_index += 1;
+                            self.section_field_index += 1;
+                        }
+                        if legacy_form_field_syntax(&self.complex_instruction).is_some() {
+                            self.form_field_index += 1;
                         }
                         self.complex_instruction.clear();
                         self.complex_phase = None;

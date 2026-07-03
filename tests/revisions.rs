@@ -248,6 +248,23 @@ fn section_field_revision_docx() -> Vec<u8> {
     ])
 }
 
+fn legacy_form_field_revision_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" FORMDROPDOWN "><w:ffData><w:ddList><w:result w:val="1"/><w:listEntry w:val="Direct A"/><w:listEntry w:val="Direct B"/></w:ddList></w:ffData><w:r><w:t>stale direct option</w:t></w:r></w:fldSimple></w:p><w:p><w:ins w:id="48" w:author="Alice"><w:fldSimple w:instr=" FORMDROPDOWN "><w:ffData><w:ddList><w:result w:val="1"/><w:listEntry w:val="Insert A"/><w:listEntry w:val="Insert B"/></w:ddList></w:ffData><w:r><w:t>stale insert option</w:t></w:r></w:fldSimple><w:r><w:t> added</w:t></w:r></w:ins></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn document_bookmark_formula_field_revision_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -723,6 +740,16 @@ fn docx_revision_text_uses_computed_section_field_text() {
     assert_eq!(revisions.len(), 1);
     assert_eq!(revisions[0].kind, RevisionKind::Insertion);
     assert_eq!(revisions[0].text, "2 added");
+}
+
+#[test]
+fn docx_revision_text_uses_legacy_form_dropdown_field_text() {
+    let doc = Document::open(&legacy_form_field_revision_docx()).expect("fixture opens");
+    let revisions = doc.revisions();
+
+    assert_eq!(revisions.len(), 1);
+    assert_eq!(revisions[0].kind, RevisionKind::Insertion);
+    assert_eq!(revisions[0].text, "Insert B added");
 }
 
 #[test]
