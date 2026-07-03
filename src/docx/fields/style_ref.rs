@@ -77,12 +77,14 @@ pub(crate) fn style_ref_context(
     let core_properties = CoreProperties::default();
     let empty_properties = HashMap::new();
     let note_refs = NoteRefContext::empty();
+    let sections = SectionContext::empty();
     style_ref_context_with_properties(
         xml,
         styles,
         numbering,
         document_bookmarks,
         &note_refs,
+        &sections,
         FieldDocumentProperties {
             core: &core_properties,
             custom: &empty_properties,
@@ -100,6 +102,7 @@ pub(crate) fn style_ref_context_with_properties(
     numbering: &Numbering,
     document_bookmarks: &HashMap<String, String>,
     note_refs: &NoteRefContext,
+    sections: &SectionContext,
     properties: FieldDocumentProperties<'_>,
     preserve_legacy_form_cache: bool,
 ) -> StyleRefContext {
@@ -114,6 +117,7 @@ pub(crate) fn style_ref_context_with_properties(
     let mut field_bookmarks = HashMap::new();
     let mut form_field_index = 0usize;
     let mut ref_field_index = 0usize;
+    let mut section_field_index = 0usize;
     let mut next_order = 0usize;
     let mut xml_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
@@ -149,6 +153,7 @@ pub(crate) fn style_ref_context_with_properties(
                             &mut next_order,
                             document_bookmarks,
                             note_refs,
+                            sections,
                             &mut sequence_counters,
                             &mut autonum_counter,
                             &mut listnum_counter,
@@ -156,6 +161,7 @@ pub(crate) fn style_ref_context_with_properties(
                             &legacy_forms,
                             &mut form_field_index,
                             &mut ref_field_index,
+                            &mut section_field_index,
                             properties,
                         );
                         consumed_element = true;
@@ -201,6 +207,7 @@ fn read_style_ref_paragraph(
     next_order: &mut usize,
     document_bookmarks: &HashMap<String, String>,
     note_refs: &NoteRefContext,
+    sections: &SectionContext,
     sequence_counters: &mut HashMap<String, i64>,
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
@@ -208,6 +215,7 @@ fn read_style_ref_paragraph(
     legacy_forms: &LegacyFormContext,
     form_field_index: &mut usize,
     ref_field_index: &mut usize,
+    section_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
 ) {
     let mut style_id = None;
@@ -263,6 +271,7 @@ fn read_style_ref_paragraph(
                                 paragraph_text: &mut text,
                                 document_bookmarks,
                                 note_refs,
+                                sections,
                                 sequence_counters,
                                 autonum_counter,
                                 listnum_counter,
@@ -270,6 +279,7 @@ fn read_style_ref_paragraph(
                                 legacy_forms,
                                 form_field_index,
                                 ref_field_index,
+                                section_field_index,
                                 properties,
                             },
                         );
@@ -306,6 +316,7 @@ fn read_style_ref_paragraph(
                                 &number,
                                 document_bookmarks,
                                 note_refs,
+                                sections,
                                 sequence_counters,
                                 autonum_counter,
                                 listnum_counter,
@@ -313,6 +324,7 @@ fn read_style_ref_paragraph(
                                 legacy_forms,
                                 form_field_index,
                                 ref_field_index,
+                                section_field_index,
                                 properties,
                             ));
                         }
@@ -376,6 +388,7 @@ fn read_style_ref_paragraph(
                                 instruction.as_deref(),
                                 document_bookmarks,
                                 note_refs,
+                                sections,
                                 sequence_counters,
                                 autonum_counter,
                                 listnum_counter,
@@ -383,6 +396,7 @@ fn read_style_ref_paragraph(
                                 legacy_forms,
                                 form_field_index,
                                 ref_field_index,
+                                section_field_index,
                                 properties,
                                 "",
                             ) {
@@ -448,6 +462,7 @@ struct StyleRefRunScan<'a> {
     paragraph_text: &'a mut String,
     document_bookmarks: &'a HashMap<String, String>,
     note_refs: &'a NoteRefContext,
+    sections: &'a SectionContext,
     sequence_counters: &'a mut HashMap<String, i64>,
     autonum_counter: &'a mut i64,
     listnum_counter: &'a mut i64,
@@ -455,6 +470,7 @@ struct StyleRefRunScan<'a> {
     legacy_forms: &'a LegacyFormContext,
     form_field_index: &'a mut usize,
     ref_field_index: &'a mut usize,
+    section_field_index: &'a mut usize,
     properties: FieldDocumentProperties<'a>,
 }
 
@@ -469,6 +485,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
         paragraph_text,
         document_bookmarks,
         note_refs,
+        sections,
         sequence_counters,
         autonum_counter,
         listnum_counter,
@@ -476,6 +493,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
         legacy_forms,
         form_field_index,
         ref_field_index,
+        section_field_index,
         properties,
     } = scan;
     let mut run_style_id = None;
@@ -517,6 +535,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
                             entries,
                             document_bookmarks,
                             note_refs,
+                            sections,
                             sequence_counters,
                             autonum_counter,
                             listnum_counter,
@@ -524,6 +543,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
                             legacy_forms,
                             form_field_index,
                             ref_field_index,
+                            section_field_index,
                             properties,
                         );
                     }
@@ -602,6 +622,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
                             entries,
                             document_bookmarks,
                             note_refs,
+                            sections,
                             sequence_counters,
                             autonum_counter,
                             listnum_counter,
@@ -609,6 +630,7 @@ fn read_style_ref_run(r: &mut Xml<'_>, scan: StyleRefRunScan<'_>) {
                             legacy_forms,
                             form_field_index,
                             ref_field_index,
+                            section_field_index,
                             properties,
                         );
                     }
@@ -683,6 +705,7 @@ fn read_style_ref_simple_field_result(
     paragraph_number: &Option<StyleRefParagraphNumber>,
     document_bookmarks: &HashMap<String, String>,
     note_refs: &NoteRefContext,
+    sections: &SectionContext,
     sequence_counters: &mut HashMap<String, i64>,
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
@@ -690,6 +713,7 @@ fn read_style_ref_simple_field_result(
     legacy_forms: &LegacyFormContext,
     form_field_index: &mut usize,
     ref_field_index: &mut usize,
+    section_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
 ) -> String {
     let mut text = String::new();
@@ -732,6 +756,7 @@ fn read_style_ref_simple_field_result(
                                 paragraph_text: &mut text,
                                 document_bookmarks,
                                 note_refs,
+                                sections,
                                 sequence_counters,
                                 autonum_counter,
                                 listnum_counter,
@@ -739,6 +764,7 @@ fn read_style_ref_simple_field_result(
                                 legacy_forms,
                                 form_field_index,
                                 ref_field_index,
+                                section_field_index,
                                 properties,
                             },
                         );
@@ -764,6 +790,7 @@ fn read_style_ref_simple_field_result(
                             paragraph_number,
                             document_bookmarks,
                             note_refs,
+                            sections,
                             sequence_counters,
                             autonum_counter,
                             listnum_counter,
@@ -771,6 +798,7 @@ fn read_style_ref_simple_field_result(
                             legacy_forms,
                             form_field_index,
                             ref_field_index,
+                            section_field_index,
                             properties,
                         ));
                         consumed_element = true;
@@ -817,6 +845,7 @@ fn read_style_ref_simple_field_result(
                             attr_local(&e, b"instr").as_deref(),
                             document_bookmarks,
                             note_refs,
+                            sections,
                             sequence_counters,
                             autonum_counter,
                             listnum_counter,
@@ -824,6 +853,7 @@ fn read_style_ref_simple_field_result(
                             legacy_forms,
                             form_field_index,
                             ref_field_index,
+                            section_field_index,
                             properties,
                             "",
                         ) {
@@ -863,6 +893,7 @@ fn read_style_ref_simple_field_result(
         instruction,
         document_bookmarks,
         note_refs,
+        sections,
         sequence_counters,
         autonum_counter,
         listnum_counter,
@@ -870,6 +901,7 @@ fn read_style_ref_simple_field_result(
         legacy_forms,
         form_field_index,
         ref_field_index,
+        section_field_index,
         properties,
         &cached_text,
     ) {
@@ -965,6 +997,7 @@ fn computed_style_ref_source_field_result(
     instruction: Option<&str>,
     document_bookmarks: &HashMap<String, String>,
     note_refs: &NoteRefContext,
+    sections: &SectionContext,
     sequence_counters: &mut HashMap<String, i64>,
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
@@ -972,6 +1005,7 @@ fn computed_style_ref_source_field_result(
     legacy_forms: &LegacyFormContext,
     form_field_index: &mut usize,
     ref_field_index: &mut usize,
+    section_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
     current_result: &str,
 ) -> Option<String> {
@@ -990,6 +1024,13 @@ fn computed_style_ref_source_field_result(
             let index = *form_field_index;
             *form_field_index += 1;
             return computed_legacy_form_result(&instruction, current_result, legacy_forms, index);
+        }
+        FieldKind::DocumentStructure(kind) if kind == "SECTION" || kind == "SECTIONPAGES" => {
+            if is_section_field_instruction(&instruction) {
+                let position = sections.field_position(*section_field_index);
+                *section_field_index += 1;
+                return computed_section_result(&instruction, position);
+            }
         }
         _ => {}
     }
@@ -1218,6 +1259,7 @@ fn apply_style_ref_scan_fld_char(
     entries: &mut Vec<StyleRefEntry>,
     document_bookmarks: &HashMap<String, String>,
     note_refs: &NoteRefContext,
+    sections: &SectionContext,
     sequence_counters: &mut HashMap<String, i64>,
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
@@ -1225,6 +1267,7 @@ fn apply_style_ref_scan_fld_char(
     legacy_forms: &LegacyFormContext,
     form_field_index: &mut usize,
     ref_field_index: &mut usize,
+    section_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
 ) {
     match field_char_type(e).as_deref() {
@@ -1255,6 +1298,7 @@ fn apply_style_ref_scan_fld_char(
                         Some(&field.instruction),
                         document_bookmarks,
                         note_refs,
+                        sections,
                         sequence_counters,
                         autonum_counter,
                         listnum_counter,
@@ -1262,6 +1306,7 @@ fn apply_style_ref_scan_fld_char(
                         legacy_forms,
                         form_field_index,
                         ref_field_index,
+                        section_field_index,
                         properties,
                         &current_result,
                     )

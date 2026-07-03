@@ -161,6 +161,7 @@ pub(crate) fn parse(
         numbering,
         &bookmarks,
         &note_refs,
+        &sections,
         properties,
         preserve_legacy_form_cache,
     );
