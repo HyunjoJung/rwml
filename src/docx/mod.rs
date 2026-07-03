@@ -327,6 +327,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         &doc_xml,
         &ref_targets,
         &note_ref_context,
+        &section_context,
         field_properties,
         preserve_legacy_form_cache,
     );
@@ -935,6 +936,7 @@ fn read_hf_parts(
             &xml,
             &ref_targets,
             &note_ref_context,
+            &section_context,
             field_properties,
             preserve_legacy_form_cache,
         );
@@ -1192,6 +1194,7 @@ fn read_notes(
         &xml,
         &ref_targets,
         &note_ref_context,
+        &section_context,
         field_properties,
         preserve_legacy_form_cache,
     );

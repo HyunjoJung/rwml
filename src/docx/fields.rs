@@ -170,6 +170,7 @@ pub(crate) fn parse(
         xml,
         &bookmarks,
         &note_refs,
+        &sections,
         properties,
         preserve_legacy_form_cache,
     );
