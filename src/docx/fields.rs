@@ -1316,6 +1316,21 @@ impl<'a> ContextlessFieldState<'a> {
         self.form_field_index
     }
 
+    pub(crate) fn computed_legacy_text_form_current_result(
+        &mut self,
+        instruction: &str,
+        current_result: &str,
+    ) -> Option<String> {
+        let legacy_forms = self.legacy_forms?;
+        let spec = legacy_form_field_syntax(instruction)?;
+        if spec.kind != "FORMTEXT" {
+            return None;
+        }
+        let field_index = self.form_field_index;
+        self.form_field_index += 1;
+        computed_legacy_form_result(instruction, current_result, legacy_forms, field_index)
+    }
+
     pub(crate) fn clear(&mut self) {
         self.field_bookmarks.clear();
         self.sequence_counters.clear();

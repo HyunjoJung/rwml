@@ -1547,14 +1547,29 @@ fn read_floating_shapes(
                         shape_field_cursor.end_element(b"fldSimple", simple_field_depth);
                         body_depth = body_depth.saturating_sub(1);
                         continue;
-                    } else if let Some(text) =
-                        computed_floating_anchor_simple_field_text(&e, &mut anchor_field_state)
-                    {
-                        append_floating_anchor_text(&mut current_body_block_text, &text);
-                        skip_subtree(&mut r);
-                        shape_field_cursor.end_element(b"fldSimple", simple_field_depth);
-                        body_depth = body_depth.saturating_sub(1);
-                        continue;
+                    } else if let Some(instruction) = attr_local_trimmed(&e, b"instr") {
+                        if is_text_form_field_instruction(&instruction) {
+                            let text = computed_floating_anchor_simple_text_form_field_text(
+                                &mut r,
+                                &instruction,
+                                &mut anchor_field_state,
+                            );
+                            if let Some(text) = text {
+                                append_floating_anchor_text(&mut current_body_block_text, &text);
+                            }
+                            shape_field_cursor.end_element(b"fldSimple", simple_field_depth);
+                            body_depth = body_depth.saturating_sub(1);
+                            continue;
+                        } else if let Some(text) = computed_floating_anchor_field_text(
+                            &instruction,
+                            &mut anchor_field_state,
+                        ) {
+                            append_floating_anchor_text(&mut current_body_block_text, &text);
+                            skip_subtree(&mut r);
+                            shape_field_cursor.end_element(b"fldSimple", simple_field_depth);
+                            body_depth = body_depth.saturating_sub(1);
+                            continue;
+                        }
                     }
                 }
                 if in_body && current_body_block_index.is_some() && name == b"fldChar" {
@@ -1787,12 +1802,69 @@ fn append_floating_anchor_empty(
     }
 }
 
+fn append_floating_anchor_empty_marker(out: &mut String, e: &BytesStart<'_>, name: &[u8]) {
+    if name == b"sym" {
+        append_floating_anchor_symbol(out, e);
+    } else if let Some(marker) = inline_marker_text(e) {
+        append_floating_anchor_text(out, marker);
+    }
+}
+
 fn computed_floating_anchor_simple_field_text(
     e: &BytesStart<'_>,
     field_state: &mut fields::ContextlessFieldState<'_>,
 ) -> Option<String> {
     let instruction = attr_local_trimmed(e, b"instr")?;
     computed_floating_anchor_field_text(&instruction, field_state)
+}
+
+fn computed_floating_anchor_simple_text_form_field_text(
+    r: &mut Reader<&[u8]>,
+    instruction: &str,
+    field_state: &mut fields::ContextlessFieldState<'_>,
+) -> Option<String> {
+    let current_result = read_floating_anchor_simple_field_current_result(r);
+    field_state
+        .computed_legacy_text_form_current_result(instruction, &current_result)
+        .or_else(|| (!current_result.is_empty()).then_some(current_result))
+}
+
+fn read_floating_anchor_simple_field_current_result(r: &mut Reader<&[u8]>) -> String {
+    let mut result = String::new();
+    let mut depth = 1usize;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if name == b"t" {
+                    result.push_str(&read_text(r));
+                } else if name == b"sym" {
+                    append_floating_anchor_symbol(&mut result, &e);
+                    skip_subtree(r);
+                } else if let Some(marker) = inline_marker_text(&e) {
+                    result.push_str(marker);
+                    skip_subtree(r);
+                } else {
+                    depth += 1;
+                }
+            }
+            Ok(Event::Empty(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                append_floating_anchor_empty_marker(&mut result, &e, name);
+            }
+            Ok(Event::End(_)) => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    break;
+                }
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    result
 }
 
 fn computed_floating_anchor_field_text(
