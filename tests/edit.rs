@@ -678,6 +678,31 @@ fn notes_with_revision_number_field_anchor_text_docx() -> Vec<u8> {
     ])
 }
 
+fn notes_with_section_field_anchor_text_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:fldSimple w:instr=" SECTION "><w:r><w:t>stale prior section</w:t></w:r></w:fldSimple></w:p><w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/></w:sectPr></w:pPr></w:p><w:p><w:r><w:t>Second section </w:t></w:r><w:fldSimple w:instr=" SECTION "><w:r><w:t>stale anchor section</w:t></w:r></w:fldSimple><w:r><w:t> before </w:t></w:r><w:r><w:footnoteReference w:id="7"/></w:r><w:r><w:t>foot after</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="7"><w:p><w:r><w:t>Foot body</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+    ])
+}
+
 fn notes_with_document_bookmark_formula_field_anchor_text_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -3709,6 +3734,20 @@ fn docx_note_reference_anchors_use_supported_revision_number_field_text() {
     assert_eq!(
         notes[0].anchor.as_ref().map(|a| a.text.as_str()),
         Some("17 before foot after")
+    );
+}
+
+#[test]
+fn docx_note_reference_anchors_use_computed_section_field_text() {
+    let doc = Document::open(&notes_with_section_field_anchor_text_docx()).expect("fixture opens");
+
+    let notes = doc.notes();
+    assert_eq!(notes.len(), 1);
+    assert_eq!(notes[0].id, "7");
+    assert_eq!(notes[0].kind, NoteKind::Footnote);
+    assert_eq!(
+        notes[0].anchor.as_ref().map(|a| a.text.as_str()),
+        Some("Second section 2 before foot after")
     );
 }
 

@@ -420,6 +420,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         field_properties,
         &ref_targets,
         &note_ref_context,
+        &section_context,
         &toc_entries,
         &bookmark_names,
     );
@@ -3904,6 +3905,7 @@ fn attach_note_reference_anchors(
     properties: fields::FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
     note_refs: &fields::NoteRefContext,
+    sections: &fields::SectionContext,
     toc_entries: &[fields::TocEntry],
     bookmark_names: &HashSet<String>,
 ) {
@@ -3913,6 +3915,7 @@ fn attach_note_reference_anchors(
         properties,
         document_bookmarks,
         note_refs,
+        sections,
         toc_entries,
         bookmark_names,
     );
@@ -3922,6 +3925,7 @@ fn attach_note_reference_anchors(
         properties,
         document_bookmarks,
         note_refs,
+        sections,
         toc_entries,
         bookmark_names,
     );

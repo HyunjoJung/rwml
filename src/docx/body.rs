@@ -1022,6 +1022,7 @@ pub(crate) fn scan_note_ref_anchors(
     properties: FieldDocumentProperties<'_>,
     document_bookmarks: &HashMap<String, String>,
     note_refs: &super::fields::NoteRefContext,
+    sections: &super::fields::SectionContext,
     toc_entries: &[TocEntry],
     bookmark_names: &HashSet<String>,
 ) -> HashMap<String, String> {
@@ -1039,7 +1040,8 @@ pub(crate) fn scan_note_ref_anchors(
         document_bookmarks,
         note_refs,
     )
-    .with_toc_context(toc_entries, bookmark_names);
+    .with_toc_context(toc_entries, bookmark_names)
+    .with_section_context(sections);
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => {
