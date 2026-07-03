@@ -246,6 +246,7 @@ pub(crate) fn parse_anchors(
     document_bookmarks: &HashMap<String, String>,
     note_refs: &NoteRefContext,
     sections: &SectionContext,
+    style_refs: &StyleRefContext,
     legacy_forms: &LegacyFormContext,
     toc_entries: &[TocEntry],
     bookmark_names: &HashSet<String>,
@@ -261,6 +262,7 @@ pub(crate) fn parse_anchors(
     )
     .with_toc_context(toc_entries, bookmark_names)
     .with_section_context(sections)
+    .with_style_ref_context_from(style_refs, 0)
     .with_legacy_form_context_from(legacy_forms, 0);
     let mut old_content_depth = 0usize;
     let mut embedded_body_depth = 0usize;

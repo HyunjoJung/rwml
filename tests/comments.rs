@@ -1114,6 +1114,46 @@ fn docx_comment_anchor_uses_text_form_current_field_text() {
 }
 
 #[test]
+fn docx_comment_anchor_uses_style_ref_field_text() {
+    let docx = docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="comments.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Anchor Heading</w:t></w:r></w:p><w:p><w:commentRangeStart w:id="22"/><w:fldSimple w:instr=" STYLEREF &quot;heading 1&quot; "><w:r><w:t>stale anchor style ref</w:t></w:r></w:fldSimple><w:r><w:t> Anchor</w:t></w:r><w:commentRangeEnd w:id="22"/><w:r><w:commentReference w:id="22"/></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/comments.xml",
+            r#"<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:comment w:id="22" w:author="Reviewer"><w:p><w:r><w:t>Style note</w:t></w:r></w:p></w:comment></w:comments>"#,
+        ),
+    ]);
+    let doc = Document::open(&docx).expect("fixture opens");
+    let comments = doc.comments();
+
+    assert_eq!(doc.main_text(), "Anchor Heading\nAnchor Heading Anchor");
+    assert_eq!(comments.len(), 1);
+    assert_eq!(comments[0].text, "Style note");
+    assert_eq!(
+        comments[0].anchor.as_ref().map(|a| a.text.as_str()),
+        Some("Anchor Heading Anchor")
+    );
+}
+
+#[test]
 fn docx_comments_use_computed_section_field_text() {
     let docx = docx_fixture(&[
         (
