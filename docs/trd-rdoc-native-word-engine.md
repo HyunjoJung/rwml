@@ -1480,13 +1480,16 @@ Shipped targets (`fuzz/fuzz_targets/`):
 
 - `parse` — `.doc` and `.docx` open over arbitrary bytes (covers OPC package
   parse and XML tree parse on the open path);
+- `edit` — `.docx` preservation edit surface over arbitrary bytes opened through
+  `Document::open`, running a short scripted sequence (`replace_body_text`,
+  `set_field_result`, `fill_template_fields`, `add_image_png`, then `save`) so
+  XmlTree promotion/serialize and transactional rollback paths are exercised;
 - `render` — render from arbitrary bytes behind the `render` feature.
 
-Planned: one edit-surface target that runs a short scripted edit sequence
-(for example `replace_body_text` + `set_field_result` + `add_image_png`) over
-arbitrary input so XmlTree promotion/serialize and transactional rollback are
-fuzzed directly; the per-method target list is intentionally collapsed into
-that single scripted target rather than ~30 separate bins.
+The `edit` target is exercised by the fuzz CI workflow alongside `parse` and
+`render`. Local fuzz runs require the nightly Rust toolchain and `cargo-fuzz`;
+stable local verification is limited to `cargo check --manifest-path
+fuzz/Cargo.toml`.
 
 Fuzz findings should become regression tests when practical.
 

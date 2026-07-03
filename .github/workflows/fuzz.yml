@@ -2,7 +2,7 @@ name: fuzz
 
 # Manual-only (weekly schedule disabled to avoid consuming GitHub Actions minutes the repo
 # budget does not cover). Run on demand from the Actions tab; restore the schedule when budget
-# is available. Local fuzzing: `cargo +nightly fuzz run parse` / `... render`.
+# is available. Local fuzzing: `cargo +nightly fuzz run parse` / `... edit` / `... render`.
 on:
   workflow_dispatch:
 
@@ -21,5 +21,7 @@ jobs:
         run: cargo +nightly fuzz build
       - name: Fuzz the parser/writer (smoke — extend in OSS-Fuzz / longer jobs)
         run: cargo +nightly fuzz run parse -- -max_total_time=120 -rss_limit_mb=2048
+      - name: Fuzz the edit surface (smoke)
+        run: cargo +nightly fuzz run edit -- -max_total_time=120 -rss_limit_mb=2048
       - name: Fuzz the renderer (smoke)
         run: cargo +nightly fuzz run render -- -max_total_time=120 -rss_limit_mb=2048
