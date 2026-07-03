@@ -284,17 +284,23 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         extended: document_properties.extended,
         file_size_bytes: document_properties.file_size_bytes,
     };
-    let ref_targets =
+    let raw_ref_targets =
         fields::ref_targets_with_properties(&doc_xml, field_properties, preserve_legacy_form_cache);
     let ref_position_context = fields::ref_position_context(&doc_xml, &numbering);
     let ref_number_context = fields::ref_number_context(&doc_xml, &numbering);
-    let page_ref_context = fields::page_ref_context_with_properties(
+    let note_ref_context = fields::note_ref_context_with_properties(
         &doc_xml,
-        &ref_targets,
+        &raw_ref_targets,
         field_properties,
         preserve_legacy_form_cache,
     );
-    let note_ref_context = fields::note_ref_context_with_properties(
+    let ref_targets = fields::ref_targets_with_note_context(
+        &doc_xml,
+        field_properties,
+        preserve_legacy_form_cache,
+        &note_ref_context,
+    );
+    let page_ref_context = fields::page_ref_context_with_properties(
         &doc_xml,
         &ref_targets,
         field_properties,
@@ -889,16 +895,22 @@ fn read_hf_parts(
             extended: properties.extended,
             file_size_bytes: properties.file_size_bytes,
         };
-        let ref_targets =
+        let raw_ref_targets =
             fields::ref_targets_with_properties(&xml, field_properties, preserve_legacy_form_cache);
         let ref_position_context = fields::ref_position_context(&xml, numbering);
         let ref_number_context = fields::ref_number_context(&xml, numbering);
         let page_ref_context = fields::PageRefContext::empty();
         let note_ref_context = fields::note_ref_context_with_properties(
             &xml,
-            &ref_targets,
+            &raw_ref_targets,
             field_properties,
             preserve_legacy_form_cache,
+        );
+        let ref_targets = fields::ref_targets_with_note_context(
+            &xml,
+            field_properties,
+            preserve_legacy_form_cache,
+            &note_ref_context,
         );
         let section_context = fields::section_context_with_properties(
             &xml,
@@ -1138,16 +1150,22 @@ fn read_notes(
         extended: properties.extended,
         file_size_bytes: properties.file_size_bytes,
     };
-    let ref_targets =
+    let raw_ref_targets =
         fields::ref_targets_with_properties(&xml, field_properties, preserve_legacy_form_cache);
     let ref_position_context = fields::ref_position_context(&xml, numbering);
     let ref_number_context = fields::ref_number_context(&xml, numbering);
     let page_ref_context = fields::PageRefContext::empty();
     let note_ref_context = fields::note_ref_context_with_properties(
         &xml,
-        &ref_targets,
+        &raw_ref_targets,
         field_properties,
         preserve_legacy_form_cache,
+    );
+    let ref_targets = fields::ref_targets_with_note_context(
+        &xml,
+        field_properties,
+        preserve_legacy_form_cache,
+        &note_ref_context,
     );
     let section_context = fields::section_context_with_properties(
         &xml,
@@ -3978,13 +3996,19 @@ pub(crate) fn main_text_with_revision_view(state: &DocxState, view: crate::Revis
         .part("word/styles.xml")
         .map(|xml| styles::parse(&String::from_utf8_lossy(&xml)))
         .unwrap_or_default();
-    let document_bookmarks =
+    let raw_document_bookmarks =
         fields::ref_targets_with_properties(&doc_xml, properties, preserve_legacy_form_cache);
     let note_ref_context = fields::note_ref_context_with_properties(
         &doc_xml,
-        &document_bookmarks,
+        &raw_document_bookmarks,
         properties,
         preserve_legacy_form_cache,
+    );
+    let document_bookmarks = fields::ref_targets_with_note_context(
+        &doc_xml,
+        properties,
+        preserve_legacy_form_cache,
+        &note_ref_context,
     );
     let toc_entries = fields::toc_entries_with_properties(
         &doc_xml,

@@ -21,6 +21,29 @@ pub(crate) fn ref_targets_with_properties(
     properties: FieldDocumentProperties<'_>,
     preserve_legacy_form_cache: bool,
 ) -> HashMap<String, String> {
+    ref_targets_with_optional_note_context(xml, properties, preserve_legacy_form_cache, None)
+}
+
+pub(crate) fn ref_targets_with_note_context(
+    xml: &str,
+    properties: FieldDocumentProperties<'_>,
+    preserve_legacy_form_cache: bool,
+    note_refs: &NoteRefContext,
+) -> HashMap<String, String> {
+    ref_targets_with_optional_note_context(
+        xml,
+        properties,
+        preserve_legacy_form_cache,
+        Some(note_refs),
+    )
+}
+
+fn ref_targets_with_optional_note_context(
+    xml: &str,
+    properties: FieldDocumentProperties<'_>,
+    preserve_legacy_form_cache: bool,
+    note_refs: Option<&NoteRefContext>,
+) -> HashMap<String, String> {
     let legacy_forms = legacy_form_context(xml, preserve_legacy_form_cache);
     let mut r = Reader::from_str(xml);
     let mut active: Vec<(String, String)> = Vec::new();
@@ -65,6 +88,7 @@ pub(crate) fn ref_targets_with_properties(
                             &legacy_forms,
                             &mut form_field_index,
                             properties,
+                            note_refs,
                             &mut r,
                             &e,
                         );
@@ -82,6 +106,7 @@ pub(crate) fn ref_targets_with_properties(
                             &legacy_forms,
                             &mut form_field_index,
                             properties,
+                            note_refs,
                             &mut r,
                             &e,
                         );
@@ -104,6 +129,7 @@ pub(crate) fn ref_targets_with_properties(
                             &legacy_forms,
                             &mut form_field_index,
                             properties,
+                            note_refs,
                             &field.result,
                         )
                         .unwrap_or(field.result);
@@ -126,6 +152,7 @@ pub(crate) fn ref_targets_with_properties(
                             &legacy_forms,
                             &mut form_field_index,
                             properties,
+                            note_refs,
                             &field.result,
                         );
                         continue;
@@ -143,6 +170,7 @@ pub(crate) fn ref_targets_with_properties(
                             &legacy_forms,
                             &mut form_field_index,
                             properties,
+                            note_refs,
                         );
                     }
                     b"p" => append_ref_target_paragraph_breaks(&active, &mut current, &mut out),
@@ -226,6 +254,7 @@ pub(crate) fn ref_targets_with_properties(
                             &legacy_forms,
                             &mut form_field_index,
                             properties,
+                            note_refs,
                         );
                     }
                     b"fldSimple"
@@ -245,6 +274,7 @@ pub(crate) fn ref_targets_with_properties(
                             &legacy_forms,
                             &mut form_field_index,
                             properties,
+                            note_refs,
                             "",
                         );
                     }
@@ -264,6 +294,7 @@ pub(crate) fn ref_targets_with_properties(
                             &legacy_forms,
                             &mut form_field_index,
                             properties,
+                            note_refs,
                             "",
                         );
                     }
@@ -280,6 +311,7 @@ pub(crate) fn ref_targets_with_properties(
                             &legacy_forms,
                             &mut form_field_index,
                             properties,
+                            note_refs,
                         );
                     }
                     b"tab" => append_ref_target_text(&active, &mut current, &mut out, "\t"),
@@ -334,6 +366,7 @@ fn apply_ref_target_fld_char(
     legacy_forms: &LegacyFormContext,
     form_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
+    note_refs: Option<&NoteRefContext>,
 ) {
     match field_char_type(e).as_deref() {
         Some("begin") => {
@@ -374,6 +407,7 @@ fn apply_ref_target_fld_char(
                 legacy_forms,
                 form_field_index,
                 properties,
+                note_refs,
                 &field.result,
             )
             .unwrap_or(field.result);
@@ -447,6 +481,7 @@ fn append_ref_simple_field_result(
     legacy_forms: &LegacyFormContext,
     form_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
+    note_refs: Option<&NoteRefContext>,
     r: &mut Xml<'_>,
     e: &BytesStart<'_>,
 ) {
@@ -463,6 +498,7 @@ fn append_ref_simple_field_result(
             legacy_forms,
             form_field_index,
             properties,
+            note_refs,
             result,
         )
     });
@@ -477,6 +513,7 @@ fn append_ref_simple_field_result(
         legacy_forms,
         form_field_index,
         properties,
+        note_refs,
         &result,
     )
     .unwrap_or(result);
@@ -495,6 +532,7 @@ fn append_ref_empty_simple_field_result(
     legacy_forms: &LegacyFormContext,
     form_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
+    note_refs: Option<&NoteRefContext>,
 ) {
     let instruction = instruction.unwrap_or_default();
     let excluded = ref_target_excluded_bookmarks(active, current);
@@ -509,6 +547,7 @@ fn append_ref_empty_simple_field_result(
         legacy_forms,
         form_field_index,
         properties,
+        note_refs,
         "",
     )
     .unwrap_or_default();
@@ -526,6 +565,7 @@ fn computed_ref_target_field_result(
     legacy_forms: &LegacyFormContext,
     form_field_index: &mut usize,
     properties: FieldDocumentProperties<'_>,
+    note_refs: Option<&NoteRefContext>,
     current_result: &str,
 ) -> Option<String> {
     let available_bookmarks = ref_target_available_bookmarks(bookmarks, excluded);
@@ -546,6 +586,9 @@ fn computed_ref_target_field_result(
     }
     let bookmarks = ref_target_merged_bookmarks(&available_bookmarks, field_bookmarks);
     computed_ref_target_ref_result(&instruction, &bookmarks)
+        .or_else(|| {
+            note_refs.and_then(|note_refs| computed_note_ref_result(&instruction, note_refs, None))
+        })
         .or_else(|| computed_numbering_result(&instruction, autonum_counter))
         .or_else(|| computed_listnum_result(&instruction, listnum_counter))
         .or_else(|| computed_sequence_result(&instruction, sequence_counters))
