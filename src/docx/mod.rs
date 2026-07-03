@@ -326,6 +326,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         &doc_xml,
         &styles,
         &ref_targets,
+        &note_ref_context,
         field_properties,
         preserve_legacy_form_cache,
     );
@@ -923,6 +924,7 @@ fn read_hf_parts(
             &xml,
             styles,
             &ref_targets,
+            &note_ref_context,
             field_properties,
             preserve_legacy_form_cache,
         );
@@ -1169,6 +1171,7 @@ fn read_notes(
         &xml,
         styles,
         &ref_targets,
+        &note_ref_context,
         field_properties,
         preserve_legacy_form_cache,
     );
@@ -3981,6 +3984,7 @@ pub(crate) fn main_text_with_revision_view(state: &DocxState, view: crate::Revis
         &doc_xml,
         &styles,
         &document_bookmarks,
+        &note_ref_context,
         properties,
         preserve_legacy_form_cache,
     );

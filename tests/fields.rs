@@ -6028,6 +6028,35 @@ fn toc_heading_ref_field_source_docx() -> Vec<u8> {
     ])
 }
 
+fn toc_heading_note_ref_field_source_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="1" w:name="FootOne"/><w:r><w:footnoteReference w:id="1"/></w:r><w:bookmarkEnd w:id="1"/></w:p><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Section </w:t></w:r><w:fldSimple w:instr=" NOTEREF FootOne "><w:r><w:t>stale heading note</w:t></w:r></w:fldSimple><w:r><w:t> Review</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" TOC \o &quot;1-1&quot; "><w:r><w:t>stale note-ref toc</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:footnote><w:footnote w:id="1"><w:p><w:r><w:t>First footnote.</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+    ])
+}
+
 fn toc_heading_document_info_field_source_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -18557,6 +18586,37 @@ fn docx_toc_heading_source_text_uses_computed_ref_field_results() {
     assert!(
         main_text.contains("Section Live Chapter") && !main_text.contains("stale ref"),
         "TOC source text should use the computed REF bookmark text: {main_text:?}"
+    );
+}
+
+#[test]
+fn docx_toc_heading_source_text_uses_computed_note_ref_field_results() {
+    let doc = Document::open(&toc_heading_note_ref_field_source_docx()).expect("fixture opens");
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 2);
+    assert_eq!(fields[0].kind, FieldKind::NoteRef);
+    assert_eq!(fields[0].instruction, "NOTEREF FootOne");
+    assert_eq!(fields[0].result, "stale heading note");
+    assert_eq!(fields[0].computed_result.as_deref(), Some("1"));
+    assert_eq!(fields[1].kind, FieldKind::Toc);
+    assert_eq!(fields[1].instruction, "TOC \\o \"1-1\"");
+    assert_eq!(fields[1].result, "stale note-ref toc");
+    assert_eq!(
+        fields[1].computed_result.as_deref(),
+        Some("Section 1 Review")
+    );
+
+    let report = doc.report();
+    assert!(report.features.unsupported_field_kinds.is_empty());
+    assert!(report.features.unsupported_field_reasons.is_empty());
+
+    let main_text = doc.main_text();
+    assert!(
+        main_text.contains("Section 1 Review")
+            && !main_text.contains("stale heading note")
+            && !main_text.contains("stale note-ref toc"),
+        "TOC source text should use the computed NOTEREF note number: {main_text:?}"
     );
 }
 

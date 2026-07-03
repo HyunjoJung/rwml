@@ -33,10 +33,12 @@ pub(crate) fn toc_entries(
 ) -> Vec<TocEntry> {
     let core_properties = CoreProperties::default();
     let empty_properties = HashMap::new();
+    let note_refs = NoteRefContext::empty();
     toc_entries_with_properties(
         xml,
         styles,
         ref_targets,
+        &note_refs,
         FieldDocumentProperties {
             core: &core_properties,
             custom: &empty_properties,
@@ -52,6 +54,7 @@ pub(crate) fn toc_entries_with_properties(
     xml: &str,
     styles: &Styles,
     ref_targets: &HashMap<String, String>,
+    note_refs: &NoteRefContext,
     properties: FieldDocumentProperties<'_>,
     preserve_legacy_form_cache: bool,
 ) -> Vec<TocEntry> {
@@ -98,6 +101,7 @@ pub(crate) fn toc_entries_with_properties(
                             &mut field_bookmarks,
                             &mut entries,
                             ref_targets,
+                            note_refs,
                             properties,
                             &legacy_forms,
                             &mut form_field_index,
@@ -157,6 +161,7 @@ fn read_toc_paragraph(
     field_bookmarks: &mut HashMap<String, String>,
     entries: &mut Vec<TocEntry>,
     ref_targets: &HashMap<String, String>,
+    note_refs: &NoteRefContext,
     properties: FieldDocumentProperties<'_>,
     legacy_forms: &LegacyFormContext,
     form_field_index: &mut usize,
@@ -222,6 +227,7 @@ fn read_toc_paragraph(
                                 field_bookmarks,
                                 entries,
                                 ref_targets,
+                                note_refs,
                                 properties,
                                 legacy_forms,
                                 form_field_index,
@@ -243,6 +249,7 @@ fn read_toc_paragraph(
                             &mut text,
                             entries,
                             ref_targets,
+                            note_refs,
                             properties,
                             legacy_forms,
                             form_field_index,
@@ -307,6 +314,7 @@ fn read_toc_paragraph(
                             if let Some(computed) = computed_toc_source_field_result(
                                 instruction.as_deref(),
                                 ref_targets,
+                                note_refs,
                                 autonum_counter,
                                 listnum_counter,
                                 field_bookmarks,
@@ -333,6 +341,7 @@ fn read_toc_paragraph(
                             &mut text,
                             entries,
                             ref_targets,
+                            note_refs,
                             properties,
                             legacy_forms,
                             form_field_index,
@@ -431,6 +440,7 @@ fn read_toc_simple_field_result(
     field_bookmarks: &mut HashMap<String, String>,
     entries: &mut Vec<TocEntry>,
     ref_targets: &HashMap<String, String>,
+    note_refs: &NoteRefContext,
     properties: FieldDocumentProperties<'_>,
     legacy_forms: &LegacyFormContext,
     form_field_index: &mut usize,
@@ -490,6 +500,7 @@ fn read_toc_simple_field_result(
                                 field_bookmarks,
                                 entries,
                                 ref_targets,
+                                note_refs,
                                 properties,
                                 legacy_forms,
                                 form_field_index,
@@ -511,6 +522,7 @@ fn read_toc_simple_field_result(
                             &mut text,
                             entries,
                             ref_targets,
+                            note_refs,
                             properties,
                             legacy_forms,
                             form_field_index,
@@ -583,6 +595,7 @@ fn read_toc_simple_field_result(
                             if let Some(computed) = computed_toc_source_field_result(
                                 nested_instruction.as_deref(),
                                 ref_targets,
+                                note_refs,
                                 autonum_counter,
                                 listnum_counter,
                                 field_bookmarks,
@@ -609,6 +622,7 @@ fn read_toc_simple_field_result(
                             &mut text,
                             entries,
                             ref_targets,
+                            note_refs,
                             properties,
                             legacy_forms,
                             form_field_index,
@@ -659,6 +673,7 @@ fn read_toc_simple_field_result(
     computed_toc_source_field_result(
         instruction,
         ref_targets,
+        note_refs,
         autonum_counter,
         listnum_counter,
         field_bookmarks,
@@ -709,6 +724,7 @@ fn apply_toc_fld_char(
     text: &mut String,
     entries: &mut Vec<TocEntry>,
     ref_targets: &HashMap<String, String>,
+    note_refs: &NoteRefContext,
     properties: FieldDocumentProperties<'_>,
     legacy_forms: &LegacyFormContext,
     form_field_index: &mut usize,
@@ -751,6 +767,7 @@ fn apply_toc_fld_char(
         computed_source = computed_toc_source_field_result(
             Some(&field.instruction),
             ref_targets,
+            note_refs,
             autonum_counter,
             listnum_counter,
             field_bookmarks,
@@ -840,6 +857,7 @@ fn push_computed_toc_sequence_result(
 fn computed_toc_source_field_result(
     instruction: Option<&str>,
     ref_targets: &HashMap<String, String>,
+    note_refs: &NoteRefContext,
     autonum_counter: &mut i64,
     listnum_counter: &mut i64,
     field_bookmarks: &mut HashMap<String, String>,
@@ -869,6 +887,7 @@ fn computed_toc_source_field_result(
         _ => {}
     }
     computed_toc_source_ref_result(&instruction, ref_targets, field_bookmarks)
+        .or_else(|| computed_note_ref_result(&instruction, note_refs, None))
         .or_else(|| computed_numbering_result(&instruction, autonum_counter))
         .or_else(|| computed_listnum_result(&instruction, listnum_counter))
         .or_else(|| {
