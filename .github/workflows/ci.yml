@@ -1,0 +1,62 @@
+name: CI
+
+# Runs the full local gate (fmt/clippy/test/doc + corpus hygiene) on every push to
+# main and every pull request; public repositories get unlimited GitHub Actions
+# minutes, so the badge reflects real per-commit status. Still dispatchable manually.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  check:
+    name: fmt · clippy · test · doc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Install system libraries (fontconfig for the render feature)
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev pkg-config
+      - name: Public hygiene audit
+        run: python3 scripts/public_hygiene_audit.py
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy (default)
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Clippy (all features)
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Test (default)
+        run: cargo test --all-targets
+      - name: Test (no default features)
+        run: cargo test --no-default-features
+      - name: Test (render)
+        run: cargo test --all-targets --features render
+      - name: Doctests
+        run: cargo test --doc --all-features
+      - name: Doc
+        run: cargo doc --no-deps --all-features
+
+  msrv:
+    name: MSRV 1.85 · render 1.92
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system libraries (fontconfig for the render feature)
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev pkg-config
+      - uses: dtolnay/rust-toolchain@1.85.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Build (no default features, legacy .doc, MSRV 1.85)
+        run: cargo build --no-default-features --locked
+      - name: Build (default features, MSRV 1.85)
+        run: cargo build --locked
+      - uses: dtolnay/rust-toolchain@1.92.0
+      - name: Build (render feature, MSRV 1.92)
+        run: cargo build --features render --locked

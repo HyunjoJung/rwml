@@ -1,0 +1,75 @@
+name: Release
+
+# Publishes to crates.io when a `v*` tag is pushed. Requires the
+# CARGO_REGISTRY_TOKEN repository secret.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  publish:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install system libraries (fontconfig for the render feature)
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev pkg-config
+
+      - name: Verify the crate builds, tests, and packages
+        run: |
+          python3 scripts/public_hygiene_audit.py
+          cargo fmt --all -- --check
+          cargo clippy --all-targets -- -D warnings
+          cargo clippy --all-targets --all-features -- -D warnings
+          cargo test --all-targets
+          cargo test --no-default-features
+          cargo test --doc --all-features
+          cargo doc --no-deps --all-features
+          cargo test --all-targets --features render
+          cargo package
+
+      - name: Generate release manifest
+        run: |
+          mkdir -p dist
+          python3 scripts/public_hygiene_audit.py --json > dist/public-hygiene.json
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$VERSION" = "$GITHUB_REF_NAME" ]; then
+            VERSION="$(python3 -c "import tomllib,pathlib;print(tomllib.loads(pathlib.Path('Cargo.toml').read_text())['package']['version'])")"
+          fi
+          python3 scripts/release_manifest.py \
+            --version "$VERSION" \
+            --git-rev "$GITHUB_SHA" \
+            --release-policy public-release \
+            --hygiene-report dist/public-hygiene.json \
+            --corpus-manifest corpus/public/MANIFEST.tsv \
+            --corpus-manifest corpus/public/RENDER_MANIFEST.tsv \
+            --output dist/rwml-release-manifest.json \
+            target/package/rwml-*.crate
+
+      - name: Upload release manifest artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rwml-release-manifest
+          path: |
+            dist/public-hygiene.json
+            dist/rwml-release-manifest.json
+            target/package/rwml-*.crate
+
+      - name: Publish
+        # Idempotent: skip if this version is already on crates.io so re-tagging or
+        # re-running a release does not fail on an "already uploaded" error.
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 \
+            | python3 -c "import sys,json;print(json.load(sys.stdin)['packages'][0]['version'])")
+          # crates.io requires a User-Agent header (403 without one).
+          if curl -sf -A "rwml-release-ci (github actions)" \
+            "https://crates.io/api/v1/crates/rwml/${version}" >/dev/null 2>&1; then
+            echo "rwml ${version} is already published — skipping."
+          else
+            cargo publish --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
+          fi

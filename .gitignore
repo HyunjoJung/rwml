@@ -1,0 +1,6 @@
+/target
+fuzz/target
+fuzz/Cargo.lock
+__pycache__/
+.pytest_cache/
+*.pdf
