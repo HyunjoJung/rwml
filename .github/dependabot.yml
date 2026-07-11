@@ -5,6 +5,15 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
+    ignore:
+      # quick-xml 0.37+ removes BytesText::unescape, deprecates unescape_value in
+      # favor of whitespace-normalizing normalized_value, and adds Event::GeneralRef
+      # — a breaking migration that touches package-preservation byte-stability and
+      # XXE-safety. Stay on 0.36 until a deliberate, fully-verified upgrade (see #4/#8).
+      # Security advisories still surface (they bypass version-update ignores).
+      - dependency-name: "quick-xml"
+        update-types:
+          ["version-update:semver-minor", "version-update:semver-patch"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
