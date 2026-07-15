@@ -11,7 +11,7 @@ an inline PNG image.
 
 Usage:
     python scripts/gen_public_corpus.py            # writes corpus/public/synthetic/*.docx
-    python scripts/gen_public_corpus.py --check     # also re-open each with python-docx
+    python scripts/gen_public_corpus.py --check     # verifies committed bytes without writing
 
 Output is deterministic (fixed zip member order, no timestamps) so regeneration is a no-op
 in git.
@@ -49,10 +49,10 @@ def _zip(parts: list[tuple[str, bytes]]) -> bytes:
     """Build a deterministic .docx zip from an ordered (name, bytes) list."""
     import io
     buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as z:
         for name, data in parts:
             zi = zipfile.ZipInfo(name)  # fixed default date (1980-01-01), no per-run drift
-            zi.compress_type = zipfile.ZIP_DEFLATED
+            zi.compress_type = zipfile.ZIP_STORED
             z.writestr(zi, data)
     return buf.getvalue()
 
@@ -465,18 +465,43 @@ CORPUS = {
 
 def main() -> int:
     check = "--check" in sys.argv
-    os.makedirs(OUT_DIR, exist_ok=True)
+    status = 0
+    if not check:
+        os.makedirs(OUT_DIR, exist_ok=True)
     for name, fn in CORPUS.items():
         path = os.path.join(OUT_DIR, name)
         data = fn()
-        with open(path, "wb") as f:
-            f.write(data)
-        print(f"wrote {os.path.relpath(path)} ({len(data)} bytes)")
         if check:
-            from docx import Document  # python-docx
-            Document(path)  # raises if structurally invalid
-            print(f"  python-docx OK: {name}")
-    return 0
+            try:
+                with open(path, "rb") as f:
+                    current = f.read()
+            except FileNotFoundError:
+                print(f"missing {os.path.relpath(path)}", file=sys.stderr)
+                status = 1
+                continue
+            if current != data:
+                print(f"stale {os.path.relpath(path)}", file=sys.stderr)
+                status = 1
+            else:
+                print(f"checked {os.path.relpath(path)} ({len(data)} bytes)")
+        else:
+            with open(path, "wb") as f:
+                f.write(data)
+            print(f"wrote {os.path.relpath(path)} ({len(data)} bytes)")
+
+    if check and os.path.isdir(OUT_DIR):
+        unexpected = sorted(
+            name
+            for name in os.listdir(OUT_DIR)
+            if name.endswith(".docx") and name not in CORPUS
+        )
+        for name in unexpected:
+            print(
+                f"unexpected {os.path.relpath(os.path.join(OUT_DIR, name))}",
+                file=sys.stderr,
+            )
+            status = 1
+    return status
 
 
 if __name__ == "__main__":

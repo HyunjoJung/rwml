@@ -8,6 +8,57 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 _Nothing yet._
 
+## [0.1.1] - 2026-07-16
+
+Patch-compatible stabilization release. Default-feature and all-feature public
+APIs are checked against `v0.1.0` by `cargo-semver-checks`.
+
+### Added
+
+- Expands bounded WMF/EMF single-DIB raster extraction to 1/4/8-bit palettes,
+  16/32-bit `BI_BITFIELDS`, and full-scan SETDIB records, with strict identity
+  transfer semantics and decoded-allocation/inflation ceilings.
+- Improves preview PDF fidelity for modeled run paint, vertical alignment, and
+  hidden-content exclusion; paragraph shading, spacing, indents, and tabs; table
+  cell margins and RTL visual order; bounded paragraph/run RTL shaping with
+  bundled Arabic/Hebrew subsets; and equal-width section-column flow.
+- Applies resolved `.docx` `keepNext`, `keepLines`, and default-on
+  `widowControl` to opened-document PDF/layout pagination through private
+  source-aligned hints; raw `DocModel` render entry points remain source-agnostic.
+- Applies bounded forward `wrapTopAndBottom` exclusion after eligible recovered
+  top-level paragraph anchors with explicit page/margin or enabled `simplePos`
+  vertical geometry, while retaining overlay fallback for unsupported wrap cases.
+- Adds typed enumeration plus package-preserving move/removal for conservative
+  atomic direct `.docx` body paragraphs, tables, and content-control subtrees,
+  with transactional cross-block range/field/section/opaque-content rejection.
+- Computes side-table `STYLEREF` fields in headers, footers, footnotes,
+  endnotes, comments, and text boxes with report/evaluator parity.
+- Adds a license-clean public legacy `.doc` extraction corpus with exact report
+  expectations and Apache POI 5.2.3 / LibreOffice 26.2.3.2 goldens.
+- Executes generated WASM bindings under Node in CI and release preflight, and
+  freezes document/render report JSON shapes with checked-in golden contracts.
+- Adds release-mode public-corpus performance, bundled-font, fuzz-build,
+  deterministic-corpus, package-identity, and semantic-version gates. Release
+  automation publishes the checksum-verified `rwml-fonts` dependency first,
+  waits for registry visibility, and then packages and publishes `rwml` with
+  idempotent registry-identity checks.
+
+### Fixed
+
+- Tightens single-DIB WMF/EMF extraction to spec-correct inclusive EMF bounds,
+  consistent headers and terminal records, frame-covering destinations, and an
+  exact one-raster record stream so later vector composition stays unsupported.
+- Preservation edits now resolve targets across accepted revisions, ignore
+  deleted comment markers and nested tables, handle rejected header revisions,
+  retain comment run formatting, and validate mutations before commit.
+- Fixes 32-bit WASM compilation without changing the public `usize` APIs.
+
+### Security
+
+- Expands the edit fuzz target across the package-preserving mutation surface,
+  makes its lockfile reproducible, and seeds parse/edit/render fuzzing from the
+  public hostile-input corpus.
+
 ## [0.1.0] - 2026-07-04
 
 First public release. `rwml` is a native Rust toolkit for Microsoft Word
@@ -238,6 +289,7 @@ with no JVM, no Apache POI, no other `.docx` crate, and no subprocess.
   preserve body-coordinated constructs, so package-preserving editing is
   element-tree only.
 
-[Unreleased]: https://github.com/HyunjoJung/rwml/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/HyunjoJung/rwml/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/HyunjoJung/rwml/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/HyunjoJung/rwml/releases/tag/v0.1.0
 [MS-DOC]: https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/

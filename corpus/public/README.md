@@ -1,15 +1,16 @@
 # rwml public validation corpus
 
-A small, **license-clean** corpus of `.docx` files for validating rwml's reader + the
-package-preserving editor in the open (CI and anyone who clones the repo). It complements the
-maintainer's larger private real-world corpus, which is not redistributable.
+A small, **license-clean** corpus for validating rwml's readers and the `.docx`
+package-preserving editor in the open (CI and anyone who clones the repo). It
+complements the maintainer's larger private real-world corpus, which is not
+redistributable.
 
-**Scope: `.docx` only.** The legacy binary `.doc` reader is validated against a private local
-corpus (Apache-POI / GovDocs1 samples), not here: `.doc` cannot be synthesized cleanly (binary
-CFB/OLE2), and redistributing third-party `.doc` files in a public repo raises per-file license
-questions we keep out of scope. Public `.doc` coverage is intentionally omitted for that reason.
-If a legacy `.doc` file is accidentally added to the public tree, the public hygiene audit still
-scans bounded decoded byte text views and blocks oversized legacy binaries.
+The corpus includes generated `.docx` fixtures plus a small generated Word
+97-2003 `.doc` extraction benchmark. No third-party `.doc` file is redistributed:
+the legacy fixtures were exported from repository-owned synthetic sources, and
+their Apache POI and LibreOffice text outputs are checked alongside exact rwml
+report expectations. The public hygiene audit scans bounded decoded byte views
+of every legacy binary and blocks oversized files.
 
 Every file here is safe to redistribute:
 
@@ -18,6 +19,9 @@ Every file here is safe to redistribute:
 - `RENDER_MANIFEST.tsv` — expected native-render page counts and render warning
   classes for the synthetic fixtures. It is checked when tests run with
   `--features render`.
+- `benchmark/` — three generated `.doc` fixtures, exact report expectations, and
+  Apache POI 5.2.3 / LibreOffice 26.2.3.2 extraction goldens. It is also the
+  self-contained input for the strict public extraction benchmark.
 - `synthetic/` — generated from scratch by [`scripts/gen_public_corpus.py`](../../scripts/gen_public_corpus.py).
   You own these outright (no third-party content). They deliberately carry the **unmodeled
   content a package-preserving editor must round-trip intact**: tracked changes (`w:ins`/`w:del`),

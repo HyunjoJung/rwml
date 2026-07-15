@@ -63,8 +63,16 @@ pub(crate) fn parse_fields(xml: &str) -> Vec<Field> {
 }
 
 pub(crate) fn header_footer_ref_ids(xml: &str) -> HashSet<String> {
+    header_footer_ref_ids_from_sections(body::scan_hf_ref_sections(xml))
+}
+
+pub(crate) fn header_footer_ref_ids_for_revision_reject(xml: &str) -> HashSet<String> {
+    header_footer_ref_ids_from_sections(body::scan_hf_ref_sections_for_revision_reject(xml))
+}
+
+fn header_footer_ref_ids_from_sections(sections: Vec<body::HeaderFooterRefs>) -> HashSet<String> {
     let mut ids = HashSet::new();
-    for refs in body::scan_hf_ref_sections(xml) {
+    for refs in sections {
         ids.extend(refs.headers.into_iter().map(|r| r.rel_id));
         ids.extend(refs.footers.into_iter().map(|r| r.rel_id));
     }
@@ -194,6 +202,9 @@ pub(crate) struct DocxState {
     pub text_boxes: Vec<TextBox>,
     /// Floating shape geometry parsed from body/note/header/footer `wp:anchor` drawing markup.
     pub floating_shapes: Vec<FloatingShape>,
+    /// Renderer-only paragraph pagination controls aligned to body model blocks.
+    #[cfg(feature = "render")]
+    pub pagination_hints: Vec<crate::model::PaginationHint>,
     /// Exact running header/footer records parsed from referenced `.docx` parts.
     pub header_footers: Vec<HeaderFooter>,
     /// Core metadata parsed from `docProps/core.xml`.
@@ -206,6 +217,7 @@ pub(crate) struct DocxState {
     /// package-preserving `save()`. Element-tree edits mutate its `document.xml` in
     /// place; the lossy `model` above is the read/render view.
     pub package: crate::opc::Package,
+    source_size_bytes: usize,
     /// Comments parsed from `word/comments.xml` and optional commentsExtended links.
     pub comments: Vec<Comment>,
     /// Fields parsed from body/note/header/footer content.
@@ -390,11 +402,16 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         listnum_counter: Default::default(),
         field_bookmarks: Default::default(),
         counters: Default::default(),
+        pagination_capture: Default::default(),
     };
+    #[cfg(feature = "render")]
+    ctx.begin_pagination_capture();
     let mut blocks = body::parse_document(&doc_xml, &ctx); // body only
-                                                           // Footnotes/endnotes live in their own parts. Keep them SEPARATE from the body
-                                                           // (not appended into `model.blocks`); their parts are preserved verbatim on save.
-                                                           // They are re-joined for the read/text views below and in `Document::model()`.
+    #[cfg(feature = "render")]
+    let pagination_hints = ctx.take_pagination_hints();
+    // Footnotes/endnotes live in their own parts. Keep them SEPARATE from the body
+    // (not appended into `model.blocks`); their parts are preserved verbatim on save.
+    // They are re-joined for the read/text views below and in `Document::model()`.
     let part_env = PartParseEnv {
         styles: &styles,
         numbering: &numbering,
@@ -618,10 +635,13 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         text,
         main_text,
         package,
+        source_size_bytes: bytes.len(),
         comments,
         note_records: note_part.records,
         text_boxes,
         floating_shapes,
+        #[cfg(feature = "render")]
+        pagination_hints,
         header_footers,
         core_properties,
         fields,
@@ -1053,6 +1073,7 @@ fn read_hf_parts(
             listnum_counter: Default::default(),
             field_bookmarks: Default::default(),
             counters: Default::default(),
+            pagination_capture: Default::default(),
         };
         let type_name = normalized_header_footer_type(&reference.type_name);
         extend_missing_comment_anchors(
@@ -1314,6 +1335,7 @@ fn read_notes(
         listnum_counter: Default::default(),
         field_bookmarks: Default::default(),
         counters: Default::default(),
+        pagination_capture: Default::default(),
     };
     let mut blocks = Vec::new();
     let mut records = Vec::new();
@@ -3994,57 +4016,60 @@ fn flatten_header_footer_surfaces(model: &DocModel, out: &mut String) {
     flatten(&model.setup.even_footer, out);
 }
 
+fn package_text_part(package: &crate::opc::Package, name: &str) -> Option<String> {
+    String::from_utf8(package.part(name)?).ok()
+}
+
 pub(crate) fn main_text_with_revision_view(state: &DocxState, view: crate::RevisionView) -> String {
-    let Some(doc_xml) = state.package.part("word/document.xml") else {
+    let Some(doc_xml) = package_text_part(&state.package, "word/document.xml") else {
         return state.main_text.clone();
     };
-    let doc_xml = String::from_utf8_lossy(&doc_xml);
-    let core_properties = state
-        .package
-        .part("docProps/core.xml")
-        .map(|xml| parse_core_properties(&String::from_utf8_lossy(&xml)))
+    let numbering = package_text_part(&state.package, "word/numbering.xml")
+        .map(|xml| numbering::parse(&xml))
+        .unwrap_or_default();
+    let core_properties = package_text_part(&state.package, "docProps/core.xml")
+        .map(|xml| parse_core_properties(&xml))
         .unwrap_or_else(|| state.core_properties.clone());
-    let custom_properties = state
-        .package
-        .part("docProps/custom.xml")
-        .map(|xml| parse_custom_properties(&String::from_utf8_lossy(&xml)))
+    let custom_properties = package_text_part(&state.package, "docProps/custom.xml")
+        .map(|xml| parse_custom_properties(&xml))
         .unwrap_or_default();
     let custom_property_fields = custom_properties
         .iter()
         .map(|(key, value)| (document_property_key(key), value.clone()))
         .collect::<HashMap<_, _>>();
-    let settings_xml = state.package.part("word/settings.xml");
+    let settings_xml = package_text_part(&state.package, "word/settings.xml");
     let document_variables = settings_xml
         .as_deref()
-        .map(|xml| parse_document_variables(&String::from_utf8_lossy(xml)))
+        .map(parse_document_variables)
         .unwrap_or_default();
     let preserve_legacy_form_cache = settings_xml
         .as_deref()
-        .is_some_and(|xml| settings_preserves_legacy_form_cache(&String::from_utf8_lossy(xml)));
-    let extended_properties = state
-        .package
-        .part("docProps/app.xml")
-        .map(|xml| parse_extended_properties(&String::from_utf8_lossy(&xml)))
+        .is_some_and(settings_preserves_legacy_form_cache);
+    let note_numbering = settings_xml
+        .as_deref()
+        .map(fields::note_numbering_from_settings)
+        .unwrap_or_default();
+    let extended_properties = package_text_part(&state.package, "docProps/app.xml")
+        .map(|xml| parse_extended_properties(&xml))
         .unwrap_or_default();
     let properties = fields::FieldDocumentProperties {
         core: &core_properties,
         custom: &custom_property_fields,
         variables: &document_variables,
         extended: &extended_properties,
-        file_size_bytes: None,
+        file_size_bytes: Some(state.source_size_bytes),
     };
-    let styles = state
-        .package
-        .part("word/styles.xml")
-        .map(|xml| styles::parse(&String::from_utf8_lossy(&xml)))
+    let styles = package_text_part(&state.package, "word/styles.xml")
+        .map(|xml| styles::parse(&xml))
         .unwrap_or_default();
     let raw_document_bookmarks =
         fields::ref_targets_with_properties(&doc_xml, properties, preserve_legacy_form_cache);
-    let note_ref_context = fields::note_ref_context_with_properties(
+    let note_ref_context = fields::note_ref_context_with_numbering(
         &doc_xml,
         &raw_document_bookmarks,
         properties,
         preserve_legacy_form_cache,
+        note_numbering,
     );
     let document_bookmarks = fields::ref_targets_with_note_context(
         &doc_xml,
@@ -4055,6 +4080,18 @@ pub(crate) fn main_text_with_revision_view(state: &DocxState, view: crate::Revis
     let section_context = fields::section_context_with_properties(
         &doc_xml,
         &document_bookmarks,
+        properties,
+        preserve_legacy_form_cache,
+    );
+    let style_ref_context = fields::style_ref_context_with_properties(
+        &doc_xml,
+        &styles,
+        &numbering,
+        &fields::StyleRefResolutionSources {
+            document_bookmarks: &document_bookmarks,
+            note_refs: &note_ref_context,
+            sections: &section_context,
+        },
         properties,
         preserve_legacy_form_cache,
     );
@@ -4069,10 +4106,6 @@ pub(crate) fn main_text_with_revision_view(state: &DocxState, view: crate::Revis
     );
     let legacy_form_context = fields::legacy_form_context(&doc_xml, preserve_legacy_form_cache);
     let bookmark_names = fields::bookmark_names(&doc_xml);
-    // `main_text_with_view` never consults style-ref context, but the shared
-    // `FieldResolutionContext` requires a borrow; an empty default is sufficient and
-    // avoids an unused style-ref scan here.
-    let style_ref_context = fields::StyleRefContext::default();
     revisions::main_text_with_view(
         &doc_xml,
         view,

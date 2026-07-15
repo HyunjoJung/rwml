@@ -507,6 +507,42 @@ fn docx_comment_anchors_follow_accepted_revision_view() {
 }
 
 #[test]
+fn docx_comment_anchor_ignores_deleted_range_markers() {
+    let fixture = docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdComments" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="comments.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:commentRangeStart w:id="1"/><w:r><w:t>A</w:t></w:r><w:del w:id="2"><w:commentRangeEnd w:id="1"/></w:del><w:r><w:t>B</w:t></w:r><w:commentRangeEnd w:id="1"/><w:r><w:commentReference w:id="1"/></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/comments.xml",
+            r#"<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:comment w:id="1"><w:p><w:r><w:t>Note</w:t></w:r></w:p></w:comment></w:comments>"#,
+        ),
+    ]);
+
+    let doc = Document::open(&fixture).expect("fixture opens");
+    assert_eq!(doc.main_text(), "AB");
+    assert_eq!(
+        doc.comments()[0]
+            .anchor
+            .as_ref()
+            .map(|anchor| anchor.text.as_str()),
+        Some("AB")
+    );
+}
+
+#[test]
 fn docx_note_comment_anchors_are_exposed() {
     let doc = Document::open(&note_commented_docx()).expect("fixture opens");
     let comments = doc.comments();
@@ -1517,6 +1553,50 @@ fn set_comment_text_updates_existing_comment_body() {
 }
 
 #[test]
+fn set_comment_text_preserves_first_run_properties() {
+    let fixture = docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdComments" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments" Target="comments.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:commentRangeStart w:id="7"/><w:r><w:t>Hello</w:t></w:r><w:commentRangeEnd w:id="7"/><w:r><w:commentReference w:id="7"/></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/comments.xml",
+            r#"<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:comment w:id="7" w:author="Reviewer"><w:p><w:r><w:rPr><w:b/><w:color w:val="FF0000"/></w:rPr><w:t>Styled</w:t></w:r><w:r><w:rPr><w:i/></w:rPr><w:t> tail</w:t></w:r></w:p></w:comment></w:comments>"#,
+        ),
+    ]);
+    let mut doc = Document::open(&fixture).expect("fixture opens");
+
+    doc.set_comment_text("7", "Updated")
+        .expect("comment text updates");
+
+    let saved = doc.save().expect("save edited docx");
+    let comments_xml = String::from_utf8(unzip_parts(&saved)["word/comments.xml"].clone()).unwrap();
+    assert!(
+        comments_xml.contains(r#"<w:rPr><w:b/><w:color w:val="FF0000"/></w:rPr>"#),
+        "first run properties were dropped: {comments_xml}"
+    );
+    assert!(
+        comments_xml.contains(r#"<w:rPr><w:i/></w:rPr>"#),
+        "later run properties were dropped: {comments_xml}"
+    );
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    assert_eq!(reopened.comments()[0].text, "Updated");
+}
+
+#[test]
 fn set_comment_text_skips_deleted_comment_body_text() {
     let fixture = docx_fixture(&[
         (
@@ -1724,6 +1804,56 @@ fn add_comment_on_text_can_anchor_across_adjacent_runs() {
     assert_eq!(comments.len(), 1);
     assert_eq!(
         comments[0].anchor.as_ref().map(|a| a.text.as_str()),
+        Some("Hello")
+    );
+}
+
+#[test]
+fn add_comment_on_text_anchors_across_accepted_revision_wrappers() {
+    let fixture = docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Hel</w:t></w:r><w:ins w:id="1"><w:r><w:t>l</w:t></w:r></w:ins><w:moveTo w:id="2"><w:r><w:t>o</w:t></w:r></w:moveTo><w:r><w:t>!</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ]);
+    let mut doc = Document::open(&fixture).expect("fixture opens");
+
+    doc.add_comment_on_text("Hello", "Revision note", "Reviewer")
+        .expect("comment added across accepted revision wrappers");
+
+    let saved = doc.save().expect("save edited docx");
+    let body = String::from_utf8(unzip_parts(&saved)["word/document.xml"].clone()).unwrap();
+    let start = body.find("<w:commentRangeStart").unwrap_or(usize::MAX);
+    let first = body.find("<w:t>Hel</w:t>").unwrap_or(usize::MAX);
+    let second = body.find("<w:t>l</w:t>").unwrap_or(usize::MAX);
+    let third = body.find("<w:t>o</w:t>").unwrap_or(usize::MAX);
+    let end = body.find("<w:commentRangeEnd").unwrap_or(usize::MAX);
+    let reference = body.find("<w:commentReference").unwrap_or(usize::MAX);
+    let tail = body.find("<w:t>!</w:t>").unwrap_or(usize::MAX);
+    assert!(
+        start < first
+            && first < second
+            && second < third
+            && third < end
+            && end < reference
+            && reference < tail,
+        "revision-spanning comment anchor missing or misplaced: {body}"
+    );
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    assert_eq!(
+        reopened.comments()[0]
+            .anchor
+            .as_ref()
+            .map(|anchor| anchor.text.as_str()),
         Some("Hello")
     );
 }

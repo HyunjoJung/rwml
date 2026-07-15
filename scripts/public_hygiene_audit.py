@@ -55,6 +55,8 @@ BINARY_SUFFIXES = {
 PROVENANCED_BINARY_FILES = {
     "rwml-fonts/fonts/NotoSansKR-rwml-subset.ttf": "rwml-fonts/PROVENANCE.md",
     "rwml-fonts/fonts/NotoSansKR-rwml-subset-full.ttf": "rwml-fonts/PROVENANCE.md",
+    "rwml-fonts/fonts/NotoSansArabic-rwml-subset.ttf": "rwml-fonts/PROVENANCE.md",
+    "rwml-fonts/fonts/NotoSansHebrew-rwml-subset.ttf": "rwml-fonts/PROVENANCE.md",
 }
 
 SECRET_PATTERNS = [

@@ -18,6 +18,21 @@ content; these files are part of rwml and covered by the repository's own licens
 | `floating_wrap_policy.docx` | floating anchor and wrap distances plus `wrapTight` polygon metadata |
 | `floating_text_bearing.docx` | text-bearing floating shape with containing-block anchor text |
 
+## benchmark/ - generated legacy fixtures
+
+The `.doc` files are generated artifacts derived only from this repository's
+synthetic inputs and are covered by the repository license. They were exported
+with LibreOffice 26.2.3.2 using the `MS Word 97` filter on 2026-07-15. The
+`sample-poi` text files were produced by Apache POI 5.2.3
+`WordExtractor.getText()`; the `sample-lo` text files were produced by
+LibreOffice's `Text` filter.
+
+| Legacy fixture | Repository-owned source |
+|------|-------|
+| `floating_text_bearing.doc` | `synthetic/floating_text_bearing.docx` |
+| `floating_wrap_policy.doc` | `synthetic/floating_wrap_policy.docx` |
+| `nested_tables.doc` | `synthetic/nested_tables.docx` |
+
 ## vendored/
 
 Real-producer files copied verbatim from permissively-licensed upstreams. Only **MIT** /

@@ -1,8 +1,8 @@
 # Security Policy
 
-`rwml` parses **untrusted binary files** (legacy `.doc`). Memory safety and
-graceful handling of malicious or malformed input are primary goals, so security
-reports are taken seriously.
+`rwml` parses **untrusted Word files** (legacy binary `.doc` and OOXML `.docx`).
+Memory safety and graceful handling of malicious or malformed input are primary
+goals, so security reports are taken seriously.
 
 ## Supported Versions
 
@@ -25,7 +25,7 @@ Or email the maintainer via the address on the [GitHub profile](https://github.c
 ## What to Include
 
 - Description of the vulnerability and potential impact
-- A minimal proof-of-concept `.doc` (or bytes) that triggers it
+- A minimal proof-of-concept `.doc` or `.docx` (or bytes) that triggers it
 - Affected version(s)
 - Suggested fix, if available
 
@@ -41,7 +41,8 @@ Or email the maintainer via the address on the [GitHub profile](https://github.c
 
 In scope:
 - Panics, out-of-bounds reads, unbounded allocation, or infinite loops on
-  crafted `.doc` input (the crate is `#![forbid(unsafe_code)]`; any crash is a bug)
+  crafted `.doc` or `.docx` input (the crate is `#![forbid(unsafe_code)]`; any
+  crash is a bug)
 - Silent emission of incorrect/garbled text that could poison a downstream index
 
 Out of scope:

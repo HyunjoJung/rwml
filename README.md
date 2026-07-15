@@ -6,11 +6,11 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![MSRV](https://img.shields.io/badge/MSRV-1.85%20(render%201.92)-orange.svg)
 
-**rwml** — from **W**ord**p**rocessing**ML**, the OOXML markup for Word documents
-— is a native Rust toolkit for Microsoft Word documents: **read**, **write**,
-**edit**, and **render**, covering **both** formats: legacy **`.doc`** (Word 97–2003 binary,
-[MS-DOC]) and modern **`.docx`** (OOXML WordprocessingML). No JVM, no Apache POI,
-no other `.docx` crate, no subprocess.
+**rwml** takes its name from **WordprocessingML**, the OOXML markup for Word
+documents. It is a native Rust toolkit to **read**, **write**, **edit**, and
+**render** both legacy **`.doc`** (Word 97–2003 binary, [MS-DOC]) and modern
+**`.docx`** (OOXML WordprocessingML). No JVM, no Apache POI, no other `.docx`
+crate, and no subprocess.
 
 One model ties it together. [`Document::open`] detects the format from the magic
 bytes (OLE2 `D0CF11E0` → `.doc`; ZIP `PK` → `.docx`) and both backends produce the
@@ -174,6 +174,11 @@ let mut doc = rwml::Document::open(&std::fs::read("in.docx")?)?;
 // Element-tree edit: preserves fields, content controls, shapes, comments…
 doc.replace_body_text("DRAFT", "FINAL")?;
 doc.set_field_result(0, "7")?;                  // cached result for body field index 0
+let blocks = doc.body_blocks()?;                 // direct p/tbl/sdt edit indices + kinds
+if blocks.len() >= 3 {
+    doc.move_body_block(blocks[0].index, 2)?;    // exact subtree, final index 2
+    doc.remove_body_block(1)?;                   // conservative exact-subtree removal
+}
 doc.fill_content_controls_by_tag([
     ("client-name", "Acme & Co"),
     ("project-name", "Roadmap"),
@@ -214,15 +219,21 @@ std::fs::write("out.docx", doc.save()?)?;        // untouched parts preserved
 Every one of the edit methods above mutates live WordprocessingML **element
 trees** or media parts in place, so everything they don't touch — including
 content the lossy model can't represent (fields, content controls, shapes,
-comments, tracked changes) — is preserved byte-for-byte; `save()` re-serializes
-only the parts you changed.
+comments, tracked changes) — is structurally preserved; `save()` re-serializes
+only the parts you changed, while untouched package-part payloads stay
+byte-for-byte.
+`body_blocks()` enumerates conservative atomic direct `w:p`, `w:tbl`, and
+`w:sdt` subtrees for `move_body_block` / `remove_body_block`. Those edits reject
+opaque direct children, cross-block ranges or complex fields, and section-boundary
+targets/moves; they preserve but do not garbage-collect relationships or media
+made unreachable by a removal. Read/model views remain stale until save and reopen.
 Regenerated relationship parts are validated before save, so internal
 relationship targets must point at retained package parts unless they are
 explicitly external.
 `Document::new()` starts from a bundled
 blank template. To *author* a
 document from data (or convert a `.doc`), build a `DocModel` and use
-[`write_docx`](#author--build-a-styled-docx) instead.
+[`write_docx`](#write--author-a-styled-docx) instead.
 Call `edit_capability()` or inspect `report().edit` before editing if you need
 machine-readable read-only reasons such as legacy `.doc`, incomplete retained
 packages, or lossy OPC metadata. Call `edited_parts()` after edits to inspect
@@ -236,26 +247,44 @@ string custom properties are included in `report().custom_properties`.
 Lay any model out to a paginated **PDF** with native typesetting — `parley` shapes
 and line-breaks (Korean/CJK [UAX #14] line-breaking + script font fallback),
 `krilla` emits the PDF with subsetted embedded fonts and **selectable text**. Rich
-runs (color/size/font, caps/small-caps), lists with real autonumber labels and
-indentation, bordered tables with shaded, vertically-aligned cells and authored
-column widths, images, and **clickable hyperlink annotations** are drawn; page
-size/orientation and per-side margins come from the document; multi-page tables
-repeat their header rows and a row taller than a page splits across pages. Behind
-the `render` feature.
+runs (color/size/font, highlight, decorations, super/subscript, caps/small-caps),
+paragraph shading, line spacing, first/hanging indents, lists with real autonumber
+labels, bordered tables with shaded vertically-aligned cells and authored column
+widths, images, and **clickable hyperlink annotations** are drawn. Page geometry,
+equal-width section columns, and per-side margins come from the document;
+multi-page tables repeat their header rows and a row taller than a page splits
+across pages. Opened `.docx` `Document` renders additionally honor resolved
+`keepNext`, `keepLines`, and default-on `widowControl` pagination hints without
+adding those source-only hints to the public `DocModel`. Eligible front-of-text
+`wrapTopAndBottom` shapes with explicit page/margin or enabled `simplePos`
+vertical geometry also exclude later flow from their page-wide vertical band
+after the recovered top-level paragraph anchor. Pagination-protected paragraphs
+and keep-next chains retain their controls, and same-paragraph inline images do
+not participate in the bounded exclusion. Behind the `render` feature.
+
+Bounded RTL rendering applies `w:bidi` paragraph base direction, `w:rtl` run
+isolation, logical alignment/list placement, and `w:bidiVisual` table column
+mirroring. This improves mixed Arabic/Hebrew documents without claiming
+Word-exact list-level alignment, punctuation, or table typography.
 
 > **Scope:** this is a fast, in-process **preview / report** renderer, not a Word
-> layout engine. It is faithful to the *model* and selectable, but it does **not**
-> match LibreOffice fidelity — exact pagination, exact floating-object layout,
-> unknown fields, unresolved or unsupported remaining value-changing REF cases
-> beyond the deterministic note/comment-reference mark subset,
-> remaining advanced
-> TOC/REF computed field evaluation, and pixel layout differ. Opened-document
-> renders draw bounded approximate overlay boxes for recovered `.docx`
-> floating-shape geometry on the recovered top-level body block page when
-> available, and compact placeholder lines for preserved charts,
-> OLE objects, WMF/EMF/EMZ/WMZ images, image nodes whose bytes are unavailable,
-> raster images the PDF backend cannot decode, and any floating-shape markers
-> without recovered geometry rather than drawing those objects exactly.
+> layout engine. It is faithful to the model and produces selectable text, but
+> does **not** claim Word- or LibreOffice-exact pagination, floating-object
+> layout, end-to-end RTL typography, page-bottom footnote composition, unequal
+> section columns, or section-local page geometry. Unknown fields, remaining
+> layout-dependent TOC/REF/NOTEREF cases, and unsupported value-changing field
+> semantics retain their cached display text with diagnostics.
+>
+> Opened-document renders draw bounded approximate overlay boxes for recovered
+> `.docx` floating-shape geometry on the recovered top-level body block page. A
+> forward `wrapTopAndBottom` subset moves eligible post-anchor lines and later
+> block images/charts below page-wide rectangular exclusions; backward,
+> same-paragraph image, table, polygon, and Word-exact wrap reflow remain out of
+> scope. Compact placeholder lines represent preserved charts, OLE objects,
+> unsupported or composed WMF/EMF/EMZ/WMZ payloads, unavailable image bytes,
+> backend-incompatible raster images, and floating shapes without recoverable
+> geometry. Exact single-DIB WMF/EMF raster streams are decoded separately.
+>
 > Measured against LibreOffice on a real corpus it reaches ~0.93 text recall with
 > close page counts; for archival or Word-exact PDF, render via LibreOffice.
 > (See *Scope & parity*.)
@@ -279,7 +308,12 @@ eprintln!(
 );
 ```
 
-For portable Korean PDF rendering, enable `bundled-fonts` to opt into the separate OFL-licensed `rwml-fonts` crate: it registers a Noto Sans KR subset covering KS X 1001 Hangul + hanja plus Latin while `rwml` itself remains MIT-licensed. Other scripts still use system font fallback, matching `render_pdf_with_fonts`.
+For portable Korean, Arabic, and Hebrew PDF rendering, enable `bundled-fonts`.
+The separate OFL-licensed `rwml-fonts` crate registers Noto Sans subsets for KS
+X 1001 Hangul and hanja plus Latin, Arabic, and Hebrew, including the OpenType
+tables required for Arabic/Hebrew shaping. The main `rwml` crate remains
+MIT-licensed. Scripts outside those subsets continue through the normal system
+or caller-supplied font fallback used by `render_pdf_with_fonts`.
 
 `layout_pages_with_fonts` exposes **layout-derived page numbers** from the same
 preview-grade pagination: the page count plus the page each body `PAGE` field
@@ -312,12 +346,14 @@ cargo run --example report   -- report.docx            # author a styled report
 cargo run --features render --example to_pdf -- file.docx out.pdf
 cargo run --features render --example to_pdf -- file.docx out.pdf --report-json render.json
 python scripts/render_validate.py --json --min-mean-recall 0.90 --max-skipped 0 corpus/public/**/*.docx > render.json
-python scripts/bench_vs_mature.py --corpus "$RWML_BENCH_CORPUS" --json \
-  --version 0.1.0 --git-rev "$(git rev-parse HEAD)" \
+VERSION=0.1.1
+REV="$(git rev-parse HEAD)"
+python scripts/bench_vs_mature.py --corpus corpus/public/benchmark --json \
+  --version "$VERSION" --git-rev "$REV" \
   --min-poi-recall-mean 0.95 --min-poi-f1-mean 0.95 --max-errors 0 --min-scored 1 \
   --output dist/extract-benchmark.json
 python scripts/public_hygiene_audit.py --json > dist/public-hygiene.json
-python scripts/release_manifest.py --version 0.1.0 --git-rev "$(git rev-parse HEAD)" \
+python scripts/release_manifest.py --version "$VERSION" --git-rev "$REV" \
   --release-policy public-release \
   --enforce-policy-inputs \
   --hygiene-report dist/public-hygiene.json \
@@ -332,7 +368,7 @@ python scripts/release_manifest.py --version 0.1.0 --git-rev "$(git rev-parse HE
 |---|:--:|---|---|
 | `docx`   | ✅ | `zip`, `quick-xml`, `flate2` | `.docx` read, `write_docx`, **and package-preserving edit/`save`** |
 | `render` |    | `parley`, `krilla` | `render_pdf` / `to_pdf` (MSRV 1.92) |
-| `bundled-fonts` |    | `render`, `rwml-fonts` | `render_pdf_bundled` with an OFL Noto Sans KR subset covering KS X 1001 Hangul + hanja |
+| `bundled-fonts` |    | `render`, `rwml-fonts` | `render_pdf_bundled` with OFL Noto Sans subsets for KS X 1001 Korean + hanja, Arabic, and Hebrew |
 
 The library also emits an `rlib` plus `cdylib`; on `wasm32` it uses a
 target-specific `wasm-bindgen` dependency for the thin `rwml::wasm` read/report
@@ -383,8 +419,9 @@ The `.docx` **writer** is the inverse of the reader, part by part: `document.xml
 (`w:rPr`/`w:pPr` with the full property set), a synthesized `styles.xml`
 (Normal + Heading1–6 with `outlineLvl`), `numbering.xml`, header/footer parts wired
 through `sectPr`, media parts + relationships for images, and external relationships
-for hyperlinks. The **renderer** flows the model into A4 pages and draws each page's
-glyph runs, table grids, shading, and images with krilla.
+for hyperlinks. The **renderer** flows the model through its authored page geometry
+and section columns, then draws each page's glyph runs, table grids, shading, and
+images with krilla.
 
 Encrypted / XOR-obfuscated documents and pre-Word-97 (Word 6/95) files are detected
 and reported as distinct [`Error`]s rather than silently emitting garbage. Every
@@ -439,13 +476,15 @@ based on emitted page parity; field-code `HYPERLINK` runs render as link
 annotations for target/anchor, tooltip/frame, and documented `\m`/`\n` no-op
 switch tails, and malformed hyperlink syntax reports `UnsupportedSwitch`.
 
-**Field evaluation** is deterministic and source-order stable, and applies
-identically in the reader, the render model, and side-table text surfaces
-(comment bodies/anchors, tracked-change text, note anchors, floating-shape and
-text-box text, TOC heading sources). Every `FieldKind` is distinguished from an
-unknown field; where a value can't be computed deterministically the cached
-result text is preserved (including inline tabs, line breaks, and no-break/soft
-hyphens for simple and common complex fields) and a reason is reported. The four
+**Field evaluation** is deterministic and source-order stable. The reader,
+render model, and side-table text surfaces (comment bodies/anchors,
+tracked-change text, note anchors, floating-shape and text-box text, TOC heading
+sources) share the same evaluators when the scanner has the field family's
+required source context; otherwise cached result text is preserved. Every
+`FieldKind` is distinguished from an unknown field; where a value can't be
+computed deterministically the cached result text is preserved (including
+inline tabs, line breaks, and no-break/soft hyphens for simple and common
+complex fields) and a reason is reported. The four
 diagnostic reasons — `UnknownField`, `UnresolvedBookmark`, `UnsupportedSwitch`,
 `NoComputedResult` — are surfaced with both field-kind counts and reason counts,
 and malformed instruction syntax for any supported family reports
@@ -514,8 +553,10 @@ It appends compact placeholder lines for
 preserved-but-unmodeled chart parts, OLE objects, unsupported metafile images,
 image nodes whose bytes are unavailable, skipped raster images whose bytes the
 PDF backend cannot decode, and shape markers without recovered geometry. Exact
-body-page anchoring beyond that best-effort block page, real text-wrap reflow,
-and non-text Office-Art drawing contents remain out of scope.
+body-page anchoring beyond that best-effort block page, text-wrap reflow beyond
+bounded forward `wrapTopAndBottom` for explicit page/margin or enabled
+`simplePos` geometry, and non-text Office-Art drawing contents remain out of
+scope.
 [`scripts/bench_vs_mature.py`](scripts/bench_vs_mature.py) emits a schema-tagged
 JSON extraction benchmark report against local Apache POI and LibreOffice
 goldens and can enforce release thresholds for mean POI recall/F1, mean
@@ -560,8 +601,8 @@ code points.
 
 **Still out of scope:**
 
-- *Both formats (read/render):* metafile images (WMF/EMF/EMZ/WMZ), OLE-embedded objects,
-  and exact floating Office-Art layout (`.docx` `wp:anchor` geometry, z-order
+- *Both formats (read/render):* OLE-embedded objects and exact floating Office-Art
+  layout (`.docx` `wp:anchor` geometry, z-order
   metadata, enabled `wp:simplePos` absolute points, `wp:effectExtent` visual
   bounds, anchor `dist*` margins, wrap-element `dist*` margins, wrap policy,
   best-effort visible top-level body block page including transparent body
@@ -572,10 +613,17 @@ code points.
   offsets, DrawingML preset geometry names, simple sRGB solid fill/outline
   colors, and text-bearing shape body text are exposed through
   `floating_shapes()` and rendered as approximate preview overlays, not
-  Word-exact anchored/wrapped Office-Art content; metafile metadata is exposed
-  in diagnostics with bounded header inflation, and a single full-frame embedded
-  DIB wrapped in a metafile is extracted and rendered as a raster image, but
-  general vector metafile payloads are not rendered);
+  Word-exact anchored/wrapped Office-Art content. The renderer applies bounded
+  forward vertical exclusion for eligible top-level paragraph
+  `wrapTopAndBottom` anchors, but backward reflow, tables, unsupported relative
+  coordinates, and square/tight/through/polygon wrapping remain out of scope;
+  metafile metadata is exposed
+  in diagnostics with bounded header inflation, and a strict single full-frame
+  DIB (`BI_RGB` 1/4/8/24/32-bit or 16/32-bit `BI_BITFIELDS`) in an exact
+  header/raster/EOF stream with a frame-covering identity
+  `STRETCHDIB`/`STRETCHDIBITS` or full-scan `SETDIBTODEV`/`SETDIBITSTODEVICE`
+  record is extracted and rendered as a raster image, but additional drawing
+  records, composed raster operations, and general vector payloads are not rendered);
   unknown or broader fields' *computed* values
   (cached result text is kept, including inline tabs, line breaks, and
   no-break/soft hyphens for simple and common complex body fields; `.docx`
@@ -637,26 +685,28 @@ code points.
   properties.
 - *Write/edit:* editing an opened `.docx` preserves arbitrary OOXML parts
   verbatim and the writer/edit surfaces are broad (see **Write** and **Edit**
-  above). The remaining gaps are broader *structural* editing (the element-tree
-  edit covers focused text, template/content-control filling, revision
-  acceptance, field/comment/image/note operations, and `gridSpan`/`vMerge`-aware
-  cell replacement — not arbitrary block restructuring) and newer extension chart
-  families beyond the current authored set.
-- *Render:* preview-grade vs LibreOffice (see above); right-to-left scripts; no
-  embedded CJK font is bundled - install a system CJK font or pass one to
-  `render_pdf_with_fonts`.
+  above). Structural edits now enumerate, move, and remove conservative atomic
+  direct body paragraph/table/content-control subtrees. Nested-container edits,
+  arbitrary rich block insertion/duplication, cross-block range rewriting, and
+  relationship/media garbage collection remain out of scope, as do newer
+  extension chart families beyond the current authored set.
+- *Render:* preview-grade vs LibreOffice (see above); Word-exact end-to-end RTL
+  typography beyond bounded paragraph/run/list/table behavior; the core crate
+  embeds no CJK font, so use a system font, `render_pdf_with_fonts`, or the
+  optional `bundled-fonts` companion subsets.
 
 ## Roadmap
 
 The long-term native Word engine roadmap is summarized below.
 
 Current maturity work is concentrated in deeper compatibility rather than new
-top-level APIs. The remaining native Word-engine work is tracked as bounded R2
-sub-buckets: field report/evaluator parity, layout-derived `PAGE`/`PAGEREF`,
-remaining `REF`/`NOTEREF`/`FTNREF`/TOC policy, non-deterministic field families
-that stay cached/reportable, and legacy `.doc` anchors/header-footer behavior.
-Each slice should move only after focused reader/report evidence proves either
-deterministic computation or precise cached-result diagnostics.
+top-level APIs. The bounded R2 reader/field pass and deterministic secondary-text
+context work are closed; unresolved values remain cached with explicit reasons
+where layout or Word behavior is required. The larger remaining projects are
+Word-exact pagination and RTL typography, broader floating-object reflow,
+nested/package-aware structural editing, and full vector metafile replay. Future
+slices should move only with focused parser, renderer, report, or public-corpus
+evidence.
 
 - [x] Codepage-aware `.doc` text; encryption / Word 6/95 detection gates
 - [x] Full read model: runs (CHPX incl. font/size/color), headings (STSH), tables
@@ -764,50 +814,64 @@ deterministic computation or precise cached-result diagnostics.
       default selection/inheritance, first/even-page variant modeling and
       authoring, plus section-aware first/even-page render selection, and
       Symbol/Wingdings glyph mapping
-- [ ] Reader R2-a: field report/evaluator parity for value-changing fields
+- [x] Reader R2-a: field report/evaluator parity for value-changing fields
       where duplicated syntax checks or document-report/render-report
       diagnostics can drift from computed-result behavior. Verified parity
       coverage now locks `PAGEREF`, `REF`, `NOTEREF`/`FTNREF`, and TOC
       computed/gap buckets across opened-document and render-model reports, and
       empty unsupported simple/complex field instructions plus supported hidden
       `RD`/`TA`/`XE` marker fields stay reportable in model/render inventories;
-      the remaining R2-a work is limited to newly proven parser/evaluator/report
-      drift or exact duplicated syntax logic.
-- [ ] Reader R2-b: layout-derived `PAGE`/`PAGEREF` current-page,
-      page-number, and relative-position computation beyond trusted
+      reopen only for newly proven parser/evaluator/report drift or exact
+      duplicated syntax logic.
+- [x] Reader R2-b: bounded deterministic `PAGE`/`PAGEREF` computation in trusted
       leading/source-rendered, section-start, paragraph-end section-break
-      target, source-marker, and hard-break contexts
+      target, source-marker, and hard-break contexts. Remaining Word-exact
+      current-page, page-reference, and relative-position cases are an inherent
+      layout ceiling and stay cached; opt-in `layout_pages_with_fonts` reports
+      rwml's own preview-grade pagination without changing reader results
 - [x] Reader R2-c: deterministic value-changing `REF` (incl. `\#` numeric
       picture and `\!`), `NOTEREF`/`FTNREF` (incl. `settings.xml`
       `numStart`/`numFmt` and `customMarkFollows`), and TOC heading-source
       `NOTEREF`/`SEQ` resolution; the remaining REF/NOTEREF/TOC cases are
       layout- or Word-behavior-dependent and stay cached-with-reason
-- [ ] Reader R2-d: non-deterministic data-, source-, layout-, action-,
+- [x] Reader R2-d: non-deterministic data-, source-, layout-, action-,
       generated-, barcode-, compatibility-, and protected-form field families
-      that preserve cached text and stay reportable until deterministic
+      preserve cached text and stay reportable by design unless deterministic
       semantics are proven
-- [ ] Reader R2-e: exact legacy `.doc` note/text-box/body anchors and richer
-      legacy multi-section header/footer application semantics beyond
-      recovered global default/first/even running stories
+- [x] Reader R2-e: bounded legacy `.doc` note anchors from
+      `PlcffndRef`/`PlcfendRef`, count-aligned text-box anchors from `PlcSpaMom`,
+      annotation author metadata, and per-section `PlcfHdd` header/footer story
+      application through `PlcfSed`. Missing annotation bookmark tables and
+      count-mismatched shape/text-box tables retain source-region fallbacks by
+      design
+- [x] Reader side-table context parity: supported `STYLEREF` fields compute in
+      accepted-current insertion/move-to revision text and note-reference anchor
+      text with source-order-stable body context. Deletion/move-from text keeps
+      cached original results, note anchors skip old-content fields, and
+      revision-view context reconstruction matches strict open-time part parsing,
+      source package size, and `settings.xml` note numbering
 - [x] **Package-preserving edit layer** — `Document::open`→edit→`save` keeps every
       unmodeled part verbatim; the element-tree edit methods (text/field/comment/
-      note/image/content-control/revision/core-property, listed under
+      note/image/content-control/revision/core-property plus conservative atomic
+      direct body block enumeration/move/removal, listed under
       [Edit](#edit--open-change-save-package-preserving)) preserve fields/shapes/
       content-controls/comments/revisions;
       `edited_parts` exposes touched package parts; `edit_capability` /
       `report().edit` expose read-only reasons; `opc` + `xmltree` internals;
       fallible `try_write_docx`
-- [ ] Renderer: exact pagination, floating-shape page anchoring/wrap reflow,
+- [ ] Renderer: Word-exact pagination beyond bounded section columns and opened-DOCX
+      keep/widow controls, floating-shape wrap/reflow beyond bounded forward
+      page-wide `wrapTopAndBottom`,
       full layout-derived `PAGE`/`PAGEREF` values beyond trusted source markers,
       remaining render-time TOC/REF/NOTEREF policy where layout context is
-      required, bundled-font feature, and RTL
+      required, broader bundled script coverage, and full Word-exact RTL typography
 - [x] Authoring API, native PDF preview rendering, and embedded workbook-backed
       data for the [core OOXML chart families](#chart-families)
 - [x] Wireframe styling for authored surface and 3-D surface charts
 - [x] Shape styling for authored 3-D bar and 3-D column-family charts
 - [x] Metafile diagnostics for WMF/EMF/EMZ/WMZ path, format, byte size, compression flag, and raw/gzip-wrapped header dimensions
 - [x] Chart-ex extension chart families (waterfall, treemap, sunburst, histogram, box & whisker, funnel) authored as `chartEx` parts
-- [x] Single-DIB-wrapper metafile (WMF/EMF) raster extraction rendered as images
+- [x] Bounded exact single-DIB metafile (WMF/EMF) raster extraction for palette, RGB, and strict bitfield rasters rendered as images
 - [ ] Full vector metafile (WMF/EMF) rendering beyond single-DIB raster extraction and bounded header diagnostics
 
 ## Contributing
@@ -829,8 +893,8 @@ no Microsoft source.
 
 ## Trademarks
 
-`rwml` — from **W**ord**p**rocessing**ML**, the ECMA-376 markup for
-word-processing documents — is an independent open-source project, **not**
+`rwml` takes its name from **WordprocessingML**, the ECMA-376 markup for
+word-processing documents. It is an independent open-source project, **not**
 affiliated with, authorized by, or endorsed by Microsoft. Microsoft, Microsoft
 Word, and the `.doc` / `.docx` file formats are trademarks or registered
 trademarks of Microsoft Corporation, referenced here only descriptively to

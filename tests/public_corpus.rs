@@ -1,5 +1,5 @@
-//! Validates the in-repo public corpus (`corpus/public/**/*.docx`) through rwml's public
-//! API — a license-clean, dependency-free gate anyone (and CI) can run with `cargo test`.
+//! Validates the in-repo public `.docx` corpus and generated legacy `.doc` benchmark
+//! through rwml's public API — a license-clean gate anyone can run with `cargo test`.
 //!
 //! For each `.docx` it asserts the editor's core contract holds on a real/feature-rich file:
 //!   1. `Document::open` succeeds;
@@ -252,6 +252,128 @@ fn public_corpus_report_matches_manifest() {
         expected_warnings.sort();
         assert_eq!(warnings, expected_warnings, "warnings in {}", row.path);
     }
+}
+
+#[derive(Debug)]
+struct ExpectedLegacyReport {
+    path: String,
+    paragraphs: u32,
+    tables: u16,
+    figures: u16,
+    text_chars: usize,
+    warnings: Vec<String>,
+}
+
+fn parse_expected_legacy_reports(manifest: &str) -> Vec<ExpectedLegacyReport> {
+    manifest
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim();
+            !trimmed.is_empty() && !trimmed.starts_with('#') && !trimmed.starts_with("path\t")
+        })
+        .map(|line| {
+            let cols: Vec<_> = line.split('\t').collect();
+            assert_eq!(cols.len(), 6, "bad legacy manifest row: {line}");
+            let parse = |i: usize| {
+                cols[i]
+                    .parse::<usize>()
+                    .unwrap_or_else(|e| panic!("bad numeric column {i} in {line}: {e}"))
+            };
+            let warnings = if cols[5] == "-" {
+                Vec::new()
+            } else {
+                cols[5].split('|').map(str::to_owned).collect()
+            };
+            ExpectedLegacyReport {
+                path: cols[0].to_owned(),
+                paragraphs: parse(1).try_into().expect("paragraph count fits u32"),
+                tables: parse(2).try_into().expect("table count fits u16"),
+                figures: parse(3).try_into().expect("figure count fits u16"),
+                text_chars: parse(4),
+                warnings,
+            }
+        })
+        .collect()
+}
+
+#[test]
+fn public_legacy_corpus_matches_manifest_and_has_mature_goldens() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("corpus/public/benchmark");
+    let manifest =
+        fs::read_to_string(root.join("LEGACY_MANIFEST.tsv")).expect("read legacy manifest");
+    let expected = parse_expected_legacy_reports(&manifest);
+    assert!(
+        expected.len() >= 3,
+        "expected at least three generated legacy fixtures"
+    );
+
+    let mut manifested = Vec::new();
+    for row in expected {
+        let path = root.join(&row.path);
+        let bytes = fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", row.path));
+        let doc = Document::open(&bytes).unwrap_or_else(|e| panic!("open {}: {e}", row.path));
+        let report = doc.report();
+        assert_eq!(
+            report.format,
+            rwml::DocumentFormat::Doc,
+            "format in {}",
+            row.path
+        );
+        assert_eq!(
+            report.stats.paragraphs, row.paragraphs,
+            "paragraphs in {}",
+            row.path
+        );
+        assert_eq!(report.stats.tables, row.tables, "tables in {}", row.path);
+        assert_eq!(report.stats.figures, row.figures, "figures in {}", row.path);
+        assert_eq!(
+            report.stats.text_chars, row.text_chars,
+            "text chars in {}",
+            row.path
+        );
+
+        let mut warnings: Vec<_> = report
+            .warnings
+            .iter()
+            .map(|warning| warning_name(warning).to_owned())
+            .collect();
+        warnings.sort();
+        let mut expected_warnings = row.warnings;
+        expected_warnings.sort();
+        assert_eq!(warnings, expected_warnings, "warnings in {}", row.path);
+
+        let stem = path
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .expect("ASCII fixture stem");
+        for golden in [
+            root.join("sample-poi").join(format!("{stem}.poi.txt")),
+            root.join("sample-lo").join(format!("{stem}.txt")),
+        ] {
+            let text = fs::read_to_string(&golden)
+                .unwrap_or_else(|e| panic!("read mature golden {}: {e}", golden.display()));
+            assert!(
+                !text.trim().is_empty(),
+                "empty mature golden {}",
+                golden.display()
+            );
+        }
+        manifested.push(path);
+    }
+
+    let mut discovered = Vec::new();
+    for entry in fs::read_dir(root.join("sample")).expect("read legacy sample directory") {
+        let path = entry.expect("read legacy sample entry").path();
+        if path.extension().and_then(|ext| ext.to_str()) == Some("doc") {
+            discovered.push(path);
+        }
+    }
+    manifested.sort();
+    discovered.sort();
+    assert_eq!(
+        discovered, manifested,
+        "legacy manifest must account for every .doc"
+    );
 }
 
 #[cfg(feature = "render")]

@@ -269,17 +269,27 @@ class PublicHygieneAuditTests(unittest.TestCase):
             bundled_full_font = (
                 root / "rwml-fonts" / "fonts" / "NotoSansKR-rwml-subset-full.ttf"
             )
+            bundled_arabic = (
+                root / "rwml-fonts" / "fonts" / "NotoSansArabic-rwml-subset.ttf"
+            )
+            bundled_hebrew = (
+                root / "rwml-fonts" / "fonts" / "NotoSansHebrew-rwml-subset.ttf"
+            )
             other_font = root / "rwml-fonts" / "fonts" / "other.ttf"
             provenance = root / "rwml-fonts" / "PROVENANCE.md"
             bundled_font.parent.mkdir(parents=True)
             bundled_font.write_bytes(b"\x00\x01\x00\x00")
             bundled_full_font.write_bytes(b"\x00\x01\x00\x00")
+            bundled_arabic.write_bytes(b"\x00\x01\x00\x00")
+            bundled_hebrew.write_bytes(b"\x00\x01\x00\x00")
             other_font.write_bytes(b"\x00\x01\x00\x00")
             provenance.write_text("font provenance\n", encoding="utf-8")
 
             with audit_root(root):
                 self.assertTrue(public_hygiene_audit.should_skip(bundled_font))
                 self.assertTrue(public_hygiene_audit.should_skip(bundled_full_font))
+                self.assertTrue(public_hygiene_audit.should_skip(bundled_arabic))
+                self.assertTrue(public_hygiene_audit.should_skip(bundled_hebrew))
                 self.assertFalse(public_hygiene_audit.should_skip(other_font))
 
     def test_docx_audit_scans_package_member_paths(self):

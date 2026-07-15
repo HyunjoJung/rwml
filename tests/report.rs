@@ -111,9 +111,10 @@ fn sample_emf(width: i32, height: i32) -> Vec<u8> {
     put_u32le(&mut bytes, 4, 88);
     put_i32le(&mut bytes, 8, 0);
     put_i32le(&mut bytes, 12, 0);
-    put_i32le(&mut bytes, 16, width);
-    put_i32le(&mut bytes, 20, height);
+    put_i32le(&mut bytes, 16, width - 1);
+    put_i32le(&mut bytes, 20, height - 1);
     bytes[40..44].copy_from_slice(b" EMF");
+    put_u32le(&mut bytes, 44, 0x0001_0000);
     bytes
 }
 
@@ -134,6 +135,45 @@ fn sample_bgr24_dib() -> Vec<u8> {
 }
 
 #[cfg(feature = "docx")]
+fn sample_palette8_dib() -> Vec<u8> {
+    let mut dib = vec![0u8; 40];
+    put_u32le(&mut dib, 0, 40);
+    put_i32le(&mut dib, 4, 2);
+    put_i32le(&mut dib, 8, 2);
+    put_u16le(&mut dib, 12, 1);
+    put_u16le(&mut dib, 14, 8);
+    put_u32le(&mut dib, 20, 8);
+    put_u32le(&mut dib, 32, 4);
+    dib.extend_from_slice(&[
+        0, 0, 255, 0, // red
+        0, 255, 0, 0, // green
+        255, 0, 0, 0, // blue
+        255, 255, 255, 0, // white
+    ]);
+    dib.extend_from_slice(&[2, 3, 0, 0]);
+    dib.extend_from_slice(&[0, 1, 0, 0]);
+    dib
+}
+
+#[cfg(feature = "docx")]
+fn sample_rgb565_dib() -> Vec<u8> {
+    let mut dib = vec![0u8; 40];
+    put_u32le(&mut dib, 0, 40);
+    put_i32le(&mut dib, 4, 2);
+    put_i32le(&mut dib, 8, 2);
+    put_u16le(&mut dib, 12, 1);
+    put_u16le(&mut dib, 14, 16);
+    put_u32le(&mut dib, 16, 3);
+    put_u32le(&mut dib, 20, 8);
+    dib.extend_from_slice(&0xF800u32.to_le_bytes());
+    dib.extend_from_slice(&0x07E0u32.to_le_bytes());
+    dib.extend_from_slice(&0x001Fu32.to_le_bytes());
+    dib.extend_from_slice(&[0x1F, 0x00, 0xFF, 0xFF]);
+    dib.extend_from_slice(&[0x00, 0xF8, 0xE0, 0x07]);
+    dib
+}
+
+#[cfg(feature = "docx")]
 fn expected_rgba_2x2_pixels() -> Vec<u8> {
     vec![
         255, 0, 0, 255, // red
@@ -146,7 +186,27 @@ fn expected_rgba_2x2_pixels() -> Vec<u8> {
 #[cfg(feature = "docx")]
 fn sample_emf_with_stretchdibits() -> Vec<u8> {
     let dib = sample_bgr24_dib();
-    let bmi_len = 40usize;
+    sample_emf_with_dib(&dib, 40)
+}
+
+#[cfg(feature = "docx")]
+fn sample_emf_with_dib_and_vector_overlay() -> Vec<u8> {
+    let mut bytes = sample_emf_with_stretchdibits();
+    let eof = bytes.split_off(bytes.len() - 20);
+    let start = bytes.len();
+    bytes.resize(start + 20, 0);
+    put_u32le(&mut bytes, start, 15); // EMR_SETPIXELV
+    put_u32le(&mut bytes, start + 4, 20);
+    put_u32le(&mut bytes, start + 16, 0x0000_00FF);
+    bytes.extend_from_slice(&eof);
+    let byte_len = bytes.len() as u32;
+    put_u32le(&mut bytes, 48, byte_len);
+    put_u32le(&mut bytes, 52, 4);
+    bytes
+}
+
+#[cfg(feature = "docx")]
+fn sample_emf_with_dib(dib: &[u8], bmi_len: usize) -> Vec<u8> {
     let bits_len = dib.len() - bmi_len;
     let record_size = 80 + dib.len();
     let mut bytes = sample_emf(2, 2);
@@ -154,11 +214,26 @@ fn sample_emf_with_stretchdibits() -> Vec<u8> {
     bytes.resize(start + record_size, 0);
     put_u32le(&mut bytes, start, 81); // EMR_STRETCHDIBITS
     put_u32le(&mut bytes, start + 4, record_size as u32);
+    put_i32le(&mut bytes, start + 16, 1);
+    put_i32le(&mut bytes, start + 20, 1);
     put_u32le(&mut bytes, start + 48, 80);
     put_u32le(&mut bytes, start + 52, bmi_len as u32);
     put_u32le(&mut bytes, start + 56, (80 + bmi_len) as u32);
     put_u32le(&mut bytes, start + 60, bits_len as u32);
-    bytes[start + 80..start + 80 + dib.len()].copy_from_slice(&dib);
+    put_i32le(&mut bytes, start + 40, 2);
+    put_i32le(&mut bytes, start + 44, 2);
+    put_u32le(&mut bytes, start + 68, 0x00CC_0020);
+    put_i32le(&mut bytes, start + 72, 2);
+    put_i32le(&mut bytes, start + 76, 2);
+    bytes[start + 80..start + 80 + dib.len()].copy_from_slice(dib);
+    let eof = bytes.len();
+    bytes.resize(eof + 20, 0);
+    put_u32le(&mut bytes, eof, 14);
+    put_u32le(&mut bytes, eof + 4, 20);
+    put_u32le(&mut bytes, eof + 16, 20);
+    let byte_len = bytes.len() as u32;
+    put_u32le(&mut bytes, 48, byte_len);
+    put_u32le(&mut bytes, 52, 3);
     bytes
 }
 
@@ -172,22 +247,58 @@ fn sample_placeable_wmf(width_units: i16, height_units: i16, units_per_inch: u16
     put_i16le(&mut bytes, 12, height_units);
     put_u16le(&mut bytes, 14, units_per_inch);
     put_u16le(&mut bytes, 22, 1); // standard WMF header follows placeable header
+    put_u16le(&mut bytes, 24, 9);
+    put_u16le(&mut bytes, 26, 0x0300);
+    let checksum = (0..20).step_by(2).fold(0u16, |value, offset| {
+        value ^ u16::from_le_bytes(bytes[offset..offset + 2].try_into().unwrap())
+    });
+    put_u16le(&mut bytes, 20, checksum);
     bytes
 }
 
 #[cfg(feature = "docx")]
 fn sample_placeable_wmf_with_stretchdib() -> Vec<u8> {
     let dib = sample_bgr24_dib();
-    let mut bytes = sample_placeable_wmf(30, 30, 1440);
+    sample_placeable_wmf_with_dib(&dib)
+}
+
+#[cfg(feature = "docx")]
+fn sample_wmf_with_dib_and_vector_overlay() -> Vec<u8> {
+    let mut bytes = sample_placeable_wmf_with_stretchdib();
+    let eof = bytes.split_off(bytes.len() - 6);
+    let start = bytes.len();
+    bytes.resize(start + 14, 0);
+    put_u32le(&mut bytes, start, 7);
+    put_u16le(&mut bytes, start + 4, 0x041F); // META_SETPIXEL
+    put_u32le(&mut bytes, start + 6, 0x0000_00FF);
+    bytes.extend_from_slice(&eof);
+    let file_words = ((bytes.len() - 22) / 2) as u32;
+    put_u32le(&mut bytes, 28, file_words);
+    bytes
+}
+
+#[cfg(feature = "docx")]
+fn sample_placeable_wmf_with_dib(dib: &[u8]) -> Vec<u8> {
+    let mut bytes = sample_placeable_wmf(2, 2, 96);
     let record_size = 6 + 22 + dib.len();
     let start = bytes.len();
     bytes.resize(start + record_size, 0);
     put_u32le(&mut bytes, start, (record_size / 2) as u32);
     put_u16le(&mut bytes, start + 4, 0x0F43); // META_STRETCHDIB
-    bytes[start + 28..start + 28 + dib.len()].copy_from_slice(&dib);
+    put_u32le(&mut bytes, start + 6, 0x00CC_0020);
+    put_i16le(&mut bytes, start + 12, 2);
+    put_i16le(&mut bytes, start + 14, 2);
+    put_i16le(&mut bytes, start + 20, 2);
+    put_i16le(&mut bytes, start + 22, 2);
+    bytes[start + 28..start + 28 + dib.len()].copy_from_slice(dib);
     let eof = bytes.len();
     bytes.resize(eof + 6, 0);
     put_u32le(&mut bytes, eof, 3);
+    let file_words = ((bytes.len() - 22) / 2) as u32;
+    put_u32le(&mut bytes, 28, file_words);
+    put_u16le(&mut bytes, 32, 0);
+    put_u32le(&mut bytes, 34, (record_size / 2) as u32);
+    put_u16le(&mut bytes, 38, 0);
     bytes
 }
 
@@ -200,20 +311,12 @@ fn gzip_bytes(bytes: &[u8]) -> Vec<u8> {
 
 #[cfg(feature = "docx")]
 fn sample_compressed_emf() -> Vec<u8> {
-    vec![
-        0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x63, 0x64, 0x60, 0x60, 0x88,
-        0x60, 0x40, 0x00, 0x07, 0x46, 0x06, 0x86, 0x0f, 0x0c, 0x98, 0x40, 0xc1, 0xd5, 0xd7, 0x8d,
-        0x81, 0x04, 0x00, 0x00, 0xa4, 0x29, 0x32, 0xcb, 0x58, 0x00, 0x00, 0x00,
-    ]
+    gzip_bytes(&sample_emf(320, 240))
 }
 
 #[cfg(feature = "docx")]
 fn sample_compressed_placeable_wmf() -> Vec<u8> {
-    vec![
-        0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xbb, 0x7e, 0xf6, 0xd8, 0x2c,
-        0x06, 0x30, 0x70, 0xe0, 0x5e, 0xc0, 0xba, 0x80, 0x15, 0xc2, 0x66, 0x64, 0x40, 0x07, 0x00,
-        0x39, 0x10, 0x03, 0xa4, 0x28, 0x00, 0x00, 0x00,
-    ]
+    gzip_bytes(&sample_placeable_wmf(1920, 960, 960))
 }
 
 #[cfg(feature = "docx")]
@@ -3956,7 +4059,7 @@ fn report_exposes_metafile_metadata() {
         .expect("compressed EMF metadata");
     assert_eq!(emz.format, MetafileFormat::Emf);
     assert!(emz.compressed);
-    assert_eq!(emz.bytes, 42);
+    assert_eq!(emz.bytes, 51);
     assert_eq!(emz.width_px, Some(320));
     assert_eq!(emz.height_px, Some(240));
 
@@ -3968,7 +4071,7 @@ fn report_exposes_metafile_metadata() {
         .expect("compressed WMF metadata");
     assert_eq!(wmz.format, MetafileFormat::Wmf);
     assert!(wmz.compressed);
-    assert_eq!(wmz.bytes, 38);
+    assert_eq!(wmz.bytes, 45);
     assert_eq!(wmz.width_px, Some(192));
     assert_eq!(wmz.height_px, Some(96));
 
@@ -3982,11 +4085,11 @@ fn report_exposes_metafile_metadata() {
         "{json}"
     );
     assert!(
-        json.contains(r#"{"path":"word/media/pic3.emz","format":"EMF","bytes":42,"compressed":true,"width_px":320,"height_px":240}"#),
+        json.contains(r#"{"path":"word/media/pic3.emz","format":"EMF","bytes":51,"compressed":true,"width_px":320,"height_px":240}"#),
         "{json}"
     );
     assert!(
-        json.contains(r#"{"path":"word/media/pic4.wmz","format":"WMF","bytes":38,"compressed":true,"width_px":192,"height_px":96}"#),
+        json.contains(r#"{"path":"word/media/pic4.wmz","format":"WMF","bytes":45,"compressed":true,"width_px":192,"height_px":96}"#),
         "{json}"
     );
 }
@@ -4026,6 +4129,51 @@ fn report_extracts_single_dib_metafiles_as_images() {
             "{name}: {:?}",
             report.warnings
         );
+    }
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_extracts_palette_and_bitfield_metafiles_as_images() {
+    let palette = sample_palette8_dib();
+    let bitfields = sample_rgb565_dib();
+    for (name, bytes) in [
+        ("palette.emf", sample_emf_with_dib(&palette, 56)),
+        ("palette.wmf", sample_placeable_wmf_with_dib(&palette)),
+        ("bitfields.emf", sample_emf_with_dib(&bitfields, 52)),
+        ("bitfields.wmf", sample_placeable_wmf_with_dib(&bitfields)),
+    ] {
+        let doc = Document::open(&metafile_image_docx(name, "rIdMeta", bytes))
+            .expect("metafile image fixture opens");
+        let images = doc.images();
+        assert_eq!(images.len(), 1, "{name}");
+        assert_eq!(images[0].width_px, Some(2), "{name}");
+        assert_eq!(images[0].height_px, Some(2), "{name}");
+        assert_eq!(
+            images[0].bytes.as_deref(),
+            Some(expected_rgba_2x2_pixels().as_slice()),
+            "{name} pixels"
+        );
+        assert_eq!(doc.report().features.unsupported_metafiles, 0, "{name}");
+    }
+}
+
+#[cfg(feature = "docx")]
+#[test]
+fn report_rejects_single_dib_metafiles_with_vector_composition() {
+    for (name, bytes) in [
+        ("composed.emf", sample_emf_with_dib_and_vector_overlay()),
+        ("composed.wmf", sample_wmf_with_dib_and_vector_overlay()),
+    ] {
+        let doc = Document::open(&metafile_image_docx(name, "rIdMeta", bytes))
+            .expect("composed metafile fixture opens");
+        assert!(doc.images().is_empty(), "{name}");
+        let report = doc.report();
+        assert_eq!(report.features.unsupported_metafiles, 1, "{name}");
+        assert!(report.warnings.iter().any(|warning| matches!(
+            warning,
+            DocumentWarning::UnsupportedMetafileImages { count: 1 }
+        )));
     }
 }
 

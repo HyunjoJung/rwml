@@ -13,7 +13,7 @@ are tokenized identically. The script reports measurements only; it does not
 decide which extractor is "better".
 
   python scripts/bench_vs_mature.py --corpus DIR [--limit N] [--json]
-  python scripts/bench_vs_mature.py --corpus DIR --json --version 0.1.0 \
+  python scripts/bench_vs_mature.py --corpus corpus/public/benchmark --json --version 0.1.1 \
     --git-rev "$(git rev-parse HEAD)" --min-poi-recall-mean 0.95 \
     --min-poi-f1-mean 0.95 --max-errors 0 --min-scored 1 \
     --output dist/extract-benchmark.json

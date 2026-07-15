@@ -4,7 +4,9 @@
 //! The exported functions accept raw Word bytes, call the normal Rust core, and
 //! return strings that are convenient for JavaScript demos and browser tests.
 
-use crate::{Document, DocumentReport, Result};
+use crate::Document;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::{DocumentReport, Result};
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;

@@ -14,7 +14,7 @@ manifest also records whether strict local policy evidence was enforced.
 Example:
 
   python scripts/release_manifest.py \
-    --version 0.1.0 \
+    --version 0.1.1 \
     --git-rev "$(git rev-parse HEAD)" \
     --release-policy public-release \
     --enforce-policy-inputs \

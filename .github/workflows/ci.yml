@@ -19,14 +19,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      - name: Install semantic-version compatibility checker
+        run: cargo install cargo-semver-checks --version 0.48.0 --locked
       - name: Install system libraries (fontconfig for the render feature)
         run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev pkg-config
+      - name: Check patch-compatible public API
+        run: |
+          cargo semver-checks check-release --baseline-rev v0.1.0 --release-type patch --default-features
+          cargo semver-checks check-release --baseline-rev v0.1.0 --release-type patch --all-features
       - name: Public hygiene audit
         run: python3 scripts/public_hygiene_audit.py
+      - name: Python release and evidence tooling tests
+        run: PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_*.py'
+      - name: Public corpus determinism
+        run: python3 scripts/gen_public_corpus.py --check
       - name: Format
         run: cargo fmt --all -- --check
       - name: Clippy (default)
@@ -36,13 +48,39 @@ jobs:
       - name: Test (default)
         run: cargo test --all-targets
       - name: Test (no default features)
-        run: cargo test --no-default-features
+        run: cargo test --all-targets --no-default-features
+      - name: Check fuzz targets
+        run: cargo check --manifest-path fuzz/Cargo.toml --all-targets --locked
       - name: Test (render)
         run: cargo test --all-targets --features render
+      - name: Test (bundled fonts)
+        run: cargo test --test bundled_fonts --all-features --locked
+      - name: Test (release-mode performance smoke)
+        run: cargo test --release --test performance --locked -- --ignored --nocapture
       - name: Doctests
         run: cargo test --doc --all-features
       - name: Doc
         run: cargo doc --no-deps --all-features
+
+  wasm:
+    name: wasm32 build and Node smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Install matching wasm-bindgen CLI
+        run: cargo install wasm-bindgen-cli --version 0.2.126 --locked
+      - name: Build WASM library
+        run: cargo build --lib --target wasm32-unknown-unknown --locked
+      - name: Generate Node bindings
+        run: wasm-bindgen --target nodejs --out-dir target/wasm-node target/wasm32-unknown-unknown/debug/rwml.wasm
+      - name: Execute WASM bindings
+        run: node tests/wasm_node_smoke.cjs target/wasm-node corpus/public/synthetic/comments.docx
+      - name: Test browser report formatting
+        run: node tests/wasm_demo_report_format.mjs
 
   msrv:
     name: MSRV 1.85 · render 1.92

@@ -288,17 +288,14 @@ pub(crate) fn parse_anchors(
                 push_anchor_paragraph_boundary(&active, &mut anchors);
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
-                if local(e.name().as_ref()) == b"commentRangeStart" =>
+                if local(e.name().as_ref()) == b"commentRangeStart" && old_content_depth == 0 =>
             {
                 if let Some(id) = attr_local_trimmed(&e, b"id") {
-                    let visible = old_content_depth == 0;
-                    if visible {
-                        anchors.entry(id.clone()).or_insert_with(|| TextAnchor {
-                            id: id.clone(),
-                            text: String::new(),
-                        });
-                    }
-                    active.push((id, visible));
+                    anchors.entry(id.clone()).or_insert_with(|| TextAnchor {
+                        id: id.clone(),
+                        text: String::new(),
+                    });
+                    active.push((id, true));
                 }
             }
             Ok(Event::Start(e))
@@ -347,7 +344,7 @@ pub(crate) fn parse_anchors(
                 }
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
-                if local(e.name().as_ref()) == b"commentRangeEnd" =>
+                if local(e.name().as_ref()) == b"commentRangeEnd" && old_content_depth == 0 =>
             {
                 if let Some(id) = attr_local_trimmed(&e, b"id") {
                     if let Some(pos) = active.iter().rposition(|(active_id, _)| active_id == &id) {

@@ -1,20 +1,25 @@
 [package]
 name = "rwml-fonts"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 rust-version = "1.74"
 license = "OFL-1.1"
-description = "Bundled OFL font subset (Noto Sans KR, KS X 1001) for rwml's PDF renderer"
+description = "Bundled OFL Noto Sans subsets for rwml's PDF renderer"
 repository = "https://github.com/HyunjoJung/rwml"
 readme = "README.md"
 include = [
     "src/**",
     "fonts/NotoSansKR-rwml-subset.ttf",
     "fonts/NotoSansKR-rwml-subset-full.ttf",
+    "fonts/NotoSansArabic-rwml-subset.ttf",
+    "fonts/NotoSansHebrew-rwml-subset.ttf",
     "OFL.txt",
+    "OFL-NotoSansArabic.txt",
+    "OFL-NotoSansHebrew.txt",
     "PROVENANCE.md",
     "README.md",
     "scripts/make_font_subset.py",
+    "scripts/make_rtl_font_subsets.py",
 ]
 
 [lib]

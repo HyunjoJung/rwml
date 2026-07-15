@@ -20,10 +20,26 @@ const MINIMAL_PNG: &[u8] = &[
 
 fuzz_target!(|data: &[u8]| {
     if let Ok(mut doc) = rwml::Document::open(data) {
+        let _ = doc.set_core_property(rwml::CoreProperty::Title, "fuzz");
+        let _ = doc.add_comment_on_text("a", "fuzz comment", "fuzzer");
+        let _ = doc.add_footnote_on_text("a", "fuzz footnote");
+        let _ = doc.add_endnote_on_text("a", "fuzz endnote");
+        let _ = doc.set_table_cell_text(0, 0, 0, "x");
+        let _ = doc.set_hyperlink_target(0, "https://example.invalid/fuzz");
+        let _ = doc.set_comment_text("0", "x");
+        let _ = doc.replace_note_text("a", "b");
+        let _ = doc.replace_header_footer_text("a", "b");
+        let _ = doc.replace_text_in_part("word/document.xml", "a", "b");
         let _ = doc.replace_body_text("a", "b");
         let _ = doc.set_field_result(0, "x");
+        let _ = doc.fill_content_control_by_tag("k", "v");
         let _ = doc.fill_template_fields([("k", "v")]);
         let _ = doc.add_image_png(MINIMAL_PNG, "f.png");
+        if data.first().copied().unwrap_or_default() & 1 == 0 {
+            let _ = doc.accept_all_revisions();
+        } else {
+            let _ = doc.reject_all_revisions();
+        }
         let _ = doc.save();
     }
 });

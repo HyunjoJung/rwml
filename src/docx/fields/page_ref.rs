@@ -1811,33 +1811,33 @@ fn cardinal_number_text(number: usize) -> Option<String> {
     if number == 0 {
         return Some("zero".to_string());
     }
-    cardinal_positive_number_text(number)
+    cardinal_positive_number_text(number as u64)
 }
 
-fn cardinal_positive_number_text(number: usize) -> Option<String> {
-    const SCALES: &[(usize, &str)] = &[
+fn cardinal_positive_number_text(number: u64) -> Option<String> {
+    const SCALES: &[(u64, &str)] = &[
         (1_000_000_000_000, "trillion"),
         (1_000_000_000, "billion"),
         (1_000_000, "million"),
         (1_000, "thousand"),
     ];
     if number < 20 {
-        return Some(SMALL_NUMBER_WORDS[number].to_string());
+        return Some(SMALL_NUMBER_WORDS[number as usize].to_string());
     }
     if number < 100 {
         let tens = number / 10;
         let rest = number % 10;
-        let tens_word = TENS_NUMBER_WORDS[tens];
+        let tens_word = TENS_NUMBER_WORDS[tens as usize];
         return Some(if rest == 0 {
             tens_word.to_string()
         } else {
-            format!("{tens_word}-{}", SMALL_NUMBER_WORDS[rest])
+            format!("{tens_word}-{}", SMALL_NUMBER_WORDS[rest as usize])
         });
     }
     if number < 1_000 {
         let hundreds = number / 100;
         let rest = number % 100;
-        let prefix = format!("{} hundred", SMALL_NUMBER_WORDS[hundreds]);
+        let prefix = format!("{} hundred", SMALL_NUMBER_WORDS[hundreds as usize]);
         return Some(if rest == 0 {
             prefix
         } else {
@@ -1860,31 +1860,35 @@ fn cardinal_positive_number_text(number: usize) -> Option<String> {
 }
 
 fn ordinal_number_text(number: usize) -> Option<String> {
+    ordinal_positive_number_text(number as u64)
+}
+
+fn ordinal_positive_number_text(number: u64) -> Option<String> {
     if number < 20 {
-        return Some(SMALL_ORDINAL_WORDS[number].to_string());
+        return Some(SMALL_ORDINAL_WORDS[number as usize].to_string());
     }
     if number < 100 {
         let tens = number / 10;
         let rest = number % 10;
-        let tens_word = TENS_NUMBER_WORDS[tens];
+        let tens_word = TENS_NUMBER_WORDS[tens as usize];
         return Some(if rest == 0 {
-            TENS_ORDINAL_WORDS[tens].to_string()
+            TENS_ORDINAL_WORDS[tens as usize].to_string()
         } else {
-            format!("{tens_word}-{}", ordinal_number_text(rest)?)
+            format!("{tens_word}-{}", ordinal_positive_number_text(rest)?)
         });
     }
     if number < 1_000 {
         let hundreds = number / 100;
         let rest = number % 100;
-        let prefix = format!("{} hundred", SMALL_NUMBER_WORDS[hundreds]);
+        let prefix = format!("{} hundred", SMALL_NUMBER_WORDS[hundreds as usize]);
         return Some(if rest == 0 {
             format!("{prefix}th")
         } else {
-            format!("{prefix} {}", ordinal_number_text(rest)?)
+            format!("{prefix} {}", ordinal_positive_number_text(rest)?)
         });
     }
     for (value, name) in [
-        (1_000_000_000_000usize, "trillion"),
+        (1_000_000_000_000u64, "trillion"),
         (1_000_000_000, "billion"),
         (1_000_000, "million"),
         (1_000, "thousand"),
@@ -1896,7 +1900,7 @@ fn ordinal_number_text(number: usize) -> Option<String> {
             return Some(if rest == 0 {
                 format!("{prefix} {name}th")
             } else {
-                format!("{prefix} {name} {}", ordinal_number_text(rest)?)
+                format!("{prefix} {name} {}", ordinal_positive_number_text(rest)?)
             });
         }
     }

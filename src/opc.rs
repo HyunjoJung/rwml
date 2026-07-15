@@ -453,6 +453,43 @@ impl Package {
     /// ZIP *container* metadata is normalized (fresh writer, default options), so the
     /// result is part-payload-stable, not a bit-exact copy of the input archive.
     pub(crate) fn to_zip(&self) -> Result<Vec<u8>> {
+        let in_order = self.validate_write_metadata()?;
+        let mut zw = ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let opt = SimpleFileOptions::default();
+        let mut total = 0u64;
+        self.visit_write_entries(&in_order, |name, bytes| match bytes {
+            Some(bytes) => {
+                validate_write_payload(name, bytes, &mut total)?;
+                zw.start_file(name, opt)
+                    .map_err(|e| Error::Docx(format!("zip start {name}: {e}")))?;
+                zw.write_all(bytes)
+                    .map_err(|e| Error::Docx(format!("zip write {name}: {e}")))
+            }
+            None => zw
+                .add_directory(name, opt)
+                .map_err(|e| Error::Docx(format!("zip dir {name}: {e}"))),
+        })?;
+        let cur = zw
+            .finish()
+            .map_err(|e| Error::Docx(format!("zip finish: {e}")))?;
+        Ok(cur.into_inner())
+    }
+
+    /// Validate every deterministic condition required by [`Self::to_zip`] without
+    /// allocating a ZIP archive. Preservation edits call this on their staged clone
+    /// before making it authoritative.
+    pub(crate) fn validate_for_save(&self) -> Result<()> {
+        let in_order = self.validate_write_metadata()?;
+        let mut total = 0u64;
+        self.visit_write_entries(&in_order, |name, bytes| {
+            if let Some(bytes) = bytes {
+                validate_write_payload(name, bytes, &mut total)?;
+            }
+            Ok(())
+        })
+    }
+
+    fn validate_write_metadata(&self) -> Result<HashSet<&String>> {
         // Every part WE added/replaced must be typed (an `<Override>` or matching
         // `<Default>`), or Word rejects the file — this catches an internal/caller
         // mistake before writing a broken package. Original passthrough parts are
@@ -523,43 +560,20 @@ impl Package {
         if self.order.len().saturating_add(added_after_open) > max_entries() {
             return Err(Error::Docx("package has too many entries on save".into()));
         }
-        let mut zw = ZipWriter::new(std::io::Cursor::new(Vec::new()));
-        let opt = SimpleFileOptions::default();
-        // Re-apply the same size budgets `from_zip` enforces, so an edit can't produce a
-        // part/package this crate would later refuse to open (a giant replacement string
-        // or oversized media). Checked on the actual serialized payloads.
-        let mut total: u64 = 0;
-        let part_budget = max_part();
-        let emit =
-            |zw: &mut ZipWriter<_>, total: &mut u64, name: &str, bytes: &[u8]| -> Result<()> {
-                // Same part-name length limit `from_zip` enforces, so an edit can't add a
-                // name the reopen would reject.
-                if name.len() > MAX_NAME_LEN {
-                    return Err(Error::Docx(format!("part name too long on save: {name}")));
-                }
-                if bytes.len() as u64 > part_budget {
-                    return Err(Error::Docx(format!(
-                        "part {name} exceeds the per-part size budget on save"
-                    )));
-                }
-                *total = total.saturating_add(bytes.len() as u64);
-                if *total > MAX_TOTAL {
-                    return Err(Error::Docx(
-                        "package exceeds the total size budget on save".into(),
-                    ));
-                }
-                zw.start_file(name, opt)
-                    .map_err(|e| Error::Docx(format!("zip start {name}: {e}")))?;
-                zw.write_all(bytes)
-                    .map_err(|e| Error::Docx(format!("zip write {name}: {e}")))?;
-                Ok(())
-            };
+        Ok(in_order)
+    }
+
+    fn visit_write_entries(
+        &self,
+        in_order: &HashSet<&String>,
+        mut visit: impl FnMut(&str, Option<&[u8]>) -> Result<()>,
+    ) -> Result<()> {
         for name in &self.order {
             if name.ends_with('/') {
-                zw.add_directory(name.as_str(), opt)
-                    .map_err(|e| Error::Docx(format!("zip dir {name}: {e}")))?;
+                visit(name, None)?;
             } else if let Some(p) = self.parts.get(name) {
-                emit(&mut zw, &mut total, name, p.bytes().as_ref())?;
+                let bytes = p.bytes();
+                visit(name, Some(bytes.as_ref()))?;
             }
         }
         // Any part added after open (not in `order`) is appended deterministically.
@@ -571,13 +585,11 @@ impl Package {
         extra.sort();
         for name in extra {
             if let Some(p) = self.parts.get(name) {
-                emit(&mut zw, &mut total, name, p.bytes().as_ref())?;
+                let bytes = p.bytes();
+                visit(name, Some(bytes.as_ref()))?;
             }
         }
-        let cur = zw
-            .finish()
-            .map_err(|e| Error::Docx(format!("zip finish: {e}")))?;
-        Ok(cur.into_inner())
+        Ok(())
     }
 
     /// Serialized bytes of a part, if present (re-serializing a promoted tree).
@@ -916,6 +928,24 @@ impl Package {
             self.regen_content_types();
         }
     }
+}
+
+fn validate_write_payload(name: &str, bytes: &[u8], total: &mut u64) -> Result<()> {
+    if name.len() > MAX_NAME_LEN {
+        return Err(Error::Docx(format!("part name too long on save: {name}")));
+    }
+    if bytes.len() as u64 > max_part() {
+        return Err(Error::Docx(format!(
+            "part {name} exceeds the per-part size budget on save"
+        )));
+    }
+    *total = total.saturating_add(bytes.len() as u64);
+    if *total > MAX_TOTAL {
+        return Err(Error::Docx(
+            "package exceeds the total size budget on save".into(),
+        ));
+    }
+    Ok(())
 }
 
 /// `word/document.xml` → `word/_rels/document.xml.rels`; `` (root) handled too.

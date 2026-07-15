@@ -33,9 +33,9 @@ use crate::annotation::{
 use crate::model::{
     Align, AuthoredContentControl, Block, Cell, CellMargins, CharProps, Color, DocGrid,
     DocGridType, FieldRole, FieldUnsupportedReason, Image, Indent, ListInfo, PageNumberFormat,
-    PageSetup, ParaProps, Paragraph, Row, Run, SectionBreakKind, SectionSetup, Spacing, Table,
-    TableBorderColors, TableBorderSide, TableBorderSizes, TableBorderStyle, TableBorderStyles,
-    TextDirection, VCell,
+    PageSetup, PaginationHint, ParaProps, Paragraph, Row, Run, SectionBreakKind, SectionSetup,
+    Spacing, Table, TableBorderColors, TableBorderSide, TableBorderSizes, TableBorderStyle,
+    TableBorderStyles, TextDirection, VCell,
 };
 use crate::text;
 use crate::CoreProperties;
@@ -61,6 +61,12 @@ type Xml<'a> = Reader<&'a [u8]>;
 /// this depth the subtree is skipped rather than recursed into.
 const MAX_DEPTH: u32 = 128;
 const PAGE_BREAK_MARKER: char = '\u{000C}';
+
+#[derive(Default)]
+pub(super) struct PaginationCapture {
+    hints: Vec<PaginationHint>,
+    suspended: usize,
+}
 
 /// Resolved supplementary tables, passed down the descent.
 pub(crate) struct Ctx<'a> {
@@ -103,6 +109,53 @@ pub(crate) struct Ctx<'a> {
     /// order as list paragraphs are finalized (interior-mutable: parsing is
     /// single-threaded and `finalize_paragraph` runs in reading order).
     pub counters: std::cell::RefCell<HashMap<String, [u32; 9]>>,
+    pub(super) pagination_capture: std::cell::RefCell<Option<PaginationCapture>>,
+}
+
+impl Ctx<'_> {
+    #[cfg(feature = "render")]
+    pub(crate) fn begin_pagination_capture(&self) {
+        *self.pagination_capture.borrow_mut() = Some(PaginationCapture::default());
+    }
+
+    #[cfg(feature = "render")]
+    pub(crate) fn take_pagination_hints(&self) -> Vec<PaginationHint> {
+        self.pagination_capture
+            .borrow_mut()
+            .take()
+            .map(|capture| capture.hints)
+            .unwrap_or_default()
+    }
+
+    fn suspend_pagination_capture(&self) {
+        if let Some(capture) = self.pagination_capture.borrow_mut().as_mut() {
+            capture.suspended = capture.suspended.saturating_add(1);
+        }
+    }
+
+    fn resume_pagination_capture(&self) {
+        if let Some(capture) = self.pagination_capture.borrow_mut().as_mut() {
+            capture.suspended = capture.suspended.saturating_sub(1);
+        }
+    }
+
+    fn capture_block_pagination(&self, hint: PaginationHint) {
+        if let Some(capture) = self.pagination_capture.borrow_mut().as_mut() {
+            if capture.suspended == 0 {
+                capture.hints.push(hint);
+            }
+        }
+    }
+
+    fn capture_paragraph_blocks(&self, blocks: &[Block], hint: PaginationHint) {
+        for block in blocks {
+            self.capture_block_pagination(if matches!(block, Block::Paragraph(_)) {
+                hint
+            } else {
+                PaginationHint::default()
+            });
+        }
+    }
 }
 
 /// Parse `word/document.xml` into block-level nodes.
@@ -156,23 +209,28 @@ pub(crate) fn scan_hf_refs(xml: &str) -> (Vec<HeaderFooterRef>, Vec<HeaderFooter
 /// `Block::SectionBreak` nodes; the trailing body-level group describes the
 /// final document setup.
 pub(crate) fn scan_hf_ref_sections(xml: &str) -> Vec<HeaderFooterRefs> {
+    scan_hf_ref_sections_with_view(xml, HeaderFooterRevisionView::Accepted)
+}
+
+pub(crate) fn scan_hf_ref_sections_for_revision_reject(xml: &str) -> Vec<HeaderFooterRefs> {
+    scan_hf_ref_sections_with_view(xml, HeaderFooterRevisionView::Rejected)
+}
+
+#[derive(Clone, Copy)]
+enum HeaderFooterRevisionView {
+    Accepted,
+    Rejected,
+}
+
+fn scan_hf_ref_sections_with_view(
+    xml: &str,
+    view: HeaderFooterRevisionView,
+) -> Vec<HeaderFooterRefs> {
     let mut r = Reader::from_str(xml);
     let mut sections = Vec::new();
     loop {
         match r.read_event() {
-            Ok(Event::Start(e))
-                if matches!(
-                    local(e.name().as_ref()),
-                    b"del"
-                        | b"moveFrom"
-                        | b"pPrChange"
-                        | b"rPrChange"
-                        | b"tblPrChange"
-                        | b"trPrChange"
-                        | b"tcPrChange"
-                        | b"sectPrChange"
-                ) =>
-            {
+            Ok(Event::Start(e)) if skip_header_footer_revision_subtree(&e, view) => {
                 skip_subtree(&mut r);
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"sectPr" => {
@@ -186,6 +244,25 @@ pub(crate) fn scan_hf_ref_sections(xml: &str) -> Vec<HeaderFooterRefs> {
         }
     }
     sections
+}
+
+fn skip_header_footer_revision_subtree(e: &BytesStart<'_>, view: HeaderFooterRevisionView) -> bool {
+    let qname = e.name();
+    let name = local(qname.as_ref());
+    let hidden_content = match view {
+        HeaderFooterRevisionView::Accepted => matches!(name, b"del" | b"moveFrom"),
+        HeaderFooterRevisionView::Rejected => matches!(name, b"ins" | b"moveTo"),
+    };
+    hidden_content
+        || matches!(
+            name,
+            b"pPrChange"
+                | b"rPrChange"
+                | b"tblPrChange"
+                | b"trPrChange"
+                | b"tcPrChange"
+                | b"sectPrChange"
+        )
 }
 
 fn read_hf_ref_section(r: &mut Xml<'_>) -> HeaderFooterRefs {
@@ -1032,6 +1109,7 @@ pub(crate) fn scan_note_ref_anchors(
     )
     .with_toc_context(ctx.toc_entries, ctx.bookmark_names)
     .with_section_context(ctx.sections)
+    .with_style_ref_context_from(ctx.style_refs, 0)
     .with_legacy_form_context_from(ctx.legacy_forms, 0);
     loop {
         match r.read_event() {
@@ -1069,7 +1147,10 @@ pub(crate) fn scan_note_ref_anchors(
                     body_depth += 1;
                 }
                 if current_block_depth.is_some() {
-                    if name == tag {
+                    if matches!(name, b"del" | b"moveFrom") {
+                        skip_subtree(&mut r);
+                        body_depth = body_depth.saturating_sub(1);
+                    } else if name == tag {
                         if let Some(id) = attr_local_trimmed(&e, b"id") {
                             current_block_refs.push(id);
                         }
@@ -1724,9 +1805,8 @@ fn read_blocks(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Vec<Block> {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
                 b"p" => blocks.extend(read_paragraph_blocks(r, ctx, depth + 1)),
                 b"tbl" => {
-                    let t = read_table(r, ctx, depth + 1);
-                    if !t.rows.is_empty() {
-                        blocks.push(Block::Table(t));
+                    if let Some(table) = read_table_block(r, ctx, depth + 1) {
+                        blocks.push(table);
                     }
                 }
                 b"sdt" => blocks.extend(read_content_control_blocks(r, ctx, depth + 1)),
@@ -1782,9 +1862,8 @@ fn read_content_control_blocks(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Ve
                 b"sdtContent" => blocks.extend(read_blocks(r, ctx, depth + 1)),
                 b"p" => blocks.extend(read_paragraph_blocks(r, ctx, depth + 1)),
                 b"tbl" => {
-                    let table = read_table(r, ctx, depth + 1);
-                    if !table.rows.is_empty() {
-                        blocks.push(Block::Table(table));
+                    if let Some(table) = read_table_block(r, ctx, depth + 1) {
+                        blocks.push(table);
                     }
                 }
                 b"sdt" => blocks.extend(read_content_control_blocks(r, ctx, depth + 1)),
@@ -1864,9 +1943,8 @@ fn read_content_control_blocks_alternate_content_branch(
                 b"sdtContent" => blocks.extend(read_blocks(r, ctx, depth + 1)),
                 b"p" => blocks.extend(read_paragraph_blocks(r, ctx, depth + 1)),
                 b"tbl" => {
-                    let table = read_table(r, ctx, depth + 1);
-                    if !table.rows.is_empty() {
-                        blocks.push(Block::Table(table));
+                    if let Some(table) = read_table_block(r, ctx, depth + 1) {
+                        blocks.push(table);
                     }
                 }
                 b"sdt" => blocks.extend(read_content_control_blocks(r, ctx, depth + 1)),
@@ -1911,10 +1989,14 @@ fn apply_content_control_to_blocks(blocks: &mut [Block], control: Option<Authore
 }
 
 /// Read a `<w:p>`: its `w:pPr` properties and inline runs.
-fn read_paragraph(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Paragraph, Option<SectionSetup>) {
+fn read_paragraph(
+    r: &mut Xml<'_>,
+    ctx: &Ctx<'_>,
+    depth: u32,
+) -> (Paragraph, Option<SectionSetup>, PaginationHint) {
     if depth > MAX_DEPTH {
         skip_subtree(r);
-        return (Paragraph::default(), None);
+        return (Paragraph::default(), None, PaginationHint::default());
     }
     let mut runs: Vec<Run> = Vec::new();
     let mut pp = PPr::default();
@@ -2023,7 +2105,8 @@ fn read_paragraph(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Paragraph, Opt
     }
     apply_sequence_heading_scope(&pp, ctx, &mut sequence_heading_applied);
     let section = pp.section.take();
-    (finalize_paragraph(runs, pp, ctx), section)
+    let (paragraph, pagination) = finalize_paragraph(runs, pp, ctx);
+    (paragraph, section, pagination)
 }
 
 fn push_active_bookmark(bookmarks: &mut Vec<(String, String)>, e: &BytesStart<'_>) {
@@ -2075,7 +2158,7 @@ fn mark_complex_field_result_runs(
 }
 
 fn read_paragraph_blocks(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Vec<Block> {
-    let (paragraph, section) = read_paragraph(r, ctx, depth);
+    let (paragraph, section, pagination) = read_paragraph(r, ctx, depth);
     let mut blocks = split_page_breaks(paragraph);
     if let Some(mut section) = section {
         if section.section_break.is_none() {
@@ -2083,6 +2166,7 @@ fn read_paragraph_blocks(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Vec<Bloc
         }
         blocks.push(Block::SectionBreak(section));
     }
+    ctx.capture_paragraph_blocks(&blocks, pagination);
     blocks
 }
 
@@ -2351,9 +2435,14 @@ struct PPr {
     outline: Option<u8>,
     spacing: Spacing,
     indent: Indent,
+    indent_start_pt: Option<f32>,
+    indent_end_pt: Option<f32>,
     shading: Option<Color>,
     page_break_before: bool,
-    bidi: bool,
+    bidi: Option<bool>,
+    keep_next: Option<bool>,
+    keep_lines: Option<bool>,
+    widow_control: Option<bool>,
     section: Option<SectionSetup>,
 }
 
@@ -2948,7 +3037,10 @@ fn read_ppr_item(pp: &mut PPr, e: &BytesStart<'_>, num_id: &mut Option<String>, 
         b"jc" => pp.jc = attr_local_trimmed(e, b"val"),
         b"outlineLvl" => pp.outline = attr_u8(e, b"val"),
         b"pageBreakBefore" => pp.page_break_before = toggle_on(attr_local(e, b"val")),
-        b"bidi" => pp.bidi = toggle_on(attr_local(e, b"val")),
+        b"bidi" => pp.bidi = Some(toggle_on(attr_local(e, b"val"))),
+        b"keepNext" => pp.keep_next = Some(toggle_on(attr_local(e, b"val"))),
+        b"keepLines" => pp.keep_lines = Some(toggle_on(attr_local(e, b"val"))),
+        b"widowControl" => pp.widow_control = Some(toggle_on(attr_local(e, b"val"))),
         b"spacing" => {
             pp.spacing.before_pt = attr_local(e, b"before").and_then(|v| twips_to_pt(&v));
             pp.spacing.after_pt = attr_local(e, b"after").and_then(|v| twips_to_pt(&v));
@@ -2962,12 +3054,10 @@ fn read_ppr_item(pp: &mut PPr, e: &BytesStart<'_>, num_id: &mut Option<String>, 
             }
         }
         b"ind" => {
-            pp.indent.left_pt = attr_local(e, b"left")
-                .or_else(|| attr_local(e, b"start"))
-                .and_then(|v| twips_to_pt(&v));
-            pp.indent.right_pt = attr_local(e, b"right")
-                .or_else(|| attr_local(e, b"end"))
-                .and_then(|v| twips_to_pt(&v));
+            pp.indent.left_pt = attr_local(e, b"left").and_then(|v| twips_to_pt(&v));
+            pp.indent.right_pt = attr_local(e, b"right").and_then(|v| twips_to_pt(&v));
+            pp.indent_start_pt = attr_local(e, b"start").and_then(|v| twips_to_pt(&v));
+            pp.indent_end_pt = attr_local(e, b"end").and_then(|v| twips_to_pt(&v));
             pp.indent.first_line_pt = attr_local(e, b"firstLine").and_then(|v| twips_to_pt(&v));
             pp.indent.hanging_pt = attr_local(e, b"hanging").and_then(|v| twips_to_pt(&v));
         }
@@ -3659,13 +3749,15 @@ fn effective_run_props(
     paragraph_style_id: Option<&str>,
     direct_props: &DirectRunProps,
 ) -> CharProps {
-    let mut props = ctx
+    let mut resolved = ctx
         .styles
-        .run_props(paragraph_style_id, direct_props.style_id.as_deref());
+        .resolved_run_props(paragraph_style_id, direct_props.style_id.as_deref());
     // Intentional ceiling: this uses layered property override. Full ECMA-376
     // toggle XOR semantics and table-style conditional `tblStylePr` are the
     // upgrade path.
-    direct_props.props.apply_to(&mut props);
+    resolved.overlay(&direct_props.props);
+    let mut props = CharProps::default();
+    resolved.apply_to(&mut props);
     props
 }
 
@@ -4825,19 +4917,54 @@ fn hyperlink_instr_uses_anchor_target(instr: &str) -> bool {
 /// Resolve paragraph-level properties (heading level, alignment, list) from the
 /// collected `w:pPr` fields — mirroring `assemble.rs::take_paragraph` precedence
 /// (explicit outline level wins; a heading suppresses list rendering).
-fn finalize_paragraph(runs: Vec<Run>, pp: PPr, ctx: &Ctx<'_>) -> Paragraph {
+fn finalize_paragraph(runs: Vec<Run>, pp: PPr, ctx: &Ctx<'_>) -> (Paragraph, PaginationHint) {
     let PPr {
         style_id,
         num,
         jc,
         outline,
         spacing,
-        indent,
+        mut indent,
+        indent_start_pt,
+        indent_end_pt,
         shading,
         page_break_before,
         bidi,
+        keep_next,
+        keep_lines,
+        widow_control,
         section: _,
     } = pp;
+    let inherited = ctx.styles.paragraph_props(style_id.as_deref());
+    let pagination = PaginationHint {
+        keep_next: keep_next.or(inherited.keep_next).unwrap_or(false),
+        keep_lines: keep_lines.or(inherited.keep_lines).unwrap_or(false),
+        widow_control: widow_control.or(inherited.widow_control).unwrap_or(true),
+    };
+    let bidi = bidi.or(inherited.bidi).unwrap_or(false);
+    let jc = jc.or(inherited.jc);
+    let direct_logical_left = if bidi { indent_end_pt } else { indent_start_pt };
+    let direct_logical_right = if bidi { indent_start_pt } else { indent_end_pt };
+    let inherited_logical_left = if bidi {
+        inherited.indent_end_pt
+    } else {
+        inherited.indent_start_pt
+    };
+    let inherited_logical_right = if bidi {
+        inherited.indent_start_pt
+    } else {
+        inherited.indent_end_pt
+    };
+    indent.left_pt = indent
+        .left_pt
+        .or(direct_logical_left)
+        .or(inherited.indent_left_pt)
+        .or(inherited_logical_left);
+    indent.right_pt = indent
+        .right_pt
+        .or(direct_logical_right)
+        .or(inherited.indent_right_pt)
+        .or(inherited_logical_right);
     let heading_level = match outline {
         Some(o) if o <= 8 => Some(o + 1),
         Some(_) => None, // outlineLvl 9 = body text
@@ -4851,8 +4978,24 @@ fn finalize_paragraph(runs: Vec<Run>, pp: PPr, ctx: &Ctx<'_>) -> Paragraph {
         .map(str::to_string);
     let align = match jc.as_deref() {
         Some("center") => Align::Center,
-        Some("right") | Some("end") => Align::Right,
+        Some("left") => Align::Left,
+        Some("right") => Align::Right,
+        Some("start") => {
+            if bidi {
+                Align::Right
+            } else {
+                Align::Left
+            }
+        }
+        Some("end") => {
+            if bidi {
+                Align::Left
+            } else {
+                Align::Right
+            }
+        }
         Some("both") | Some("distribute") => Align::Justify,
+        _ if bidi => Align::Right,
         _ => Align::Left,
     };
     // A heading takes precedence over list-item rendering. `numId == "0"` is the
@@ -4878,7 +5021,7 @@ fn finalize_paragraph(runs: Vec<Run>, pp: PPr, ctx: &Ctx<'_>) -> Paragraph {
             _ => None,
         }
     };
-    Paragraph {
+    let paragraph = Paragraph {
         props: ParaProps {
             style_id,
             style_name,
@@ -4893,7 +5036,8 @@ fn finalize_paragraph(runs: Vec<Run>, pp: PPr, ctx: &Ctx<'_>) -> Paragraph {
             bidi,
         },
         runs,
-    }
+    };
+    (paragraph, pagination)
 }
 
 /// A streamed cell before vertical-merge resolution.
@@ -4915,6 +5059,18 @@ enum VMerge {
 }
 
 /// Read a `<w:tbl>` and resolve merges into a [`Table`].
+fn read_table_block(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Option<Block> {
+    ctx.suspend_pagination_capture();
+    let table = read_table(r, ctx, depth);
+    ctx.resume_pagination_capture();
+    if table.rows.is_empty() {
+        None
+    } else {
+        ctx.capture_block_pagination(PaginationHint::default());
+        Some(Block::Table(table))
+    }
+}
+
 fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Table {
     if depth > MAX_DEPTH {
         skip_subtree(r);
@@ -5543,9 +5699,8 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
                 b"tcPr" => tc = Some(read_tcpr(r)),
                 b"p" => blocks.extend(read_paragraph_blocks(r, ctx, depth + 1)),
                 b"tbl" => {
-                    let t = read_table(r, ctx, depth + 1);
-                    if !t.rows.is_empty() {
-                        blocks.push(Block::Table(t));
+                    if let Some(table) = read_table_block(r, ctx, depth + 1) {
+                        blocks.push(table);
                     }
                 }
                 b"sdt" | b"sdtContent" | b"customXml" | b"smartTag" | b"ins" | b"moveTo" => {
@@ -5891,7 +6046,27 @@ mod tests {
     }
 
     fn parse_with_media(xml: &str, media: HashMap<String, Image>) -> Vec<Block> {
-        let styles = Styles::default();
+        parse_with_media_and_styles(xml, media, Styles::default())
+    }
+
+    fn parse_with_styles(xml: &str, styles_xml: &str) -> Vec<Block> {
+        parse_with_media_and_styles(xml, HashMap::new(), super::super::styles::parse(styles_xml))
+    }
+
+    fn parse_with_media_and_styles(
+        xml: &str,
+        media: HashMap<String, Image>,
+        styles: Styles,
+    ) -> Vec<Block> {
+        parse_with_media_styles_and_pagination(xml, media, styles, false).0
+    }
+
+    fn parse_with_media_styles_and_pagination(
+        xml: &str,
+        media: HashMap<String, Image>,
+        styles: Styles,
+        capture_pagination: bool,
+    ) -> (Vec<Block>, Vec<PaginationHint>) {
         let numbering = Numbering::default();
         let rels = HashMap::new();
         let ref_targets = HashMap::new();
@@ -5946,8 +6121,68 @@ mod tests {
             listnum_counter: Default::default(),
             field_bookmarks: Default::default(),
             counters: Default::default(),
+            pagination_capture: Default::default(),
         };
-        parse_document(xml, &ctx)
+        if capture_pagination {
+            *ctx.pagination_capture.borrow_mut() = Some(PaginationCapture::default());
+        }
+        let blocks = parse_document(xml, &ctx);
+        let hints = ctx
+            .pagination_capture
+            .borrow_mut()
+            .take()
+            .map(|capture| capture.hints)
+            .unwrap_or_default();
+        (blocks, hints)
+    }
+
+    #[test]
+    fn captures_resolved_top_level_pagination_hints_in_block_order() {
+        let styles = super::super::styles::parse(
+            r#"<w:styles>
+                <w:style w:type="paragraph" w:styleId="Kept">
+                    <w:pPr><w:keepNext/><w:keepLines/></w:pPr>
+                </w:style>
+            </w:styles>"#,
+        );
+        let xml = r#"<w:document><w:body>
+            <w:p><w:r><w:t>default widow</w:t></w:r></w:p>
+            <w:sdt><w:sdtContent><w:p><w:pPr><w:pStyle w:val="Kept"/><w:keepNext w:val="0"/><w:widowControl w:val="off"/></w:pPr><w:r><w:t>styled</w:t></w:r></w:p></w:sdtContent></w:sdt>
+            <w:tbl><w:tr><w:tc><w:p><w:pPr><w:keepNext/></w:pPr><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+            <w:p><w:pPr><w:keepLines/></w:pPr><w:r><w:t>before</w:t><w:br w:type="page"/><w:t>after</w:t></w:r></w:p>
+        </w:body></w:document>"#;
+
+        let (blocks, hints) =
+            parse_with_media_styles_and_pagination(xml, HashMap::new(), styles, true);
+
+        assert_eq!(blocks.len(), 6);
+        assert_eq!(hints.len(), blocks.len());
+        assert_eq!(
+            hints,
+            vec![
+                PaginationHint {
+                    widow_control: true,
+                    ..PaginationHint::default()
+                },
+                PaginationHint {
+                    keep_next: false,
+                    keep_lines: true,
+                    widow_control: false,
+                },
+                PaginationHint::default(),
+                PaginationHint {
+                    keep_lines: true,
+                    widow_control: true,
+                    ..PaginationHint::default()
+                },
+                PaginationHint::default(),
+                PaginationHint {
+                    keep_lines: true,
+                    widow_control: true,
+                    ..PaginationHint::default()
+                },
+            ]
+        );
     }
 
     #[test]
@@ -6525,6 +6760,7 @@ mod tests {
             listnum_counter: Default::default(),
             field_bookmarks: Default::default(),
             counters: Default::default(),
+            pagination_capture: Default::default(),
         };
         let xml = r#"<w:footnotes>
             <w:footnote w:type=" separator " w:id="-1"><w:p><w:r><w:t>SEP</w:t></w:r></w:p></w:footnote>
@@ -6601,6 +6837,7 @@ mod tests {
             listnum_counter: Default::default(),
             field_bookmarks: Default::default(),
             counters: Default::default(),
+            pagination_capture: Default::default(),
         };
         let xml = r#"<w:footnotes xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
             <mc:AlternateContent>
@@ -6690,6 +6927,7 @@ mod tests {
             listnum_counter: Default::default(),
             field_bookmarks: Default::default(),
             counters: Default::default(),
+            pagination_capture: Default::default(),
         };
         let xml = r#"<w:hdr><w:p><w:r><w:t>헤더 텍스트</w:t></w:r></w:p></w:hdr>"#;
         let blocks = parse_hdrftr(xml, &ctx);
@@ -6780,7 +7018,7 @@ mod tests {
     #[test]
     fn reads_rtl_onoff_properties() {
         let xml = r#"<w:document><w:body>
-            <w:p><w:pPr><w:bidi/></w:pPr><w:r><w:rPr><w:rtl/></w:rPr><w:t>rtl</w:t></w:r></w:p>
+            <w:p><w:pPr><w:bidi/></w:pPr><w:r><w:rPr><w:rFonts w:ascii="Arial" w:cs="Noto Sans Arabic"/><w:rtl/></w:rPr><w:t>rtl</w:t></w:r></w:p>
             <w:p><w:pPr><w:bidi w:val="0"/></w:pPr><w:r><w:rPr><w:rtl w:val="0"/></w:rPr><w:t>ltr</w:t></w:r></w:p>
             <w:tbl><w:tblPr><w:bidiVisual/></w:tblPr><w:tr><w:tc><w:p><w:r><w:t>visual</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
             <w:tbl><w:tblPr><w:bidiVisual w:val="0"/></w:tblPr><w:tr><w:tc><w:p><w:r><w:t>logical</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
@@ -6792,6 +7030,10 @@ mod tests {
         };
         assert!(rtl_para.props.bidi);
         assert!(rtl_para.runs[0].props.rtl);
+        assert_eq!(
+            rtl_para.runs[0].props.font.as_deref(),
+            Some("Noto Sans Arabic")
+        );
 
         let Block::Paragraph(ltr_para) = &blocks[1] else {
             panic!("ltr paragraph")
@@ -6808,6 +7050,68 @@ mod tests {
             panic!("logical table")
         };
         assert!(!logical_table.bidi_visual);
+    }
+
+    #[test]
+    fn resolves_logical_alignment_and_indents_by_paragraph_direction() {
+        let xml = r#"<w:document><w:body>
+            <w:p><w:pPr><w:jc w:val="start"/><w:ind w:start="720" w:end="1440"/></w:pPr><w:r><w:t>ltr start</w:t></w:r></w:p>
+            <w:p><w:pPr><w:bidi/><w:jc w:val="start"/><w:ind w:start="720" w:end="1440"/></w:pPr><w:r><w:t>rtl start</w:t></w:r></w:p>
+            <w:p><w:pPr><w:bidi/><w:jc w:val="end"/></w:pPr><w:r><w:t>rtl end</w:t></w:r></w:p>
+            <w:p><w:pPr><w:bidi/><w:jc w:val="left"/></w:pPr><w:r><w:t>rtl physical left</w:t></w:r></w:p>
+            <w:p><w:pPr><w:bidi/></w:pPr><w:r><w:t>rtl default</w:t></w:r></w:p>
+        </w:body></w:document>"#;
+        let blocks = parse(xml);
+        let paragraphs = blocks
+            .iter()
+            .map(|block| match block {
+                Block::Paragraph(paragraph) => paragraph,
+                _ => panic!("paragraph"),
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(paragraphs[0].props.align, Align::Left);
+        assert_eq!(paragraphs[0].props.indent.left_pt, Some(36.0));
+        assert_eq!(paragraphs[0].props.indent.right_pt, Some(72.0));
+        assert_eq!(paragraphs[1].props.align, Align::Right);
+        assert_eq!(paragraphs[1].props.indent.left_pt, Some(72.0));
+        assert_eq!(paragraphs[1].props.indent.right_pt, Some(36.0));
+        assert_eq!(paragraphs[2].props.align, Align::Left);
+        assert_eq!(paragraphs[3].props.align, Align::Left);
+        assert_eq!(paragraphs[4].props.align, Align::Right);
+    }
+
+    #[test]
+    fn resolves_inherited_rtl_paragraph_and_complex_script_font() {
+        let styles_xml = r#"<w:styles>
+            <w:style w:type="paragraph" w:styleId="RtlBody">
+                <w:pPr><w:bidi/><w:jc w:val="start"/><w:ind w:start="720" w:end="1440"/></w:pPr>
+                <w:rPr><w:rFonts w:ascii="Arial" w:cs="Noto Sans Arabic"/><w:rtl/></w:rPr>
+            </w:style>
+        </w:styles>"#;
+        let document_xml = r#"<w:document><w:body>
+            <w:p><w:pPr><w:pStyle w:val="RtlBody"/></w:pPr><w:r><w:t>styled rtl</w:t></w:r></w:p>
+            <w:p><w:pPr><w:pStyle w:val="RtlBody"/><w:bidi w:val="0"/><w:jc w:val="left"/></w:pPr><w:r><w:t>direct ltr</w:t></w:r></w:p>
+        </w:body></w:document>"#;
+        let blocks = parse_with_styles(document_xml, styles_xml);
+        let Block::Paragraph(inherited) = &blocks[0] else {
+            panic!("inherited paragraph")
+        };
+        let Block::Paragraph(overridden) = &blocks[1] else {
+            panic!("overridden paragraph")
+        };
+
+        assert!(inherited.props.bidi);
+        assert_eq!(inherited.props.align, Align::Right);
+        assert_eq!(inherited.props.indent.left_pt, Some(72.0));
+        assert_eq!(inherited.props.indent.right_pt, Some(36.0));
+        assert!(inherited.runs[0].props.rtl);
+        assert_eq!(
+            inherited.runs[0].props.font.as_deref(),
+            Some("Noto Sans Arabic")
+        );
+        assert!(!overridden.props.bidi);
+        assert_eq!(overridden.props.align, Align::Left);
     }
 
     #[test]

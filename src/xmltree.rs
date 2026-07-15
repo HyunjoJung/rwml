@@ -22,6 +22,8 @@
 //! is no aliasing/borrow tangle. Parsing is depth-bounded and panic-free on hostile
 //! input, matching the rest of the crate.
 
+use std::collections::HashMap;
+
 use quick_xml::events::Event;
 use quick_xml::Reader;
 
@@ -626,15 +628,78 @@ struct ComplexFieldScan {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct WmlRunRange {
-    parent: NodeId,
-    first_index: usize,
-    last_index: usize,
+    first_run: NodeId,
+    last_run: NodeId,
 }
 
 #[derive(Debug)]
 struct WmlCommentTextEditTarget {
-    first_run: Option<NodeId>,
     text_runs: Vec<NodeId>,
+}
+
+#[derive(Clone, Copy)]
+struct WmlAtomicBodyBlock {
+    child_index: usize,
+    node: NodeId,
+    kind: WmlAtomicBodyBlockKind,
+    section_boundary: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum WmlAtomicBodyBlockKind {
+    Paragraph,
+    Table,
+    ContentControl,
+}
+
+#[derive(Default)]
+struct WmlBodyRangeScan {
+    paired: HashMap<Vec<u8>, usize>,
+    comment_ranges: HashMap<Vec<u8>, usize>,
+    comment_references: HashMap<Vec<u8>, usize>,
+    complex_fields: Vec<(usize, bool)>,
+    proofing: HashMap<Vec<u8>, usize>,
+}
+
+fn paired_wml_range_marker(local: &[u8]) -> Option<(&[u8], bool)> {
+    match local {
+        b"bookmarkStart" => Some((b"bookmark", true)),
+        b"bookmarkEnd" => Some((b"bookmark", false)),
+        b"permStart" => Some((b"perm", true)),
+        b"permEnd" => Some((b"perm", false)),
+        _ => local
+            .strip_suffix(b"RangeStart")
+            .map(|family| (family, true))
+            .or_else(|| {
+                local
+                    .strip_suffix(b"RangeEnd")
+                    .map(|family| (family, false))
+            }),
+    }
+}
+
+fn body_marker_key(family: &[u8], id: &[u8]) -> Result<Vec<u8>> {
+    let capacity = family
+        .len()
+        .checked_add(id.len())
+        .and_then(|len| len.checked_add(1))
+        .ok_or_else(|| Error::Docx("body range identity is too large".into()))?;
+    let mut key = Vec::new();
+    key.try_reserve(capacity)
+        .map_err(|_| Error::Docx("body range identity: out of memory".into()))?;
+    key.extend_from_slice(family);
+    key.push(0);
+    key.extend_from_slice(id);
+    Ok(key)
+}
+
+fn body_marker_id(id: &[u8]) -> Result<Vec<u8>> {
+    let mut owned = Vec::new();
+    owned
+        .try_reserve(id.len())
+        .map_err(|_| Error::Docx("body marker identity: out of memory".into()))?;
+    owned.extend_from_slice(id);
+    Ok(owned)
 }
 
 fn attr_value_local<'a>(attrs: &'a [(Vec<u8>, Vec<u8>)], local: &[u8]) -> Option<&'a [u8]> {
@@ -910,16 +975,393 @@ impl XmlTree {
                 "document.xml root is not a WordprocessingML w:document".into(),
             ));
         }
+        let mut body = None;
         for &c in &self.nodes[root.0 as usize].children {
             let cb = scope.len();
             self.push_xmlns(c, &mut scope);
             let is_body = self.resolves_to(c, WML_NS, b"body", &scope);
             scope.truncate(cb);
-            if is_body {
-                return Ok(c);
+            if is_body && body.replace(c).is_some() {
+                return Err(Error::Docx(
+                    "document.xml has more than one direct w:body".into(),
+                ));
             }
         }
-        Err(Error::Docx("document.xml has no w:body".into()))
+        body.ok_or_else(|| Error::Docx("document.xml has no w:body".into()))
+    }
+
+    /// Remove one conservative atomic direct body block (`w:p`, `w:tbl`, or
+    /// `w:sdt`) after validating that body-level structure and range markers do
+    /// not make subtree removal ambiguous.
+    pub(crate) fn remove_wml_atomic_body_block_under(
+        &mut self,
+        body: NodeId,
+        block_index: usize,
+    ) -> Result<()> {
+        let blocks = self.wml_atomic_body_blocks_under(body)?;
+        let block = blocks.get(block_index).copied().ok_or_else(|| {
+            Error::Docx(format!(
+                "body block index {block_index} is out of range for {} atomic blocks",
+                blocks.len()
+            ))
+        })?;
+        if block.section_boundary {
+            return Err(Error::Docx(
+                "cannot remove a body block that carries section properties".into(),
+            ));
+        }
+        self.nodes[body.0 as usize]
+            .children
+            .remove(block.child_index);
+        Ok(())
+    }
+
+    /// Enumerate the same conservative atomic direct body blocks addressed by
+    /// the structural edit methods.
+    pub(crate) fn wml_atomic_body_block_kinds_under(
+        &self,
+        body: NodeId,
+    ) -> Result<Vec<WmlAtomicBodyBlockKind>> {
+        let blocks = self.wml_atomic_body_blocks_under(body)?;
+        let mut kinds = Vec::new();
+        kinds
+            .try_reserve(blocks.len())
+            .map_err(|_| Error::Docx("body block kind inventory: out of memory".into()))?;
+        kinds.extend(blocks.into_iter().map(|block| block.kind));
+        Ok(kinds)
+    }
+
+    /// Reorder one conservative atomic direct body block. `to_index` is the
+    /// block's final zero-based position among the same direct block set.
+    pub(crate) fn move_wml_atomic_body_block_under(
+        &mut self,
+        body: NodeId,
+        from_index: usize,
+        to_index: usize,
+    ) -> Result<()> {
+        let blocks = self.wml_atomic_body_blocks_under(body)?;
+        let count = blocks.len();
+        if from_index >= count {
+            return Err(Error::Docx(format!(
+                "body block source index {from_index} is out of range for {count} atomic blocks"
+            )));
+        }
+        if to_index >= count {
+            return Err(Error::Docx(format!(
+                "body block destination index {to_index} is out of range for {count} atomic blocks"
+            )));
+        }
+        if from_index == to_index {
+            return Ok(());
+        }
+        let (first, last) = if from_index <= to_index {
+            (from_index, to_index)
+        } else {
+            (to_index, from_index)
+        };
+        if blocks[first..=last]
+            .iter()
+            .any(|block| block.section_boundary)
+        {
+            return Err(Error::Docx(
+                "cannot move a body block across a block carrying section properties".into(),
+            ));
+        }
+        let mut order = Vec::new();
+        order
+            .try_reserve(blocks.len())
+            .map_err(|_| Error::Docx("body block move: out of memory".into()))?;
+        order.extend(blocks.iter().map(|block| block.node));
+        let moved = order.remove(from_index);
+        order.insert(to_index, moved);
+        for (block, node) in blocks.iter().zip(order) {
+            self.nodes[body.0 as usize].children[block.child_index] = node;
+        }
+        Ok(())
+    }
+
+    fn wml_atomic_body_blocks_under(&self, body: NodeId) -> Result<Vec<WmlAtomicBodyBlock>> {
+        let children = &self.nodes[body.0 as usize].children;
+        let mut blocks = Vec::new();
+        blocks
+            .try_reserve(children.len())
+            .map_err(|_| Error::Docx("body block inventory: out of memory".into()))?;
+        let mut scan = WmlBodyRangeScan::default();
+        let mut scope = self.ns_scope_at(body);
+        let mut seen_direct_sect_pr = false;
+
+        for (child_index, &child) in children.iter().enumerate() {
+            match &self.nodes[child.0 as usize].node {
+                Node::Text(text) => {
+                    if !text.iter().all(u8::is_ascii_whitespace) {
+                        return Err(Error::Docx(
+                            "document body has non-whitespace text outside a block".into(),
+                        ));
+                    }
+                    continue;
+                }
+                Node::Raw(raw) => {
+                    let is_whitespace = raw.iter().all(u8::is_ascii_whitespace);
+                    let is_markup = raw.starts_with(b"<!--") || raw.starts_with(b"<?");
+                    if !is_whitespace && !is_markup {
+                        return Err(Error::Docx(
+                            "document body has unsupported raw content between blocks".into(),
+                        ));
+                    }
+                    continue;
+                }
+                Node::Element { .. } => {}
+            }
+
+            let base = scope.len();
+            self.push_xmlns(child, &mut scope);
+            if self.resolves_to(child, WML_NS, b"sectPr", &scope) {
+                if seen_direct_sect_pr {
+                    return Err(Error::Docx(
+                        "document body has more than one direct w:sectPr".into(),
+                    ));
+                }
+                seen_direct_sect_pr = true;
+                scope.truncate(base);
+                continue;
+            }
+
+            let kind = if self.resolves_to(child, WML_NS, b"p", &scope) {
+                Some(WmlAtomicBodyBlockKind::Paragraph)
+            } else if self.resolves_to(child, WML_NS, b"tbl", &scope) {
+                Some(WmlAtomicBodyBlockKind::Table)
+            } else if self.resolves_to(child, WML_NS, b"sdt", &scope) {
+                Some(WmlAtomicBodyBlockKind::ContentControl)
+            } else {
+                None
+            };
+            let Some(kind) = kind else {
+                let name = self
+                    .local_name(child)
+                    .map(String::from_utf8_lossy)
+                    .unwrap_or_default();
+                return Err(Error::Docx(format!(
+                    "document body contains unsupported direct element {name:?}"
+                )));
+            };
+            if seen_direct_sect_pr {
+                return Err(Error::Docx(
+                    "document body has a block after its direct w:sectPr".into(),
+                ));
+            }
+
+            let owner = blocks.len();
+            self.scan_wml_body_ranges(child, owner, &mut scope, &mut scan)?;
+            let section_boundary = self.wml_block_has_sect_pr(child, &mut scope);
+            blocks.push(WmlAtomicBodyBlock {
+                child_index,
+                node: child,
+                kind,
+                section_boundary,
+            });
+            scope.truncate(base);
+        }
+
+        if !scan.paired.is_empty() || !scan.complex_fields.is_empty() || !scan.proofing.is_empty() {
+            return Err(Error::Docx(
+                "document body has an unclosed range or complex field across body blocks".into(),
+            ));
+        }
+        Ok(blocks)
+    }
+
+    fn wml_block_has_sect_pr(&self, block: NodeId, scope: &mut Vec<(Vec<u8>, Vec<u8>)>) -> bool {
+        if self.resolves_to(block, WML_NS, b"sectPr", scope) {
+            return true;
+        }
+        for &child in &self.nodes[block.0 as usize].children {
+            let base = scope.len();
+            self.push_xmlns(child, scope);
+            if self.wml_block_has_sect_pr(child, scope) {
+                scope.truncate(base);
+                return true;
+            }
+            scope.truncate(base);
+        }
+        false
+    }
+
+    fn scan_wml_body_ranges(
+        &self,
+        id: NodeId,
+        owner: usize,
+        scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+        scan: &mut WmlBodyRangeScan,
+    ) -> Result<()> {
+        if self.resolves_to_ns(id, WML_NS, scope) {
+            let local = self.local_name(id).unwrap_or_default();
+            let attrs = match &self.nodes[id.0 as usize].node {
+                Node::Element { attrs, .. } => attrs.as_slice(),
+                _ => &[],
+            };
+            if let Some((family, is_start)) = paired_wml_range_marker(local) {
+                let range_id =
+                    attr_value_ns_local(attrs, scope, WML_NS, b"id").ok_or_else(|| {
+                        Error::Docx(format!(
+                            "body range marker {} is missing its id",
+                            String::from_utf8_lossy(local)
+                        ))
+                    })?;
+                let key = body_marker_key(family, range_id)?;
+                if is_start {
+                    if scan.paired.contains_key(key.as_slice()) {
+                        return Err(Error::Docx(
+                            "document body has a duplicate open range".into(),
+                        ));
+                    }
+                    scan.paired
+                        .try_reserve(1)
+                        .map_err(|_| Error::Docx("body range inventory: out of memory".into()))?;
+                    scan.paired.insert(key, owner);
+                } else {
+                    let Some(start_owner) = scan.paired.remove(key.as_slice()) else {
+                        return Err(Error::Docx(
+                            "document body has a closing range without a matching start".into(),
+                        ));
+                    };
+                    if start_owner != owner {
+                        return Err(Error::Docx(
+                            "document body range crosses atomic body blocks".into(),
+                        ));
+                    }
+                    if family == b"comment" {
+                        let id = body_marker_id(range_id)?;
+                        if scan.comment_ranges.contains_key(id.as_slice()) {
+                            return Err(Error::Docx(
+                                "document body has a duplicate comment range".into(),
+                            ));
+                        }
+                        if scan
+                            .comment_references
+                            .get(id.as_slice())
+                            .is_some_and(|reference_owner| *reference_owner != owner)
+                        {
+                            return Err(Error::Docx(
+                                "document body comment range and reference cross atomic body blocks"
+                                    .into(),
+                            ));
+                        }
+                        scan.comment_ranges.try_reserve(1).map_err(|_| {
+                            Error::Docx("comment range inventory: out of memory".into())
+                        })?;
+                        scan.comment_ranges.insert(id, owner);
+                    }
+                }
+            } else if local == b"commentReference" {
+                let comment_id =
+                    attr_value_ns_local(attrs, scope, WML_NS, b"id").ok_or_else(|| {
+                        Error::Docx("body comment reference is missing its id".into())
+                    })?;
+                if scan.comment_references.contains_key(comment_id) {
+                    return Err(Error::Docx(
+                        "document body has a duplicate comment reference".into(),
+                    ));
+                }
+                if scan
+                    .comment_ranges
+                    .get(comment_id)
+                    .is_some_and(|range_owner| *range_owner != owner)
+                {
+                    return Err(Error::Docx(
+                        "document body comment range and reference cross atomic body blocks".into(),
+                    ));
+                }
+                let id = body_marker_id(comment_id)?;
+                scan.comment_references.try_reserve(1).map_err(|_| {
+                    Error::Docx("comment reference inventory: out of memory".into())
+                })?;
+                scan.comment_references.insert(id, owner);
+            } else if local == b"fldChar" {
+                match attr_value_ns_local(attrs, scope, WML_NS, b"fldCharType") {
+                    Some(b"begin") => {
+                        scan.complex_fields.try_reserve(1).map_err(|_| {
+                            Error::Docx("complex field inventory: out of memory".into())
+                        })?;
+                        scan.complex_fields.push((owner, false));
+                    }
+                    Some(b"separate") => {
+                        let Some((start_owner, separated)) = scan.complex_fields.last_mut() else {
+                            return Err(Error::Docx(
+                                "document body has a field separator without a begin marker".into(),
+                            ));
+                        };
+                        if *start_owner != owner {
+                            return Err(Error::Docx(
+                                "document body complex field crosses atomic body blocks".into(),
+                            ));
+                        }
+                        if *separated {
+                            return Err(Error::Docx(
+                                "document body complex field has more than one separator".into(),
+                            ));
+                        }
+                        *separated = true;
+                    }
+                    Some(b"end") => {
+                        let Some((start_owner, _)) = scan.complex_fields.pop() else {
+                            return Err(Error::Docx(
+                                "document body has a field end without a begin marker".into(),
+                            ));
+                        };
+                        if start_owner != owner {
+                            return Err(Error::Docx(
+                                "document body complex field crosses atomic body blocks".into(),
+                            ));
+                        }
+                    }
+                    _ => {
+                        return Err(Error::Docx(
+                            "document body has a malformed complex field marker".into(),
+                        ));
+                    }
+                }
+            } else if local == b"proofErr" {
+                let proof_type =
+                    attr_value_ns_local(attrs, scope, WML_NS, b"type").ok_or_else(|| {
+                        Error::Docx("document body proofing range is missing its type".into())
+                    })?;
+                if let Some(family) = proof_type.strip_suffix(b"Start") {
+                    if scan.proofing.contains_key(family) {
+                        return Err(Error::Docx(
+                            "document body has a duplicate open proofing range".into(),
+                        ));
+                    }
+                    let key = body_marker_id(family)?;
+                    scan.proofing.try_reserve(1).map_err(|_| {
+                        Error::Docx("proofing range inventory: out of memory".into())
+                    })?;
+                    scan.proofing.insert(key, owner);
+                } else if let Some(family) = proof_type.strip_suffix(b"End") {
+                    let Some(start_owner) = scan.proofing.remove(family) else {
+                        return Err(Error::Docx(
+                            "document body has a proofing range end without a start".into(),
+                        ));
+                    };
+                    if start_owner != owner {
+                        return Err(Error::Docx(
+                            "document body proofing range crosses atomic body blocks".into(),
+                        ));
+                    }
+                } else {
+                    return Err(Error::Docx(
+                        "document body has a malformed proofing range type".into(),
+                    ));
+                }
+            }
+        }
+
+        for &child in &self.nodes[id.0 as usize].children {
+            let base = scope.len();
+            self.push_xmlns(child, scope);
+            self.scan_wml_body_ranges(child, owner, scope, scan)?;
+            scope.truncate(base);
+        }
+        Ok(())
     }
 
     /// The sole top-level WML root of a non-body WordprocessingML part, such as
@@ -1222,23 +1664,14 @@ impl XmlTree {
         let target = self
             .wml_comment_text_edit_target_under(root, comment_id)
             .ok_or_else(|| Error::Docx(format!("comment id {comment_id:?} not found")))?;
-        let first_run = target
-            .first_run
+        let mut text_runs = target.text_runs.into_iter();
+        let first_text = text_runs
+            .next()
             .ok_or_else(|| Error::Docx(format!("comment id {comment_id:?} has no visible text")))?;
-        if target.text_runs.is_empty() {
-            return Err(Error::Docx(format!(
-                "comment id {comment_id:?} has no visible text"
-            )));
-        }
 
-        let old_children = self.nodes[first_run.0 as usize].children.clone();
-        let xml = wml_text_run_content_xml(text);
-        self.nodes[first_run.0 as usize].children.clear();
-        self.insert_fragment_at(first_run, 0, xml.as_bytes())?;
-        for id in target.text_runs {
-            if !old_children.contains(&id) {
-                self.set_element_text(id, "")?;
-            }
+        self.replace_wml_text_element_with_run_content(first_text, text)?;
+        for id in text_runs {
+            self.set_element_text(id, "")?;
         }
         Ok(())
     }
@@ -1390,8 +1823,16 @@ impl XmlTree {
             wml_ns_str(),
             wml_ns_str()
         );
-        self.insert_fragment_at(range.parent, range.first_index, start.as_bytes())?;
-        self.insert_fragment_at(range.parent, range.last_index + 2, end.as_bytes())?;
+        let (first_parent, first_index) =
+            self.parent_child_index(range.first_run).ok_or_else(|| {
+                Error::Docx("comment anchor start run is detached from the XML tree".into())
+            })?;
+        self.insert_fragment_at(first_parent, first_index, start.as_bytes())?;
+        let (last_parent, last_index) =
+            self.parent_child_index(range.last_run).ok_or_else(|| {
+                Error::Docx("comment anchor end run is detached from the XML tree".into())
+            })?;
+        self.insert_fragment_at(last_parent, last_index + 1, end.as_bytes())?;
         Ok(())
     }
 
@@ -1422,7 +1863,10 @@ impl XmlTree {
             r#"<w:r xmlns:w="{}"><w:footnoteReference w:id="{id}"/></w:r>"#,
             wml_ns_str()
         );
-        self.insert_fragment_at(range.parent, range.last_index + 1, reference.as_bytes())
+        let (parent, index) = self.parent_child_index(range.last_run).ok_or_else(|| {
+            Error::Docx("footnote anchor run is detached from the XML tree".into())
+        })?;
+        self.insert_fragment_at(parent, index + 1, reference.as_bytes())
     }
 
     /// Insert a Word endnote reference run after the first adjacent `w:r` sequence under
@@ -1452,7 +1896,10 @@ impl XmlTree {
             r#"<w:r xmlns:w="{}"><w:endnoteReference w:id="{id}"/></w:r>"#,
             wml_ns_str()
         );
-        self.insert_fragment_at(range.parent, range.last_index + 1, reference.as_bytes())
+        let (parent, index) = self.parent_child_index(range.last_run).ok_or_else(|| {
+            Error::Docx("endnote anchor run is detached from the XML tree".into())
+        })?;
+        self.insert_fragment_at(parent, index + 1, reference.as_bytes())
     }
 
     /// Append one `w:comment` record to a `w:comments` root.
@@ -1790,8 +2237,12 @@ impl XmlTree {
             let c = self.nodes[id.0 as usize].children[i];
             let base = scope.len();
             self.push_xmlns(c, scope);
-            if self.resolves_to(c, WML_NS, b"tbl", scope)
-                || self.contains_wml_table_descendant(c, scope)
+            let is_accepted =
+                self.wml_revision_edit_action(c, scope, WmlRevisionEditPolicy::Accept)
+                    != WmlRevisionEditAction::Remove;
+            if is_accepted
+                && (self.resolves_to(c, WML_NS, b"tbl", scope)
+                    || self.contains_wml_table_descendant(c, scope))
             {
                 scope.truncate(base);
                 return true;
@@ -2075,42 +2526,88 @@ impl XmlTree {
         anchor_text: &str,
         out: &mut Option<WmlRunRange>,
     ) -> bool {
-        let children = &self.nodes[parent.0 as usize].children;
-        for start in 0..children.len() {
-            let Some(first_text) = self.wml_run_text(children[start], scope) else {
-                continue;
-            };
-            let mut candidate = first_text;
-            if candidate == anchor_text {
-                *out = Some(WmlRunRange {
-                    parent,
-                    first_index: start,
-                    last_index: start,
-                });
-                return true;
-            }
-            if !anchor_text.starts_with(&candidate) {
-                continue;
-            }
-            for (end, &child) in children.iter().enumerate().skip(start + 1) {
-                let Some(text) = self.wml_run_text(child, scope) else {
-                    break;
-                };
-                candidate.push_str(&text);
+        for runs in self.wml_child_run_groups(parent, scope) {
+            for start in 0..runs.len() {
+                let mut candidate = runs[start].1.clone();
                 if candidate == anchor_text {
                     *out = Some(WmlRunRange {
-                        parent,
-                        first_index: start,
-                        last_index: end,
+                        first_run: runs[start].0,
+                        last_run: runs[start].0,
                     });
                     return true;
                 }
                 if !anchor_text.starts_with(&candidate) {
-                    break;
+                    continue;
+                }
+                for end in (start + 1)..runs.len() {
+                    candidate.push_str(&runs[end].1);
+                    if candidate == anchor_text {
+                        *out = Some(WmlRunRange {
+                            first_run: runs[start].0,
+                            last_run: runs[end].0,
+                        });
+                        return true;
+                    }
+                    if !anchor_text.starts_with(&candidate) {
+                        break;
+                    }
                 }
             }
         }
         false
+    }
+
+    fn wml_child_run_groups(
+        &self,
+        parent: NodeId,
+        scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+    ) -> Vec<Vec<(NodeId, String)>> {
+        let mut groups = Vec::new();
+        let mut current = Vec::new();
+        self.collect_wml_transparent_child_runs(parent, scope, &mut current, &mut groups);
+        Self::finish_wml_run_group(&mut current, &mut groups);
+        groups
+    }
+
+    fn collect_wml_transparent_child_runs(
+        &self,
+        parent: NodeId,
+        scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+        current: &mut Vec<(NodeId, String)>,
+        groups: &mut Vec<Vec<(NodeId, String)>>,
+    ) {
+        for i in 0..self.nodes[parent.0 as usize].children.len() {
+            let child = self.nodes[parent.0 as usize].children[i];
+            let base = scope.len();
+            self.push_xmlns(child, scope);
+            match self.wml_revision_edit_action(child, scope, WmlRevisionEditPolicy::Accept) {
+                WmlRevisionEditAction::Unwrap => {
+                    self.collect_wml_transparent_child_runs(child, scope, current, groups);
+                }
+                WmlRevisionEditAction::Keep if self.resolves_to(child, WML_NS, b"r", scope) => {
+                    if let Some(text) = self.wml_run_text(child, scope) {
+                        current.push((child, text));
+                    } else {
+                        Self::finish_wml_run_group(current, groups);
+                    }
+                }
+                WmlRevisionEditAction::Remove
+                | WmlRevisionEditAction::Keep
+                | WmlRevisionEditAction::RenameDeletedText => {
+                    Self::finish_wml_run_group(current, groups);
+                }
+            }
+            scope.truncate(base);
+        }
+    }
+
+    fn finish_wml_run_group(
+        current: &mut Vec<(NodeId, String)>,
+        groups: &mut Vec<Vec<(NodeId, String)>>,
+    ) {
+        if !current.is_empty() {
+            groups.push(std::mem::take(current));
+        }
     }
 
     fn wml_run_text(&self, id: NodeId, scope: &mut Vec<(Vec<u8>, Vec<u8>)>) -> Option<String> {
@@ -2173,10 +2670,9 @@ impl XmlTree {
                     .is_some_and(|value| trim_ascii_whitespace(value) == comment_id)
             {
                 let mut target = WmlCommentTextEditTarget {
-                    first_run: None,
                     text_runs: Vec::new(),
                 };
-                self.collect_wml_comment_text_edit_descendants(id, scope, None, &mut target);
+                self.collect_wml_comment_text_edit_descendants(id, scope, &mut target);
                 *out = Some(target);
                 scope.truncate(base);
                 return;
@@ -2197,7 +2693,6 @@ impl XmlTree {
         &self,
         id: NodeId,
         scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
-        current_run: Option<NodeId>,
         target: &mut WmlCommentTextEditTarget,
     ) {
         let base = scope.len();
@@ -2208,20 +2703,12 @@ impl XmlTree {
             scope.truncate(base);
             return;
         }
-        let run = if self.resolves_to(id, WML_NS, b"r", scope) {
-            Some(id)
-        } else {
-            current_run
-        };
         if self.resolves_to(id, WML_NS, b"t", scope) {
             target.text_runs.push(id);
-            if target.first_run.is_none() {
-                target.first_run = run;
-            }
         }
         for i in 0..self.nodes[id.0 as usize].children.len() {
             let c = self.nodes[id.0 as usize].children[i];
-            self.collect_wml_comment_text_edit_descendants(c, scope, run, target);
+            self.collect_wml_comment_text_edit_descendants(c, scope, target);
         }
         scope.truncate(base);
     }
@@ -2700,6 +3187,113 @@ mod tests {
             XmlTree::parse(nest(MAX_DEPTH - 1).as_bytes()).is_ok(),
             "an empty element at the cap should still parse"
         );
+    }
+
+    #[test]
+    fn atomic_body_blocks_move_and_remove_exact_subtrees() {
+        let xml = br#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+            <w:p data-id="A"><w:r><w:t>A</w:t></w:r><w:unknown keep="1"/></w:p>
+            <w:tbl data-id="B"><w:tr><w:tc><w:p/></w:tc></w:tr></w:tbl>
+            <w:sdt data-id="C"><w:sdtPr/><w:sdtContent><w:p><w:r><w:t>C</w:t></w:r></w:p></w:sdtContent></w:sdt>
+            <w:sectPr/>
+        </w:body></w:document>"#;
+        let mut tree = XmlTree::parse(xml).unwrap();
+        let body = tree.wml_body_strict().unwrap();
+
+        tree.move_wml_atomic_body_block_under(body, 0, 2).unwrap();
+        let moved = s(&tree);
+        let b = moved.find("data-id=\"B\"").unwrap();
+        let c = moved.find("data-id=\"C\"").unwrap();
+        let a = moved.find("data-id=\"A\"").unwrap();
+        let sect = moved.find("<w:sectPr/>").unwrap();
+        assert!(b < c && c < a && a < sect, "unexpected order: {moved}");
+        assert!(moved.contains("<w:unknown keep=\"1\"/>"));
+
+        tree.remove_wml_atomic_body_block_under(body, 1).unwrap();
+        let removed = s(&tree);
+        assert!(!removed.contains("data-id=\"C\""));
+        assert!(removed.contains("data-id=\"A\"") && removed.contains("data-id=\"B\""));
+    }
+
+    #[test]
+    fn atomic_body_blocks_reject_cross_block_and_opaque_hazards() {
+        let wrap = |body: &str| {
+            format!(
+                r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>{body}<w:sectPr/></w:body></w:document>"#
+            )
+        };
+        for body_xml in [
+            r#"<w:p/><w:altChunk w:id="x"/>"#,
+            r#"<w:p><w:bookmarkStart w:id="7"/></w:p><w:p><w:bookmarkEnd w:id="7"/></w:p>"#,
+            r#"<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r></w:p><w:p><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>"#,
+        ] {
+            let mut tree = XmlTree::parse(wrap(body_xml).as_bytes()).unwrap();
+            let body = tree.wml_body_strict().unwrap();
+            assert!(tree.remove_wml_atomic_body_block_under(body, 0).is_err());
+        }
+    }
+
+    #[test]
+    fn atomic_body_blocks_use_wml_attributes_and_track_comment_references() {
+        let wrap = |body: &str| {
+            format!(
+                r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:x="urn:foreign"><w:body>{body}<w:sectPr/></w:body></w:document>"#
+            )
+        };
+        for body_xml in [
+            concat!(
+                r#"<w:p><w:bookmarkStart x:id="fake-a" w:id="7"/>"#,
+                r#"<w:bookmarkEnd x:id="fake-a" w:id="8"/></w:p>"#,
+                r#"<w:p><w:bookmarkStart x:id="fake-b" w:id="8"/>"#,
+                r#"<w:bookmarkEnd x:id="fake-b" w:id="7"/></w:p>"#,
+            ),
+            concat!(
+                r#"<w:p><w:commentRangeStart w:id="4"/><w:r><w:t>A</w:t></w:r>"#,
+                r#"<w:commentRangeEnd w:id="4"/></w:p>"#,
+                r#"<w:p><w:r><w:commentReference w:id="4"/></w:r></w:p>"#,
+            ),
+            concat!(
+                r#"<w:p><w:r><w:fldChar x:fldCharType="begin" w:fldCharType="end"/>"#,
+                r#"<w:fldChar x:fldCharType="end" w:fldCharType="begin"/></w:r></w:p>"#,
+            ),
+        ] {
+            let tree = XmlTree::parse(wrap(body_xml).as_bytes()).unwrap();
+            let body = tree.wml_body_strict().unwrap();
+            assert!(tree.wml_atomic_body_block_kinds_under(body).is_err());
+        }
+    }
+
+    #[test]
+    fn atomic_body_blocks_reject_duplicate_bodies_and_repeated_field_separator() {
+        let duplicate = br#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p/></w:body><w:body><w:p/></w:body></w:document>"#;
+        assert!(XmlTree::parse(duplicate)
+            .unwrap()
+            .wml_body_strict()
+            .is_err());
+
+        let repeated_separator = br#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:fldChar w:fldCharType="begin"/><w:fldChar w:fldCharType="separate"/><w:fldChar w:fldCharType="separate"/><w:fldChar w:fldCharType="end"/></w:r></w:p><w:sectPr/></w:body></w:document>"#;
+        let tree = XmlTree::parse(repeated_separator).unwrap();
+        let body = tree.wml_body_strict().unwrap();
+        assert!(tree.wml_atomic_body_block_kinds_under(body).is_err());
+    }
+
+    #[test]
+    fn atomic_body_blocks_allow_internal_ranges_but_protect_sections() {
+        let xml = br#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+            <w:p data-id="A"><w:bookmarkStart w:id="7"/><w:r><w:t>A</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p>
+            <w:p data-id="S"><w:pPr><w:sectPr/></w:pPr><w:r><w:t>section</w:t></w:r></w:p>
+            <w:p data-id="B"><w:r><w:t>B</w:t></w:r></w:p>
+            <w:sectPr/>
+        </w:body></w:document>"#;
+        let mut tree = XmlTree::parse(xml).unwrap();
+        let body = tree.wml_body_strict().unwrap();
+
+        assert!(tree.remove_wml_atomic_body_block_under(body, 1).is_err());
+        assert!(tree.move_wml_atomic_body_block_under(body, 0, 2).is_err());
+        tree.move_wml_atomic_body_block_under(body, 0, 0).unwrap();
+        tree.move_wml_atomic_body_block_under(body, 1, 1).unwrap();
+        tree.remove_wml_atomic_body_block_under(body, 0).unwrap();
+        assert!(!s(&tree).contains("data-id=\"A\""));
     }
 
     #[test]

@@ -491,6 +491,68 @@ fn notes_with_complex_field_anchor_text_docx() -> Vec<u8> {
     ])
 }
 
+fn notes_with_style_ref_anchor_text_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rIdEnd" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Intro Heading</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;heading 1&quot; "><w:r><w:t>stale earlier style ref</w:t></w:r></w:fldSimple></w:p><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Anchor Heading</w:t></w:r></w:p><w:p><w:fldSimple w:instr=" STYLEREF &quot;heading 1&quot; "><w:r><w:t>stale simple style ref</w:t></w:r></w:fldSimple><w:r><w:t> before </w:t></w:r><w:r><w:footnoteReference w:id="7"/></w:r><w:r><w:t>foot after</w:t></w:r></w:p><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> STYLEREF &quot;heading 1&quot; </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>stale complex style ref</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:t> before </w:t></w:r><w:r><w:endnoteReference w:id="8"/></w:r><w:r><w:t>end after</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="7"><w:p><w:r><w:t>Foot body</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+        (
+            "word/endnotes.xml",
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:id="8"><w:p><w:r><w:t>End body</w:t></w:r></w:p></w:endnote></w:endnotes>"#,
+        ),
+    ])
+}
+
+fn notes_with_deleted_style_ref_before_anchor_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/></Relationships>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Live Heading</w:t></w:r></w:p><w:p><w:del w:id="64" w:author="Bob"><w:fldSimple w:instr=" STYLEREF &quot;heading 1&quot; "><w:r><w:delText>DELETED CACHE</w:delText></w:r></w:fldSimple></w:del><w:fldSimple w:instr=" STYLEREF &quot;heading 1&quot; "><w:r><w:t>BAD CURRENT CACHE</w:t></w:r></w:fldSimple><w:r><w:footnoteReference w:id="7"/></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:footnote w:id="7"><w:p><w:r><w:t>Foot body</w:t></w:r></w:p></w:footnote></w:footnotes>"#,
+        ),
+    ])
+}
+
 fn notes_with_dynamic_field_anchor_text_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -1955,6 +2017,35 @@ fn tracked_header_footer_revisions_docx() -> Vec<u8> {
     ])
 }
 
+fn revision_switched_header_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/header2.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdCurrent" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/><Relationship Id="rIdOld" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header2.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:ins w:id="1"><w:p><w:pPr><w:sectPr><w:headerReference w:type="default" r:id="rIdCurrent"/></w:sectPr></w:pPr></w:p></w:ins><w:del w:id="2"><w:p><w:pPr><w:sectPr><w:headerReference w:type="default" r:id="rIdOld"/></w:sectPr></w:pPr></w:p></w:del></w:body></w:document>"#,
+        ),
+        (
+            "word/header1.xml",
+            r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:ins w:id="3"><w:r><w:t>Current added</w:t></w:r></w:ins><w:del w:id="4"><w:r><w:delText>Current removed</w:delText></w:r></w:del></w:p></w:hdr>"#,
+        ),
+        (
+            "word/header2.xml",
+            r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:ins w:id="5"><w:r><w:t>Old added</w:t></w:r></w:ins><w:del w:id="6"><w:r><w:delText>Old removed</w:delText></w:r></w:del></w:p></w:hdr>"#,
+        ),
+    ])
+}
+
 #[test]
 fn fill_content_control_by_tag_updates_matching_controls() {
     let mut doc = Document::open(&content_control_docx()).expect("fixture opens");
@@ -2776,6 +2867,35 @@ fn reject_all_revisions_rejects_header_footer_tracked_changes() {
 }
 
 #[test]
+fn reject_all_revisions_resolves_newly_active_old_header() {
+    let fixture = revision_switched_header_docx();
+    let before = unzip_parts(&fixture);
+    let mut doc = Document::open(&fixture).expect("fixture opens");
+
+    let changed = doc.reject_all_revisions().expect("revisions rejected");
+
+    assert_eq!(changed, 5);
+    assert_eq!(
+        doc.edited_parts(),
+        ["word/document.xml", "word/header2.xml"]
+    );
+    let saved = doc.save().expect("save rejected docx");
+    let parts = unzip_parts(&saved);
+    assert_eq!(parts["word/header1.xml"], before["word/header1.xml"]);
+    let old_header = String::from_utf8(parts["word/header2.xml"].clone()).unwrap();
+    for marker in ["<w:ins", "<w:del", "<w:delText"] {
+        assert!(
+            !old_header.contains(marker),
+            "newly active old header still contains {marker}: {old_header}"
+        );
+    }
+
+    let reopened = Document::open(&saved).expect("reopen rejected docx");
+    assert!(reopened.revisions().is_empty());
+    assert_eq!(reopened.header_text(), "Old removed");
+}
+
+#[test]
 fn reject_all_revisions_without_revisions_is_noop() {
     let fixture = content_control_docx();
     let before = unzip_parts(&fixture);
@@ -3247,6 +3367,44 @@ fn set_table_cell_text_edits_accepted_revision_wrapped_tables() {
 
     let reopened = Document::open(&saved).expect("reopen edited docx");
     assert_eq!(reopened.main_text(), "Inserted updated\nMoved updated");
+}
+
+#[test]
+fn set_table_cell_text_ignores_nested_tables_in_deleted_content() {
+    let fixture = docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:tbl><w:tr><w:tc><w:p><w:r><w:t>Visible</w:t></w:r></w:p><w:del w:id="1"><w:tbl><w:tr><w:tc><w:p><w:r><w:delText>Deleted nested</w:delText></w:r></w:p></w:tc></w:tr></w:tbl></w:del></w:tc></w:tr></w:tbl></w:body></w:document>"#,
+        ),
+    ]);
+    let mut doc = Document::open(&fixture).expect("fixture opens");
+
+    doc.set_table_cell_text(0, 0, 0, "Updated")
+        .expect("deleted nested table does not block the visible cell edit");
+    assert_eq!(doc.edited_parts(), ["word/document.xml"]);
+
+    let saved = doc.save().expect("save edited docx");
+    let body = String::from_utf8(unzip_parts(&saved)["word/document.xml"].clone()).unwrap();
+    assert!(
+        body.contains("<w:t>Updated</w:t>"),
+        "cell not updated: {body}"
+    );
+    assert!(
+        body.contains(r#"<w:del w:id="1"><w:tbl>"#)
+            && body.contains("<w:delText>Deleted nested</w:delText>"),
+        "deleted nested table markup changed: {body}"
+    );
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    assert_eq!(reopened.main_text(), "Updated");
 }
 
 #[test]
@@ -3827,6 +3985,41 @@ fn docx_note_reference_anchors_use_computed_complex_field_text() {
     assert_eq!(
         notes[1].anchor.as_ref().map(|a| a.text.as_str()),
         Some("Fresh end before end after")
+    );
+}
+
+#[test]
+fn docx_note_reference_anchors_use_computed_style_ref_field_text() {
+    let doc = Document::open(&notes_with_style_ref_anchor_text_docx()).expect("fixture opens");
+
+    assert_eq!(
+        doc.main_text(),
+        "Intro Heading\nAnchor Heading\nAnchor Heading before foot after\nAnchor Heading before end after"
+    );
+    let notes = doc.notes();
+    assert_eq!(notes.len(), 2);
+    assert_eq!(notes[0].id, "7");
+    assert_eq!(notes[0].kind, NoteKind::Footnote);
+    assert_eq!(
+        notes[0].anchor.as_ref().map(|a| a.text.as_str()),
+        Some("Anchor Heading before foot after")
+    );
+    assert_eq!(notes[1].id, "8");
+    assert_eq!(notes[1].kind, NoteKind::Endnote);
+    assert_eq!(
+        notes[1].anchor.as_ref().map(|a| a.text.as_str()),
+        Some("Anchor Heading before end after")
+    );
+}
+
+#[test]
+fn docx_note_reference_anchor_ignores_deleted_style_ref_cursor() {
+    let doc =
+        Document::open(&notes_with_deleted_style_ref_before_anchor_docx()).expect("fixture opens");
+
+    assert_eq!(
+        doc.notes()[0].anchor.as_ref().map(|a| a.text.as_str()),
+        Some("Live Heading")
     );
 }
 
@@ -4520,6 +4713,78 @@ fn add_notes_on_text_can_anchor_across_adjacent_runs() {
     let reopened = Document::open(&saved).expect("reopen edited docx");
     assert!(reopened.text().contains("Split footnote"));
     assert!(reopened.text().contains("Split endnote"));
+}
+
+#[test]
+fn add_notes_on_text_anchor_across_accepted_revision_wrappers() {
+    let fixture = docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Hel</w:t></w:r><w:ins w:id="1"><w:r><w:t>l</w:t></w:r></w:ins><w:moveTo w:id="2"><w:r><w:t>o</w:t></w:r></w:moveTo><w:r><w:t>!</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ]);
+    let mut doc = Document::open(&fixture).expect("fixture opens");
+
+    doc.add_footnote_on_text("Hello", "Revision footnote")
+        .expect("footnote added across accepted revision wrappers");
+    doc.add_endnote_on_text("Hello", "Revision endnote")
+        .expect("endnote added across accepted revision wrappers");
+
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let third = body.find("<w:t>o</w:t>").unwrap_or(usize::MAX);
+    let footnote_ref = body.find("<w:footnoteReference").unwrap_or(usize::MAX);
+    let endnote_ref = body.find("<w:endnoteReference").unwrap_or(usize::MAX);
+    let tail = body.find("<w:t>!</w:t>").unwrap_or(usize::MAX);
+    assert!(
+        third < footnote_ref && third < endnote_ref && footnote_ref < tail && endnote_ref < tail,
+        "revision-spanning note references missing or misplaced: {body}"
+    );
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    assert_eq!(reopened.main_text(), "Hello!");
+    assert!(reopened.text().contains("Revision footnote"));
+    assert!(reopened.text().contains("Revision endnote"));
+}
+
+#[test]
+fn add_note_on_text_does_not_bridge_deleted_revision_wrappers() {
+    let fixture = docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Hel</w:t></w:r><w:del w:id="1"><w:r><w:delText>deleted</w:delText></w:r></w:del><w:r><w:t>lo</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+    ]);
+    let before = unzip_parts(&fixture);
+    let mut doc = Document::open(&fixture).expect("fixture opens");
+
+    assert!(
+        doc.add_footnote_on_text("Hello", "Must not be added")
+            .is_err(),
+        "deleted content must remain a hard anchor boundary"
+    );
+    assert!(doc.edited_parts().is_empty());
+    assert_eq!(
+        unzip_parts(&doc.save().expect("save unchanged docx")),
+        before
+    );
 }
 
 #[test]

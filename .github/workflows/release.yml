@@ -15,41 +15,111 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - name: Install system libraries (fontconfig for the render feature)
         run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev pkg-config
+      - name: Install matching wasm-bindgen CLI
+        run: cargo install wasm-bindgen-cli --version 0.2.126 --locked
+      - name: Install semantic-version compatibility checker
+        run: cargo install cargo-semver-checks --version 0.48.0 --locked
+
+      - name: Verify release identity
+        run: |
+          crate_version=$(cargo metadata --no-deps --format-version 1 \
+            | python3 -c "import sys,json;print(json.load(sys.stdin)['packages'][0]['version'])")
+          if [[ "$GITHUB_REF" == refs/tags/* ]] && \
+             [[ "$GITHUB_REF_NAME" != "v${crate_version}" ]]; then
+            echo "tag $GITHUB_REF_NAME does not match Cargo version ${crate_version}" >&2
+            exit 1
+          fi
+          echo "RWML_VERSION=${crate_version}" >> "$GITHUB_ENV"
 
       - name: Verify the crate builds, tests, and packages
         run: |
           python3 scripts/public_hygiene_audit.py
+          PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_*.py'
+          python3 scripts/gen_public_corpus.py --check
+          cargo semver-checks check-release --baseline-rev v0.1.0 --release-type patch --default-features
+          cargo semver-checks check-release --baseline-rev v0.1.0 --release-type patch --all-features
           cargo fmt --all -- --check
           cargo clippy --all-targets -- -D warnings
           cargo clippy --all-targets --all-features -- -D warnings
           cargo test --all-targets
-          cargo test --no-default-features
+          cargo test --all-targets --no-default-features
+          cargo check --manifest-path fuzz/Cargo.toml --all-targets --locked
           cargo test --doc --all-features
           cargo doc --no-deps --all-features
           cargo test --all-targets --features render
+          cargo test --test bundled_fonts --all-features --locked
+          cargo test --manifest-path rwml-fonts/Cargo.toml --locked
+          cargo package --manifest-path rwml-fonts/Cargo.toml
+          cargo package --list > /dev/null
+          cargo test --release --test performance --locked -- --ignored --nocapture
+          cargo build --lib --target wasm32-unknown-unknown --locked
+          wasm-bindgen --target nodejs --out-dir target/wasm-node target/wasm32-unknown-unknown/debug/rwml.wasm
+          node tests/wasm_node_smoke.cjs target/wasm-node corpus/public/synthetic/comments.docx
+          node tests/wasm_demo_report_format.mjs
+
+      - name: Publish bundled font crate dependency
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          font_version=$(cargo metadata --manifest-path rwml-fonts/Cargo.toml \
+            --no-deps --format-version 1 \
+            | python3 -c "import sys,json;print(json.load(sys.stdin)['packages'][0]['version'])")
+          if [[ "$font_version" != "$RWML_VERSION" ]]; then
+            echo "rwml-fonts ${font_version} does not match rwml ${RWML_VERSION}" >&2
+            exit 1
+          fi
+          python3 scripts/publish_crate.py \
+            --name rwml-fonts \
+            --version "$font_version" \
+            --artifact "rwml-fonts/target/package/rwml-fonts-${font_version}.crate" \
+            --manifest-path rwml-fonts/Cargo.toml
+
+      - name: Package main crate
+        run: |
+          registry_visible=false
+          for attempt in {1..12}; do
+            if cargo info "rwml-fonts@${RWML_VERSION}" >/dev/null 2>&1; then
+              registry_visible=true
+              break
+            fi
+            sleep 10
+          done
+          if [[ "$registry_visible" != true ]]; then
+            echo "rwml-fonts ${RWML_VERSION} did not become registry-visible" >&2
+            exit 1
+          fi
           cargo package
+
+      - name: Verify main crate registry identity
+        run: |
+          python3 scripts/publish_crate.py \
+            --name rwml \
+            --version "$RWML_VERSION" \
+            --artifact "target/package/rwml-${RWML_VERSION}.crate" \
+            --check-only
 
       - name: Generate release manifest
         run: |
           mkdir -p dist
           python3 scripts/public_hygiene_audit.py --json > dist/public-hygiene.json
-          VERSION="${GITHUB_REF_NAME#v}"
-          if [ "$VERSION" = "$GITHUB_REF_NAME" ]; then
-            VERSION="$(python3 -c "import tomllib,pathlib;print(tomllib.loads(pathlib.Path('Cargo.toml').read_text())['package']['version'])")"
-          fi
           python3 scripts/release_manifest.py \
-            --version "$VERSION" \
+            --version "$RWML_VERSION" \
             --git-rev "$GITHUB_SHA" \
             --release-policy public-release \
             --hygiene-report dist/public-hygiene.json \
             --corpus-manifest corpus/public/MANIFEST.tsv \
             --corpus-manifest corpus/public/RENDER_MANIFEST.tsv \
             --output dist/rwml-release-manifest.json \
-            target/package/rwml-*.crate
+            target/package/rwml-${RWML_VERSION}.crate \
+            rwml-fonts/target/package/rwml-fonts-${RWML_VERSION}.crate
 
       - name: Upload release manifest artifacts
         uses: actions/upload-artifact@v7
@@ -58,18 +128,16 @@ jobs:
           path: |
             dist/public-hygiene.json
             dist/rwml-release-manifest.json
-            target/package/rwml-*.crate
+            target/package/rwml-${{ env.RWML_VERSION }}.crate
+            rwml-fonts/target/package/rwml-fonts-${{ env.RWML_VERSION }}.crate
 
-      - name: Publish
+      - name: Publish main crate
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         # Idempotent: skip if this version is already on crates.io so re-tagging or
         # re-running a release does not fail on an "already uploaded" error.
         run: |
-          version=$(cargo metadata --no-deps --format-version 1 \
-            | python3 -c "import sys,json;print(json.load(sys.stdin)['packages'][0]['version'])")
-          # crates.io requires a User-Agent header (403 without one).
-          if curl -sf -A "rwml-release-ci (github actions)" \
-            "https://crates.io/api/v1/crates/rwml/${version}" >/dev/null 2>&1; then
-            echo "rwml ${version} is already published — skipping."
-          else
-            cargo publish --token "${{ secrets.CARGO_REGISTRY_TOKEN }}"
-          fi
+          python3 scripts/publish_crate.py \
+            --name rwml \
+            --version "$RWML_VERSION" \
+            --artifact "target/package/rwml-${RWML_VERSION}.crate"

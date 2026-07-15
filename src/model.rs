@@ -320,6 +320,14 @@ pub struct ParaProps {
     pub bidi: bool,
 }
 
+#[cfg(any(feature = "docx", feature = "render"))]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct PaginationHint {
+    pub(crate) keep_next: bool,
+    pub(crate) keep_lines: bool,
+    pub(crate) widow_control: bool,
+}
+
 /// A paragraph style definition for generated `.docx` output.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ParagraphStyle {

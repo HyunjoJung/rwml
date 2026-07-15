@@ -26,7 +26,9 @@ pub(crate) struct Styles {
     heading: HashMap<String, u8>,
     name: HashMap<String, String>,
     doc_defaults_run: RunProps,
+    doc_defaults_paragraph: ParagraphProps,
     paragraph_run: HashMap<String, RunProps>,
+    paragraph: HashMap<String, ParagraphProps>,
     character_run: HashMap<String, RunProps>,
 }
 
@@ -44,24 +46,102 @@ impl Styles {
             .filter(|s| !s.is_empty())
     }
 
-    pub(crate) fn run_props(
+    pub(crate) fn resolved_run_props(
         &self,
         paragraph_style_id: Option<&str>,
         character_style_id: Option<&str>,
-    ) -> CharProps {
-        let mut props = CharProps::default();
-        self.doc_defaults_run.apply_to(&mut props);
+    ) -> RunProps {
+        let mut props = self.doc_defaults_run.clone();
         if let Some(style_id) = paragraph_style_id {
             if let Some(style_props) = self.paragraph_run.get(style_id) {
-                style_props.apply_to(&mut props);
+                props.overlay(style_props);
             }
         }
         if let Some(style_id) = character_style_id {
             if let Some(style_props) = self.character_run.get(style_id) {
-                style_props.apply_to(&mut props);
+                props.overlay(style_props);
             }
         }
         props
+    }
+
+    pub(crate) fn paragraph_props(&self, style_id: Option<&str>) -> ParagraphProps {
+        let mut props = self.doc_defaults_paragraph.clone();
+        if let Some(style_id) = style_id {
+            if let Some(style_props) = self.paragraph.get(style_id) {
+                props.overlay(style_props);
+            }
+        }
+        props
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub(crate) struct ParagraphProps {
+    pub(crate) bidi: Option<bool>,
+    pub(crate) keep_next: Option<bool>,
+    pub(crate) keep_lines: Option<bool>,
+    pub(crate) widow_control: Option<bool>,
+    pub(crate) jc: Option<String>,
+    pub(crate) indent_left_pt: Option<f32>,
+    pub(crate) indent_right_pt: Option<f32>,
+    pub(crate) indent_start_pt: Option<f32>,
+    pub(crate) indent_end_pt: Option<f32>,
+}
+
+impl ParagraphProps {
+    fn overlay(&mut self, other: &ParagraphProps) {
+        if other.bidi.is_some() {
+            self.bidi = other.bidi;
+        }
+        if other.keep_next.is_some() {
+            self.keep_next = other.keep_next;
+        }
+        if other.keep_lines.is_some() {
+            self.keep_lines = other.keep_lines;
+        }
+        if other.widow_control.is_some() {
+            self.widow_control = other.widow_control;
+        }
+        if other.jc.is_some() {
+            self.jc = other.jc.clone();
+        }
+        if other.indent_left_pt.is_some() {
+            self.indent_left_pt = other.indent_left_pt;
+        }
+        if other.indent_right_pt.is_some() {
+            self.indent_right_pt = other.indent_right_pt;
+        }
+        if other.indent_start_pt.is_some() {
+            self.indent_start_pt = other.indent_start_pt;
+        }
+        if other.indent_end_pt.is_some() {
+            self.indent_end_pt = other.indent_end_pt;
+        }
+    }
+}
+
+fn twips_attr(e: &BytesStart<'_>, name: &[u8]) -> Option<f32> {
+    attr_local(e, name)
+        .and_then(|value| value.trim().parse::<f32>().ok())
+        .filter(|value| value.is_finite())
+        .map(|value| value / 20.0)
+}
+
+fn apply_paragraph_props_child(props: &mut ParagraphProps, e: &BytesStart<'_>) {
+    match local(e.name().as_ref()) {
+        b"bidi" => props.bidi = Some(toggle_on(attr_local(e, b"val"))),
+        b"keepNext" => props.keep_next = Some(toggle_on(attr_local(e, b"val"))),
+        b"keepLines" => props.keep_lines = Some(toggle_on(attr_local(e, b"val"))),
+        b"widowControl" => props.widow_control = Some(toggle_on(attr_local(e, b"val"))),
+        b"jc" => props.jc = attr_local_trimmed(e, b"val"),
+        b"ind" => {
+            props.indent_left_pt = twips_attr(e, b"left");
+            props.indent_right_pt = twips_attr(e, b"right");
+            props.indent_start_pt = twips_attr(e, b"start");
+            props.indent_end_pt = twips_attr(e, b"end");
+        }
+        _ => {}
     }
 }
 
@@ -73,6 +153,7 @@ pub(crate) struct RunProps {
     strike: Option<bool>,
     hidden: Option<bool>,
     font: Option<String>,
+    font_cs: Option<String>,
     size_half_pt: Option<u16>,
     color: Option<Color>,
     highlight: Option<String>,
@@ -123,9 +204,14 @@ impl RunProps {
         if let Some(value) = self.rtl {
             props.rtl = value;
         }
+        if props.rtl {
+            if let Some(value) = &self.font_cs {
+                props.font = Some(value.clone());
+            }
+        }
     }
 
-    fn overlay(&mut self, other: &RunProps) {
+    pub(crate) fn overlay(&mut self, other: &RunProps) {
         if other.bold.is_some() {
             self.bold = other.bold;
         }
@@ -143,6 +229,9 @@ impl RunProps {
         }
         if other.font.is_some() {
             self.font = other.font.clone();
+        }
+        if other.font_cs.is_some() {
+            self.font_cs = other.font_cs.clone();
         }
         if other.size_half_pt.is_some() {
             self.size_half_pt = other.size_half_pt;
@@ -187,6 +276,7 @@ pub(crate) fn apply_run_props_child(props: &mut RunProps, e: &BytesStart<'_>) {
         b"rFonts" => {
             props.font =
                 attr_local_trimmed(e, b"eastAsia").or_else(|| attr_local_trimmed(e, b"ascii"));
+            props.font_cs = attr_local_trimmed(e, b"cs");
         }
         b"sz" => props.size_half_pt = attr_u16(e, b"val"),
         b"color" => props.color = attr_local(e, b"val").and_then(|v| parse_rgb_hex_color(&v)),
@@ -212,6 +302,7 @@ pub(crate) fn parse(xml: &str) -> Styles {
     let mut cur_style: Option<RawStyle> = None;
     let mut in_doc_defaults = false;
     let mut in_rpr_default = false;
+    let mut in_ppr_default = false;
     let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
@@ -236,6 +327,9 @@ pub(crate) fn parse(xml: &str) -> Styles {
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"rPrDefault" => {
                 in_rpr_default = true;
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"pPrDefault" => {
+                in_ppr_default = true;
             }
             // A new <w:style> opens; capture its id and reset per-style state.
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"style" => {
@@ -270,6 +364,13 @@ pub(crate) fn parse(xml: &str) -> Styles {
                         style.run_props = read_run_props(&mut r, b"rPr");
                     }
                 }
+                b"bidi" | b"keepNext" | b"keepLines" | b"widowControl" | b"jc" | b"ind" => {
+                    if in_doc_defaults && in_ppr_default {
+                        apply_paragraph_props_child(&mut styles.doc_defaults_paragraph, &e);
+                    } else if let Some(style) = &mut cur_style {
+                        apply_paragraph_props_child(&mut style.paragraph_props, &e);
+                    }
+                }
                 b"name" => {
                     if let Some(v) = attr_local_trimmed(&e, b"val") {
                         if let Some(style) = &mut cur_style {
@@ -299,6 +400,9 @@ pub(crate) fn parse(xml: &str) -> Styles {
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"rPrDefault" => {
                 in_rpr_default = false;
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"pPrDefault" => {
+                in_ppr_default = false;
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"docDefaults" => {
                 in_doc_defaults = false;
@@ -332,6 +436,7 @@ pub(crate) fn parse(xml: &str) -> Styles {
         .map(|(id, _)| id.clone())
         .collect::<Vec<_>>();
     let mut paragraph_cache = HashMap::new();
+    let mut paragraph_props_cache = HashMap::new();
     for id in paragraph_ids {
         let props = resolve_style_run_props(
             &id,
@@ -341,7 +446,15 @@ pub(crate) fn parse(xml: &str) -> Styles {
             &mut Vec::new(),
             0,
         );
-        styles.paragraph_run.insert(id, props);
+        styles.paragraph_run.insert(id.clone(), props);
+        let paragraph_props = resolve_style_paragraph_props(
+            &id,
+            &raw_styles,
+            &mut paragraph_props_cache,
+            &mut Vec::new(),
+            0,
+        );
+        styles.paragraph.insert(id, paragraph_props);
     }
     let mut character_cache = HashMap::new();
     for id in character_ids {
@@ -366,6 +479,7 @@ struct RawStyle {
     based_on: Option<String>,
     outline: Option<u8>,
     run_props: RunProps,
+    paragraph_props: ParagraphProps,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -409,6 +523,39 @@ fn resolve_style_run_props(
         .map(|base| resolve_style_run_props(base, kind, raw_styles, cache, stack, depth + 1))
         .unwrap_or_default();
     props.overlay(&style.run_props);
+    stack.pop();
+
+    cache.insert(id.to_string(), props.clone());
+    props
+}
+
+fn resolve_style_paragraph_props(
+    id: &str,
+    raw_styles: &HashMap<String, RawStyle>,
+    cache: &mut HashMap<String, ParagraphProps>,
+    stack: &mut Vec<String>,
+    depth: usize,
+) -> ParagraphProps {
+    if let Some(props) = cache.get(id) {
+        return props.clone();
+    }
+    if depth >= STYLE_CHAIN_LIMIT || stack.iter().any(|seen| seen == id) {
+        return ParagraphProps::default();
+    }
+    let Some(style) = raw_styles
+        .get(id)
+        .filter(|style| style.kind == Some(StyleKind::Paragraph))
+    else {
+        return ParagraphProps::default();
+    };
+
+    stack.push(id.to_string());
+    let mut props = style
+        .based_on
+        .as_deref()
+        .map(|base| resolve_style_paragraph_props(base, raw_styles, cache, stack, depth + 1))
+        .unwrap_or_default();
+    props.overlay(&style.paragraph_props);
     stack.pop();
 
     cache.insert(id.to_string(), props.clone());
@@ -516,5 +663,56 @@ mod tests {
         assert_eq!(s.name("ChoiceHeading"), Some("heading 1"));
         assert_eq!(s.heading_level("FallbackHeading"), None);
         assert_eq!(s.name("FallbackHeading"), None);
+    }
+
+    #[test]
+    fn resolves_inherited_paragraph_direction_alignment_and_logical_indents() {
+        let xml = r#"<w:styles>
+            <w:docDefaults><w:pPrDefault><w:pPr><w:jc w:val="left"/></w:pPr></w:pPrDefault></w:docDefaults>
+            <w:style w:type="paragraph" w:styleId="RtlBase">
+                <w:pPr><w:bidi/><w:jc w:val="start"/><w:ind w:start="720" w:end="1440"/></w:pPr>
+            </w:style>
+            <w:style w:type="paragraph" w:styleId="RtlDerived"><w:basedOn w:val="RtlBase"/></w:style>
+            <w:style w:type="paragraph" w:styleId="LtrOverride"><w:basedOn w:val="RtlBase"/>
+                <w:pPr><w:bidi w:val="0"/><w:jc w:val="end"/></w:pPr>
+            </w:style>
+        </w:styles>"#;
+        let styles = parse(xml);
+        let defaults = styles.paragraph_props(None);
+        let inherited = styles.paragraph_props(Some("RtlDerived"));
+        let overridden = styles.paragraph_props(Some("LtrOverride"));
+
+        assert_eq!(defaults.jc.as_deref(), Some("left"));
+        assert_eq!(inherited.bidi, Some(true));
+        assert_eq!(inherited.jc.as_deref(), Some("start"));
+        assert_eq!(inherited.indent_start_pt, Some(36.0));
+        assert_eq!(inherited.indent_end_pt, Some(72.0));
+        assert_eq!(overridden.bidi, Some(false));
+        assert_eq!(overridden.jc.as_deref(), Some("end"));
+    }
+
+    #[test]
+    fn resolves_inherited_pagination_controls_and_explicit_off_values() {
+        let xml = r#"<w:styles>
+            <w:docDefaults><w:pPrDefault><w:pPr><w:widowControl/></w:pPr></w:pPrDefault></w:docDefaults>
+            <w:style w:type="paragraph" w:styleId="KeepBase">
+                <w:pPr><w:keepNext/><w:keepLines/><w:widowControl w:val="0"/></w:pPr>
+            </w:style>
+            <w:style w:type="paragraph" w:styleId="KeepDerived"><w:basedOn w:val="KeepBase"/>
+                <w:pPr><w:keepLines w:val="off"/><w:widowControl/></w:pPr>
+            </w:style>
+        </w:styles>"#;
+        let styles = parse(xml);
+        let defaults = styles.paragraph_props(None);
+        let base = styles.paragraph_props(Some("KeepBase"));
+        let derived = styles.paragraph_props(Some("KeepDerived"));
+
+        assert_eq!(defaults.widow_control, Some(true));
+        assert_eq!(base.keep_next, Some(true));
+        assert_eq!(base.keep_lines, Some(true));
+        assert_eq!(base.widow_control, Some(false));
+        assert_eq!(derived.keep_next, Some(true));
+        assert_eq!(derived.keep_lines, Some(false));
+        assert_eq!(derived.widow_control, Some(true));
     }
 }

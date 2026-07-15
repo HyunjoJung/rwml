@@ -11,8 +11,9 @@ use crate::text;
 
 use super::fields::{
     computed_contextless_result, computed_run_symbol_char, is_section_field_instruction,
-    ContextlessFieldState, FieldDocumentProperties, FieldResolutionContext, LegacyFormContext,
-    NoteRefContext, SectionContext, TocEntry,
+    is_style_ref_field_instruction, ContextlessFieldState, FieldDocumentProperties,
+    FieldResolutionContext, LegacyFormContext, NoteRefContext, SectionContext, StyleRefContext,
+    TocEntry,
 };
 use super::xml_text::{
     inline_marker_text, read_text, skip_alternate_content_branch, skip_subtree,
@@ -32,6 +33,7 @@ pub(crate) fn parse(xml: &str, ctx: &FieldResolutionContext<'_>) -> Vec<Revision
         document_bookmarks: ctx.document_bookmarks,
         note_refs: ctx.note_refs,
         sections: ctx.sections,
+        style_refs: ctx.style_refs,
         legacy_forms: ctx.legacy_forms,
         toc_entries: ctx.toc_entries,
         bookmark_names: ctx.bookmark_names,
@@ -88,11 +90,12 @@ pub(crate) fn main_text_with_view(
 ) -> String {
     // The field-resolution context is all-or-nothing at the call site: either every
     // family context is present or none is. Spread it back into the per-field options
-    // the text reader threads (it never consults `style_refs`).
+    // the text reader threads.
     let properties = ctx.map(|c| c.properties);
     let document_bookmarks = ctx.map(|c| c.document_bookmarks);
     let note_refs = ctx.map(|c| c.note_refs);
     let sections = ctx.map(|c| c.sections);
+    let style_refs = ctx.map(|c| c.style_refs);
     let legacy_forms = ctx.map(|c| c.legacy_forms);
     let toc_entries = ctx.map(|c| c.toc_entries);
     let bookmark_names = ctx.map(|c| c.bookmark_names);
@@ -125,25 +128,35 @@ pub(crate) fn main_text_with_view(
             Ok(Event::Start(e)) => {
                 if let Some(kind) = revision_kind(local(e.name().as_ref())) {
                     let use_sections = sections.filter(|_| revision_kind_is_current(kind));
+                    let use_style_refs = style_refs.filter(|_| revision_kind_is_current(kind));
                     let use_legacy_forms = legacy_forms.filter(|_| revision_kind_is_current(kind));
-                    let (rev_text, next_section_field_index, next_form_field_index) =
-                        read_revision_text(
-                            &mut r,
-                            local(e.name().as_ref()),
-                            RevisionTextContext {
-                                properties,
-                                document_bookmarks,
-                                note_refs,
-                                sections: use_sections,
-                                section_field_index: field_cursor.section_field_index,
-                                legacy_forms: use_legacy_forms,
-                                form_field_index: field_cursor.form_field_index,
-                                toc_entries,
-                                bookmark_names,
-                            },
-                        );
+                    let (
+                        rev_text,
+                        next_section_field_index,
+                        next_style_ref_field_index,
+                        next_form_field_index,
+                    ) = read_revision_text(
+                        &mut r,
+                        local(e.name().as_ref()),
+                        RevisionTextContext {
+                            properties,
+                            document_bookmarks,
+                            note_refs,
+                            sections: use_sections,
+                            section_field_index: field_cursor.section_field_index,
+                            style_refs: use_style_refs,
+                            style_ref_field_index: field_cursor.style_ref_field_index,
+                            legacy_forms: use_legacy_forms,
+                            form_field_index: field_cursor.form_field_index,
+                            toc_entries,
+                            bookmark_names,
+                        },
+                    );
                     if use_sections.is_some() {
                         field_cursor.section_field_index = next_section_field_index;
+                    }
+                    if use_style_refs.is_some() {
+                        field_cursor.style_ref_field_index = next_style_ref_field_index;
                     }
                     if use_legacy_forms.is_some() {
                         field_cursor.form_field_index = next_form_field_index;
@@ -222,6 +235,7 @@ struct RevisionContext<'a> {
     document_bookmarks: &'a HashMap<String, String>,
     note_refs: &'a NoteRefContext,
     sections: &'a SectionContext,
+    style_refs: &'a StyleRefContext,
     legacy_forms: &'a LegacyFormContext,
     toc_entries: &'a [TocEntry],
     bookmark_names: &'a HashSet<String>,
@@ -236,24 +250,31 @@ fn read_revision(
 ) -> Revision {
     let end_name = local(start.name().as_ref()).to_vec();
     let use_sections = revision_kind_is_current(kind).then_some(ctx.sections);
+    let use_style_refs = revision_kind_is_current(kind).then_some(ctx.style_refs);
     let use_legacy_forms = revision_kind_is_current(kind).then_some(ctx.legacy_forms);
-    let (text, next_section_field_index, next_form_field_index) = read_revision_text(
-        r,
-        &end_name,
-        RevisionTextContext {
-            properties: Some(ctx.properties),
-            document_bookmarks: Some(ctx.document_bookmarks),
-            note_refs: Some(ctx.note_refs),
-            sections: use_sections,
-            section_field_index: field_cursor.section_field_index,
-            legacy_forms: use_legacy_forms,
-            form_field_index: field_cursor.form_field_index,
-            toc_entries: Some(ctx.toc_entries),
-            bookmark_names: Some(ctx.bookmark_names),
-        },
-    );
+    let (text, next_section_field_index, next_style_ref_field_index, next_form_field_index) =
+        read_revision_text(
+            r,
+            &end_name,
+            RevisionTextContext {
+                properties: Some(ctx.properties),
+                document_bookmarks: Some(ctx.document_bookmarks),
+                note_refs: Some(ctx.note_refs),
+                sections: use_sections,
+                section_field_index: field_cursor.section_field_index,
+                style_refs: use_style_refs,
+                style_ref_field_index: field_cursor.style_ref_field_index,
+                legacy_forms: use_legacy_forms,
+                form_field_index: field_cursor.form_field_index,
+                toc_entries: Some(ctx.toc_entries),
+                bookmark_names: Some(ctx.bookmark_names),
+            },
+        );
     if use_sections.is_some() {
         field_cursor.section_field_index = next_section_field_index;
+    }
+    if use_style_refs.is_some() {
+        field_cursor.style_ref_field_index = next_style_ref_field_index;
     }
     if use_legacy_forms.is_some() {
         field_cursor.form_field_index = next_form_field_index;
@@ -270,6 +291,8 @@ struct RevisionTextContext<'a> {
     note_refs: Option<&'a NoteRefContext>,
     sections: Option<&'a SectionContext>,
     section_field_index: usize,
+    style_refs: Option<&'a StyleRefContext>,
+    style_ref_field_index: usize,
     legacy_forms: Option<&'a LegacyFormContext>,
     form_field_index: usize,
     toc_entries: Option<&'a [TocEntry]>,
@@ -280,13 +303,15 @@ fn read_revision_text(
     r: &mut Xml<'_>,
     end_name: &[u8],
     ctx: RevisionTextContext<'_>,
-) -> (String, usize, usize) {
+) -> (String, usize, usize, usize) {
     let RevisionTextContext {
         properties,
         document_bookmarks,
         note_refs,
         sections,
         section_field_index,
+        style_refs,
+        style_ref_field_index,
         legacy_forms,
         form_field_index,
         toc_entries,
@@ -314,6 +339,9 @@ fn read_revision_text(
     }
     if let Some(sections) = sections {
         field_state = field_state.with_section_context_from(sections, section_field_index);
+    }
+    if let Some(style_refs) = style_refs {
+        field_state = field_state.with_style_ref_context_from(style_refs, style_ref_field_index);
     }
     if let Some(legacy_forms) = legacy_forms {
         field_state = field_state.with_legacy_form_context_from(legacy_forms, form_field_index);
@@ -454,6 +482,7 @@ fn read_revision_text(
     (
         text,
         field_state.section_field_index(),
+        field_state.style_ref_field_index(),
         field_state.form_field_index(),
     )
 }
@@ -469,6 +498,7 @@ fn revision_kind_is_current(kind: RevisionKind) -> bool {
 #[derive(Default)]
 struct RevisionFieldCursor {
     section_field_index: usize,
+    style_ref_field_index: usize,
     form_field_index: usize,
     complex_depth: usize,
     complex_instruction: String,
@@ -510,6 +540,9 @@ impl RevisionFieldCursor {
         if is_section_field_instruction(&instruction) {
             self.section_field_index += 1;
         }
+        if is_style_ref_field_instruction(&instruction) {
+            self.style_ref_field_index += 1;
+        }
         if legacy_form_field_syntax(&instruction).is_some() {
             self.form_field_index += 1;
         }
@@ -536,6 +569,9 @@ impl RevisionFieldCursor {
                 if self.complex_depth == 0 {
                     if is_section_field_instruction(&self.complex_instruction) {
                         self.section_field_index += 1;
+                    }
+                    if is_style_ref_field_instruction(&self.complex_instruction) {
+                        self.style_ref_field_index += 1;
                     }
                     if legacy_form_field_syntax(&self.complex_instruction).is_some() {
                         self.form_field_index += 1;

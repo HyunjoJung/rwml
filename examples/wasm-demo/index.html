@@ -283,6 +283,7 @@
 
   <script type="module">
     import init, { extractText, markdown, html, reportJson } from "./pkg/rwml.js";
+    import { featureEntries, warningEntries } from "./report-format.mjs";
 
     const fileInput = document.getElementById("fileInput");
     const openButton = document.getElementById("openButton");
@@ -341,31 +342,6 @@
         item.textContent = entry;
         target.appendChild(item);
       }
-    }
-
-    function featureEntries(features) {
-      return Object.entries(features || {})
-        .filter(([, value]) => {
-          if (Array.isArray(value)) {
-            return value.length > 0;
-          }
-          return Number(value) > 0;
-        })
-        .map(([key, value]) => {
-          if (Array.isArray(value)) {
-            return `${key}: ${value.map((item) => `${item.kind}=${item.count}`).join(", ")}`;
-          }
-          return `${key}: ${value}`;
-        });
-    }
-
-    function warningEntries(warnings) {
-      return (warnings || []).map((warning) => {
-        if (warning.kind) {
-          return `${warning.kind}: ${JSON.stringify(warning)}`;
-        }
-        return JSON.stringify(warning);
-      });
     }
 
     function renderReport(report) {

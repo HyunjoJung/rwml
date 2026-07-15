@@ -149,7 +149,7 @@ pub fn try_write_docx(model: &DocModel) -> Result<Vec<u8>> {
 }
 
 /// Render a [`DocModel`] — one you built from data, or read from a `.doc`/`.docx`
-/// — to a single-column A4 **PDF** with native typesetting (`parley` + `krilla`).
+/// — to a **PDF** with native typesetting (`parley` + `krilla`).
 /// The rendering entry point for previews and generated reports: rich text
 /// (color/size/font), lists, indentation, bordered tables with shaded cells, and
 /// images. Available with the `render` feature.
@@ -195,15 +195,14 @@ pub fn layout_pages_with_fonts(model: &DocModel, fonts: &[Vec<u8>]) -> Result<La
     render::layout_pages_with_fonts(model, fonts)
 }
 
-/// Render a [`DocModel`] to PDF with rwml's bundled Noto Sans KR subset
-/// registered first. The bundled subset covers KS X 1001 Hangul, KS X 1001
-/// hanja coverage (4,885 of 4,888 mapped), and Basic Latin; other scripts fall
-/// back to system fonts exactly like
-/// [`render_pdf_with_fonts`]. Available with the `render` and `bundled-fonts`
-/// features.
+/// Render a [`DocModel`] to PDF with rwml's bundled Noto Sans subsets registered
+/// first. The bundled faces cover KS X 1001 Hangul, 4,885 of 4,888 KS X 1001
+/// hanja, common Arabic and Hebrew ranges, and Basic Latin. Other scripts fall
+/// back to system fonts exactly like [`render_pdf_with_fonts`]. Available with
+/// the `render` and `bundled-fonts` features.
 #[cfg(all(feature = "render", feature = "bundled-fonts"))]
 pub fn render_pdf_bundled(model: &DocModel) -> Vec<u8> {
-    let fonts = [rwml_fonts::noto_sans_kr_subset_with_hanja().to_vec()];
+    let fonts = bundled_render_fonts();
     render_pdf_with_fonts(model, &fonts)
 }
 
@@ -211,8 +210,17 @@ pub fn render_pdf_bundled(model: &DocModel) -> Vec<u8> {
 /// `bundled-fonts` features.
 #[cfg(all(feature = "render", feature = "bundled-fonts"))]
 pub fn try_render_pdf_bundled(model: &DocModel) -> Result<Vec<u8>> {
-    let fonts = [rwml_fonts::noto_sans_kr_subset_with_hanja().to_vec()];
+    let fonts = bundled_render_fonts();
     try_render_pdf_with_fonts(model, &fonts)
+}
+
+#[cfg(all(feature = "render", feature = "bundled-fonts"))]
+fn bundled_render_fonts() -> [Vec<u8>; 3] {
+    [
+        rwml_fonts::noto_sans_kr_subset_with_hanja().to_vec(),
+        rwml_fonts::noto_sans_arabic_subset().to_vec(),
+        rwml_fonts::noto_sans_hebrew_subset().to_vec(),
+    ]
 }
 
 /// Render a [`DocModel`] to PDF and return renderer metrics/warnings produced by
@@ -288,6 +296,36 @@ pub enum CoreProperty {
     Revision,
     /// Core-properties `cp:version`.
     Version,
+}
+
+/// Kind of one conservative atomic direct `.docx` body block exposed by
+/// [`Document::body_blocks`].
+#[cfg(feature = "docx")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum BodyBlockKind {
+    /// A direct WordprocessingML paragraph (`w:p`).
+    Paragraph,
+    /// A direct WordprocessingML table (`w:tbl`).
+    Table,
+    /// A direct block-level content control subtree (`w:sdt`).
+    ContentControl,
+}
+
+/// Index and kind of one atomic direct `.docx` body block.
+///
+/// These descriptors intentionally are not persistent source handles. Indices
+/// address the current retained package tree and should be enumerated again after
+/// a structural edit or save/reopen cycle.
+#[cfg(feature = "docx")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct BodyBlockInfo {
+    /// Zero-based index used by [`Document::remove_body_block`] and
+    /// [`Document::move_body_block`].
+    pub index: usize,
+    /// Direct body element kind.
+    pub kind: BodyBlockKind,
 }
 
 /// Core document properties extracted from `docProps/core.xml` or generated
@@ -516,11 +554,12 @@ impl Document {
     ///
     /// **Stale after an in-place edit.** This (and everything derived from it —
     /// [`Document::to_markdown`], [`Document::to_html`], [`Document::images`],
-    /// [`Document::to_docx`], [`Document::to_pdf`]) reflects the document **as opened**.
+    /// [`Document::to_docx`], `Document::to_pdf`) reflects the document **as opened**.
     /// Preservation edits ([`Document::replace_body_text`], [`Document::set_field_result`],
     /// [`Document::fill_content_control_by_tag`], [`Document::fill_content_controls_by_tag`],
     /// [`Document::fill_template_fields`],
     /// [`Document::accept_all_revisions`], [`Document::reject_all_revisions`],
+    /// [`Document::remove_body_block`], [`Document::move_body_block`],
     /// [`Document::set_hyperlink_target`], [`Document::add_image_png`],
     /// [`Document::replace_image_png`]) mutate the package
     /// directly, not this model, so they are not visible here until you [`Document::save`]
@@ -850,6 +889,7 @@ impl Document {
     /// [`Document::fill_content_control_by_tag`], [`Document::fill_content_controls_by_tag`],
     /// [`Document::fill_template_fields`],
     /// [`Document::accept_all_revisions`], [`Document::reject_all_revisions`],
+    /// [`Document::remove_body_block`], [`Document::move_body_block`],
     /// [`Document::set_hyperlink_target`], [`Document::replace_image_png`]) mutate only
     /// their target XML/media/relationship parts, so
     /// untouched **non-metadata** parts stay byte-for-byte;
@@ -925,8 +965,7 @@ impl Document {
             )?;
         }
         pkg.ensure_content_type("docProps/core.xml", CT_CORE_PROPERTIES);
-        pkg.to_zip()?;
-        d.package = pkg;
+        commit_docx_package(d, pkg)?;
         Ok(())
     }
 
@@ -1018,8 +1057,85 @@ impl Document {
         // We've edited (touched) document.xml — guarantee the saved package types it as
         // the WML main document, so `save()` can't fail on a missing/generic override.
         pkg.ensure_content_type("word/document.xml", CT_DOCUMENT_MAIN);
-        d.package = pkg;
+        commit_docx_package(d, pkg)?;
         Ok(changed)
+    }
+
+    /// Enumerate atomic direct body blocks addressable by the conservative
+    /// package-preserving structural edit methods.
+    ///
+    /// The returned indices cover direct `w:p`, `w:tbl`, and `w:sdt` children in
+    /// retained package order. They deliberately do not claim one-to-one parity
+    /// with [`DocModel::blocks`]: a direct content control may contain several
+    /// modeled blocks. The same structural hazard preflight used by move/remove is
+    /// applied, so opaque direct children or cross-block ranges return an error.
+    #[cfg(feature = "docx")]
+    pub fn body_blocks(&self) -> Result<Vec<BodyBlockInfo>> {
+        let d = self.docx_tree_editable_ref()?;
+        let raw = d
+            .package
+            .part("word/document.xml")
+            .ok_or_else(|| Error::Docx("missing word/document.xml".into()))?;
+        let tree = xmltree::XmlTree::parse(&raw)?;
+        let body = tree.wml_body_strict()?;
+        let kinds = tree.wml_atomic_body_block_kinds_under(body)?;
+        let mut blocks = Vec::new();
+        blocks
+            .try_reserve(kinds.len())
+            .map_err(|_| Error::Docx("body block descriptor inventory: out of memory".into()))?;
+        blocks.extend(
+            kinds
+                .into_iter()
+                .enumerate()
+                .map(|(index, kind)| BodyBlockInfo {
+                    index,
+                    kind: match kind {
+                        xmltree::WmlAtomicBodyBlockKind::Paragraph => BodyBlockKind::Paragraph,
+                        xmltree::WmlAtomicBodyBlockKind::Table => BodyBlockKind::Table,
+                        xmltree::WmlAtomicBodyBlockKind::ContentControl => {
+                            BodyBlockKind::ContentControl
+                        }
+                    },
+                }),
+        );
+        Ok(blocks)
+    }
+
+    /// **Package-preserving structural edit: remove one atomic top-level body block.**
+    /// `block_index` addresses direct `w:p`, `w:tbl`, and `w:sdt` children of the
+    /// main `.docx` body in source order. The exact XML subtree is removed; every
+    /// other package part and sibling subtree is preserved.
+    ///
+    /// The edit is intentionally conservative. It rejects opaque direct body
+    /// elements, malformed or cross-block ranges/complex fields, and any block
+    /// carrying section properties. The read model and text views remain stale
+    /// until the saved bytes are reopened. On any error the document is unchanged.
+    #[cfg(feature = "docx")]
+    pub fn remove_body_block(&mut self, block_index: usize) -> Result<()> {
+        let d = self.docx_tree_editable()?;
+        edit_docx_atomic_body_block(d, AtomicBodyBlockEdit::Remove { block_index })
+    }
+
+    /// **Package-preserving structural edit: move one atomic top-level body block.**
+    /// `from_index` and `to_index` address direct `w:p`, `w:tbl`, and `w:sdt`
+    /// children in source order; `to_index` is the block's final zero-based
+    /// position. The exact subtree moves without regenerating its content.
+    ///
+    /// Moves across blocks carrying section properties, opaque body children,
+    /// and malformed or cross-block ranges/complex fields are rejected. A validated
+    /// same-index move is a no-op and does not promote or dirty `document.xml`.
+    /// Read views remain stale until save and reopen. On any error the document is
+    /// unchanged.
+    #[cfg(feature = "docx")]
+    pub fn move_body_block(&mut self, from_index: usize, to_index: usize) -> Result<()> {
+        let d = self.docx_tree_editable()?;
+        edit_docx_atomic_body_block(
+            d,
+            AtomicBodyBlockEdit::Move {
+                from_index,
+                to_index,
+            },
+        )
     }
 
     /// **Package-preserving edit: accept tracked body/note/header/footer revisions.** In
@@ -1134,7 +1250,7 @@ impl Document {
             }
         }
         pkg.ensure_content_type("word/document.xml", CT_DOCUMENT_MAIN);
-        d.package = pkg;
+        commit_docx_package(d, pkg)?;
         Ok(())
     }
 
@@ -1310,7 +1426,7 @@ impl Document {
         }
         pkg.ensure_content_type("word/document.xml", CT_DOCUMENT_MAIN);
         let changed = matched.len();
-        d.package = pkg;
+        commit_docx_package(d, pkg)?;
         Ok(changed)
     }
 
@@ -1542,7 +1658,7 @@ impl Document {
             }
             pkg.ensure_content_type(&target.part, target.content_type);
         }
-        d.package = pkg;
+        commit_docx_package(d, pkg)?;
         Ok(changed)
     }
 
@@ -1572,8 +1688,7 @@ impl Document {
             rid.as_str(),
             target,
         )?;
-        pkg.to_zip()?;
-        d.package = pkg;
+        commit_docx_package(d, pkg)?;
         Ok(())
     }
 
@@ -1596,7 +1711,7 @@ impl Document {
             tree.set_wml_comment_text_under(root, comment_id, text)?;
         }
         pkg.ensure_content_type("word/comments.xml", CT_COMMENTS);
-        d.package = pkg;
+        commit_docx_package(d, pkg)?;
         Ok(())
     }
 
@@ -1650,8 +1765,7 @@ impl Document {
         }
         pkg.ensure_content_type("word/document.xml", CT_DOCUMENT_MAIN);
         pkg.ensure_content_type("word/comments.xml", CT_COMMENTS);
-        pkg.to_zip()?;
-        d.package = pkg;
+        commit_docx_package(d, pkg)?;
         Ok(id)
     }
 
@@ -1720,7 +1834,7 @@ impl Document {
             set_wml_text_runs(tree, runs, text)?;
         }
         pkg.ensure_content_type("word/document.xml", CT_DOCUMENT_MAIN);
-        d.package = pkg;
+        commit_docx_package(d, pkg)?;
         Ok(())
     }
 
@@ -1769,8 +1883,7 @@ impl Document {
         }
         pkg.ensure_content_type("word/document.xml", CT_DOCUMENT_MAIN);
         pkg.ensure_content_type("word/footnotes.xml", CT_FOOTNOTES);
-        pkg.to_zip()?;
-        d.package = pkg;
+        commit_docx_package(d, pkg)?;
         Ok(id)
     }
 
@@ -1819,8 +1932,7 @@ impl Document {
         }
         pkg.ensure_content_type("word/document.xml", CT_DOCUMENT_MAIN);
         pkg.ensure_content_type("word/endnotes.xml", CT_ENDNOTES);
-        pkg.to_zip()?;
-        d.package = pkg;
+        commit_docx_package(d, pkg)?;
         Ok(id)
     }
 
@@ -1919,7 +2031,7 @@ impl Document {
             }
             pkg.ensure_content_type(target.part, target.content_type);
         }
-        d.package = pkg;
+        commit_docx_package(d, pkg)?;
         Ok(changed)
     }
 
@@ -2006,7 +2118,7 @@ impl Document {
             }
             pkg.ensure_content_type(&target.part, target.content_type);
         }
-        d.package = pkg;
+        commit_docx_package(d, pkg)?;
         Ok(changed)
     }
 
@@ -2076,8 +2188,7 @@ impl Document {
                 changed += 1;
             }
         }
-        pkg.to_zip()?;
-        d.package = pkg;
+        commit_docx_package(d, pkg)?;
         Ok(changed)
     }
 
@@ -2318,7 +2429,7 @@ impl Document {
         tree.insert_fragment_before_ns_local(body, frag.as_bytes(), xmltree::WML_NS, b"sectPr")?;
         // Guarantee the edited document.xml is typed as the WML main document on save.
         pkg.ensure_content_type("word/document.xml", CT_DOCUMENT_MAIN);
-        d.package = pkg;
+        commit_docx_package(d, pkg)?;
         Ok(())
     }
 
@@ -2351,8 +2462,7 @@ impl Document {
         pkg.set_part(&part, bytes.to_vec(), Some(kind.content_type()));
         // Validate the touched part's content type and write-side budgets before the
         // clone becomes authoritative, so a failed replacement leaves the document unchanged.
-        pkg.to_zip()?;
-        d.package = pkg;
+        commit_docx_package(d, pkg)?;
         Ok(())
     }
 
@@ -2363,21 +2473,23 @@ impl Document {
     #[cfg(feature = "docx")]
     fn docx_tree_editable(&mut self) -> Result<&mut docx::DocxState> {
         match &mut self.backend {
-            // An incomplete package (an unreadable entry was dropped on open) can't be
-            // package-preserving-saved, so refuse edits up front rather than letting an
-            // edit "succeed" and then `save()` fail — editable ⇔ saveable.
-            Backend::Docx(d) if !d.package.is_complete() => Err(Error::Docx(
-                "cannot edit: this document was opened with unreadable/dropped parts, so a \
-                 package-preserving save is impossible — re-acquire the source file"
-                    .into(),
+            Backend::Docx(d) => {
+                ensure_docx_tree_editable(d)?;
+                Ok(d)
+            }
+            Backend::Doc(_) => Err(Error::Docx(
+                "element-tree editing requires a .docx-backed document".into(),
             )),
-            Backend::Docx(d) if d.package.is_meta_lossy() => Err(Error::Docx(
-                "cannot edit: this document's OPC metadata ([Content_Types].xml or a \
-                 .rels part) is malformed, so an edit would regenerate it lossily — \
-                 re-acquire the source file"
-                    .into(),
-            )),
-            Backend::Docx(d) => Ok(d),
+        }
+    }
+
+    #[cfg(feature = "docx")]
+    fn docx_tree_editable_ref(&self) -> Result<&docx::DocxState> {
+        match &self.backend {
+            Backend::Docx(d) => {
+                ensure_docx_tree_editable(d)?;
+                Ok(d)
+            }
             Backend::Doc(_) => Err(Error::Docx(
                 "element-tree editing requires a .docx-backed document".into(),
             )),
@@ -2399,7 +2511,7 @@ impl Document {
         }
     }
 
-    /// Render this document to a single-column A4 **PDF** with native typesetting
+    /// Render this document to a **PDF** with native typesetting
     /// — `parley` lays out and shapes the text (Korean/CJK line-breaking and font
     /// fallback included) and `krilla` emits the PDF with subsetted embedded fonts
     /// and selectable text. Tables render as a real bordered grid with rich,
@@ -2410,7 +2522,14 @@ impl Document {
     pub fn to_pdf(&self) -> Vec<u8> {
         let features = self.report().features;
         let shapes = self.floating_shapes();
-        render::to_pdf_with_fonts_and_features_and_shapes(&self.model(), &[], features, &shapes)
+        let model = self.model();
+        render::to_pdf_with_fonts_and_features_and_shapes(
+            &model,
+            &[],
+            features,
+            &shapes,
+            self.render_pagination_hints(),
+        )
     }
 
     /// Fallible variant of [`Document::to_pdf`]. Available with the `render`
@@ -2419,7 +2538,14 @@ impl Document {
     pub fn try_to_pdf(&self) -> Result<Vec<u8>> {
         let features = self.report().features;
         let shapes = self.floating_shapes();
-        render::try_to_pdf_with_fonts_and_features_and_shapes(&self.model(), &[], features, &shapes)
+        let model = self.model();
+        render::try_to_pdf_with_fonts_and_features_and_shapes(
+            &model,
+            &[],
+            features,
+            &shapes,
+            self.render_pagination_hints(),
+        )
     }
 
     /// Render this document to PDF after registering caller-supplied font blobs.
@@ -2430,7 +2556,14 @@ impl Document {
     pub fn to_pdf_with_fonts(&self, fonts: &[Vec<u8>]) -> Vec<u8> {
         let features = self.report().features;
         let shapes = self.floating_shapes();
-        render::to_pdf_with_fonts_and_features_and_shapes(&self.model(), fonts, features, &shapes)
+        let model = self.model();
+        render::to_pdf_with_fonts_and_features_and_shapes(
+            &model,
+            fonts,
+            features,
+            &shapes,
+            self.render_pagination_hints(),
+        )
     }
 
     /// Fallible variant of [`Document::to_pdf_with_fonts`]. Available with the
@@ -2439,11 +2572,13 @@ impl Document {
     pub fn try_to_pdf_with_fonts(&self, fonts: &[Vec<u8>]) -> Result<Vec<u8>> {
         let features = self.report().features;
         let shapes = self.floating_shapes();
+        let model = self.model();
         render::try_to_pdf_with_fonts_and_features_and_shapes(
-            &self.model(),
+            &model,
             fonts,
             features,
             &shapes,
+            self.render_pagination_hints(),
         )
     }
 
@@ -2456,7 +2591,13 @@ impl Document {
     /// caller bytes are considered. Available with the `render` feature.
     #[cfg(feature = "render")]
     pub fn layout_pages_with_fonts(&self, fonts: &[Vec<u8>]) -> Result<LayoutPages> {
-        layout_pages_with_fonts(&self.model(), fonts)
+        let shapes = self.floating_shapes();
+        render::layout_pages_with_fonts_and_pagination(
+            &self.model(),
+            fonts,
+            self.render_pagination_hints(),
+            &shapes,
+        )
     }
 
     /// Render this document to PDF and return renderer metrics/warnings produced
@@ -2467,7 +2608,14 @@ impl Document {
     pub fn to_pdf_with_report(&self) -> RenderedPdf {
         let features = self.report().features;
         let shapes = self.floating_shapes();
-        render::to_pdf_with_fonts_and_report_and_shapes(&self.model(), &[], features, &shapes)
+        let model = self.model();
+        render::to_pdf_with_fonts_and_report_and_shapes(
+            &model,
+            &[],
+            features,
+            &shapes,
+            self.render_pagination_hints(),
+        )
     }
 
     /// Render this document to PDF with caller-supplied fonts and return
@@ -2478,7 +2626,14 @@ impl Document {
     pub fn to_pdf_with_fonts_and_report(&self, fonts: &[Vec<u8>]) -> RenderedPdf {
         let features = self.report().features;
         let shapes = self.floating_shapes();
-        render::to_pdf_with_fonts_and_report_and_shapes(&self.model(), fonts, features, &shapes)
+        let model = self.model();
+        render::to_pdf_with_fonts_and_report_and_shapes(
+            &model,
+            fonts,
+            features,
+            &shapes,
+            self.render_pagination_hints(),
+        )
     }
 
     /// Fallible variant of [`Document::to_pdf_with_report`]. Available with the
@@ -2487,7 +2642,14 @@ impl Document {
     pub fn try_to_pdf_with_report(&self) -> Result<RenderedPdf> {
         let features = self.report().features;
         let shapes = self.floating_shapes();
-        render::try_to_pdf_with_fonts_and_report_and_shapes(&self.model(), &[], features, &shapes)
+        let model = self.model();
+        render::try_to_pdf_with_fonts_and_report_and_shapes(
+            &model,
+            &[],
+            features,
+            &shapes,
+            self.render_pagination_hints(),
+        )
     }
 
     /// Fallible variant of [`Document::to_pdf_with_fonts_and_report`].
@@ -2496,7 +2658,23 @@ impl Document {
     pub fn try_to_pdf_with_fonts_and_report(&self, fonts: &[Vec<u8>]) -> Result<RenderedPdf> {
         let features = self.report().features;
         let shapes = self.floating_shapes();
-        render::try_to_pdf_with_fonts_and_report_and_shapes(&self.model(), fonts, features, &shapes)
+        let model = self.model();
+        render::try_to_pdf_with_fonts_and_report_and_shapes(
+            &model,
+            fonts,
+            features,
+            &shapes,
+            self.render_pagination_hints(),
+        )
+    }
+
+    #[cfg(feature = "render")]
+    fn render_pagination_hints(&self) -> &[model::PaginationHint] {
+        match &self.backend {
+            Backend::Doc(_) => &[],
+            #[cfg(feature = "docx")]
+            Backend::Docx(d) => &d.pagination_hints,
+        }
     }
 
     /// Normalized plain text of the entire document (all sub-documents), with
@@ -2606,6 +2784,84 @@ impl Document {
             Backend::Docx(_) => false,
         }
     }
+}
+
+#[cfg(feature = "docx")]
+#[derive(Clone, Copy)]
+enum AtomicBodyBlockEdit {
+    Remove { block_index: usize },
+    Move { from_index: usize, to_index: usize },
+}
+
+#[cfg(feature = "docx")]
+fn ensure_docx_tree_editable(d: &docx::DocxState) -> Result<()> {
+    // An incomplete package (an unreadable entry was dropped on open) cannot be
+    // package-preserving-saved, so editable must remain equivalent to saveable.
+    if !d.package.is_complete() {
+        return Err(Error::Docx(
+            "cannot edit: this document was opened with unreadable/dropped parts, so a \
+             package-preserving save is impossible — re-acquire the source file"
+                .into(),
+        ));
+    }
+    if d.package.is_meta_lossy() {
+        return Err(Error::Docx(
+            "cannot edit: this document's OPC metadata ([Content_Types].xml or a \
+             .rels part) is malformed, so an edit would regenerate it lossily — \
+             re-acquire the source file"
+                .into(),
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(feature = "docx")]
+fn apply_atomic_body_block_edit(
+    tree: &mut xmltree::XmlTree,
+    edit: AtomicBodyBlockEdit,
+) -> Result<()> {
+    let body = tree.wml_body_strict()?;
+    match edit {
+        AtomicBodyBlockEdit::Remove { block_index } => {
+            tree.remove_wml_atomic_body_block_under(body, block_index)
+        }
+        AtomicBodyBlockEdit::Move {
+            from_index,
+            to_index,
+        } => tree.move_wml_atomic_body_block_under(body, from_index, to_index),
+    }
+}
+
+#[cfg(feature = "docx")]
+fn edit_docx_atomic_body_block(d: &mut docx::DocxState, edit: AtomicBodyBlockEdit) -> Result<()> {
+    let raw = d
+        .package
+        .part("word/document.xml")
+        .ok_or_else(|| Error::Docx("missing word/document.xml".into()))?;
+    let mut probe = xmltree::XmlTree::parse(&raw)?;
+    apply_atomic_body_block_edit(&mut probe, edit)?;
+    if matches!(
+        edit,
+        AtomicBodyBlockEdit::Move {
+            from_index,
+            to_index
+        } if from_index == to_index
+    ) {
+        return Ok(());
+    }
+
+    let mut pkg = d.package.clone();
+    let tree = pkg.part_tree_mut("word/document.xml")?;
+    apply_atomic_body_block_edit(tree, edit)?;
+    pkg.ensure_content_type("word/document.xml", CT_DOCUMENT_MAIN);
+    commit_docx_package(d, pkg)
+}
+
+#[cfg(feature = "docx")]
+fn commit_docx_package(d: &mut docx::DocxState, pkg: opc::Package) -> Result<()> {
+    pkg.validate_for_save()?;
+    d.package = pkg;
+    Ok(())
 }
 
 #[cfg(feature = "docx")]
@@ -3343,7 +3599,7 @@ struct RevisionEditTarget {
 
 #[cfg(feature = "docx")]
 fn edit_docx_revisions(d: &mut docx::DocxState, mode: RevisionEditMode) -> Result<usize> {
-    let targets = revision_edit_targets(&d.package)?;
+    let targets = revision_edit_targets(&d.package, mode)?;
     let mut changed = Vec::new();
     let mut total = 0usize;
     for target in targets {
@@ -3370,12 +3626,15 @@ fn edit_docx_revisions(d: &mut docx::DocxState, mode: RevisionEditMode) -> Resul
         apply_revision_edit(tree, root, mode);
         pkg.ensure_content_type(target.part.as_str(), target.content_type);
     }
-    d.package = pkg;
+    commit_docx_package(d, pkg)?;
     Ok(total)
 }
 
 #[cfg(feature = "docx")]
-fn revision_edit_targets(package: &opc::Package) -> Result<Vec<RevisionEditTarget>> {
+fn revision_edit_targets(
+    package: &opc::Package,
+    mode: RevisionEditMode,
+) -> Result<Vec<RevisionEditTarget>> {
     if !package.has_part("word/document.xml") {
         return Err(Error::Docx("missing word/document.xml".into()));
     }
@@ -3396,7 +3655,7 @@ fn revision_edit_targets(package: &opc::Package) -> Result<Vec<RevisionEditTarge
             });
         }
     }
-    for target in header_footer_targets(package) {
+    for target in header_footer_targets_for_revision_edit(package, mode) {
         targets.push(RevisionEditTarget {
             part: target.part,
             root_local: Some(target.root_local),
@@ -3452,6 +3711,30 @@ fn header_footer_targets(package: &opc::Package) -> Vec<HeaderFooterTarget> {
     };
     let document_xml = String::from_utf8_lossy(&document_xml);
     let referenced = docx::header_footer_ref_ids(&document_xml);
+    header_footer_targets_for_ids(package, &referenced)
+}
+
+#[cfg(feature = "docx")]
+fn header_footer_targets_for_revision_edit(
+    package: &opc::Package,
+    mode: RevisionEditMode,
+) -> Vec<HeaderFooterTarget> {
+    let Some(document_xml) = package.part("word/document.xml") else {
+        return Vec::new();
+    };
+    let document_xml = String::from_utf8_lossy(&document_xml);
+    let referenced = match mode {
+        RevisionEditMode::Accept => docx::header_footer_ref_ids(&document_xml),
+        RevisionEditMode::Reject => docx::header_footer_ref_ids_for_revision_reject(&document_xml),
+    };
+    header_footer_targets_for_ids(package, &referenced)
+}
+
+#[cfg(feature = "docx")]
+fn header_footer_targets_for_ids(
+    package: &opc::Package,
+    referenced: &std::collections::HashSet<String>,
+) -> Vec<HeaderFooterTarget> {
     let mut seen = std::collections::HashSet::new();
     let mut targets = Vec::new();
     for rel in package.rels_for("word/document.xml") {
@@ -6134,6 +6417,167 @@ mod tests {
         zw.finish().unwrap().into_inner()
     }
 
+    #[cfg(all(feature = "docx", feature = "render"))]
+    #[test]
+    fn opened_docx_layout_uses_private_keep_lines_hints() {
+        let bytes = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:p><w:pPr><w:spacing w:line="800" w:lineRule="exact"/></w:pPr><w:r><w:t>seed</w:t></w:r></w:p>
+                <w:p><w:pPr><w:keepLines/><w:widowControl w:val="off"/><w:spacing w:line="200" w:lineRule="exact"/></w:pPr>
+                    <w:r><w:t>one</w:t><w:br/><w:t>two</w:t><w:br/><w:t>three</w:t></w:r>
+                </w:p>
+                <w:sectPr><w:pgSz w:w="4400" w:h="2000"/><w:pgMar w:top="400" w:right="400" w:bottom="400" w:left="400"/></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let document = Document::open(&bytes).unwrap();
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+        let raw_model_layout = layout_pages_with_fonts(&document.model(), &fonts).unwrap();
+        let opened_document_layout = document.layout_pages_with_fonts(&fonts).unwrap();
+
+        assert_eq!(raw_model_layout.block_pages, vec![Some(1), Some(1)]);
+        assert_eq!(opened_document_layout.block_pages, vec![Some(1), Some(2)]);
+        assert_eq!(opened_document_layout.pages, 2);
+    }
+
+    #[cfg(all(feature = "docx", feature = "render"))]
+    #[test]
+    fn opened_docx_layout_applies_bounded_top_and_bottom_wrap() {
+        let bytes = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><w:body>
+                <w:p><w:r><w:t>anchor</w:t><w:drawing><wp:anchor simplePos="0" behindDoc="0" layoutInCell="1">
+                    <wp:positionH relativeFrom="page"><wp:posOffset>0</wp:posOffset></wp:positionH>
+                    <wp:positionV relativeFrom="page"><wp:posOffset>571500</wp:posOffset></wp:positionV>
+                    <wp:extent cx="254000" cy="317500"/><wp:wrapTopAndBottom/><wp:docPr id="1" name="Wrapped"/>
+                    <a:graphic><a:graphicData/></a:graphic>
+                </wp:anchor></w:drawing></w:r></w:p>
+                <w:p><w:r><w:t>following</w:t></w:r></w:p>
+                <w:sectPr><w:pgSz w:w="4400" w:h="2000"/><w:pgMar w:top="400" w:right="400" w:bottom="400" w:left="400"/></w:sectPr>
+            </w:body></w:document>"#,
+        );
+        let document = Document::open(&bytes).unwrap();
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+        assert_eq!(document.floating_shapes().len(), 1);
+        assert_eq!(
+            document.floating_shapes()[0]
+                .wrapping
+                .as_ref()
+                .map(|wrapping| wrapping.kind.as_str()),
+            Some("topAndBottom")
+        );
+        let raw_model_layout = layout_pages_with_fonts(&document.model(), &fonts).unwrap();
+        let opened_document_layout = document.layout_pages_with_fonts(&fonts).unwrap();
+        let rendered = document.try_to_pdf_with_fonts_and_report(&fonts).unwrap();
+
+        assert_eq!(raw_model_layout.block_pages, vec![Some(1), Some(1)]);
+        assert_eq!(opened_document_layout.block_pages, vec![Some(1), Some(2)]);
+        assert_eq!(rendered.report.pages, opened_document_layout.pages);
+        assert!(rendered.pdf.starts_with(b"%PDF-"));
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn atomic_body_block_edits_preserve_package_and_reopen_in_order() {
+        let bytes = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:p data-id="A"><w:r><w:t>A</w:t></w:r><w:unknown keep="1"/></w:p>
+                <w:tbl data-id="B"><w:tr><w:tc><w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+                <w:sdt data-id="C"><w:sdtPr/><w:sdtContent><w:p><w:r><w:t>C</w:t></w:r></w:p></w:sdtContent></w:sdt>
+                <w:sectPr/>
+            </w:body></w:document>"#,
+        );
+        let original_parts = unzip_parts(&bytes);
+        let mut document = Document::open(&bytes).unwrap();
+
+        assert_eq!(
+            document.body_blocks().unwrap(),
+            vec![
+                BodyBlockInfo {
+                    index: 0,
+                    kind: BodyBlockKind::Paragraph,
+                },
+                BodyBlockInfo {
+                    index: 1,
+                    kind: BodyBlockKind::Table,
+                },
+                BodyBlockInfo {
+                    index: 2,
+                    kind: BodyBlockKind::ContentControl,
+                },
+            ]
+        );
+
+        document.move_body_block(0, 2).unwrap();
+        assert_eq!(document.edited_parts(), vec!["word/document.xml"]);
+        assert_eq!(document.main_text(), "A\nB\nC");
+        assert_eq!(
+            document
+                .body_blocks()
+                .unwrap()
+                .into_iter()
+                .map(|block| block.kind)
+                .collect::<Vec<_>>(),
+            vec![
+                BodyBlockKind::Table,
+                BodyBlockKind::ContentControl,
+                BodyBlockKind::Paragraph,
+            ]
+        );
+        let moved = document.save().unwrap();
+        let moved_parts = unzip_parts(&moved);
+        for (name, payload) in &original_parts {
+            if name != "word/document.xml" {
+                assert_eq!(moved_parts.get(name), Some(payload), "changed part {name}");
+            }
+        }
+        let moved_xml = String::from_utf8(moved_parts["word/document.xml"].clone()).unwrap();
+        let b = moved_xml.find("data-id=\"B\"").unwrap();
+        let c = moved_xml.find("data-id=\"C\"").unwrap();
+        let a = moved_xml.find("data-id=\"A\"").unwrap();
+        assert!(b < c && c < a, "unexpected body order: {moved_xml}");
+        assert!(moved_xml.contains("<w:unknown keep=\"1\"/>"));
+
+        let mut reopened = Document::open(&moved).unwrap();
+        assert_eq!(reopened.main_text(), "B\nC\nA");
+        reopened.remove_body_block(1).unwrap();
+        let removed = reopened.save().unwrap();
+        let removed_xml =
+            String::from_utf8(unzip_parts(&removed)["word/document.xml"].clone()).unwrap();
+        assert!(!removed_xml.contains("data-id=\"C\""));
+        assert_eq!(Document::open(&removed).unwrap().main_text(), "B\nA");
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn atomic_body_block_edits_are_transactional_and_noop_stays_raw() {
+        let safe = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>A</w:t></w:r></w:p><w:p><w:r><w:t>B</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#,
+        );
+        let safe_xml = unzip_parts(&safe)["word/document.xml"].clone();
+        let mut noop = Document::open(&safe).unwrap();
+        noop.move_body_block(0, 0).unwrap();
+        assert!(noop.edited_parts().is_empty());
+        assert_eq!(
+            unzip_parts(&noop.save().unwrap())["word/document.xml"],
+            safe_xml
+        );
+
+        let hazardous = minimal_docx(
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:bookmarkStart w:id="7"/><w:r><w:t>A</w:t></w:r></w:p><w:p><w:r><w:t>B</w:t></w:r><w:bookmarkEnd w:id="7"/></w:p><w:sectPr/></w:body></w:document>"#,
+        );
+        let hazardous_xml = unzip_parts(&hazardous)["word/document.xml"].clone();
+        let mut document = Document::open(&hazardous).unwrap();
+        assert!(document.body_blocks().is_err());
+        assert!(document.remove_body_block(0).is_err());
+        assert!(document.move_body_block(0, 9).is_err());
+        assert!(document.edited_parts().is_empty());
+        assert_eq!(
+            unzip_parts(&document.save().unwrap())["word/document.xml"],
+            hazardous_xml
+        );
+    }
+
     #[cfg(feature = "docx")]
     #[test]
     fn edit_reuses_case_variant_document_override() {
@@ -6411,8 +6855,8 @@ mod tests {
     }
 
     /// An edit can't produce a part/package over the size budget that
-    /// the crate would later refuse to open — add_image_png rejects an oversize image up
-    /// front, and save() rejects an over-budget edited part. (Budget lowered for the test.)
+    /// the crate would later refuse to open. Staged edits validate the resulting package
+    /// before commit and leave the original package untouched on failure.
     #[cfg(feature = "docx")]
     #[test]
     fn edits_respect_part_size_budget() {
@@ -6429,13 +6873,17 @@ mod tests {
             "rejected image leaked"
         );
 
-        // save(): an edited document.xml over the budget is rejected on save.
-        let mut doc2 = Document::open(&docx_rich_body()).unwrap();
-        doc2.replace_body_text("OLD", "NEW").unwrap();
+        // replace_body_text: an over-budget staged document.xml is rejected before commit.
+        let original = docx_rich_body();
+        let before = unzip_parts(&original);
+        let mut doc2 = Document::open(&original).unwrap();
         crate::opc::set_test_max_part(8); // document.xml is far larger than 8 bytes
-        let saved = doc2.save();
+        let edit = doc2.replace_body_text("OLD", "NEW");
         crate::opc::reset_test_max_part();
-        assert!(saved.is_err(), "over-budget edited part should fail save");
+        assert!(edit.is_err(), "over-budget edit should fail before commit");
+        assert!(doc2.edited_parts().is_empty());
+        let after = unzip_parts(&doc2.save().unwrap());
+        assert_eq!(after, before, "failed edit changed package payloads");
     }
 
     /// add_image_png rejects a part name longer than the OPC limit,
