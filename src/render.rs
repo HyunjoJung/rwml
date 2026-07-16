@@ -5,9 +5,10 @@
 //! Pipeline: blocks are laid out into a stream of flow items — text lines and
 //! table rows — which are flowed top-to-bottom onto fixed A4 pages, then each
 //! page's glyph runs and table borders are drawn with krilla. A table that spans
-//! pages repeats its header rows after each break, and a row taller than a page is
-//! split across pages at line boundaries. Tables are rendered as a real grid:
-//! columns are reconstructed
+//! pages repeats its header rows after each break. Opened DOCX rows may split at
+//! line boundaries unless direct `w:cantSplit` keeps a fitting row together; an
+//! over-tall row still splits to guarantee progress. Tables are rendered as a
+//! real grid: columns are reconstructed
 //! (including `col_span`/`row_span` placement), sized to authored `col_widths_pct`
 //! or to content, then bordered; cells carry rich per-run text (bold/italic/color/
 //! size/font), background shading, and vertical alignment. Images (block-level
@@ -41,7 +42,7 @@ use parley::{FontContext, LayoutContext};
 use crate::model::{
     Align, Block, Cell, CellMargins, CharProps, Chart, ChartKind, ChartShape, Color, DocModel,
     FieldRole, Image, ListInfo, PageSetup, PaginationHint, ParaProps, Paragraph, Run, SectionSetup,
-    Spacing, TabAlignment, TabStop, Table, VCell, VertAlign,
+    Spacing, TabAlignment, TabStop, Table, TableRowPaginationHint, VCell, VertAlign,
 };
 use crate::report::{self, FeatureInventory, RenderReport, RenderWarning, RenderedPdf};
 use crate::{Error, Result};
@@ -146,6 +147,7 @@ const POP_DIRECTIONAL_ISOLATE: char = '\u{2069}';
 pub(crate) struct SourceRenderHints<'a> {
     pub(crate) pagination: &'a [PaginationHint],
     pub(crate) tab_stops: &'a [Vec<TabStop>],
+    pub(crate) table_row_pagination: &'a [Vec<TableRowPaginationHint>],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -273,6 +275,7 @@ impl CellInsets {
 struct RowLayout {
     height: f32,
     cells: Vec<CellBox>,
+    cant_split: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -2444,12 +2447,24 @@ fn shape_cell(
 /// model's authored `col_widths_pct` when present; otherwise columns are sized to
 /// their content (natural widths scaled to fill the content box), so a narrow
 /// label column and a wide value column read correctly instead of being equal.
+#[cfg(test)]
 fn layout_table(
     t: &Table,
     out: &mut Vec<FlowItem>,
     geom: Geom,
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
+) {
+    layout_table_with_row_pagination(t, out, geom, cx, capture, None);
+}
+
+fn layout_table_with_row_pagination(
+    t: &Table,
+    out: &mut Vec<FlowItem>,
+    geom: Geom,
+    cx: &mut TextCx<'_>,
+    capture: &mut LayoutCapture,
+    row_pagination: Option<&[TableRowPaginationHint]>,
 ) {
     let (grid, ncols) = reconstruct_grid(t);
     let content_w = geom.content_w();
@@ -2490,7 +2505,7 @@ fn layout_table(
 
     // Pass 2: shape each cell richly at its column width and build the rows.
     let mut rows: Vec<RowLayout> = Vec::with_capacity(grid.len());
-    for placed_row in grid {
+    for (row_index, placed_row) in grid.into_iter().enumerate() {
         let mut cells = Vec::with_capacity(placed_row.len());
         let mut row_h = 0.0_f32;
         for pc in placed_row {
@@ -2533,6 +2548,10 @@ fn layout_table(
         rows.push(RowLayout {
             height: row_h,
             cells,
+            cant_split: row_pagination
+                .and_then(|rows| rows.get(row_index))
+                .map(|row| row.cant_split)
+                .unwrap_or(true),
         });
     }
     let header_rows = t.header_rows.min(rows.len());
@@ -2543,6 +2562,7 @@ fn layout_table(
 /// rest, by partitioning each cell's lines. At least one line is always kept in
 /// the fragment so progress is guaranteed even for a line taller than a page.
 fn split_row(row: RowLayout, avail: f32) -> (RowLayout, Option<RowLayout>) {
+    let cant_split = row.cant_split;
     let mut frag_cells = Vec::with_capacity(row.cells.len());
     let mut rest_cells = Vec::with_capacity(row.cells.len());
     let mut any_rest = false;
@@ -2602,6 +2622,7 @@ fn split_row(row: RowLayout, avail: f32) -> (RowLayout, Option<RowLayout>) {
     let frag = RowLayout {
         height: avail,
         cells: frag_cells,
+        cant_split,
     };
     if any_rest {
         let rest_h = rest_cells
@@ -2611,6 +2632,7 @@ fn split_row(row: RowLayout, avail: f32) -> (RowLayout, Option<RowLayout>) {
         let rest = RowLayout {
             height: rest_h.max(14.0),
             cells: rest_cells,
+            cant_split,
         };
         (frag, Some(rest))
     } else {
@@ -2794,6 +2816,7 @@ struct BlockCollectionOptions<'a> {
     section_columns: Option<&'a [Option<u16>]>,
     pagination_hints: Option<&'a [PaginationHint]>,
     tab_stops: Option<&'a [Vec<TabStop>]>,
+    table_row_pagination: Option<&'a [Vec<TableRowPaginationHint>]>,
     top_bottom_bands: Option<&'a [Vec<TopBottomBand>]>,
 }
 
@@ -2801,6 +2824,7 @@ struct BodyCollectionSidecars<'a> {
     section_columns: &'a [Option<u16>],
     pagination_hints: &'a [PaginationHint],
     tab_stops: &'a [Vec<TabStop>],
+    table_row_pagination: &'a [Vec<TableRowPaginationHint>],
     top_bottom_bands: &'a [Vec<TopBottomBand>],
 }
 
@@ -2823,6 +2847,7 @@ fn collect_blocks_with_block_anchors(
             section_columns: Some(sidecars.section_columns),
             pagination_hints: Some(sidecars.pagination_hints),
             tab_stops: Some(sidecars.tab_stops),
+            table_row_pagination: Some(sidecars.table_row_pagination),
             top_bottom_bands: Some(sidecars.top_bottom_bands),
         },
     );
@@ -2906,7 +2931,11 @@ fn collect_blocks_inner(
                 }
             }
             Block::Table(t) => {
-                layout_table(t, out, block_geom, cx, capture);
+                let row_pagination = options
+                    .table_row_pagination
+                    .and_then(|tables| tables.get(block_index))
+                    .map(Vec::as_slice);
+                layout_table_with_row_pagination(t, out, block_geom, cx, capture, row_pagination);
                 out.push(FlowItem::Gap(PARA_GAP));
             }
             Block::Image(img) => {
@@ -5386,10 +5415,30 @@ fn repeat_headers(pages: &mut Pages, cursor: &mut FlowCursor, headers: &[RowLayo
     }
 }
 
-/// Place one row, breaking pages as needed: a row that fits a fresh page is moved
-/// whole (with the header rows repeated); a row taller than a page is split across
-/// pages at line boundaries. `is_header` rows are never themselves preceded by a
-/// header repeat.
+fn first_row_fragment_height(row: &RowLayout) -> f32 {
+    row.cells
+        .iter()
+        .map(|cell| match cell.lines.first() {
+            Some(line) => {
+                cell.insets.top
+                    + line.height
+                    + if cell.lines.len() == 1 {
+                        cell.insets.bottom
+                    } else {
+                        0.0
+                    }
+            }
+            None => cell.insets.top + cell.insets.bottom,
+        })
+        .fold(0.0_f32, f32::max)
+        .max(14.0)
+        .min(row.height)
+}
+
+/// Place one row, breaking pages as needed. A splittable row uses the remaining
+/// column when it can hold a complete line. An authored `cantSplit` row that fits
+/// a fresh column moves there whole; an over-tall row still splits at line
+/// boundaries. `is_header` rows are never themselves preceded by a header repeat.
 fn place_row(
     pages: &mut Pages,
     cursor: &mut FlowCursor,
@@ -5406,8 +5455,10 @@ fn place_row(
             place_item(pages, cursor, FlowItem::Row(row), h);
             return;
         }
-        if !on_fresh {
-            // Move the whole row to a fresh column and repeat headers.
+        let remaining_can_hold_line = avail >= first_row_fragment_height(&row);
+        if !on_fresh && (row.cant_split || !remaining_can_hold_line) {
+            // Keep authored `cantSplit` rows together when they fit a fresh
+            // column; also avoid forcing a partial line into a tiny remainder.
             cursor.advance(pages, geom);
             if !is_header {
                 repeat_headers(pages, cursor, headers);
@@ -5419,12 +5470,15 @@ fn place_row(
         let (frag, rest) = split_row(row, geom.bottom() - cursor.y);
         let fh = frag.height;
         place_item(pages, cursor, FlowItem::Row(frag), fh);
-        cursor.advance(pages, geom);
-        if !is_header {
-            repeat_headers(pages, cursor, headers);
-        }
         match rest {
-            Some(r) => row = r,
+            Some(r) => {
+                cursor.advance(pages, geom);
+                if !is_header {
+                    repeat_headers(pages, cursor, headers);
+                }
+                row = r;
+                on_fresh = true;
+            }
             None => return,
         }
     }
@@ -5973,6 +6027,7 @@ fn collect_pdf_flow_items(
             section_columns: &body_columns,
             pagination_hints: source_hints.pagination,
             tab_stops: source_hints.tab_stops,
+            table_row_pagination: source_hints.table_row_pagination,
             top_bottom_bands: &top_bottom_bands,
         },
     );
@@ -8366,6 +8421,177 @@ mod tests {
 
     fn pagination_block(index: usize, pagination: PaginationHint) -> FlowItem {
         FlowItem::BlockStart { index, pagination }
+    }
+
+    fn pagination_table_row(cant_split: bool, line_count: usize) -> super::RowLayout {
+        let lines = (0..line_count)
+            .map(|_| LineLayout {
+                height: 10.0,
+                baseline: 8.0,
+                x_indent: 0.0,
+                char_range: None,
+                background: None,
+                runs: Vec::new(),
+            })
+            .collect::<Vec<_>>();
+        super::RowLayout {
+            height: line_count as f32 * 10.0,
+            cells: vec![super::CellBox {
+                x: 0.0,
+                width: 100.0,
+                lines,
+                insets: super::CellInsets::zero(),
+                shading: None,
+                valign: crate::model::VCell::Top,
+            }],
+            cant_split,
+        }
+    }
+
+    fn page_row_counts(pagination: &super::Pagination) -> Vec<usize> {
+        pagination
+            .pages
+            .iter()
+            .map(|page| {
+                page.iter()
+                    .filter(|placed| matches!(placed.item, FlowItem::Row(_)))
+                    .count()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn table_row_break_policy_uses_remaining_space_or_moves_whole() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let splittable = paginate(
+            vec![
+                pagination_line(30.0),
+                FlowItem::Table {
+                    rows: vec![pagination_table_row(false, 4)],
+                    header_rows: 0,
+                },
+            ],
+            geom,
+            &SectionSetup::default(),
+        );
+        let kept = paginate(
+            vec![
+                pagination_line(30.0),
+                FlowItem::Table {
+                    rows: vec![pagination_table_row(true, 4)],
+                    header_rows: 0,
+                },
+            ],
+            geom,
+            &SectionSetup::default(),
+        );
+
+        assert_eq!(page_row_counts(&splittable), vec![1, 1]);
+        assert_eq!(page_row_counts(&kept), vec![0, 1]);
+    }
+
+    #[test]
+    fn over_tall_cant_split_row_starts_fresh_and_still_makes_progress() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let pagination = paginate(
+            vec![
+                pagination_line(10.0),
+                FlowItem::Table {
+                    rows: vec![pagination_table_row(true, 8)],
+                    header_rows: 0,
+                },
+            ],
+            geom,
+            &SectionSetup::default(),
+        );
+
+        assert_eq!(page_row_counts(&pagination), vec![0, 1, 1]);
+    }
+
+    #[test]
+    fn splittable_row_moves_when_remainder_cannot_hold_a_line() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let pagination = paginate(
+            vec![
+                pagination_line(55.0),
+                FlowItem::Table {
+                    rows: vec![pagination_table_row(false, 2)],
+                    header_rows: 0,
+                },
+            ],
+            geom,
+            &SectionSetup::default(),
+        );
+
+        assert_eq!(page_row_counts(&pagination), vec![0, 1]);
+    }
+
+    #[test]
+    fn splittable_row_moves_when_remainder_cannot_hold_single_line_cell_insets() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let mut row = pagination_table_row(false, 1);
+        row.cells[0].insets.top = 3.0;
+        row.cells[0].insets.bottom = 5.0;
+        row.height = 18.0;
+        let pagination = paginate(
+            vec![
+                pagination_line(45.0),
+                FlowItem::Table {
+                    rows: vec![row],
+                    header_rows: 0,
+                },
+            ],
+            geom,
+            &SectionSetup::default(),
+        );
+
+        assert_eq!(page_row_counts(&pagination), vec![0, 1]);
+    }
+
+    #[test]
+    fn split_table_row_repeats_headers_once_per_new_page() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let pagination = paginate(
+            vec![
+                pagination_line(30.0),
+                FlowItem::Table {
+                    rows: vec![
+                        pagination_table_row(true, 1),
+                        pagination_table_row(false, 4),
+                    ],
+                    header_rows: 1,
+                },
+            ],
+            geom,
+            &SectionSetup::default(),
+        );
+
+        assert_eq!(page_row_counts(&pagination), vec![2, 2]);
     }
 
     fn page_line_counts(pagination: &super::Pagination) -> Vec<usize> {
