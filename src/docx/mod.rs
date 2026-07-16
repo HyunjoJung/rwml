@@ -205,6 +205,9 @@ pub(crate) struct DocxState {
     /// Renderer-only paragraph pagination controls aligned to body model blocks.
     #[cfg(feature = "render")]
     pub pagination_hints: Vec<crate::model::PaginationHint>,
+    /// Renderer-only resolved explicit tab stops aligned to body model blocks.
+    #[cfg(feature = "render")]
+    pub tab_stops: Vec<Vec<crate::model::TabStop>>,
     /// Exact running header/footer records parsed from referenced `.docx` parts.
     pub header_footers: Vec<HeaderFooter>,
     /// Core metadata parsed from `docProps/core.xml`.
@@ -408,7 +411,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
     ctx.begin_pagination_capture();
     let mut blocks = body::parse_document(&doc_xml, &ctx); // body only
     #[cfg(feature = "render")]
-    let pagination_hints = ctx.take_pagination_hints();
+    let (pagination_hints, tab_stops) = ctx.take_render_hints();
     // Footnotes/endnotes live in their own parts. Keep them SEPARATE from the body
     // (not appended into `model.blocks`); their parts are preserved verbatim on save.
     // They are re-joined for the read/text views below and in `Document::model()`.
@@ -642,6 +645,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         floating_shapes,
         #[cfg(feature = "render")]
         pagination_hints,
+        #[cfg(feature = "render")]
+        tab_stops,
         header_footers,
         core_properties,
         fields,

@@ -2528,7 +2528,7 @@ impl Document {
             &[],
             features,
             &shapes,
-            self.render_pagination_hints(),
+            self.render_source_hints(),
         )
     }
 
@@ -2544,7 +2544,7 @@ impl Document {
             &[],
             features,
             &shapes,
-            self.render_pagination_hints(),
+            self.render_source_hints(),
         )
     }
 
@@ -2562,7 +2562,7 @@ impl Document {
             fonts,
             features,
             &shapes,
-            self.render_pagination_hints(),
+            self.render_source_hints(),
         )
     }
 
@@ -2578,7 +2578,7 @@ impl Document {
             fonts,
             features,
             &shapes,
-            self.render_pagination_hints(),
+            self.render_source_hints(),
         )
     }
 
@@ -2595,7 +2595,7 @@ impl Document {
         render::layout_pages_with_fonts_and_pagination(
             &self.model(),
             fonts,
-            self.render_pagination_hints(),
+            self.render_source_hints(),
             &shapes,
         )
     }
@@ -2614,7 +2614,7 @@ impl Document {
             &[],
             features,
             &shapes,
-            self.render_pagination_hints(),
+            self.render_source_hints(),
         )
     }
 
@@ -2632,7 +2632,7 @@ impl Document {
             fonts,
             features,
             &shapes,
-            self.render_pagination_hints(),
+            self.render_source_hints(),
         )
     }
 
@@ -2648,7 +2648,7 @@ impl Document {
             &[],
             features,
             &shapes,
-            self.render_pagination_hints(),
+            self.render_source_hints(),
         )
     }
 
@@ -2664,16 +2664,19 @@ impl Document {
             fonts,
             features,
             &shapes,
-            self.render_pagination_hints(),
+            self.render_source_hints(),
         )
     }
 
     #[cfg(feature = "render")]
-    fn render_pagination_hints(&self) -> &[model::PaginationHint] {
+    fn render_source_hints(&self) -> render::SourceRenderHints<'_> {
         match &self.backend {
-            Backend::Doc(_) => &[],
+            Backend::Doc(_) => render::SourceRenderHints::default(),
             #[cfg(feature = "docx")]
-            Backend::Docx(d) => &d.pagination_hints,
+            Backend::Docx(d) => render::SourceRenderHints {
+                pagination: &d.pagination_hints,
+                tab_stops: &d.tab_stops,
+            },
         }
     }
 

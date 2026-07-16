@@ -15,6 +15,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "render")]
+use rwml::Block;
 use rwml::{Document, DocumentWarning};
 
 /// A genuinely valid 2x3 RGB PNG (correct chunk CRCs + a real zlib IDAT), so
@@ -482,4 +484,143 @@ fn public_corpus_render_report_matches_manifest() {
             row.path
         );
     }
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn render_activation_fixtures_preserve_opened_document_semantics() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("corpus/public/synthetic");
+    let open = |name: &str| {
+        let path = root.join(name);
+        let bytes = fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        Document::open(&bytes).unwrap_or_else(|e| panic!("open {}: {e}", path.display()))
+    };
+
+    let style = open("style-hidden-tabs-table.docx");
+    let source_text = style.text();
+    let before = source_text.find("VISIBLE BEFORE").expect("visible prefix");
+    let hidden = source_text
+        .find("SECRET_TOKEN")
+        .expect("hidden source text");
+    let after = source_text.find("VISIBLE AFTER").expect("visible suffix");
+    assert!(
+        before < hidden && hidden < after,
+        "source order must remain stable"
+    );
+
+    let style_model = style.model();
+    let hidden_runs: Vec<_> = style_model
+        .blocks
+        .iter()
+        .filter_map(|block| match block {
+            Block::Paragraph(paragraph) => Some(&paragraph.runs),
+            _ => None,
+        })
+        .flatten()
+        .filter(|run| run.props.hidden)
+        .collect();
+    assert_eq!(hidden_runs.len(), 1);
+    assert_eq!(hidden_runs[0].text, "SECRET_TOKEN");
+    let table = style_model
+        .blocks
+        .iter()
+        .find_map(|block| match block {
+            Block::Table(table) => Some(table),
+            _ => None,
+        })
+        .expect("style fixture table");
+    assert!(table.bidi_visual);
+    assert_eq!(table.rows[0].cells[0].text(), "LOGICAL LEFT");
+    assert_eq!(table.rows[0].cells[1].text(), "LOGICAL RIGHT");
+
+    let fonts = vec![
+        rwml_fonts::noto_sans_kr_subset_with_hanja().to_vec(),
+        rwml_fonts::noto_sans_arabic_subset().to_vec(),
+        rwml_fonts::noto_sans_hebrew_subset().to_vec(),
+    ];
+    let tabbed_pdf = style
+        .try_to_pdf_with_fonts(&fonts)
+        .expect("opened-document tab render");
+    assert!(!tabbed_pdf.is_empty());
+    assert_eq!(
+        tabbed_pdf,
+        style
+            .try_to_pdf_with_fonts(&fonts)
+            .expect("repeat opened-document tab render")
+    );
+    assert_ne!(
+        tabbed_pdf,
+        rwml::try_render_pdf_with_fonts(&style_model, &fonts)
+            .expect("model-only default-tab render"),
+        "opened DOCX tab stops must affect rendering beyond the public DocModel"
+    );
+
+    let pagination_doc = open("pagination-keep.docx");
+    let pagination = pagination_doc
+        .layout_pages_with_fonts(&fonts)
+        .expect("fixed-font pagination layout");
+    assert_eq!(pagination.pages, 3);
+    assert_eq!(pagination.block_pages.len(), 8);
+    assert!(pagination.block_pages.iter().all(Option::is_some));
+    assert_eq!(pagination.block_pages[0], Some(1));
+    assert_eq!(pagination.block_pages[1], Some(1));
+    assert!(pagination
+        .block_pages
+        .windows(2)
+        .all(|pages| pages[0] <= pages[1]));
+    assert_eq!(
+        pagination,
+        pagination_doc
+            .layout_pages_with_fonts(&fonts)
+            .expect("repeat fixed-font pagination layout")
+    );
+
+    let columns_doc = open("two-columns.docx");
+    let columns = columns_doc
+        .layout_pages_with_fonts(&fonts)
+        .expect("fixed-font column layout");
+    assert_eq!(columns.pages, 2);
+    assert_eq!(columns.block_pages.first(), Some(&Some(1)));
+    assert_eq!(columns.block_pages.last(), Some(&Some(2)));
+    assert!(columns.block_pages.contains(&Some(1)));
+    assert!(columns.block_pages.contains(&Some(2)));
+    assert!(columns
+        .block_pages
+        .windows(2)
+        .all(|pages| pages[0] <= pages[1]));
+    assert_eq!(
+        columns,
+        columns_doc
+            .layout_pages_with_fonts(&fonts)
+            .expect("repeat fixed-font column layout")
+    );
+
+    let rtl = open("rtl-table.docx");
+    let rtl_model = rtl.model();
+    let rtl_table = rtl_model
+        .blocks
+        .iter()
+        .find_map(|block| match block {
+            Block::Table(table) => Some(table),
+            _ => None,
+        })
+        .expect("RTL fixture table");
+    assert!(rtl_table.bidi_visual);
+    assert_eq!(rtl_table.rows[0].cells[0].text(), "أولى");
+    assert_eq!(rtl_table.rows[0].cells[1].text(), "תא שני");
+    let rtl_pdf = rtl
+        .try_to_pdf_with_fonts(&fonts)
+        .expect("fixed-font RTL render");
+    assert!(!rtl_pdf.is_empty());
+    assert_eq!(
+        rtl_pdf,
+        rtl.try_to_pdf_with_fonts(&fonts)
+            .expect("repeat fixed-font RTL render")
+    );
+
+    let wrap = open("wrap-top-bottom.docx");
+    let report = wrap.report();
+    assert_eq!(report.features.text_boxes, 1);
+    assert_eq!(report.features.floating_shapes, 1);
+    assert_eq!(wrap.floating_shapes().len(), 1);
 }

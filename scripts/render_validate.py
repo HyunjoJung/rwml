@@ -6,7 +6,7 @@ For each input `.doc`/`.docx`, render it two ways and compare:
   * rwml        — `cargo run --features render --example to_pdf -- IN OUT`
   * LibreOffice — `soffice --headless --convert-to pdf` (the reference oracle)
 
-and report three metrics per document:
+and report complementary metrics per document:
 
   * text recall   — fraction of the reference's whitespace-normalized tokens that
                     also appear in rwml's text layer, after dropping volatile
@@ -15,8 +15,12 @@ and report three metrics per document:
                     placeholders and joined tracked-change/footnote markers
                     when rwml's report proves that context.
   * page ratio    — rwml page count / reference page count (≈ 1.0 is good).
-  * visual aHash  — mean per-page average-hash Hamming similarity of page 1
-                    (0..1; a coarse "does it look alike" signal, not exactness).
+  * legacy aHash  — average-hash Hamming similarity of page 1 at 72 DPI
+                    (0..1; retained unchanged for historical trend continuity).
+  * page aHash    — mean average-hash similarity across every matched page up to
+                    a configurable hard cap at a reported fixed DPI.
+  * ink IoU       — foreground-pixel intersection-over-union across those pages;
+                    canvases are white-padded, never stretched, before comparison.
   * warnings      — rwml `RenderReport` warning count/kinds for trend tracking.
 
 This is a developer tool, not part of the crate. It needs PyMuPDF (`pip install
@@ -50,18 +54,43 @@ try:
 except ImportError:
     fitz = None
 try:
-    from PIL import Image
+    from PIL import Image, ImageChops
 except ImportError:
     Image = None
+    ImageChops = None
 
 
-COUNT_THRESHOLD_METRICS = {"below_recall_min", "skipped"}
+DEFAULT_RASTER_DPI = 110
+DEFAULT_PAGE_CAP = 32
+DEFAULT_FOREGROUND_THRESHOLD = 245
+DEFAULT_AHASH_SIZE = 16
+DEFAULT_FONT_MODE = "fixed-noto-subsets"
+MAX_RASTER_DPI = 600
+MAX_PAGE_CAP = 256
+MAX_AHASH_SIZE = 64
+MAX_RASTER_PAGE_PIXELS = 40_000_000
+MAX_NORMALIZED_CANVAS_PIXELS = 50_000_000
+MAX_BUFFERED_RASTER_PIXELS = 100_000_000
+
+COUNT_THRESHOLD_METRICS = {
+    "below_recall_min",
+    "skipped",
+    "unmatched_candidate_pages",
+    "unmatched_reference_pages",
+}
 SCORE_THRESHOLD_METRICS = {
     "mean_recall",
     "mean_page_ratio",
     "mean_ahash_similarity",
+    "mean_page_ahash_similarity",
+    "mean_foreground_ink_iou",
 }
-BOUNDED_SCORE_THRESHOLD_METRICS = {"mean_recall", "mean_ahash_similarity"}
+BOUNDED_SCORE_THRESHOLD_METRICS = {
+    "mean_recall",
+    "mean_ahash_similarity",
+    "mean_page_ahash_similarity",
+    "mean_foreground_ink_iou",
+}
 VALID_RENDER_WARNING_KINDS = {
     "UnsupportedFieldEvaluation",
     "FloatingShapePlaceholderOnly",
@@ -83,6 +112,10 @@ class RenderDependencyError(RuntimeError):
     """A selected render backend executable is unavailable."""
 
 
+class VisualMetricError(RuntimeError):
+    """A PDF page could not be rasterized or compared deterministically."""
+
+
 @dataclass
 class ValidationRow:
     document: str
@@ -92,9 +125,25 @@ class ValidationRow:
     reference_pages: int | None = None
     page_ratio: float | None = None
     ahash_similarity: float | None = None
+    mean_page_ahash_similarity: float | None = None
+    foreground_ink_iou: float | None = None
+    compared_pages: int | None = None
+    unmatched_candidate_pages: int | None = None
+    unmatched_reference_pages: int | None = None
+    capped_matched_pages: int | None = None
     render_warnings: int | None = None
     render_warning_kinds: list[str] | None = None
     reason: str | None = None
+
+
+@dataclass(frozen=True)
+class VisualMetrics:
+    mean_page_ahash_similarity: float | None
+    foreground_ink_iou: float | None
+    compared_pages: int
+    unmatched_candidate_pages: int
+    unmatched_reference_pages: int
+    capped_matched_pages: int
 
 
 def is_finite_number(value: object) -> bool:
@@ -109,7 +158,7 @@ def require_pdf_deps() -> None:
     missing = []
     if fitz is None:
         missing.append("PyMuPDF (pip install pymupdf)")
-    if Image is None:
+    if Image is None or ImageChops is None:
         missing.append("Pillow (pip install pillow)")
     if missing:
         sys.exit("PDF validation dependencies required: " + ", ".join(missing))
@@ -136,6 +185,48 @@ def mean(values: list[float]) -> float | None:
 
 def row_dict(row: ValidationRow) -> dict:
     return {k: v for k, v in asdict(row).items() if v is not None}
+
+
+def validate_visual_settings(settings: dict | None = None) -> dict[str, int | str]:
+    defaults = {
+        "dpi": DEFAULT_RASTER_DPI,
+        "page_cap": DEFAULT_PAGE_CAP,
+        "foreground_threshold": DEFAULT_FOREGROUND_THRESHOLD,
+        "ahash_size": DEFAULT_AHASH_SIZE,
+        "font_mode": DEFAULT_FONT_MODE,
+    }
+    if settings is None:
+        return defaults
+    if not isinstance(settings, dict):
+        raise ValueError("visual settings must be an object")
+    unknown = set(settings) - set(defaults)
+    if unknown:
+        raise ValueError(f"unknown visual setting: {sorted(unknown)[0]}")
+    values = defaults | settings
+    for name in ("dpi", "page_cap", "foreground_threshold", "ahash_size"):
+        value = values[name]
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise ValueError(f"visual setting is invalid: {name}")
+    if values["font_mode"] not in {"fixed-noto-subsets", "system"}:
+        raise ValueError(
+            f"visual setting is out of range: font_mode={values['font_mode']}"
+        )
+    if not 1 <= values["dpi"] <= MAX_RASTER_DPI:
+        raise ValueError(f"visual setting is out of range: dpi={values['dpi']}")
+    if not 1 <= values["page_cap"] <= MAX_PAGE_CAP:
+        raise ValueError(
+            f"visual setting is out of range: page_cap={values['page_cap']}"
+        )
+    if not 0 <= values["foreground_threshold"] <= 255:
+        raise ValueError(
+            "visual setting is out of range: "
+            f"foreground_threshold={values['foreground_threshold']}"
+        )
+    if not 1 <= values["ahash_size"] <= MAX_AHASH_SIZE:
+        raise ValueError(
+            f"visual setting is out of range: ahash_size={values['ahash_size']}"
+        )
+    return values
 
 
 def add_threshold_check(
@@ -214,6 +305,20 @@ def validation_gate(summary: dict, thresholds: dict | None = None) -> dict:
     )
     add_threshold_check(
         checks,
+        "mean_page_ahash_similarity",
+        summary.get("mean_page_ahash_similarity"),
+        ">=",
+        thresholds.get("min_mean_page_ahash_similarity"),
+    )
+    add_threshold_check(
+        checks,
+        "mean_foreground_ink_iou",
+        summary.get("mean_foreground_ink_iou"),
+        ">=",
+        thresholds.get("min_mean_foreground_ink_iou"),
+    )
+    add_threshold_check(
+        checks,
         "mean_render_warnings",
         summary.get("mean_render_warnings"),
         "<=",
@@ -226,6 +331,20 @@ def validation_gate(summary: dict, thresholds: dict | None = None) -> dict:
         "<=",
         thresholds.get("max_skipped"),
     )
+    add_threshold_check(
+        checks,
+        "unmatched_candidate_pages",
+        summary.get("unmatched_candidate_pages"),
+        "<=",
+        thresholds.get("max_unmatched_candidate_pages"),
+    )
+    add_threshold_check(
+        checks,
+        "unmatched_reference_pages",
+        summary.get("unmatched_reference_pages"),
+        "<=",
+        thresholds.get("max_unmatched_reference_pages"),
+    )
     return {"passed": all(check["passed"] for check in checks), "checks": checks}
 
 
@@ -233,6 +352,7 @@ def validation_report(
     rows: list[ValidationRow],
     recall_min: float,
     thresholds: dict | None = None,
+    visual_settings: dict | None = None,
 ) -> dict:
     for row in rows:
         if not isinstance(row.document, str):
@@ -251,15 +371,30 @@ def validation_report(
             "recall",
             "page_ratio",
             "ahash_similarity",
+            "mean_page_ahash_similarity",
+            "foreground_ink_iou",
             "render_warnings",
         ):
             value = getattr(row, metric)
             if value is not None and not is_finite_number(value):
                 raise ValueError(f"metric is invalid: {metric}")
-            if value is not None and metric in {"recall", "ahash_similarity"}:
+            if value is not None and metric in {
+                "recall",
+                "ahash_similarity",
+                "mean_page_ahash_similarity",
+                "foreground_ink_iou",
+            }:
                 if not 0 <= value <= 1:
                     raise ValueError(f"metric is out of range: {metric}")
-        for metric in ("rwml_pages", "reference_pages", "render_warnings"):
+        for metric in (
+            "rwml_pages",
+            "reference_pages",
+            "render_warnings",
+            "compared_pages",
+            "unmatched_candidate_pages",
+            "unmatched_reference_pages",
+            "capped_matched_pages",
+        ):
             value = getattr(row, metric)
             if value is not None and (
                 not isinstance(value, int) or isinstance(value, bool) or value < 0
@@ -296,6 +431,12 @@ def validation_report(
                 "reference_pages",
                 "page_ratio",
                 "ahash_similarity",
+                "mean_page_ahash_similarity",
+                "foreground_ink_iou",
+                "compared_pages",
+                "unmatched_candidate_pages",
+                "unmatched_reference_pages",
+                "capped_matched_pages",
                 "render_warnings",
                 "render_warning_kinds",
             )
@@ -309,6 +450,7 @@ def validation_report(
         raise ValueError(f"negative recall threshold: {recall_min}")
     if recall_min > 1:
         raise ValueError(f"recall threshold above one: {recall_min}")
+    visual_settings = validate_visual_settings(visual_settings)
     measured = [r for r in rows if r.recall is not None]
     summary = {
         "documents": len(rows),
@@ -329,6 +471,38 @@ def validation_report(
                 if r.ahash_similarity is not None
             ]
         ),
+        "mean_page_ahash_similarity": mean(
+            [
+                r.mean_page_ahash_similarity
+                for r in measured
+                if r.mean_page_ahash_similarity is not None
+            ]
+        ),
+        "mean_foreground_ink_iou": mean(
+            [
+                r.foreground_ink_iou
+                for r in measured
+                if r.foreground_ink_iou is not None
+            ]
+        ),
+        "compared_pages": sum(
+            r.compared_pages for r in measured if r.compared_pages is not None
+        ),
+        "unmatched_candidate_pages": sum(
+            r.unmatched_candidate_pages
+            for r in measured
+            if r.unmatched_candidate_pages is not None
+        ),
+        "unmatched_reference_pages": sum(
+            r.unmatched_reference_pages
+            for r in measured
+            if r.unmatched_reference_pages is not None
+        ),
+        "capped_matched_pages": sum(
+            r.capped_matched_pages
+            for r in measured
+            if r.capped_matched_pages is not None
+        ),
         "mean_render_warnings": mean(
             [
                 r.render_warnings
@@ -338,6 +512,7 @@ def validation_report(
         ),
     }
     return {
+        "visual_comparison": visual_settings,
         "summary": summary,
         "gate": validation_gate(summary, thresholds),
         "rows": [row_dict(r) for r in rows],
@@ -374,7 +549,13 @@ def warning_kinds(report: dict | None) -> list[str] | None:
     return kinds
 
 
-def render_rwml(src: Path, out: Path, report_out: Path | None = None) -> dict | None:
+def render_rwml(
+    src: Path,
+    out: Path,
+    report_out: Path | None = None,
+    *,
+    fixed_fonts: bool = True,
+) -> dict | None:
     """Render via the crate's to_pdf example and return its JSON report."""
     cmd = [
         "cargo",
@@ -388,6 +569,8 @@ def render_rwml(src: Path, out: Path, report_out: Path | None = None) -> dict | 
         str(src),
         str(out),
     ]
+    if fixed_fonts:
+        cmd.append("--fixed-fonts")
     if report_out is not None:
         cmd.extend(["--report-json", str(report_out)])
     r = subprocess.run(
@@ -659,6 +842,288 @@ def page_count(pdf: Path) -> int:
     return fitz.open(pdf).page_count
 
 
+def opaque_rgb(image):
+    if image.mode in {"RGBA", "LA"} or "transparency" in image.info:
+        rgba = image.convert("RGBA")
+        background = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
+        background.alpha_composite(rgba)
+        return background.convert("RGB")
+    return image.convert("RGB")
+
+
+def ensure_pixel_budget(width: int, height: int, limit: int, context: str) -> None:
+    if width < 1 or height < 1 or width > limit or height > limit or width * height > limit:
+        raise VisualMetricError(
+            f"{context} exceeds the {limit}-pixel safety limit: {width}x{height}"
+        )
+
+
+def normalize_page_pair(reference, candidate):
+    """White-pad both images to one canvas without scaling either page."""
+    reference = opaque_rgb(reference)
+    candidate = opaque_rgb(candidate)
+    width = max(reference.width, candidate.width)
+    height = max(reference.height, candidate.height)
+    ensure_pixel_budget(width, height, MAX_NORMALIZED_CANVAS_PIXELS, "normalized canvas")
+    normalized_reference = Image.new("RGB", (width, height), color="white")
+    normalized_candidate = Image.new("RGB", (width, height), color="white")
+    normalized_reference.paste(reference, (0, 0))
+    normalized_candidate.paste(candidate, (0, 0))
+    return normalized_reference, normalized_candidate
+
+
+def image_ahash(image, size: int = DEFAULT_AHASH_SIZE) -> int:
+    if not isinstance(size, int) or isinstance(size, bool) or not 1 <= size <= MAX_AHASH_SIZE:
+        raise ValueError(f"aHash size is out of range: {size}")
+    grayscale = image.convert("L").resize((size, size))
+    pixels = list(grayscale.tobytes())
+    average = sum(pixels) / len(pixels)
+    bits = 0
+    for index, value in enumerate(pixels):
+        if value >= average:
+            bits |= 1 << index
+    return bits
+
+
+def image_hash_similarity(reference, candidate, size: int = DEFAULT_AHASH_SIZE) -> float:
+    reference, candidate = normalize_page_pair(reference, candidate)
+    difference = image_ahash(reference, size=size) ^ image_ahash(candidate, size=size)
+    return 1.0 - difference.bit_count() / (size * size)
+
+
+def foreground_ink_iou_images(reference, candidate, threshold: int) -> float:
+    if (
+        not isinstance(threshold, int)
+        or isinstance(threshold, bool)
+        or not 0 <= threshold <= 255
+    ):
+        raise ValueError(f"foreground threshold is out of range: {threshold}")
+    reference, candidate = normalize_page_pair(reference, candidate)
+    ink_lut = [255 if value < threshold else 0 for value in range(256)]
+    reference_mask = reference.convert("L").point(ink_lut)
+    candidate_mask = candidate.convert("L").point(ink_lut)
+    intersection = ImageChops.darker(reference_mask, candidate_mask).histogram()[255]
+    union = ImageChops.lighter(reference_mask, candidate_mask).histogram()[255]
+    if union == 0:
+        return 1.0
+    return intersection / union
+
+
+def compare_page_images(
+    reference_pages: list,
+    candidate_pages: list,
+    *,
+    page_cap: int,
+    foreground_threshold: int,
+    ahash_size: int,
+    reference_page_count: int | None = None,
+    candidate_page_count: int | None = None,
+) -> VisualMetrics:
+    settings = validate_visual_settings(
+        {
+            "page_cap": page_cap,
+            "foreground_threshold": foreground_threshold,
+            "ahash_size": ahash_size,
+        }
+    )
+    reference_page_count = (
+        len(reference_pages) if reference_page_count is None else reference_page_count
+    )
+    candidate_page_count = (
+        len(candidate_pages) if candidate_page_count is None else candidate_page_count
+    )
+    for name, count, available in (
+        ("reference", reference_page_count, len(reference_pages)),
+        ("candidate", candidate_page_count, len(candidate_pages)),
+    ):
+        if (
+            not isinstance(count, int)
+            or isinstance(count, bool)
+            or count < available
+        ):
+            raise ValueError(f"{name} page count is invalid: {count}")
+    compared_pages = min(
+        reference_page_count,
+        candidate_page_count,
+        settings["page_cap"],
+        len(reference_pages),
+        len(candidate_pages),
+    )
+    page_hashes = []
+    page_ink_ious = []
+    for index in range(compared_pages):
+        page_hashes.append(
+            image_hash_similarity(
+                reference_pages[index],
+                candidate_pages[index],
+                size=settings["ahash_size"],
+            )
+        )
+        page_ink_ious.append(
+            foreground_ink_iou_images(
+                reference_pages[index],
+                candidate_pages[index],
+                threshold=settings["foreground_threshold"],
+            )
+        )
+    return visual_metrics_from_scores(
+        page_hashes,
+        page_ink_ious,
+        reference_page_count=reference_page_count,
+        candidate_page_count=candidate_page_count,
+        page_cap=settings["page_cap"],
+    )
+
+
+def visual_metrics_from_scores(
+    page_hashes: list[float],
+    page_ink_ious: list[float],
+    *,
+    reference_page_count: int,
+    candidate_page_count: int,
+    page_cap: int,
+) -> VisualMetrics:
+    if len(page_hashes) != len(page_ink_ious):
+        raise ValueError("visual page metric count mismatch")
+    return VisualMetrics(
+        mean_page_ahash_similarity=mean(page_hashes),
+        foreground_ink_iou=mean(page_ink_ious),
+        compared_pages=len(page_hashes),
+        unmatched_candidate_pages=max(0, candidate_page_count - reference_page_count),
+        unmatched_reference_pages=max(0, reference_page_count - candidate_page_count),
+        capped_matched_pages=max(
+            0,
+            min(reference_page_count, candidate_page_count) - page_cap,
+        ),
+    )
+
+
+def rasterize_pdf_page(document, index: int, *, dpi: int, pdf_name: str):
+    page = document[index]
+    scale = dpi / 72.0
+    predicted_width = max(1, math.ceil(abs(page.rect.width) * scale))
+    predicted_height = max(1, math.ceil(abs(page.rect.height) * scale))
+    ensure_pixel_budget(
+        predicted_width,
+        predicted_height,
+        MAX_RASTER_PAGE_PIXELS,
+        f"raster page {index + 1} of {pdf_name}",
+    )
+    pixmap = page.get_pixmap(dpi=dpi, alpha=False)
+    ensure_pixel_budget(
+        pixmap.width,
+        pixmap.height,
+        MAX_RASTER_PAGE_PIXELS,
+        f"raster page {index + 1} of {pdf_name}",
+    )
+    return Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
+
+
+def rasterize_pdf_pages(pdf: Path, *, dpi: int, page_cap: int) -> tuple[list, int]:
+    if fitz is None or Image is None:
+        raise VisualMetricError("PyMuPDF and Pillow are required for page rasterization")
+    settings = validate_visual_settings({"dpi": dpi, "page_cap": page_cap})
+    try:
+        with fitz.open(pdf) as document:
+            page_count_value = document.page_count
+            pages = []
+            buffered_pixels = 0
+            for index in range(min(page_count_value, settings["page_cap"])):
+                page = rasterize_pdf_page(
+                    document,
+                    index,
+                    dpi=settings["dpi"],
+                    pdf_name=pdf.name,
+                )
+                buffered_pixels += page.width * page.height
+                ensure_pixel_budget(
+                    buffered_pixels,
+                    1,
+                    MAX_BUFFERED_RASTER_PIXELS,
+                    f"buffered raster pages of {pdf.name}",
+                )
+                pages.append(page)
+            return pages, page_count_value
+    except VisualMetricError:
+        raise
+    except Exception as exc:
+        raise VisualMetricError(f"rasterization failed for {pdf.name}: {exc}") from exc
+
+
+def compare_pdf_visuals(
+    reference: Path,
+    candidate: Path,
+    *,
+    dpi: int,
+    page_cap: int,
+    foreground_threshold: int,
+    ahash_size: int,
+) -> VisualMetrics:
+    if fitz is None or Image is None or ImageChops is None:
+        raise VisualMetricError("PyMuPDF and Pillow are required for page rasterization")
+    settings = validate_visual_settings(
+        {
+            "dpi": dpi,
+            "page_cap": page_cap,
+            "foreground_threshold": foreground_threshold,
+            "ahash_size": ahash_size,
+        }
+    )
+    try:
+        with fitz.open(reference) as reference_document, fitz.open(
+            candidate
+        ) as candidate_document:
+            reference_page_count = reference_document.page_count
+            candidate_page_count = candidate_document.page_count
+            compared_pages = min(
+                reference_page_count,
+                candidate_page_count,
+                settings["page_cap"],
+            )
+            page_hashes = []
+            page_ink_ious = []
+            for index in range(compared_pages):
+                reference_page = rasterize_pdf_page(
+                    reference_document,
+                    index,
+                    dpi=settings["dpi"],
+                    pdf_name=reference.name,
+                )
+                candidate_page = rasterize_pdf_page(
+                    candidate_document,
+                    index,
+                    dpi=settings["dpi"],
+                    pdf_name=candidate.name,
+                )
+                page_hashes.append(
+                    image_hash_similarity(
+                        reference_page,
+                        candidate_page,
+                        size=settings["ahash_size"],
+                    )
+                )
+                page_ink_ious.append(
+                    foreground_ink_iou_images(
+                        reference_page,
+                        candidate_page,
+                        threshold=settings["foreground_threshold"],
+                    )
+                )
+            return visual_metrics_from_scores(
+                page_hashes,
+                page_ink_ious,
+                reference_page_count=reference_page_count,
+                candidate_page_count=candidate_page_count,
+                page_cap=settings["page_cap"],
+            )
+    except VisualMetricError:
+        raise
+    except Exception as exc:
+        raise VisualMetricError(
+            f"rasterization failed for {reference.name} / {candidate.name}: {exc}"
+        ) from exc
+
+
 def ahash(pdf: Path, page: int = 0, size: int = 16) -> int:
     require_pdf_deps()
     doc = fitz.open(pdf)
@@ -666,14 +1131,7 @@ def ahash(pdf: Path, page: int = 0, size: int = 16) -> int:
         return 0
     pix = doc[page].get_pixmap(dpi=72)
     img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
-    img = img.convert("L").resize((size, size))
-    px = list(img.tobytes())  # L mode ⇒ one byte per pixel
-    mean = sum(px) / len(px)
-    bits = 0
-    for i, v in enumerate(px):
-        if v >= mean:
-            bits |= 1 << i
-    return bits
+    return image_ahash(img, size=size)
 
 
 def hash_similarity(ref: Path, got: Path, size: int = 16) -> float:
@@ -701,14 +1159,62 @@ def main() -> int:
     ap.add_argument("--min-mean-page-ratio", type=float)
     ap.add_argument("--max-mean-page-ratio", type=float)
     ap.add_argument("--min-mean-ahash-similarity", type=float)
+    ap.add_argument("--min-mean-page-ahash-similarity", type=float)
+    ap.add_argument("--min-mean-foreground-ink-iou", type=float)
     ap.add_argument("--max-mean-render-warnings", type=float)
     ap.add_argument("--max-skipped", type=int)
+    ap.add_argument("--max-unmatched-candidate-pages", type=int)
+    ap.add_argument("--max-unmatched-reference-pages", type=int)
+    ap.add_argument(
+        "--raster-dpi",
+        type=int,
+        default=DEFAULT_RASTER_DPI,
+        help=f"DPI for multi-page visual metrics (default: {DEFAULT_RASTER_DPI}).",
+    )
+    ap.add_argument(
+        "--page-cap",
+        type=int,
+        default=DEFAULT_PAGE_CAP,
+        help=f"Maximum matched pages rasterized per document (default: {DEFAULT_PAGE_CAP}).",
+    )
+    ap.add_argument(
+        "--foreground-threshold",
+        type=int,
+        default=DEFAULT_FOREGROUND_THRESHOLD,
+        help=(
+            "Grayscale values below this are foreground ink "
+            f"(default: {DEFAULT_FOREGROUND_THRESHOLD})."
+        ),
+    )
+    ap.add_argument(
+        "--ahash-size",
+        type=int,
+        default=DEFAULT_AHASH_SIZE,
+        help=f"Side length for all-page aHash (default: {DEFAULT_AHASH_SIZE}).",
+    )
+    ap.add_argument(
+        "--system-fonts",
+        action="store_true",
+        help="Use host system fonts instead of the deterministic Noto subset set.",
+    )
     ap.add_argument(
         "--json",
         action="store_true",
         help="Emit a machine-readable validation report instead of the table.",
     )
     args = ap.parse_args()
+    try:
+        visual_settings = validate_visual_settings(
+            {
+                "dpi": args.raster_dpi,
+                "page_cap": args.page_cap,
+                "foreground_threshold": args.foreground_threshold,
+                "ahash_size": args.ahash_size,
+                "font_mode": "system" if args.system_fonts else DEFAULT_FONT_MODE,
+            }
+        )
+    except ValueError as exc:
+        ap.error(str(exc))
     try:
         inputs = resolve_input_paths(args.inputs, args.manifest)
     except ValueError as exc:
@@ -719,9 +1225,9 @@ def main() -> int:
     if not args.json:
         print(
             f"{'document':40} {'recall':>8} {'pages':>10} "
-            f"{'aHash':>8} {'warn':>5}  result"
+            f"{'aHash':>8} {'pageHash':>8} {'inkIoU':>8} {'warn':>5}  result"
         )
-        print("-" * 88)
+        print("-" * 108)
     rows = []
     try:
         soffice_mode = resolve_soffice_mode(args.soffice)
@@ -737,7 +1243,12 @@ def main() -> int:
             except RenderDependencyError as exc:
                 sys.exit(str(exc))
             got = tmp / (src.stem + ".rwml.pdf")
-            render_report = render_rwml(src, got, tmp / (src.stem + ".rwml.report.json"))
+            render_report = render_rwml(
+                src,
+                got,
+                tmp / (src.stem + ".rwml.report.json"),
+                fixed_fonts=not args.system_fonts,
+            )
             if ref is None or render_report is None:
                 rows.append(
                     ValidationRow(
@@ -749,7 +1260,7 @@ def main() -> int:
                 if not args.json:
                     print(
                         f"{src.name[:40]:40} {'—':>8} {'—':>10} "
-                        f"{'—':>8} {'—':>5}  SKIP (render failed)"
+                        f"{'—':>8} {'—':>8} {'—':>8} {'—':>5}  SKIP (render failed)"
                     )
                 continue
             kinds = warning_kinds(render_report)
@@ -764,7 +1275,8 @@ def main() -> int:
                 if not args.json:
                     print(
                         f"{src.name[:40]:40} {'--':>8} {'--':>10} "
-                        f"{'--':>8} {'--':>5}  SKIP (render report invalid warnings)"
+                        f"{'--':>8} {'--':>8} {'--':>8} {'--':>5}  "
+                        "SKIP (render report invalid warnings)"
                     )
                 continue
             rec = text_recall(ref, got, kinds, render_report)
@@ -772,6 +1284,30 @@ def main() -> int:
             ref_pages = page_count(ref)
             pr = got_pages / max(1, ref_pages)
             sim = hash_similarity(ref, got)
+            try:
+                visual = compare_pdf_visuals(
+                    ref,
+                    got,
+                    dpi=visual_settings["dpi"],
+                    page_cap=visual_settings["page_cap"],
+                    foreground_threshold=visual_settings["foreground_threshold"],
+                    ahash_size=visual_settings["ahash_size"],
+                )
+            except VisualMetricError as exc:
+                rows.append(
+                    ValidationRow(
+                        document=src.name,
+                        status="skip",
+                        reason=str(exc),
+                    )
+                )
+                if not args.json:
+                    print(
+                        f"{src.name[:40]:40} {'--':>8} {'--':>10} "
+                        f"{'--':>8} {'--':>8} {'--':>8} {'--':>5}  "
+                        f"SKIP ({exc})"
+                    )
+                continue
             passed = rec >= args.recall_min
             status = "pass" if passed else "fail"
             rows.append(
@@ -783,6 +1319,12 @@ def main() -> int:
                     reference_pages=ref_pages,
                     page_ratio=round(pr, 4),
                     ahash_similarity=round(sim, 4),
+                    mean_page_ahash_similarity=visual.mean_page_ahash_similarity,
+                    foreground_ink_iou=visual.foreground_ink_iou,
+                    compared_pages=visual.compared_pages,
+                    unmatched_candidate_pages=visual.unmatched_candidate_pages,
+                    unmatched_reference_pages=visual.unmatched_reference_pages,
+                    capped_matched_pages=visual.capped_matched_pages,
                     render_warnings=len(kinds) if kinds is not None else None,
                     render_warning_kinds=kinds,
                 )
@@ -792,17 +1334,28 @@ def main() -> int:
                 warns = len(kinds) if kinds is not None else 0
                 print(
                     f"{src.name[:40]:40} {rec:8.3f} "
-                    f"{got_pages}/{ref_pages:<7} {sim:8.3f} {warns:5}  {mark}"
+                    f"{got_pages}/{ref_pages:<7} {sim:8.3f} "
+                    f"{(visual.mean_page_ahash_similarity or 0.0):8.3f} "
+                    f"{(visual.foreground_ink_iou or 0.0):8.3f} {warns:5}  {mark}"
                 )
     thresholds = {
         "min_mean_recall": args.min_mean_recall,
         "min_mean_page_ratio": args.min_mean_page_ratio,
         "max_mean_page_ratio": args.max_mean_page_ratio,
         "min_mean_ahash_similarity": args.min_mean_ahash_similarity,
+        "min_mean_page_ahash_similarity": args.min_mean_page_ahash_similarity,
+        "min_mean_foreground_ink_iou": args.min_mean_foreground_ink_iou,
         "max_mean_render_warnings": args.max_mean_render_warnings,
         "max_skipped": args.max_skipped,
+        "max_unmatched_candidate_pages": args.max_unmatched_candidate_pages,
+        "max_unmatched_reference_pages": args.max_unmatched_reference_pages,
     }
-    report = validation_report(rows, args.recall_min, thresholds=thresholds)
+    report = validation_report(
+        rows,
+        args.recall_min,
+        thresholds=thresholds,
+        visual_settings=visual_settings,
+    )
     if args.json:
         print(json_report_payload(report))
     elif report["summary"]["measured"]:
@@ -814,7 +1367,11 @@ def main() -> int:
             f"{report['summary']['measured']} docs, "
             f"{report['summary']['below_recall_min']} below {args.recall_min}; "
             f"mean page ratio {report['summary']['mean_page_ratio']:.3f}; "
-            f"mean aHash {report['summary']['mean_ahash_similarity']:.3f}; "
+            f"legacy aHash {report['summary']['mean_ahash_similarity']:.3f}; "
+            "mean page aHash "
+            f"{(report['summary']['mean_page_ahash_similarity'] or 0.0):.3f}; "
+            "mean ink IoU "
+            f"{(report['summary']['mean_foreground_ink_iou'] or 0.0):.3f}; "
             f"mean warnings {(mean_warnings or 0.0):.3f}"
         )
         failures = [check for check in report["gate"]["checks"] if not check["passed"]]

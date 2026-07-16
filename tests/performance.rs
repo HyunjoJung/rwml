@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use rwml::Document;
 
 const ITERATIONS: usize = 25;
-const EXPECTED_DOCUMENTS: usize = 11;
+const EXPECTED_DOCUMENTS: usize = 16;
 const MAX_ELAPSED: Duration = Duration::from_secs(10);
 
 #[test]
