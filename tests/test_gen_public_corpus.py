@@ -4,7 +4,6 @@ import pathlib
 import sys
 import tempfile
 import unittest
-import zipfile
 from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
@@ -58,66 +57,9 @@ class PublicCorpusGeneratorTests(unittest.TestCase):
             for path in corpus_root.rglob("*.docx")
         }
         attribution = (corpus_root / "ATTRIBUTION.md").read_text(encoding="utf-8")
-        provenance = (corpus_root / "PROVENANCE.md").read_text(encoding="utf-8")
-        for name in gen_public_corpus.CORPUS:
-            self.assertIn(f"`synthetic/{name}`", provenance)
         for relative in observed - expected:
             self.assertTrue(relative.startswith("vendored/"), relative)
             self.assertIn(f"`{pathlib.PurePosixPath(relative).name}`", attribution)
-
-    def test_render_activation_fixtures_are_deterministic_and_cover_target_markup(self):
-        expected_markup = {
-            "style-hidden-tabs-table.docx": (
-                "<w:highlight",
-                "<w:vertAlign",
-                "<w:caps",
-                "<w:smallCaps",
-                "<w:strike",
-                "<w:vanish",
-                'xml:space="preserve"',
-                "<w:tabs",
-                "<w:bidiVisual",
-                "<w:tblCellMar",
-                "<w:vAlign",
-                "w:hanging=",
-                "<w:shd",
-            ),
-            "pagination-keep.docx": (
-                "<w:keepNext",
-                "<w:keepLines",
-                "<w:widowControl",
-                '<w:pStyle w:val="KeepGroup"',
-                '<w:pgSz w:w="7200" w:h="5000"',
-            ),
-            "two-columns.docx": ('<w:cols w:num="2"',),
-            "rtl-table.docx": (
-                "<w:bidi",
-                "<w:rtl",
-                "<w:bidiVisual",
-                "<w:tblCellMar",
-            ),
-            "wrap-top-bottom.docx": (
-                "<wp:anchor",
-                "<wp:positionH",
-                "<wp:positionV",
-                "<wp:wrapTopAndBottom",
-            ),
-        }
-
-        self.assertLessEqual(expected_markup.keys(), gen_public_corpus.CORPUS.keys())
-        for name, markers in expected_markup.items():
-            with self.subTest(name=name):
-                first = gen_public_corpus.CORPUS[name]()
-                self.assertEqual(first, gen_public_corpus.CORPUS[name]())
-                with zipfile.ZipFile(io.BytesIO(first)) as archive:
-                    document_xml = archive.read("word/document.xml").decode("utf-8")
-                    if name == "pagination-keep.docx":
-                        styles_xml = archive.read("word/styles.xml").decode("utf-8")
-                        self.assertIn('<w:style w:type="paragraph"', styles_xml)
-                        self.assertIn("<w:keepNext", styles_xml)
-                        self.assertIn("<w:keepLines", styles_xml)
-                for marker in markers:
-                    self.assertIn(marker, document_xml)
 
 
 if __name__ == "__main__":

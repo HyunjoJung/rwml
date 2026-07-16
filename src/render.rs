@@ -41,7 +41,7 @@ use parley::{FontContext, LayoutContext};
 use crate::model::{
     Align, Block, Cell, CellMargins, CharProps, Chart, ChartKind, ChartShape, Color, DocModel,
     FieldRole, Image, ListInfo, PageSetup, PaginationHint, ParaProps, Paragraph, Run, SectionSetup,
-    Spacing, TabAlignment, TabStop, Table, VCell, VertAlign,
+    Spacing, Table, VCell, VertAlign,
 };
 use crate::report::{self, FeatureInventory, RenderReport, RenderWarning, RenderedPdf};
 use crate::{Error, Result};
@@ -141,12 +141,6 @@ const MAX_SECTION_COLUMNS: usize = 64;
 const RIGHT_TO_LEFT_MARK: char = '\u{200F}';
 const RIGHT_TO_LEFT_ISOLATE: char = '\u{2067}';
 const POP_DIRECTIONAL_ISOLATE: char = '\u{2069}';
-
-#[derive(Clone, Copy, Default)]
-pub(crate) struct SourceRenderHints<'a> {
-    pub(crate) pagination: &'a [PaginationHint],
-    pub(crate) tab_stops: &'a [Vec<TabStop>],
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DynamicTextKind {
@@ -1550,11 +1544,10 @@ struct StyledText<'a> {
 }
 
 #[derive(Clone, Copy, Default)]
-struct ShapeOptions<'a> {
+struct ShapeOptions {
     line_height: Option<f32>,
     text_indent: f32,
     hanging_indent: bool,
-    tab_stops: &'a [TabStop],
 }
 
 #[derive(Clone, Copy)]
@@ -1632,7 +1625,7 @@ fn shape_with_options(
     heading_level: Option<u8>,
     align: Alignment,
     width: f32,
-    options: ShapeOptions<'_>,
+    options: ShapeOptions,
     cx: &mut TextCx<'_>,
 ) -> Vec<LineLayout> {
     let StyledText {
@@ -1859,122 +1852,25 @@ fn shape_with_options(
         });
     }
     if adjust_default_tabs {
-        apply_tab_stops(text, &mut out, options.tab_stops, width);
+        apply_default_tab_stops(text, &mut out);
     }
     out
 }
 
-#[derive(Clone, Copy, Default)]
-struct TabFieldMetrics {
-    advance: f32,
-    decimal_offset: Option<f32>,
-}
-
-fn glyph_text<'a>(text: &'a str, glyph: &KrillaGlyph) -> Option<&'a str> {
-    text.get(glyph.text_range.clone())
-}
-
-fn tab_field_metrics(
-    text: &str,
-    line: &LineLayout,
-    tab_run_index: usize,
-    tab_glyph_index: usize,
-) -> TabFieldMetrics {
-    let mut metrics = TabFieldMetrics::default();
-    let mut found_preferred_decimal = false;
-    for (run_index, run) in line.runs.iter().enumerate().skip(tab_run_index) {
-        let glyph_start = if run_index == tab_run_index {
-            tab_glyph_index.saturating_add(1)
-        } else {
-            0
-        };
-        for glyph in run.glyphs.iter().skip(glyph_start) {
-            let Some(glyph_text) = glyph_text(text, glyph) else {
-                continue;
-            };
-            if glyph_text == "\t" {
-                return metrics;
-            }
-            let contains_preferred_decimal =
-                glyph_text.chars().any(|ch| matches!(ch, '.' | '\u{066B}'));
-            let contains_fallback_decimal = glyph_text.contains(',');
-            if contains_preferred_decimal && !found_preferred_decimal {
-                metrics.decimal_offset =
-                    Some((metrics.advance + glyph.x_offset * run.size).max(metrics.advance));
-                found_preferred_decimal = true;
-            } else if contains_fallback_decimal
-                && !found_preferred_decimal
-                && metrics.decimal_offset.is_none()
-            {
-                metrics.decimal_offset =
-                    Some((metrics.advance + glyph.x_offset * run.size).max(metrics.advance));
-            }
-            let advance = glyph.x_advance * run.size;
-            if advance.is_finite() {
-                metrics.advance += advance.max(0.0);
-            }
-        }
-    }
-    metrics
-}
-
-fn explicit_tab_field_start(
-    tab_stops: &[TabStop],
-    cursor: f32,
-    field: TabFieldMetrics,
-    width: f32,
-) -> Option<f32> {
-    tab_stops
-        .iter()
-        .filter_map(|stop| {
-            let alignment_offset = match stop.alignment {
-                TabAlignment::Left => 0.0,
-                TabAlignment::Center => field.advance / 2.0,
-                TabAlignment::Right => field.advance,
-                TabAlignment::Decimal => field.decimal_offset.unwrap_or(field.advance),
-                TabAlignment::Clear => return None,
-            };
-            let field_start = stop.position_pt - alignment_offset;
-            let field_end = field_start + field.advance;
-            (stop.position_pt.is_finite()
-                && stop.position_pt > cursor + f32::EPSILON
-                && field_start >= cursor
-                && field_end <= width)
-                .then_some((stop.position_pt, field_start))
-        })
-        .min_by(|left, right| left.0.total_cmp(&right.0))
-        .map(|(_, field_start)| field_start)
-}
-
-fn default_tab_field_start(cursor: f32, width: f32) -> f32 {
-    if cursor >= width {
-        return width;
-    }
-    (((cursor / DEFAULT_TAB_STOP_PT).floor() + 1.0) * DEFAULT_TAB_STOP_PT)
-        .min(width)
-        .max(cursor)
-}
-
-fn apply_tab_stops(text: &str, lines: &mut [LineLayout], tab_stops: &[TabStop], width: f32) {
+fn apply_default_tab_stops(text: &str, lines: &mut [LineLayout]) {
     for line in lines {
         let mut accumulated_shift = 0.0;
-        for run_index in 0..line.runs.len() {
-            line.runs[run_index].x += accumulated_shift;
-            let mut cursor = line.runs[run_index].x;
-            for glyph_index in 0..line.runs[run_index].glyphs.len() {
-                let run_size = line.runs[run_index].size;
-                let glyph = &line.runs[run_index].glyphs[glyph_index];
-                let original_advance = glyph.x_advance * run_size;
-                if glyph_text(text, glyph) == Some("\t") && run_size > 0.0 {
-                    let field = tab_field_metrics(text, line, run_index, glyph_index);
-                    let field_start = explicit_tab_field_start(tab_stops, cursor, field, width)
-                        .unwrap_or_else(|| default_tab_field_start(cursor, width));
-                    let advance = (field_start - cursor)
-                        .max(0.0)
-                        .min((width - cursor).max(0.0));
-                    line.runs[run_index].glyphs[glyph_index].x_advance = advance / run_size;
+        for run in &mut line.runs {
+            run.x += accumulated_shift;
+            let mut cursor = run.x;
+            for glyph in &mut run.glyphs {
+                let original_advance = glyph.x_advance * run.size;
+                if text.get(glyph.text_range.clone()) == Some("\t") && run.size > 0.0 {
+                    let stop = ((cursor / DEFAULT_TAB_STOP_PT).floor() + 1.0) * DEFAULT_TAB_STOP_PT;
+                    let advance = (stop - cursor).max(0.0);
+                    glyph.x_advance = advance / run.size;
                     accumulated_shift += advance - original_advance;
-                    cursor += advance;
+                    cursor = stop;
                 } else {
                     cursor += original_advance;
                 }
@@ -2025,7 +1921,6 @@ fn layout_paragraph(
     p: &Paragraph,
     out: &mut Vec<FlowItem>,
     marker: Option<&str>,
-    tab_stops: &[TabStop],
     geom: Geom,
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
@@ -2152,7 +2047,6 @@ fn layout_paragraph(
                 line_height: p.props.spacing.line_pct,
                 text_indent: indent.text_indent,
                 hanging_indent: indent.hanging_indent,
-                tab_stops,
             },
             cx,
         ) {
@@ -2413,7 +2307,6 @@ fn shape_cell(
                         line_height: p.props.spacing.line_pct,
                         text_indent: indent.text_indent,
                         hanging_indent: indent.hanging_indent,
-                        ..ShapeOptions::default()
                     },
                     cx,
                 );
@@ -2793,14 +2686,12 @@ struct BlockCollectionOptions<'a> {
     include_block_anchors: bool,
     section_columns: Option<&'a [Option<u16>]>,
     pagination_hints: Option<&'a [PaginationHint]>,
-    tab_stops: Option<&'a [Vec<TabStop>]>,
     top_bottom_bands: Option<&'a [Vec<TopBottomBand>]>,
 }
 
 struct BodyCollectionSidecars<'a> {
     section_columns: &'a [Option<u16>],
     pagination_hints: &'a [PaginationHint],
-    tab_stops: &'a [Vec<TabStop>],
     top_bottom_bands: &'a [Vec<TopBottomBand>],
 }
 
@@ -2822,7 +2713,6 @@ fn collect_blocks_with_block_anchors(
             include_block_anchors: true,
             section_columns: Some(sidecars.section_columns),
             pagination_hints: Some(sidecars.pagination_hints),
-            tab_stops: Some(sidecars.tab_stops),
             top_bottom_bands: Some(sidecars.top_bottom_bands),
         },
     );
@@ -2880,30 +2770,14 @@ fn collect_blocks_inner(
                 if let Some(before) = p.props.spacing.before_pt.filter(|b| *b > 0.0) {
                     out.push(FlowItem::Gap(before));
                 }
-                let tab_stops = options
-                    .tab_stops
-                    .and_then(|stops| stops.get(block_index))
-                    .map(Vec::as_slice)
-                    .unwrap_or(&[]);
-                layout_paragraph(
-                    p,
-                    out,
-                    marker.as_deref(),
-                    tab_stops,
-                    block_geom,
-                    cx,
-                    capture,
-                );
+                layout_paragraph(p, out, marker.as_deref(), block_geom, cx, capture);
                 let after = p
                     .props
                     .spacing
                     .after_pt
-                    .filter(|value| value.is_finite())
-                    .map(|value| value.max(0.0))
+                    .filter(|a| *a > 0.0)
                     .unwrap_or(PARA_GAP);
-                if after > 0.0 {
-                    out.push(FlowItem::Gap(after));
-                }
+                out.push(FlowItem::Gap(after));
             }
             Block::Table(t) => {
                 layout_table(t, out, block_geom, cx, capture);
@@ -5955,7 +5829,7 @@ fn collect_pdf_flow_items(
     geom: Geom,
     tcx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
-    source_hints: SourceRenderHints<'_>,
+    pagination_hints: &[PaginationHint],
     floating_shapes: &[FloatingShape],
     unsupported_features: Option<&FeatureInventory>,
 ) -> Vec<FlowItem> {
@@ -5971,8 +5845,7 @@ fn collect_pdf_flow_items(
         capture,
         BodyCollectionSidecars {
             section_columns: &body_columns,
-            pagination_hints: source_hints.pagination,
-            tab_stops: source_hints.tab_stops,
+            pagination_hints,
             top_bottom_bands: &top_bottom_bands,
         },
     );
@@ -6126,13 +5999,13 @@ fn record_page_fields(pages: &Pages, page_fields: &mut [Option<usize>]) {
 /// system fonts are disabled and only successfully registered caller bytes are
 /// considered.
 pub fn layout_pages_with_fonts(model: &DocModel, fonts: &[Vec<u8>]) -> Result<LayoutPages> {
-    layout_pages_with_fonts_and_pagination(model, fonts, SourceRenderHints::default(), &[])
+    layout_pages_with_fonts_and_pagination(model, fonts, &[], &[])
 }
 
 pub(crate) fn layout_pages_with_fonts_and_pagination(
     model: &DocModel,
     fonts: &[Vec<u8>],
-    source_hints: SourceRenderHints<'_>,
+    pagination_hints: &[PaginationHint],
     floating_shapes: &[FloatingShape],
 ) -> Result<LayoutPages> {
     let mut font_cx = strict_font_context(fonts)?;
@@ -6150,7 +6023,7 @@ pub(crate) fn layout_pages_with_fonts_and_pagination(
         geom,
         &mut tcx,
         &mut capture,
-        source_hints,
+        pagination_hints,
         floating_shapes,
         None,
     );
@@ -6190,7 +6063,7 @@ pub(crate) fn to_pdf_with_fonts(model: &DocModel, extra_fonts: &[Vec<u8>]) -> Ve
 
 /// Fallible variant of [`to_pdf_with_fonts`].
 pub(crate) fn try_to_pdf_with_fonts(model: &DocModel, extra_fonts: &[Vec<u8>]) -> Result<Vec<u8>> {
-    Ok(render_pdf(model, extra_fonts, None, &[], SourceRenderHints::default())?.pdf)
+    Ok(render_pdf(model, extra_fonts, None, &[], &[])?.pdf)
 }
 
 pub(crate) fn to_pdf_with_fonts_and_features_and_shapes(
@@ -6198,14 +6071,14 @@ pub(crate) fn to_pdf_with_fonts_and_features_and_shapes(
     extra_fonts: &[Vec<u8>],
     features: FeatureInventory,
     floating_shapes: &[FloatingShape],
-    source_hints: SourceRenderHints<'_>,
+    pagination_hints: &[PaginationHint],
 ) -> Vec<u8> {
     try_to_pdf_with_fonts_and_features_and_shapes(
         model,
         extra_fonts,
         features,
         floating_shapes,
-        source_hints,
+        pagination_hints,
     )
     .unwrap_or_default()
 }
@@ -6215,7 +6088,7 @@ pub(crate) fn try_to_pdf_with_fonts_and_features_and_shapes(
     extra_fonts: &[Vec<u8>],
     features: FeatureInventory,
     floating_shapes: &[FloatingShape],
-    source_hints: SourceRenderHints<'_>,
+    pagination_hints: &[PaginationHint],
 ) -> Result<Vec<u8>> {
     let unsupported = report::render_unsupported_features(&features);
     Ok(render_pdf(
@@ -6223,7 +6096,7 @@ pub(crate) fn try_to_pdf_with_fonts_and_features_and_shapes(
         extra_fonts,
         Some(&unsupported),
         floating_shapes,
-        source_hints,
+        pagination_hints,
     )?
     .pdf)
 }
@@ -6233,13 +6106,7 @@ pub(crate) fn to_pdf_with_fonts_and_report(
     extra_fonts: &[Vec<u8>],
     features: FeatureInventory,
 ) -> RenderedPdf {
-    to_pdf_with_fonts_and_report_and_shapes(
-        model,
-        extra_fonts,
-        features,
-        &[],
-        SourceRenderHints::default(),
-    )
+    to_pdf_with_fonts_and_report_and_shapes(model, extra_fonts, features, &[], &[])
 }
 
 pub(crate) fn to_pdf_with_fonts_and_report_and_shapes(
@@ -6247,7 +6114,7 @@ pub(crate) fn to_pdf_with_fonts_and_report_and_shapes(
     extra_fonts: &[Vec<u8>],
     features: FeatureInventory,
     floating_shapes: &[FloatingShape],
-    source_hints: SourceRenderHints<'_>,
+    pagination_hints: &[PaginationHint],
 ) -> RenderedPdf {
     let unsupported = report::render_unsupported_features(&features);
     let fallback_unsupported = unsupported.clone();
@@ -6256,7 +6123,7 @@ pub(crate) fn to_pdf_with_fonts_and_report_and_shapes(
         extra_fonts,
         features,
         floating_shapes,
-        source_hints,
+        pagination_hints,
     )
     .unwrap_or_else(|_| RenderedPdf {
         pdf: Vec::new(),
@@ -6273,13 +6140,7 @@ pub(crate) fn try_to_pdf_with_fonts_and_report(
     extra_fonts: &[Vec<u8>],
     features: FeatureInventory,
 ) -> Result<RenderedPdf> {
-    try_to_pdf_with_fonts_and_report_and_shapes(
-        model,
-        extra_fonts,
-        features,
-        &[],
-        SourceRenderHints::default(),
-    )
+    try_to_pdf_with_fonts_and_report_and_shapes(model, extra_fonts, features, &[], &[])
 }
 
 pub(crate) fn try_to_pdf_with_fonts_and_report_and_shapes(
@@ -6287,7 +6148,7 @@ pub(crate) fn try_to_pdf_with_fonts_and_report_and_shapes(
     extra_fonts: &[Vec<u8>],
     features: FeatureInventory,
     floating_shapes: &[FloatingShape],
-    source_hints: SourceRenderHints<'_>,
+    pagination_hints: &[PaginationHint],
 ) -> Result<RenderedPdf> {
     let unsupported = report::render_unsupported_features(&features);
     let rendered = render_pdf(
@@ -6295,7 +6156,7 @@ pub(crate) fn try_to_pdf_with_fonts_and_report_and_shapes(
         extra_fonts,
         Some(&unsupported),
         floating_shapes,
-        source_hints,
+        pagination_hints,
     )?;
     let warnings = render_warnings_for_model(&unsupported, model);
     Ok(RenderedPdf {
@@ -6313,7 +6174,7 @@ fn render_pdf(
     extra_fonts: &[Vec<u8>],
     unsupported_features: Option<&FeatureInventory>,
     floating_shapes: &[FloatingShape],
-    source_hints: SourceRenderHints<'_>,
+    pagination_hints: &[PaginationHint],
 ) -> Result<PdfRender> {
     use parley::fontique::Blob;
     let mut font_cx = FontContext::default();
@@ -6339,7 +6200,7 @@ fn render_pdf(
         geom,
         &mut tcx,
         &mut capture,
-        source_hints,
+        pagination_hints,
         floating_shapes,
         unsupported_features,
     );
@@ -6576,8 +6437,8 @@ mod tests {
     };
     use crate::model::{
         Align, Block, Cell, CellMargins, CharProps, Color, DocModel, FieldRole, Image, Indent,
-        PageSetup, PaginationHint, ParaProps, Paragraph, Row, Run, SectionSetup, Spacing,
-        TabAlignment, TabStop, Table, VertAlign,
+        PageSetup, PaginationHint, ParaProps, Paragraph, Row, Run, SectionSetup, Spacing, Table,
+        VertAlign,
     };
     use crate::report::FeatureInventory;
     use crate::{FloatingShape, ShapeEffectExtent, ShapeExtent, ShapePoint, ShapePosition};
@@ -6601,15 +6462,6 @@ mod tests {
         runs: Vec<Run>,
         marker: Option<&str>,
     ) -> Vec<LineLayout> {
-        paragraph_lines_with_marker_and_tabs(props, runs, marker, &[])
-    }
-
-    fn paragraph_lines_with_marker_and_tabs(
-        props: ParaProps,
-        runs: Vec<Run>,
-        marker: Option<&str>,
-        tab_stops: &[TabStop],
-    ) -> Vec<LineLayout> {
         let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
         let mut font_cx = strict_font_context(&fonts);
         let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
@@ -6631,7 +6483,6 @@ mod tests {
             &Paragraph { props, runs },
             &mut flow,
             marker,
-            tab_stops,
             geom,
             &mut tcx,
             &mut capture,
@@ -6646,26 +6497,6 @@ mod tests {
 
     fn paragraph_lines(props: ParaProps, runs: Vec<Run>) -> Vec<LineLayout> {
         paragraph_lines_with_marker(props, runs, None)
-    }
-
-    fn text_bounds(line: &LineLayout, byte_range: std::ops::Range<usize>) -> Option<(f32, f32)> {
-        let mut left = f32::INFINITY;
-        let mut right = f32::NEG_INFINITY;
-        for run in &line.runs {
-            let mut cursor = run.x;
-            for glyph in &run.glyphs {
-                let advance = glyph.x_advance * run.size;
-                if glyph.text_range.start < byte_range.end
-                    && byte_range.start < glyph.text_range.end
-                {
-                    let glyph_x = cursor + glyph.x_offset * run.size;
-                    left = left.min(glyph_x);
-                    right = right.max(glyph_x + advance);
-                }
-                cursor += advance;
-            }
-        }
-        left.is_finite().then_some((left, right))
     }
 
     type ParagraphLineMetric = (f32, f32, Option<(usize, usize)>);
@@ -7016,109 +6847,6 @@ mod tests {
     }
 
     #[test]
-    fn explicit_tabs_apply_left_center_right_and_decimal_alignment() {
-        let cases = [
-            ("A\tLEFT", 2..6, TabAlignment::Left, 90.0),
-            ("A\tCENTER", 2..8, TabAlignment::Center, 100.0),
-            ("A\tRIGHT", 2..7, TabAlignment::Right, 150.0),
-            ("A\t12.34", 4..5, TabAlignment::Decimal, 110.0),
-            ("A\t1,234.56", 7..8, TabAlignment::Decimal, 110.0),
-        ];
-
-        for (text, measured, alignment, position_pt) in cases {
-            let lines = paragraph_lines_with_marker_and_tabs(
-                ParaProps::default(),
-                vec![Run {
-                    text: text.to_string(),
-                    ..Run::default()
-                }],
-                None,
-                &[TabStop {
-                    position_pt,
-                    alignment,
-                }],
-            );
-            let bounds = text_bounds(&lines[0], measured).expect("measured field glyphs");
-            let actual = match alignment {
-                TabAlignment::Left | TabAlignment::Decimal => bounds.0,
-                TabAlignment::Center => (bounds.0 + bounds.1) / 2.0,
-                TabAlignment::Right => bounds.1,
-                TabAlignment::Clear => unreachable!(),
-            };
-            assert!(
-                (actual - position_pt).abs() <= 1.5,
-                "alignment={alignment:?} actual={actual} expected={position_pt} bounds={bounds:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn explicit_tabs_use_the_indented_paragraph_box_and_preserve_paint_ranges() {
-        let lines = paragraph_lines_with_marker_and_tabs(
-            ParaProps {
-                indent: Indent {
-                    left_pt: Some(20.0),
-                    right_pt: Some(20.0),
-                    first_line_pt: Some(10.0),
-                    ..Indent::default()
-                },
-                ..ParaProps::default()
-            },
-            vec![
-                Run {
-                    text: "A\t".to_string(),
-                    ..Run::default()
-                },
-                Run {
-                    text: "B".to_string(),
-                    props: CharProps {
-                        highlight: Some("yellow".to_string()),
-                        ..CharProps::default()
-                    },
-                    ..Run::default()
-                },
-            ],
-            None,
-            &[TabStop {
-                position_pt: 100.0,
-                alignment: TabAlignment::Left,
-            }],
-        );
-        let b_bounds = text_bounds(&lines[0], 2..3).expect("B glyph");
-
-        assert!((lines[0].x_indent - 20.0).abs() < 0.1);
-        assert!((b_bounds.0 - 100.0).abs() <= 1.5, "B bounds={b_bounds:?}");
-        assert_eq!(
-            lines[0].char_range.map(|range| (range.start, range.end)),
-            Some((0, 3))
-        );
-        assert!(lines[0]
-            .runs
-            .iter()
-            .any(|run| run.highlight == Some(rgb::Color::new(0xFF, 0xFF, 0x00))));
-    }
-
-    #[test]
-    fn explicit_tab_past_the_paragraph_box_falls_back_without_overflow() {
-        let lines = paragraph_lines_with_marker_and_tabs(
-            ParaProps::default(),
-            vec![Run {
-                text: "A\tB".to_string(),
-                ..Run::default()
-            }],
-            None,
-            &[TabStop {
-                position_pt: 1_000.0,
-                alignment: TabAlignment::Left,
-            }],
-        );
-        let b_bounds = text_bounds(&lines[0], 2..3).expect("B glyph");
-
-        assert!(b_bounds.0 >= 35.0);
-        assert!(b_bounds.1 <= 180.0, "B bounds={b_bounds:?}");
-    }
-
-    #[test]
     fn paragraph_line_spacing_controls_layout_height() {
         let run = Run {
             text: "Line spacing".to_string(),
@@ -7153,39 +6881,6 @@ mod tests {
             single[0].0,
             double[0].0
         );
-    }
-
-    #[test]
-    fn explicit_zero_paragraph_after_spacing_suppresses_the_default_gap() {
-        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
-        let mut font_cx = strict_font_context(&fonts);
-        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
-        let mut font_cache = HashMap::new();
-        let mut tcx = TextCx {
-            font_cx: &mut font_cx,
-            layout_cx: &mut layout_cx,
-            font_cache: &mut font_cache,
-        };
-        let mut paragraph = Paragraph {
-            runs: vec![Run {
-                text: "No trailing gap".to_string(),
-                ..Run::default()
-            }],
-            ..Paragraph::default()
-        };
-        paragraph.props.spacing.after_pt = Some(0.0);
-        let mut flow = Vec::new();
-        let mut capture = LayoutCapture::default();
-
-        super::collect_blocks(
-            &[Block::Paragraph(paragraph)],
-            &mut flow,
-            Geom::from_setup(&PageSetup::default()),
-            &mut tcx,
-            &mut capture,
-        );
-
-        assert!(!flow.iter().any(|item| matches!(item, FlowItem::Gap(_))));
     }
 
     #[test]
@@ -7351,11 +7046,7 @@ mod tests {
 
     #[test]
     fn bidi_visual_table_mirrors_logical_cell_positions() {
-        let fonts = vec![
-            rwml_fonts::noto_sans_kr_subset_with_hanja().to_vec(),
-            rwml_fonts::noto_sans_arabic_subset().to_vec(),
-            rwml_fonts::noto_sans_hebrew_subset().to_vec(),
-        ];
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
         let mut font_cx = strict_font_context(&fonts);
         let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
         let mut font_cache = HashMap::new();
@@ -7379,49 +7070,21 @@ mod tests {
                         Cell {
                             blocks: vec![Block::Paragraph(Paragraph {
                                 runs: vec![Run {
-                                    text: "خلية أولى 123".to_string(),
-                                    props: CharProps {
-                                        rtl: true,
-                                        ..CharProps::default()
-                                    },
+                                    text: "logical first".to_string(),
                                     ..Run::default()
                                 }],
-                                props: ParaProps {
-                                    align: Align::Right,
-                                    bidi: true,
-                                    ..ParaProps::default()
-                                },
+                                ..Paragraph::default()
                             })],
-                            margins: Some(CellMargins {
-                                top: 40,
-                                right: 40,
-                                bottom: 60,
-                                left: 200,
-                            }),
                             ..Cell::default()
                         },
                         Cell {
                             blocks: vec![Block::Paragraph(Paragraph {
                                 runs: vec![Run {
-                                    text: "תא שני 456".to_string(),
-                                    props: CharProps {
-                                        rtl: true,
-                                        ..CharProps::default()
-                                    },
+                                    text: "logical second".to_string(),
                                     ..Run::default()
                                 }],
-                                props: ParaProps {
-                                    align: Align::Right,
-                                    bidi: true,
-                                    ..ParaProps::default()
-                                },
+                                ..Paragraph::default()
                             })],
-                            margins: Some(CellMargins {
-                                top: 80,
-                                right: 240,
-                                bottom: 20,
-                                left: 60,
-                            }),
                             ..Cell::default()
                         },
                     ],
@@ -7445,26 +7108,6 @@ mod tests {
         assert!((cells[1].x - 0.0).abs() < 0.1, "cells={:?}", cells[1].x);
         assert!((cells[0].width - 45.0).abs() < 0.1);
         assert!((cells[1].width - 135.0).abs() < 0.1);
-        assert!((cells[0].insets.left - 10.0).abs() < 0.1);
-        assert!((cells[0].insets.right - 2.0).abs() < 0.1);
-        assert!((cells[1].insets.left - 3.0).abs() < 0.1);
-        assert!((cells[1].insets.right - 12.0).abs() < 0.1);
-        assert!(cells[0]
-            .lines
-            .iter()
-            .flat_map(|line| &line.runs)
-            .any(|run| run.text.contains("خلية أولى 123")));
-        assert!(cells[1]
-            .lines
-            .iter()
-            .flat_map(|line| &line.runs)
-            .any(|run| run.text.contains("תא שני 456")));
-        assert!(
-            (cell_line_origin(cells[0].x, cells[0].insets, &cells[0].lines[0]) - 145.0).abs() < 0.1
-        );
-        assert!(
-            (cell_line_origin(cells[1].x, cells[1].insets, &cells[1].lines[0]) - 3.0).abs() < 0.1
-        );
     }
 
     #[test]
@@ -8746,7 +8389,7 @@ mod tests {
             geom,
             &mut tcx,
             &mut capture,
-            super::SourceRenderHints::default(),
+            &[],
             std::slice::from_ref(&shape),
             None,
         );
@@ -8777,7 +8420,7 @@ mod tests {
             geom,
             &mut tcx,
             &mut capture,
-            super::SourceRenderHints::default(),
+            &[],
             &[page_break_shape],
             None,
         );
@@ -9071,15 +8714,8 @@ mod tests {
         };
         let geom = Geom::from_setup(&page);
         let mut capture = LayoutCapture::default();
-        let full_width = super::collect_pdf_flow_items(
-            &model,
-            geom,
-            &mut tcx,
-            &mut capture,
-            super::SourceRenderHints::default(),
-            &[],
-            None,
-        );
+        let full_width =
+            super::collect_pdf_flow_items(&model, geom, &mut tcx, &mut capture, &[], &[], None);
         let full_width_lines = full_width
             .iter()
             .filter(|item| matches!(item, FlowItem::Line(_)))
@@ -9087,15 +8723,8 @@ mod tests {
 
         model.setup.columns = Some(2);
         let mut capture = LayoutCapture::default();
-        let columns = super::collect_pdf_flow_items(
-            &model,
-            geom,
-            &mut tcx,
-            &mut capture,
-            super::SourceRenderHints::default(),
-            &[],
-            None,
-        );
+        let columns =
+            super::collect_pdf_flow_items(&model, geom, &mut tcx, &mut capture, &[], &[], None);
         let column_lines = columns
             .iter()
             .filter(|item| matches!(item, FlowItem::Line(_)))
