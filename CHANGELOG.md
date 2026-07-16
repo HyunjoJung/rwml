@@ -6,7 +6,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- Adds a deterministic public render-activation corpus for run paint/hidden
+  text, explicit tabs and RTL tables, keep/widow pagination, equal-width
+  columns, and bounded `wrapTopAndBottom` flow, with per-file provenance.
+- Extends renderer validation with fixed-font all-page aHash, foreground ink
+  IoU, explicit unmatched/capped page counts, configurable gates, and bounded
+  page-pair raster streaming while retaining the historical page-1 aHash.
+
+### Fixed
+
+- Opened `.docx` renders now resolve inherited and direct left, center, right,
+  and decimal tab stops in top-level body paragraphs, including `clear`
+  overrides, and preserve authored zero paragraph after-spacing instead of
+  substituting the preview default gap.
 
 ## [0.1.1] - 2026-07-16
 

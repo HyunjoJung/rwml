@@ -7,7 +7,9 @@ deliberately carry the *unmodeled* content a package-preserving editor must roun
 intact: tracked changes (w:ins/w:del), content controls (w:sdt), text boxes
 (mc:AlternateContent + w:txbxContent), footnotes, comments, headers/footers, fields,
 hyperlinks, unsupported object markers, tables, floating shape placement metadata, and
-an inline PNG image.
+an inline PNG image. Dedicated render fixtures additionally activate modeled paint,
+hidden text, explicit tabs, bounded pagination, equal-width columns, RTL tables, and
+top-and-bottom floating-object flow.
 
 Usage:
     python scripts/gen_public_corpus.py            # writes corpus/public/synthetic/*.docx
@@ -448,6 +450,166 @@ def floating_text_bearing() -> bytes:
     return _minimal_docx(document)
 
 
+def style_hidden_tabs_table() -> bytes:
+    """Activate modeled run paint, hidden text, tabs, and RTL table geometry."""
+    document = _b(
+        XML_DECL
+        + f'<w:document xmlns:w="{W}"><w:body>'
+        '<w:p><w:pPr><w:shd w:val="clear" w:fill="DDEBF7"/>'
+        '<w:spacing w:before="240" w:after="240" w:line="480"/>'
+        '<w:ind w:left="720" w:firstLine="360"/></w:pPr>'
+        '<w:r><w:rPr><w:b/><w:color w:val="C00000"/>'
+        '<w:highlight w:val="yellow"/><w:u w:val="single"/></w:rPr>'
+        '<w:t>Styled paragraph</w:t></w:r>'
+        '<w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr>'
+        '<w:t xml:space="preserve"> SUPER</w:t></w:r>'
+        '<w:r><w:rPr><w:vertAlign w:val="subscript"/></w:rPr>'
+        '<w:t xml:space="preserve"> SUB</w:t></w:r>'
+        '<w:r><w:rPr><w:caps/></w:rPr>'
+        '<w:t xml:space="preserve"> caps sample</w:t></w:r>'
+        '<w:r><w:rPr><w:smallCaps/></w:rPr>'
+        '<w:t xml:space="preserve"> Small Capitals</w:t></w:r>'
+        '<w:r><w:rPr><w:strike/></w:rPr>'
+        '<w:t xml:space="preserve"> STRUCK</w:t></w:r></w:p>'
+        '<w:p><w:pPr><w:spacing w:after="0"/>'
+        '<w:ind w:left="1080" w:hanging="360"/></w:pPr>'
+        '<w:r><w:t>Hanging indent after an explicit left indent.</w:t></w:r></w:p>'
+        '<w:p><w:pPr><w:spacing w:after="0"/></w:pPr>'
+        '<w:r><w:t xml:space="preserve">VISIBLE BEFORE </w:t></w:r>'
+        '<w:r><w:rPr><w:vanish/></w:rPr><w:t>SECRET_TOKEN</w:t></w:r>'
+        '<w:r><w:t xml:space="preserve"> VISIBLE AFTER</w:t></w:r></w:p>'
+        '<w:p><w:pPr><w:spacing w:after="0"/>'
+        '<w:tabs><w:tab w:val="left" w:pos="2880"/>'
+        '<w:tab w:val="right" w:pos="7200"/></w:tabs></w:pPr>'
+        '<w:r><w:t>LEFT</w:t><w:tab/><w:t>LOGICAL</w:t><w:tab/><w:t>RIGHT</w:t></w:r></w:p>'
+        '<w:tbl><w:tblPr><w:tblW w:w="9000" w:type="dxa"/><w:bidiVisual/>'
+        '<w:tblCellMar><w:left w:w="360" w:type="dxa"/><w:right w:w="360" w:type="dxa"/>'
+        '<w:top w:w="180" w:type="dxa"/><w:bottom w:w="180" w:type="dxa"/>'
+        '</w:tblCellMar></w:tblPr><w:tblGrid><w:gridCol w:w="4500"/>'
+        '<w:gridCol w:w="4500"/></w:tblGrid><w:tr>'
+        '<w:tc><w:tcPr><w:shd w:val="clear" w:fill="F4CCCC"/>'
+        '<w:vAlign w:val="center"/></w:tcPr>'
+        '<w:p><w:r><w:t>LOGICAL LEFT</w:t></w:r></w:p></w:tc>'
+        '<w:tc><w:tcPr><w:shd w:val="clear" w:fill="D9EAD3"/>'
+        '<w:vAlign w:val="bottom"/></w:tcPr>'
+        '<w:p><w:r><w:t>LOGICAL RIGHT</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+        '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>'
+        '<w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720"/>'
+        '</w:sectPr></w:body></w:document>'
+    )
+    return _minimal_docx(document)
+
+
+def pagination_keep() -> bytes:
+    paragraphs = []
+    for index in range(1, 9):
+        if index == 4:
+            controls = '<w:pStyle w:val="KeepGroup"/>'
+        elif index in (3, 5):
+            controls = '<w:keepNext/><w:keepLines/><w:widowControl/>'
+        else:
+            controls = '<w:widowControl/>'
+        text = f"Paragraph {index}: " + "bounded pagination content " * 5
+        paragraphs.append(
+            f'<w:p><w:pPr>{controls}<w:spacing w:before="120" w:after="120" '
+            f'w:line="360"/></w:pPr><w:r><w:t>{text}</w:t></w:r></w:p>'
+        )
+    document = _b(
+        XML_DECL
+        + f'<w:document xmlns:w="{W}"><w:body>'
+        + "".join(paragraphs)
+        + '<w:sectPr><w:pgSz w:w="7200" w:h="5000"/>'
+        '<w:pgMar w:top="360" w:right="360" w:bottom="360" w:left="360"/>'
+        '</w:sectPr></w:body></w:document>'
+    )
+    styles = _b(
+        XML_DECL
+        + f'<w:styles xmlns:w="{W}"><w:style w:type="paragraph" w:styleId="KeepGroup">'
+        '<w:name w:val="Keep Group"/><w:pPr><w:keepNext/><w:keepLines/>'
+        '<w:widowControl/></w:pPr></w:style></w:styles>'
+    )
+    return _minimal_docx(
+        document,
+        doc_rels=[("rIdStyles", f"{R}/styles", "styles.xml")],
+        overrides=[
+            (
+                "/word/styles.xml",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml",
+            )
+        ],
+        extra_parts=[("word/styles.xml", styles)],
+    )
+
+
+def two_columns() -> bytes:
+    paragraphs = []
+    for index in range(1, 17):
+        text = (
+            f"Column item {index}: "
+            + "flow across equal columns with stable layout. " * 2
+        )
+        paragraphs.append(
+            '<w:p><w:pPr><w:spacing w:after="100"/></w:pPr>'
+            f'<w:r><w:t>{text}</w:t></w:r></w:p>'
+        )
+    document = _b(
+        XML_DECL
+        + f'<w:document xmlns:w="{W}"><w:body>'
+        + "".join(paragraphs)
+        + '<w:sectPr><w:pgSz w:w="9000" w:h="8000"/>'
+        '<w:pgMar w:top="540" w:right="540" w:bottom="540" w:left="540"/>'
+        '<w:cols w:num="2" w:space="360"/></w:sectPr></w:body></w:document>'
+    )
+    return _minimal_docx(document)
+
+
+def rtl_table() -> bytes:
+    document = _b(
+        XML_DECL
+        + f'<w:document xmlns:w="{W}"><w:body>'
+        '<w:p><w:pPr><w:bidi/><w:jc w:val="right"/>'
+        '<w:ind w:start="720" w:end="360"/></w:pPr>'
+        '<w:r><w:rPr><w:rtl/><w:cs/><w:color w:val="1F4E79"/></w:rPr>'
+        '<w:t>بالعالم אבגדה</w:t></w:r></w:p>'
+        '<w:tbl><w:tblPr><w:bidiVisual/><w:tblW w:w="8000" w:type="dxa"/>'
+        '<w:tblCellMar><w:left w:w="300" w:type="dxa"/>'
+        '<w:right w:w="300" w:type="dxa"/></w:tblCellMar></w:tblPr>'
+        '<w:tblGrid><w:gridCol w:w="4000"/><w:gridCol w:w="4000"/></w:tblGrid><w:tr>'
+        '<w:tc><w:p><w:pPr><w:bidi/></w:pPr><w:r><w:rPr><w:rtl/></w:rPr>'
+        '<w:t>أولى</w:t></w:r></w:p></w:tc>'
+        '<w:tc><w:p><w:pPr><w:bidi/></w:pPr><w:r><w:rPr><w:rtl/></w:rPr>'
+        '<w:t>תא שני</w:t></w:r></w:p></w:tc></w:tr></w:tbl>'
+        '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>'
+        '<w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720"/>'
+        '</w:sectPr></w:body></w:document>'
+    )
+    return _minimal_docx(document)
+
+
+def wrap_top_bottom() -> bytes:
+    document = _b(
+        XML_DECL
+        + f'<w:document xmlns:w="{W}" '
+        'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
+        'xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape">'
+        '<w:body><w:p><w:r><w:t>Flow before the bounded top-and-bottom object.</w:t></w:r></w:p>'
+        '<w:p><w:r><w:drawing><wp:anchor relativeHeight="500" behindDoc="0" '
+        'distT="72000" distB="72000" distL="0" distR="0">'
+        '<wp:positionH relativeFrom="column"><wp:posOffset>914400</wp:posOffset></wp:positionH>'
+        '<wp:positionV relativeFrom="page"><wp:posOffset>1828800</wp:posOffset></wp:positionV>'
+        '<wp:extent cx="2743200" cy="914400"/><wp:wrapTopAndBottom/>'
+        '<wp:docPr id="450" name="Public top and bottom float"/>'
+        '<wps:wsp><wps:txbx><w:txbxContent><w:p><w:r>'
+        '<w:t>Bounded top and bottom body</w:t></w:r></w:p></w:txbxContent></wps:txbx>'
+        '</wps:wsp></wp:anchor></w:drawing></w:r></w:p>'
+        '<w:p><w:r><w:t>Flow after the bounded top-and-bottom object.</w:t></w:r></w:p>'
+        '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>'
+        '<w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720"/>'
+        '</w:sectPr></w:body></w:document>'
+    )
+    return _minimal_docx(document)
+
+
 CORPUS = {
     "kitchen_sink.docx": kitchen_sink,
     "comments.docx": comments,
@@ -460,6 +622,11 @@ CORPUS = {
     "floating_z_order_pair.docx": floating_z_order_pair,
     "floating_wrap_policy.docx": floating_wrap_policy,
     "floating_text_bearing.docx": floating_text_bearing,
+    "style-hidden-tabs-table.docx": style_hidden_tabs_table,
+    "pagination-keep.docx": pagination_keep,
+    "two-columns.docx": two_columns,
+    "rtl-table.docx": rtl_table,
+    "wrap-top-bottom.docx": wrap_top_bottom,
 }
 
 

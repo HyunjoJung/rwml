@@ -254,8 +254,10 @@ widths, images, and **clickable hyperlink annotations** are drawn. Page geometry
 equal-width section columns, and per-side margins come from the document;
 multi-page tables repeat their header rows and a row taller than a page splits
 across pages. Opened `.docx` `Document` renders additionally honor resolved
+left/center/right/decimal tab stops in top-level body paragraphs, authored zero
+after-spacing, and
 `keepNext`, `keepLines`, and default-on `widowControl` pagination hints without
-adding those source-only hints to the public `DocModel`. Eligible front-of-text
+adding those source-only render hints to the public `DocModel`. Eligible front-of-text
 `wrapTopAndBottom` shapes with explicit page/margin or enabled `simplePos`
 vertical geometry also exclude later flow from their page-wide vertical band
 after the recovered top-level paragraph anchor. Pagination-protected paragraphs
@@ -345,7 +347,7 @@ cargo run --features render --bin rwml -- to-pdf file.docx out.pdf --report-json
 cargo run --example report   -- report.docx            # author a styled report
 cargo run --features render --example to_pdf -- file.docx out.pdf
 cargo run --features render --example to_pdf -- file.docx out.pdf --report-json render.json
-python scripts/render_validate.py --json --min-mean-recall 0.90 --max-skipped 0 corpus/public/**/*.docx > render.json
+python scripts/render_validate.py --json --page-cap 32 --min-mean-recall 0.90 --max-skipped 0 corpus/public/**/*.docx > render.json
 VERSION=0.1.1
 REV="$(git rev-parse HEAD)"
 python scripts/bench_vs_mature.py --corpus corpus/public/benchmark --json \
@@ -462,12 +464,15 @@ file and a structurally-broken original. To author/convert from a `DocModel`, us
 `write_docx` (it regenerates a fresh package, lossy w.r.t. unmodeled content).
 
 **Rendering.** [`scripts/render_validate.py`](scripts/render_validate.py) compares
-the renderer to LibreOffice per document on three metrics (text recall, page-count
-ratio, average-hash visual similarity) plus rwml render-warning counts/kinds, and
-can emit a JSON report for release tracking. Its `--soffice auto` default uses a
-local `soffice` when available and otherwise falls back to the Docker `lo-cli`
-backend. The public synthetic corpus also includes a render manifest checked by
-`cargo test --features render`. rwml is a **preview-grade**
+the renderer to LibreOffice per document using text recall, page-count ratio, the
+historical page-1 72-DPI aHash, all-matched-page aHash, foreground ink IoU, and
+explicit unmatched/capped page counts, plus rwml render-warning counts/kinds.
+The multi-page metrics report their DPI, foreground threshold, hash size, page
+cap, and fixed-bundled-font mode; page canvases are white-padded without scaling
+and raster pairs are processed under hard pixel limits. Its `--soffice auto`
+default uses a local `soffice` when available and otherwise falls back to the
+Docker `lo-cli` backend. The public synthetic corpus also includes a render
+manifest checked by `cargo test --features render`. rwml is a **preview-grade**
 renderer, faithful to the model but **not** a LibreOffice replacement. Generated
 running footer page numbers and body `PAGE` fields are computed from the emitted
 PDF page list; section-aware default/first/even running header/footer variants
@@ -562,7 +567,8 @@ JSON extraction benchmark report against local Apache POI and LibreOffice
 goldens and can enforce release thresholds for mean POI recall/F1, mean
 LibreOffice recall, scored-file counts, and extractor errors. Render-validation
 JSON also carries a compact `gate` section for per-document recall plus optional
-mean recall, page-ratio, aHash, warning, and skipped-file thresholds. Release
+mean recall, page-ratio, legacy/all-page aHash, foreground-IoU, unmatched-page,
+warning, and skipped-file thresholds. Release
 manifests embed public corpus manifest totals plus public hygiene,
 render-validation, and benchmark summaries/gates without copying row data, plus
 the named `public-release` policy: required public hygiene audit,
