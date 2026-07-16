@@ -103,7 +103,10 @@ class ReleaseWorkflowTests(unittest.TestCase):
         manifest = step_body(text, "Generate release manifest")
         upload = step_body(text, "Upload release manifest artifacts")
         main_publish = step_body(text, "Publish main crate")
-        self.assertIn("cargo test --manifest-path rwml-fonts/Cargo.toml --locked", text)
+        self.assertIn("cargo test --manifest-path rwml-fonts/Cargo.toml", text)
+        self.assertNotIn(
+            "cargo test --manifest-path rwml-fonts/Cargo.toml --locked", text
+        )
         self.assertIn(font_package, text)
         self.assertIn("cargo package --list > /dev/null", text)
         self.assertIn(font_publish_step, text)

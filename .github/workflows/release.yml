@@ -56,7 +56,7 @@ jobs:
           cargo doc --no-deps --all-features
           cargo test --all-targets --features render
           cargo test --test bundled_fonts --all-features --locked
-          cargo test --manifest-path rwml-fonts/Cargo.toml --locked
+          cargo test --manifest-path rwml-fonts/Cargo.toml
           cargo package --manifest-path rwml-fonts/Cargo.toml
           cargo package --list > /dev/null
           cargo test --release --test performance --locked -- --ignored --nocapture
