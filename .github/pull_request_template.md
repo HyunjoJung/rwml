@@ -12,6 +12,10 @@ closes #
 - [ ] `cargo clippy --all-targets -- -D warnings` passes
 - [ ] `cargo test --all-targets && cargo test --doc` pass
 - [ ] `cargo doc --no-deps` builds clean
+- [ ] Renderer changes pass all-feature clippy and
+      `cargo test --all-targets --features render`
+- [ ] Public-corpus changes pass deterministic regeneration and the release
+      performance smoke
 - [ ] New behaviour is covered by a test (a synthetic `.doc` is fine)
 - [ ] Spec-referenced changes cite the relevant [MS-DOC]/[MS-CFB] section
 
