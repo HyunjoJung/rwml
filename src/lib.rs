@@ -2676,6 +2676,7 @@ impl Document {
             Backend::Docx(d) => render::SourceRenderHints {
                 pagination: &d.pagination_hints,
                 tab_stops: &d.tab_stops,
+                table_row_pagination: &d.table_row_pagination,
             },
         }
     }
@@ -6441,6 +6442,43 @@ mod tests {
         assert_eq!(raw_model_layout.block_pages, vec![Some(1), Some(1)]);
         assert_eq!(opened_document_layout.block_pages, vec![Some(1), Some(2)]);
         assert_eq!(opened_document_layout.pages, 2);
+    }
+
+    #[cfg(all(feature = "docx", feature = "render"))]
+    #[test]
+    fn opened_docx_layout_uses_private_table_row_pagination_hints() {
+        let make_document = |row_properties: &str| {
+            let xml = format!(
+                r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                    <w:p><w:pPr><w:spacing w:line="800" w:lineRule="exact"/></w:pPr><w:r><w:t>seed</w:t></w:r></w:p>
+                    <w:tbl><w:tr>{row_properties}<w:tc>
+                        <w:p><w:pPr><w:spacing w:line="400" w:lineRule="exact"/></w:pPr><w:r><w:t>one</w:t></w:r></w:p>
+                        <w:p><w:pPr><w:spacing w:line="400" w:lineRule="exact"/></w:pPr><w:r><w:t>two</w:t></w:r></w:p>
+                        <w:p><w:pPr><w:spacing w:line="400" w:lineRule="exact"/></w:pPr><w:r><w:t>three</w:t></w:r></w:p>
+                        <w:p><w:r><w:t>four</w:t></w:r></w:p>
+                        <w:p><w:r><w:t>five</w:t></w:r></w:p>
+                    </w:tc></w:tr></w:tbl>
+                    <w:p><w:pPr><w:spacing w:line="400" w:lineRule="exact"/></w:pPr><w:r><w:t>after</w:t></w:r></w:p>
+                    <w:sectPr><w:pgSz w:w="4400" w:h="2400"/><w:pgMar w:top="400" w:right="400" w:bottom="400" w:left="400"/></w:sectPr>
+                </w:body></w:document>"#
+            );
+            Document::open(&minimal_docx(&xml)).unwrap()
+        };
+        let splittable = make_document("");
+        let kept = make_document("<w:trPr><w:cantSplit/></w:trPr>");
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+        let model_pages = layout_pages_with_fonts(&splittable.model(), &fonts)
+            .unwrap()
+            .pages;
+        let splittable_pages = splittable.layout_pages_with_fonts(&fonts).unwrap().pages;
+        let kept_pages = kept.layout_pages_with_fonts(&fonts).unwrap().pages;
+
+        assert_eq!(
+            (model_pages, splittable_pages, kept_pages),
+            (3, 2, 3),
+            "model-only and direct cantSplit rows keep together; the default source row splits"
+        );
     }
 
     #[cfg(all(feature = "docx", feature = "render"))]

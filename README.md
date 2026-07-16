@@ -252,10 +252,12 @@ paragraph shading, line spacing, first/hanging indents, lists with real autonumb
 labels, bordered tables with shaded vertically-aligned cells and authored column
 widths, images, and **clickable hyperlink annotations** are drawn. Page geometry,
 equal-width section columns, and per-side margins come from the document;
-multi-page tables repeat their header rows and a row taller than a page splits
-across pages. Opened `.docx` `Document` renders additionally honor resolved
-left/center/right/decimal tab stops in top-level body paragraphs, authored zero
-after-spacing, and
+multi-page tables repeat their header rows. Opened `.docx` rows may split across
+pages by default, while direct `w:cantSplit` keeps a fitting row together and an
+over-tall row still splits at line boundaries. Model-only renders retain the
+established keep-together default. Opened `.docx` `Document` renders additionally
+honor resolved left/center/right/decimal tab stops in top-level body paragraphs,
+authored zero after-spacing, and
 `keepNext`, `keepLines`, and default-on `widowControl` pagination hints without
 adding those source-only render hints to the public `DocModel`. Eligible front-of-text
 `wrapTopAndBottom` shapes with explicit page/margin or enabled `simplePos`
@@ -276,6 +278,8 @@ Word-exact list-level alignment, punctuation, or table typography.
 > section columns, or section-local page geometry. Unknown fields, remaining
 > layout-dependent TOC/REF/NOTEREF cases, and unsupported value-changing field
 > semantics retain their cached display text with diagnostics.
+> Direct table-row pagination does not yet inherit `cantSplit` from table styles
+> or `tblPrEx`, and legacy `.doc` row-break SPRMs remain outside this slice.
 >
 > Opened-document renders draw bounded approximate overlay boxes for recovered
 > `.docx` floating-shape geometry on the recovered top-level body block page. A
