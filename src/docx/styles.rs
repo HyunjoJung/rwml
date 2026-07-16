@@ -15,7 +15,7 @@ use super::xml_text::{skip_alternate_content_branch, skip_subtree, AlternateCont
 use super::{
     attr_local, attr_local_trimmed, attr_u16, attr_u8, local, parse_rgb_hex_color, toggle_on,
 };
-use crate::model::{CharProps, Color, TabAlignment, TabStop, VertAlign, MAX_TAB_STOPS};
+use crate::model::{CharProps, Color, VertAlign};
 use crate::stsh::heading_from_name;
 
 const STYLE_CHAIN_LIMIT: usize = 32;
@@ -87,7 +87,6 @@ pub(crate) struct ParagraphProps {
     pub(crate) indent_right_pt: Option<f32>,
     pub(crate) indent_start_pt: Option<f32>,
     pub(crate) indent_end_pt: Option<f32>,
-    pub(crate) tab_stops: Vec<TabStop>,
 }
 
 impl ParagraphProps {
@@ -119,9 +118,6 @@ impl ParagraphProps {
         if other.indent_end_pt.is_some() {
             self.indent_end_pt = other.indent_end_pt;
         }
-        let remaining = MAX_TAB_STOPS.saturating_sub(self.tab_stops.len());
-        self.tab_stops
-            .extend(other.tab_stops.iter().take(remaining).copied());
     }
 }
 
@@ -130,22 +126,6 @@ fn twips_attr(e: &BytesStart<'_>, name: &[u8]) -> Option<f32> {
         .and_then(|value| value.trim().parse::<f32>().ok())
         .filter(|value| value.is_finite())
         .map(|value| value / 20.0)
-}
-
-pub(super) fn tab_stop(e: &BytesStart<'_>) -> Option<TabStop> {
-    let position_pt = twips_attr(e, b"pos").filter(|position| *position >= 0.0)?;
-    let alignment = match attr_local_trimmed(e, b"val").as_deref() {
-        None | Some("left") | Some("start") => TabAlignment::Left,
-        Some("center") => TabAlignment::Center,
-        Some("right") | Some("end") => TabAlignment::Right,
-        Some("decimal") | Some("num") => TabAlignment::Decimal,
-        Some("clear") => TabAlignment::Clear,
-        _ => return None,
-    };
-    Some(TabStop {
-        position_pt,
-        alignment,
-    })
 }
 
 fn apply_paragraph_props_child(props: &mut ParagraphProps, e: &BytesStart<'_>) {
@@ -160,11 +140,6 @@ fn apply_paragraph_props_child(props: &mut ParagraphProps, e: &BytesStart<'_>) {
             props.indent_right_pt = twips_attr(e, b"right");
             props.indent_start_pt = twips_attr(e, b"start");
             props.indent_end_pt = twips_attr(e, b"end");
-        }
-        b"tab" if props.tab_stops.len() < MAX_TAB_STOPS => {
-            if let Some(tab) = tab_stop(e) {
-                props.tab_stops.push(tab);
-            }
         }
         _ => {}
     }
@@ -389,8 +364,7 @@ pub(crate) fn parse(xml: &str) -> Styles {
                         style.run_props = read_run_props(&mut r, b"rPr");
                     }
                 }
-                b"bidi" | b"keepNext" | b"keepLines" | b"widowControl" | b"jc" | b"ind"
-                | b"tab" => {
+                b"bidi" | b"keepNext" | b"keepLines" | b"widowControl" | b"jc" | b"ind" => {
                     if in_doc_defaults && in_ppr_default {
                         apply_paragraph_props_child(&mut styles.doc_defaults_paragraph, &e);
                     } else if let Some(style) = &mut cur_style {

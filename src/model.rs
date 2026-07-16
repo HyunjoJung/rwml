@@ -328,26 +328,6 @@ pub(crate) struct PaginationHint {
     pub(crate) widow_control: bool,
 }
 
-#[cfg(any(feature = "docx", feature = "render"))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TabAlignment {
-    Left,
-    Center,
-    Right,
-    Decimal,
-    Clear,
-}
-
-#[cfg(any(feature = "docx", feature = "render"))]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) struct TabStop {
-    pub(crate) position_pt: f32,
-    pub(crate) alignment: TabAlignment,
-}
-
-#[cfg(any(feature = "docx", feature = "render"))]
-pub(crate) const MAX_TAB_STOPS: usize = 256;
-
 /// A paragraph style definition for generated `.docx` output.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ParagraphStyle {

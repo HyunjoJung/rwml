@@ -4,7 +4,6 @@
 //! ```text
 //! cargo run --example to_pdf --features render -- input.doc [output.pdf]
 //! cargo run --example to_pdf --features render -- input.doc output.pdf --report-json report.json
-//! cargo run --example to_pdf --features render -- input.doc output.pdf --fixed-fonts
 //! ```
 
 use std::path::PathBuf;
@@ -14,26 +13,21 @@ fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
     let mut positional = Vec::new();
     let mut report_json: Option<PathBuf> = None;
-    let mut fixed_fonts = false;
     while let Some(arg) = args.next() {
         if arg == "--report-json" {
             let Some(path) = args.next() else {
                 eprintln!(
-                    "usage: to_pdf <input.doc|.docx> [output.pdf] [--report-json report.json] [--fixed-fonts]"
+                    "usage: to_pdf <input.doc|.docx> [output.pdf] [--report-json report.json]"
                 );
                 return ExitCode::from(2);
             };
             report_json = Some(PathBuf::from(path));
-        } else if arg == "--fixed-fonts" {
-            fixed_fonts = true;
         } else {
             positional.push(arg);
         }
     }
     let Some(input) = positional.first() else {
-        eprintln!(
-            "usage: to_pdf <input.doc|.docx> [output.pdf] [--report-json report.json] [--fixed-fonts]"
-        );
+        eprintln!("usage: to_pdf <input.doc|.docx> [output.pdf] [--report-json report.json]");
         return ExitCode::from(2);
     };
     let out = positional.get(1).map(PathBuf::from).unwrap_or_else(|| {
@@ -56,19 +50,8 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let fixed_fonts = fixed_fonts.then(|| {
-        vec![
-            rwml_fonts::noto_sans_kr_subset_with_hanja().to_vec(),
-            rwml_fonts::noto_sans_arabic_subset().to_vec(),
-            rwml_fonts::noto_sans_hebrew_subset().to_vec(),
-        ]
-    });
     let (pdf, report) = if report_json.is_some() {
-        let rendered = match &fixed_fonts {
-            Some(fonts) => doc.try_to_pdf_with_fonts_and_report(fonts),
-            None => doc.try_to_pdf_with_report(),
-        };
-        match rendered {
+        match doc.try_to_pdf_with_report() {
             Ok(rendered) => (rendered.pdf, Some(rendered.report)),
             Err(e) => {
                 eprintln!("render {input}: {e}");
@@ -76,11 +59,7 @@ fn main() -> ExitCode {
             }
         }
     } else {
-        let rendered = match &fixed_fonts {
-            Some(fonts) => doc.try_to_pdf_with_fonts(fonts),
-            None => doc.try_to_pdf(),
-        };
-        match rendered {
+        match doc.try_to_pdf() {
             Ok(pdf) => (pdf, None),
             Err(e) => {
                 eprintln!("render {input}: {e}");

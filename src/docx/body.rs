@@ -34,8 +34,8 @@ use crate::model::{
     Align, AuthoredContentControl, Block, Cell, CellMargins, CharProps, Color, DocGrid,
     DocGridType, FieldRole, FieldUnsupportedReason, Image, Indent, ListInfo, PageNumberFormat,
     PageSetup, PaginationHint, ParaProps, Paragraph, Row, Run, SectionBreakKind, SectionSetup,
-    Spacing, TabAlignment, TabStop, Table, TableBorderColors, TableBorderSide, TableBorderSizes,
-    TableBorderStyle, TableBorderStyles, TextDirection, VCell, MAX_TAB_STOPS,
+    Spacing, Table, TableBorderColors, TableBorderSide, TableBorderSizes, TableBorderStyle,
+    TableBorderStyles, TextDirection, VCell,
 };
 use crate::text;
 use crate::CoreProperties;
@@ -65,7 +65,6 @@ const PAGE_BREAK_MARKER: char = '\u{000C}';
 #[derive(Default)]
 pub(super) struct PaginationCapture {
     hints: Vec<PaginationHint>,
-    tab_stops: Vec<Vec<TabStop>>,
     suspended: usize,
 }
 
@@ -120,11 +119,11 @@ impl Ctx<'_> {
     }
 
     #[cfg(feature = "render")]
-    pub(crate) fn take_render_hints(&self) -> (Vec<PaginationHint>, Vec<Vec<TabStop>>) {
+    pub(crate) fn take_pagination_hints(&self) -> Vec<PaginationHint> {
         self.pagination_capture
             .borrow_mut()
             .take()
-            .map(|capture| (capture.hints, capture.tab_stops))
+            .map(|capture| capture.hints)
             .unwrap_or_default()
     }
 
@@ -140,27 +139,21 @@ impl Ctx<'_> {
         }
     }
 
-    fn capture_block_hints(&self, hint: PaginationHint, tab_stops: &[TabStop]) {
+    fn capture_block_pagination(&self, hint: PaginationHint) {
         if let Some(capture) = self.pagination_capture.borrow_mut().as_mut() {
             if capture.suspended == 0 {
                 capture.hints.push(hint);
-                capture.tab_stops.push(tab_stops.to_vec());
             }
         }
     }
 
-    fn capture_paragraph_blocks(
-        &self,
-        blocks: &[Block],
-        hint: PaginationHint,
-        tab_stops: &[TabStop],
-    ) {
+    fn capture_paragraph_blocks(&self, blocks: &[Block], hint: PaginationHint) {
         for block in blocks {
-            if matches!(block, Block::Paragraph(_)) {
-                self.capture_block_hints(hint, tab_stops);
+            self.capture_block_pagination(if matches!(block, Block::Paragraph(_)) {
+                hint
             } else {
-                self.capture_block_hints(PaginationHint::default(), &[]);
-            }
+                PaginationHint::default()
+            });
         }
     }
 }
@@ -2000,20 +1993,10 @@ fn read_paragraph(
     r: &mut Xml<'_>,
     ctx: &Ctx<'_>,
     depth: u32,
-) -> (
-    Paragraph,
-    Option<SectionSetup>,
-    PaginationHint,
-    Vec<TabStop>,
-) {
+) -> (Paragraph, Option<SectionSetup>, PaginationHint) {
     if depth > MAX_DEPTH {
         skip_subtree(r);
-        return (
-            Paragraph::default(),
-            None,
-            PaginationHint::default(),
-            Vec::new(),
-        );
+        return (Paragraph::default(), None, PaginationHint::default());
     }
     let mut runs: Vec<Run> = Vec::new();
     let mut pp = PPr::default();
@@ -2122,8 +2105,8 @@ fn read_paragraph(
     }
     apply_sequence_heading_scope(&pp, ctx, &mut sequence_heading_applied);
     let section = pp.section.take();
-    let (paragraph, pagination, tab_stops) = finalize_paragraph(runs, pp, ctx);
-    (paragraph, section, pagination, tab_stops)
+    let (paragraph, pagination) = finalize_paragraph(runs, pp, ctx);
+    (paragraph, section, pagination)
 }
 
 fn push_active_bookmark(bookmarks: &mut Vec<(String, String)>, e: &BytesStart<'_>) {
@@ -2175,7 +2158,7 @@ fn mark_complex_field_result_runs(
 }
 
 fn read_paragraph_blocks(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Vec<Block> {
-    let (paragraph, section, pagination, tab_stops) = read_paragraph(r, ctx, depth);
+    let (paragraph, section, pagination) = read_paragraph(r, ctx, depth);
     let mut blocks = split_page_breaks(paragraph);
     if let Some(mut section) = section {
         if section.section_break.is_none() {
@@ -2183,7 +2166,7 @@ fn read_paragraph_blocks(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Vec<Bloc
         }
         blocks.push(Block::SectionBreak(section));
     }
-    ctx.capture_paragraph_blocks(&blocks, pagination, &tab_stops);
+    ctx.capture_paragraph_blocks(&blocks, pagination);
     blocks
 }
 
@@ -2460,7 +2443,6 @@ struct PPr {
     keep_next: Option<bool>,
     keep_lines: Option<bool>,
     widow_control: Option<bool>,
-    tab_stops: Vec<TabStop>,
     section: Option<SectionSetup>,
 }
 
@@ -3078,11 +3060,6 @@ fn read_ppr_item(pp: &mut PPr, e: &BytesStart<'_>, num_id: &mut Option<String>, 
             pp.indent_end_pt = attr_local(e, b"end").and_then(|v| twips_to_pt(&v));
             pp.indent.first_line_pt = attr_local(e, b"firstLine").and_then(|v| twips_to_pt(&v));
             pp.indent.hanging_pt = attr_local(e, b"hanging").and_then(|v| twips_to_pt(&v));
-        }
-        b"tab" if pp.tab_stops.len() < MAX_TAB_STOPS => {
-            if let Some(tab) = super::styles::tab_stop(e) {
-                pp.tab_stops.push(tab);
-            }
         }
         b"shd" => pp.shading = attr_local(e, b"fill").and_then(|v| parse_rgb_hex_color(&v)),
         _ => {}
@@ -4940,23 +4917,7 @@ fn hyperlink_instr_uses_anchor_target(instr: &str) -> bool {
 /// Resolve paragraph-level properties (heading level, alignment, list) from the
 /// collected `w:pPr` fields — mirroring `assemble.rs::take_paragraph` precedence
 /// (explicit outline level wins; a heading suppresses list rendering).
-fn resolve_tab_stops(changes: impl IntoIterator<Item = TabStop>) -> Vec<TabStop> {
-    let mut resolved: Vec<TabStop> = Vec::new();
-    for change in changes {
-        resolved.retain(|stop| (stop.position_pt - change.position_pt).abs() >= 0.01);
-        if change.alignment != TabAlignment::Clear && resolved.len() < MAX_TAB_STOPS {
-            resolved.push(change);
-        }
-    }
-    resolved.sort_by(|left, right| left.position_pt.total_cmp(&right.position_pt));
-    resolved
-}
-
-fn finalize_paragraph(
-    runs: Vec<Run>,
-    pp: PPr,
-    ctx: &Ctx<'_>,
-) -> (Paragraph, PaginationHint, Vec<TabStop>) {
+fn finalize_paragraph(runs: Vec<Run>, pp: PPr, ctx: &Ctx<'_>) -> (Paragraph, PaginationHint) {
     let PPr {
         style_id,
         num,
@@ -4972,12 +4933,9 @@ fn finalize_paragraph(
         keep_next,
         keep_lines,
         widow_control,
-        tab_stops,
         section: _,
     } = pp;
     let inherited = ctx.styles.paragraph_props(style_id.as_deref());
-    let resolved_tab_stops =
-        resolve_tab_stops(inherited.tab_stops.iter().copied().chain(tab_stops));
     let pagination = PaginationHint {
         keep_next: keep_next.or(inherited.keep_next).unwrap_or(false),
         keep_lines: keep_lines.or(inherited.keep_lines).unwrap_or(false),
@@ -5079,7 +5037,7 @@ fn finalize_paragraph(
         },
         runs,
     };
-    (paragraph, pagination, resolved_tab_stops)
+    (paragraph, pagination)
 }
 
 /// A streamed cell before vertical-merge resolution.
@@ -5108,7 +5066,7 @@ fn read_table_block(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Option<Block>
     if table.rows.is_empty() {
         None
     } else {
-        ctx.capture_block_hints(PaginationHint::default(), &[]);
+        ctx.capture_block_pagination(PaginationHint::default());
         Some(Block::Table(table))
     }
 }
@@ -6108,7 +6066,7 @@ mod tests {
         media: HashMap<String, Image>,
         styles: Styles,
         capture_pagination: bool,
-    ) -> (Vec<Block>, Vec<PaginationHint>, Vec<Vec<TabStop>>) {
+    ) -> (Vec<Block>, Vec<PaginationHint>) {
         let numbering = Numbering::default();
         let rels = HashMap::new();
         let ref_targets = HashMap::new();
@@ -6169,13 +6127,13 @@ mod tests {
             *ctx.pagination_capture.borrow_mut() = Some(PaginationCapture::default());
         }
         let blocks = parse_document(xml, &ctx);
-        let (hints, tab_stops) = ctx
+        let hints = ctx
             .pagination_capture
             .borrow_mut()
             .take()
-            .map(|capture| (capture.hints, capture.tab_stops))
+            .map(|capture| capture.hints)
             .unwrap_or_default();
-        (blocks, hints, tab_stops)
+        (blocks, hints)
     }
 
     #[test]
@@ -6194,7 +6152,7 @@ mod tests {
             <w:p><w:pPr><w:keepLines/></w:pPr><w:r><w:t>before</w:t><w:br w:type="page"/><w:t>after</w:t></w:r></w:p>
         </w:body></w:document>"#;
 
-        let (blocks, hints, _) =
+        let (blocks, hints) =
             parse_with_media_styles_and_pagination(xml, HashMap::new(), styles, true);
 
         assert_eq!(blocks.len(), 6);
@@ -6225,56 +6183,6 @@ mod tests {
                 },
             ]
         );
-    }
-
-    #[test]
-    fn captures_resolved_style_and_direct_tab_stops_in_block_order() {
-        let styles = super::super::styles::parse(
-            r#"<w:styles>
-                <w:docDefaults><w:pPrDefault><w:pPr><w:tabs>
-                    <w:tab w:val="left" w:pos="720"/>
-                </w:tabs></w:pPr></w:pPrDefault></w:docDefaults>
-                <w:style w:type="paragraph" w:styleId="TabBase"><w:pPr><w:tabs>
-                    <w:tab w:val="decimal" w:pos="2880"/>
-                </w:tabs></w:pPr></w:style>
-                <w:style w:type="paragraph" w:styleId="TabDerived">
-                    <w:basedOn w:val="TabBase"/><w:pPr><w:tabs>
-                        <w:tab w:val="center" w:pos="1440"/>
-                    </w:tabs></w:pPr>
-                </w:style>
-            </w:styles>"#,
-        );
-        let xml = r#"<w:document><w:body>
-            <w:p><w:pPr><w:pStyle w:val="TabDerived"/><w:tabs>
-                <w:tab w:val="clear" w:pos="720"/>
-                <w:tab w:val="right" w:pos="2160"/>
-            </w:tabs></w:pPr><w:r><w:t>A</w:t><w:tab/><w:t>B</w:t></w:r></w:p>
-            <w:tbl><w:tr><w:tc><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
-        </w:body></w:document>"#;
-
-        let (blocks, hints, tab_stops) =
-            parse_with_media_styles_and_pagination(xml, HashMap::new(), styles, true);
-
-        assert_eq!(hints.len(), blocks.len());
-        assert_eq!(tab_stops.len(), blocks.len());
-        assert_eq!(
-            tab_stops[0],
-            vec![
-                TabStop {
-                    position_pt: 72.0,
-                    alignment: TabAlignment::Center,
-                },
-                TabStop {
-                    position_pt: 108.0,
-                    alignment: TabAlignment::Right,
-                },
-                TabStop {
-                    position_pt: 144.0,
-                    alignment: TabAlignment::Decimal,
-                },
-            ]
-        );
-        assert!(tab_stops[1].is_empty());
     }
 
     #[test]
