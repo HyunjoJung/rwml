@@ -26,6 +26,18 @@ both legacy `.doc` (Word 97–2003 binary, [MS-DOC]) and modern `.docx`
   `.docx` behaviour to [ECMA-376]; cite the relevant section in comments when
   implementing format details.
 
+## Pull request workflow
+
+`main` is protected, including for maintainers. Make changes on a topic branch,
+rebase it on the current `origin/main`, and open a pull request; do not push
+implementation or documentation commits directly to `main`. Pull requests must
+be up to date and pass the required CI jobs before squash or rebase merge.
+
+Keep linked issues open until the implementing pull request merges. Use
+`Closes #N` in the pull request body when the merged change fully satisfies an
+issue, and describe any intentionally deferred ceiling instead of closing it
+early.
+
 ## Before opening a PR
 
 Run the local gate (all must pass clean). The default gate covers the `docx`
@@ -43,6 +55,14 @@ If you touch the renderer, also run the `render`-gated build (MSRV 1.92):
 ```sh
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-targets --features render
+```
+
+If you change the checked-in public corpus, also verify deterministic
+regeneration and the release-mode corpus smoke:
+
+```sh
+python3 scripts/gen_public_corpus.py --check
+cargo test --release --test performance --locked -- --ignored --nocapture
 ```
 
 ## Tests
