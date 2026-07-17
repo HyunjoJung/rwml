@@ -643,7 +643,10 @@ code points.
   `floating_shapes()` and rendered as approximate preview overlays, not
   Word-exact anchored/wrapped Office-Art content. The renderer applies bounded
   forward vertical exclusion for eligible top-level paragraph
-  `wrapTopAndBottom` anchors, but backward reflow, tables, unsupported relative
+  `wrapTopAndBottom` anchors positioned from the page, page-margin text
+  rectangle, or physical top/bottom margin bands, and overlay coordinates also
+  distinguish physical left/right margin bands. Backward reflow, tables,
+  parity-dependent inside/outside margins, character/column/line/paragraph
   coordinates, and square/tight/through/polygon wrapping remain out of scope;
   metafile metadata is exposed
   in diagnostics with bounded header inflation, and a strict single full-frame
