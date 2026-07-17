@@ -1001,14 +1001,16 @@ fn shape_reference(axis: ShapeAxis, relative_from: Option<&str>, geom: Geom) -> 
     match axis {
         ShapeAxis::Horizontal => match relative_from.as_str() {
             "page" => (0.0, geom.page_w),
-            "margin" | "leftmargin" | "rightmargin" => (geom.left, geom.content_w()),
+            "leftmargin" => (0.0, geom.left),
+            "rightmargin" => (geom.page_w - geom.right, geom.right),
+            "margin" => (geom.left, geom.content_w()),
             _ => (geom.left, geom.content_w()),
         },
         ShapeAxis::Vertical => match relative_from.as_str() {
             "page" => (0.0, geom.page_h),
-            "margin" | "topmargin" | "bottommargin" => {
-                (geom.top(), (geom.bottom() - geom.top()).max(1.0))
-            }
+            "topmargin" => (0.0, geom.top_m),
+            "bottommargin" => (geom.page_h - geom.bottom_m, geom.bottom_m),
+            "margin" => (geom.top(), (geom.bottom() - geom.top()).max(1.0)),
             _ => (geom.top(), (geom.bottom() - geom.top()).max(1.0)),
         },
     }
@@ -1074,7 +1076,10 @@ fn bounded_top_bottom_vertical_coordinate(
     }
     let position = shape.vertical_position.as_ref()?;
     let relative_from = position.relative_from.as_deref()?.to_ascii_lowercase();
-    if !matches!(relative_from.as_str(), "page" | "margin") {
+    if !matches!(
+        relative_from.as_str(),
+        "page" | "margin" | "topmargin" | "bottommargin"
+    ) {
         return None;
     }
     let has_supported_coordinate = position.offset_emu.is_some()
@@ -7996,6 +8001,64 @@ mod tests {
     }
 
     #[test]
+    fn floating_shape_coordinates_use_distinct_physical_margin_bands() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 600.0,
+            height_pt: 800.0,
+            margin_pt: 72.0,
+            margin_left_pt: Some(60.0),
+            margin_right_pt: Some(90.0),
+            margin_top_pt: Some(72.0),
+            margin_bottom_pt: Some(108.0),
+            landscape: false,
+        });
+        let coordinate = |axis, relative_from: &str, align: Option<&str>, size| {
+            super::floating_shape_coordinate(
+                Some(&ShapePosition {
+                    relative_from: Some(relative_from.to_string()),
+                    offset_emu: align.is_none().then_some(0),
+                    align: align.map(str::to_string),
+                }),
+                axis,
+                geom,
+                size,
+            )
+        };
+
+        let horizontal = [
+            ("leftMargin", None, 0.0),
+            ("leftMargin", Some("center"), 15.0),
+            ("rightMargin", None, 510.0),
+            ("rightMargin", Some("center"), 540.0),
+            ("margin", None, 60.0),
+            ("page", None, 0.0),
+        ];
+        for (relative_from, align, expected) in horizontal {
+            let actual = coordinate(super::ShapeAxis::Horizontal, relative_from, align, 30.0);
+            assert!(
+                (actual - expected).abs() < 0.01,
+                "horizontal {relative_from:?} {align:?}: expected {expected}, got {actual}"
+            );
+        }
+
+        let vertical = [
+            ("topMargin", None, 0.0),
+            ("topMargin", Some("center"), 16.0),
+            ("bottomMargin", None, 692.0),
+            ("bottomMargin", Some("center"), 726.0),
+            ("margin", None, 72.0),
+            ("page", None, 0.0),
+        ];
+        for (relative_from, align, expected) in vertical {
+            let actual = coordinate(super::ShapeAxis::Vertical, relative_from, align, 40.0);
+            assert!(
+                (actual - expected).abs() < 0.01,
+                "vertical {relative_from:?} {align:?}: expected {expected}, got {actual}"
+            );
+        }
+    }
+
+    #[test]
     fn floating_shape_overlays_follow_anchor_z_order() {
         let geom = Geom::from_setup(&PageSetup::default());
         let overlays = super::floating_shape_overlays_for_pages(
@@ -9037,6 +9100,33 @@ mod tests {
             offset_emu: Some(0),
             align: None,
         });
+        let top_margin_bands = super::top_bottom_bands_by_block(
+            &model,
+            std::slice::from_ref(&top_margin_relative),
+            geom,
+        );
+        assert!((top_margin_bands[0][0].top - 20.0).abs() < 0.01);
+        assert!((top_margin_bands[0][0].bottom - 26.0).abs() < 0.01);
+        let bottom_margin_bands = super::top_bottom_bands_by_block(
+            &model,
+            std::slice::from_ref(&bottom_margin_relative),
+            geom,
+        );
+        assert!((bottom_margin_bands[0][0].top - 76.0).abs() < 0.01);
+        assert!((bottom_margin_bands[0][0].bottom - 80.0).abs() < 0.01);
+
+        for mut margin_contained in [top_margin_relative, bottom_margin_relative] {
+            margin_contained.extent = Some(ShapeExtent {
+                cx_emu: 127_000,
+                cy_emu: 127_000,
+            });
+            margin_contained.effect_extent = None;
+            margin_contained.distance = crate::ShapeDistance::default();
+            margin_contained.wrapping.as_mut().unwrap().distance = crate::ShapeDistance::default();
+            assert!(
+                super::top_bottom_bands_by_block(&model, &[margin_contained], geom)[0].is_empty()
+            );
+        }
         let mut missing_anchor_offset = shape.clone();
         missing_anchor_offset.anchor_char_offset = None;
         let mut layout_in_cell_flag = shape.clone();
@@ -9049,8 +9139,6 @@ mod tests {
         for unsupported in [
             paragraph_relative,
             behind_text,
-            top_margin_relative,
-            bottom_margin_relative,
             missing_anchor_offset,
             square,
         ] {

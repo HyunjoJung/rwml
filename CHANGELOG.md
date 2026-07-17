@@ -20,6 +20,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Floating-shape preview coordinates now distinguish the page, page-margin text
+  rectangle, and physical left/right/top/bottom margin bands; bounded
+  `wrapTopAndBottom` flow also honors top/bottom-margin anchors when their visual
+  bounds intersect body text.
 - Opened `.docx` rendering now honors direct table-row `w:cantSplit`: default
   rows may use remaining page space, fitting protected rows move whole, and
   over-tall rows still split deterministically. Table-style inheritance and
