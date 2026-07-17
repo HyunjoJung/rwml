@@ -30,6 +30,7 @@ pub(crate) struct Styles {
     paragraph_run: HashMap<String, RunProps>,
     paragraph: HashMap<String, ParagraphProps>,
     character_run: HashMap<String, RunProps>,
+    table_row_cant_split: HashMap<String, bool>,
 }
 
 impl Styles {
@@ -73,6 +74,10 @@ impl Styles {
             }
         }
         props
+    }
+
+    pub(crate) fn table_row_cant_split(&self, style_id: Option<&str>) -> Option<bool> {
+        style_id.and_then(|style_id| self.table_row_cant_split.get(style_id).copied())
     }
 }
 
@@ -376,6 +381,22 @@ pub(crate) fn parse(xml: &str) -> Styles {
                     );
                 }
             }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblStylePr" => {
+                // ECMA-376 17.7.4.17: direct trPr on a table style is always on;
+                // conditional regions require separate tblLook/cnfStyle evaluation.
+                skip_subtree(&mut r);
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"trPr" => {
+                if let Some(style) = &mut cur_style {
+                    if style.kind == Some(StyleKind::Table) {
+                        style.table_row_props = read_table_row_props(&mut r, b"trPr");
+                    } else {
+                        skip_subtree(&mut r);
+                    }
+                } else {
+                    skip_subtree(&mut r);
+                }
+            }
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
                 // An empty `<w:rPr/>` carries no run properties, so both rPr targets
                 // (doc defaults, current style) only act on a non-empty element. Merging
@@ -494,6 +515,15 @@ pub(crate) fn parse(xml: &str) -> Styles {
         );
         styles.character_run.insert(id, props);
     }
+    for (id, _) in raw_styles
+        .iter()
+        .filter(|(_, style)| style.kind == Some(StyleKind::Table))
+    {
+        let props = resolve_style_table_row_props(id, &raw_styles, &mut Vec::new(), 0);
+        if let Some(cant_split) = props.cant_split {
+            styles.table_row_cant_split.insert(id.clone(), cant_split);
+        }
+    }
     styles
 }
 
@@ -506,12 +536,14 @@ struct RawStyle {
     outline: Option<u8>,
     run_props: RunProps,
     paragraph_props: ParagraphProps,
+    table_row_props: TableRowProps,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StyleKind {
     Paragraph,
     Character,
+    Table,
 }
 
 impl StyleKind {
@@ -519,7 +551,21 @@ impl StyleKind {
         match value {
             Some("paragraph") => Some(Self::Paragraph),
             Some("character") => Some(Self::Character),
+            Some("table") => Some(Self::Table),
             _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct TableRowProps {
+    cant_split: Option<bool>,
+}
+
+impl TableRowProps {
+    fn overlay(&mut self, other: Self) {
+        if other.cant_split.is_some() {
+            self.cant_split = other.cant_split;
         }
     }
 }
@@ -585,6 +631,82 @@ fn resolve_style_paragraph_props(
     stack.pop();
 
     cache.insert(id.to_string(), props.clone());
+    props
+}
+
+fn resolve_style_table_row_props(
+    id: &str,
+    raw_styles: &HashMap<String, RawStyle>,
+    stack: &mut Vec<String>,
+    depth: usize,
+) -> TableRowProps {
+    if depth >= STYLE_CHAIN_LIMIT || stack.iter().any(|seen| seen == id) {
+        return TableRowProps::default();
+    }
+    let Some(style) = raw_styles
+        .get(id)
+        .filter(|style| style.kind == Some(StyleKind::Table))
+    else {
+        return TableRowProps::default();
+    };
+
+    stack.push(id.to_string());
+    let mut props = style
+        .based_on
+        .as_deref()
+        .map(|base| resolve_style_table_row_props(base, raw_styles, stack, depth + 1))
+        .unwrap_or_default();
+    props.overlay(style.table_row_props);
+    stack.pop();
+    props
+}
+
+fn read_table_row_props(r: &mut Reader<&[u8]>, end: &[u8]) -> TableRowProps {
+    let mut props = TableRowProps::default();
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"trPrChange" => {
+                skip_subtree(r);
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                if let Some(value) = read_table_row_props_alternate_content(r) {
+                    props.overlay(value);
+                }
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if local(e.name().as_ref()) == b"cantSplit" =>
+            {
+                props.cant_split = Some(toggle_on(attr_local(&e, b"val")));
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == end => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    props
+}
+
+fn read_table_row_props_alternate_content(r: &mut Reader<&[u8]>) -> Option<TableRowProps> {
+    let mut took = false;
+    let mut props = None;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                match name {
+                    b"Choice" | b"Fallback" if !took => {
+                        took = true;
+                        props = Some(read_table_row_props(r, name));
+                    }
+                    _ => skip_subtree(r),
+                }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
     props
 }
 
@@ -740,5 +862,79 @@ mod tests {
         assert_eq!(derived.keep_next, Some(true));
         assert_eq!(derived.keep_lines, Some(false));
         assert_eq!(derived.widow_control, Some(true));
+    }
+
+    #[test]
+    fn resolves_nonconditional_table_row_pagination_through_table_style_chains() {
+        let xml = r#"<w:styles xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+            <w:style w:type="table" w:styleId="KeepBase">
+                <w:trPr><w:cantSplit/></w:trPr>
+            </w:style>
+            <w:style w:type="table" w:styleId="KeepDerived">
+                <w:basedOn w:val="KeepBase"/>
+            </w:style>
+            <w:style w:type="table" w:styleId="AllowDerived">
+                <w:basedOn w:val="KeepBase"/>
+                <w:trPr><w:cantSplit w:val="off"/></w:trPr>
+            </w:style>
+            <w:style w:type="table" w:styleId="ChoiceOff">
+                <w:trPr><mc:AlternateContent>
+                    <mc:Choice Requires="w14"><w:cantSplit w:val="0"/></mc:Choice>
+                    <mc:Fallback><w:cantSplit/></mc:Fallback>
+                </mc:AlternateContent></w:trPr>
+            </w:style>
+            <w:style w:type="table" w:styleId="ConditionalOnly">
+                <w:tblStylePr w:type="firstRow"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+            </w:style>
+            <w:style w:type="table" w:styleId="HistoricalOnly">
+                <w:trPr><w:trPrChange><w:trPr><w:cantSplit/></w:trPr></w:trPrChange></w:trPr>
+            </w:style>
+            <w:style w:type="table" w:styleId="CycleA"><w:basedOn w:val="CycleB"/></w:style>
+            <w:style w:type="table" w:styleId="CycleB"><w:basedOn w:val="CycleA"/></w:style>
+            <w:style w:type="paragraph" w:styleId="WrongKind">
+                <w:trPr><w:cantSplit/></w:trPr>
+            </w:style>
+            <w:style w:type="table" w:styleId="CrossKind">
+                <w:basedOn w:val="WrongKind"/>
+            </w:style>
+        </w:styles>"#;
+        let styles = parse(xml);
+
+        assert_eq!(styles.table_row_cant_split(Some("KeepBase")), Some(true));
+        assert_eq!(styles.table_row_cant_split(Some("KeepDerived")), Some(true));
+        assert_eq!(
+            styles.table_row_cant_split(Some("AllowDerived")),
+            Some(false)
+        );
+        assert_eq!(styles.table_row_cant_split(Some("ChoiceOff")), Some(false));
+        assert_eq!(styles.table_row_cant_split(Some("ConditionalOnly")), None);
+        assert_eq!(styles.table_row_cant_split(Some("HistoricalOnly")), None);
+        assert_eq!(styles.table_row_cant_split(Some("CycleA")), None);
+        assert_eq!(styles.table_row_cant_split(Some("CrossKind")), None);
+        assert_eq!(styles.table_row_cant_split(Some("missing")), None);
+        assert_eq!(styles.table_row_cant_split(None), None);
+    }
+
+    #[test]
+    fn table_row_style_resolution_stops_at_the_chain_limit() {
+        let mut xml = String::from("<w:styles>");
+        for index in 0..=STYLE_CHAIN_LIMIT {
+            xml.push_str(&format!(
+                r#"<w:style w:type="table" w:styleId="S{index}"><w:basedOn w:val="S{}"/></w:style>"#,
+                index + 1
+            ));
+        }
+        xml.push_str(&format!(
+            r#"<w:style w:type="table" w:styleId="S{}"><w:trPr><w:cantSplit/></w:trPr></w:style></w:styles>"#,
+            STYLE_CHAIN_LIMIT + 1
+        ));
+
+        let styles = parse(&xml);
+
+        assert_eq!(styles.table_row_cant_split(Some("S0")), None);
+        assert_eq!(
+            styles.table_row_cant_split(Some(&format!("S{}", STYLE_CHAIN_LIMIT))),
+            Some(true)
+        );
     }
 }

@@ -5158,9 +5158,9 @@ impl RowProps {
         }
     }
 
-    fn pagination(self) -> TableRowPaginationHint {
+    fn pagination(self, style_cant_split: Option<bool>) -> TableRowPaginationHint {
         TableRowPaginationHint {
-            cant_split: self.cant_split.unwrap_or(false),
+            cant_split: self.cant_split.or(style_cant_split).unwrap_or(false),
         }
     }
 }
@@ -5212,7 +5212,11 @@ fn read_table(
             _ => {}
         }
     }
-    let row_pagination = rows.iter().map(|row| row.props.pagination()).collect();
+    let style_cant_split = ctx.styles.table_row_cant_split(props.style_id.as_deref());
+    let row_pagination = rows
+        .iter()
+        .map(|row| row.props.pagination(style_cant_split))
+        .collect();
     let (table, cell_pagination) = build_table(rows, props);
     (table, row_pagination, cell_pagination)
 }
@@ -5284,6 +5288,7 @@ fn read_table_alternate_content_branch_rows(
 
 #[derive(Default)]
 struct TableProps {
+    style_id: Option<String>,
     bidi_visual: bool,
     fixed_layout: bool,
     indent_twips: Option<i32>,
@@ -5307,6 +5312,11 @@ fn read_tblpr(r: &mut Xml<'_>) -> TableProps {
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
                 read_tblpr_alternate_content(r, &mut props);
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if local(e.name().as_ref()) == b"tblStyle" =>
+            {
+                props.style_id = attr_local_trimmed(&e, b"val");
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"bidiVisual" =>
@@ -5386,6 +5396,11 @@ fn read_tblpr_alternate_content_branch(r: &mut Xml<'_>, props: &mut TableProps, 
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
                 read_tblpr_alternate_content(r, props);
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if local(e.name().as_ref()) == b"tblStyle" =>
+            {
+                props.style_id = attr_local_trimmed(&e, b"val");
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"bidiVisual" =>
@@ -6450,6 +6465,67 @@ mod tests {
             ]
         );
         assert!(table_rows[2].is_empty());
+    }
+
+    #[test]
+    fn table_row_pagination_uses_table_style_with_direct_row_precedence() {
+        let styles = super::super::styles::parse(
+            r#"<w:styles>
+                <w:style w:type="table" w:styleId="KeepBase">
+                    <w:trPr><w:cantSplit/></w:trPr>
+                </w:style>
+                <w:style w:type="table" w:styleId="KeepDerived">
+                    <w:basedOn w:val="KeepBase"/>
+                </w:style>
+                <w:style w:type="table" w:styleId="AllowDerived">
+                    <w:basedOn w:val="KeepBase"/>
+                    <w:trPr><w:cantSplit w:val="off"/></w:trPr>
+                </w:style>
+            </w:styles>"#,
+        );
+        let xml = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+            <w:tbl>
+                <w:tblPr><w:tblStyle w:val="KeepDerived"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>inherited on</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:trPr><w:cantSplit w:val="off"/></w:trPr><w:tc><w:p><w:r><w:t>direct off</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr><w:tblStyle w:val="AllowDerived"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>inherited off</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:p><w:r><w:t>direct on</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr><mc:AlternateContent>
+                    <mc:Choice Requires="w14"><w:tblStyle w:val="KeepDerived"/></mc:Choice>
+                    <mc:Fallback><w:tblStyle w:val="AllowDerived"/></mc:Fallback>
+                </mc:AlternateContent></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>choice on</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr><w:tblPrChange><w:tblPr><w:tblStyle w:val="KeepDerived"/></w:tblPr></w:tblPrChange></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>history ignored</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+        </w:body></w:document>"#;
+
+        let (blocks, _, _, table_rows, _) =
+            parse_with_media_styles_and_pagination(xml, HashMap::new(), styles, true);
+
+        assert_eq!(table_rows.len(), blocks.len());
+        assert_eq!(
+            table_rows,
+            vec![
+                vec![
+                    TableRowPaginationHint { cant_split: true },
+                    TableRowPaginationHint { cant_split: false },
+                ],
+                vec![
+                    TableRowPaginationHint { cant_split: false },
+                    TableRowPaginationHint { cant_split: true },
+                ],
+                vec![TableRowPaginationHint { cant_split: true }],
+                vec![TableRowPaginationHint { cant_split: false }],
+            ]
+        );
     }
 
     #[test]
