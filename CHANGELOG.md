@@ -11,6 +11,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Adds an RAII `EditSession` for grouping existing package-preserving `.docx`
   mutations behind one explicit commit or package-exact drop/unwind rollback,
   including restoration of the pre-session touched-part state.
+- Adds atomic `Document::refresh_read_view`; successful edit-session commits use
+  it to reparse model, text, metadata, side tables, media, and renderer hints
+  while retaining the authoritative package and touched-part evidence.
 - Adds a deterministic public render-activation corpus for run paint/hidden
   text, explicit tabs and RTL tables, keep/widow pagination, equal-width
   columns, and bounded `wrapTopAndBottom` flow, with per-file provenance.
