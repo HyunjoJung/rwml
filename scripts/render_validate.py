@@ -71,6 +71,8 @@ MAX_AHASH_SIZE = 64
 MAX_RASTER_PAGE_PIXELS = 40_000_000
 MAX_NORMALIZED_CANVAS_PIXELS = 50_000_000
 MAX_BUFFERED_RASTER_PIXELS = 100_000_000
+MAX_VOLATILE_REFERENCE_PATH_TOKENS = 8
+OFFICE_DOCUMENT_EXTENSIONS = (".doc", ".docx", ".docm", ".dot", ".dotx", ".rtf")
 
 COUNT_THRESHOLD_METRICS = {
     "below_recall_min",
@@ -694,10 +696,12 @@ def reference_recall_tokens(
         if raw_tokens[index : index + len(missing_reference)] == missing_reference:
             index += len(missing_reference)
             continue
+        path_span = volatile_reference_path_span(raw_tokens, index)
+        if path_span:
+            index += path_span
+            continue
         token = raw_tokens[index]
-        if not is_volatile_reference_path_token(
-            token
-        ) and not is_volatile_reference_shape_placeholder_token(
+        if not is_volatile_reference_shape_placeholder_token(
             token, render_warning_kinds
         ):
             tokens.append(token)
@@ -706,20 +710,50 @@ def reference_recall_tokens(
 
 
 def is_volatile_reference_path_token(token: str) -> bool:
-    value = token.strip(" \t\r\n\"'`.,;:()[]{}<>")
+    value = normalized_reference_path_token(token)
     if not value:
         return False
     lower = value.lower()
-    office_extensions = (".doc", ".docx", ".docm", ".dot", ".dotx", ".rtf")
-    if value.startswith(("/", "~/", "\\\\")):
+    if is_absolute_reference_path_token(value):
         return True
-    if len(value) >= 3 and value[1] == ":" and value[2] in {"/", "\\"}:
+    if "/" in value and lower.endswith(OFFICE_DOCUMENT_EXTENSIONS):
         return True
-    if "/" in value and lower.endswith(office_extensions):
-        return True
-    if "\\" in value and lower.endswith(office_extensions):
+    if "\\" in value and lower.endswith(OFFICE_DOCUMENT_EXTENSIONS):
         return True
     return False
+
+
+def volatile_reference_path_span(raw_tokens: list[str], index: int) -> int:
+    value = normalized_reference_path_token(raw_tokens[index])
+    if not is_volatile_reference_path_token(value):
+        return 0
+    if not is_absolute_reference_path_token(value) or is_office_document_token(value):
+        return 1
+
+    limit = min(len(raw_tokens), index + MAX_VOLATILE_REFERENCE_PATH_TOKENS)
+    for end in range(index + 1, limit):
+        continuation = normalized_reference_path_token(raw_tokens[end])
+        if not continuation:
+            break
+        if is_office_document_token(continuation):
+            return end - index + 1
+        if "/" not in continuation and "\\" not in continuation:
+            break
+    return 1
+
+
+def normalized_reference_path_token(token: str) -> str:
+    return token.strip(" \t\r\n\"'`.,;:()[]{}<>")
+
+
+def is_absolute_reference_path_token(value: str) -> bool:
+    return value.startswith(("/", "~/", "\\\\")) or (
+        len(value) >= 3 and value[1] == ":" and value[2] in {"/", "\\"}
+    )
+
+
+def is_office_document_token(value: str) -> bool:
+    return value.lower().endswith(OFFICE_DOCUMENT_EXTENSIONS)
 
 
 def is_volatile_reference_shape_placeholder_token(
