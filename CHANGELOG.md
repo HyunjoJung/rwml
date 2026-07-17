@@ -31,6 +31,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rows may use remaining page space, fitting protected rows move whole, and
   over-tall rows still split deterministically. Table-style inheritance and
   legacy `.doc` row-break SPRMs remain unsupported.
+- Opened `.docx` table rows now honor resolved `keepNext`, `keepLines`, and
+  default-on `widowControl` for direct cell paragraphs when choosing legal row
+  fragments, while retaining deterministic progress for over-tall content.
 - Opened `.docx` renders now resolve inherited and direct left, center, right,
   and decimal tab stops in top-level body paragraphs, including `clear`
   overrides, and preserve authored zero paragraph after-spacing instead of

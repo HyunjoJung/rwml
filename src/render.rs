@@ -6,8 +6,9 @@
 //! table rows — which are flowed top-to-bottom onto fixed A4 pages, then each
 //! page's glyph runs and table borders are drawn with krilla. A table that spans
 //! pages repeats its header rows after each break. Opened DOCX rows may split at
-//! line boundaries unless direct `w:cantSplit` keeps a fitting row together; an
-//! over-tall row still splits to guarantee progress. Tables are rendered as a
+//! legal direct-cell paragraph boundaries unless direct `w:cantSplit` keeps a
+//! fitting row together; an over-tall row still splits to guarantee progress.
+//! Tables are rendered as a
 //! real grid: columns are reconstructed
 //! (including `col_span`/`row_span` placement), sized to authored `col_widths_pct`
 //! or to content, then bordered; cells carry rich per-run text (bold/italic/color/
@@ -42,7 +43,8 @@ use parley::{FontContext, LayoutContext};
 use crate::model::{
     Align, Block, Cell, CellMargins, CharProps, Chart, ChartKind, ChartShape, Color, DocModel,
     FieldRole, Image, ListInfo, PageSetup, PaginationHint, ParaProps, Paragraph, Run, SectionSetup,
-    Spacing, TabAlignment, TabStop, Table, TableRowPaginationHint, VCell, VertAlign,
+    Spacing, TabAlignment, TabStop, Table, TableCellPaginationHints, TableRowPaginationHint, VCell,
+    VertAlign,
 };
 use crate::report::{self, FeatureInventory, RenderReport, RenderWarning, RenderedPdf};
 use crate::{Error, Result};
@@ -148,6 +150,7 @@ pub(crate) struct SourceRenderHints<'a> {
     pub(crate) pagination: &'a [PaginationHint],
     pub(crate) tab_stops: &'a [Vec<TabStop>],
     pub(crate) table_row_pagination: &'a [Vec<TableRowPaginationHint>],
+    pub(crate) table_cell_pagination: &'a [TableCellPaginationHints],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -223,7 +226,16 @@ struct LineLayout {
     x_indent: f32,
     char_range: Option<LineCharRange>,
     background: Option<LineBackground>,
+    cell_paragraph: Option<CellParagraphLine>,
     runs: Vec<RunDraw>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CellParagraphLine {
+    block_index: usize,
+    line_index: usize,
+    line_count: usize,
+    pagination: PaginationHint,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1863,6 +1875,7 @@ fn shape_with_options(
             x_indent: 0.0,
             char_range,
             background: None,
+            cell_paragraph: None,
             runs,
         });
     }
@@ -2325,11 +2338,22 @@ fn shape_cell(
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
 ) -> Vec<LineLayout> {
+    shape_cell_with_pagination(cell, None, inner_w, depth, cx, capture)
+}
+
+fn shape_cell_with_pagination(
+    cell: &Cell,
+    pagination: Option<&[Option<PaginationHint>]>,
+    inner_w: f32,
+    depth: u32,
+    cx: &mut TextCx<'_>,
+    capture: &mut LayoutCapture,
+) -> Vec<LineLayout> {
     let mut lines = Vec::new();
     if depth > MAX_CELL_DEPTH {
         return lines;
     }
-    for b in &cell.blocks {
+    for (block_index, b) in cell.blocks.iter().enumerate() {
         // Bound a pathologically tall cell so the page-split paginator stays linear.
         if lines.len() >= MAX_CELL_LINES {
             break;
@@ -2432,6 +2456,22 @@ fn shape_cell(
                         width: indent.wrap_width,
                     });
                 }
+                paragraph_lines.truncate(MAX_CELL_LINES.saturating_sub(lines.len()));
+                if let Some(hint) = pagination
+                    .and_then(|hints| hints.get(block_index))
+                    .copied()
+                    .flatten()
+                {
+                    let line_count = paragraph_lines.len();
+                    for (line_index, line) in paragraph_lines.iter_mut().enumerate() {
+                        line.cell_paragraph = Some(CellParagraphLine {
+                            block_index,
+                            line_index,
+                            line_count,
+                            pagination: hint,
+                        });
+                    }
+                }
                 lines.extend(paragraph_lines);
             }
             Block::Table(t) => {
@@ -2460,7 +2500,7 @@ fn layout_table(
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
 ) {
-    layout_table_with_row_pagination(t, out, geom, cx, capture, None);
+    layout_table_with_row_pagination(t, out, geom, cx, capture, None, None);
 }
 
 fn layout_table_with_row_pagination(
@@ -2470,6 +2510,7 @@ fn layout_table_with_row_pagination(
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
     row_pagination: Option<&[TableRowPaginationHint]>,
+    cell_pagination: Option<&TableCellPaginationHints>,
 ) {
     let (grid, ncols) = reconstruct_grid(t);
     let content_w = geom.content_w();
@@ -2513,6 +2554,8 @@ fn layout_table_with_row_pagination(
     for (row_index, placed_row) in grid.into_iter().enumerate() {
         let mut cells = Vec::with_capacity(placed_row.len());
         let mut row_h = 0.0_f32;
+        let row_cell_pagination = cell_pagination.and_then(|rows| rows.get(row_index));
+        let mut source_cell_index = 0usize;
         for pc in placed_row {
             let end = (pc.col + pc.span).min(ncols);
             let logical_x = col_x[pc.col];
@@ -2522,11 +2565,21 @@ fn layout_table_with_row_pagination(
             } else {
                 logical_x
             };
+            let direct_pagination = if pc.cell.is_some() {
+                let hints = row_cell_pagination
+                    .and_then(|cells| cells.get(source_cell_index))
+                    .map(Vec::as_slice);
+                source_cell_index += 1;
+                hints
+            } else {
+                None
+            };
             let (lines, insets, shading, valign) = match pc.cell {
                 Some(c) => {
                     let insets = cell_insets(c.margins, width);
-                    let lines = shape_cell(
+                    let lines = shape_cell_with_pagination(
                         c,
+                        direct_pagination,
                         (width - insets.left - insets.right).max(1.0),
                         0,
                         cx,
@@ -2566,6 +2619,56 @@ fn layout_table_with_row_pagination(
 /// Split a row into a fragment that fits `avail` points of height and the leftover
 /// rest, by partitioning each cell's lines. At least one line is always kept in
 /// the fragment so progress is guaranteed even for a line taller than a page.
+fn legal_cell_split(lines: &[LineLayout], cut: usize) -> bool {
+    if cut == 0 {
+        return false;
+    }
+    if cut >= lines.len() {
+        return true;
+    }
+    let (Some(before), Some(after)) = (lines[cut - 1].cell_paragraph, lines[cut].cell_paragraph)
+    else {
+        return true;
+    };
+    if before.block_index != after.block_index {
+        return !before.pagination.keep_next;
+    }
+    if before.pagination.keep_lines || before.pagination.keep_next {
+        return false;
+    }
+    if !before.pagination.widow_control {
+        return true;
+    }
+    let leading = before.line_index.saturating_add(1);
+    let trailing = before.line_count.saturating_sub(leading);
+    before.line_count > 3 && leading >= 2 && trailing >= 2
+}
+
+fn greedy_cell_split(lines: &[LineLayout], budget: f32) -> usize {
+    let mut used = 0.0_f32;
+    let mut count = 0usize;
+    for line in lines {
+        if count == 0 || used + line.height <= budget {
+            used += line.height;
+            count += 1;
+        } else {
+            break;
+        }
+    }
+    count
+}
+
+fn fitting_cell_split(lines: &[LineLayout], budget: f32) -> usize {
+    let greedy = greedy_cell_split(lines, budget);
+    if greedy >= lines.len() {
+        return lines.len();
+    }
+    (1..=greedy)
+        .rev()
+        .find(|cut| legal_cell_split(lines, *cut))
+        .unwrap_or(greedy)
+}
+
 fn split_row(row: RowLayout, avail: f32) -> (RowLayout, Option<RowLayout>) {
     let cant_split = row.cant_split;
     let mut frag_cells = Vec::with_capacity(row.cells.len());
@@ -2581,17 +2684,9 @@ fn split_row(row: RowLayout, avail: f32) -> (RowLayout, Option<RowLayout>) {
             insets,
         } = cell;
         let budget = (avail - insets.top - insets.bottom).max(0.0);
-        let mut used = 0.0_f32;
-        let mut head = Vec::new();
-        let mut tail = Vec::new();
-        for line in lines {
-            if tail.is_empty() && (head.is_empty() || used + line.height <= budget) {
-                used += line.height;
-                head.push(line);
-            } else {
-                tail.push(line);
-            }
-        }
+        let cut = fitting_cell_split(&lines, budget);
+        let mut head = lines;
+        let tail = head.split_off(cut);
         if !tail.is_empty() {
             any_rest = true;
         }
@@ -2822,6 +2917,7 @@ struct BlockCollectionOptions<'a> {
     pagination_hints: Option<&'a [PaginationHint]>,
     tab_stops: Option<&'a [Vec<TabStop>]>,
     table_row_pagination: Option<&'a [Vec<TableRowPaginationHint>]>,
+    table_cell_pagination: Option<&'a [TableCellPaginationHints]>,
     top_bottom_bands: Option<&'a [Vec<TopBottomBand>]>,
 }
 
@@ -2830,6 +2926,7 @@ struct BodyCollectionSidecars<'a> {
     pagination_hints: &'a [PaginationHint],
     tab_stops: &'a [Vec<TabStop>],
     table_row_pagination: &'a [Vec<TableRowPaginationHint>],
+    table_cell_pagination: &'a [TableCellPaginationHints],
     top_bottom_bands: &'a [Vec<TopBottomBand>],
 }
 
@@ -2853,6 +2950,7 @@ fn collect_blocks_with_block_anchors(
             pagination_hints: Some(sidecars.pagination_hints),
             tab_stops: Some(sidecars.tab_stops),
             table_row_pagination: Some(sidecars.table_row_pagination),
+            table_cell_pagination: Some(sidecars.table_cell_pagination),
             top_bottom_bands: Some(sidecars.top_bottom_bands),
         },
     );
@@ -2940,7 +3038,18 @@ fn collect_blocks_inner(
                     .table_row_pagination
                     .and_then(|tables| tables.get(block_index))
                     .map(Vec::as_slice);
-                layout_table_with_row_pagination(t, out, block_geom, cx, capture, row_pagination);
+                let cell_pagination = options
+                    .table_cell_pagination
+                    .and_then(|tables| tables.get(block_index));
+                layout_table_with_row_pagination(
+                    t,
+                    out,
+                    block_geom,
+                    cx,
+                    capture,
+                    row_pagination,
+                    cell_pagination,
+                );
                 out.push(FlowItem::Gap(PARA_GAP));
             }
             Block::Image(img) => {
@@ -5423,17 +5532,22 @@ fn repeat_headers(pages: &mut Pages, cursor: &mut FlowCursor, headers: &[RowLayo
 fn first_row_fragment_height(row: &RowLayout) -> f32 {
     row.cells
         .iter()
-        .map(|cell| match cell.lines.first() {
-            Some(line) => {
-                cell.insets.top
-                    + line.height
-                    + if cell.lines.len() == 1 {
-                        cell.insets.bottom
-                    } else {
-                        0.0
-                    }
-            }
-            None => cell.insets.top + cell.insets.bottom,
+        .map(|cell| {
+            let cut = (1..=cell.lines.len())
+                .find(|cut| legal_cell_split(&cell.lines, *cut))
+                .unwrap_or(0);
+            cell.insets.top
+                + cell
+                    .lines
+                    .iter()
+                    .take(cut)
+                    .map(|line| line.height)
+                    .sum::<f32>()
+                + if cut == cell.lines.len() {
+                    cell.insets.bottom
+                } else {
+                    0.0
+                }
         })
         .fold(0.0_f32, f32::max)
         .max(14.0)
@@ -5460,8 +5574,8 @@ fn place_row(
             place_item(pages, cursor, FlowItem::Row(row), h);
             return;
         }
-        let remaining_can_hold_line = avail >= first_row_fragment_height(&row);
-        if !on_fresh && (row.cant_split || !remaining_can_hold_line) {
+        let remaining_can_hold_fragment = avail >= first_row_fragment_height(&row);
+        if !on_fresh && (row.cant_split || !remaining_can_hold_fragment) {
             // Keep authored `cantSplit` rows together when they fit a fresh
             // column; also avoid forcing a partial line into a tiny remainder.
             cursor.advance(pages, geom);
@@ -6033,6 +6147,7 @@ fn collect_pdf_flow_items(
             pagination_hints: source_hints.pagination,
             tab_stops: source_hints.tab_stops,
             table_row_pagination: source_hints.table_row_pagination,
+            table_cell_pagination: source_hints.table_cell_pagination,
             top_bottom_bands: &top_bottom_bands,
         },
     );
@@ -6629,8 +6744,9 @@ mod tests {
 
     use super::{
         assign_section_to_render_pages, cell_insets, cell_line_origin, count_missing_image_bytes,
-        display_text, layout_page_number_line, layout_paragraph, layout_table, page_field_text,
-        paginate, rgb, running_header_footer_blocks_for_page, shape, shape_cell, split_row,
+        display_text, first_row_fragment_height, layout_page_number_line, layout_paragraph,
+        layout_table, layout_table_with_row_pagination, page_field_text, paginate, rgb,
+        running_header_footer_blocks_for_page, shape, shape_cell, split_row,
         unsupported_placeholder_texts, FlowItem, Geom, LayoutCapture, LineLayout, StyledText,
         TextCx,
     };
@@ -7640,6 +7756,219 @@ mod tests {
         assert_eq!(tail.cells[0].insets.bottom, 30.0);
     }
 
+    fn cell_row_with_pagination(paragraphs: &[(&str, PaginationHint)]) -> super::RowLayout {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let table = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: paragraphs
+                        .iter()
+                        .map(|(text, _)| {
+                            Block::Paragraph(Paragraph {
+                                runs: vec![Run {
+                                    text: (*text).to_string(),
+                                    ..Run::default()
+                                }],
+                                ..Paragraph::default()
+                            })
+                        })
+                        .collect(),
+                    ..Cell::default()
+                }],
+            }],
+            ..Table::default()
+        };
+        let cell_pagination = vec![vec![paragraphs
+            .iter()
+            .map(|(_, hint)| Some(*hint))
+            .collect::<Vec<_>>()]];
+        let mut flow = Vec::new();
+        let mut capture = LayoutCapture::default();
+        layout_table_with_row_pagination(
+            &table,
+            &mut flow,
+            geom,
+            &mut tcx,
+            &mut capture,
+            None,
+            Some(&cell_pagination),
+        );
+        let FlowItem::Table { mut rows, .. } = flow.remove(0) else {
+            panic!("table flow item")
+        };
+        rows.remove(0)
+    }
+
+    fn row_avail_for_lines(row: &super::RowLayout, count: usize) -> f32 {
+        let cell = &row.cells[0];
+        cell.insets.top
+            + cell.insets.bottom
+            + cell
+                .lines
+                .iter()
+                .take(count)
+                .map(|line| line.height)
+                .sum::<f32>()
+    }
+
+    #[test]
+    fn table_cell_widow_control_avoids_a_three_plus_one_split() {
+        let row = cell_row_with_pagination(&[(
+            "one\ntwo\nthree\nfour",
+            PaginationHint {
+                widow_control: true,
+                ..PaginationHint::default()
+            },
+        )]);
+        assert_eq!(row.cells[0].lines.len(), 4);
+        let avail = row_avail_for_lines(&row, 3);
+
+        let (head, tail) = split_row(row, avail);
+        let tail = tail.expect("two widow-protected lines remain");
+
+        assert_eq!(head.cells[0].lines.len(), 2);
+        assert_eq!(tail.cells[0].lines.len(), 2);
+    }
+
+    #[test]
+    fn table_cell_keep_lines_uses_the_last_legal_paragraph_boundary() {
+        let row = cell_row_with_pagination(&[
+            ("lead", PaginationHint::default()),
+            (
+                "one\ntwo\nthree",
+                PaginationHint {
+                    keep_lines: true,
+                    ..PaginationHint::default()
+                },
+            ),
+        ]);
+        assert_eq!(row.cells[0].lines.len(), 4);
+        let avail = row_avail_for_lines(&row, 3);
+
+        let (head, tail) = split_row(row, avail);
+        let tail = tail.expect("kept paragraph remains");
+
+        assert_eq!(head.cells[0].lines.len(), 1);
+        assert_eq!(tail.cells[0].lines.len(), 3);
+    }
+
+    #[test]
+    fn table_cell_keep_next_raises_the_minimum_row_fragment() {
+        let row = cell_row_with_pagination(&[
+            (
+                "heading",
+                PaginationHint {
+                    keep_next: true,
+                    ..PaginationHint::default()
+                },
+            ),
+            ("body one\nbody two", PaginationHint::default()),
+        ]);
+        assert_eq!(row.cells[0].lines.len(), 3);
+        let cell = &row.cells[0];
+        let expected = cell.insets.top + cell.lines[0].height + cell.lines[1].height;
+
+        assert!((first_row_fragment_height(&row) - expected).abs() < 0.01);
+    }
+
+    #[test]
+    fn table_cell_keep_next_chains_direct_paragraphs() {
+        let keep_next = PaginationHint {
+            keep_next: true,
+            ..PaginationHint::default()
+        };
+        let row = cell_row_with_pagination(&[
+            ("heading one", keep_next),
+            ("heading two", keep_next),
+            ("body", PaginationHint::default()),
+        ]);
+        let cell = &row.cells[0];
+        assert_eq!(cell.lines.len(), 3);
+        let expected = cell.insets.top
+            + cell.lines.iter().map(|line| line.height).sum::<f32>()
+            + cell.insets.bottom;
+
+        assert!((first_row_fragment_height(&row) - expected).abs() < 0.01);
+    }
+
+    #[test]
+    fn table_cell_widow_control_keeps_a_short_paragraph_whole() {
+        let row = cell_row_with_pagination(&[(
+            "one\ntwo\nthree",
+            PaginationHint {
+                widow_control: true,
+                ..PaginationHint::default()
+            },
+        )]);
+        let cell = &row.cells[0];
+        assert_eq!(cell.lines.len(), 3);
+        let expected = cell.insets.top
+            + cell.lines.iter().map(|line| line.height).sum::<f32>()
+            + cell.insets.bottom;
+
+        assert!((first_row_fragment_height(&row) - expected).abs() < 0.01);
+    }
+
+    #[test]
+    fn table_cells_choose_independent_legal_split_points() {
+        let mut protected = cell_row_with_pagination(&[(
+            "one\ntwo\nthree\nfour",
+            PaginationHint {
+                widow_control: true,
+                ..PaginationHint::default()
+            },
+        )]);
+        let mut plain =
+            cell_row_with_pagination(&[("alpha\nbeta\ngamma\ndelta", PaginationHint::default())]);
+        let avail = row_avail_for_lines(&protected, 3);
+        let row = super::RowLayout {
+            height: protected.height.max(plain.height),
+            cells: vec![protected.cells.remove(0), plain.cells.remove(0)],
+            cant_split: false,
+        };
+
+        let (head, tail) = split_row(row, avail);
+        let tail = tail.expect("both cells have remaining lines");
+
+        assert_eq!(head.cells[0].lines.len(), 2);
+        assert_eq!(head.cells[1].lines.len(), 3);
+        assert_eq!(tail.cells[0].lines.len(), 2);
+        assert_eq!(tail.cells[1].lines.len(), 1);
+    }
+
+    #[test]
+    fn over_tall_kept_table_cell_still_splits_for_progress() {
+        let row = cell_row_with_pagination(&[(
+            "one\ntwo\nthree\nfour\nfive",
+            PaginationHint {
+                keep_lines: true,
+                ..PaginationHint::default()
+            },
+        )]);
+        assert_eq!(row.cells[0].lines.len(), 5);
+        let avail = row_avail_for_lines(&row, 2);
+
+        let (head, tail) = split_row(row, avail);
+        let tail = tail.expect("over-tall kept content remains");
+
+        assert_eq!(head.cells[0].lines.len(), 2);
+        assert_eq!(tail.cells[0].lines.len(), 3);
+    }
+
     #[test]
     fn strict_registered_font_shapes_latin_and_korean() {
         let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
@@ -8443,6 +8772,7 @@ mod tests {
                 x_indent: 0.0,
                 char_range: None,
                 background: None,
+                cell_paragraph: None,
                 runs: Vec::new(),
             })
         };
@@ -8470,6 +8800,7 @@ mod tests {
             x_indent: 0.0,
             char_range: None,
             background: None,
+            cell_paragraph: None,
             runs: Vec::new(),
         })
     }
@@ -8494,6 +8825,7 @@ mod tests {
                 x_indent: 0.0,
                 char_range: None,
                 background: None,
+                cell_paragraph: None,
                 runs: Vec::new(),
             })
             .collect::<Vec<_>>();
@@ -9326,6 +9658,7 @@ mod tests {
                 x_indent: 0.0,
                 char_range: None,
                 background: None,
+                cell_paragraph: None,
                 runs: Vec::new(),
             })
         };

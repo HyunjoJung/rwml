@@ -335,6 +335,9 @@ pub(crate) struct TableRowPaginationHint {
 }
 
 #[cfg(any(feature = "docx", feature = "render"))]
+pub(crate) type TableCellPaginationHints = Vec<Vec<Vec<Option<PaginationHint>>>>;
+
+#[cfg(any(feature = "docx", feature = "render"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TabAlignment {
     Left,

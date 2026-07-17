@@ -35,8 +35,8 @@ use crate::model::{
     DocGridType, FieldRole, FieldUnsupportedReason, Image, Indent, ListInfo, PageNumberFormat,
     PageSetup, PaginationHint, ParaProps, Paragraph, Row, Run, SectionBreakKind, SectionSetup,
     Spacing, TabAlignment, TabStop, Table, TableBorderColors, TableBorderSide, TableBorderSizes,
-    TableBorderStyle, TableBorderStyles, TableRowPaginationHint, TextDirection, VCell,
-    MAX_TAB_STOPS,
+    TableBorderStyle, TableBorderStyles, TableCellPaginationHints, TableRowPaginationHint,
+    TextDirection, VCell, MAX_TAB_STOPS,
 };
 use crate::text;
 use crate::CoreProperties;
@@ -68,7 +68,17 @@ pub(super) struct PaginationCapture {
     hints: Vec<PaginationHint>,
     tab_stops: Vec<Vec<TabStop>>,
     table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
+    table_cell_pagination: Vec<TableCellPaginationHints>,
     suspended: usize,
+}
+
+#[cfg(feature = "render")]
+#[derive(Default)]
+pub(super) struct BodyRenderHints {
+    pub(super) pagination: Vec<PaginationHint>,
+    pub(super) tab_stops: Vec<Vec<TabStop>>,
+    pub(super) table_rows: Vec<Vec<TableRowPaginationHint>>,
+    pub(super) table_cells: Vec<TableCellPaginationHints>,
 }
 
 /// Resolved supplementary tables, passed down the descent.
@@ -122,22 +132,15 @@ impl Ctx<'_> {
     }
 
     #[cfg(feature = "render")]
-    pub(crate) fn take_render_hints(
-        &self,
-    ) -> (
-        Vec<PaginationHint>,
-        Vec<Vec<TabStop>>,
-        Vec<Vec<TableRowPaginationHint>>,
-    ) {
+    pub(crate) fn take_render_hints(&self) -> BodyRenderHints {
         self.pagination_capture
             .borrow_mut()
             .take()
-            .map(|capture| {
-                (
-                    capture.hints,
-                    capture.tab_stops,
-                    capture.table_row_pagination,
-                )
+            .map(|capture| BodyRenderHints {
+                pagination: capture.hints,
+                tab_stops: capture.tab_stops,
+                table_rows: capture.table_row_pagination,
+                table_cells: capture.table_cell_pagination,
             })
             .unwrap_or_default()
     }
@@ -160,16 +163,22 @@ impl Ctx<'_> {
                 capture.hints.push(hint);
                 capture.tab_stops.push(tab_stops.to_vec());
                 capture.table_row_pagination.push(Vec::new());
+                capture.table_cell_pagination.push(Vec::new());
             }
         }
     }
 
-    fn capture_table_block_hints(&self, rows: &[TableRowPaginationHint]) {
+    fn capture_table_block_hints(
+        &self,
+        rows: &[TableRowPaginationHint],
+        cells: &TableCellPaginationHints,
+    ) {
         if let Some(capture) = self.pagination_capture.borrow_mut().as_mut() {
             if capture.suspended == 0 {
                 capture.hints.push(PaginationHint::default());
                 capture.tab_stops.push(Vec::new());
                 capture.table_row_pagination.push(rows.to_vec());
+                capture.table_cell_pagination.push(cells.clone());
             }
         }
     }
@@ -2199,7 +2208,11 @@ fn mark_complex_field_result_runs(
     }
 }
 
-fn read_paragraph_blocks(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Vec<Block> {
+fn read_paragraph_blocks_data(
+    r: &mut Xml<'_>,
+    ctx: &Ctx<'_>,
+    depth: u32,
+) -> (Vec<Block>, PaginationHint, Vec<TabStop>) {
     let (paragraph, section, pagination, tab_stops) = read_paragraph(r, ctx, depth);
     let mut blocks = split_page_breaks(paragraph);
     if let Some(mut section) = section {
@@ -2208,6 +2221,11 @@ fn read_paragraph_blocks(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Vec<Bloc
         }
         blocks.push(Block::SectionBreak(section));
     }
+    (blocks, pagination, tab_stops)
+}
+
+fn read_paragraph_blocks(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Vec<Block> {
+    let (blocks, pagination, tab_stops) = read_paragraph_blocks_data(r, ctx, depth);
     ctx.capture_paragraph_blocks(&blocks, pagination, &tab_stops);
     blocks
 }
@@ -5110,6 +5128,7 @@ fn finalize_paragraph(
 /// A streamed cell before vertical-merge resolution.
 struct CellRaw {
     blocks: Vec<Block>,
+    pagination: Vec<Option<PaginationHint>>,
     col_span: u16,
     vmerge: VMerge,
     shading: Option<Color>,
@@ -5156,20 +5175,24 @@ enum VMerge {
 /// Read a `<w:tbl>` and resolve merges into a [`Table`].
 fn read_table_block(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Option<Block> {
     ctx.suspend_pagination_capture();
-    let (table, row_pagination) = read_table(r, ctx, depth);
+    let (table, row_pagination, cell_pagination) = read_table(r, ctx, depth);
     ctx.resume_pagination_capture();
     if table.rows.is_empty() {
         None
     } else {
-        ctx.capture_table_block_hints(&row_pagination);
+        ctx.capture_table_block_hints(&row_pagination, &cell_pagination);
         Some(Block::Table(table))
     }
 }
 
-fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Table, Vec<TableRowPaginationHint>) {
+fn read_table(
+    r: &mut Xml<'_>,
+    ctx: &Ctx<'_>,
+    depth: u32,
+) -> (Table, Vec<TableRowPaginationHint>, TableCellPaginationHints) {
     if depth > MAX_DEPTH {
         skip_subtree(r);
-        return (Table::default(), Vec::new());
+        return (Table::default(), Vec::new(), Vec::new());
     }
     let mut rows: Vec<RowRaw> = Vec::new();
     let mut props = TableProps::default();
@@ -5190,7 +5213,8 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Table, Vec<TableRo
         }
     }
     let row_pagination = rows.iter().map(|row| row.props.pagination()).collect();
-    (build_table(rows, props), row_pagination)
+    let (table, cell_pagination) = build_table(rows, props);
+    (table, row_pagination, cell_pagination)
 }
 
 fn is_current_table_structural_wrapper(name: &[u8]) -> bool {
@@ -5791,6 +5815,7 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
         skip_subtree(r);
         return CellRaw {
             blocks: Vec::new(),
+            pagination: Vec::new(),
             col_span: 1,
             vmerge: VMerge::None,
             shading: None,
@@ -5800,22 +5825,38 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
         };
     }
     let mut blocks = Vec::new();
+    let mut pagination = Vec::new();
     let mut tc: Option<TcPr> = None;
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
                 b"tcPr" => tc = Some(read_tcpr(r)),
-                b"p" => blocks.extend(read_paragraph_blocks(r, ctx, depth + 1)),
+                b"p" => {
+                    let (paragraph_blocks, hint, _) = read_paragraph_blocks_data(r, ctx, depth + 1);
+                    pagination.extend(paragraph_blocks.iter().map(|block| {
+                        if matches!(block, Block::Paragraph(_)) {
+                            Some(hint)
+                        } else {
+                            None
+                        }
+                    }));
+                    blocks.extend(paragraph_blocks);
+                }
                 b"tbl" => {
                     if let Some(table) = read_table_block(r, ctx, depth + 1) {
+                        pagination.push(None);
                         blocks.push(table);
                     }
                 }
                 b"sdt" | b"sdtContent" | b"customXml" | b"smartTag" | b"ins" | b"moveTo" => {
-                    blocks.extend(read_blocks(r, ctx, depth + 1))
+                    let wrapped = read_blocks(r, ctx, depth + 1);
+                    pagination.resize(pagination.len() + wrapped.len(), None);
+                    blocks.extend(wrapped);
                 }
                 b"AlternateContent" => {
-                    blocks.extend(read_alternate_content_blocks(r, ctx, depth + 1))
+                    let alternate = read_alternate_content_blocks(r, ctx, depth + 1);
+                    pagination.resize(pagination.len() + alternate.len(), None);
+                    blocks.extend(alternate);
                 }
                 _ => skip_subtree(r),
             },
@@ -5833,6 +5874,7 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
     });
     CellRaw {
         blocks,
+        pagination,
         col_span: tc.gs,
         vmerge: tc.vm,
         shading: tc.shading,
@@ -6042,7 +6084,7 @@ fn apply_tc_mar_side(margins: &mut CellMargins, seen: &mut bool, e: &BytesStart<
 /// (`vMerge="restart"` opens a span, a later `vMerge` continuation at the same
 /// starting column grows the owner's `row_span` and is dropped) — the OOXML
 /// analogue of `table.rs` Phase B.
-fn build_table(raw_rows: Vec<RowRaw>, props: TableProps) -> Table {
+fn build_table(raw_rows: Vec<RowRaw>, props: TableProps) -> (Table, TableCellPaginationHints) {
     let header_rows = raw_rows
         .iter()
         .take_while(|row| row.props.header.unwrap_or(false))
@@ -6050,6 +6092,7 @@ fn build_table(raw_rows: Vec<RowRaw>, props: TableProps) -> Table {
 
     struct Placed {
         blocks: Vec<Block>,
+        pagination: Vec<Option<PaginationHint>>,
         col: usize,
         col_span: u16,
         row_span: u16,
@@ -6071,6 +6114,7 @@ fn build_table(raw_rows: Vec<RowRaw>, props: TableProps) -> Table {
             let cs = c.col_span.max(1);
             row.push(Placed {
                 blocks: c.blocks,
+                pagination: c.pagination,
                 col,
                 col_span: cs,
                 row_span: 1,
@@ -6113,11 +6157,13 @@ fn build_table(raw_rows: Vec<RowRaw>, props: TableProps) -> Table {
     }
 
     let mut rows = Vec::with_capacity(grid.len());
+    let mut table_cell_pagination = Vec::with_capacity(grid.len());
     for row in grid {
-        let cells: Vec<Cell> = row
-            .into_iter()
-            .filter(|p| !p.dropped)
-            .map(|p| Cell {
+        let mut cells = Vec::with_capacity(row.len());
+        let mut cell_pagination = Vec::with_capacity(row.len());
+        for p in row.into_iter().filter(|p| !p.dropped) {
+            cell_pagination.push(p.pagination);
+            cells.push(Cell {
                 blocks: p.blocks,
                 col_span: p.col_span,
                 row_span: p.row_span,
@@ -6126,26 +6172,30 @@ fn build_table(raw_rows: Vec<RowRaw>, props: TableProps) -> Table {
                 valign: p.valign,
                 width_pct: p.width_pct,
                 margins: p.margins,
-            })
-            .collect();
+            });
+        }
         rows.push(Row { cells });
+        table_cell_pagination.push(cell_pagination);
     }
-    Table {
-        rows,
-        header_rows,
-        bidi_visual: props.bidi_visual,
-        fixed_layout: props.fixed_layout,
-        indent_twips: props.indent_twips,
-        align: props.align,
-        width_pct: props.width_pct,
-        border_color: props.border_color,
-        border_colors: props.border_colors,
-        border_size_eighths: props.border_size_eighths,
-        border_sizes: props.border_sizes,
-        border_style: props.border_style,
-        border_styles: props.border_styles,
-        ..Default::default()
-    }
+    (
+        Table {
+            rows,
+            header_rows,
+            bidi_visual: props.bidi_visual,
+            fixed_layout: props.fixed_layout,
+            indent_twips: props.indent_twips,
+            align: props.align,
+            width_pct: props.width_pct,
+            border_color: props.border_color,
+            border_colors: props.border_colors,
+            border_size_eighths: props.border_size_eighths,
+            border_sizes: props.border_sizes,
+            border_style: props.border_style,
+            border_styles: props.border_styles,
+            ..Default::default()
+        },
+        table_cell_pagination,
+    )
 }
 
 #[cfg(test)]
@@ -6158,6 +6208,7 @@ mod tests {
         Vec<PaginationHint>,
         Vec<Vec<TabStop>>,
         Vec<Vec<TableRowPaginationHint>>,
+        Vec<TableCellPaginationHints>,
     );
 
     fn parse(xml: &str) -> Vec<Block> {
@@ -6246,7 +6297,7 @@ mod tests {
             *ctx.pagination_capture.borrow_mut() = Some(PaginationCapture::default());
         }
         let blocks = parse_document(xml, &ctx);
-        let (hints, tab_stops, table_rows) = ctx
+        let (hints, tab_stops, table_rows, table_cells) = ctx
             .pagination_capture
             .borrow_mut()
             .take()
@@ -6255,10 +6306,11 @@ mod tests {
                     capture.hints,
                     capture.tab_stops,
                     capture.table_row_pagination,
+                    capture.table_cell_pagination,
                 )
             })
             .unwrap_or_default();
-        (blocks, hints, tab_stops, table_rows)
+        (blocks, hints, tab_stops, table_rows, table_cells)
     }
 
     #[test]
@@ -6277,7 +6329,7 @@ mod tests {
             <w:p><w:pPr><w:keepLines/></w:pPr><w:r><w:t>before</w:t><w:br w:type="page"/><w:t>after</w:t></w:r></w:p>
         </w:body></w:document>"#;
 
-        let (blocks, hints, _, _) =
+        let (blocks, hints, _, _, _) =
             parse_with_media_styles_and_pagination(xml, HashMap::new(), styles, true);
 
         assert_eq!(blocks.len(), 6);
@@ -6335,7 +6387,7 @@ mod tests {
             <w:tbl><w:tr><w:tc><w:p><w:r><w:t>cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
         </w:body></w:document>"#;
 
-        let (blocks, hints, tab_stops, _) =
+        let (blocks, hints, tab_stops, _, _) =
             parse_with_media_styles_and_pagination(xml, HashMap::new(), styles, true);
 
         assert_eq!(hints.len(), blocks.len());
@@ -6381,7 +6433,7 @@ mod tests {
             <w:p><w:r><w:t>after</w:t></w:r></w:p>
         </w:body></w:document>"#;
 
-        let (blocks, _, _, table_rows) =
+        let (blocks, _, _, table_rows, _) =
             parse_with_media_styles_and_pagination(xml, HashMap::new(), Styles::default(), true);
 
         assert_eq!(table_rows.len(), blocks.len());
@@ -6398,6 +6450,73 @@ mod tests {
             ]
         );
         assert!(table_rows[2].is_empty());
+    }
+
+    #[test]
+    fn captures_direct_table_cell_pagination_with_surviving_cell_alignment() {
+        let styles = super::super::styles::parse(
+            r#"<w:styles>
+                <w:style w:type="paragraph" w:styleId="Kept">
+                    <w:pPr><w:keepNext/><w:keepLines/><w:widowControl w:val="off"/></w:pPr>
+                </w:style>
+            </w:styles>"#,
+        );
+        let xml = r#"<w:document><w:body>
+            <w:p><w:r><w:t>before</w:t></w:r></w:p>
+            <w:tbl>
+                <w:tr>
+                    <w:tc><w:p><w:pPr><w:pStyle w:val="Kept"/><w:keepNext w:val="0"/></w:pPr><w:r><w:t>one</w:t><w:br w:type="page"/><w:t>two</w:t></w:r></w:p></w:tc>
+                    <w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr><w:p><w:r><w:t>owner</w:t></w:r></w:p></w:tc>
+                    <w:tc><w:sdt><w:sdtContent><w:p><w:pPr><w:keepLines/></w:pPr><w:r><w:t>wrapped ceiling</w:t></w:r></w:p></w:sdtContent></w:sdt></w:tc>
+                </w:tr>
+                <w:tr>
+                    <w:tc><w:p><w:pPr><w:widowControl w:val="off"/></w:pPr><w:r><w:t>disabled</w:t></w:r></w:p></w:tc>
+                    <w:tc><w:tcPr><w:vMerge/></w:tcPr><w:p><w:pPr><w:keepLines/></w:pPr><w:r><w:t>dropped continuation</w:t></w:r></w:p></w:tc>
+                    <w:tc><w:p><w:pPr><w:keepNext/></w:pPr><w:r><w:t>survivor</w:t></w:r></w:p></w:tc>
+                </w:tr>
+            </w:tbl>
+            <w:p><w:r><w:t>after</w:t></w:r></w:p>
+        </w:body></w:document>"#;
+
+        let (blocks, _, _, _, table_cells) =
+            parse_with_media_styles_and_pagination(xml, HashMap::new(), styles, true);
+
+        assert_eq!(table_cells.len(), blocks.len());
+        assert!(table_cells[0].is_empty());
+        assert_eq!(
+            table_cells[1],
+            vec![
+                vec![
+                    vec![
+                        Some(PaginationHint {
+                            keep_next: false,
+                            keep_lines: true,
+                            widow_control: false,
+                        }),
+                        None,
+                        Some(PaginationHint {
+                            keep_next: false,
+                            keep_lines: true,
+                            widow_control: false,
+                        }),
+                    ],
+                    vec![Some(PaginationHint {
+                        widow_control: true,
+                        ..PaginationHint::default()
+                    })],
+                    vec![None],
+                ],
+                vec![
+                    vec![Some(PaginationHint::default())],
+                    vec![Some(PaginationHint {
+                        keep_next: true,
+                        widow_control: true,
+                        ..PaginationHint::default()
+                    })],
+                ],
+            ]
+        );
+        assert!(table_cells[2].is_empty());
     }
 
     #[test]
@@ -6521,6 +6640,7 @@ mod tests {
     fn raw_merge_cell(vmerge: VMerge) -> CellRaw {
         CellRaw {
             blocks: Vec::new(),
+            pagination: Vec::new(),
             col_span: 1,
             vmerge,
             shading: None,
@@ -7526,7 +7646,7 @@ mod tests {
             props: RowProps::default(),
         }));
 
-        let table = build_table(rows, TableProps::default());
+        let table = build_table(rows, TableProps::default()).0;
 
         assert_eq!(table.rows[0].cells[0].row_span, u16::MAX);
     }
