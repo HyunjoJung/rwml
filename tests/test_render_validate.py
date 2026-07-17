@@ -215,6 +215,31 @@ class RenderValidateReportTests(unittest.TestCase):
             ["Stable", "report.docx"],
         )
 
+    def test_reference_recall_tokens_drop_whitespace_split_volatile_path(self):
+        tokens = [
+            "Stable",
+            "/workspace/New",
+            "project/corpus/public/synthetic/",
+            "fields.docx",
+            "Visible",
+            "report.docx",
+        ]
+
+        self.assertEqual(
+            render_validate.reference_recall_tokens(tokens),
+            ["Stable", "Visible", "report.docx"],
+        )
+        self.assertEqual(
+            render_validate.reference_recall_tokens(["fields.docx"]),
+            ["fields.docx"],
+        )
+        self.assertEqual(
+            render_validate.reference_recall_tokens(
+                ["/workspace/New", "Visible", "fields.docx"]
+            ),
+            ["Visible", "fields.docx"],
+        )
+
     def test_reference_recall_tokens_drop_libreoffice_shape_fallback_only_when_warned(self):
         tokens = ["Visible", "[shape]"]
 
