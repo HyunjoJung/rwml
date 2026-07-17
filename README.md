@@ -223,16 +223,21 @@ let mut doc = rwml::Document::open(&std::fs::read("in.docx")?)?;
 let mut edits = doc.edit_session()?;
 edits.replace_body_text("DRAFT", "FINAL")?;
 edits.set_core_property(rwml::CoreProperty::Title, "Final report")?;
-edits.commit()?; // dropping without commit, including during unwind, rolls both back
+edits.commit()?; // validates, refreshes read views, and retains both edits
 ```
 
 `EditSession` snapshots the complete retained package and its existing
 touched-part state. Individual operation failures remain non-poisoning because
 each edit method is already atomic; a handled error may be followed by more
-operations, but any session not explicitly committed rolls back. This is an
-in-memory transaction, not an undo/redo stack or read-view refresh mechanism,
-and it cannot retract saved bytes or other external side effects already used by
-the caller.
+operations, but any session not explicitly committed rolls back. Read views stay
+at their pre-session state while the guard is open. A successful commit validates
+the package, fully reparses the model, text, metadata, notes, comments, fields,
+shapes, images, and renderer sidecars, and retains the original package object so
+`edited_parts()` evidence is unchanged. Direct edit callers can perform the same
+atomic refresh with `doc.refresh_read_view()?` instead of saving and reopening.
+Refresh performs one in-memory DOCX serialization and parse; it is not an
+undo/redo stack and cannot retract saved bytes or other external side effects
+already used by the caller.
 
 Every one of the edit methods above mutates live WordprocessingML **element
 trees** or media parts in place, so everything they don't touch — including
@@ -244,7 +249,8 @@ byte-for-byte.
 `w:sdt` subtrees for `move_body_block` / `remove_body_block`. Those edits reject
 opaque direct children, cross-block ranges or complex fields, and section-boundary
 targets/moves; they preserve but do not garbage-collect relationships or media
-made unreachable by a removal. Read/model views remain stale until save and reopen.
+made unreachable by a removal. Read/model views remain stale until explicitly
+refreshed or reopened.
 Regenerated relationship parts are validated before save, so internal
 relationship targets must point at retained package parts unless they are
 explicitly external.

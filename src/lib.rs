@@ -264,12 +264,15 @@ pub fn try_render_pdf_with_fonts_and_report(
 /// which Word format the bytes are in.
 pub struct Document {
     backend: Backend,
+    #[cfg(feature = "docx")]
+    edit_session_active: bool,
 }
 
 /// A package-level transaction over an editable `.docx` [`Document`].
 ///
 /// Existing `Document` edit methods are available through this guard via
-/// `DerefMut`. Call [`EditSession::commit`] to retain all staged mutations.
+/// `DerefMut`. Call [`EditSession::commit`] to retain all staged mutations and
+/// rebuild the document's read views from the committed package.
 /// Calling [`EditSession::rollback`], dropping the guard, or unwinding through
 /// its scope restores the complete package snapshot from session creation,
 /// including any touched-part state that existed before the session.
@@ -314,15 +317,13 @@ impl std::ops::DerefMut for EditSession<'_> {
 
 #[cfg(feature = "docx")]
 impl EditSession<'_> {
-    /// Validate and retain every mutation staged through this session.
+    /// Validate and retain every mutation staged through this session, then
+    /// rebuild the document's model, text, metadata, and side-table read views.
     ///
-    /// If final package validation fails, the session is dropped and the
-    /// original package is restored before the error is returned.
+    /// If final package validation or read-view refresh fails, the session is
+    /// dropped and the original package is restored before the error is returned.
     pub fn commit(mut self) -> Result<()> {
-        self.document
-            .docx_tree_editable_ref()?
-            .package
-            .validate_for_save()?;
+        self.document.refresh_read_view_impl()?;
         self.original_package = None;
         Ok(())
     }
@@ -346,6 +347,7 @@ impl EditSession<'_> {
 impl Drop for EditSession<'_> {
     fn drop(&mut self) {
         self.restore();
+        self.document.edit_session_active = false;
     }
 }
 
@@ -588,12 +590,15 @@ impl Document {
         if ole::is_ole2(bytes) {
             return Ok(Document {
                 backend: Backend::Doc(Box::new(DocState::open(bytes)?)),
+                #[cfg(feature = "docx")]
+                edit_session_active: false,
             });
         }
         #[cfg(feature = "docx")]
         if docx::is_zip(bytes) {
             return Ok(Document {
                 backend: Backend::Docx(Box::new(docx::open(bytes)?)),
+                edit_session_active: false,
             });
         }
         #[cfg(not(feature = "docx"))]
@@ -617,6 +622,7 @@ impl Document {
     pub fn new() -> Self {
         Document {
             backend: Backend::Docx(Box::new(docx::blank())),
+            edit_session_active: false,
         }
     }
 
@@ -627,6 +633,7 @@ impl Document {
     pub fn try_new() -> Result<Self> {
         Ok(Document {
             backend: Backend::Docx(Box::new(docx::try_blank()?)),
+            edit_session_active: false,
         })
     }
 
@@ -637,7 +644,7 @@ impl Document {
     ///
     /// **Stale after an in-place edit.** This (and everything derived from it —
     /// [`Document::to_markdown`], [`Document::to_html`], [`Document::images`],
-    /// [`Document::to_docx`], `Document::to_pdf`) reflects the document **as opened**.
+    /// [`Document::to_docx`], `Document::to_pdf`) reflects the current parsed read view.
     /// Preservation edits ([`Document::replace_body_text`], [`Document::set_field_result`],
     /// [`Document::fill_content_control_by_tag`], [`Document::fill_content_controls_by_tag`],
     /// [`Document::fill_template_fields`],
@@ -645,8 +652,10 @@ impl Document {
     /// [`Document::remove_body_block`], [`Document::move_body_block`],
     /// [`Document::set_hyperlink_target`], [`Document::add_image_png`],
     /// [`Document::replace_image_png`]) mutate the package
-    /// directly, not this model, so they are not visible here until you [`Document::save`]
-    /// and re-[`Document::open`] the result.
+    /// directly, not this model, so they are not visible here until
+    /// [`Document::refresh_read_view`] runs or you [`Document::save`] and
+    /// re-[`Document::open`] the result. [`EditSession::commit`] refreshes the read
+    /// view automatically.
     pub fn model(&self) -> DocModel {
         match &self.backend {
             Backend::Doc(d) => doc_model_from_doc_state(d),
@@ -1021,11 +1030,49 @@ impl Document {
     /// error before a session is created.
     #[cfg(feature = "docx")]
     pub fn edit_session(&mut self) -> Result<EditSession<'_>> {
+        if self.edit_session_active {
+            return Err(Error::Docx(
+                "cannot begin an edit session while another edit session is active".into(),
+            ));
+        }
         let original_package = self.docx_tree_editable_ref()?.package.clone();
+        self.edit_session_active = true;
         Ok(EditSession {
             document: self,
             original_package: Some(original_package),
         })
+    }
+
+    /// Rebuild all `.docx` read views from the current retained package.
+    ///
+    /// Package-preserving edit methods update the authoritative OPC package
+    /// without incrementally mutating the lossy model, text, metadata, notes,
+    /// comments, fields, shapes, images, or renderer sidecars. This method
+    /// validates and serializes that package to ephemeral bytes, reparses every
+    /// read surface, and then restores the original retained package object so
+    /// touched-part diagnostics and future package-preserving saves are kept.
+    /// No read state changes unless both serialization and reparsing succeed.
+    ///
+    /// [`EditSession::commit`] calls this automatically. Direct edit callers may
+    /// invoke it explicitly instead of saving and reopening. Calling it through
+    /// an active edit session is rejected so a later rollback cannot leave staged
+    /// read state behind. Legacy `.doc`, incomplete packages, and lossy OPC
+    /// metadata return the existing editability error.
+    #[cfg(feature = "docx")]
+    pub fn refresh_read_view(&mut self) -> Result<()> {
+        if self.edit_session_active {
+            return Err(Error::Docx(
+                "refresh_read_view cannot run during an active edit session; commit refreshes automatically"
+                    .into(),
+            ));
+        }
+        self.refresh_read_view_impl()
+    }
+
+    #[cfg(feature = "docx")]
+    fn refresh_read_view_impl(&mut self) -> Result<()> {
+        let d = self.docx_tree_editable()?;
+        refresh_docx_read_view(d)
     }
 
     /// **Package-preserving edit: set a `.docx` core document property.**
@@ -1034,7 +1081,7 @@ impl Document {
     /// property as text.
     ///
     /// This edits package metadata only; `word/document.xml` and other content parts
-    /// remain untouched. Read views are stale until the saved bytes are reopened.
+    /// remain untouched. Read views remain stale until explicitly refreshed or reopened.
     /// Available with the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn set_core_property(&mut self, property: CoreProperty, value: &str) -> Result<()> {
@@ -1081,9 +1128,9 @@ impl Document {
     /// This promotes `document.xml` to an editable tree; [`Document::save`] then
     /// re-serializes only that part (every other part stays byte-for-byte). Requires
     /// a `.docx`-backed document. Note: this edits the package directly, not the
-    /// `model()`/`text()` views, which become stale until reopened. On any error the
-    /// document is left untouched (the edit is transactional). Available with the
-    /// default `docx` feature.
+    /// `model()`/`text()` views, which remain stale until explicitly refreshed or
+    /// reopened. On any error the document is left untouched (the edit is
+    /// transactional). Available with the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn replace_body_text(&mut self, old: &str, new: &str) -> Result<usize> {
         // Backend/editability check FIRST (so a `.doc` or un-editable package gets the
@@ -1212,7 +1259,7 @@ impl Document {
     /// The edit is intentionally conservative. It rejects opaque direct body
     /// elements, malformed or cross-block ranges/complex fields, and any block
     /// carrying section properties. The read model and text views remain stale
-    /// until the saved bytes are reopened. On any error the document is unchanged.
+    /// until explicitly refreshed or reopened. On any error the document is unchanged.
     #[cfg(feature = "docx")]
     pub fn remove_body_block(&mut self, block_index: usize) -> Result<()> {
         let d = self.docx_tree_editable()?;
@@ -1227,8 +1274,8 @@ impl Document {
     /// Moves across blocks carrying section properties, opaque body children,
     /// and malformed or cross-block ranges/complex fields are rejected. A validated
     /// same-index move is a no-op and does not promote or dirty `document.xml`.
-    /// Read views remain stale until save and reopen. On any error the document is
-    /// unchanged.
+    /// Read views remain stale until explicitly refreshed or reopened. On any error
+    /// the document is unchanged.
     #[cfg(feature = "docx")]
     pub fn move_body_block(&mut self, from_index: usize, to_index: usize) -> Result<()> {
         let d = self.docx_tree_editable()?;
@@ -1251,8 +1298,8 @@ impl Document {
     ///
     /// This is a focused body/note/header/footer edit, not a full Word review engine for every
     /// package part. It is transactional and returns the number of revision
-    /// elements removed or unwrapped. Read views are stale until the saved bytes
-    /// are reopened. Available with the default `docx` feature.
+    /// elements removed or unwrapped. Read views remain stale until explicitly
+    /// refreshed or reopened. Available with the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn accept_all_revisions(&mut self) -> Result<usize> {
         let d = self.docx_tree_editable()?;
@@ -1270,8 +1317,8 @@ impl Document {
     ///
     /// This is a focused body/note/header/footer edit, not a full Word review engine for every
     /// package part. It is transactional and returns the number of revision or
-    /// revision-text elements removed, unwrapped, or normalized. Read views are
-    /// stale until the saved bytes are reopened. Available with the default
+    /// revision-text elements removed, unwrapped, or normalized. Read views remain
+    /// stale until explicitly refreshed or reopened. Available with the default
     /// `docx` feature.
     #[cfg(feature = "docx")]
     pub fn reject_all_revisions(&mut self) -> Result<usize> {
@@ -1287,8 +1334,8 @@ impl Document {
     ///
     /// This is a preservation edit: unmodeled field markup and surrounding package
     /// parts are kept, and the edit is transactional. Like other element-tree edits,
-    /// read views are stale until the saved bytes are reopened. Available with the
-    /// default `docx` feature.
+    /// read views remain stale until explicitly refreshed or reopened. Available with
+    /// the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn set_field_result(&mut self, field_index: usize, result: &str) -> Result<()> {
         let d = self.docx_tree_editable()?;
@@ -1367,8 +1414,8 @@ impl Document {
     /// This is intentionally focused on plain-text template fields represented by
     /// content controls. It does not remove the controls, alter aliases/tags, or
     /// evaluate data binding. For a record of tag/value pairs, use
-    /// [`Document::fill_content_controls_by_tag`]. Read views are stale until the
-    /// saved bytes are reopened. Available with the default `docx` feature.
+    /// [`Document::fill_content_controls_by_tag`]. Read views remain stale until
+    /// explicitly refreshed or reopened. Available with the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn fill_content_control_by_tag(&mut self, tag: &str, text: &str) -> Result<usize> {
         self.fill_content_controls_by_tag_impl(
@@ -1413,8 +1460,8 @@ impl Document {
     /// All fills are validated first and then committed as one
     /// package-preserving edit. Missing names are ignored, and the return value is
     /// the number of template locations filled. Duplicate input names are
-    /// rejected so callers do not accidentally depend on ordering. Read views are
-    /// stale until the saved bytes are reopened. Available with the default
+    /// rejected so callers do not accidentally depend on ordering. Read views remain
+    /// stale until explicitly refreshed or reopened. Available with the default
     /// `docx` feature.
     #[cfg(feature = "docx")]
     pub fn fill_template_fields<I, K, V>(&mut self, values: I) -> Result<usize>
@@ -1774,8 +1821,9 @@ impl Document {
     /// This rewrites the matching external hyperlink relationship target in
     /// `word/_rels/document.xml.rels` and leaves `word/document.xml` byte-preserved.
     /// If multiple body hyperlinks share the same relationship id, updating any one
-    /// of those indexes updates the shared relationship. Read views are stale until
-    /// the saved bytes are reopened. Available with the default `docx` feature.
+    /// of those indexes updates the shared relationship. Read views remain stale
+    /// until explicitly refreshed or reopened. Available with the default `docx`
+    /// feature.
     #[cfg(feature = "docx")]
     pub fn set_hyperlink_target(&mut self, hyperlink_index: usize, target: &str) -> Result<()> {
         let d = self.docx_tree_editable()?;
@@ -1802,8 +1850,8 @@ impl Document {
     ///
     /// This updates existing comments only. Creating a new comment requires
     /// coordinated body markers and relationships and is a separate edit surface.
-    /// Read views are stale until the saved bytes are reopened. Available with the
-    /// default `docx` feature.
+    /// Read views remain stale until explicitly refreshed or reopened. Available with
+    /// the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn set_comment_text(&mut self, comment_id: &str, text: &str) -> Result<()> {
         let d = self.docx_tree_editable()?;
@@ -1827,7 +1875,7 @@ impl Document {
     ///
     /// This is intentionally conservative: it anchors whole adjacent runs, not an
     /// arbitrary character range inside a run. The returned string is the allocated
-    /// comment id. Read views are stale until the saved bytes are reopened.
+    /// comment id. Read views remain stale until explicitly refreshed or reopened.
     /// Available with the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn add_comment_on_text(
@@ -1881,8 +1929,8 @@ impl Document {
     /// `text`; surrounding table structure and other cells are preserved.
     ///
     /// This is intentionally a focused body-table edit surface. Parent cells
-    /// containing nested tables are rejected before mutation. Read views are stale
-    /// until the saved bytes are reopened.
+    /// containing nested tables are rejected before mutation. Read views remain stale
+    /// until explicitly refreshed or reopened.
     /// Available with the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn set_table_cell_text(
@@ -1950,7 +1998,7 @@ impl Document {
     ///
     /// This is intentionally conservative: it anchors whole adjacent runs, not an
     /// arbitrary character range inside a run. The returned string is the allocated
-    /// footnote id. Read views are stale until the saved bytes are reopened.
+    /// footnote id. Read views remain stale until explicitly refreshed or reopened.
     /// Available with the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn add_footnote_on_text(&mut self, anchor_text: &str, note_text: &str) -> Result<String> {
@@ -1999,7 +2047,7 @@ impl Document {
     ///
     /// This is intentionally conservative: it anchors whole adjacent runs, not an
     /// arbitrary character range inside a run. The returned string is the allocated
-    /// endnote id. Read views are stale until the saved bytes are reopened.
+    /// endnote id. Read views remain stale until explicitly refreshed or reopened.
     /// Available with the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn add_endnote_on_text(&mut self, anchor_text: &str, note_text: &str) -> Result<String> {
@@ -2045,8 +2093,8 @@ impl Document {
     /// notes, rewrites matches to `new`, and returns the number of runs changed.
     ///
     /// This edits existing notes only; creating notes and inserting body references
-    /// is a separate structural edit surface. Read views are stale until the saved
-    /// bytes are reopened. Available with the default `docx` feature.
+    /// is a separate structural edit surface. Read views remain stale until explicitly
+    /// refreshed or reopened. Available with the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn replace_note_text(&mut self, old: &str, new: &str) -> Result<usize> {
         let d = self.docx_tree_editable()?;
@@ -2146,8 +2194,8 @@ impl Document {
     ///
     /// This uses the same package-preserving, transactional edit path as
     /// [`Document::replace_body_text`]. Read views such as [`Document::header_text`]
-    /// are stale until the saved bytes are reopened. Available with the default
-    /// `docx` feature.
+    /// remain stale until explicitly refreshed or reopened. Available with the
+    /// default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn replace_header_footer_text(&mut self, old: &str, new: &str) -> Result<usize> {
         let d = self.docx_tree_editable()?;
@@ -2236,8 +2284,8 @@ impl Document {
     /// [`Document::replace_header_footer_text`] when they match the job; this is an
     /// explicit escape hatch for parts the model does not yet expose semantically.
     /// The edit is transactional and does not infer or repair a part-specific content
-    /// type. Read views are stale until the saved bytes are reopened. Available with
-    /// the default `docx` feature.
+    /// type. Read views remain stale until explicitly refreshed or reopened.
+    /// Available with the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn replace_text_in_part(&mut self, part_name: &str, old: &str, new: &str) -> Result<usize> {
         let d = self.docx_tree_editable()?;
@@ -2310,8 +2358,8 @@ impl Document {
     /// container validity, part not present, `w:body` exists, node budget) are checked
     /// before any mutation, so on error the document is unchanged. Like
     /// [`Document::replace_body_text`], this edits the package directly, so the
-    /// `model()`/`images()`/`text()` read views are stale until the saved bytes are
-    /// reopened. Available with the default `docx` feature.
+    /// `model()`/`images()`/`text()` read views remain stale until explicitly refreshed
+    /// or reopened. Available with the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn add_image_png(&mut self, png: &[u8], name: &str) -> Result<()> {
         self.add_image_media(png, name, ImageMediaKind::Png, "add_image_png")
@@ -2324,8 +2372,8 @@ impl Document {
     ///
     /// The validation is a bounded container check (SOI/EOI, segment framing,
     /// dimensions in a SOF marker, and an SOS scan start), not a full JPEG decode.
-    /// Read views are stale until the saved bytes are reopened. Available with the
-    /// default `docx` feature.
+    /// Read views remain stale until explicitly refreshed or reopened. Available with
+    /// the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn add_image_jpeg(&mut self, jpeg: &[u8], name: &str) -> Result<()> {
         self.add_image_media(jpeg, name, ImageMediaKind::Jpeg, "add_image_jpeg")
@@ -2338,8 +2386,8 @@ impl Document {
     ///
     /// The validation checks GIF87a/GIF89a framing, non-zero logical-screen
     /// dimensions, at least one image descriptor, and a final trailer; it does
-    /// not decode LZW image data. Read views are stale until the saved bytes are
-    /// reopened. Available with the default `docx` feature.
+    /// not decode LZW image data. Read views remain stale until explicitly refreshed
+    /// or reopened. Available with the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn add_image_gif(&mut self, gif: &[u8], name: &str) -> Result<()> {
         self.add_image_media(gif, name, ImageMediaKind::Gif, "add_image_gif")
@@ -2352,7 +2400,7 @@ impl Document {
     ///
     /// The validation checks the BMP file header, BITMAPINFOHEADER dimensions,
     /// plane count, bit depth, and uncompressed pixel-data offset; it does not
-    /// decode pixel rows. Read views are stale until the saved bytes are
+    /// decode pixel rows. Read views remain stale until explicitly refreshed or
     /// reopened. Available with the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn add_image_bmp(&mut self, bmp: &[u8], name: &str) -> Result<()> {
@@ -2367,7 +2415,7 @@ impl Document {
     ///
     /// The validation checks a classic TIFF header and first IFD
     /// `ImageWidth`/`ImageLength` tags; it does not decode image data. Read
-    /// views are stale until the saved bytes are reopened. Available with the
+    /// views remain stale until explicitly refreshed or reopened. Available with the
     /// default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn add_image_tiff(&mut self, tiff: &[u8], name: &str) -> Result<()> {
@@ -2380,8 +2428,8 @@ impl Document {
     /// for plain `*.webp` names and bounded structural WebP dimension parsing.
     ///
     /// The validation checks the RIFF/WebP container and supported VP8/VP8L/VP8X
-    /// size headers; it does not decode image data. Read views are stale until
-    /// the saved bytes are reopened. Available with the default `docx` feature.
+    /// size headers; it does not decode image data. Read views remain stale until
+    /// explicitly refreshed or reopened. Available with the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn add_image_webp(&mut self, webp: &[u8], name: &str) -> Result<()> {
         self.add_image_media(webp, name, ImageMediaKind::Webp, "add_image_webp")
@@ -2394,8 +2442,8 @@ impl Document {
     ///
     /// This is intentionally a media-part replacement, not a layout rewrite: drawing
     /// extents, alt text, captions, and relationship ids are preserved. Read views
-    /// such as [`Document::images`] are stale until the saved bytes are reopened.
-    /// Available with the default `docx` feature.
+    /// such as [`Document::images`] remain stale until explicitly refreshed or
+    /// reopened. Available with the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn replace_image_png(&mut self, png: &[u8], name: &str) -> Result<()> {
         self.replace_image_media(png, name, ImageMediaKind::Png, "replace_image_png")
@@ -2968,6 +3016,15 @@ fn edit_docx_atomic_body_block(d: &mut docx::DocxState, edit: AtomicBodyBlockEdi
 fn commit_docx_package(d: &mut docx::DocxState, pkg: opc::Package) -> Result<()> {
     pkg.validate_for_save()?;
     d.package = pkg;
+    Ok(())
+}
+
+#[cfg(feature = "docx")]
+fn refresh_docx_read_view(d: &mut docx::DocxState) -> Result<()> {
+    let bytes = d.package.to_zip()?;
+    let mut refreshed = docx::open(&bytes)?;
+    std::mem::swap(&mut refreshed.package, &mut d.package);
+    *d = refreshed;
     Ok(())
 }
 
@@ -6618,6 +6675,67 @@ mod tests {
         assert_eq!(opened_document_layout.block_pages, vec![Some(1), Some(2)]);
         assert_eq!(rendered.report.pages, opened_document_layout.pages);
         assert!(rendered.pdf.starts_with(b"%PDF-"));
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn edit_session_refresh_failure_restores_package_and_read_views() {
+        let mut document = Document::try_new().unwrap();
+        let before_parts = unzip_parts(&document.save().unwrap());
+        let before_text = document.main_text().to_string();
+
+        let edits = document.edit_session().unwrap();
+        let Backend::Docx(state) = &mut edits.document.backend else {
+            unreachable!("try_new creates a DOCX backend");
+        };
+        state.package.ensure_relationship(
+            "",
+            "https://example.invalid/relationships/missing",
+            "missing-part.bin",
+        );
+        let error = edits.commit().unwrap_err();
+
+        assert!(
+            error.to_string().contains("targets missing part"),
+            "{error}"
+        );
+        assert_eq!(unzip_parts(&document.save().unwrap()), before_parts);
+        assert_eq!(document.main_text(), before_text);
+        assert!(document.edited_parts().is_empty());
+        document.refresh_read_view().unwrap();
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn explicit_refresh_failure_preserves_package_and_read_views() {
+        let mut document = Document::try_new().unwrap();
+        let before_text = document.main_text().to_string();
+        let Backend::Docx(state) = &mut document.backend else {
+            unreachable!("try_new creates a DOCX backend");
+        };
+        let missing_relationship_id = state.package.ensure_relationship(
+            "",
+            "https://example.invalid/relationships/missing",
+            "missing-part.bin",
+        );
+        let touched = state.package.touched_parts();
+
+        let error = document.refresh_read_view().unwrap_err();
+
+        assert!(
+            error.to_string().contains("targets missing part"),
+            "{error}"
+        );
+        assert_eq!(document.main_text(), before_text);
+        let Backend::Docx(state) = &document.backend else {
+            unreachable!("try_new creates a DOCX backend");
+        };
+        assert_eq!(state.package.touched_parts(), touched);
+        assert!(state
+            .package
+            .rels_for("")
+            .iter()
+            .any(|relationship| relationship.id == missing_relationship_id));
     }
 
     #[cfg(feature = "docx")]
