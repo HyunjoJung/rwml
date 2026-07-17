@@ -266,6 +266,89 @@ pub struct Document {
     backend: Backend,
 }
 
+/// A package-level transaction over an editable `.docx` [`Document`].
+///
+/// Existing `Document` edit methods are available through this guard via
+/// `DerefMut`. Call [`EditSession::commit`] to retain all staged mutations.
+/// Calling [`EditSession::rollback`], dropping the guard, or unwinding through
+/// its scope restores the complete package snapshot from session creation,
+/// including any touched-part state that existed before the session.
+///
+/// An individual edit error does not poison the session because every existing
+/// edit method is independently transactional. A caller may handle that error
+/// and continue, but a session that is not explicitly committed still rolls
+/// back. External side effects, such as bytes already returned by
+/// [`Document::save`] and written elsewhere by the caller, are outside this
+/// in-memory transaction.
+#[cfg(feature = "docx")]
+#[must_use = "an edit session rolls back unless commit() is called"]
+pub struct EditSession<'a> {
+    document: &'a mut Document,
+    original_package: Option<opc::Package>,
+}
+
+#[cfg(feature = "docx")]
+impl std::fmt::Debug for EditSession<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EditSession")
+            .field("pending", &self.original_package.is_some())
+            .finish_non_exhaustive()
+    }
+}
+
+#[cfg(feature = "docx")]
+impl std::ops::Deref for EditSession<'_> {
+    type Target = Document;
+
+    fn deref(&self) -> &Self::Target {
+        self.document
+    }
+}
+
+#[cfg(feature = "docx")]
+impl std::ops::DerefMut for EditSession<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.document
+    }
+}
+
+#[cfg(feature = "docx")]
+impl EditSession<'_> {
+    /// Validate and retain every mutation staged through this session.
+    ///
+    /// If final package validation fails, the session is dropped and the
+    /// original package is restored before the error is returned.
+    pub fn commit(mut self) -> Result<()> {
+        self.document
+            .docx_tree_editable_ref()?
+            .package
+            .validate_for_save()?;
+        self.original_package = None;
+        Ok(())
+    }
+
+    /// Restore the package snapshot captured when this session was created.
+    pub fn rollback(mut self) {
+        self.restore();
+    }
+
+    fn restore(&mut self) {
+        let Some(package) = self.original_package.take() else {
+            return;
+        };
+        if let Backend::Docx(state) = &mut self.document.backend {
+            state.package = package;
+        }
+    }
+}
+
+#[cfg(feature = "docx")]
+impl Drop for EditSession<'_> {
+    fn drop(&mut self) {
+        self.restore();
+    }
+}
+
 /// Editable `.docx` core document properties supported by
 /// [`Document::set_core_property`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -923,6 +1006,26 @@ impl Document {
                     .into(),
             )),
         }
+    }
+
+    /// Begin a package-level transaction for several `.docx` edit operations.
+    ///
+    /// The retained package is snapshotted after the same safety checks used by
+    /// every package-preserving edit. Existing mutable `Document` methods can be
+    /// called directly on the returned [`EditSession`]. Call
+    /// [`EditSession::commit`] to keep the staged changes; explicit rollback,
+    /// ordinary drop, and panic unwinding restore the exact pre-session package.
+    ///
+    /// This requires a safely editable `.docx` backend. Legacy `.doc`, incomplete
+    /// retained packages, and lossy OPC metadata return the existing editability
+    /// error before a session is created.
+    #[cfg(feature = "docx")]
+    pub fn edit_session(&mut self) -> Result<EditSession<'_>> {
+        let original_package = self.docx_tree_editable_ref()?.package.clone();
+        Ok(EditSession {
+            document: self,
+            original_package: Some(original_package),
+        })
     }
 
     /// **Package-preserving edit: set a `.docx` core document property.**

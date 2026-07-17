@@ -216,6 +216,24 @@ let touched = doc.edited_parts();               // package parts dirtied by edit
 std::fs::write("out.docx", doc.save()?)?;        // untouched parts preserved
 ```
 
+Several existing edit methods can share one package rollback boundary:
+
+```rust
+let mut doc = rwml::Document::open(&std::fs::read("in.docx")?)?;
+let mut edits = doc.edit_session()?;
+edits.replace_body_text("DRAFT", "FINAL")?;
+edits.set_core_property(rwml::CoreProperty::Title, "Final report")?;
+edits.commit()?; // dropping without commit, including during unwind, rolls both back
+```
+
+`EditSession` snapshots the complete retained package and its existing
+touched-part state. Individual operation failures remain non-poisoning because
+each edit method is already atomic; a handled error may be followed by more
+operations, but any session not explicitly committed rolls back. This is an
+in-memory transaction, not an undo/redo stack or read-view refresh mechanism,
+and it cannot retract saved bytes or other external side effects already used by
+the caller.
+
 Every one of the edit methods above mutates live WordprocessingML **element
 trees** or media parts in place, so everything they don't touch — including
 content the lossy model can't represent (fields, content controls, shapes,

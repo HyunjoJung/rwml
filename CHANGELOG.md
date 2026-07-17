@@ -8,6 +8,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Adds an RAII `EditSession` for grouping existing package-preserving `.docx`
+  mutations behind one explicit commit or package-exact drop/unwind rollback,
+  including restoration of the pre-session touched-part state.
 - Adds a deterministic public render-activation corpus for run paint/hidden
   text, explicit tabs and RTL tables, keep/widow pagination, equal-width
   columns, and bounded `wrapTopAndBottom` flow, with per-file provenance.
