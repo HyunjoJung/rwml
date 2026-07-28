@@ -11,7 +11,7 @@ use std::collections::HashMap;
 
 use encoding_rs::Encoding;
 
-use crate::chpx::{Chp, ChpxTable};
+use crate::chpx::{highlight_name, Chp, ChpxTable};
 use crate::clx::Piece;
 use crate::fib::{self, Fib};
 use crate::list::Numberer;
@@ -889,6 +889,7 @@ impl<'a, 'l> Asm<'a, 'l> {
                 hidden: chp.hidden,
                 size_half_pt: chp.size_half_pt,
                 color: chp.color,
+                highlight: chp.highlight.and_then(highlight_name).map(str::to_owned),
                 font: chp.ftc.and_then(|ftc| crate::ffn::name_of(self.fonts, ftc)),
                 ..Default::default()
             };

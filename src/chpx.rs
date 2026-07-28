@@ -49,6 +49,7 @@ const SPRM_C_F_ITALIC: u16 = 0x0836;
 const SPRM_C_F_STRIKE: u16 = 0x0837;
 const SPRM_C_F_VANISH: u16 = 0x083C; // hidden text (NOT 0x0838 — that is Outline)
 const SPRM_C_F_SPEC: u16 = 0x0855; // run's special char is a real object (1-byte)
+const SPRM_C_HIGHLIGHT: u16 = 0x2A0C; // one-byte Ico highlight palette
 const SPRM_C_KUL: u16 = 0x2A3E; // underline kind (0 = none)
 const SPRM_C_PIC_LOCATION: u16 = 0x6A03; // fcPic into the Data stream (4-byte)
 const SPRM_C_HPS: u16 = 0x4A43; // font size, half-points (2-byte)
@@ -80,6 +81,29 @@ fn ico_color(i: u8) -> Option<Color> {
     Some(Color { r, g, b })
 }
 
+/// Map a legacy `sprmCHighlight` Ico to the existing Word highlight names.
+pub(crate) fn highlight_name(i: u8) -> Option<&'static str> {
+    match i {
+        1 => Some("black"),
+        2 => Some("blue"),
+        3 => Some("cyan"),
+        4 => Some("green"),
+        5 => Some("magenta"),
+        6 => Some("red"),
+        7 => Some("yellow"),
+        8 => Some("white"),
+        9 => Some("darkBlue"),
+        10 => Some("darkCyan"),
+        11 => Some("darkGreen"),
+        12 => Some("darkMagenta"),
+        13 => Some("darkRed"),
+        14 => Some("darkYellow"),
+        15 => Some("darkGray"),
+        16 => Some("lightGray"),
+        _ => None,
+    }
+}
+
 /// Resolved character properties scanned out of one CHPX grpprl.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct Chp {
@@ -95,6 +119,8 @@ pub(crate) struct Chp {
     pub ftc: Option<u16>,
     /// Text color (`sprmCCv` 24-bit, or legacy `sprmCIco` palette), if set.
     pub color: Option<Color>,
+    /// Highlight Ico (`sprmCHighlight`), including explicit clear (`0`).
+    pub highlight: Option<u8>,
     /// For a special-char run (`fSpec`) that is an inline picture, the `fcPic`
     /// offset into the `Data` stream.
     pub pic: Option<u32>,
@@ -343,6 +369,12 @@ fn scan_grpprl(gp: &[u8]) -> Chp {
             SPRM_C_PIC_LOCATION => picloc = u32le(operand, 0),
             SPRM_C_HPS => chp.size_half_pt = u16le(operand, 0),
             SPRM_C_RG_FTC0 => chp.ftc = u16le(operand, 0),
+            SPRM_C_HIGHLIGHT => {
+                let value = operand[0];
+                if value <= 16 {
+                    chp.highlight = Some(value);
+                }
+            }
             SPRM_C_CV => {
                 // COLORREF: bytes [R, G, B, reserved].
                 chp.color = Some(Color {
@@ -451,6 +483,56 @@ mod tests {
     fn underline_and_strike() {
         let chp = scan_grpprl(&[0x3E, 0x2A, 0x01, 0x37, 0x08, 0x01]);
         assert!(chp.underline && chp.strike);
+    }
+
+    #[test]
+    fn highlight_palette_maps_to_word_names() {
+        let expected = [
+            None,
+            Some("black"),
+            Some("blue"),
+            Some("cyan"),
+            Some("green"),
+            Some("magenta"),
+            Some("red"),
+            Some("yellow"),
+            Some("white"),
+            Some("darkBlue"),
+            Some("darkCyan"),
+            Some("darkGreen"),
+            Some("darkMagenta"),
+            Some("darkRed"),
+            Some("darkYellow"),
+            Some("darkGray"),
+            Some("lightGray"),
+        ];
+        for (value, expected_name) in expected.into_iter().enumerate() {
+            let value = value as u8;
+            assert_eq!(scan_grpprl(&[0x0C, 0x2A, value]).highlight, Some(value));
+            assert_eq!(highlight_name(value), expected_name);
+        }
+        assert_eq!(highlight_name(17), None);
+        assert_eq!(highlight_name(u8::MAX), None);
+    }
+
+    #[test]
+    fn highlight_uses_last_valid_value_and_explicit_zero_clears() {
+        let highlighted = scan_grpprl(&[0x0C, 0x2A, 7, 0x0C, 0x2A, 14, 0x0C, 0x2A, 4]);
+        assert_eq!(highlighted.highlight, Some(4));
+
+        let cleared = scan_grpprl(&[0x0C, 0x2A, 7, 0x0C, 0x2A, 0]);
+        assert_eq!(cleared.highlight, Some(0));
+        assert_eq!(cleared.highlight.and_then(highlight_name), None);
+    }
+
+    #[test]
+    fn invalid_or_truncated_highlight_preserves_prior_valid_value() {
+        let chp = scan_grpprl(&[
+            0x0C, 0x2A, 7, // yellow
+            0x0C, 0x2A, 17, // invalid Ico
+            0x0C, 0x2A, // truncated modifier
+        ]);
+        assert_eq!(chp.highlight, Some(7));
     }
 
     #[test]

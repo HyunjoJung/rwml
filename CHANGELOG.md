@@ -23,6 +23,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Opened legacy `.doc` CHPX runs now preserve `sprmCHighlight` Ico palette
+  values through the shared model, `.docx` conversion, and PDF rendering,
+  including explicit highlight clearing and deterministic rejection of invalid
+  or truncated operands. This covers FKP/CHPX-resident modifiers; piece
+  `Pcd.Prm`, full legacy character-style resolution, and Markdown/HTML visual
+  highlighting remain unsupported.
 - Opened legacy `.doc` tables now preserve relative column proportions from
   coherent `sprmTDefTable` `rgdxaCenter` row boundaries, including mixed
   internal row grids represented through the existing global column spans.

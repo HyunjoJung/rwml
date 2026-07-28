@@ -5072,7 +5072,13 @@ mod tests {
         endnote_ref_lcb_override: Option<u32>,
         shape_anchor_cps: Option<&'a [u32]>,
         shape_anchor_lcb_override: Option<u32>,
+        chpx_runs: Option<&'a [SyntheticChpxRun]>,
         papx_runs: Option<&'a [SyntheticPapxRun]>,
+    }
+
+    struct SyntheticChpxRun {
+        cp_lim: u32,
+        grpprl: Vec<u8>,
     }
 
     struct SyntheticPapxRun {
@@ -5233,6 +5239,12 @@ mod tests {
             word[fclcb + 36 * 8 + 4..fclcb + 36 * 8 + 8].copy_from_slice(&owners_lcb.to_le_bytes());
         }
 
+        if let Some(runs) = tables.chpx_runs {
+            let (offset, lcb) = append_synthetic_chpx(&mut word, &mut clx, fc1, runs);
+            word[fclcb + 12 * 8..fclcb + 12 * 8 + 4].copy_from_slice(&offset.to_le_bytes());
+            word[fclcb + 12 * 8 + 4..fclcb + 12 * 8 + 8].copy_from_slice(&lcb.to_le_bytes());
+        }
+
         if let Some(runs) = tables.papx_runs {
             let (offset, lcb) = append_synthetic_papx(&mut word, &mut clx, fc1, runs);
             word[fclcb + 13 * 8..fclcb + 13 * 8 + 4].copy_from_slice(&offset.to_le_bytes());
@@ -5256,6 +5268,48 @@ mod tests {
             .unwrap();
         comp.flush().unwrap();
         comp.into_inner().into_inner()
+    }
+
+    fn append_synthetic_chpx(
+        word: &mut Vec<u8>,
+        table: &mut Vec<u8>,
+        text_fc: usize,
+        runs: &[SyntheticChpxRun],
+    ) -> (u32, u32) {
+        assert!(!runs.is_empty());
+        assert!(runs.len() <= 0x65);
+
+        let page_number = word.len().div_ceil(512);
+        word.resize(page_number * 512, 0);
+        let mut page = [0u8; 512];
+        let rgb_base = 4 * (runs.len() + 1);
+        let mut chpx_offset = (rgb_base + runs.len() + 1) & !1;
+
+        page[..4].copy_from_slice(&(text_fc as u32).to_le_bytes());
+        for (index, run) in runs.iter().enumerate() {
+            let fc_lim = (text_fc as u32).saturating_add(run.cp_lim.saturating_mul(2));
+            page[4 * (index + 1)..4 * (index + 2)].copy_from_slice(&fc_lim.to_le_bytes());
+
+            if run.grpprl.is_empty() {
+                continue;
+            }
+            assert!(run.grpprl.len() <= u8::MAX as usize);
+            assert!(chpx_offset + 1 + run.grpprl.len() < 511);
+            page[rgb_base + index] = (chpx_offset / 2) as u8;
+            page[chpx_offset] = run.grpprl.len() as u8;
+            page[chpx_offset + 1..chpx_offset + 1 + run.grpprl.len()].copy_from_slice(&run.grpprl);
+            chpx_offset = (chpx_offset + 1 + run.grpprl.len() + 1) & !1;
+        }
+        page[511] = runs.len() as u8;
+        word.extend_from_slice(&page);
+
+        let offset = table.len() as u32;
+        table.extend_from_slice(&(text_fc as u32).to_le_bytes());
+        let last_cp = runs.last().expect("non-empty CHPX runs").cp_lim;
+        let fc_lim = (text_fc as u32).saturating_add(last_cp.saturating_mul(2));
+        table.extend_from_slice(&fc_lim.to_le_bytes());
+        table.extend_from_slice(&(page_number as u32).to_le_bytes());
+        (offset, 12)
     }
 
     fn append_synthetic_papx(
@@ -6687,6 +6741,79 @@ mod tests {
             zw.write_all(b.as_bytes()).unwrap();
         }
         zw.finish().unwrap().into_inner()
+    }
+
+    fn legacy_chpx_highlight_doc() -> Vec<u8> {
+        let text = "YellowPlainDark";
+        let runs = [
+            SyntheticChpxRun {
+                cp_lim: 6,
+                grpprl: vec![0x0C, 0x2A, 7],
+            },
+            SyntheticChpxRun {
+                cp_lim: 11,
+                grpprl: vec![0x0C, 0x2A, 0],
+            },
+            SyntheticChpxRun {
+                cp_lim: 15,
+                grpprl: vec![0x0C, 0x2A, 14],
+            },
+        ];
+        synth_doc_with_ccp_and_tables(
+            text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [text.encode_utf16().count() as u32, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                chpx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    fn paragraph_run_highlights(model: &DocModel) -> Vec<(&str, Option<&str>)> {
+        let Block::Paragraph(paragraph) = &model.blocks[0] else {
+            panic!("synthetic legacy block must be a paragraph");
+        };
+        paragraph
+            .runs
+            .iter()
+            .map(|run| (run.text.as_str(), run.props.highlight.as_deref()))
+            .collect()
+    }
+
+    #[test]
+    fn opened_legacy_doc_preserves_chpx_text_highlighting() {
+        let document = Document::open(&legacy_chpx_highlight_doc()).unwrap();
+        let model = document.model();
+
+        assert_eq!(
+            paragraph_run_highlights(&model),
+            vec![
+                ("Yellow", Some("yellow")),
+                ("Plain", None),
+                ("Dark", Some("darkYellow")),
+            ]
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_doc_chpx_text_highlighting_roundtrips_to_docx() {
+        let legacy = Document::open(&legacy_chpx_highlight_doc()).unwrap();
+        let reopened = Document::open(&legacy.to_docx()).unwrap();
+        let model = reopened.model();
+
+        assert_eq!(
+            paragraph_run_highlights(&model),
+            vec![
+                ("Yellow", Some("yellow")),
+                ("Plain", None),
+                ("Dark", Some("darkYellow")),
+            ]
+        );
     }
 
     #[test]
