@@ -5,7 +5,7 @@
 //! Reference: [MS-DOC] 2.4.3 (cell boundaries), 2.9.349 (TDefTableOperand),
 //! 2.9.330 (TC80).
 
-use crate::model::{Block, Cell, Row, Table};
+use crate::model::{Block, Cell, PaginationHint, Row, Table, TableCellPaginationHints};
 
 const F_MERGED: u16 = 0x0002; // cell folds into the one to its left
 const F_VERT_MERGE: u16 = 0x0020; // cell continues a vertical merge from above
@@ -48,16 +48,30 @@ impl TableDef {
     }
 }
 
-/// One streamed row: its cells' block content + the row definition + header flag.
+/// One streamed cell, keeping block content and its source pagination metadata
+/// together through merge resolution.
+#[derive(Default)]
+pub(crate) struct CellBuild {
+    pub blocks: Vec<Block>,
+    pub pagination: Vec<Option<PaginationHint>>,
+}
+
+/// One streamed row: its cells + the row definition + header flag.
 pub(crate) struct RowBuild {
-    pub cells: Vec<Vec<Block>>,
+    pub cells: Vec<CellBuild>,
     pub def: Option<TableDef>,
     pub header: bool,
+}
+
+pub(crate) struct TableBuildOutput {
+    pub table: Table,
+    pub cell_pagination: TableCellPaginationHints,
 }
 
 /// An output cell during merge resolution.
 struct Out {
     blocks: Vec<Block>,
+    pagination: Vec<Option<PaginationHint>>,
     /// Starting column over the table's global boundary set.
     col: usize,
     colspan: u16,
@@ -72,7 +86,7 @@ struct Out {
 /// (`rgdxaCenter`) across all rows, so a row with fewer cells than the table has
 /// columns (e.g. a single wide header cell) gets the right colspan. Within a row,
 /// `fMerged` cells fold left; `rgdxa` then yields the final span.
-pub(crate) fn build(rows: Vec<RowBuild>) -> Table {
+pub(crate) fn build(rows: Vec<RowBuild>) -> TableBuildOutput {
     let header_rows = rows.iter().take_while(|r| r.header).count();
 
     // Global sorted set of distinct boundary positions across the whole table.
@@ -95,18 +109,20 @@ pub(crate) fn build(rows: Vec<RowBuild>) -> Table {
                 let ncell = def.rgdxa.len() - 1;
                 let mut cells = rb.cells.into_iter();
                 for k in 0..ncell {
-                    let blocks = cells.next().unwrap_or_default();
+                    let cell = cells.next().unwrap_or_default();
                     let g = def.tcgrf.get(k).copied().unwrap_or(0);
                     let (left, right) = (def.rgdxa[k], def.rgdxa[k + 1]);
                     if g & F_MERGED != 0 && !out.is_empty() {
                         let last = out.last_mut().expect("non-empty");
                         last.colspan = (col_of(right).saturating_sub(last.col)).max(1) as u16;
-                        last.blocks.extend(blocks);
+                        last.blocks.extend(cell.blocks);
+                        last.pagination.extend(cell.pagination);
                     } else {
                         let col = col_of(left);
                         let colspan = (col_of(right).saturating_sub(col)).max(1) as u16;
                         out.push(Out {
-                            blocks,
+                            blocks: cell.blocks,
+                            pagination: cell.pagination,
                             col,
                             colspan,
                             rowspan: 1,
@@ -116,16 +132,18 @@ pub(crate) fn build(rows: Vec<RowBuild>) -> Table {
                     }
                 }
                 // Extra streamed cells beyond the definition fold into the last.
-                for blocks in cells {
+                for cell in cells {
                     if let Some(last) = out.last_mut() {
-                        last.blocks.extend(blocks);
+                        last.blocks.extend(cell.blocks);
+                        last.pagination.extend(cell.pagination);
                     }
                 }
             }
             None => {
-                for (k, blocks) in rb.cells.into_iter().enumerate() {
+                for (k, cell) in rb.cells.into_iter().enumerate() {
                     out.push(Out {
-                        blocks,
+                        blocks: cell.blocks,
+                        pagination: cell.pagination,
                         col: k,
                         colspan: 1,
                         rowspan: 1,
@@ -163,32 +181,38 @@ pub(crate) fn build(rows: Vec<RowBuild>) -> Table {
 
     // Emit, skipping merged-away cells.
     let mut model_rows = Vec::with_capacity(grid.len());
+    let mut cell_pagination = Vec::with_capacity(grid.len());
     for (r, row) in grid.into_iter().enumerate() {
         let is_header = r < header_rows;
-        let cells: Vec<Cell> = row
-            .into_iter()
-            .filter(|o| !o.dropped)
-            .map(|o| Cell {
-                blocks: o.blocks,
-                col_span: o.colspan,
-                row_span: o.rowspan,
+        let mut cells = Vec::with_capacity(row.len());
+        let mut row_pagination = Vec::with_capacity(row.len());
+        for output in row.into_iter().filter(|output| !output.dropped) {
+            row_pagination.push(output.pagination);
+            cells.push(Cell {
+                blocks: output.blocks,
+                col_span: output.colspan,
+                row_span: output.rowspan,
                 is_header,
                 ..Default::default()
-            })
-            .collect();
+            });
+        }
         model_rows.push(Row { cells });
+        cell_pagination.push(row_pagination);
     }
-    Table {
-        rows: model_rows,
-        header_rows,
-        ..Default::default()
+    TableBuildOutput {
+        table: Table {
+            rows: model_rows,
+            header_rows,
+            ..Default::default()
+        },
+        cell_pagination,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Block, ParaProps, Paragraph, Run};
+    use crate::model::{Block, PaginationHint, ParaProps, Paragraph, Run};
 
     fn cell(text: &str) -> Vec<Block> {
         vec![Block::Paragraph(Paragraph {
@@ -225,10 +249,20 @@ mod tests {
             tcgrf: vec![0, F_MERGED],
         };
         let t = build(vec![RowBuild {
-            cells: vec![cell("A"), cell("B")],
+            cells: vec![
+                CellBuild {
+                    blocks: cell("A"),
+                    ..CellBuild::default()
+                },
+                CellBuild {
+                    blocks: cell("B"),
+                    ..CellBuild::default()
+                },
+            ],
             def: Some(def),
             header: false,
-        }]);
+        }])
+        .table;
         assert_eq!(t.rows[0].cells.len(), 1);
         assert_eq!(t.rows[0].cells[0].col_span, 2);
     }
@@ -238,7 +272,16 @@ mod tests {
         // Two rows, column 0: top fVertRestart, bottom fVertMerge → rowspan 2,
         // the continuation cell dropped.
         let top = RowBuild {
-            cells: vec![cell("X"), cell("a")],
+            cells: vec![
+                CellBuild {
+                    blocks: cell("X"),
+                    ..CellBuild::default()
+                },
+                CellBuild {
+                    blocks: cell("a"),
+                    ..CellBuild::default()
+                },
+            ],
             def: Some(TableDef {
                 rgdxa: vec![0, 100, 200],
                 tcgrf: vec![F_VERT_RESTART, 0],
@@ -246,23 +289,112 @@ mod tests {
             header: false,
         };
         let bot = RowBuild {
-            cells: vec![cell(""), cell("b")],
+            cells: vec![
+                CellBuild {
+                    blocks: cell(""),
+                    ..CellBuild::default()
+                },
+                CellBuild {
+                    blocks: cell("b"),
+                    ..CellBuild::default()
+                },
+            ],
             def: Some(TableDef {
                 rgdxa: vec![0, 100, 200],
                 tcgrf: vec![F_VERT_MERGE, 0],
             }),
             header: false,
         };
-        let t = build(vec![top, bot]);
+        let t = build(vec![top, bot]).table;
         assert_eq!(t.rows[0].cells[0].row_span, 2);
         assert_eq!(t.rows[1].cells.len(), 1); // continuation dropped
+    }
+
+    #[test]
+    fn merge_resolution_keeps_cell_pagination_aligned() {
+        let a = PaginationHint {
+            keep_next: true,
+            ..PaginationHint::default()
+        };
+        let b = PaginationHint {
+            keep_lines: true,
+            ..PaginationHint::default()
+        };
+        let c = PaginationHint {
+            widow_control: true,
+            ..PaginationHint::default()
+        };
+        let extra = PaginationHint {
+            keep_next: true,
+            keep_lines: true,
+            ..PaginationHint::default()
+        };
+        let d = PaginationHint {
+            keep_next: true,
+            widow_control: true,
+            ..PaginationHint::default()
+        };
+        let e = PaginationHint {
+            keep_lines: true,
+            widow_control: true,
+            ..PaginationHint::default()
+        };
+        let dropped = PaginationHint {
+            keep_next: true,
+            keep_lines: true,
+            widow_control: true,
+        };
+        let built_cell = |text: &str, pagination| CellBuild {
+            blocks: cell(text),
+            pagination: vec![Some(pagination)],
+        };
+
+        let built = build(vec![
+            RowBuild {
+                cells: vec![
+                    built_cell("A", a),
+                    built_cell("B", b),
+                    built_cell("C", c),
+                    built_cell("extra", extra),
+                ],
+                def: Some(TableDef {
+                    rgdxa: vec![0, 100, 200, 300],
+                    tcgrf: vec![0, F_MERGED, F_VERT_RESTART],
+                }),
+                header: false,
+            },
+            RowBuild {
+                cells: vec![
+                    built_cell("D", d),
+                    built_cell("E", e),
+                    built_cell("dropped", dropped),
+                ],
+                def: Some(TableDef {
+                    rgdxa: vec![0, 100, 200, 300],
+                    tcgrf: vec![0, 0, F_VERT_MERGE],
+                }),
+                header: false,
+            },
+        ]);
+
+        assert_eq!(built.table.rows[0].cells.len(), 2);
+        assert_eq!(built.table.rows[0].cells[0].col_span, 2);
+        assert_eq!(built.table.rows[0].cells[1].row_span, 2);
+        assert_eq!(built.table.rows[1].cells.len(), 2);
+        assert_eq!(
+            built.cell_pagination,
+            vec![
+                vec![vec![Some(a), Some(b)], vec![Some(c), Some(extra)]],
+                vec![vec![Some(d)], vec![Some(e)]],
+            ]
+        );
     }
 
     #[test]
     fn doc_vertical_merge_row_span_saturates_instead_of_overflowing() {
         let mut rows = Vec::with_capacity(u16::MAX as usize + 1);
         rows.push(RowBuild {
-            cells: vec![Vec::new()],
+            cells: vec![CellBuild::default()],
             def: Some(TableDef {
                 rgdxa: vec![0, 100],
                 tcgrf: vec![F_VERT_RESTART],
@@ -270,7 +402,7 @@ mod tests {
             header: false,
         });
         rows.extend((0..u16::MAX as usize).map(|_| RowBuild {
-            cells: vec![Vec::new()],
+            cells: vec![CellBuild::default()],
             def: Some(TableDef {
                 rgdxa: vec![0, 100],
                 tcgrf: vec![F_VERT_MERGE],
@@ -278,7 +410,7 @@ mod tests {
             header: false,
         }));
 
-        let table = build(rows);
+        let table = build(rows).table;
 
         assert_eq!(table.rows[0].cells[0].row_span, u16::MAX);
     }

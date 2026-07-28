@@ -17,12 +17,12 @@ use crate::fib::{self, Fib};
 use crate::list::Numberer;
 use crate::model::{
     normalize_field_instruction, Align, Block, CharProps, DocMeta, DocModel, DocSetup, FieldRole,
-    Image, ListInfo, ParaProps, Paragraph, SectionBreakKind, SectionSetup, SourceRegion,
-    SourceRegionKind, Stats, TableRowPaginationHint,
+    Image, ListInfo, PaginationHint, ParaProps, Paragraph, SectionBreakKind, SectionSetup,
+    SourceRegion, SourceRegionKind, Stats, TableCellPaginationHints, TableRowPaginationHint,
 };
 use crate::papx::PapxTable;
 use crate::stsh::StyleSheet;
-use crate::table::{self, RowBuild};
+use crate::table::{self, CellBuild, RowBuild};
 use crate::util::u32le;
 
 /// Immutable source structures threaded through legacy model assembly: the decoded
@@ -65,7 +65,9 @@ pub(crate) struct BuildInputs<'a> {
 
 pub(crate) struct LegacyBuildOutput {
     pub(crate) model: DocModel,
+    pub(crate) pagination_hints: Vec<PaginationHint>,
     pub(crate) table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
+    pub(crate) table_cell_pagination: Vec<TableCellPaginationHints>,
 }
 
 pub(crate) fn build_model_with_render_hints(
@@ -95,8 +97,14 @@ pub(crate) fn build_model_with_render_hints(
         data,
         fonts,
     };
-    let (blocks, regions, table_row_pagination) =
-        build_legacy_region_blocks(&src, numberer, fib, table, &section_spans);
+    let LegacyRegionOutput {
+        blocks,
+        regions,
+        pagination_hints,
+        table_row_pagination,
+        table_cell_pagination,
+        text_start: _,
+    } = build_legacy_region_blocks(&src, numberer, fib, table, &section_spans);
     let mut blocks = blocks;
     let stats = compute_stats(&blocks);
     let setup = legacy_doc_setup_from_regions(&mut blocks, &regions);
@@ -113,7 +121,9 @@ pub(crate) fn build_model_with_render_hints(
             custom_xml_items: Vec::new(),
             setup,
         },
+        pagination_hints,
         table_row_pagination,
+        table_cell_pagination,
     }
 }
 
@@ -210,11 +220,7 @@ fn build_legacy_region_blocks(
     fib: &Fib,
     table: &[u8],
     section_spans: &[LegacySectionSpan],
-) -> (
-    Vec<Block>,
-    Vec<SourceRegion>,
-    Vec<Vec<TableRowPaginationHint>>,
-) {
+) -> LegacyRegionOutput {
     let mut output = LegacyRegionOutput::default();
     let mut source_start_cp = 0usize;
     let header_stories = header_footer_story_ranges(fib, table);
@@ -270,7 +276,7 @@ fn build_legacy_region_blocks(
         source_start_cp = source_start_cp.saturating_add(source_len_cp);
     }
 
-    (output.blocks, output.regions, output.table_row_pagination)
+    output
 }
 
 fn push_legacy_main_section_regions(
@@ -297,7 +303,9 @@ fn push_legacy_main_section_regions(
             output
                 .blocks
                 .push(Block::SectionBreak(legacy_section_break_setup()));
+            output.pagination_hints.push(PaginationHint::default());
             output.table_row_pagination.push(Vec::new());
+            output.table_cell_pagination.push(Vec::new());
         }
     }
 }
@@ -349,8 +357,14 @@ fn push_legacy_region(
     let text_len = compute_stats(&region_output.blocks).text_chars;
     output.blocks.append(&mut region_output.blocks);
     output
+        .pagination_hints
+        .append(&mut region_output.pagination_hints);
+    output
         .table_row_pagination
         .append(&mut region_output.table_row_pagination);
+    output
+        .table_cell_pagination
+        .append(&mut region_output.table_cell_pagination);
     let block_end = output.blocks.len();
 
     if source_len_cp > 0 || include_empty {
@@ -373,7 +387,9 @@ fn push_legacy_region(
 struct LegacyRegionOutput {
     blocks: Vec<Block>,
     regions: Vec<SourceRegion>,
+    pagination_hints: Vec<PaginationHint>,
     table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
+    table_cell_pagination: Vec<TableCellPaginationHints>,
     text_start: usize,
 }
 
@@ -614,7 +630,9 @@ struct Asm<'a, 'l> {
     numberer: &'a mut Numberer<'l>,
 
     blocks: Vec<Block>,
+    pagination_hints: Vec<PaginationHint>,
     table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
+    table_cell_pagination: Vec<TableCellPaginationHints>,
 
     // Current run being coalesced. `run_chp` is the (cheap, `Copy`) source the current
     // `run_props` was built from — comparing it per code unit avoids rebuilding the owned
@@ -632,8 +650,9 @@ struct Asm<'a, 'l> {
     // Table-building state.
     cur_rows: Vec<RowBuild>,
     cur_row_pagination: Vec<TableRowPaginationHint>,
-    cur_row_cells: Vec<Vec<Block>>,
+    cur_row_cells: Vec<CellBuild>,
     cell_blocks: Vec<Block>,
+    cell_pagination: Vec<Option<PaginationHint>>,
 
     // Field state. `field_stack` holds one entry per currently-open field
     // (`0x13`..`0x15`), each recording whether that field has passed its `0x14`
@@ -686,7 +705,9 @@ impl<'a, 'l> Asm<'a, 'l> {
             fonts,
             numberer,
             blocks: Vec::new(),
+            pagination_hints: Vec::new(),
             table_row_pagination: Vec::new(),
+            table_cell_pagination: Vec::new(),
             run_buf: Vec::new(),
             run_chp: Chp::default(),
             run_props: CharProps::default(),
@@ -696,6 +717,7 @@ impl<'a, 'l> Asm<'a, 'l> {
             cur_row_pagination: Vec::new(),
             cur_row_cells: Vec::new(),
             cell_blocks: Vec::new(),
+            cell_pagination: Vec::new(),
             field_stack: Vec::new(),
             unseparated: 0,
             img_cache: HashMap::new(),
@@ -897,9 +919,10 @@ impl<'a, 'l> Asm<'a, 'l> {
     }
 
     /// Finalize the runs collected so far into a [`Paragraph`] with list info.
-    fn take_paragraph(&mut self, fc: u32) -> Paragraph {
+    fn take_paragraph(&mut self, fc: u32) -> (Paragraph, PaginationHint) {
         self.flush_run();
         let runs = std::mem::take(&mut self.para_runs);
+        let source_pagination = self.papx.paragraph_pagination_at(fc);
         let (ilfo, ilvl) = self.papx.list_at(fc);
         let list = if ilfo > 0 {
             self.numberer.label(ilfo, ilvl).map(|label| ListInfo {
@@ -927,30 +950,39 @@ impl<'a, 'l> Asm<'a, 'l> {
         let style_name = self.stylesheet.name(istd).map(str::to_string);
         // A heading takes precedence over list-item rendering.
         let list = if heading_level.is_some() { None } else { list };
-        Paragraph {
+        let paragraph = Paragraph {
             props: ParaProps {
                 style_name,
                 heading_level,
                 align,
                 outline_level: outlvl,
                 list,
+                page_break_before: source_pagination.page_break_before,
                 ..Default::default()
             },
             runs,
-        }
+        };
+        let pagination = PaginationHint {
+            keep_next: source_pagination.keep_next,
+            keep_lines: source_pagination.keep_lines,
+            widow_control: source_pagination.widow_control,
+        };
+        (paragraph, pagination)
     }
 
     /// Handle a paragraph (`0x0D`) or cell (`0x07`) mark: finalize the paragraph
     /// and route it into the body or the current table.
     fn end_paragraph(&mut self, fc: u32, is_cell_mark: bool) {
         let (in_table, ttp) = self.papx.at(fc);
-        let para = self.take_paragraph(fc);
+        let (para, pagination) = self.take_paragraph(fc);
 
         if !in_table {
             self.flush_table();
             if !para.is_blank() {
                 self.blocks.push(Block::Paragraph(para));
+                self.pagination_hints.push(pagination);
                 self.table_row_pagination.push(Vec::new());
+                self.table_cell_pagination.push(Vec::new());
             }
             return;
         }
@@ -959,6 +991,7 @@ impl<'a, 'l> Asm<'a, 'l> {
         // 0x07 closes the cell (and, when it is the row terminator, the row).
         if !is_cell_mark {
             self.cell_blocks.push(Block::Paragraph(para));
+            self.cell_pagination.push(Some(pagination));
             return;
         }
         // The row-terminating paragraph (`fTtp`) is an empty marker, not a real
@@ -966,10 +999,14 @@ impl<'a, 'l> Asm<'a, 'l> {
         let blank_terminator = ttp && para.is_blank() && self.cell_blocks.is_empty();
         if !blank_terminator {
             self.cell_blocks.push(Block::Paragraph(para));
-            self.cur_row_cells
-                .push(std::mem::take(&mut self.cell_blocks));
+            self.cell_pagination.push(Some(pagination));
+            self.cur_row_cells.push(CellBuild {
+                blocks: std::mem::take(&mut self.cell_blocks),
+                pagination: std::mem::take(&mut self.cell_pagination),
+            });
         } else {
             self.cell_blocks.clear();
+            self.cell_pagination.clear();
         }
         if ttp {
             // The row definition (column geometry + merge flags) is carried on the
@@ -1000,13 +1037,17 @@ impl<'a, 'l> Asm<'a, 'l> {
                 .push(TableRowPaginationHint::default());
         }
         self.cell_blocks.clear();
+        self.cell_pagination.clear();
         if !self.cur_rows.is_empty() {
-            let t = table::build(std::mem::take(&mut self.cur_rows));
+            let built = table::build(std::mem::take(&mut self.cur_rows));
             let row_pagination = std::mem::take(&mut self.cur_row_pagination);
-            if !t.rows.is_empty() {
-                debug_assert_eq!(row_pagination.len(), t.rows.len());
-                self.blocks.push(Block::Table(t));
+            if !built.table.rows.is_empty() {
+                debug_assert_eq!(row_pagination.len(), built.table.rows.len());
+                debug_assert_eq!(built.cell_pagination.len(), built.table.rows.len());
+                self.blocks.push(Block::Table(built.table));
+                self.pagination_hints.push(PaginationHint::default());
                 self.table_row_pagination.push(row_pagination);
+                self.table_cell_pagination.push(built.cell_pagination);
             }
         }
     }
@@ -1015,17 +1056,23 @@ impl<'a, 'l> Asm<'a, 'l> {
     fn finish_with_render_hints(mut self) -> LegacyBlockOutput {
         // A trailing paragraph with no final mark.
         if !self.para_runs.is_empty() || !self.run_buf.is_empty() {
-            let para = self.take_paragraph(u32::MAX);
+            let (para, pagination) = self.take_paragraph(u32::MAX);
             if !para.is_blank() {
                 self.blocks.push(Block::Paragraph(para));
+                self.pagination_hints.push(pagination);
                 self.table_row_pagination.push(Vec::new());
+                self.table_cell_pagination.push(Vec::new());
             }
         }
         self.flush_table();
+        debug_assert_eq!(self.pagination_hints.len(), self.blocks.len());
         debug_assert_eq!(self.table_row_pagination.len(), self.blocks.len());
+        debug_assert_eq!(self.table_cell_pagination.len(), self.blocks.len());
         LegacyBlockOutput {
             blocks: self.blocks,
+            pagination_hints: self.pagination_hints,
             table_row_pagination: self.table_row_pagination,
+            table_cell_pagination: self.table_cell_pagination,
         }
     }
 
@@ -1038,7 +1085,9 @@ impl<'a, 'l> Asm<'a, 'l> {
 #[derive(Default)]
 struct LegacyBlockOutput {
     blocks: Vec<Block>,
+    pagination_hints: Vec<PaginationHint>,
     table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
+    table_cell_pagination: Vec<TableCellPaginationHints>,
 }
 
 /// Extract the target URL from a `HYPERLINK` field instruction, e.g.
@@ -1136,6 +1185,128 @@ mod tests {
         assert_eq!(assembled.table_row_pagination[0].len(), 1);
         assert!(assembled.table_row_pagination[0][0].cant_split);
         assert!(assembled.table_row_pagination[1].is_empty());
+    }
+
+    #[test]
+    fn legacy_assembly_maps_and_aligns_direct_paragraph_pagination() {
+        let units = [
+            b'A' as u16,
+            PARA_MARK,
+            b'B' as u16,
+            PARA_MARK,
+            b'C' as u16,
+            PARA_MARK,
+        ];
+        let fcs: Vec<u32> = (0..units.len() as u32).collect();
+        let first = crate::papx::ParagraphPagination {
+            keep_next: true,
+            keep_lines: true,
+            page_break_before: true,
+            widow_control: false,
+        };
+        let second = crate::papx::ParagraphPagination::default();
+        let third = crate::papx::ParagraphPagination {
+            widow_control: false,
+            ..crate::papx::ParagraphPagination::default()
+        };
+        let papx = PapxTable::from_test_entries_with_pagination(&[
+            (2, false, false, false, first),
+            (4, false, false, false, second),
+            (6, false, false, false, third),
+        ]);
+        let chpx = ChpxTable::default();
+        let stsh = StyleSheet::default();
+        let lists = Lists::default();
+        let mut numberer = Numberer::new(&lists);
+        let mut asm = Asm::new(&papx, &chpx, &stsh, &[], &[], &mut numberer);
+
+        asm.run(&units, &fcs);
+        let assembled = asm.finish_with_render_hints();
+
+        assert_eq!(assembled.blocks.len(), 3);
+        assert_eq!(
+            assembled.pagination_hints,
+            vec![
+                PaginationHint {
+                    keep_next: true,
+                    keep_lines: true,
+                    widow_control: false,
+                },
+                PaginationHint {
+                    widow_control: true,
+                    ..PaginationHint::default()
+                },
+                PaginationHint::default(),
+            ]
+        );
+        assert!(assembled.table_cell_pagination.iter().all(Vec::is_empty));
+        let Block::Paragraph(first_paragraph) = &assembled.blocks[0] else {
+            panic!("first block must be a paragraph");
+        };
+        assert!(first_paragraph.props.page_break_before);
+        let Block::Paragraph(second_paragraph) = &assembled.blocks[1] else {
+            panic!("second block must be a paragraph");
+        };
+        assert!(!second_paragraph.props.page_break_before);
+    }
+
+    #[test]
+    fn legacy_assembly_aligns_table_cell_paragraph_pagination() {
+        let units = [b'A' as u16, PARA_MARK, b'B' as u16, CELL_MARK, CELL_MARK];
+        let fcs: Vec<u32> = (0..units.len() as u32).collect();
+        let first = crate::papx::ParagraphPagination {
+            keep_next: true,
+            page_break_before: true,
+            widow_control: false,
+            ..crate::papx::ParagraphPagination::default()
+        };
+        let second = crate::papx::ParagraphPagination {
+            keep_lines: true,
+            ..crate::papx::ParagraphPagination::default()
+        };
+        let papx = PapxTable::from_test_entries_with_pagination(&[
+            (2, true, false, false, first),
+            (4, true, false, false, second),
+            (
+                5,
+                true,
+                true,
+                false,
+                crate::papx::ParagraphPagination::default(),
+            ),
+        ]);
+        let chpx = ChpxTable::default();
+        let stsh = StyleSheet::default();
+        let lists = Lists::default();
+        let mut numberer = Numberer::new(&lists);
+        let mut asm = Asm::new(&papx, &chpx, &stsh, &[], &[], &mut numberer);
+
+        asm.run(&units, &fcs);
+        let assembled = asm.finish_with_render_hints();
+
+        assert_eq!(assembled.blocks.len(), 1);
+        assert_eq!(
+            assembled.table_cell_pagination,
+            vec![vec![vec![vec![
+                Some(PaginationHint {
+                    keep_next: true,
+                    widow_control: false,
+                    ..PaginationHint::default()
+                }),
+                Some(PaginationHint {
+                    keep_lines: true,
+                    widow_control: true,
+                    ..PaginationHint::default()
+                }),
+            ]]]]
+        );
+        let Block::Table(table) = &assembled.blocks[0] else {
+            panic!("assembled block must be a table");
+        };
+        let Block::Paragraph(first_paragraph) = &table.rows[0].cells[0].blocks[0] else {
+            panic!("first cell block must be a paragraph");
+        };
+        assert!(first_paragraph.props.page_break_before);
     }
 
     #[test]
@@ -1243,6 +1414,12 @@ mod tests {
         ));
         assert_eq!(output.table_row_pagination.len(), output.blocks.len());
         assert!(output.table_row_pagination.iter().all(Vec::is_empty));
+        assert_eq!(output.pagination_hints.len(), output.blocks.len());
+        assert!(output.pagination_hints[0].widow_control);
+        assert_eq!(output.pagination_hints[1], PaginationHint::default());
+        assert!(output.pagination_hints[2].widow_control);
+        assert_eq!(output.table_cell_pagination.len(), output.blocks.len());
+        assert!(output.table_cell_pagination.iter().all(Vec::is_empty));
     }
 
     fn all_text(blocks: &[Block]) -> String {
@@ -1334,9 +1511,17 @@ mod tests {
             data: &[],
             fonts: &[],
         };
-        let (blocks, regions, table_row_pagination) =
-            build_legacy_region_blocks(&src, &mut numberer, &fib, &plcf_hdd, &[]);
+        let LegacyRegionOutput {
+            blocks,
+            regions,
+            pagination_hints,
+            table_row_pagination,
+            table_cell_pagination,
+            text_start: _,
+        } = build_legacy_region_blocks(&src, &mut numberer, &fib, &plcf_hdd, &[]);
+        assert_eq!(pagination_hints.len(), blocks.len());
         assert_eq!(table_row_pagination.len(), blocks.len());
+        assert_eq!(table_cell_pagination.len(), blocks.len());
 
         let header_region = regions
             .iter()
