@@ -23,6 +23,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Opened legacy `.doc` CHPX runs now preserve literal direct
+  `sprmCFSmallCaps` and `sprmCFCaps` on/off values through the shared model,
+  `.docx` conversion, and PDF rendering. Style-relative toggle operands and
+  complete character-style/reset modifiers conservatively discard stale
+  direct state until a later literal value; character-style-derived
+  capitalization, piece `Pcd.Prm`, and Markdown/HTML visual caps/small-caps
+  remain unsupported.
 - Opened legacy `.doc` CHPX runs now preserve direct `sprmCIss` normal,
   superscript, and subscript values through the shared model, `.docx`
   conversion, and PDF rendering. Complete character-style/reset modifiers

@@ -47,6 +47,8 @@ fn max_fkp_entries() -> usize {
 const SPRM_C_F_BOLD: u16 = 0x0835;
 const SPRM_C_F_ITALIC: u16 = 0x0836;
 const SPRM_C_F_STRIKE: u16 = 0x0837;
+const SPRM_C_F_SMALL_CAPS: u16 = 0x083A;
+const SPRM_C_F_CAPS: u16 = 0x083B;
 const SPRM_C_F_VANISH: u16 = 0x083C; // hidden text (NOT 0x0838 — that is Outline)
 const SPRM_C_F_SPEC: u16 = 0x0855; // run's special char is a real object (1-byte)
 const SPRM_C_HIGHLIGHT: u16 = 0x2A0C; // one-byte Ico highlight palette
@@ -128,6 +130,10 @@ pub(crate) struct Chp {
     pub highlight: Option<u8>,
     /// Direct `sprmCIss`, including explicit baseline.
     pub vert_align: Option<VertAlign>,
+    /// Literal direct `sprmCFSmallCaps`; style-relative operands stay unknown.
+    pub small_caps: Option<bool>,
+    /// Literal direct `sprmCFCaps`; style-relative operands stay unknown.
+    pub caps: Option<bool>,
     /// For a special-char run (`fSpec`) that is an inline picture, the `fcPic`
     /// offset into the `Data` stream.
     pub pic: Option<u32>,
@@ -370,6 +376,8 @@ fn scan_grpprl(gp: &[u8]) -> Chp {
             SPRM_C_F_BOLD => chp.bold = toggle(),
             SPRM_C_F_ITALIC => chp.italic = toggle(),
             SPRM_C_F_STRIKE => chp.strike = toggle(),
+            SPRM_C_F_SMALL_CAPS => apply_direct_toggle(&mut chp.small_caps, operand[0]),
+            SPRM_C_F_CAPS => apply_direct_toggle(&mut chp.caps, operand[0]),
             SPRM_C_F_VANISH => chp.hidden = toggle(),
             SPRM_C_F_SPEC => fspec = operand.first().copied().unwrap_or(0) != 0,
             SPRM_C_KUL => chp.underline = operand.first().copied().unwrap_or(0) != 0,
@@ -393,13 +401,17 @@ fn scan_grpprl(gp: &[u8]) -> Chp {
                     chp.vert_align = value;
                 }
             }
-            // These operators make vertical alignment style-derived. Legacy
-            // character-style resolution is outside this bounded CHPX pass.
+            // These operators make modeled direct properties style-derived.
+            // Legacy character-style resolution is outside this CHPX pass.
             SPRM_C_ISTD | SPRM_C_ISTD_PERMUTE | SPRM_C_MAJORITY => {
                 chp.vert_align = None;
+                chp.small_caps = None;
+                chp.caps = None;
             }
             SPRM_C_PLAIN if operand[0] == 0 => {
                 chp.vert_align = None;
+                chp.small_caps = None;
+                chp.caps = None;
             }
             SPRM_C_CV => {
                 // COLORREF: bytes [R, G, B, reserved].
@@ -420,6 +432,15 @@ fn scan_grpprl(gp: &[u8]) -> Chp {
     // A picture run sets both fSpec and a picture location.
     chp.pic = if fspec { picloc } else { None };
     chp
+}
+
+fn apply_direct_toggle(state: &mut Option<bool>, operand: u8) {
+    match operand {
+        0 => *state = Some(false),
+        1 => *state = Some(true),
+        0x80 | 0x81 => *state = None,
+        _ => {}
+    }
 }
 
 /// Operand length for a sprm, from its `spra` field ([MS-DOC] 2.2.5). Character
@@ -629,6 +650,99 @@ mod tests {
             0x48, 0x2A, 2, // later direct subscript
         ]);
         assert_eq!(direct_after_reset.vert_align, Some(VertAlign::Sub));
+    }
+
+    #[test]
+    fn capitalization_literal_toggles_are_bounded() {
+        assert_eq!(scan_grpprl(&[0x3A, 0x08, 0]).small_caps, Some(false));
+        assert_eq!(scan_grpprl(&[0x3A, 0x08, 1]).small_caps, Some(true));
+        assert_eq!(scan_grpprl(&[0x3A, 0x08, 2]).small_caps, None);
+        assert_eq!(scan_grpprl(&[0x3A, 0x08, u8::MAX]).small_caps, None);
+
+        assert_eq!(scan_grpprl(&[0x3B, 0x08, 0]).caps, Some(false));
+        assert_eq!(scan_grpprl(&[0x3B, 0x08, 1]).caps, Some(true));
+        assert_eq!(scan_grpprl(&[0x3B, 0x08, 2]).caps, None);
+        assert_eq!(scan_grpprl(&[0x3B, 0x08, u8::MAX]).caps, None);
+    }
+
+    #[test]
+    fn capitalization_uses_last_valid_literal_values() {
+        let chp = scan_grpprl(&[
+            0x3A, 0x08, 1, // small caps on
+            0x3A, 0x08, 0, // small caps off
+            0x3B, 0x08, 0, // caps off
+            0x3B, 0x08, 1, // caps on
+        ]);
+        assert_eq!(chp.small_caps, Some(false));
+        assert_eq!(chp.caps, Some(true));
+    }
+
+    #[test]
+    fn style_relative_capitalization_discards_stale_direct_values() {
+        let chp = scan_grpprl(&[
+            0x3A, 0x08, 1, // small caps on
+            0x3B, 0x08, 1, // caps on
+            0x3A, 0x08, 0x80, // small caps from style
+            0x3B, 0x08, 0x81, // caps opposite style
+        ]);
+        assert_eq!(chp.small_caps, None);
+        assert_eq!(chp.caps, None);
+
+        let later_literal = scan_grpprl(&[
+            0x3A, 0x08, 0x80, // small caps from style
+            0x3B, 0x08, 0x81, // caps opposite style
+            0x3A, 0x08, 1, // later literal small caps on
+            0x3B, 0x08, 0, // later literal caps off
+        ]);
+        assert_eq!(later_literal.small_caps, Some(true));
+        assert_eq!(later_literal.caps, Some(false));
+    }
+
+    #[test]
+    fn invalid_or_truncated_capitalization_preserves_prior_literal_values() {
+        let chp = scan_grpprl(&[
+            0x3A, 0x08, 1, // small caps on
+            0x3B, 0x08, 1, // caps on
+            0x3A, 0x08, 2, // invalid small caps
+            0x3B, 0x08, 0xFF, // invalid caps
+            0x3A, 0x08, // truncated modifier
+        ]);
+        assert_eq!(chp.small_caps, Some(true));
+        assert_eq!(chp.caps, Some(true));
+    }
+
+    #[test]
+    fn style_and_reset_operators_discard_stale_direct_capitalization() {
+        let resets: &[&[u8]] = &[
+            // sprmCPlain
+            &[0x33, 0x2A, 0],
+            // sprmCIstd
+            &[0x30, 0x4A, 0x0A, 0x00],
+            // sprmCIstdPermute
+            &[0x31, 0xCA, 0x07, 0x00, 0x0A, 0x00, 0x0A, 0x00, 0x0A, 0x00],
+            // sprmCMajority comparing both properties as on
+            &[0x47, 0xCA, 0x06, 0x3A, 0x08, 1, 0x3B, 0x08, 1],
+        ];
+        for reset in resets {
+            let mut grpprl = vec![
+                0x3A, 0x08, 1, // small caps on
+                0x3B, 0x08, 1, // caps on
+            ];
+            grpprl.extend_from_slice(reset);
+            let chp = scan_grpprl(&grpprl);
+            assert_eq!(chp.small_caps, None);
+            assert_eq!(chp.caps, None);
+        }
+
+        let direct_after_reset = scan_grpprl(&[
+            0x3A, 0x08, 1, // small caps on
+            0x3B, 0x08, 1, // caps on
+            0x33, 0x2A, 0, // sprmCPlain
+            0x3A, 0x08, 0, // later direct small caps off
+            0x3B, 0x08, 1, // later direct caps on
+        ]);
+        assert_eq!(direct_after_reset.small_caps, Some(false));
+        assert_eq!(direct_after_reset.caps, Some(true));
     }
 
     #[test]
