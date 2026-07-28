@@ -56,6 +56,8 @@ const SPRM_T_FCANT_SPLIT_90: u16 = 0x3403;
 const SPRM_T_TABLE_HEADER: u16 = 0x3404; // row repeats as a header (1-byte)
 const SPRM_T_FCANT_SPLIT: u16 = 0x3466;
 const SPRM_P_ILFO: u16 = 0x460B;
+const SPRM_T_F_BIDI: u16 = 0x560B;
+const SPRM_T_F_BIDI_90: u16 = 0x5664;
 const SPRM_T_DEF_TABLE: u16 = 0xD608;
 
 /// Direct paragraph pagination resolved against the MS-DOC format defaults.
@@ -165,6 +167,8 @@ struct PapEntry {
     table_header: bool,
     /// Resolved `sprmTFCantSplit` / `sprmTFCantSplit90` row property.
     table_cant_split: bool,
+    /// Resolved direct table direction from `sprmTFBiDi` / `sprmTFBiDi90`.
+    table_bidi_visual: bool,
     /// Parsed `sprmTDefTable` row definition — present only on TTP paragraphs.
     table_def: Option<TableDef>,
 }
@@ -183,6 +187,8 @@ struct Pap {
     table_header: bool,
     table_cant_split_90: Option<bool>,
     table_cant_split: Option<bool>,
+    table_bidi: Option<bool>,
+    table_bidi_90: Option<bool>,
 }
 
 impl Pap {
@@ -190,6 +196,10 @@ impl Pap {
         self.table_cant_split
             .or(self.table_cant_split_90)
             .unwrap_or(false)
+    }
+
+    fn resolved_table_bidi_visual(self) -> bool {
+        self.table_bidi.unwrap_or(false) || self.table_bidi_90.unwrap_or(false)
     }
 }
 
@@ -265,6 +275,13 @@ impl PapxTable {
             .unwrap_or(false)
     }
 
+    /// Whether the row ending at `fc` uses visual right-to-left table ordering.
+    pub(crate) fn table_bidi_visual_at(&self, fc: u32) -> bool {
+        self.entry_at(fc)
+            .map(|e| e.table_bidi_visual)
+            .unwrap_or(false)
+    }
+
     pub(crate) fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
@@ -321,6 +338,27 @@ impl PapxTable {
                         table_cant_split,
                         istd,
                         pagination,
+                        ..PapEntry::default()
+                    },
+                )
+                .collect(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_test_entries_with_table_bidi(
+        entries: &[(u32, bool, bool, bool, bool)],
+    ) -> Self {
+        Self {
+            entries: entries
+                .iter()
+                .map(
+                    |&(fc_lim, in_table, ttp, table_cant_split, table_bidi_visual)| PapEntry {
+                        fc_lim,
+                        in_table,
+                        ttp,
+                        table_cant_split,
+                        table_bidi_visual,
                         ..PapEntry::default()
                     },
                 )
@@ -397,6 +435,7 @@ fn parse_fkp(word: &[u8], page_off: usize, out: &mut Vec<PapEntry>) {
             pagination: pap.pagination,
             table_header: pap.table_header,
             table_cant_split: pap.resolved_cant_split(),
+            table_bidi_visual: pap.resolved_table_bidi_visual(),
             table_def,
         });
     }
@@ -483,6 +522,16 @@ fn scan_grpprl(gp: &[u8], istd: u16) -> (Pap, Option<TableDef>) {
             SPRM_T_TABLE_HEADER => pap.table_header = gp.get(op).copied().unwrap_or(0) != 0,
             SPRM_T_FCANT_SPLIT => {
                 pap.table_cant_split = Some(gp.get(op).copied().unwrap_or(0) != 0);
+            }
+            SPRM_T_F_BIDI => {
+                if let Some(value) = strict_bool16(&gp[op..operand_end]) {
+                    pap.table_bidi = Some(value);
+                }
+            }
+            SPRM_T_F_BIDI_90 => {
+                if let Some(value) = strict_bool16(&gp[op..operand_end]) {
+                    pap.table_bidi_90 = Some(value);
+                }
             }
             SPRM_P_ILVL => pap.ilvl = gp.get(op).copied().unwrap_or(0),
             SPRM_P_ILFO => pap.ilfo = u16le(gp, op).unwrap_or(0),
@@ -593,6 +642,14 @@ fn logical_justification(value: u8) -> Option<ParagraphJustification> {
     }
 }
 
+fn strict_bool16(operand: &[u8]) -> Option<bool> {
+    match u16le(operand, 0)? {
+        0 => Some(false),
+        1 => Some(true),
+        _ => None,
+    }
+}
+
 /// Strictly scan a style `grpprlPapx` for the layout and pagination subsets
 /// modeled by the legacy reader. A malformed modifier invalidates the local
 /// style payload instead of applying a partial prefix.
@@ -676,6 +733,42 @@ mod tests {
             let (properties, _) = scan_grpprl(&grpprl, 0);
             assert!(properties.resolved_cant_split());
         }
+    }
+
+    #[test]
+    fn resolves_direct_table_bidi_properties_strictly() {
+        let (default, _) = scan_grpprl(&[], 0);
+        let (modern, _) = scan_grpprl(&[0x0B, 0x56, 0x01, 0x00], 0);
+        let (compatibility, _) = scan_grpprl(&[0x64, 0x56, 0x01, 0x00], 0);
+        assert!(!default.resolved_table_bidi_visual());
+        assert!(modern.resolved_table_bidi_visual());
+        assert!(compatibility.resolved_table_bidi_visual());
+
+        for grpprl in [
+            [0x0B, 0x56, 0x01, 0x00, 0x64, 0x56, 0x00, 0x00],
+            [0x64, 0x56, 0x00, 0x00, 0x0B, 0x56, 0x01, 0x00],
+            [0x0B, 0x56, 0x00, 0x00, 0x64, 0x56, 0x01, 0x00],
+            [0x64, 0x56, 0x01, 0x00, 0x0B, 0x56, 0x00, 0x00],
+        ] {
+            let (properties, _) = scan_grpprl(&grpprl, 0);
+            assert!(properties.resolved_table_bidi_visual());
+        }
+
+        let (modern_last_off, _) =
+            scan_grpprl(&[0x0B, 0x56, 0x01, 0x00, 0x0B, 0x56, 0x00, 0x00], 0);
+        let (compatibility_last_on, _) =
+            scan_grpprl(&[0x64, 0x56, 0x00, 0x00, 0x64, 0x56, 0x01, 0x00], 0);
+        assert!(!modern_last_off.resolved_table_bidi_visual());
+        assert!(compatibility_last_on.resolved_table_bidi_visual());
+
+        let (invalid_after_valid, _) =
+            scan_grpprl(&[0x0B, 0x56, 0x01, 0x00, 0x0B, 0x56, 0x02, 0x00], 0);
+        let (only_invalid, _) = scan_grpprl(&[0x64, 0x56, 0xFF, 0xFF], 0);
+        let (truncated_after_valid, _) =
+            scan_grpprl(&[0x0B, 0x56, 0x01, 0x00, 0x64, 0x56, 0x01], 0);
+        assert!(invalid_after_valid.resolved_table_bidi_visual());
+        assert!(!only_invalid.resolved_table_bidi_visual());
+        assert!(truncated_after_valid.resolved_table_bidi_visual());
     }
 
     #[test]
@@ -1088,6 +1181,7 @@ mod tests {
             pagination: ParagraphPaginationOverrides::default(),
             table_header: false,
             table_cant_split: false,
+            table_bidi_visual: false,
             table_def: None,
         };
         let t = PapxTable {

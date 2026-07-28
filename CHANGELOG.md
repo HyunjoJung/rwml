@@ -23,6 +23,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Opened legacy `.doc` tables now preserve strict direct `sprmTFBiDi` and
+  compatibility `sprmTFBiDi90` Bool16 direction from row-terminating PAPX.
+  Repeated values of each property apply in source order, either final
+  property enables visual RTL, equivalent rows remain one table, and a
+  direction change starts a separate table before merge/width resolution.
+  Cells stay in source-logical order through the shared model and `.docx`
+  conversion while the existing PDF renderer mirrors their visual positions.
+  Invalid Bool16 values are ignored and truncated modifiers retain only the
+  valid prefix. Table-style/Data-stream/`Pcd.Prm` direction, additional
+  position/wrapping/protection boundaries, and nested legacy tables remain
+  unsupported.
 - Opened legacy `.doc` paragraphs now preserve valid direct `sprmPFBiDi`
   Bool8 direction plus physical left/center/right and logical
   start/center/end alignment from `sprmPJc80` and `sprmPJc` through the shared
@@ -31,16 +42,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   outside the shared alignment model. Logical start/end resolve against
   paragraph direction, and paragraphs without explicit justification use that
   logical start edge. Generated BiDi paragraphs retain explicit physical-left
-  alignment when present. Paragraph-style direction/justification, logical
-  legacy indents, exact RTL list-level layout, table visual RTL, piece
-  `Pcd.Prm`, and Markdown/HTML visual RTL remain unsupported.
+  alignment when present. The same bounded direction/justification subset now
+  resolves through cycle/depth-bounded paragraph-style STSH inheritance before
+  final direct PAPX overrides. Character-style/language-derived direction,
+  logical legacy indents, exact RTL list-level layout, table-style-derived
+  visual RTL, piece `Pcd.Prm`, and Markdown/HTML visual RTL remain unsupported.
 - Opened legacy `.doc` CHPX runs now preserve literal direct `sprmCFBiDi`
   on/off values through the shared model, `.docx` conversion, and PDF run
   isolation. Style-relative operands use the conservative unknown fallback,
   while character-style/reset operators preserve established direction as
-  required by MS-DOC. Language- or style-derived direction, complex-script
-  properties, paragraph-style/table visual RTL, piece `Pcd.Prm`, and
-  Markdown/HTML visual RTL remain unsupported.
+  required by MS-DOC. Character-style/language-derived direction,
+  complex-script properties, table-style-derived visual RTL, piece `Pcd.Prm`,
+  and Markdown/HTML visual RTL remain unsupported.
 - Opened legacy `.doc` CHPX runs now preserve literal direct
   `sprmCFSmallCaps` and `sprmCFCaps` on/off values through the shared model,
   `.docx` conversion, and PDF rendering. Style-relative toggle operands and
@@ -66,8 +79,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   internal row grids represented through the existing global column spans.
   Missing, zero-width, descending, or inconsistent outer-edge geometry keeps
   the deterministic content-sized fallback; absolute table sizing, autofit,
-  indentation, preferred cell widths, legacy table RTL, and nested legacy
-  tables remain unsupported.
+  indentation, preferred cell widths, table-style-derived RTL, and nested
+  legacy tables remain unsupported.
 - Floating-shape preview coordinates now distinguish the page, page-margin text
   rectangle, and physical left/right/top/bottom margin bands; bounded
   `wrapTopAndBottom` flow also honors top/bottom-margin anchors when their visual

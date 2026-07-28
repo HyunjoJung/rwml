@@ -650,6 +650,7 @@ struct Asm<'a, 'l> {
     // Table-building state.
     cur_rows: Vec<RowBuild>,
     cur_row_pagination: Vec<TableRowPaginationHint>,
+    cur_table_bidi_visual: Option<bool>,
     cur_row_cells: Vec<CellBuild>,
     cell_blocks: Vec<Block>,
     cell_pagination: Vec<Option<PaginationHint>>,
@@ -715,6 +716,7 @@ impl<'a, 'l> Asm<'a, 'l> {
             para_runs: Vec::new(),
             cur_rows: Vec::new(),
             cur_row_pagination: Vec::new(),
+            cur_table_bidi_visual: None,
             cur_row_cells: Vec::new(),
             cell_blocks: Vec::new(),
             cell_pagination: Vec::new(),
@@ -1049,14 +1051,24 @@ impl<'a, 'l> Asm<'a, 'l> {
             // TTP paragraph's grpprl.
             let def = self.papx.table_def_at(fc).cloned();
             let header = self.papx.table_header_at(fc);
-            self.cur_rows.push(RowBuild {
+            let bidi_visual = self.papx.table_bidi_visual_at(fc);
+            let row = RowBuild {
                 cells: std::mem::take(&mut self.cur_row_cells),
                 def,
                 header,
-            });
-            self.cur_row_pagination.push(TableRowPaginationHint {
+            };
+            let row_pagination = TableRowPaginationHint {
                 cant_split: self.papx.table_cant_split_at(fc),
-            });
+            };
+            if self
+                .cur_table_bidi_visual
+                .is_some_and(|current| current != bidi_visual)
+            {
+                self.flush_table();
+            }
+            self.cur_table_bidi_visual.get_or_insert(bidi_visual);
+            self.cur_rows.push(row);
+            self.cur_row_pagination.push(row_pagination);
         }
     }
 
@@ -1074,8 +1086,10 @@ impl<'a, 'l> Asm<'a, 'l> {
         }
         self.cell_blocks.clear();
         self.cell_pagination.clear();
+        let bidi_visual = self.cur_table_bidi_visual.take().unwrap_or(false);
         if !self.cur_rows.is_empty() {
-            let built = table::build(std::mem::take(&mut self.cur_rows));
+            let mut built = table::build(std::mem::take(&mut self.cur_rows));
+            built.table.bidi_visual = bidi_visual;
             let row_pagination = std::mem::take(&mut self.cur_row_pagination);
             if !built.table.rows.is_empty() {
                 debug_assert_eq!(row_pagination.len(), built.table.rows.len());
@@ -1466,6 +1480,89 @@ mod tests {
         assert!(assembled.table_row_pagination[0][0].cant_split);
         assert!(assembled.table_row_pagination[1].is_empty());
         assert!(!assembled.table_row_pagination[2][0].cant_split);
+    }
+
+    #[test]
+    fn legacy_table_direction_splits_rows_without_misaligning_sidecars() {
+        let units = [
+            b'A' as u16,
+            CELL_MARK,
+            CELL_MARK,
+            b'B' as u16,
+            CELL_MARK,
+            CELL_MARK,
+            b'C' as u16,
+            CELL_MARK,
+            CELL_MARK,
+        ];
+        let fcs: Vec<u32> = (0..units.len() as u32).collect();
+        let papx = PapxTable::from_test_entries_with_table_bidi(&[
+            (2, true, false, false, false),
+            (3, true, true, true, true),
+            (5, true, false, false, false),
+            (6, true, true, false, true),
+            (8, true, false, false, false),
+            (9, true, true, true, false),
+        ]);
+        let chpx = ChpxTable::default();
+        let stsh = StyleSheet::default();
+        let lists = Lists::default();
+        let mut numberer = Numberer::new(&lists);
+        let mut asm = Asm::new(&papx, &chpx, &stsh, &[], &[], &mut numberer);
+
+        asm.run(&units, &fcs);
+        let assembled = asm.finish_with_render_hints();
+
+        assert_eq!(assembled.blocks.len(), 2);
+        let Block::Table(first) = &assembled.blocks[0] else {
+            panic!("first block must be a table");
+        };
+        let Block::Table(second) = &assembled.blocks[1] else {
+            panic!("second block must be a table");
+        };
+        assert!(first.bidi_visual);
+        assert!(!second.bidi_visual);
+        assert_eq!(first.rows.len(), 2);
+        assert_eq!(second.rows.len(), 1);
+        assert_eq!(
+            assembled.table_row_pagination,
+            vec![
+                vec![
+                    TableRowPaginationHint { cant_split: true },
+                    TableRowPaginationHint { cant_split: false },
+                ],
+                vec![TableRowPaginationHint { cant_split: true }],
+            ]
+        );
+        assert_eq!(assembled.table_cell_pagination[0].len(), 2);
+        assert_eq!(assembled.table_cell_pagination[1].len(), 1);
+    }
+
+    #[test]
+    fn dangling_legacy_row_inherits_the_active_table_direction() {
+        let units = [b'A' as u16, CELL_MARK, CELL_MARK, b'B' as u16, CELL_MARK];
+        let fcs: Vec<u32> = (0..units.len() as u32).collect();
+        let papx = PapxTable::from_test_entries_with_table_bidi(&[
+            (2, true, false, false, false),
+            (3, true, true, false, true),
+            (5, true, false, false, false),
+        ]);
+        let chpx = ChpxTable::default();
+        let stsh = StyleSheet::default();
+        let lists = Lists::default();
+        let mut numberer = Numberer::new(&lists);
+        let mut asm = Asm::new(&papx, &chpx, &stsh, &[], &[], &mut numberer);
+
+        asm.run(&units, &fcs);
+        let assembled = asm.finish_with_render_hints();
+
+        let [Block::Table(table)] = assembled.blocks.as_slice() else {
+            panic!("rows must remain one table");
+        };
+        assert!(table.bidi_visual);
+        assert_eq!(table.rows.len(), 2);
+        assert_eq!(assembled.table_row_pagination[0].len(), 2);
+        assert_eq!(assembled.table_cell_pagination[0].len(), 2);
     }
 
     #[test]
