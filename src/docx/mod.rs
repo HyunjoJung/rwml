@@ -214,6 +214,9 @@ pub(crate) struct DocxState {
     /// Renderer-only direct table-cell paragraph controls aligned to body model blocks.
     #[cfg(feature = "render")]
     pub table_cell_pagination: Vec<crate::model::TableCellPaginationHints>,
+    /// Renderer-only recursive nested-table controls aligned to body model blocks.
+    #[cfg(feature = "render")]
+    pub table_nested_pagination: Vec<crate::model::TableCellNestedPaginationHints>,
     /// Exact running header/footer records parsed from referenced `.docx` parts.
     pub header_footers: Vec<HeaderFooter>,
     /// Core metadata parsed from `docProps/core.xml`.
@@ -422,6 +425,7 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         tab_stops,
         table_rows: table_row_pagination,
         table_cells: table_cell_pagination,
+        table_nested: table_nested_pagination,
     } = ctx.take_render_hints();
     // Footnotes/endnotes live in their own parts. Keep them SEPARATE from the body
     // (not appended into `model.blocks`); their parts are preserved verbatim on save.
@@ -662,6 +666,8 @@ pub(crate) fn open(bytes: &[u8]) -> Result<DocxState> {
         table_row_pagination,
         #[cfg(feature = "render")]
         table_cell_pagination,
+        #[cfg(feature = "render")]
+        table_nested_pagination,
         header_footers,
         core_properties,
         fields,
