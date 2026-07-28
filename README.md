@@ -277,13 +277,17 @@ labels, bordered tables with shaded vertically-aligned cells and authored column
 widths, images, and **clickable hyperlink annotations** are drawn. Page geometry,
 equal-width section columns, and per-side margins come from the document;
 multi-page tables repeat their header rows. Opened `.docx` rows may split across
-pages by default, while effective `w:cantSplit` from direct row properties or a
-inherited table-style chain keeps a fitting row together and an over-tall row
+pages by default, while effective `w:cantSplit` from direct row properties or
+an inherited table-style chain keeps a fitting row together and an over-tall row
 still splits at line boundaries. Table styles include direct non-conditional
 row properties and bounded `wholeTable`/`firstRow`/`lastRow` conditional
 regions selected by direct table `w:tblLook` or row `w:cnfStyle`; later regions
 and direct row formatting retain Word precedence. Model-only renders retain
-the established keep-together default. Opened `.docx` `Document` renders
+the established keep-together default. Opened legacy `.doc` rows follow direct
+`sprmTFCantSplit` and compatibility `sprmTFCantSplit90`: absent properties
+retain the MS-DOC splittable default, the modern property takes precedence when
+both are present, and fitting protected rows move whole while over-tall rows
+still make deterministic progress. Opened `.docx` `Document` renders
 additionally honor resolved left/center/right/decimal tab stops in top-level
 body paragraphs, authored zero after-spacing, and source-aligned `keepNext`,
 `keepLines`, and default-on `widowControl` pagination hints in top-level body
@@ -314,8 +318,9 @@ Word-exact list-level alignment, punctuation, or table typography.
 > corner regions, configurable band sizes, and `w:tblPrEx` row-group exceptions
 > do not yet contribute `cantSplit`. Nested-table paragraph controls retain the
 > renderer's 32-level flattening bound; nested grid/border geometry, nested-row
-> `cantSplit`, Word-exact cell spacing/tab geometry, and legacy `.doc` row-break
-> SPRMs remain outside this slice.
+> `cantSplit`, and Word-exact cell spacing/tab geometry remain outside this
+> slice. Legacy paragraph pagination SPRMs plus inherited/table-style and nested
+> legacy row controls also remain unsupported.
 >
 > Opened-document renders draw bounded approximate overlay boxes for recovered
 > `.docx` floating-shape geometry on the recovered top-level body block page. A
@@ -775,7 +780,8 @@ evidence.
 - [x] **PDF renderer** - `parley` + `krilla` with rich text/tables/images/lists/
       hyperlinks, paragraph page-break-before, header-row repeat, oversized-row split,
       direct and non-conditional table-style DOCX table-row `cantSplit`, direct DOCX
-      and recursively nested table-cell keep/widow controls, font registration
+      and recursively nested table-cell keep/widow controls, direct legacy DOC row
+      `sprmTFCantSplit`/`sprmTFCantSplit90`, font registration
 - [x] Reader: `.docx` headers/footers, text boxes (`w:txbxContent` incl. run-level
       `mc:AlternateContent`) including `text_boxes()` records, footnotes/endnotes
       including `notes()` records, per-level numbering labels, caps
