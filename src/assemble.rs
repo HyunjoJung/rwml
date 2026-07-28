@@ -893,8 +893,8 @@ impl<'a, 'l> Asm<'a, 'l> {
                 vert_align: chp.vert_align.unwrap_or_default(),
                 small_caps: chp.small_caps.unwrap_or(false),
                 caps: chp.caps.unwrap_or(false),
+                rtl: chp.rtl.unwrap_or(false),
                 font: chp.ftc.and_then(|ftc| crate::ffn::name_of(self.fonts, ftc)),
-                ..Default::default()
             };
             self.run_field = self.active_field_role();
         }

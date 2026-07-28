@@ -317,6 +317,11 @@ Bounded RTL rendering applies `w:bidi` paragraph base direction, `w:rtl` run
 isolation, logical alignment/list placement, and `w:bidiVisual` table column
 mirroring. This improves mixed Arabic/Hebrew documents without claiming
 Word-exact list-level alignment, punctuation, or table typography.
+Opened legacy `.doc` runs additionally preserve literal direct
+`sprmCFBiDi` on/off values from complete FKP/CHPX payloads through `.docx`
+conversion and PDF run isolation. Character-style or language-derived
+direction, complex-script properties, paragraph/table RTL, piece `Pcd.Prm`,
+and Markdown/HTML visual RTL remain outside this bounded bridge.
 
 > **Scope:** this is a fast, in-process **preview / report** renderer, not a Word
 > layout engine. It is faithful to the model and produces selectable text, but

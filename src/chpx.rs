@@ -51,6 +51,7 @@ const SPRM_C_F_SMALL_CAPS: u16 = 0x083A;
 const SPRM_C_F_CAPS: u16 = 0x083B;
 const SPRM_C_F_VANISH: u16 = 0x083C; // hidden text (NOT 0x0838 — that is Outline)
 const SPRM_C_F_SPEC: u16 = 0x0855; // run's special char is a real object (1-byte)
+const SPRM_C_F_BIDI: u16 = 0x085A; // right-to-left run layout (ToggleOperand)
 const SPRM_C_HIGHLIGHT: u16 = 0x2A0C; // one-byte Ico highlight palette
 const SPRM_C_ISTD: u16 = 0x4A30; // apply a character style
 const SPRM_C_ISTD_PERMUTE: u16 = 0xCA31; // conditionally remap character style
@@ -134,6 +135,8 @@ pub(crate) struct Chp {
     pub small_caps: Option<bool>,
     /// Literal direct `sprmCFCaps`; style-relative operands stay unknown.
     pub caps: Option<bool>,
+    /// Literal direct `sprmCFBiDi`; style-relative operands stay unknown.
+    pub rtl: Option<bool>,
     /// For a special-char run (`fSpec`) that is an inline picture, the `fcPic`
     /// offset into the `Data` stream.
     pub pic: Option<u32>,
@@ -380,6 +383,7 @@ fn scan_grpprl(gp: &[u8]) -> Chp {
             SPRM_C_F_CAPS => apply_direct_toggle(&mut chp.caps, operand[0]),
             SPRM_C_F_VANISH => chp.hidden = toggle(),
             SPRM_C_F_SPEC => fspec = operand.first().copied().unwrap_or(0) != 0,
+            SPRM_C_F_BIDI => apply_direct_toggle(&mut chp.rtl, operand[0]),
             SPRM_C_KUL => chp.underline = operand.first().copied().unwrap_or(0) != 0,
             SPRM_C_PIC_LOCATION => picloc = u32le(operand, 0),
             SPRM_C_HPS => chp.size_half_pt = u16le(operand, 0),
@@ -401,8 +405,8 @@ fn scan_grpprl(gp: &[u8]) -> Chp {
                     chp.vert_align = value;
                 }
             }
-            // These operators make modeled direct properties style-derived.
-            // Legacy character-style resolution is outside this CHPX pass.
+            // These operators make the properties below style-derived. MS-DOC
+            // explicitly preserves right-to-left layout across them.
             SPRM_C_ISTD | SPRM_C_ISTD_PERMUTE | SPRM_C_MAJORITY => {
                 chp.vert_align = None;
                 chp.small_caps = None;
@@ -743,6 +747,76 @@ mod tests {
         ]);
         assert_eq!(direct_after_reset.small_caps, Some(false));
         assert_eq!(direct_after_reset.caps, Some(true));
+    }
+
+    #[test]
+    fn run_rtl_literal_toggles_are_bounded() {
+        assert_eq!(scan_grpprl(&[0x5A, 0x08, 0]).rtl, Some(false));
+        assert_eq!(scan_grpprl(&[0x5A, 0x08, 1]).rtl, Some(true));
+        assert_eq!(scan_grpprl(&[0x5A, 0x08, 2]).rtl, None);
+        assert_eq!(scan_grpprl(&[0x5A, 0x08, u8::MAX]).rtl, None);
+    }
+
+    #[test]
+    fn run_rtl_uses_source_order_and_style_relative_unknown_state() {
+        let explicit = scan_grpprl(&[
+            0x5A, 0x08, 1, // RTL on
+            0x5A, 0x08, 0, // RTL off
+        ]);
+        assert_eq!(explicit.rtl, Some(false));
+
+        for style_relative in [0x80, 0x81] {
+            let unresolved = scan_grpprl(&[
+                0x5A,
+                0x08,
+                1, // RTL on
+                0x5A,
+                0x08,
+                style_relative,
+            ]);
+            assert_eq!(unresolved.rtl, None);
+        }
+
+        let recovered = scan_grpprl(&[
+            0x5A, 0x08, 0x80, // RTL from style
+            0x5A, 0x08, 1, // later literal RTL on
+        ]);
+        assert_eq!(recovered.rtl, Some(true));
+    }
+
+    #[test]
+    fn invalid_or_truncated_run_rtl_preserves_prior_literal_state() {
+        let chp = scan_grpprl(&[
+            0x5A, 0x08, 1, // RTL on
+            0x5A, 0x08, 2, // invalid toggle
+            0x5A, 0x08, // truncated modifier
+        ]);
+        assert_eq!(chp.rtl, Some(true));
+    }
+
+    #[test]
+    fn style_and_reset_operators_preserve_direct_run_rtl() {
+        let operators: &[&[u8]] = &[
+            // sprmCPlain
+            &[0x33, 0x2A, 0],
+            // sprmCIstd
+            &[0x30, 0x4A, 0x0A, 0x00],
+            // sprmCIstdPermute
+            &[0x31, 0xCA, 0x07, 0x00, 0x0A, 0x00, 0x0A, 0x00, 0x0A, 0x00],
+            // sprmCMajority
+            &[0x47, 0xCA, 0x03, 0x35, 0x08, 1],
+        ];
+        for operator in operators {
+            let mut grpprl = vec![0x5A, 0x08, 1];
+            grpprl.extend_from_slice(operator);
+            assert_eq!(scan_grpprl(&grpprl).rtl, Some(true));
+        }
+
+        let explicit_off = scan_grpprl(&[
+            0x5A, 0x08, 0, // RTL off
+            0x33, 0x2A, 0, // sprmCPlain
+        ]);
+        assert_eq!(explicit_off.rtl, Some(false));
     }
 
     #[test]

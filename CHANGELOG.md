@@ -23,6 +23,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Opened legacy `.doc` CHPX runs now preserve literal direct `sprmCFBiDi`
+  on/off values through the shared model, `.docx` conversion, and PDF run
+  isolation. Style-relative operands use the conservative unknown fallback,
+  while character-style/reset operators preserve established direction as
+  required by MS-DOC. Language- or style-derived direction, complex-script
+  properties, paragraph/table RTL, piece `Pcd.Prm`, and Markdown/HTML visual
+  RTL remain unsupported.
 - Opened legacy `.doc` CHPX runs now preserve literal direct
   `sprmCFSmallCaps` and `sprmCFCaps` on/off values through the shared model,
   `.docx` conversion, and PDF rendering. Style-relative toggle operands and
