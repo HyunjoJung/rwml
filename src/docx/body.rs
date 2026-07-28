@@ -1836,49 +1836,88 @@ fn walk_text_box_alternate_content(
 /// accepted-current revision wrappers (`w:ins`/`w:moveTo`) are transparent
 /// containers — descended into so their paragraphs/tables aren't lost.
 fn read_blocks(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Vec<Block> {
+    read_blocks_with_pagination(r, ctx, depth).blocks
+}
+
+#[derive(Default)]
+struct BlockBatch {
+    blocks: Vec<Block>,
+    pagination: Vec<Option<PaginationHint>>,
+}
+
+impl BlockBatch {
+    fn push(&mut self, block: Block, pagination: Option<PaginationHint>) {
+        self.blocks.push(block);
+        self.pagination.push(pagination);
+    }
+
+    fn extend(&mut self, other: Self) {
+        self.blocks.extend(other.blocks);
+        self.pagination.extend(other.pagination);
+    }
+
+    fn append_to(self, blocks: &mut Vec<Block>, pagination: &mut Vec<Option<PaginationHint>>) {
+        blocks.extend(self.blocks);
+        pagination.extend(self.pagination);
+    }
+}
+
+fn read_blocks_with_pagination(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> BlockBatch {
     if depth > MAX_DEPTH {
         skip_subtree(r);
-        return Vec::new();
+        return BlockBatch::default();
     }
-    let mut blocks = Vec::new();
+    let mut batch = BlockBatch::default();
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
-                b"p" => blocks.extend(read_paragraph_blocks(r, ctx, depth + 1)),
-                b"tbl" => {
-                    if let Some(table) = read_table_block(r, ctx, depth + 1) {
-                        blocks.push(table);
+            Ok(Event::Start(e)) => {
+                match local(e.name().as_ref()) {
+                    b"p" => batch.extend(read_paragraph_block_batch(r, ctx, depth + 1)),
+                    b"tbl" => {
+                        if let Some(table) = read_table_block(r, ctx, depth + 1) {
+                            batch.push(table, None);
+                        }
                     }
+                    b"sdt" => {
+                        batch.extend(read_content_control_blocks_with_pagination(
+                            r,
+                            ctx,
+                            depth + 1,
+                        ));
+                    }
+                    b"sdtContent" | b"customXml" | b"smartTag" | b"ins" | b"moveTo" => {
+                        batch.extend(read_blocks_with_pagination(r, ctx, depth + 1))
+                    }
+                    b"AlternateContent" => batch.extend(
+                        read_alternate_content_blocks_with_pagination(r, ctx, depth + 1),
+                    ),
+                    _ => skip_subtree(r),
                 }
-                b"sdt" => blocks.extend(read_content_control_blocks(r, ctx, depth + 1)),
-                b"sdtContent" | b"customXml" | b"smartTag" | b"ins" | b"moveTo" => {
-                    blocks.extend(read_blocks(r, ctx, depth + 1))
-                }
-                b"AlternateContent" => {
-                    blocks.extend(read_alternate_content_blocks(r, ctx, depth + 1))
-                }
-                _ => skip_subtree(r),
-            },
+            }
             Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
     }
-    blocks
+    batch
 }
 
-fn read_alternate_content_blocks(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Vec<Block> {
+fn read_alternate_content_blocks_with_pagination(
+    r: &mut Xml<'_>,
+    ctx: &Ctx<'_>,
+    depth: u32,
+) -> BlockBatch {
     if depth > MAX_DEPTH {
         skip_subtree(r);
-        return Vec::new();
+        return BlockBatch::default();
     }
-    let mut blocks = Vec::new();
+    let mut batch = BlockBatch::default();
     let mut took = false;
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
                 b"Choice" | b"Fallback" if !took => {
                     took = true;
-                    blocks.extend(read_blocks(r, ctx, depth + 1));
+                    batch.extend(read_blocks_with_pagination(r, ctx, depth + 1));
                 }
                 _ => skip_subtree(r),
             },
@@ -1886,30 +1925,40 @@ fn read_alternate_content_blocks(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> 
             _ => {}
         }
     }
-    blocks
+    batch
 }
 
-fn read_content_control_blocks(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Vec<Block> {
+fn read_content_control_blocks_with_pagination(
+    r: &mut Xml<'_>,
+    ctx: &Ctx<'_>,
+    depth: u32,
+) -> BlockBatch {
     if depth > MAX_DEPTH {
         skip_subtree(r);
-        return Vec::new();
+        return BlockBatch::default();
     }
     let mut control = None;
-    let mut blocks = Vec::new();
+    let mut batch = BlockBatch::default();
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
                 b"sdtPr" => control = read_content_control_pr(r),
-                b"sdtContent" => blocks.extend(read_blocks(r, ctx, depth + 1)),
-                b"p" => blocks.extend(read_paragraph_blocks(r, ctx, depth + 1)),
+                b"sdtContent" => batch.extend(read_blocks_with_pagination(r, ctx, depth + 1)),
+                b"p" => batch.extend(read_paragraph_block_batch(r, ctx, depth + 1)),
                 b"tbl" => {
                     if let Some(table) = read_table_block(r, ctx, depth + 1) {
-                        blocks.push(table);
+                        batch.push(table, None);
                     }
                 }
-                b"sdt" => blocks.extend(read_content_control_blocks(r, ctx, depth + 1)),
+                b"sdt" => {
+                    batch.extend(read_content_control_blocks_with_pagination(
+                        r,
+                        ctx,
+                        depth + 1,
+                    ));
+                }
                 b"customXml" | b"smartTag" | b"ins" | b"moveTo" => {
-                    blocks.extend(read_blocks(r, ctx, depth + 1))
+                    batch.extend(read_blocks_with_pagination(r, ctx, depth + 1))
                 }
                 b"AlternateContent" => {
                     read_content_control_blocks_alternate_content(
@@ -1917,7 +1966,7 @@ fn read_content_control_blocks(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Ve
                         ctx,
                         depth + 1,
                         &mut control,
-                        &mut blocks,
+                        &mut batch,
                     );
                 }
                 _ => skip_subtree(r),
@@ -1926,8 +1975,8 @@ fn read_content_control_blocks(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Ve
             _ => {}
         }
     }
-    apply_content_control_to_blocks(&mut blocks, control);
-    blocks
+    apply_content_control_to_blocks(&mut batch.blocks, control);
+    batch
 }
 
 fn read_content_control_blocks_alternate_content(
@@ -1935,7 +1984,7 @@ fn read_content_control_blocks_alternate_content(
     ctx: &Ctx<'_>,
     depth: u32,
     control: &mut Option<AuthoredContentControl>,
-    blocks: &mut Vec<Block>,
+    batch: &mut BlockBatch,
 ) {
     if depth > MAX_DEPTH {
         skip_subtree(r);
@@ -1955,7 +2004,7 @@ fn read_content_control_blocks_alternate_content(
                             ctx,
                             depth + 1,
                             control,
-                            blocks,
+                            batch,
                             name,
                         );
                     }
@@ -1974,31 +2023,33 @@ fn read_content_control_blocks_alternate_content_branch(
     ctx: &Ctx<'_>,
     depth: u32,
     control: &mut Option<AuthoredContentControl>,
-    blocks: &mut Vec<Block>,
+    batch: &mut BlockBatch,
     branch: &[u8],
 ) {
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
                 b"sdtPr" => *control = read_content_control_pr(r),
-                b"sdtContent" => blocks.extend(read_blocks(r, ctx, depth + 1)),
-                b"p" => blocks.extend(read_paragraph_blocks(r, ctx, depth + 1)),
+                b"sdtContent" => batch.extend(read_blocks_with_pagination(r, ctx, depth + 1)),
+                b"p" => batch.extend(read_paragraph_block_batch(r, ctx, depth + 1)),
                 b"tbl" => {
                     if let Some(table) = read_table_block(r, ctx, depth + 1) {
-                        blocks.push(table);
+                        batch.push(table, None);
                     }
                 }
-                b"sdt" => blocks.extend(read_content_control_blocks(r, ctx, depth + 1)),
-                b"customXml" | b"smartTag" | b"ins" | b"moveTo" => {
-                    blocks.extend(read_blocks(r, ctx, depth + 1))
+                b"sdt" => {
+                    batch.extend(read_content_control_blocks_with_pagination(
+                        r,
+                        ctx,
+                        depth + 1,
+                    ));
                 }
-                b"AlternateContent" => read_content_control_blocks_alternate_content(
-                    r,
-                    ctx,
-                    depth + 1,
-                    control,
-                    blocks,
-                ),
+                b"customXml" | b"smartTag" | b"ins" | b"moveTo" => {
+                    batch.extend(read_blocks_with_pagination(r, ctx, depth + 1))
+                }
+                b"AlternateContent" => {
+                    read_content_control_blocks_alternate_content(r, ctx, depth + 1, control, batch)
+                }
                 _ => skip_subtree(r),
             },
             Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
@@ -2224,10 +2275,20 @@ fn read_paragraph_blocks_data(
     (blocks, pagination, tab_stops)
 }
 
-fn read_paragraph_blocks(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Vec<Block> {
+fn read_paragraph_block_batch(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> BlockBatch {
     let (blocks, pagination, tab_stops) = read_paragraph_blocks_data(r, ctx, depth);
     ctx.capture_paragraph_blocks(&blocks, pagination, &tab_stops);
-    blocks
+    let pagination = blocks
+        .iter()
+        .map(|block| {
+            if matches!(block, Block::Paragraph(_)) {
+                Some(pagination)
+            } else {
+                None
+            }
+        })
+        .collect();
+    BlockBatch { blocks, pagination }
 }
 
 fn split_page_breaks(paragraph: Paragraph) -> Vec<Block> {
@@ -5847,15 +5908,8 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
                 b"tcPr" => tc = Some(read_tcpr(r)),
                 b"p" => {
-                    let (paragraph_blocks, hint, _) = read_paragraph_blocks_data(r, ctx, depth + 1);
-                    pagination.extend(paragraph_blocks.iter().map(|block| {
-                        if matches!(block, Block::Paragraph(_)) {
-                            Some(hint)
-                        } else {
-                            None
-                        }
-                    }));
-                    blocks.extend(paragraph_blocks);
+                    read_paragraph_block_batch(r, ctx, depth + 1)
+                        .append_to(&mut blocks, &mut pagination);
                 }
                 b"tbl" => {
                     if let Some(table) = read_table_block(r, ctx, depth + 1) {
@@ -5864,14 +5918,12 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
                     }
                 }
                 b"sdt" | b"sdtContent" | b"customXml" | b"smartTag" | b"ins" | b"moveTo" => {
-                    let wrapped = read_blocks(r, ctx, depth + 1);
-                    pagination.resize(pagination.len() + wrapped.len(), None);
-                    blocks.extend(wrapped);
+                    read_blocks_with_pagination(r, ctx, depth + 1)
+                        .append_to(&mut blocks, &mut pagination);
                 }
                 b"AlternateContent" => {
-                    let alternate = read_alternate_content_blocks(r, ctx, depth + 1);
-                    pagination.resize(pagination.len() + alternate.len(), None);
-                    blocks.extend(alternate);
+                    read_alternate_content_blocks_with_pagination(r, ctx, depth + 1)
+                        .append_to(&mut blocks, &mut pagination);
                 }
                 _ => skip_subtree(r),
             },
@@ -6580,7 +6632,11 @@ mod tests {
                         widow_control: true,
                         ..PaginationHint::default()
                     })],
-                    vec![None],
+                    vec![Some(PaginationHint {
+                        keep_lines: true,
+                        widow_control: true,
+                        ..PaginationHint::default()
+                    })],
                 ],
                 vec![
                     vec![Some(PaginationHint::default())],
@@ -6593,6 +6649,114 @@ mod tests {
             ]
         );
         assert!(table_cells[2].is_empty());
+    }
+
+    #[test]
+    fn captures_wrapped_table_cell_pagination_in_selected_block_order() {
+        let xml = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+            <w:tbl><w:tr>
+                <w:tc><w:sdt><w:sdtContent>
+                    <w:p><w:pPr><w:keepLines/></w:pPr><w:r><w:t>sdt</w:t></w:r></w:p>
+                </w:sdtContent></w:sdt></w:tc>
+                <w:tc><w:customXml>
+                    <w:p><w:pPr><w:keepNext/></w:pPr><w:r><w:t>custom</w:t></w:r></w:p>
+                </w:customXml></w:tc>
+                <w:tc><w:smartTag>
+                    <w:p><w:pPr><w:widowControl w:val="off"/></w:pPr><w:r><w:t>smart</w:t></w:r></w:p>
+                </w:smartTag></w:tc>
+                <w:tc><w:ins>
+                    <w:p><w:pPr><w:keepLines w:val="off"/></w:pPr><w:r><w:t>inserted</w:t></w:r></w:p>
+                </w:ins></w:tc>
+                <w:tc><w:moveTo>
+                    <w:p><w:pPr><w:keepNext/></w:pPr><w:r><w:t>moved</w:t></w:r></w:p>
+                </w:moveTo></w:tc>
+                <w:tc><mc:AlternateContent>
+                    <mc:Choice Requires="w14">
+                        <w:p><w:pPr><w:keepLines/></w:pPr><w:r><w:t>choice</w:t></w:r></w:p>
+                    </mc:Choice>
+                    <mc:Fallback>
+                        <w:p><w:pPr><w:keepLines w:val="off"/></w:pPr><w:r><w:t>fallback</w:t></w:r></w:p>
+                    </mc:Fallback>
+                </mc:AlternateContent></w:tc>
+                <w:tc><w:customXml><w:ins><w:sdtContent>
+                    <w:p><w:pPr><w:keepNext/></w:pPr><w:r><w:t>before</w:t><w:br w:type="page"/><w:t>after</w:t></w:r></w:p>
+                </w:sdtContent></w:ins></w:customXml></w:tc>
+                <w:tc><w:customXml>
+                    <w:tbl><w:tr><w:tc><w:p><w:pPr><w:keepLines/></w:pPr><w:r><w:t>nested</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+                </w:customXml></w:tc>
+            </w:tr></w:tbl>
+        </w:body></w:document>"#;
+
+        let (blocks, _, _, _, table_cells) =
+            parse_with_media_styles_and_pagination(xml, HashMap::new(), Styles::default(), true);
+
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(table_cells.len(), blocks.len());
+        assert_eq!(
+            table_cells[0][0],
+            vec![
+                vec![Some(PaginationHint {
+                    keep_lines: true,
+                    widow_control: true,
+                    ..PaginationHint::default()
+                })],
+                vec![Some(PaginationHint {
+                    keep_next: true,
+                    widow_control: true,
+                    ..PaginationHint::default()
+                })],
+                vec![Some(PaginationHint::default())],
+                vec![Some(PaginationHint {
+                    widow_control: true,
+                    ..PaginationHint::default()
+                })],
+                vec![Some(PaginationHint {
+                    keep_next: true,
+                    widow_control: true,
+                    ..PaginationHint::default()
+                })],
+                vec![Some(PaginationHint {
+                    keep_lines: true,
+                    widow_control: true,
+                    ..PaginationHint::default()
+                })],
+                vec![
+                    Some(PaginationHint {
+                        keep_next: true,
+                        widow_control: true,
+                        ..PaginationHint::default()
+                    }),
+                    None,
+                    Some(PaginationHint {
+                        keep_next: true,
+                        widow_control: true,
+                        ..PaginationHint::default()
+                    }),
+                ],
+                vec![None],
+            ]
+        );
+    }
+
+    #[test]
+    fn deeply_wrapped_table_cell_pagination_stops_at_the_depth_limit() {
+        let nesting = MAX_DEPTH + 4;
+        let mut xml = String::from("<w:document><w:body><w:tbl><w:tr><w:tc>");
+        for _ in 0..nesting {
+            xml.push_str("<w:customXml>");
+        }
+        xml.push_str("<w:p><w:pPr><w:keepLines/></w:pPr><w:r><w:t>too deep</w:t></w:r></w:p>");
+        for _ in 0..nesting {
+            xml.push_str("</w:customXml>");
+        }
+        xml.push_str("</w:tc></w:tr></w:tbl></w:body></w:document>");
+
+        let (blocks, _, _, _, table_cells) =
+            parse_with_media_styles_and_pagination(&xml, HashMap::new(), Styles::default(), true);
+
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(table_cells.len(), blocks.len());
+        assert_eq!(table_cells[0][0], vec![Vec::new()]);
     }
 
     #[test]

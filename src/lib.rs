@@ -6679,6 +6679,38 @@ mod tests {
 
     #[cfg(all(feature = "docx", feature = "render"))]
     #[test]
+    fn opened_docx_layout_uses_private_wrapped_table_cell_pagination_hints() {
+        let make_document = |pagination: &str| {
+            let xml = format!(
+                r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                    <w:p><w:pPr><w:spacing w:line="480"/></w:pPr><w:r><w:t>seed</w:t></w:r></w:p>
+                    <w:tbl><w:tr><w:tc><w:sdt><w:sdtContent>
+                        <w:p><w:pPr>{pagination}<w:widowControl w:val="off"/></w:pPr>
+                            <w:r><w:t>one</w:t><w:br/><w:t>two</w:t><w:br/><w:t>three</w:t></w:r>
+                        </w:p>
+                    </w:sdtContent></w:sdt></w:tc></w:tr></w:tbl>
+                    <w:p><w:pPr><w:widowControl w:val="off"/></w:pPr><w:r><w:t>after</w:t></w:r></w:p>
+                    <w:sectPr><w:pgSz w:w="4400" w:h="2000"/><w:pgMar w:top="400" w:right="400" w:bottom="400" w:left="400"/></w:sectPr>
+                </w:body></w:document>"#
+            );
+            Document::open(&minimal_docx(&xml)).unwrap()
+        };
+        let splittable = make_document(r#"<w:keepLines w:val="off"/>"#);
+        let kept = make_document("<w:keepLines/>");
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+        let splittable_pages = splittable.layout_pages_with_fonts(&fonts).unwrap().pages;
+        let kept_pages = kept.layout_pages_with_fonts(&fonts).unwrap().pages;
+
+        assert_eq!(
+            (splittable_pages, kept_pages),
+            (2, 3),
+            "wrapped cell paragraphs must retain the same keepLines behavior as direct ones"
+        );
+    }
+
+    #[cfg(all(feature = "docx", feature = "render"))]
+    #[test]
     fn opened_docx_layout_applies_bounded_top_and_bottom_wrap() {
         let bytes = minimal_docx(
             r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><w:body>

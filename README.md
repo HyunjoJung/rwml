@@ -284,8 +284,9 @@ established keep-together default. Opened `.docx` `Document` renders additionall
 honor resolved left/center/right/decimal tab stops in top-level body paragraphs,
 authored zero after-spacing, and source-aligned `keepNext`, `keepLines`, and
 default-on `widowControl` pagination hints in top-level body paragraphs and
-direct paragraphs in ordinary table cells, without adding those source-only
-render hints to the public `DocModel`. Eligible front-of-text
+direct or accepted-current wrapper-contained paragraphs in ordinary table
+cells, without adding those source-only render hints to the public `DocModel`.
+Eligible front-of-text
 `wrapTopAndBottom` shapes with explicit page/margin or enabled `simplePos`
 vertical geometry also exclude later flow from their page-wide vertical band
 after the recovered top-level paragraph anchor. Pagination-protected paragraphs
@@ -306,8 +307,7 @@ Word-exact list-level alignment, punctuation, or table typography.
 > semantics retain their cached display text with diagnostics.
 > Conditional table-style `w:tblStylePr` regions selected through `w:tblLook` or
 > `w:cnfStyle` do not yet contribute `cantSplit`. Cell paragraph controls do not
-> yet cover wrapper-contained paragraphs, nested tables, or Word-exact cell
-> spacing/tab geometry; legacy
+> yet cover nested tables or Word-exact cell spacing/tab geometry; legacy
 > `.doc` row-break SPRMs remain outside this slice.
 >
 > Opened-document renders draw bounded approximate overlay boxes for recovered
