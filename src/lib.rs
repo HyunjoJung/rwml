@@ -563,8 +563,16 @@ struct DocState {
 }
 
 fn doc_model_from_doc_state(state: &DocState) -> DocModel {
+    let assemble::LegacyBuildOutput {
+        model,
+        table_row_pagination: _table_row_pagination,
+    } = legacy_build_output_from_doc_state(state);
+    model
+}
+
+fn legacy_build_output_from_doc_state(state: &DocState) -> assemble::LegacyBuildOutput {
     let mut numberer = list::Numberer::new(&state.lists);
-    assemble::build_model(
+    assemble::build_model_with_render_hints(
         assemble::BuildInputs {
             word: &state.word,
             table: &state.table,
@@ -2673,14 +2681,15 @@ impl Document {
     pub fn to_pdf(&self) -> Vec<u8> {
         let features = self.report().features;
         let shapes = self.floating_shapes();
-        let model = self.model();
-        render::to_pdf_with_fonts_and_features_and_shapes(
-            &model,
-            &[],
-            features,
-            &shapes,
-            self.render_source_hints(),
-        )
+        self.with_render_model_and_hints(|model, source_hints| {
+            render::to_pdf_with_fonts_and_features_and_shapes(
+                model,
+                &[],
+                features,
+                &shapes,
+                source_hints,
+            )
+        })
     }
 
     /// Fallible variant of [`Document::to_pdf`]. Available with the `render`
@@ -2689,14 +2698,15 @@ impl Document {
     pub fn try_to_pdf(&self) -> Result<Vec<u8>> {
         let features = self.report().features;
         let shapes = self.floating_shapes();
-        let model = self.model();
-        render::try_to_pdf_with_fonts_and_features_and_shapes(
-            &model,
-            &[],
-            features,
-            &shapes,
-            self.render_source_hints(),
-        )
+        self.with_render_model_and_hints(|model, source_hints| {
+            render::try_to_pdf_with_fonts_and_features_and_shapes(
+                model,
+                &[],
+                features,
+                &shapes,
+                source_hints,
+            )
+        })
     }
 
     /// Render this document to PDF after registering caller-supplied font blobs.
@@ -2707,14 +2717,15 @@ impl Document {
     pub fn to_pdf_with_fonts(&self, fonts: &[Vec<u8>]) -> Vec<u8> {
         let features = self.report().features;
         let shapes = self.floating_shapes();
-        let model = self.model();
-        render::to_pdf_with_fonts_and_features_and_shapes(
-            &model,
-            fonts,
-            features,
-            &shapes,
-            self.render_source_hints(),
-        )
+        self.with_render_model_and_hints(|model, source_hints| {
+            render::to_pdf_with_fonts_and_features_and_shapes(
+                model,
+                fonts,
+                features,
+                &shapes,
+                source_hints,
+            )
+        })
     }
 
     /// Fallible variant of [`Document::to_pdf_with_fonts`]. Available with the
@@ -2723,14 +2734,15 @@ impl Document {
     pub fn try_to_pdf_with_fonts(&self, fonts: &[Vec<u8>]) -> Result<Vec<u8>> {
         let features = self.report().features;
         let shapes = self.floating_shapes();
-        let model = self.model();
-        render::try_to_pdf_with_fonts_and_features_and_shapes(
-            &model,
-            fonts,
-            features,
-            &shapes,
-            self.render_source_hints(),
-        )
+        self.with_render_model_and_hints(|model, source_hints| {
+            render::try_to_pdf_with_fonts_and_features_and_shapes(
+                model,
+                fonts,
+                features,
+                &shapes,
+                source_hints,
+            )
+        })
     }
 
     /// Return layout-derived page numbers from rwml's preview-grade pagination.
@@ -2743,12 +2755,9 @@ impl Document {
     #[cfg(feature = "render")]
     pub fn layout_pages_with_fonts(&self, fonts: &[Vec<u8>]) -> Result<LayoutPages> {
         let shapes = self.floating_shapes();
-        render::layout_pages_with_fonts_and_pagination(
-            &self.model(),
-            fonts,
-            self.render_source_hints(),
-            &shapes,
-        )
+        self.with_render_model_and_hints(|model, source_hints| {
+            render::layout_pages_with_fonts_and_pagination(model, fonts, source_hints, &shapes)
+        })
     }
 
     /// Render this document to PDF and return renderer metrics/warnings produced
@@ -2759,14 +2768,15 @@ impl Document {
     pub fn to_pdf_with_report(&self) -> RenderedPdf {
         let features = self.report().features;
         let shapes = self.floating_shapes();
-        let model = self.model();
-        render::to_pdf_with_fonts_and_report_and_shapes(
-            &model,
-            &[],
-            features,
-            &shapes,
-            self.render_source_hints(),
-        )
+        self.with_render_model_and_hints(|model, source_hints| {
+            render::to_pdf_with_fonts_and_report_and_shapes(
+                model,
+                &[],
+                features,
+                &shapes,
+                source_hints,
+            )
+        })
     }
 
     /// Render this document to PDF with caller-supplied fonts and return
@@ -2777,14 +2787,15 @@ impl Document {
     pub fn to_pdf_with_fonts_and_report(&self, fonts: &[Vec<u8>]) -> RenderedPdf {
         let features = self.report().features;
         let shapes = self.floating_shapes();
-        let model = self.model();
-        render::to_pdf_with_fonts_and_report_and_shapes(
-            &model,
-            fonts,
-            features,
-            &shapes,
-            self.render_source_hints(),
-        )
+        self.with_render_model_and_hints(|model, source_hints| {
+            render::to_pdf_with_fonts_and_report_and_shapes(
+                model,
+                fonts,
+                features,
+                &shapes,
+                source_hints,
+            )
+        })
     }
 
     /// Fallible variant of [`Document::to_pdf_with_report`]. Available with the
@@ -2793,14 +2804,15 @@ impl Document {
     pub fn try_to_pdf_with_report(&self) -> Result<RenderedPdf> {
         let features = self.report().features;
         let shapes = self.floating_shapes();
-        let model = self.model();
-        render::try_to_pdf_with_fonts_and_report_and_shapes(
-            &model,
-            &[],
-            features,
-            &shapes,
-            self.render_source_hints(),
-        )
+        self.with_render_model_and_hints(|model, source_hints| {
+            render::try_to_pdf_with_fonts_and_report_and_shapes(
+                model,
+                &[],
+                features,
+                &shapes,
+                source_hints,
+            )
+        })
     }
 
     /// Fallible variant of [`Document::to_pdf_with_fonts_and_report`].
@@ -2809,28 +2821,48 @@ impl Document {
     pub fn try_to_pdf_with_fonts_and_report(&self, fonts: &[Vec<u8>]) -> Result<RenderedPdf> {
         let features = self.report().features;
         let shapes = self.floating_shapes();
-        let model = self.model();
-        render::try_to_pdf_with_fonts_and_report_and_shapes(
-            &model,
-            fonts,
-            features,
-            &shapes,
-            self.render_source_hints(),
-        )
+        self.with_render_model_and_hints(|model, source_hints| {
+            render::try_to_pdf_with_fonts_and_report_and_shapes(
+                model,
+                fonts,
+                features,
+                &shapes,
+                source_hints,
+            )
+        })
     }
 
     #[cfg(feature = "render")]
-    fn render_source_hints(&self) -> render::SourceRenderHints<'_> {
+    fn with_render_model_and_hints<R>(
+        &self,
+        render_document: impl FnOnce(&DocModel, render::SourceRenderHints<'_>) -> R,
+    ) -> R {
         match &self.backend {
-            Backend::Doc(_) => render::SourceRenderHints::default(),
+            Backend::Doc(d) => {
+                let assembled = legacy_build_output_from_doc_state(d);
+                render_document(
+                    &assembled.model,
+                    render::SourceRenderHints {
+                        table_row_pagination: &assembled.table_row_pagination,
+                        ..render::SourceRenderHints::default()
+                    },
+                )
+            }
             #[cfg(feature = "docx")]
-            Backend::Docx(d) => render::SourceRenderHints {
-                pagination: &d.pagination_hints,
-                tab_stops: &d.tab_stops,
-                table_row_pagination: &d.table_row_pagination,
-                table_cell_pagination: &d.table_cell_pagination,
-                table_nested_pagination: &d.table_nested_pagination,
-            },
+            Backend::Docx(d) => {
+                let mut model = d.model.clone();
+                model.blocks.extend(d.notes.iter().cloned());
+                render_document(
+                    &model,
+                    render::SourceRenderHints {
+                        pagination: &d.pagination_hints,
+                        tab_stops: &d.tab_stops,
+                        table_row_pagination: &d.table_row_pagination,
+                        table_cell_pagination: &d.table_cell_pagination,
+                        table_nested_pagination: &d.table_nested_pagination,
+                    },
+                )
+            }
         }
     }
 
@@ -5035,6 +5067,12 @@ mod tests {
         endnote_ref_lcb_override: Option<u32>,
         shape_anchor_cps: Option<&'a [u32]>,
         shape_anchor_lcb_override: Option<u32>,
+        papx_runs: Option<&'a [SyntheticPapxRun]>,
+    }
+
+    struct SyntheticPapxRun {
+        cp_lim: u32,
+        grpprl: Vec<u8>,
     }
 
     fn synth_doc_with_ccp_and_tables(
@@ -5184,6 +5222,12 @@ mod tests {
             word[fclcb + 36 * 8 + 4..fclcb + 36 * 8 + 8].copy_from_slice(&owners_lcb.to_le_bytes());
         }
 
+        if let Some(runs) = tables.papx_runs {
+            let (offset, lcb) = append_synthetic_papx(&mut word, &mut clx, fc1, runs);
+            word[fclcb + 13 * 8..fclcb + 13 * 8 + 4].copy_from_slice(&offset.to_le_bytes());
+            word[fclcb + 13 * 8 + 4..fclcb + 13 * 8 + 8].copy_from_slice(&lcb.to_le_bytes());
+        }
+
         // fcClx = 0, lcbClx = clx.len() (CLX at start of 1Table).
         word[fclcb + 33 * 8..fclcb + 33 * 8 + 4].copy_from_slice(&0u32.to_le_bytes());
         word[fclcb + 33 * 8 + 4..fclcb + 33 * 8 + 8]
@@ -5201,6 +5245,57 @@ mod tests {
             .unwrap();
         comp.flush().unwrap();
         comp.into_inner().into_inner()
+    }
+
+    fn append_synthetic_papx(
+        word: &mut Vec<u8>,
+        table: &mut Vec<u8>,
+        text_fc: usize,
+        runs: &[SyntheticPapxRun],
+    ) -> (u32, u32) {
+        assert!(!runs.is_empty());
+        assert!(runs.len() <= u8::MAX as usize);
+
+        let page_number = word.len().div_ceil(512);
+        word.resize(page_number * 512, 0);
+        let mut page = [0u8; 512];
+        let bx_base = 4 * (runs.len() + 1);
+        let mut papx_offset = (bx_base + 13 * runs.len() + 1) & !1;
+
+        page[..4].copy_from_slice(&(text_fc as u32).to_le_bytes());
+        for (index, run) in runs.iter().enumerate() {
+            let fc_lim = (text_fc as u32).saturating_add(run.cp_lim.saturating_mul(2));
+            page[4 * (index + 1)..4 * (index + 2)].copy_from_slice(&fc_lim.to_le_bytes());
+
+            let data_len = 2 + run.grpprl.len();
+            let encoded_len = if data_len % 2 == 1 {
+                page[papx_offset] = data_len.div_ceil(2) as u8;
+                page[papx_offset + 1..papx_offset + 3].copy_from_slice(&0u16.to_le_bytes());
+                page[papx_offset + 3..papx_offset + 3 + run.grpprl.len()]
+                    .copy_from_slice(&run.grpprl);
+                1 + data_len
+            } else {
+                page[papx_offset] = 0;
+                page[papx_offset + 1] = (data_len / 2) as u8;
+                page[papx_offset + 2..papx_offset + 4].copy_from_slice(&0u16.to_le_bytes());
+                page[papx_offset + 4..papx_offset + 4 + run.grpprl.len()]
+                    .copy_from_slice(&run.grpprl);
+                2 + data_len
+            };
+            assert!(papx_offset + encoded_len < 511);
+            page[bx_base + index * 13] = (papx_offset / 2) as u8;
+            papx_offset = (papx_offset + encoded_len + 1) & !1;
+        }
+        page[511] = runs.len() as u8;
+        word.extend_from_slice(&page);
+
+        let offset = table.len() as u32;
+        table.extend_from_slice(&(text_fc as u32).to_le_bytes());
+        let last_cp = runs.last().expect("non-empty PAPX runs").cp_lim;
+        let fc_lim = (text_fc as u32).saturating_add(last_cp.saturating_mul(2));
+        table.extend_from_slice(&fc_lim.to_le_bytes());
+        table.extend_from_slice(&(page_number as u32).to_le_bytes());
+        (offset, 12)
     }
 
     fn append_plc_with_u16_records(
@@ -6604,6 +6699,119 @@ mod tests {
         assert_eq!(raw_model_layout.block_pages, vec![Some(1), Some(1)]);
         assert_eq!(opened_document_layout.block_pages, vec![Some(1), Some(2)]);
         assert_eq!(opened_document_layout.pages, 2);
+    }
+
+    #[cfg(feature = "render")]
+    fn legacy_row_pagination_doc(row_properties: &[(u16, u8)]) -> Vec<u8> {
+        let mut text = String::new();
+        for index in 0..32 {
+            text.push_str(&format!("seed {index}\r"));
+        }
+        let table_start = text.encode_utf16().count() as u32;
+        for index in 0..12 {
+            text.push_str(&format!("row {index}\r"));
+        }
+        text.push('\u{7}');
+        let cell_end = text.encode_utf16().count() as u32;
+        text.push('\u{7}');
+        let row_end = text.encode_utf16().count() as u32;
+        for index in 0..25 {
+            text.push_str(&format!("after {index}\r"));
+        }
+        let text_end = text.encode_utf16().count() as u32;
+
+        let mut row_grpprl = vec![
+            0x16, 0x24, 0x01, // sprmPFInTable
+            0x17, 0x24, 0x01, // sprmPFTtp
+            0x08, 0xD6, 0x1A, 0x00, // sprmTDefTable, cb=26
+            0x01, // one cell
+            0x00, 0x00, 0xD0, 0x07, // cell boundaries 0..2000 twips
+        ];
+        row_grpprl.extend_from_slice(&[0u8; 20]); // one TC80
+        for &(sprm, value) in row_properties {
+            row_grpprl.extend_from_slice(&sprm.to_le_bytes());
+            row_grpprl.push(value);
+        }
+
+        let runs = [
+            SyntheticPapxRun {
+                cp_lim: table_start,
+                grpprl: Vec::new(),
+            },
+            SyntheticPapxRun {
+                cp_lim: cell_end,
+                grpprl: vec![0x16, 0x24, 0x01],
+            },
+            SyntheticPapxRun {
+                cp_lim: row_end,
+                grpprl: row_grpprl,
+            },
+            SyntheticPapxRun {
+                cp_lim: text_end,
+                grpprl: Vec::new(),
+            },
+        ];
+        synth_doc_with_ccp_and_tables(
+            &text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [text_end, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_layout_uses_direct_row_pagination_hints() {
+        let splittable = Document::open(&legacy_row_pagination_doc(&[])).unwrap();
+        let modern = Document::open(&legacy_row_pagination_doc(&[(0x3466, 1)])).unwrap();
+        let compatibility = Document::open(&legacy_row_pagination_doc(&[(0x3403, 1)])).unwrap();
+        let modern_off =
+            Document::open(&legacy_row_pagination_doc(&[(0x3403, 1), (0x3466, 0)])).unwrap();
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let first_table_hint = |document: &Document| match &document.backend {
+            Backend::Doc(state) => {
+                assert!(!state.papx.is_empty(), "synthetic PAPX must parse");
+                legacy_build_output_from_doc_state(state)
+                    .table_row_pagination
+                    .into_iter()
+                    .find(|rows| !rows.is_empty())
+                    .and_then(|rows| rows.first().copied())
+                    .expect("synthetic legacy table row hint")
+            }
+            #[cfg(feature = "docx")]
+            Backend::Docx(_) => unreachable!("synthetic fixture is OLE"),
+        };
+
+        assert!(!first_table_hint(&splittable).cant_split);
+        assert!(first_table_hint(&modern).cant_split);
+        assert!(first_table_hint(&compatibility).cant_split);
+        assert!(!first_table_hint(&modern_off).cant_split);
+
+        let model = splittable.model();
+        let model_layout = layout_pages_with_fonts(&model, &fonts).unwrap();
+        let splittable_layout = splittable.layout_pages_with_fonts(&fonts).unwrap();
+        let modern_layout = modern.layout_pages_with_fonts(&fonts).unwrap();
+        let compatibility_layout = compatibility.layout_pages_with_fonts(&fonts).unwrap();
+        let modern_off_layout = modern_off.layout_pages_with_fonts(&fonts).unwrap();
+
+        assert_eq!(
+            (
+                model_layout.pages,
+                splittable_layout.pages,
+                modern_layout.pages,
+                compatibility_layout.pages,
+                modern_off_layout.pages,
+            ),
+            (3, 2, 3, 3, 2),
+            "model-only and explicit no-split rows keep together; default and modern-off \
+             legacy source rows split"
+        );
     }
 
     #[cfg(all(feature = "docx", feature = "render"))]

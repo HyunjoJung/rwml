@@ -18,7 +18,7 @@ use crate::list::Numberer;
 use crate::model::{
     normalize_field_instruction, Align, Block, CharProps, DocMeta, DocModel, DocSetup, FieldRole,
     Image, ListInfo, ParaProps, Paragraph, SectionBreakKind, SectionSetup, SourceRegion,
-    SourceRegionKind, Stats,
+    SourceRegionKind, Stats, TableRowPaginationHint,
 };
 use crate::papx::PapxTable;
 use crate::stsh::StyleSheet;
@@ -63,8 +63,15 @@ pub(crate) struct BuildInputs<'a> {
     pub fib: &'a Fib,
 }
 
-/// Build the document model from the already-parsed structures.
-pub(crate) fn build_model(inputs: BuildInputs<'_>, numberer: &mut Numberer<'_>) -> DocModel {
+pub(crate) struct LegacyBuildOutput {
+    pub(crate) model: DocModel,
+    pub(crate) table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
+}
+
+pub(crate) fn build_model_with_render_hints(
+    inputs: BuildInputs<'_>,
+    numberer: &mut Numberer<'_>,
+) -> LegacyBuildOutput {
     let BuildInputs {
         word,
         table,
@@ -88,21 +95,25 @@ pub(crate) fn build_model(inputs: BuildInputs<'_>, numberer: &mut Numberer<'_>) 
         data,
         fonts,
     };
-    let (blocks, regions) = build_legacy_region_blocks(&src, numberer, fib, table, &section_spans);
+    let (blocks, regions, table_row_pagination) =
+        build_legacy_region_blocks(&src, numberer, fib, table, &section_spans);
     let mut blocks = blocks;
     let stats = compute_stats(&blocks);
     let setup = legacy_doc_setup_from_regions(&mut blocks, &regions);
-    DocModel {
-        blocks,
-        regions,
-        meta: DocMeta {
-            codepage: fib.ansi_codepage(),
-            lid: fib.lid,
-            stats,
+    LegacyBuildOutput {
+        model: DocModel {
+            blocks,
+            regions,
+            meta: DocMeta {
+                codepage: fib.ansi_codepage(),
+                lid: fib.lid,
+                stats,
+            },
+            custom_properties: Default::default(),
+            custom_xml_items: Vec::new(),
+            setup,
         },
-        custom_properties: Default::default(),
-        custom_xml_items: Vec::new(),
-        setup,
+        table_row_pagination,
     }
 }
 
@@ -199,11 +210,13 @@ fn build_legacy_region_blocks(
     fib: &Fib,
     table: &[u8],
     section_spans: &[LegacySectionSpan],
-) -> (Vec<Block>, Vec<SourceRegion>) {
-    let mut blocks = Vec::new();
-    let mut regions = Vec::new();
+) -> (
+    Vec<Block>,
+    Vec<SourceRegion>,
+    Vec<Vec<TableRowPaginationHint>>,
+) {
+    let mut output = LegacyRegionOutput::default();
     let mut source_start_cp = 0usize;
-    let mut text_start = 0usize;
     let header_stories = header_footer_story_ranges(fib, table);
     let has_header_footer_setup_stories = header_stories
         .iter()
@@ -217,9 +230,7 @@ fn build_legacy_region_blocks(
             push_legacy_main_section_regions(
                 src,
                 numberer,
-                &mut blocks,
-                &mut regions,
-                &mut text_start,
+                &mut output,
                 source_start_cp,
                 section_spans,
             );
@@ -231,9 +242,7 @@ fn build_legacy_region_blocks(
                 push_legacy_region(
                     src,
                     numberer,
-                    &mut blocks,
-                    &mut regions,
-                    &mut text_start,
+                    &mut output,
                     RegionSpec {
                         kind,
                         source_start_cp: source_start_cp.saturating_add(story.start_cp),
@@ -247,9 +256,7 @@ fn build_legacy_region_blocks(
             push_legacy_region(
                 src,
                 numberer,
-                &mut blocks,
-                &mut regions,
-                &mut text_start,
+                &mut output,
                 RegionSpec {
                     kind,
                     source_start_cp,
@@ -263,15 +270,13 @@ fn build_legacy_region_blocks(
         source_start_cp = source_start_cp.saturating_add(source_len_cp);
     }
 
-    (blocks, regions)
+    (output.blocks, output.regions, output.table_row_pagination)
 }
 
 fn push_legacy_main_section_regions(
     src: &LegacySource<'_>,
     numberer: &mut Numberer<'_>,
-    blocks: &mut Vec<Block>,
-    regions: &mut Vec<SourceRegion>,
-    text_start: &mut usize,
+    output: &mut LegacyRegionOutput,
     source_start_cp: usize,
     section_spans: &[LegacySectionSpan],
 ) {
@@ -279,9 +284,7 @@ fn push_legacy_main_section_regions(
         push_legacy_region(
             src,
             numberer,
-            blocks,
-            regions,
-            text_start,
+            output,
             RegionSpec {
                 kind: SourceRegionKind::Main,
                 source_start_cp: source_start_cp.saturating_add(span.start_cp),
@@ -291,7 +294,10 @@ fn push_legacy_main_section_regions(
             },
         );
         if index + 1 < section_spans.len() {
-            blocks.push(Block::SectionBreak(legacy_section_break_setup()));
+            output
+                .blocks
+                .push(Block::SectionBreak(legacy_section_break_setup()));
+            output.table_row_pagination.push(Vec::new());
         }
     }
 }
@@ -307,9 +313,7 @@ fn legacy_section_break_setup() -> SectionSetup {
 fn push_legacy_region(
     src: &LegacySource<'_>,
     numberer: &mut Numberer<'_>,
-    blocks: &mut Vec<Block>,
-    regions: &mut Vec<SourceRegion>,
-    text_start: &mut usize,
+    output: &mut LegacyRegionOutput,
     spec: RegionSpec,
 ) {
     let RegionSpec {
@@ -319,13 +323,13 @@ fn push_legacy_region(
         source_story_index,
         include_empty,
     } = spec;
-    let block_start = blocks.len();
+    let block_start = output.blocks.len();
     let actual_start = source_start_cp.min(src.units.len()).min(src.fcs.len());
     let actual_end = source_start_cp
         .saturating_add(source_len_cp)
         .min(src.units.len())
         .min(src.fcs.len());
-    let mut region_blocks = if actual_start < actual_end {
+    let mut region_output = if actual_start < actual_end {
         let mut asm = Asm::new(
             src.papx,
             src.chpx,
@@ -338,28 +342,39 @@ fn push_legacy_region(
             &src.units[actual_start..actual_end],
             &src.fcs[actual_start..actual_end],
         );
-        asm.finish()
+        asm.finish_with_render_hints()
     } else {
-        Vec::new()
+        LegacyBlockOutput::default()
     };
-    let text_len = compute_stats(&region_blocks).text_chars;
-    blocks.append(&mut region_blocks);
-    let block_end = blocks.len();
+    let text_len = compute_stats(&region_output.blocks).text_chars;
+    output.blocks.append(&mut region_output.blocks);
+    output
+        .table_row_pagination
+        .append(&mut region_output.table_row_pagination);
+    let block_end = output.blocks.len();
 
     if source_len_cp > 0 || include_empty {
-        regions.push(SourceRegion {
+        output.regions.push(SourceRegion {
             kind,
             source_story_index,
             block_start,
             block_end,
             source_start_cp,
             source_len_cp,
-            text_start: *text_start,
+            text_start: output.text_start,
             text_len,
         });
     }
 
-    *text_start = (*text_start).saturating_add(text_len);
+    output.text_start = output.text_start.saturating_add(text_len);
+}
+
+#[derive(Default)]
+struct LegacyRegionOutput {
+    blocks: Vec<Block>,
+    regions: Vec<SourceRegion>,
+    table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
+    text_start: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -599,6 +614,7 @@ struct Asm<'a, 'l> {
     numberer: &'a mut Numberer<'l>,
 
     blocks: Vec<Block>,
+    table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
 
     // Current run being coalesced. `run_chp` is the (cheap, `Copy`) source the current
     // `run_props` was built from — comparing it per code unit avoids rebuilding the owned
@@ -615,6 +631,7 @@ struct Asm<'a, 'l> {
 
     // Table-building state.
     cur_rows: Vec<RowBuild>,
+    cur_row_pagination: Vec<TableRowPaginationHint>,
     cur_row_cells: Vec<Vec<Block>>,
     cell_blocks: Vec<Block>,
 
@@ -669,12 +686,14 @@ impl<'a, 'l> Asm<'a, 'l> {
             fonts,
             numberer,
             blocks: Vec::new(),
+            table_row_pagination: Vec::new(),
             run_buf: Vec::new(),
             run_chp: Chp::default(),
             run_props: CharProps::default(),
             run_field: FieldRole::None,
             para_runs: Vec::new(),
             cur_rows: Vec::new(),
+            cur_row_pagination: Vec::new(),
             cur_row_cells: Vec::new(),
             cell_blocks: Vec::new(),
             field_stack: Vec::new(),
@@ -931,6 +950,7 @@ impl<'a, 'l> Asm<'a, 'l> {
             self.flush_table();
             if !para.is_blank() {
                 self.blocks.push(Block::Paragraph(para));
+                self.table_row_pagination.push(Vec::new());
             }
             return;
         }
@@ -961,6 +981,9 @@ impl<'a, 'l> Asm<'a, 'l> {
                 def,
                 header,
             });
+            self.cur_row_pagination.push(TableRowPaginationHint {
+                cant_split: self.papx.table_cant_split_at(fc),
+            });
         }
     }
 
@@ -973,28 +996,49 @@ impl<'a, 'l> Asm<'a, 'l> {
                 def: None,
                 header: false,
             });
+            self.cur_row_pagination
+                .push(TableRowPaginationHint::default());
         }
         self.cell_blocks.clear();
         if !self.cur_rows.is_empty() {
             let t = table::build(std::mem::take(&mut self.cur_rows));
+            let row_pagination = std::mem::take(&mut self.cur_row_pagination);
             if !t.rows.is_empty() {
+                debug_assert_eq!(row_pagination.len(), t.rows.len());
                 self.blocks.push(Block::Table(t));
+                self.table_row_pagination.push(row_pagination);
             }
         }
     }
 
     /// Flush trailing paragraph/table state at end of stream.
-    fn finish(mut self) -> Vec<Block> {
+    fn finish_with_render_hints(mut self) -> LegacyBlockOutput {
         // A trailing paragraph with no final mark.
         if !self.para_runs.is_empty() || !self.run_buf.is_empty() {
             let para = self.take_paragraph(u32::MAX);
             if !para.is_blank() {
                 self.blocks.push(Block::Paragraph(para));
+                self.table_row_pagination.push(Vec::new());
             }
         }
         self.flush_table();
-        self.blocks
+        debug_assert_eq!(self.table_row_pagination.len(), self.blocks.len());
+        LegacyBlockOutput {
+            blocks: self.blocks,
+            table_row_pagination: self.table_row_pagination,
+        }
     }
+
+    #[cfg(test)]
+    fn finish(self) -> Vec<Block> {
+        self.finish_with_render_hints().blocks
+    }
+}
+
+#[derive(Default)]
+struct LegacyBlockOutput {
+    blocks: Vec<Block>,
+    table_row_pagination: Vec<Vec<TableRowPaginationHint>>,
 }
 
 /// Extract the target URL from a `HYPERLINK` field instruction, e.g.
@@ -1066,6 +1110,139 @@ mod tests {
         let mut asm = Asm::new(&papx, &chpx, &stsh, &[], &[], &mut numberer);
         asm.run(units, &fcs);
         asm.finish()
+    }
+
+    #[test]
+    fn legacy_assembly_aligns_row_pagination_with_emitted_blocks() {
+        let units = [b'A' as u16, CELL_MARK, CELL_MARK, b'X' as u16, PARA_MARK];
+        let fcs: Vec<u32> = (0..units.len() as u32).collect();
+        let papx = PapxTable::from_test_entries(&[
+            (2, true, false, false),
+            (3, true, true, true),
+            (5, false, false, false),
+        ]);
+        let chpx = ChpxTable::default();
+        let stsh = StyleSheet::default();
+        let lists = Lists::default();
+        let mut numberer = Numberer::new(&lists);
+        let mut asm = Asm::new(&papx, &chpx, &stsh, &[], &[], &mut numberer);
+
+        asm.run(&units, &fcs);
+        let assembled = asm.finish_with_render_hints();
+
+        assert!(matches!(assembled.blocks[0], Block::Table(_)));
+        assert!(matches!(assembled.blocks[1], Block::Paragraph(_)));
+        assert_eq!(assembled.table_row_pagination.len(), assembled.blocks.len());
+        assert_eq!(assembled.table_row_pagination[0].len(), 1);
+        assert!(assembled.table_row_pagination[0][0].cant_split);
+        assert!(assembled.table_row_pagination[1].is_empty());
+    }
+
+    #[test]
+    fn dangling_legacy_row_defaults_to_splittable() {
+        let units = [b'A' as u16, CELL_MARK];
+        let fcs: Vec<u32> = (0..units.len() as u32).collect();
+        let papx = PapxTable::from_test_entries(&[(2, true, false, true)]);
+        let chpx = ChpxTable::default();
+        let stsh = StyleSheet::default();
+        let lists = Lists::default();
+        let mut numberer = Numberer::new(&lists);
+        let mut asm = Asm::new(&papx, &chpx, &stsh, &[], &[], &mut numberer);
+
+        asm.run(&units, &fcs);
+        let assembled = asm.finish_with_render_hints();
+
+        assert_eq!(assembled.table_row_pagination.len(), 1);
+        assert_eq!(assembled.table_row_pagination[0].len(), 1);
+        assert!(!assembled.table_row_pagination[0][0].cant_split);
+    }
+
+    #[test]
+    fn legacy_row_pagination_stays_aligned_across_separated_tables() {
+        let units = [
+            b'A' as u16,
+            CELL_MARK,
+            CELL_MARK,
+            b'X' as u16,
+            PARA_MARK,
+            b'B' as u16,
+            CELL_MARK,
+            CELL_MARK,
+        ];
+        let fcs: Vec<u32> = (0..units.len() as u32).collect();
+        let papx = PapxTable::from_test_entries(&[
+            (2, true, false, false),
+            (3, true, true, true),
+            (5, false, false, false),
+            (7, true, false, false),
+            (8, true, true, false),
+        ]);
+        let chpx = ChpxTable::default();
+        let stsh = StyleSheet::default();
+        let lists = Lists::default();
+        let mut numberer = Numberer::new(&lists);
+        let mut asm = Asm::new(&papx, &chpx, &stsh, &[], &[], &mut numberer);
+
+        asm.run(&units, &fcs);
+        let assembled = asm.finish_with_render_hints();
+
+        assert!(matches!(
+            assembled.blocks.as_slice(),
+            [Block::Table(_), Block::Paragraph(_), Block::Table(_)]
+        ));
+        assert_eq!(assembled.table_row_pagination.len(), 3);
+        assert!(assembled.table_row_pagination[0][0].cant_split);
+        assert!(assembled.table_row_pagination[1].is_empty());
+        assert!(!assembled.table_row_pagination[2][0].cant_split);
+    }
+
+    #[test]
+    fn legacy_section_break_keeps_row_pagination_sidecar_aligned() {
+        let units = [b'A' as u16, PARA_MARK, b'B' as u16, PARA_MARK];
+        let fcs: Vec<u32> = (0..units.len() as u32).collect();
+        let papx = PapxTable::default();
+        let chpx = ChpxTable::default();
+        let stsh = StyleSheet::default();
+        let lists = Lists::default();
+        let mut numberer = Numberer::new(&lists);
+        let source = LegacySource {
+            units: &units,
+            fcs: &fcs,
+            papx: &papx,
+            chpx: &chpx,
+            stylesheet: &stsh,
+            data: &[],
+            fonts: &[],
+        };
+        let mut output = LegacyRegionOutput::default();
+
+        push_legacy_main_section_regions(
+            &source,
+            &mut numberer,
+            &mut output,
+            0,
+            &[
+                LegacySectionSpan {
+                    start_cp: 0,
+                    end_cp: 2,
+                },
+                LegacySectionSpan {
+                    start_cp: 2,
+                    end_cp: 4,
+                },
+            ],
+        );
+
+        assert!(matches!(
+            output.blocks.as_slice(),
+            [
+                Block::Paragraph(_),
+                Block::SectionBreak(_),
+                Block::Paragraph(_)
+            ]
+        ));
+        assert_eq!(output.table_row_pagination.len(), output.blocks.len());
+        assert!(output.table_row_pagination.iter().all(Vec::is_empty));
     }
 
     fn all_text(blocks: &[Block]) -> String {
@@ -1157,8 +1334,9 @@ mod tests {
             data: &[],
             fonts: &[],
         };
-        let (blocks, regions) =
+        let (blocks, regions, table_row_pagination) =
             build_legacy_region_blocks(&src, &mut numberer, &fib, &plcf_hdd, &[]);
+        assert_eq!(table_row_pagination.len(), blocks.len());
 
         let header_region = regions
             .iter()

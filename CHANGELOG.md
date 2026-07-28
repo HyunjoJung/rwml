@@ -32,8 +32,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `wholeTable`, `firstRow`, and `lastRow` conditional regions selected by direct
   table `w:tblLook` or row `w:cnfStyle`: default rows may use remaining page
   space, fitting protected rows move whole, and over-tall rows still split
-  deterministically. Banded, column/corner, `w:tblPrEx`, and legacy `.doc`
-  row-break cases remain unsupported.
+  deterministically. Banded, column/corner, and `w:tblPrEx` cases remain
+  unsupported.
+- Opened legacy `.doc` rendering now honors direct table-row
+  `sprmTFCantSplit` and compatibility `sprmTFCantSplit90`: rows remain
+  splittable by default, fitting protected rows move whole, the modern property
+  takes precedence when both are present, and over-tall rows still split for
+  deterministic progress. Inherited/table-style and nested legacy row controls
+  remain unsupported.
 - Opened `.docx` table rows now honor resolved `keepNext`, `keepLines`, and
   default-on `widowControl` for direct, accepted-current wrapper-contained, and
   recursively nested cell paragraphs when choosing legal row fragments, while

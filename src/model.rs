@@ -328,7 +328,6 @@ pub(crate) struct PaginationHint {
     pub(crate) widow_control: bool,
 }
 
-#[cfg(any(feature = "docx", feature = "render"))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct TableRowPaginationHint {
     pub(crate) cant_split: bool,

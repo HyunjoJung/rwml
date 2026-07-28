@@ -44,7 +44,9 @@ const SPRM_P_FIN_TABLE: u16 = 0x2416;
 const SPRM_P_FTTP: u16 = 0x2417;
 const SPRM_P_OUT_LVL: u16 = 0x2640; // outline level 0..8, 9 = body (1-byte)
 const SPRM_P_ILVL: u16 = 0x260A;
+const SPRM_T_FCANT_SPLIT_90: u16 = 0x3403;
 const SPRM_T_TABLE_HEADER: u16 = 0x3404; // row repeats as a header (1-byte)
+const SPRM_T_FCANT_SPLIT: u16 = 0x3466;
 const SPRM_P_ILFO: u16 = 0x460B;
 const SPRM_T_DEF_TABLE: u16 = 0xD608;
 
@@ -66,6 +68,8 @@ struct PapEntry {
     jc: u8,
     /// Row repeats as a table header (`sprmTTableHeader`).
     table_header: bool,
+    /// Resolved `sprmTFCantSplit` / `sprmTFCantSplit90` row property.
+    table_cant_split: bool,
     /// Parsed `sprmTDefTable` row definition — present only on TTP paragraphs.
     table_def: Option<TableDef>,
 }
@@ -81,6 +85,16 @@ struct Pap {
     outlvl: Option<u8>,
     jc: u8,
     table_header: bool,
+    table_cant_split_90: Option<bool>,
+    table_cant_split: Option<bool>,
+}
+
+impl Pap {
+    fn resolved_cant_split(self) -> bool {
+        self.table_cant_split
+            .or(self.table_cant_split_90)
+            .unwrap_or(false)
+    }
 }
 
 /// All paragraphs' properties, sorted by FC, for point lookup by a mark's FC.
@@ -129,8 +143,31 @@ impl PapxTable {
         self.entry_at(fc).map(|e| e.table_header).unwrap_or(false)
     }
 
+    /// Whether the row ending at `fc` must not split across a page boundary.
+    pub(crate) fn table_cant_split_at(&self, fc: u32) -> bool {
+        self.entry_at(fc)
+            .map(|e| e.table_cant_split)
+            .unwrap_or(false)
+    }
+
     pub(crate) fn is_empty(&self) -> bool {
         self.entries.is_empty()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_test_entries(entries: &[(u32, bool, bool, bool)]) -> Self {
+        Self {
+            entries: entries
+                .iter()
+                .map(|&(fc_lim, in_table, ttp, table_cant_split)| PapEntry {
+                    fc_lim,
+                    in_table,
+                    ttp,
+                    table_cant_split,
+                    ..PapEntry::default()
+                })
+                .collect(),
+        }
     }
 }
 
@@ -200,6 +237,7 @@ fn parse_fkp(word: &[u8], page_off: usize, out: &mut Vec<PapEntry>) {
             outlvl: pap.outlvl,
             jc: pap.jc,
             table_header: pap.table_header,
+            table_cant_split: pap.resolved_cant_split(),
             table_def,
         });
     }
@@ -257,7 +295,13 @@ fn scan_grpprl(gp: &[u8], istd: u16) -> (Pap, Option<TableDef>) {
             SPRM_P_FIN_TABLE => pap.in_table = gp.get(op).copied().unwrap_or(0) != 0,
             SPRM_P_FTTP => pap.ttp = gp.get(op).copied().unwrap_or(0) != 0,
             SPRM_P_OUT_LVL => pap.outlvl = Some(gp.get(op).copied().unwrap_or(9)),
+            SPRM_T_FCANT_SPLIT_90 => {
+                pap.table_cant_split_90 = Some(gp.get(op).copied().unwrap_or(0) != 0);
+            }
             SPRM_T_TABLE_HEADER => pap.table_header = gp.get(op).copied().unwrap_or(0) != 0,
+            SPRM_T_FCANT_SPLIT => {
+                pap.table_cant_split = Some(gp.get(op).copied().unwrap_or(0) != 0);
+            }
             SPRM_P_ILVL => pap.ilvl = gp.get(op).copied().unwrap_or(0),
             SPRM_P_ILFO => pap.ilfo = u16le(gp, op).unwrap_or(0),
             SPRM_T_DEF_TABLE => {
@@ -308,6 +352,34 @@ mod tests {
     }
 
     #[test]
+    fn resolves_modern_and_compatibility_table_row_no_split_properties() {
+        let (default, _) = scan_grpprl(&[], 0);
+        let (compatibility, _) = scan_grpprl(&[0x03, 0x34, 0x01], 0);
+        let (modern, _) = scan_grpprl(&[0x66, 0x34, 0x01], 0);
+
+        assert!(!default.resolved_cant_split());
+        assert!(compatibility.resolved_cant_split());
+        assert!(modern.resolved_cant_split());
+
+        // `sprmTFCantSplit` supersedes `sprmTFCantSplit90` regardless of the
+        // physical order in the grpprl.
+        for grpprl in [
+            [0x03, 0x34, 0x01, 0x66, 0x34, 0x00],
+            [0x66, 0x34, 0x00, 0x03, 0x34, 0x01],
+        ] {
+            let (properties, _) = scan_grpprl(&grpprl, 0);
+            assert!(!properties.resolved_cant_split());
+        }
+        for grpprl in [
+            [0x03, 0x34, 0x00, 0x66, 0x34, 0x01],
+            [0x66, 0x34, 0x01, 0x03, 0x34, 0x00],
+        ] {
+            let (properties, _) = scan_grpprl(&grpprl, 0);
+            assert!(properties.resolved_cant_split());
+        }
+    }
+
+    #[test]
     fn scans_list_props() {
         // sprmPIlvl (0x260A, 1-byte) = 2, then sprmPIlfo (0x460B, 2-byte) = 5.
         let (p, _) = scan_grpprl(&[0x0A, 0x26, 0x02, 0x0B, 0x46, 0x05, 0x00], 0);
@@ -355,6 +427,7 @@ mod tests {
             outlvl: None,
             jc: 0,
             table_header: false,
+            table_cant_split: false,
             table_def: None,
         };
         let t = PapxTable {
@@ -368,6 +441,29 @@ mod tests {
         assert_eq!(t.at(150), (true, false)); // cell paragraph
         assert_eq!(t.at(250), (true, true)); // row-terminating
         assert_eq!(t.at(999), (false, false)); // past the end
+    }
+
+    #[test]
+    fn row_no_split_lookup_and_truncated_papx_default_safely() {
+        let table =
+            PapxTable::from_test_entries(&[(100, false, false, false), (200, true, true, true)]);
+        assert!(!table.table_cant_split_at(50));
+        assert!(table.table_cant_split_at(150));
+        assert!(!table.table_cant_split_at(250));
+
+        let mut word = vec![0u8; FKP_SIZE];
+        word[4..8].copy_from_slice(&100u32.to_le_bytes());
+        word[8] = u8::MAX; // PAPX offset 510: the declared payload is truncated.
+        word[FKP_SIZE - 1] = 1;
+        let mut plc = Vec::new();
+        plc.extend_from_slice(&0u32.to_le_bytes());
+        plc.extend_from_slice(&100u32.to_le_bytes());
+        plc.extend_from_slice(&0u32.to_le_bytes());
+
+        let parsed = parse(&word, &plc, 0, plc.len());
+        assert!(!parsed.is_empty());
+        assert_eq!(parsed.at(50), (false, false));
+        assert!(!parsed.table_cant_split_at(50));
     }
 
     #[test]
