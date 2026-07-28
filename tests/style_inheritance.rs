@@ -99,12 +99,16 @@ fn no_styles_docx() -> Vec<u8> {
 }
 
 #[cfg(feature = "render")]
-fn table_style_pagination_docx(direct_row_props: &str) -> Vec<u8> {
+fn table_pagination_docx(
+    table_properties: &str,
+    direct_row_props: &str,
+    styles_xml: &str,
+) -> Vec<u8> {
     let content_types = content_types(true);
     let document_xml = format!(
         r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
             <w:p><w:pPr><w:spacing w:line="800" w:lineRule="exact"/></w:pPr><w:r><w:t>seed</w:t></w:r></w:p>
-            <w:tbl><w:tblPr><w:tblStyle w:val="KeepDerived"/></w:tblPr><w:tr>{direct_row_props}<w:tc>
+            <w:tbl><w:tblPr>{table_properties}</w:tblPr><w:tr>{direct_row_props}<w:tc>
                 <w:p><w:pPr><w:spacing w:line="400" w:lineRule="exact"/></w:pPr><w:r><w:t>one</w:t></w:r></w:p>
                 <w:p><w:pPr><w:spacing w:line="400" w:lineRule="exact"/></w:pPr><w:r><w:t>two</w:t></w:r></w:p>
                 <w:p><w:pPr><w:spacing w:line="400" w:lineRule="exact"/></w:pPr><w:r><w:t>three</w:t></w:r></w:p>
@@ -122,15 +126,34 @@ fn table_style_pagination_docx(direct_row_props: &str) -> Vec<u8> {
             r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
         ),
         ("word/_rels/document.xml.rels", document_rels(true)),
-        (
-            "word/styles.xml",
-            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-                <w:style w:type="table" w:styleId="KeepBase"><w:trPr><w:cantSplit/></w:trPr></w:style>
-                <w:style w:type="table" w:styleId="KeepDerived"><w:basedOn w:val="KeepBase"/></w:style>
-            </w:styles>"#,
-        ),
+        ("word/styles.xml", styles_xml),
         ("word/document.xml", &document_xml),
     ])
+}
+
+#[cfg(feature = "render")]
+fn table_style_pagination_docx(direct_row_props: &str) -> Vec<u8> {
+    table_pagination_docx(
+        r#"<w:tblStyle w:val="KeepDerived"/>"#,
+        direct_row_props,
+        r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+            <w:style w:type="table" w:styleId="KeepBase"><w:trPr><w:cantSplit/></w:trPr></w:style>
+            <w:style w:type="table" w:styleId="KeepDerived"><w:basedOn w:val="KeepBase"/></w:style>
+        </w:styles>"#,
+    )
+}
+
+#[cfg(feature = "render")]
+fn conditional_table_style_pagination_docx(direct_row_props: &str) -> Vec<u8> {
+    table_pagination_docx(
+        r#"<w:tblStyle w:val="ConditionalKeep"/><w:tblLook w:firstRow="1"/>"#,
+        direct_row_props,
+        r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+            <w:style w:type="table" w:styleId="ConditionalKeep">
+                <w:tblStylePr w:type="firstRow"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+            </w:style>
+        </w:styles>"#,
+    )
 }
 
 #[test]
@@ -203,5 +226,32 @@ fn opened_docx_render_honors_inherited_table_style_cant_split_and_direct_off() {
         (inherited_pages, direct_off_pages),
         (3, 2),
         "base table style keeps the row together while direct off restores splitting"
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn opened_docx_render_honors_first_row_conditional_table_style_cant_split() {
+    let conditional =
+        Document::open(&conditional_table_style_pagination_docx("")).expect("fixture opens");
+    let direct_off = Document::open(&conditional_table_style_pagination_docx(
+        r#"<w:trPr><w:cantSplit w:val="off"/></w:trPr>"#,
+    ))
+    .expect("fixture opens");
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+    let conditional_pages = conditional
+        .layout_pages_with_fonts(&fonts)
+        .expect("conditional table style lays out")
+        .pages;
+    let direct_off_pages = direct_off
+        .layout_pages_with_fonts(&fonts)
+        .expect("direct override lays out")
+        .pages;
+
+    assert_eq!(
+        (conditional_pages, direct_off_pages),
+        (3, 2),
+        "the selected first-row style keeps the row together while direct off restores splitting"
     );
 }

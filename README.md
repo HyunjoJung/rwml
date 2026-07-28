@@ -278,14 +278,18 @@ widths, images, and **clickable hyperlink annotations** are drawn. Page geometry
 equal-width section columns, and per-side margins come from the document;
 multi-page tables repeat their header rows. Opened `.docx` rows may split across
 pages by default, while effective `w:cantSplit` from direct row properties or a
-non-conditional inherited table-style chain keeps a fitting row together and an
-over-tall row still splits at line boundaries. Model-only renders retain the
-established keep-together default. Opened `.docx` `Document` renders additionally
-honor resolved left/center/right/decimal tab stops in top-level body paragraphs,
-authored zero after-spacing, and source-aligned `keepNext`, `keepLines`, and
-default-on `widowControl` pagination hints in top-level body paragraphs and
-direct or accepted-current wrapper-contained paragraphs in ordinary table
-cells, without adding those source-only render hints to the public `DocModel`.
+inherited table-style chain keeps a fitting row together and an over-tall row
+still splits at line boundaries. Table styles include direct non-conditional
+row properties and bounded `wholeTable`/`firstRow`/`lastRow` conditional
+regions selected by direct table `w:tblLook` or row `w:cnfStyle`; later regions
+and direct row formatting retain Word precedence. Model-only renders retain
+the established keep-together default. Opened `.docx` `Document` renders
+additionally honor resolved left/center/right/decimal tab stops in top-level
+body paragraphs, authored zero after-spacing, and source-aligned `keepNext`,
+`keepLines`, and default-on `widowControl` pagination hints in top-level body
+paragraphs and direct or accepted-current wrapper-contained paragraphs in
+ordinary table cells, without adding those source-only render hints to the
+public `DocModel`.
 Eligible front-of-text
 `wrapTopAndBottom` shapes with explicit page/margin or enabled `simplePos`
 vertical geometry also exclude later flow from their page-wide vertical band
@@ -305,10 +309,11 @@ Word-exact list-level alignment, punctuation, or table typography.
 > section columns, or section-local page geometry. Unknown fields, remaining
 > layout-dependent TOC/REF/NOTEREF cases, and unsupported value-changing field
 > semantics retain their cached display text with diagnostics.
-> Conditional table-style `w:tblStylePr` regions selected through `w:tblLook` or
-> `w:cnfStyle` do not yet contribute `cantSplit`. Cell paragraph controls do not
-> yet cover nested tables or Word-exact cell spacing/tab geometry; legacy
-> `.doc` row-break SPRMs remain outside this slice.
+> Conditional table-style horizontal/vertical bands, first/last-column and
+> corner regions, configurable band sizes, and `w:tblPrEx` row-group exceptions
+> do not yet contribute `cantSplit`. Cell paragraph controls do not yet cover
+> nested tables or Word-exact cell spacing/tab geometry; legacy `.doc`
+> row-break SPRMs remain outside this slice.
 >
 > Opened-document renders draw bounded approximate overlay boxes for recovered
 > `.docx` floating-shape geometry on the recovered top-level body block page. A
