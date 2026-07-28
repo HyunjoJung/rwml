@@ -5467,6 +5467,8 @@ mod tests {
         piece_prms: [u16; 2],
         chpx_runs: Option<&'a [SyntheticChpxRun]>,
         papx_runs: Option<&'a [SyntheticPapxRun]>,
+        list_definition: Option<(&'a [u8], &'a [u8])>,
+        list_overrides: Option<&'a [u8]>,
     }
 
     struct SyntheticChpxRun {
@@ -5666,6 +5668,23 @@ mod tests {
             let (offset, lcb) = append_synthetic_papx(&mut word, &mut clx, fc1, runs);
             word[fclcb + 13 * 8..fclcb + 13 * 8 + 4].copy_from_slice(&offset.to_le_bytes());
             word[fclcb + 13 * 8 + 4..fclcb + 13 * 8 + 8].copy_from_slice(&lcb.to_le_bytes());
+        }
+
+        if let Some((header, levels)) = tables.list_definition {
+            let offset = clx.len() as u32;
+            clx.extend_from_slice(header);
+            clx.extend_from_slice(levels);
+            word[fclcb + 73 * 8..fclcb + 73 * 8 + 4].copy_from_slice(&offset.to_le_bytes());
+            word[fclcb + 73 * 8 + 4..fclcb + 73 * 8 + 8]
+                .copy_from_slice(&(header.len() as u32).to_le_bytes());
+        }
+
+        if let Some(overrides) = tables.list_overrides {
+            let offset = clx.len() as u32;
+            clx.extend_from_slice(overrides);
+            word[fclcb + 74 * 8..fclcb + 74 * 8 + 4].copy_from_slice(&offset.to_le_bytes());
+            word[fclcb + 74 * 8 + 4..fclcb + 74 * 8 + 8]
+                .copy_from_slice(&(overrides.len() as u32).to_le_bytes());
         }
 
         // fcClx = 0, lcbClx = clx.len() (CLX at start of 1Table).
@@ -7459,6 +7478,76 @@ mod tests {
     #[test]
     fn rejects_non_ole2() {
         assert!(matches!(extract_text(b"not a doc"), Err(Error::NotOle2)));
+    }
+
+    #[test]
+    fn opened_legacy_doc_uses_lfolvl_start_override() {
+        let text = "alpha\rbeta\r";
+        let text_end = text.encode_utf16().count() as u32;
+        let runs = [SyntheticPapxRun {
+            cp_lim: text_end,
+            grpprl: vec![
+                0x0A, 0x26, 0x00, // sprmPIlvl = 0
+                0x0B, 0x46, 0x01, 0x00, // sprmPIlfo = 1
+            ],
+        }];
+
+        let mut list_header = Vec::new();
+        list_header.extend_from_slice(&1i16.to_le_bytes());
+        let mut lstf = [0u8; 28];
+        lstf[0..4].copy_from_slice(&42i32.to_le_bytes());
+        lstf[26] = 0x01;
+        list_header.extend_from_slice(&lstf);
+
+        let mut list_level = vec![0u8; 28];
+        list_level[0..4].copy_from_slice(&1i32.to_le_bytes());
+        list_level[6] = 1;
+        list_level[15] = 1;
+        list_level.extend_from_slice(&2u16.to_le_bytes());
+        list_level.extend_from_slice(&0u16.to_le_bytes());
+        list_level.extend_from_slice(&('.' as u16).to_le_bytes());
+
+        let mut list_overrides = Vec::new();
+        list_overrides.extend_from_slice(&1u32.to_le_bytes());
+        let mut lfo = [0u8; 16];
+        lfo[0..4].copy_from_slice(&42i32.to_le_bytes());
+        lfo[12] = 1;
+        list_overrides.extend_from_slice(&lfo);
+        list_overrides.extend_from_slice(&0u32.to_le_bytes());
+        list_overrides.extend_from_slice(&5i32.to_le_bytes());
+        list_overrides.extend_from_slice(&(1u32 << 4).to_le_bytes());
+
+        let bytes = synth_doc_with_ccp_and_tables(
+            text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [text_end, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                papx_runs: Some(&runs),
+                list_definition: Some((&list_header, &list_level)),
+                list_overrides: Some(&list_overrides),
+                ..SyntheticDocTables::default()
+            },
+        );
+        let document = Document::open(&bytes).expect("synthetic legacy list document opens");
+
+        assert_eq!(document.text(), "5. alpha\n6. beta");
+        let model = document.model();
+        let labels: Vec<_> = model
+            .blocks
+            .iter()
+            .filter_map(|block| match block {
+                Block::Paragraph(paragraph) => paragraph
+                    .props
+                    .list
+                    .as_ref()
+                    .map(|list| list.label.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(labels, ["5. ", "6. "]);
     }
 
     #[test]

@@ -345,6 +345,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the deterministic content-sized fallback; absolute table sizing, autofit,
   indentation, preferred cell widths, table-style-derived RTL, and nested
   legacy tables remain unsupported.
+- Legacy `.doc` list labels now honor bounded `PlfLfo`/`LFOData`/`LFOLVL`
+  per-instance start and replacement-format overrides and continue numbering
+  across `ilfo` instances that share an `lsid`; malformed variable records retain
+  deterministic fixed-LFO fallback without panicking.
 - Floating-shape preview coordinates now distinguish the page, page-margin text
   rectangle, and physical left/right/top/bottom margin bands; bounded
   `wrapTopAndBottom` flow also honors top/bottom-margin anchors when their visual

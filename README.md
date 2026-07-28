@@ -644,7 +644,9 @@ super/subscript plus literal direct `sprmCFSmallCaps`/`sprmCFCaps`
 capitalization**), the STSH style sheet + outline levels (headings),
 `sprmTDefTable` (merge-aware tables with bounded relative column proportions),
 `PlcfSed`/SED section boundaries with SEPX page size, orientation, and
-nonnegative per-side margins, list autonumbers, hyperlink field marks, and
+nonnegative per-side margins, `PlfLst` list autonumbers with bounded
+`PlfLfo`/`LFOLVL` per-instance overrides and shared-list continuation,
+hyperlink field marks, and
 `PICF` inline images. The rich pass also retains each piece's PCD `Prm` and
 ordered CLX PRCs. After CHPX, it applies literal off/on `Prm0` values for bold,
 italic, strike, small caps, caps, and hidden text, plus precompiled bounded
@@ -891,7 +893,10 @@ code points.
   complete symbol-font (Symbol/Wingdings) glyph coverage beyond the common
   deterministic mapped subset; encrypted files
   (detected and rejected).
-- *`.doc` read only:* per-instance list overrides (`LFOLVL` start-at); Word 6/95.
+- *`.doc` read only:* exact Valid Selection/story boundaries for shared-`lsid`
+  list continuation, full `ilvlRestartLim`/legal-numbering behavior, list-level
+  PAPX/CHPX/style application, Word-exact list indentation/typography, and Word
+  6/95.
   Header, footnote/endnote, annotation, and text-box text appears in `text()` and
   dedicated region text APIs backed by `DocModel::regions`, with
   `DocModel::source_region_kind_text()` available for model-level region text.
