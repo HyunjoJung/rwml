@@ -1,6 +1,7 @@
 //! Paragraph-property (PAPX) reading — the minimum needed to reconstruct table
 //! structure and source paragraph layout: table membership/termination, list
-//! and style references, direct pagination controls, and row properties.
+//! and style references, direct pagination and BiDi/justification controls,
+//! and row properties.
 //!
 //! The `PlcfBtePapx` bin table (FIB `fcPlcfBtePapx`, in the table stream) points
 //! to 512-byte **PAPX FKP** pages in the `WordDocument` stream. Each FKP maps FC
@@ -39,13 +40,16 @@ fn max_fkp_entries() -> usize {
     }
 }
 const SPRM_P_ISTD: u16 = 0x4600; // direct istd override (2-byte)
-const SPRM_P_JC: u16 = 0x2403; // paragraph justification (1-byte)
+const SPRM_P_ISTD_PERMUTE: u16 = 0xC601; // conditional paragraph-style remap
+const SPRM_P_JC_80: u16 = 0x2403; // physical paragraph justification (1-byte)
 const SPRM_P_FKEEP: u16 = 0x2405;
 const SPRM_P_FKEEP_FOLLOW: u16 = 0x2406;
 const SPRM_P_FPAGE_BREAK_BEFORE: u16 = 0x2407;
 const SPRM_P_FIN_TABLE: u16 = 0x2416;
 const SPRM_P_FTTP: u16 = 0x2417;
 const SPRM_P_FWIDOW_CONTROL: u16 = 0x2431;
+const SPRM_P_F_BIDI: u16 = 0x2441;
+const SPRM_P_JC: u16 = 0x2461; // logical paragraph justification (1-byte)
 const SPRM_P_OUT_LVL: u16 = 0x2640; // outline level 0..8, 9 = body (1-byte)
 const SPRM_P_ILVL: u16 = 0x260A;
 const SPRM_T_FCANT_SPLIT_90: u16 = 0x3403;
@@ -109,6 +113,27 @@ impl From<ParagraphPagination> for ParagraphPaginationOverrides {
     }
 }
 
+/// Direction-independent representation of the bounded legacy justification
+/// values that the shared physical-alignment model can preserve.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ParagraphJustification {
+    PhysicalLeft,
+    Center,
+    PhysicalRight,
+    Justify,
+    LogicalStart,
+    LogicalEnd,
+    UnsupportedIndented,
+}
+
+/// Sparse direct paragraph layout modifiers. Logical justification remains
+/// unresolved until assembly knows the final paragraph direction.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct ParagraphLayoutOverrides {
+    pub(crate) bidi: Option<bool>,
+    pub(crate) justification: Option<ParagraphJustification>,
+}
+
 /// Per-paragraph properties over an FC range `[fc_start, fc_lim)`.
 #[derive(Debug, Clone, Default)]
 struct PapEntry {
@@ -123,8 +148,8 @@ struct PapEntry {
     istd: u16,
     /// `sprmPOutLvl` operand (0..8 = outline levels 1..9, 9 = body), if present.
     outlvl: Option<u8>,
-    /// `sprmPJc` — justification (0 left, 1 center, 2 right, 3/4 justify).
-    jc: u8,
+    /// Sparse direct paragraph direction and justification modifiers.
+    layout: ParagraphLayoutOverrides,
     /// Sparse direct paragraph pagination modifiers.
     pagination: ParagraphPaginationOverrides,
     /// Row repeats as a table header (`sprmTTableHeader`).
@@ -144,7 +169,7 @@ struct Pap {
     ilvl: u8,
     istd: u16,
     outlvl: Option<u8>,
-    jc: u8,
+    layout: ParagraphLayoutOverrides,
     pagination: ParagraphPaginationOverrides,
     table_header: bool,
     table_cant_split_90: Option<bool>,
@@ -188,11 +213,16 @@ impl PapxTable {
             .unwrap_or((0, 0))
     }
 
-    /// Style info of the paragraph at `fc`: `(istd, outline_level, justification)`.
-    pub(crate) fn style_at(&self, fc: u32) -> (u16, Option<u8>, u8) {
+    /// Style identity and outline level of the paragraph at `fc`.
+    pub(crate) fn style_at(&self, fc: u32) -> (u16, Option<u8>) {
         self.entry_at(fc)
-            .map(|e| (e.istd, e.outlvl, e.jc))
-            .unwrap_or((0, None, 0))
+            .map(|e| (e.istd, e.outlvl))
+            .unwrap_or((0, None))
+    }
+
+    /// Sparse direct paragraph direction and justification modifiers at `fc`.
+    pub(crate) fn paragraph_layout_overrides_at(&self, fc: u32) -> ParagraphLayoutOverrides {
+        self.entry_at(fc).map(|e| e.layout).unwrap_or_default()
     }
 
     /// Direct paragraph pagination controls at `fc`, with MS-DOC defaults.
@@ -354,7 +384,7 @@ fn parse_fkp(word: &[u8], page_off: usize, out: &mut Vec<PapEntry>) {
             ilvl: pap.ilvl,
             istd: pap.istd,
             outlvl: pap.outlvl,
-            jc: pap.jc,
+            layout: pap.layout,
             pagination: pap.pagination,
             table_header: pap.table_header,
             table_cant_split: pap.resolved_cant_split(),
@@ -420,9 +450,21 @@ fn scan_grpprl(gp: &[u8], istd: u16) -> (Pap, Option<TableDef>) {
             pos = operand_end;
             continue;
         }
+        if apply_layout_sprm(&mut pap.layout, sprm, &gp[op..operand_end]) {
+            pos = operand_end;
+            continue;
+        }
         match sprm {
-            SPRM_P_ISTD => pap.istd = u16le(gp, op).unwrap_or(istd),
-            SPRM_P_JC => pap.jc = gp.get(op).copied().unwrap_or(0),
+            SPRM_P_ISTD => {
+                if let Some(new_istd) = u16le(gp, op) {
+                    apply_paragraph_style_to_modeled_properties(&mut pap, new_istd);
+                }
+            }
+            SPRM_P_ISTD_PERMUTE => {
+                if let Some(new_istd) = permuted_istd(&gp[op..operand_end], pap.istd) {
+                    apply_paragraph_style_to_modeled_properties(&mut pap, new_istd);
+                }
+            }
             SPRM_P_FIN_TABLE => pap.in_table = gp.get(op).copied().unwrap_or(0) != 0,
             SPRM_P_FTTP => pap.ttp = gp.get(op).copied().unwrap_or(0) != 0,
             SPRM_P_OUT_LVL => pap.outlvl = Some(gp.get(op).copied().unwrap_or(9)),
@@ -447,6 +489,36 @@ fn scan_grpprl(gp: &[u8], istd: u16) -> (Pap, Option<TableDef>) {
     (pap, table_def)
 }
 
+fn apply_paragraph_style_to_modeled_properties(pap: &mut Pap, istd: u16) {
+    pap.istd = istd;
+    pap.ilfo = 0;
+    pap.ilvl = 0;
+    pap.outlvl = (1..=9).contains(&istd).then_some((istd - 1) as u8);
+    pap.layout = ParagraphLayoutOverrides::default();
+    pap.pagination = ParagraphPaginationOverrides::default();
+    // Table membership and row properties are intentionally preserved by a
+    // paragraph-style change. Style-derived list/layout values remain unknown.
+}
+
+fn permuted_istd(operand: &[u8], current_istd: u16) -> Option<u16> {
+    let declared_len = usize::from(*operand.first()?);
+    if operand.len() != declared_len.checked_add(1)? {
+        return None;
+    }
+
+    // SPPOperand = cb, fLong, istdFirst, istdLast, rgIstdPermute.
+    let first = u16le(operand, 2)?;
+    let last = u16le(operand, 4)?;
+    let count = usize::from(last.checked_sub(first)?).checked_add(1)?;
+    let expected_len = 6usize.checked_add(count.checked_mul(2)?)?;
+    if operand.len() != expected_len || !(first..=last).contains(&current_istd) {
+        return None;
+    }
+
+    let index = usize::from(current_istd - first);
+    u16le(operand, 6 + index * 2)
+}
+
 fn apply_pagination_sprm(
     pagination: &mut ParagraphPaginationOverrides,
     sprm: u16,
@@ -463,6 +535,52 @@ fn apply_pagination_sprm(
         _ => return false,
     }
     true
+}
+
+fn apply_layout_sprm(layout: &mut ParagraphLayoutOverrides, sprm: u16, operand: &[u8]) -> bool {
+    let Some(&value) = operand.first() else {
+        return false;
+    };
+    match sprm {
+        SPRM_P_F_BIDI => {
+            if value <= 1 {
+                layout.bidi = Some(value == 1);
+            }
+        }
+        SPRM_P_JC_80 => {
+            if let Some(justification) = physical_justification(value) {
+                layout.justification = Some(justification);
+            }
+        }
+        SPRM_P_JC => {
+            if let Some(justification) = logical_justification(value) {
+                layout.justification = Some(justification);
+            }
+        }
+        _ => return false,
+    }
+    true
+}
+
+fn physical_justification(value: u8) -> Option<ParagraphJustification> {
+    match value {
+        0 => Some(ParagraphJustification::PhysicalLeft),
+        1 => Some(ParagraphJustification::Center),
+        2 => Some(ParagraphJustification::PhysicalRight),
+        3..=5 => Some(ParagraphJustification::Justify),
+        _ => None,
+    }
+}
+
+fn logical_justification(value: u8) -> Option<ParagraphJustification> {
+    match value {
+        0 => Some(ParagraphJustification::LogicalStart),
+        1 => Some(ParagraphJustification::Center),
+        2 => Some(ParagraphJustification::LogicalEnd),
+        3..=5 | 7..=9 => Some(ParagraphJustification::Justify),
+        6 => Some(ParagraphJustification::UnsupportedIndented),
+        _ => None,
+    }
 }
 
 /// Strictly scan a style `grpprlPapx` for the pagination subset modeled by
@@ -663,14 +781,265 @@ mod tests {
 
     #[test]
     fn scans_style_outline_align() {
-        // leading istd = 7; sprmPJc(0x2403)=1 center; sprmPOutLvl(0x2640)=2.
+        // leading istd = 7; sprmPJc80(0x2403)=1 center; sprmPOutLvl(0x2640)=2.
         let (p, _) = scan_grpprl(&[0x03, 0x24, 0x01, 0x40, 0x26, 0x02], 7);
         assert_eq!(p.istd, 7);
-        assert_eq!(p.jc, 1);
+        assert_eq!(p.layout.justification, Some(ParagraphJustification::Center));
         assert_eq!(p.outlvl, Some(2));
         // sprmPIstd (0x4600, 2-byte) overrides the leading istd.
         let (p2, _) = scan_grpprl(&[0x00, 0x46, 0x05, 0x00], 7);
         assert_eq!(p2.istd, 5);
+    }
+
+    #[test]
+    fn direct_paragraph_bidi_is_strict_bool8_and_last_valid_wins() {
+        let (default, _) = scan_grpprl(&[], 0);
+        assert_eq!(default.layout.bidi, None);
+
+        let (last_valid, _) = scan_grpprl(
+            &[
+                0x41, 0x24, 0x01, // on
+                0x41, 0x24, 0x00, // off
+                0x41, 0x24, 0x01, // on again
+            ],
+            0,
+        );
+        assert_eq!(last_valid.layout.bidi, Some(true));
+
+        let (invalid, _) = scan_grpprl(
+            &[
+                0x41, 0x24, 0x01, // valid prefix
+                0x41, 0x24, 0x02, // invalid Bool8 preserves it
+                0x41, 0x24, 0xFF, // invalid Bool8 preserves it
+            ],
+            0,
+        );
+        assert_eq!(invalid.layout.bidi, Some(true));
+
+        let (only_invalid, _) = scan_grpprl(&[0x41, 0x24, 0x02], 0);
+        assert_eq!(only_invalid.layout.bidi, None);
+
+        let (truncated, _) = scan_grpprl(&[0x41, 0x24, 0x01, 0x41, 0x24], 0);
+        assert_eq!(truncated.layout.bidi, Some(true));
+    }
+
+    #[test]
+    fn direct_paragraph_justification_preserves_bounded_classes() {
+        for (sprm, value, expected) in [
+            (SPRM_P_JC_80, 0, ParagraphJustification::PhysicalLeft),
+            (SPRM_P_JC_80, 1, ParagraphJustification::Center),
+            (SPRM_P_JC_80, 2, ParagraphJustification::PhysicalRight),
+            (SPRM_P_JC_80, 3, ParagraphJustification::Justify),
+            (SPRM_P_JC_80, 4, ParagraphJustification::Justify),
+            (SPRM_P_JC_80, 5, ParagraphJustification::Justify),
+            (SPRM_P_JC, 0, ParagraphJustification::LogicalStart),
+            (SPRM_P_JC, 1, ParagraphJustification::Center),
+            (SPRM_P_JC, 2, ParagraphJustification::LogicalEnd),
+            (SPRM_P_JC, 3, ParagraphJustification::Justify),
+            (SPRM_P_JC, 4, ParagraphJustification::Justify),
+            (SPRM_P_JC, 5, ParagraphJustification::Justify),
+            (SPRM_P_JC, 6, ParagraphJustification::UnsupportedIndented),
+            (SPRM_P_JC, 7, ParagraphJustification::Justify),
+            (SPRM_P_JC, 8, ParagraphJustification::Justify),
+            (SPRM_P_JC, 9, ParagraphJustification::Justify),
+        ] {
+            let mut grpprl = Vec::from(sprm.to_le_bytes());
+            grpprl.push(value);
+            let (pap, _) = scan_grpprl(&grpprl, 0);
+            assert_eq!(pap.layout.justification, Some(expected));
+        }
+    }
+
+    #[test]
+    fn direct_paragraph_justification_uses_source_order_and_safe_fallbacks() {
+        let (logical_last, _) = scan_grpprl(
+            &[
+                0x03, 0x24, 0x00, // physical left
+                0x61, 0x24, 0x02, // logical end
+            ],
+            0,
+        );
+        assert_eq!(
+            logical_last.layout.justification,
+            Some(ParagraphJustification::LogicalEnd)
+        );
+
+        let (physical_last, _) = scan_grpprl(
+            &[
+                0x61, 0x24, 0x02, // logical end
+                0x03, 0x24, 0x00, // physical left
+            ],
+            0,
+        );
+        assert_eq!(
+            physical_last.layout.justification,
+            Some(ParagraphJustification::PhysicalLeft)
+        );
+
+        let (invalid, _) = scan_grpprl(
+            &[
+                0x61, 0x24, 0x02, // valid logical end
+                0x03, 0x24, 0x06, // invalid physical value
+                0x61, 0x24, 0x0A, // invalid logical value
+            ],
+            0,
+        );
+        assert_eq!(
+            invalid.layout.justification,
+            Some(ParagraphJustification::LogicalEnd)
+        );
+
+        let (truncated, _) = scan_grpprl(&[0x03, 0x24, 0x02, 0x61, 0x24], 0);
+        assert_eq!(
+            truncated.layout.justification,
+            Some(ParagraphJustification::PhysicalRight)
+        );
+    }
+
+    #[test]
+    fn paragraph_style_changes_discard_earlier_non_preserved_properties() {
+        let (style_last, _) = scan_grpprl(
+            &[
+                0x41, 0x24, 0x01, // direct RTL on
+                0x61, 0x24, 0x02, // direct logical end
+                0x05, 0x24, 0x01, // direct keep lines
+                0x06, 0x24, 0x01, // direct keep next
+                0x07, 0x24, 0x01, // direct page break before
+                0x31, 0x24, 0x00, // direct widow control off
+                0x40, 0x26, 0x02, // direct outline level
+                0x0A, 0x26, 0x03, // direct list level
+                0x0B, 0x46, 0x05, 0x00, // direct list format override
+                0x16, 0x24, 0x01, // paragraph is in a table
+                0x17, 0x24, 0x01, // paragraph terminates a table row
+                0x04, 0x34, 0x01, // table header row
+                0x66, 0x34, 0x01, // table row cannot split
+                0x00, 0x46, 0x05, 0x00, // sprmPIstd = 5
+            ],
+            2,
+        );
+        assert_eq!(style_last.istd, 5);
+        assert_eq!(style_last.layout, ParagraphLayoutOverrides::default());
+        assert_eq!(
+            style_last.pagination,
+            ParagraphPaginationOverrides::default()
+        );
+        assert_eq!(style_last.outlvl, Some(4));
+        assert_eq!((style_last.ilfo, style_last.ilvl), (0, 0));
+        assert!(style_last.in_table);
+        assert!(style_last.ttp);
+        assert!(style_last.table_header);
+        assert!(style_last.resolved_cant_split());
+
+        let (direct_last, _) = scan_grpprl(
+            &[
+                0x00, 0x46, 0x05, 0x00, // sprmPIstd = 5
+                0x41, 0x24, 0x01, // later direct RTL on
+                0x61, 0x24, 0x02, // later direct logical end
+                0x05, 0x24, 0x01, // later direct keep lines
+                0x40, 0x26, 0x02, // later direct outline level
+                0x0A, 0x26, 0x03, // later direct list level
+                0x0B, 0x46, 0x05, 0x00, // later direct list format override
+            ],
+            2,
+        );
+        assert_eq!(direct_last.istd, 5);
+        assert_eq!(
+            direct_last.layout,
+            ParagraphLayoutOverrides {
+                bidi: Some(true),
+                justification: Some(ParagraphJustification::LogicalEnd),
+            }
+        );
+        assert_eq!(direct_last.pagination.keep_lines, Some(true));
+        assert_eq!(direct_last.outlvl, Some(2));
+        assert_eq!((direct_last.ilfo, direct_last.ilvl), (5, 3));
+    }
+
+    #[test]
+    fn paragraph_style_permutation_resets_non_preserved_properties_when_affected() {
+        // SPPOperand maps styles 4..=6 to 7, 8, and 9 respectively.
+        let permutation = [
+            0x01, 0xC6, // sprmPIstdPermute
+            0x0B, // cb
+            0x00, // fLong
+            0x04, 0x00, // istdFirst
+            0x06, 0x00, // istdLast
+            0x07, 0x00, 0x08, 0x00, 0x09, 0x00, // rgIstdPermute
+        ];
+
+        let mut affected_grpprl = vec![
+            0x41, 0x24, 0x01, // direct RTL on
+            0x03, 0x24, 0x02, // direct physical right
+            0x05, 0x24, 0x01, // direct keep lines
+            0x40, 0x26, 0x02, // direct outline level
+            0x0A, 0x26, 0x03, // direct list level
+            0x0B, 0x46, 0x05, 0x00, // direct list format override
+            0x16, 0x24, 0x01, // paragraph is in a table
+            0x04, 0x34, 0x01, // table header row
+        ];
+        affected_grpprl.extend_from_slice(&permutation);
+        let (affected, _) = scan_grpprl(&affected_grpprl, 5);
+        assert_eq!(affected.istd, 8);
+        assert_eq!(affected.layout, ParagraphLayoutOverrides::default());
+        assert_eq!(affected.pagination, ParagraphPaginationOverrides::default());
+        assert_eq!(affected.outlvl, Some(7));
+        assert_eq!((affected.ilfo, affected.ilvl), (0, 0));
+        assert!(affected.in_table);
+        assert!(affected.table_header);
+
+        let mut unaffected_grpprl = vec![
+            0x41, 0x24, 0x01, // direct RTL on
+            0x03, 0x24, 0x02, // direct physical right
+            0x05, 0x24, 0x01, // direct keep lines
+            0x40, 0x26, 0x02, // direct outline level
+            0x0A, 0x26, 0x03, // direct list level
+            0x0B, 0x46, 0x05, 0x00, // direct list format override
+        ];
+        unaffected_grpprl.extend_from_slice(&permutation);
+        let (unaffected, _) = scan_grpprl(&unaffected_grpprl, 3);
+        assert_eq!(unaffected.istd, 3);
+        assert_eq!(
+            unaffected.layout,
+            ParagraphLayoutOverrides {
+                bidi: Some(true),
+                justification: Some(ParagraphJustification::PhysicalRight),
+            }
+        );
+        assert_eq!(unaffected.pagination.keep_lines, Some(true));
+        assert_eq!(unaffected.outlvl, Some(2));
+        assert_eq!((unaffected.ilfo, unaffected.ilvl), (5, 3));
+    }
+
+    #[test]
+    fn malformed_or_truncated_style_permutation_preserves_direct_layout() {
+        let direct = [
+            0x41, 0x24, 0x01, // direct RTL on
+            0x03, 0x24, 0x02, // direct physical right
+        ];
+        let expected = ParagraphLayoutOverrides {
+            bidi: Some(true),
+            justification: Some(ParagraphJustification::PhysicalRight),
+        };
+
+        let mut reversed_bounds = direct.to_vec();
+        reversed_bounds
+            .extend_from_slice(&[0x01, 0xC6, 0x07, 0x00, 0x05, 0x00, 0x04, 0x00, 0x09, 0x00]);
+        let (reversed, _) = scan_grpprl(&reversed_bounds, 5);
+        assert_eq!(reversed.istd, 5);
+        assert_eq!(reversed.layout, expected);
+
+        let mut count_mismatch = direct.to_vec();
+        count_mismatch
+            .extend_from_slice(&[0x01, 0xC6, 0x07, 0x00, 0x05, 0x00, 0x06, 0x00, 0x09, 0x00]);
+        let (mismatched, _) = scan_grpprl(&count_mismatch, 5);
+        assert_eq!(mismatched.istd, 5);
+        assert_eq!(mismatched.layout, expected);
+
+        let mut truncated = direct.to_vec();
+        truncated.extend_from_slice(&[0x01, 0xC6, 0x0B, 0x00, 0x04, 0x00, 0x06, 0x00]);
+        let (truncated, _) = scan_grpprl(&truncated, 5);
+        assert_eq!(truncated.istd, 5);
+        assert_eq!(truncated.layout, expected);
     }
 
     #[test]
@@ -700,7 +1069,7 @@ mod tests {
             ilvl: 0,
             istd: 0,
             outlvl: None,
-            jc: 0,
+            layout: ParagraphLayoutOverrides::default(),
             pagination: ParagraphPaginationOverrides::default(),
             table_header: false,
             table_cant_split: false,

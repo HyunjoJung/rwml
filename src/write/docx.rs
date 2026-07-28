@@ -787,6 +787,7 @@ impl Ctx {
         // A heading suppresses list rendering — mirror the reader's precedence.
         let list = pr.list.as_ref().filter(|_| heading.is_none());
         let jc = match pr.align {
+            Align::Left if pr.bidi => Some("left"),
             Align::Left => None,
             Align::Center => Some("center"),
             Align::Right => Some("right"),

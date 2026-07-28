@@ -7031,6 +7031,177 @@ mod tests {
         );
     }
 
+    fn legacy_paragraph_bidi_doc() -> Vec<u8> {
+        let paragraphs = [
+            ("RtlNoDirectJc", vec![0x41, 0x24, 0x01]),
+            ("RtlPhysicalLeft", vec![0x41, 0x24, 0x01, 0x03, 0x24, 0x00]),
+            ("RtlLogicalEnd", vec![0x41, 0x24, 0x01, 0x61, 0x24, 0x02]),
+            ("LtrLogicalStart", vec![0x41, 0x24, 0x00, 0x61, 0x24, 0x00]),
+            ("RtlLogicalStart", vec![0x41, 0x24, 0x01, 0x61, 0x24, 0x00]),
+            ("RtlCenter", vec![0x41, 0x24, 0x01, 0x61, 0x24, 0x01]),
+            ("RtlJustify", vec![0x41, 0x24, 0x01, 0x61, 0x24, 0x07]),
+            ("RtlIndented", vec![0x41, 0x24, 0x01, 0x61, 0x24, 0x06]),
+            ("LtrLogicalEnd", vec![0x41, 0x24, 0x00, 0x61, 0x24, 0x02]),
+        ];
+        let mut text = String::new();
+        let mut runs = Vec::new();
+        for (label, grpprl) in paragraphs {
+            text.push_str(label);
+            text.push('\r');
+            runs.push(SyntheticPapxRun {
+                cp_lim: text.encode_utf16().count() as u32,
+                grpprl,
+            });
+        }
+        let text_end = text.encode_utf16().count() as u32;
+        synth_doc_with_ccp_and_tables(
+            &text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [text_end, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    fn paragraph_layouts(model: &DocModel) -> Vec<(String, bool, Align)> {
+        model
+            .blocks
+            .iter()
+            .map(|block| {
+                let Block::Paragraph(paragraph) = block else {
+                    panic!("synthetic legacy block must be a paragraph");
+                };
+                (
+                    paragraph.text(),
+                    paragraph.props.bidi,
+                    paragraph.props.align,
+                )
+            })
+            .collect()
+    }
+
+    fn expected_legacy_paragraph_layouts() -> Vec<(String, bool, Align)> {
+        vec![
+            ("RtlNoDirectJc".to_string(), true, Align::Right),
+            ("RtlPhysicalLeft".to_string(), true, Align::Left),
+            ("RtlLogicalEnd".to_string(), true, Align::Left),
+            ("LtrLogicalStart".to_string(), false, Align::Left),
+            ("RtlLogicalStart".to_string(), true, Align::Right),
+            ("RtlCenter".to_string(), true, Align::Center),
+            ("RtlJustify".to_string(), true, Align::Justify),
+            ("RtlIndented".to_string(), true, Align::Right),
+            ("LtrLogicalEnd".to_string(), false, Align::Right),
+        ]
+    }
+
+    #[test]
+    fn opened_legacy_doc_preserves_direct_paragraph_bidi_and_justification() {
+        let document = Document::open(&legacy_paragraph_bidi_doc()).unwrap();
+
+        assert_eq!(
+            paragraph_layouts(&document.model()),
+            expected_legacy_paragraph_layouts()
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_doc_direct_paragraph_bidi_roundtrips_to_docx() {
+        let legacy = Document::open(&legacy_paragraph_bidi_doc()).unwrap();
+        let reopened = Document::open(&legacy.to_docx()).unwrap();
+
+        assert_eq!(
+            paragraph_layouts(&reopened.model()),
+            expected_legacy_paragraph_layouts()
+        );
+    }
+
+    fn legacy_table_cell_paragraph_bidi_doc() -> Vec<u8> {
+        let text = "First\u{7}Second\u{7}\u{7}";
+        let first_cell_end = "First\u{7}".encode_utf16().count() as u32;
+        let second_cell_end = "First\u{7}Second\u{7}".encode_utf16().count() as u32;
+        let row_end = text.encode_utf16().count() as u32;
+        let mut row_grpprl = vec![
+            0x16, 0x24, 0x01, // sprmPFInTable
+            0x17, 0x24, 0x01, // sprmPFTtp
+            0x08, 0xD6, 0x30, 0x00, // sprmTDefTable, cb=48
+            0x02, // two cells
+            0x00, 0x00, 0xE8, 0x03, 0xD0, 0x07, // boundaries 0..1000..2000
+        ];
+        row_grpprl.extend_from_slice(&[0u8; 40]);
+        let runs = [
+            SyntheticPapxRun {
+                cp_lim: first_cell_end,
+                grpprl: vec![
+                    0x16, 0x24, 0x01, // sprmPFInTable
+                    0x41, 0x24, 0x01, // sprmPFBiDi
+                    0x03, 0x24, 0x00, // sprmPJc80 physical left
+                ],
+            },
+            SyntheticPapxRun {
+                cp_lim: second_cell_end,
+                grpprl: vec![0x16, 0x24, 0x01],
+            },
+            SyntheticPapxRun {
+                cp_lim: row_end,
+                grpprl: row_grpprl,
+            },
+        ];
+        synth_doc_with_ccp_and_tables(
+            text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [row_end, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    fn assert_rtl_paragraph_inside_ltr_table(model: &DocModel) {
+        let Block::Table(table) = &model.blocks[0] else {
+            panic!("synthetic legacy block must be a table");
+        };
+        assert!(!table.bidi_visual);
+        assert_eq!(table.rows[0].cells.len(), 2);
+        let Block::Paragraph(first) = &table.rows[0].cells[0].blocks[0] else {
+            panic!("synthetic first table cell must contain a paragraph");
+        };
+        let Block::Paragraph(second) = &table.rows[0].cells[1].blocks[0] else {
+            panic!("synthetic second table cell must contain a paragraph");
+        };
+        assert_eq!(first.text(), "First");
+        assert!(first.props.bidi);
+        assert_eq!(first.props.align, Align::Left);
+        assert_eq!(second.text(), "Second");
+        assert!(!second.props.bidi);
+        assert_eq!(second.props.align, Align::Left);
+    }
+
+    #[test]
+    fn opened_legacy_doc_keeps_paragraph_bidi_independent_from_table_direction() {
+        let document = Document::open(&legacy_table_cell_paragraph_bidi_doc()).unwrap();
+
+        assert_rtl_paragraph_inside_ltr_table(&document.model());
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_table_cell_paragraph_bidi_roundtrips_without_mirroring_table() {
+        let legacy = Document::open(&legacy_table_cell_paragraph_bidi_doc()).unwrap();
+        let reopened = Document::open(&legacy.to_docx()).unwrap();
+
+        assert_rtl_paragraph_inside_ltr_table(&reopened.model());
+    }
+
     #[test]
     fn opened_legacy_doc_preserves_tdef_table_column_proportions() {
         let text = "left\u{7}right\u{7}\u{7}";
