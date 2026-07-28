@@ -2829,6 +2829,7 @@ impl Document {
                 tab_stops: &d.tab_stops,
                 table_row_pagination: &d.table_row_pagination,
                 table_cell_pagination: &d.table_cell_pagination,
+                table_nested_pagination: &d.table_nested_pagination,
             },
         }
     }

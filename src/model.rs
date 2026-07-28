@@ -338,6 +338,18 @@ pub(crate) struct TableRowPaginationHint {
 pub(crate) type TableCellPaginationHints = Vec<Vec<Vec<Option<PaginationHint>>>>;
 
 #[cfg(any(feature = "docx", feature = "render"))]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct TablePaginationHints {
+    pub(crate) rows: Vec<TableRowPaginationHint>,
+    pub(crate) cells: TableCellPaginationHints,
+    pub(crate) nested: TableCellNestedPaginationHints,
+}
+
+#[cfg(any(feature = "docx", feature = "render"))]
+pub(crate) type TableCellNestedPaginationHints =
+    Vec<Vec<Vec<Option<TablePaginationHints>>>>;
+
+#[cfg(any(feature = "docx", feature = "render"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TabAlignment {
     Left,
