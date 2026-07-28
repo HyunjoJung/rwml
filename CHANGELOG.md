@@ -28,10 +28,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `wrapTopAndBottom` flow also honors top/bottom-margin anchors when their visual
   bounds intersect body text.
 - Opened `.docx` rendering now honors effective table-row `w:cantSplit` from
-  direct row properties and non-conditional inherited table-style chains:
-  default rows may use remaining page space, fitting protected rows move whole,
-  and over-tall rows still split deterministically. Conditional `w:tblStylePr`
-  regions and legacy `.doc` row-break SPRMs remain unsupported.
+  direct row properties and inherited table-style chains, including bounded
+  `wholeTable`, `firstRow`, and `lastRow` conditional regions selected by direct
+  table `w:tblLook` or row `w:cnfStyle`: default rows may use remaining page
+  space, fitting protected rows move whole, and over-tall rows still split
+  deterministically. Banded, column/corner, `w:tblPrEx`, and legacy `.doc`
+  row-break cases remain unsupported.
 - Opened `.docx` table rows now honor resolved `keepNext`, `keepLines`, and
   default-on `widowControl` for direct or accepted-current wrapper-contained
   cell paragraphs when choosing legal row fragments, while retaining

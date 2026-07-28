@@ -30,7 +30,7 @@ pub(crate) struct Styles {
     paragraph_run: HashMap<String, RunProps>,
     paragraph: HashMap<String, ParagraphProps>,
     character_run: HashMap<String, RunProps>,
-    table_row_cant_split: HashMap<String, bool>,
+    table_row: HashMap<String, TableRowStyleProps>,
 }
 
 impl Styles {
@@ -76,9 +76,37 @@ impl Styles {
         props
     }
 
-    pub(crate) fn table_row_cant_split(&self, style_id: Option<&str>) -> Option<bool> {
-        style_id.and_then(|style_id| self.table_row_cant_split.get(style_id).copied())
+    #[cfg(test)]
+    fn table_row_cant_split(&self, style_id: Option<&str>) -> Option<bool> {
+        style_id
+            .and_then(|style_id| self.table_row.get(style_id))
+            .and_then(|props| props.direct.cant_split)
     }
+
+    pub(crate) fn table_row_cant_split_for_regions(
+        &self,
+        style_id: Option<&str>,
+        regions: TableRowStyleRegions,
+    ) -> Option<bool> {
+        let props = style_id.and_then(|style_id| self.table_row.get(style_id))?;
+        let mut value = props.direct.cant_split;
+        // ISO/IEC 29500-1 17.7.6.6: later matching conditional regions
+        // override earlier ones; direct row formatting is applied by body.rs.
+        overlay_cant_split(&mut value, props.whole_table);
+        if regions.first_row {
+            overlay_cant_split(&mut value, props.first_row);
+        }
+        if regions.last_row {
+            overlay_cant_split(&mut value, props.last_row);
+        }
+        value
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct TableRowStyleRegions {
+    pub(crate) first_row: bool,
+    pub(crate) last_row: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -382,14 +410,26 @@ pub(crate) fn parse(xml: &str) -> Styles {
                 }
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblStylePr" => {
-                // ECMA-376 17.7.4.17: direct trPr on a table style is always on;
-                // conditional regions require separate tblLook/cnfStyle evaluation.
-                skip_subtree(&mut r);
+                let region =
+                    TableRowStyleRegion::from_attr(attr_local_trimmed(&e, b"type").as_deref());
+                if let (Some(style), Some(region)) = (&mut cur_style, region) {
+                    if style.kind == Some(StyleKind::Table) {
+                        let props = read_conditional_table_row_props(&mut r, b"tblStylePr");
+                        style.table_row_props.region_mut(region).overlay(props);
+                    } else {
+                        skip_subtree(&mut r);
+                    }
+                } else {
+                    skip_subtree(&mut r);
+                }
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"trPr" => {
                 if let Some(style) = &mut cur_style {
                     if style.kind == Some(StyleKind::Table) {
-                        style.table_row_props = read_table_row_props(&mut r, b"trPr");
+                        style
+                            .table_row_props
+                            .direct
+                            .overlay(read_table_row_props(&mut r, b"trPr"));
                     } else {
                         skip_subtree(&mut r);
                     }
@@ -520,8 +560,8 @@ pub(crate) fn parse(xml: &str) -> Styles {
         .filter(|(_, style)| style.kind == Some(StyleKind::Table))
     {
         let props = resolve_style_table_row_props(id, &raw_styles, &mut Vec::new(), 0);
-        if let Some(cant_split) = props.cant_split {
-            styles.table_row_cant_split.insert(id.clone(), cant_split);
+        if props.has_any() {
+            styles.table_row.insert(id.clone(), props);
         }
     }
     styles
@@ -536,7 +576,7 @@ struct RawStyle {
     outline: Option<u8>,
     run_props: RunProps,
     paragraph_props: ParagraphProps,
-    table_row_props: TableRowProps,
+    table_row_props: TableRowStyleProps,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -567,6 +607,62 @@ impl TableRowProps {
         if other.cant_split.is_some() {
             self.cant_split = other.cant_split;
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct TableRowStyleProps {
+    direct: TableRowProps,
+    whole_table: TableRowProps,
+    first_row: TableRowProps,
+    last_row: TableRowProps,
+}
+
+impl TableRowStyleProps {
+    fn has_any(self) -> bool {
+        self.direct.cant_split.is_some()
+            || self.whole_table.cant_split.is_some()
+            || self.first_row.cant_split.is_some()
+            || self.last_row.cant_split.is_some()
+    }
+
+    fn overlay(&mut self, other: Self) {
+        self.direct.overlay(other.direct);
+        self.whole_table.overlay(other.whole_table);
+        self.first_row.overlay(other.first_row);
+        self.last_row.overlay(other.last_row);
+    }
+
+    fn region_mut(&mut self, region: TableRowStyleRegion) -> &mut TableRowProps {
+        match region {
+            TableRowStyleRegion::WholeTable => &mut self.whole_table,
+            TableRowStyleRegion::FirstRow => &mut self.first_row,
+            TableRowStyleRegion::LastRow => &mut self.last_row,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum TableRowStyleRegion {
+    WholeTable,
+    FirstRow,
+    LastRow,
+}
+
+impl TableRowStyleRegion {
+    fn from_attr(value: Option<&str>) -> Option<Self> {
+        match value {
+            Some("wholeTable") => Some(Self::WholeTable),
+            Some("firstRow") => Some(Self::FirstRow),
+            Some("lastRow") => Some(Self::LastRow),
+            _ => None,
+        }
+    }
+}
+
+fn overlay_cant_split(value: &mut Option<bool>, props: TableRowProps) {
+    if props.cant_split.is_some() {
+        *value = props.cant_split;
     }
 }
 
@@ -639,15 +735,15 @@ fn resolve_style_table_row_props(
     raw_styles: &HashMap<String, RawStyle>,
     stack: &mut Vec<String>,
     depth: usize,
-) -> TableRowProps {
+) -> TableRowStyleProps {
     if depth >= STYLE_CHAIN_LIMIT || stack.iter().any(|seen| seen == id) {
-        return TableRowProps::default();
+        return TableRowStyleProps::default();
     }
     let Some(style) = raw_styles
         .get(id)
         .filter(|style| style.kind == Some(StyleKind::Table))
     else {
-        return TableRowProps::default();
+        return TableRowStyleProps::default();
     };
 
     stack.push(id.to_string());
@@ -658,6 +754,53 @@ fn resolve_style_table_row_props(
         .unwrap_or_default();
     props.overlay(style.table_row_props);
     stack.pop();
+    props
+}
+
+fn read_conditional_table_row_props(r: &mut Reader<&[u8]>, end: &[u8]) -> TableRowProps {
+    let mut props = TableRowProps::default();
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"trPr" => {
+                props.overlay(read_table_row_props(r, b"trPr"));
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                if let Some(value) = read_conditional_table_row_props_alternate_content(r) {
+                    props.overlay(value);
+                }
+            }
+            Ok(Event::Start(_)) => skip_subtree(r),
+            Ok(Event::End(e)) if local(e.name().as_ref()) == end => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    props
+}
+
+fn read_conditional_table_row_props_alternate_content(
+    r: &mut Reader<&[u8]>,
+) -> Option<TableRowProps> {
+    let mut took = false;
+    let mut props = None;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                match name {
+                    b"Choice" | b"Fallback" if !took => {
+                        took = true;
+                        props = Some(read_conditional_table_row_props(r, name));
+                    }
+                    _ => skip_subtree(r),
+                }
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
     props
 }
 
@@ -925,7 +1068,7 @@ mod tests {
             ));
         }
         xml.push_str(&format!(
-            r#"<w:style w:type="table" w:styleId="S{}"><w:trPr><w:cantSplit/></w:trPr></w:style></w:styles>"#,
+            r#"<w:style w:type="table" w:styleId="S{}"><w:trPr><w:cantSplit/></w:trPr><w:tblStylePr w:type="firstRow"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr></w:style></w:styles>"#,
             STYLE_CHAIN_LIMIT + 1
         ));
 
@@ -935,6 +1078,117 @@ mod tests {
         assert_eq!(
             styles.table_row_cant_split(Some(&format!("S{}", STYLE_CHAIN_LIMIT))),
             Some(true)
+        );
+        assert_eq!(
+            styles.table_row_cant_split_for_regions(
+                Some("S0"),
+                TableRowStyleRegions {
+                    first_row: true,
+                    last_row: false,
+                },
+            ),
+            None
+        );
+        assert_eq!(
+            styles.table_row_cant_split_for_regions(
+                Some(&format!("S{}", STYLE_CHAIN_LIMIT)),
+                TableRowStyleRegions {
+                    first_row: true,
+                    last_row: false,
+                },
+            ),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn resolves_bounded_conditional_table_row_pagination_with_region_precedence() {
+        let xml = r#"<w:styles xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+            <w:style w:type="table" w:styleId="ConditionalBase">
+                <w:trPr><w:cantSplit/></w:trPr>
+                <w:tblStylePr w:type="wholeTable">
+                    <w:trPr><w:cantSplit w:val="off"/></w:trPr>
+                </w:tblStylePr>
+                <w:tblStylePr w:type="firstRow">
+                    <w:trPr><w:cantSplit/></w:trPr>
+                </w:tblStylePr>
+                <w:tblStylePr w:type="lastRow">
+                    <w:trPr><w:cantSplit w:val="off"/></w:trPr>
+                </w:tblStylePr>
+            </w:style>
+            <w:style w:type="table" w:styleId="ConditionalDerived">
+                <w:basedOn w:val="ConditionalBase"/>
+                <w:tblStylePr w:type="lastRow">
+                    <w:trPr><w:cantSplit/></w:trPr>
+                </w:tblStylePr>
+            </w:style>
+            <w:style w:type="table" w:styleId="ChoiceOff">
+                <w:tblStylePr w:type="firstRow"><mc:AlternateContent>
+                    <mc:Choice Requires="w14">
+                        <w:trPr><w:cantSplit w:val="0"/></w:trPr>
+                    </mc:Choice>
+                    <mc:Fallback>
+                        <w:trPr><w:cantSplit/></w:trPr>
+                    </mc:Fallback>
+                </mc:AlternateContent></w:tblStylePr>
+            </w:style>
+            <w:style w:type="table" w:styleId="DeferredBand">
+                <w:tblStylePr w:type="band1Horz">
+                    <w:trPr><w:cantSplit/></w:trPr>
+                </w:tblStylePr>
+            </w:style>
+            <w:style w:type="table" w:styleId="HistoricalConditional">
+                <w:tblStylePr w:type="firstRow"><w:trPr>
+                    <w:trPrChange><w:trPr><w:cantSplit/></w:trPr></w:trPrChange>
+                </w:trPr></w:tblStylePr>
+            </w:style>
+        </w:styles>"#;
+        let styles = parse(xml);
+        let neither = TableRowStyleRegions::default();
+        let first = TableRowStyleRegions {
+            first_row: true,
+            last_row: false,
+        };
+        let last = TableRowStyleRegions {
+            first_row: false,
+            last_row: true,
+        };
+        let both = TableRowStyleRegions {
+            first_row: true,
+            last_row: true,
+        };
+
+        assert_eq!(
+            styles.table_row_cant_split_for_regions(Some("ConditionalBase"), neither),
+            Some(false)
+        );
+        assert_eq!(
+            styles.table_row_cant_split_for_regions(Some("ConditionalBase"), first),
+            Some(true)
+        );
+        assert_eq!(
+            styles.table_row_cant_split_for_regions(Some("ConditionalBase"), last),
+            Some(false)
+        );
+        assert_eq!(
+            styles.table_row_cant_split_for_regions(Some("ConditionalBase"), both),
+            Some(false)
+        );
+        assert_eq!(
+            styles.table_row_cant_split_for_regions(Some("ConditionalDerived"), last),
+            Some(true)
+        );
+        assert_eq!(
+            styles.table_row_cant_split_for_regions(Some("ChoiceOff"), first),
+            Some(false)
+        );
+        assert_eq!(
+            styles.table_row_cant_split_for_regions(Some("DeferredBand"), first),
+            None
+        );
+        assert_eq!(
+            styles.table_row_cant_split_for_regions(Some("HistoricalConditional"), first),
+            None
         );
     }
 }

@@ -19,7 +19,7 @@ use super::fields::{
 };
 use super::numbering::Numbering;
 use super::parse_rgb_hex_color;
-use super::styles::{RunProps, Styles};
+use super::styles::{RunProps, Styles, TableRowStyleRegions};
 use super::xml_text::{inline_marker_text, read_i64_text, read_text, skip_subtree};
 use super::{
     attr_f32, attr_i32, attr_i64, attr_local, attr_local_trimmed, attr_u16, attr_u32, attr_u8,
@@ -5207,6 +5207,7 @@ struct RowRaw {
 struct RowProps {
     header: Option<bool>,
     cant_split: Option<bool>,
+    style_regions: Option<TableRowStyleRegions>,
 }
 
 impl RowProps {
@@ -5216,6 +5217,9 @@ impl RowProps {
         }
         if other.cant_split.is_some() {
             self.cant_split = other.cant_split;
+        }
+        if other.style_regions.is_some() {
+            self.style_regions = other.style_regions;
         }
     }
 
@@ -5273,10 +5277,21 @@ fn read_table(
             _ => {}
         }
     }
-    let style_cant_split = ctx.styles.table_row_cant_split(props.style_id.as_deref());
+    let row_count = rows.len();
+    let table_look = props.look.unwrap_or_else(TableLook::word_default);
     let row_pagination = rows
         .iter()
-        .map(|row| row.props.pagination(style_cant_split))
+        .enumerate()
+        .map(|(index, row)| {
+            let regions = row
+                .props
+                .style_regions
+                .unwrap_or_else(|| table_look.row_regions(index, row_count));
+            let style_cant_split = ctx
+                .styles
+                .table_row_cant_split_for_regions(props.style_id.as_deref(), regions);
+            row.props.pagination(style_cant_split)
+        })
         .collect();
     let (table, cell_pagination) = build_table(rows, props);
     (table, row_pagination, cell_pagination)
@@ -5350,6 +5365,7 @@ fn read_table_alternate_content_branch_rows(
 #[derive(Default)]
 struct TableProps {
     style_id: Option<String>,
+    look: Option<TableLook>,
     bidi_visual: bool,
     fixed_layout: bool,
     indent_twips: Option<i32>,
@@ -5361,6 +5377,54 @@ struct TableProps {
     border_sizes: TableBorderSizes,
     border_style: Option<TableBorderStyle>,
     border_styles: TableBorderStyles,
+}
+
+#[derive(Clone, Copy, Default)]
+struct TableLook {
+    first_row: bool,
+    last_row: bool,
+}
+
+impl TableLook {
+    fn word_default() -> Self {
+        // Word treats an omitted tblLook as 0x04A0: first row, first column,
+        // and no vertical banding. Only the row-scoped bit is retained here.
+        Self {
+            first_row: true,
+            last_row: false,
+        }
+    }
+
+    fn row_regions(self, index: usize, row_count: usize) -> TableRowStyleRegions {
+        TableRowStyleRegions {
+            first_row: self.first_row && index == 0,
+            last_row: self.last_row && index.checked_add(1) == Some(row_count),
+        }
+    }
+}
+
+fn read_table_look(e: &BytesStart<'_>) -> TableLook {
+    let has_named_attributes = e.attributes().flatten().any(|attribute| {
+        matches!(
+            local(attribute.key.as_ref()),
+            b"firstRow" | b"lastRow" | b"firstColumn" | b"lastColumn" | b"noHBand" | b"noVBand"
+        )
+    });
+    if has_named_attributes {
+        return TableLook {
+            first_row: attr_local(e, b"firstRow").is_some_and(|value| toggle_on(Some(value))),
+            last_row: attr_local(e, b"lastRow").is_some_and(|value| toggle_on(Some(value))),
+        };
+    }
+
+    // ISO/IEC 29500-4 14.4.11 serializes first/last row as 0x20/0x40.
+    let mask = attr_local_trimmed(e, b"val")
+        .and_then(|value| u16::from_str_radix(&value, 16).ok())
+        .unwrap_or(0);
+    TableLook {
+        first_row: mask & 0x0020 != 0,
+        last_row: mask & 0x0040 != 0,
+    }
 }
 
 /// Read `<w:tblPr>` layout metadata.
@@ -5378,6 +5442,9 @@ fn read_tblpr(r: &mut Xml<'_>) -> TableProps {
                 if local(e.name().as_ref()) == b"tblStyle" =>
             {
                 props.style_id = attr_local_trimmed(&e, b"val");
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"tblLook" => {
+                props.look = Some(read_table_look(&e));
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"bidiVisual" =>
@@ -5462,6 +5529,9 @@ fn read_tblpr_alternate_content_branch(r: &mut Xml<'_>, props: &mut TableProps, 
                 if local(e.name().as_ref()) == b"tblStyle" =>
             {
                 props.style_id = attr_local_trimmed(&e, b"val");
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"tblLook" => {
+                props.look = Some(read_table_look(&e));
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"bidiVisual" =>
@@ -5800,6 +5870,43 @@ fn read_row_alternate_content_branch_cells(
     (cells, props)
 }
 
+fn read_row_style_regions(e: &BytesStart<'_>) -> Option<TableRowStyleRegions> {
+    let has_named_attributes = e.attributes().flatten().any(|attribute| {
+        matches!(
+            local(attribute.key.as_ref()),
+            b"firstRow"
+                | b"lastRow"
+                | b"firstColumn"
+                | b"lastColumn"
+                | b"oddVBand"
+                | b"evenVBand"
+                | b"oddHBand"
+                | b"evenHBand"
+                | b"firstRowLastColumn"
+                | b"firstRowFirstColumn"
+                | b"lastRowLastColumn"
+                | b"lastRowFirstColumn"
+        )
+    });
+    if has_named_attributes {
+        return Some(TableRowStyleRegions {
+            first_row: attr_local(e, b"firstRow").is_some_and(|value| toggle_on(Some(value))),
+            last_row: attr_local(e, b"lastRow").is_some_and(|value| toggle_on(Some(value))),
+        });
+    }
+
+    // ISO/IEC 29500-4 14.3.1.1 serializes all twelve flags in order.
+    let value = attr_local_trimmed(e, b"val")?;
+    let mask = value.as_bytes();
+    if mask.len() != 12 || mask.iter().any(|bit| !matches!(bit, b'0' | b'1')) {
+        return None;
+    }
+    Some(TableRowStyleRegions {
+        first_row: mask[0] == b'1',
+        last_row: mask[1] == b'1',
+    })
+}
+
 /// Read direct `<w:trPr>` pagination properties.
 fn read_trpr(r: &mut Xml<'_>) -> RowProps {
     let mut props = RowProps::default();
@@ -5822,6 +5929,13 @@ fn read_trpr(r: &mut Xml<'_>) -> RowProps {
                 if local(e.name().as_ref()) == b"cantSplit" =>
             {
                 props.cant_split = Some(toggle_on(attr_local(&e, b"val")));
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if local(e.name().as_ref()) == b"cnfStyle" =>
+            {
+                if let Some(regions) = read_row_style_regions(&e) {
+                    props.style_regions = Some(regions);
+                }
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"trPr" => break,
             Ok(Event::Eof) | Err(_) => break,
@@ -5876,6 +5990,13 @@ fn read_trpr_alternate_content_branch(r: &mut Xml<'_>, branch: &[u8]) -> RowProp
                 if local(e.name().as_ref()) == b"cantSplit" =>
             {
                 props.cant_split = Some(toggle_on(attr_local(&e, b"val")));
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if local(e.name().as_ref()) == b"cnfStyle" =>
+            {
+                if let Some(regions) = read_row_style_regions(&e) {
+                    props.style_regions = Some(regions);
+                }
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
             Ok(Event::Eof) | Err(_) => break,
@@ -6576,6 +6697,166 @@ mod tests {
                 ],
                 vec![TableRowPaginationHint { cant_split: true }],
                 vec![TableRowPaginationHint { cant_split: false }],
+            ]
+        );
+    }
+
+    #[test]
+    fn table_row_pagination_uses_first_row_conditional_table_style() {
+        let styles = super::super::styles::parse(
+            r#"<w:styles>
+                <w:style w:type="table" w:styleId="ConditionalKeep">
+                    <w:tblStylePr w:type="firstRow">
+                        <w:trPr><w:cantSplit/></w:trPr>
+                    </w:tblStylePr>
+                </w:style>
+            </w:styles>"#,
+        );
+        let xml = r#"<w:document><w:body>
+            <w:tbl>
+                <w:tblPr>
+                    <w:tblStyle w:val="ConditionalKeep"/>
+                    <w:tblLook w:firstRow="1"/>
+                </w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>first</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:tc><w:p><w:r><w:t>second</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+        </w:body></w:document>"#;
+
+        let (_, _, _, table_rows, _) =
+            parse_with_media_styles_and_pagination(xml, HashMap::new(), styles, true);
+
+        assert_eq!(
+            table_rows,
+            vec![vec![
+                TableRowPaginationHint { cant_split: true },
+                TableRowPaginationHint { cant_split: false },
+            ]]
+        );
+    }
+
+    #[test]
+    fn conditional_table_row_style_selection_and_precedence_are_bounded() {
+        let styles = super::super::styles::parse(
+            r#"<w:styles xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+                <w:style w:type="table" w:styleId="Precedence">
+                    <w:tblStylePr w:type="wholeTable">
+                        <w:trPr><w:cantSplit/></w:trPr>
+                    </w:tblStylePr>
+                    <w:tblStylePr w:type="firstRow">
+                        <w:trPr><w:cantSplit w:val="off"/></w:trPr>
+                    </w:tblStylePr>
+                    <w:tblStylePr w:type="lastRow">
+                        <w:trPr><w:cantSplit/></w:trPr>
+                    </w:tblStylePr>
+                </w:style>
+                <w:style w:type="table" w:styleId="Derived">
+                    <w:basedOn w:val="Precedence"/>
+                    <w:tblStylePr w:type="lastRow">
+                        <w:trPr><w:cantSplit w:val="off"/></w:trPr>
+                    </w:tblStylePr>
+                </w:style>
+                <w:style w:type="table" w:styleId="FirstOnly">
+                    <w:tblStylePr w:type="firstRow">
+                        <w:trPr><w:cantSplit/></w:trPr>
+                    </w:tblStylePr>
+                </w:style>
+                <w:style w:type="table" w:styleId="LastOnly">
+                    <w:tblStylePr w:type="lastRow">
+                        <w:trPr><w:cantSplit/></w:trPr>
+                    </w:tblStylePr>
+                </w:style>
+            </w:styles>"#,
+        );
+        let xml = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+            <w:tbl>
+                <w:tblPr><w:tblStyle w:val="Precedence"/><w:tblLook w:firstRow="1" w:lastRow="1"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>first off</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:tc><w:p><w:r><w:t>whole on</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:tc><w:p><w:r><w:t>last on</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr><w:tblStyle w:val="Derived"/><w:tblLook w:val="0060"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>both, last off</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr><w:tblStyle w:val="Precedence"/><w:tblLook w:firstRow="0" w:lastRow="0" w:val="0060"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>named attributes win</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr><w:tblStyle w:val="FirstOnly"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>Word default first</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:tc><w:p><w:r><w:t>not first</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr><w:tblStyle w:val="Precedence"/><w:tblLook w:firstRow="0" w:lastRow="0"/></w:tblPr>
+                <w:tr><w:trPr><w:cnfStyle w:firstRow="1"/></w:trPr><w:tc><w:p><w:r><w:t>explicit first off</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:trPr><w:cnfStyle w:val="010000000000"/></w:trPr><w:tc><w:p><w:r><w:t>explicit last on</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr><w:tblStyle w:val="FirstOnly"/><w:tblLook w:firstRow="1"/></w:tblPr>
+                <w:tr><w:trPr><w:cnfStyle w:firstRow="0"/></w:trPr><w:tc><w:p><w:r><w:t>explicit mask suppresses position</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr><w:tblStyle w:val="FirstOnly"/><w:tblLook w:firstRow="1"/></w:tblPr>
+                <w:tr><w:trPr><w:cnfStyle w:val="malformed"/></w:trPr><w:tc><w:p><w:r><w:t>malformed mask falls back</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr><w:tblStyle w:val="FirstOnly"/><w:tblLook w:firstRow="0"/></w:tblPr>
+                <w:tr><w:trPr><mc:AlternateContent>
+                    <mc:Choice Requires="w14"><w:cnfStyle w:firstRow="1"/></mc:Choice>
+                    <mc:Fallback><w:cnfStyle w:firstRow="0"/></mc:Fallback>
+                </mc:AlternateContent></w:trPr><w:tc><w:p><w:r><w:t>selected row mask</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr><w:tblStyle w:val="LastOnly"/><w:tblPrChange><w:tblPr><w:tblLook w:lastRow="1"/></w:tblPr></w:tblPrChange></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>history ignored</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr><w:tblStyle w:val="Precedence"/><w:tblLook w:firstRow="1" w:lastRow="1"/></w:tblPr>
+                <w:tr><w:trPr><w:cantSplit w:val="off"/></w:trPr><w:tc><w:p><w:r><w:t>direct off wins</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr><w:tblStyle w:val="Derived"/><w:tblLook w:firstRow="1" w:lastRow="1"/></w:tblPr>
+                <w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:p><w:r><w:t>direct on wins</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr><w:tblStyle w:val="FirstOnly"/><mc:AlternateContent>
+                    <mc:Choice Requires="w14"><w:tblLook w:firstRow="1"/></mc:Choice>
+                    <mc:Fallback><w:tblLook w:firstRow="0"/></mc:Fallback>
+                </mc:AlternateContent></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>selected table look</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+        </w:body></w:document>"#;
+
+        let (_, _, _, table_rows, _) =
+            parse_with_media_styles_and_pagination(xml, HashMap::new(), styles, true);
+
+        assert_eq!(
+            table_rows,
+            vec![
+                vec![
+                    TableRowPaginationHint { cant_split: false },
+                    TableRowPaginationHint { cant_split: true },
+                    TableRowPaginationHint { cant_split: true },
+                ],
+                vec![TableRowPaginationHint { cant_split: false }],
+                vec![TableRowPaginationHint { cant_split: true }],
+                vec![
+                    TableRowPaginationHint { cant_split: true },
+                    TableRowPaginationHint { cant_split: false },
+                ],
+                vec![
+                    TableRowPaginationHint { cant_split: false },
+                    TableRowPaginationHint { cant_split: true },
+                ],
+                vec![TableRowPaginationHint { cant_split: false }],
+                vec![TableRowPaginationHint { cant_split: true }],
+                vec![TableRowPaginationHint { cant_split: true }],
+                vec![TableRowPaginationHint { cant_split: false }],
+                vec![TableRowPaginationHint { cant_split: false }],
+                vec![TableRowPaginationHint { cant_split: true }],
+                vec![TableRowPaginationHint { cant_split: true }],
             ]
         );
     }
