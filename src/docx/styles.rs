@@ -93,6 +93,12 @@ impl Styles {
         // ISO/IEC 29500-1 17.7.6.6: later matching conditional regions
         // override earlier ones; direct row formatting is applied by body.rs.
         overlay_cant_split(&mut value, props.whole_table);
+        if regions.band1_horizontal {
+            overlay_cant_split(&mut value, props.band1_horizontal);
+        }
+        if regions.band2_horizontal {
+            overlay_cant_split(&mut value, props.band2_horizontal);
+        }
         if regions.first_row {
             overlay_cant_split(&mut value, props.first_row);
         }
@@ -101,12 +107,20 @@ impl Styles {
         }
         value
     }
+
+    pub(crate) fn table_row_band_size(&self, style_id: Option<&str>) -> Option<u8> {
+        style_id
+            .and_then(|style_id| self.table_row.get(style_id))
+            .and_then(|props| props.row_band_size)
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct TableRowStyleRegions {
     pub(crate) first_row: bool,
     pub(crate) last_row: bool,
+    pub(crate) band1_horizontal: bool,
+    pub(crate) band2_horizontal: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -478,6 +492,15 @@ pub(crate) fn parse(xml: &str) -> Styles {
                         style.outline = attr_u8(&e, b"val");
                     }
                 }
+                b"tblStyleRowBandSize" => {
+                    if let Some(style) = &mut cur_style {
+                        if style.kind == Some(StyleKind::Table) {
+                            if let Some(size) = attr_u8(&e, b"val").filter(|size| *size <= 3) {
+                                style.table_row_props.row_band_size = Some(size);
+                            }
+                        }
+                    }
+                }
                 _ => {}
             },
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"style" => {
@@ -614,14 +637,19 @@ impl TableRowProps {
 struct TableRowStyleProps {
     direct: TableRowProps,
     whole_table: TableRowProps,
+    band1_horizontal: TableRowProps,
+    band2_horizontal: TableRowProps,
     first_row: TableRowProps,
     last_row: TableRowProps,
+    row_band_size: Option<u8>,
 }
 
 impl TableRowStyleProps {
     fn has_any(self) -> bool {
         self.direct.cant_split.is_some()
             || self.whole_table.cant_split.is_some()
+            || self.band1_horizontal.cant_split.is_some()
+            || self.band2_horizontal.cant_split.is_some()
             || self.first_row.cant_split.is_some()
             || self.last_row.cant_split.is_some()
     }
@@ -629,13 +657,20 @@ impl TableRowStyleProps {
     fn overlay(&mut self, other: Self) {
         self.direct.overlay(other.direct);
         self.whole_table.overlay(other.whole_table);
+        self.band1_horizontal.overlay(other.band1_horizontal);
+        self.band2_horizontal.overlay(other.band2_horizontal);
         self.first_row.overlay(other.first_row);
         self.last_row.overlay(other.last_row);
+        if other.row_band_size.is_some() {
+            self.row_band_size = other.row_band_size;
+        }
     }
 
     fn region_mut(&mut self, region: TableRowStyleRegion) -> &mut TableRowProps {
         match region {
             TableRowStyleRegion::WholeTable => &mut self.whole_table,
+            TableRowStyleRegion::Band1Horizontal => &mut self.band1_horizontal,
+            TableRowStyleRegion::Band2Horizontal => &mut self.band2_horizontal,
             TableRowStyleRegion::FirstRow => &mut self.first_row,
             TableRowStyleRegion::LastRow => &mut self.last_row,
         }
@@ -645,6 +680,8 @@ impl TableRowStyleProps {
 #[derive(Debug, Clone, Copy)]
 enum TableRowStyleRegion {
     WholeTable,
+    Band1Horizontal,
+    Band2Horizontal,
     FirstRow,
     LastRow,
 }
@@ -653,6 +690,8 @@ impl TableRowStyleRegion {
     fn from_attr(value: Option<&str>) -> Option<Self> {
         match value {
             Some("wholeTable") => Some(Self::WholeTable),
+            Some("band1Horz") => Some(Self::Band1Horizontal),
+            Some("band2Horz") => Some(Self::Band2Horizontal),
             Some("firstRow") => Some(Self::FirstRow),
             Some("lastRow") => Some(Self::LastRow),
             _ => None,
@@ -1084,7 +1123,7 @@ mod tests {
                 Some("S0"),
                 TableRowStyleRegions {
                     first_row: true,
-                    last_row: false,
+                    ..Default::default()
                 },
             ),
             None
@@ -1094,7 +1133,7 @@ mod tests {
                 Some(&format!("S{}", STYLE_CHAIN_LIMIT)),
                 TableRowStyleRegions {
                     first_row: true,
-                    last_row: false,
+                    ..Default::default()
                 },
             ),
             Some(true)
@@ -1147,15 +1186,20 @@ mod tests {
         let neither = TableRowStyleRegions::default();
         let first = TableRowStyleRegions {
             first_row: true,
-            last_row: false,
+            ..Default::default()
         };
         let last = TableRowStyleRegions {
-            first_row: false,
             last_row: true,
+            ..Default::default()
         };
         let both = TableRowStyleRegions {
             first_row: true,
             last_row: true,
+            ..Default::default()
+        };
+        let band1 = TableRowStyleRegions {
+            band1_horizontal: true,
+            ..Default::default()
         };
 
         assert_eq!(
@@ -1183,12 +1227,124 @@ mod tests {
             Some(false)
         );
         assert_eq!(
-            styles.table_row_cant_split_for_regions(Some("DeferredBand"), first),
-            None
+            styles.table_row_cant_split_for_regions(Some("DeferredBand"), band1),
+            Some(true)
         );
         assert_eq!(
             styles.table_row_cant_split_for_regions(Some("HistoricalConditional"), first),
             None
+        );
+    }
+
+    #[test]
+    fn resolves_horizontal_table_bands_and_inherited_band_sizes() {
+        let xml = r#"<w:styles xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+            <w:style w:type="table" w:styleId="BandBase">
+                <w:tblPr><w:tblStyleRowBandSize w:val="2"/></w:tblPr>
+                <w:tblStylePr w:type="band1Horz">
+                    <w:trPr><w:cantSplit/></w:trPr>
+                </w:tblStylePr>
+                <w:tblStylePr w:type="band2Horz">
+                    <w:trPr><w:cantSplit w:val="off"/></w:trPr>
+                </w:tblStylePr>
+                <w:tblStylePr w:type="firstRow">
+                    <w:trPr><w:cantSplit w:val="off"/></w:trPr>
+                </w:tblStylePr>
+            </w:style>
+            <w:style w:type="table" w:styleId="BandDerived">
+                <w:basedOn w:val="BandBase"/>
+                <w:tblPr><w:tblStyleRowBandSize w:val="3"/></w:tblPr>
+                <w:tblStylePr w:type="band2Horz">
+                    <w:trPr><w:cantSplit/></w:trPr>
+                </w:tblStylePr>
+            </w:style>
+            <w:style w:type="table" w:styleId="InvalidKeepsBase">
+                <w:basedOn w:val="BandBase"/>
+                <w:tblPr><w:tblStyleRowBandSize w:val="4"/></w:tblPr>
+            </w:style>
+            <w:style w:type="table" w:styleId="ZeroDisables">
+                <w:basedOn w:val="BandBase"/>
+                <w:tblPr><w:tblStyleRowBandSize w:val="0"/></w:tblPr>
+            </w:style>
+            <w:style w:type="table" w:styleId="LastValidWins">
+                <w:basedOn w:val="BandBase"/>
+                <w:tblPr>
+                    <w:tblStyleRowBandSize w:val="1"/>
+                    <w:tblStyleRowBandSize w:val="invalid"/>
+                    <w:tblStyleRowBandSize w:val="3"/>
+                    <w:tblStyleRowBandSize w:val="9"/>
+                </w:tblPr>
+            </w:style>
+            <w:style w:type="table" w:styleId="SelectedChoice">
+                <w:basedOn w:val="BandBase"/>
+                <w:tblPr><mc:AlternateContent>
+                    <mc:Choice Requires="w14">
+                        <w:tblStyleRowBandSize w:val="1"/>
+                    </mc:Choice>
+                    <mc:Fallback>
+                        <w:tblStyleRowBandSize w:val="3"/>
+                    </mc:Fallback>
+                </mc:AlternateContent></w:tblPr>
+            </w:style>
+            <w:style w:type="paragraph" w:styleId="WrongKind">
+                <w:tblStyleRowBandSize w:val="3"/>
+                <w:tblStylePr w:type="band1Horz">
+                    <w:trPr><w:cantSplit/></w:trPr>
+                </w:tblStylePr>
+            </w:style>
+        </w:styles>"#;
+        let styles = parse(xml);
+        let band1 = TableRowStyleRegions {
+            band1_horizontal: true,
+            ..Default::default()
+        };
+        let band2 = TableRowStyleRegions {
+            band2_horizontal: true,
+            ..Default::default()
+        };
+        let band1_first = TableRowStyleRegions {
+            first_row: true,
+            band1_horizontal: true,
+            ..Default::default()
+        };
+        let both_bands = TableRowStyleRegions {
+            band1_horizontal: true,
+            band2_horizontal: true,
+            ..Default::default()
+        };
+
+        assert_eq!(styles.table_row_band_size(Some("BandBase")), Some(2));
+        assert_eq!(styles.table_row_band_size(Some("BandDerived")), Some(3));
+        assert_eq!(
+            styles.table_row_band_size(Some("InvalidKeepsBase")),
+            Some(2)
+        );
+        assert_eq!(styles.table_row_band_size(Some("ZeroDisables")), Some(0));
+        assert_eq!(styles.table_row_band_size(Some("LastValidWins")), Some(3));
+        assert_eq!(styles.table_row_band_size(Some("SelectedChoice")), Some(1));
+        assert_eq!(styles.table_row_band_size(Some("WrongKind")), None);
+        assert_eq!(styles.table_row_band_size(Some("missing")), None);
+        assert_eq!(styles.table_row_band_size(None), None);
+
+        assert_eq!(
+            styles.table_row_cant_split_for_regions(Some("BandBase"), band1),
+            Some(true)
+        );
+        assert_eq!(
+            styles.table_row_cant_split_for_regions(Some("BandBase"), band2),
+            Some(false)
+        );
+        assert_eq!(
+            styles.table_row_cant_split_for_regions(Some("BandBase"), band1_first),
+            Some(false)
+        );
+        assert_eq!(
+            styles.table_row_cant_split_for_regions(Some("BandBase"), both_bands),
+            Some(false)
+        );
+        assert_eq!(
+            styles.table_row_cant_split_for_regions(Some("BandDerived"), band2),
+            Some(true)
         );
     }
 }

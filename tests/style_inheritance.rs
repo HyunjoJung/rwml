@@ -156,6 +156,22 @@ fn conditional_table_style_pagination_docx(direct_row_props: &str) -> Vec<u8> {
     )
 }
 
+#[cfg(feature = "render")]
+fn horizontal_band_table_style_pagination_docx(direct_row_props: &str) -> Vec<u8> {
+    table_pagination_docx(
+        r#"<w:tblStyle w:val="BandedKeep"/>"#,
+        direct_row_props,
+        r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+            <w:style w:type="table" w:styleId="BandedKeep">
+                <w:tblPr><w:tblStyleRowBandSize w:val="1"/></w:tblPr>
+                <w:tblStylePr w:type="band1Horz">
+                    <w:trPr><w:cantSplit/></w:trPr>
+                </w:tblStylePr>
+            </w:style>
+        </w:styles>"#,
+    )
+}
+
 #[test]
 fn docx_run_props_resolve_docdefaults_paragraph_and_character_styles() {
     let doc = Document::open(&style_inheritance_docx()).expect("fixture opens");
@@ -253,5 +269,32 @@ fn opened_docx_render_honors_first_row_conditional_table_style_cant_split() {
         (conditional_pages, direct_off_pages),
         (3, 2),
         "the selected first-row style keeps the row together while direct off restores splitting"
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn opened_docx_render_honors_horizontal_table_style_band_cant_split() {
+    let banded =
+        Document::open(&horizontal_band_table_style_pagination_docx("")).expect("fixture opens");
+    let direct_off = Document::open(&horizontal_band_table_style_pagination_docx(
+        r#"<w:trPr><w:cantSplit w:val="off"/></w:trPr>"#,
+    ))
+    .expect("fixture opens");
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+    let banded_pages = banded
+        .layout_pages_with_fonts(&fonts)
+        .expect("banded table style lays out")
+        .pages;
+    let direct_off_pages = direct_off
+        .layout_pages_with_fonts(&fonts)
+        .expect("direct override lays out")
+        .pages;
+
+    assert_eq!(
+        (banded_pages, direct_off_pages),
+        (3, 2),
+        "the selected horizontal band keeps the row together while direct off restores splitting"
     );
 }

@@ -315,10 +315,11 @@ border paint. Opened
 from direct row properties or an inherited table-style chain keeps a fitting
 row together and an over-tall row still splits at line boundaries. Table styles
 include direct non-conditional row properties and bounded
-`wholeTable`/`firstRow`/`lastRow` conditional regions selected by direct table
-`w:tblLook` or row `w:cnfStyle`; later regions and direct row formatting retain
-Word precedence. Model-only renders retain
-the established keep-together default. Opened legacy `.doc` rows follow direct
+`wholeTable`/`band1Horz`/`band2Horz`/`firstRow`/`lastRow` conditional regions
+selected by direct table `w:tblLook` or row `w:cnfStyle`. Inherited style and
+direct-table `w:tblStyleRowBandSize` values use Word's 0-3 row grouping; later
+regions and direct row formatting retain Word precedence. Model-only renders
+retain the established keep-together default. Opened legacy `.doc` rows follow direct
 `sprmTFCantSplit` and compatibility `sprmTFCantSplit90`: absent properties
 retain the MS-DOC splittable default, the modern property takes precedence when
 both are present, and fitting protected rows move whole while over-tall rows
@@ -455,9 +456,9 @@ bridges.
 > section columns, or section-local page geometry. Unknown fields, remaining
 > layout-dependent TOC/REF/NOTEREF cases, and unsupported value-changing field
 > semantics retain their cached display text with diagnostics.
-> Conditional table-style horizontal/vertical bands, first/last-column and
-> corner regions, configurable band sizes, and `w:tblPrEx` row-group exceptions
-> do not yet contribute `cantSplit`. Nested-table paragraph controls retain the
+> Conditional table-style vertical bands, first/last-column and corner regions,
+> and `w:tblPrEx` row-group exceptions do not yet contribute `cantSplit`.
+> Nested-table paragraph controls retain the
 > renderer's 32-level flattening bound; nested grid/border geometry, nested-row
 > `cantSplit`, and Word-exact cell spacing/tab geometry remain outside this
 > slice. Legacy STSH properties beyond the bounded paragraph-pagination,
@@ -1017,8 +1018,9 @@ evidence.
       hyperlinks, model-backed clockwise image rotation, six-way solid
       model-backed table border color/width, paragraph
       page-break-before, header-row repeat, oversized-row split,
-      direct and non-conditional table-style DOCX table-row `cantSplit`, direct DOCX
-      and recursively nested table-cell keep/widow controls, direct and
+      direct plus bounded whole/first/last/horizontal-band table-style DOCX
+      table-row `cantSplit`, direct DOCX and recursively nested table-cell
+      keep/widow controls, direct and
       paragraph-style-inherited legacy DOC
       `sprmPFKeep`/`sprmPFKeepFollow`/`sprmPFWidowControl`/`sprmPFPageBreakBefore`
       plus bounded direct/style top-level

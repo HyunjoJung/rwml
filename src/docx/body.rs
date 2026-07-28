@@ -5298,6 +5298,11 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Table, TablePagina
     }
     let row_count = rows.len();
     let table_look = props.look.unwrap_or_else(TableLook::word_default);
+    let row_band_size = props
+        .row_band_size
+        .or_else(|| ctx.styles.table_row_band_size(props.style_id.as_deref()))
+        // Word uses zero, rather than ECMA-376's one, when the property is omitted.
+        .unwrap_or(0);
     let row_pagination = rows
         .iter()
         .enumerate()
@@ -5305,7 +5310,7 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Table, TablePagina
             let regions = row
                 .props
                 .style_regions
-                .unwrap_or_else(|| table_look.row_regions(index, row_count));
+                .unwrap_or_else(|| table_look.row_regions(index, row_count, row_band_size));
             let style_cant_split = ctx
                 .styles
                 .table_row_cant_split_for_regions(props.style_id.as_deref(), regions);
@@ -5431,6 +5436,7 @@ fn read_table_alternate_content_branch_rows(
 struct TableProps {
     style_id: Option<String>,
     look: Option<TableLook>,
+    row_band_size: Option<u8>,
     bidi_visual: bool,
     fixed_layout: bool,
     indent_twips: Option<i32>,
@@ -5448,22 +5454,36 @@ struct TableProps {
 struct TableLook {
     first_row: bool,
     last_row: bool,
+    horizontal_banding: bool,
 }
 
 impl TableLook {
     fn word_default() -> Self {
         // Word treats an omitted tblLook as 0x04A0: first row, first column,
-        // and no vertical banding. Only the row-scoped bit is retained here.
+        // no vertical banding, and horizontal banding enabled.
         Self {
             first_row: true,
             last_row: false,
+            horizontal_banding: true,
         }
     }
 
-    fn row_regions(self, index: usize, row_count: usize) -> TableRowStyleRegions {
+    fn row_regions(
+        self,
+        index: usize,
+        row_count: usize,
+        row_band_size: u8,
+    ) -> TableRowStyleRegions {
+        let band = self
+            .horizontal_banding
+            .then_some(row_band_size)
+            .filter(|size| *size != 0)
+            .map(|size| (index / size as usize) % 2);
         TableRowStyleRegions {
             first_row: self.first_row && index == 0,
             last_row: self.last_row && index.checked_add(1) == Some(row_count),
+            band1_horizontal: band == Some(0),
+            band2_horizontal: band == Some(1),
         }
     }
 }
@@ -5479,6 +5499,8 @@ fn read_table_look(e: &BytesStart<'_>) -> TableLook {
         return TableLook {
             first_row: attr_local(e, b"firstRow").is_some_and(|value| toggle_on(Some(value))),
             last_row: attr_local(e, b"lastRow").is_some_and(|value| toggle_on(Some(value))),
+            horizontal_banding: !attr_local(e, b"noHBand")
+                .is_some_and(|value| toggle_on(Some(value))),
         };
     }
 
@@ -5489,6 +5511,7 @@ fn read_table_look(e: &BytesStart<'_>) -> TableLook {
     TableLook {
         first_row: mask & 0x0020 != 0,
         last_row: mask & 0x0040 != 0,
+        horizontal_banding: mask & 0x0200 == 0,
     }
 }
 
@@ -5510,6 +5533,13 @@ fn read_tblpr(r: &mut Xml<'_>) -> TableProps {
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"tblLook" => {
                 props.look = Some(read_table_look(&e));
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if local(e.name().as_ref()) == b"tblStyleRowBandSize" =>
+            {
+                if let Some(size) = attr_u8(&e, b"val").filter(|size| *size <= 3) {
+                    props.row_band_size = Some(size);
+                }
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"bidiVisual" =>
@@ -5597,6 +5627,13 @@ fn read_tblpr_alternate_content_branch(r: &mut Xml<'_>, props: &mut TableProps, 
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"tblLook" => {
                 props.look = Some(read_table_look(&e));
+            }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if local(e.name().as_ref()) == b"tblStyleRowBandSize" =>
+            {
+                if let Some(size) = attr_u8(&e, b"val").filter(|size| *size <= 3) {
+                    props.row_band_size = Some(size);
+                }
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
                 if local(e.name().as_ref()) == b"bidiVisual" =>
@@ -5957,6 +5994,10 @@ fn read_row_style_regions(e: &BytesStart<'_>) -> Option<TableRowStyleRegions> {
         return Some(TableRowStyleRegions {
             first_row: attr_local(e, b"firstRow").is_some_and(|value| toggle_on(Some(value))),
             last_row: attr_local(e, b"lastRow").is_some_and(|value| toggle_on(Some(value))),
+            band1_horizontal: attr_local(e, b"oddHBand")
+                .is_some_and(|value| toggle_on(Some(value))),
+            band2_horizontal: attr_local(e, b"evenHBand")
+                .is_some_and(|value| toggle_on(Some(value))),
         });
     }
 
@@ -5969,6 +6010,8 @@ fn read_row_style_regions(e: &BytesStart<'_>) -> Option<TableRowStyleRegions> {
     Some(TableRowStyleRegions {
         first_row: mask[0] == b'1',
         last_row: mask[1] == b'1',
+        band1_horizontal: mask[6] == b'1',
+        band2_horizontal: mask[7] == b'1',
     })
 }
 
@@ -6850,6 +6893,264 @@ mod tests {
                 TableRowPaginationHint { cant_split: true },
                 TableRowPaginationHint { cant_split: false },
             ]]
+        );
+    }
+
+    #[test]
+    fn table_row_pagination_uses_horizontal_style_bands() {
+        let styles = super::super::styles::parse(
+            r#"<w:styles>
+                <w:style w:type="table" w:styleId="Banded">
+                    <w:tblPr><w:tblStyleRowBandSize w:val="1"/></w:tblPr>
+                    <w:tblStylePr w:type="band1Horz">
+                        <w:trPr><w:cantSplit/></w:trPr>
+                    </w:tblStylePr>
+                    <w:tblStylePr w:type="band2Horz">
+                        <w:trPr><w:cantSplit w:val="off"/></w:trPr>
+                    </w:tblStylePr>
+                </w:style>
+            </w:styles>"#,
+        );
+        let xml = r#"<w:document><w:body>
+            <w:tbl>
+                <w:tblPr><w:tblStyle w:val="Banded"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>band 1</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:tc><w:p><w:r><w:t>band 2</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:tc><w:p><w:r><w:t>band 1 again</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:tc><w:p><w:r><w:t>band 2 again</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+        </w:body></w:document>"#;
+
+        let (_, _, _, table_rows, _, _) =
+            parse_with_media_styles_and_pagination(xml, HashMap::new(), styles, true);
+
+        assert_eq!(
+            table_rows,
+            vec![vec![
+                TableRowPaginationHint { cant_split: true },
+                TableRowPaginationHint { cant_split: false },
+                TableRowPaginationHint { cant_split: true },
+                TableRowPaginationHint { cant_split: false },
+            ]]
+        );
+    }
+
+    #[test]
+    fn horizontal_style_band_sizes_and_region_precedence_are_bounded() {
+        let styles = super::super::styles::parse(
+            r#"<w:styles>
+                <w:style w:type="table" w:styleId="SizedBands">
+                    <w:tblPr><w:tblStyleRowBandSize w:val="2"/></w:tblPr>
+                    <w:tblStylePr w:type="band1Horz">
+                        <w:trPr><w:cantSplit/></w:trPr>
+                    </w:tblStylePr>
+                    <w:tblStylePr w:type="band2Horz">
+                        <w:trPr><w:cantSplit w:val="off"/></w:trPr>
+                    </w:tblStylePr>
+                    <w:tblStylePr w:type="firstRow">
+                        <w:trPr><w:cantSplit w:val="off"/></w:trPr>
+                    </w:tblStylePr>
+                    <w:tblStylePr w:type="lastRow">
+                        <w:trPr><w:cantSplit/></w:trPr>
+                    </w:tblStylePr>
+                </w:style>
+                <w:style w:type="table" w:styleId="OmittedSize">
+                    <w:tblStylePr w:type="band1Horz">
+                        <w:trPr><w:cantSplit/></w:trPr>
+                    </w:tblStylePr>
+                </w:style>
+            </w:styles>"#,
+        );
+        let xml = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+            <w:tbl>
+                <w:tblPr><w:tblStyle w:val="SizedBands"/><w:tblLook w:firstRow="1" w:lastRow="1"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>first overrides band 1</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:tc><w:p><w:r><w:t>band 1</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:tc><w:p><w:r><w:t>band 2</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:tc><w:p><w:r><w:t>band 2</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:tc><w:p><w:r><w:t>band 1</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:tc><w:p><w:r><w:t>last overrides band 1</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr>
+                    <w:tblStyle w:val="SizedBands"/>
+                    <w:tblStyleRowBandSize w:val="3"/>
+                    <w:tblStyleRowBandSize w:val="9"/>
+                    <w:tblLook w:firstRow="0" w:lastRow="0"/>
+                </w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>band 1</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:tc><w:p><w:r><w:t>band 1</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:tc><w:p><w:r><w:t>band 1</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:tc><w:p><w:r><w:t>band 2</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:tc><w:p><w:r><w:t>band 2</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:tc><w:p><w:r><w:t>band 2</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr>
+                    <w:tblStyle w:val="SizedBands"/>
+                    <w:tblStyleRowBandSize w:val="0"/>
+                    <w:tblLook w:firstRow="0" w:lastRow="0"/>
+                </w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>disabled</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:tc><w:p><w:r><w:t>disabled</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr>
+                    <w:tblStyle w:val="SizedBands"/>
+                    <mc:AlternateContent>
+                        <mc:Choice Requires="w14"><w:tblStyleRowBandSize w:val="2"/></mc:Choice>
+                        <mc:Fallback><w:tblStyleRowBandSize w:val="3"/></mc:Fallback>
+                    </mc:AlternateContent>
+                    <w:tblLook w:firstRow="0" w:lastRow="0"/>
+                </w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>choice band 1</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:tc><w:p><w:r><w:t>choice band 1</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:tc><w:p><w:r><w:t>choice band 2</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:tc><w:p><w:r><w:t>choice band 2</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr><w:tblStyle w:val="OmittedSize"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>Word default size zero</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr><w:tblStyle w:val="SizedBands"/><w:tblStyleRowBandSize w:val="1"/></w:tblPr>
+                <w:tr><w:trPr><w:cantSplit w:val="off"/></w:trPr><w:tc><w:p><w:r><w:t>direct off</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:p><w:r><w:t>direct on</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr>
+                    <w:tblStyle w:val="SizedBands"/>
+                    <w:tblStyleRowBandSize w:val="1"/>
+                    <w:tblPrChange><w:tblPr><w:tblStyleRowBandSize w:val="2"/></w:tblPr></w:tblPrChange>
+                    <w:tblLook w:firstRow="0" w:lastRow="0"/>
+                </w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>current size band 1</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:tc><w:p><w:r><w:t>current size band 2</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+        </w:body></w:document>"#;
+
+        let (_, _, _, table_rows, _, _) =
+            parse_with_media_styles_and_pagination(xml, HashMap::new(), styles, true);
+
+        assert_eq!(
+            table_rows,
+            vec![
+                vec![
+                    TableRowPaginationHint { cant_split: false },
+                    TableRowPaginationHint { cant_split: true },
+                    TableRowPaginationHint { cant_split: false },
+                    TableRowPaginationHint { cant_split: false },
+                    TableRowPaginationHint { cant_split: true },
+                    TableRowPaginationHint { cant_split: true },
+                ],
+                vec![
+                    TableRowPaginationHint { cant_split: true },
+                    TableRowPaginationHint { cant_split: true },
+                    TableRowPaginationHint { cant_split: true },
+                    TableRowPaginationHint { cant_split: false },
+                    TableRowPaginationHint { cant_split: false },
+                    TableRowPaginationHint { cant_split: false },
+                ],
+                vec![
+                    TableRowPaginationHint { cant_split: false },
+                    TableRowPaginationHint { cant_split: false },
+                ],
+                vec![
+                    TableRowPaginationHint { cant_split: true },
+                    TableRowPaginationHint { cant_split: true },
+                    TableRowPaginationHint { cant_split: false },
+                    TableRowPaginationHint { cant_split: false },
+                ],
+                vec![TableRowPaginationHint { cant_split: false }],
+                vec![
+                    TableRowPaginationHint { cant_split: false },
+                    TableRowPaginationHint { cant_split: true },
+                ],
+                vec![
+                    TableRowPaginationHint { cant_split: true },
+                    TableRowPaginationHint { cant_split: false },
+                ],
+            ]
+        );
+    }
+
+    #[test]
+    fn horizontal_style_bands_honor_table_look_and_explicit_row_masks() {
+        let styles = super::super::styles::parse(
+            r#"<w:styles>
+                <w:style w:type="table" w:styleId="Bands">
+                    <w:tblPr><w:tblStyleRowBandSize w:val="1"/></w:tblPr>
+                    <w:tblStylePr w:type="band1Horz">
+                        <w:trPr><w:cantSplit/></w:trPr>
+                    </w:tblStylePr>
+                    <w:tblStylePr w:type="band2Horz">
+                        <w:trPr><w:cantSplit w:val="off"/></w:trPr>
+                    </w:tblStylePr>
+                </w:style>
+            </w:styles>"#,
+        );
+        let xml = r#"<w:document><w:body>
+            <w:tbl>
+                <w:tblPr><w:tblStyle w:val="Bands"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>omitted look</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:tc><w:p><w:r><w:t>omitted look</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr><w:tblStyle w:val="Bands"/><w:tblLook w:noHBand="1"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>named disabled</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr><w:tblStyle w:val="Bands"/><w:tblLook w:val="0200"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>mask disabled</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr><w:tblStyle w:val="Bands"/><w:tblLook w:noHBand="0" w:val="0200"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>named wins</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr><w:tblStyle w:val="Bands"/><w:tblLook w:noHBand="1"/></w:tblPr>
+                <w:tr><w:trPr><w:cnfStyle w:oddHBand="1"/></w:trPr><w:tc><w:p><w:r><w:t>explicit band 1</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:trPr><w:cnfStyle w:evenHBand="1"/></w:trPr><w:tc><w:p><w:r><w:t>explicit band 2</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr><w:tblStyle w:val="Bands"/><w:tblLook w:noHBand="1"/></w:tblPr>
+                <w:tr><w:trPr><w:cnfStyle w:val="000000100000"/></w:trPr><w:tc><w:p><w:r><w:t>mask band 1</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:trPr><w:cnfStyle w:val="000000010000"/></w:trPr><w:tc><w:p><w:r><w:t>mask band 2</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr><w:tblStyle w:val="Bands"/></w:tblPr>
+                <w:tr><w:trPr><w:cnfStyle w:evenHBand="0" w:val="000000100000"/></w:trPr><w:tc><w:p><w:r><w:t>named row mask wins</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr><w:tblStyle w:val="Bands"/></w:tblPr>
+                <w:tr><w:trPr><w:cnfStyle w:val="malformed"/></w:trPr><w:tc><w:p><w:r><w:t>malformed falls back</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+        </w:body></w:document>"#;
+
+        let (_, _, _, table_rows, _, _) =
+            parse_with_media_styles_and_pagination(xml, HashMap::new(), styles, true);
+
+        assert_eq!(
+            table_rows,
+            vec![
+                vec![
+                    TableRowPaginationHint { cant_split: true },
+                    TableRowPaginationHint { cant_split: false },
+                ],
+                vec![TableRowPaginationHint { cant_split: false }],
+                vec![TableRowPaginationHint { cant_split: false }],
+                vec![TableRowPaginationHint { cant_split: true }],
+                vec![
+                    TableRowPaginationHint { cant_split: true },
+                    TableRowPaginationHint { cant_split: false },
+                ],
+                vec![
+                    TableRowPaginationHint { cant_split: true },
+                    TableRowPaginationHint { cant_split: false },
+                ],
+                vec![TableRowPaginationHint { cant_split: false }],
+                vec![TableRowPaginationHint { cant_split: true }],
+            ]
         );
     }
 
