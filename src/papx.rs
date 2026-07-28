@@ -158,6 +158,17 @@ pub(crate) struct ParagraphIndentOverrides {
     pub(crate) first_line_twips: Option<i16>,
 }
 
+impl ParagraphIndentOverrides {
+    pub(crate) fn apply(self, overrides: Self) -> Self {
+        Self {
+            logical_left_twips: overrides.logical_left_twips.or(self.logical_left_twips),
+            logical_right_twips: overrides.logical_right_twips.or(self.logical_right_twips),
+            nest_twips: overrides.nest_twips.or(self.nest_twips),
+            first_line_twips: overrides.first_line_twips.or(self.first_line_twips),
+        }
+    }
+}
+
 /// Per-paragraph properties over an FC range `[fc_start, fc_lim)`.
 #[derive(Debug, Clone, Default)]
 struct PapEntry {
@@ -662,6 +673,17 @@ fn apply_indent_sprm(indent: &mut ParagraphIndentOverrides, sprm: u16, operand: 
     true
 }
 
+fn apply_style_indent_sprm(
+    indent: &mut ParagraphIndentOverrides,
+    sprm: u16,
+    operand: &[u8],
+) -> bool {
+    if sprm == SPRM_P_NEST {
+        return false;
+    }
+    apply_indent_sprm(indent, sprm, operand)
+}
+
 fn physical_justification(value: u8) -> Option<ParagraphJustification> {
     match value {
         0 => Some(ParagraphJustification::PhysicalLeft),
@@ -696,13 +718,18 @@ fn strict_xas(operand: &[u8]) -> Option<i16> {
     (-31_680..=31_680).contains(&value).then_some(value)
 }
 
-/// Strictly scan a style `grpprlPapx` for the layout and pagination subsets
-/// modeled by the legacy reader. A malformed modifier invalidates the local
-/// style payload instead of applying a partial prefix.
+/// Strictly scan a style `grpprlPapx` for the layout, indent, and pagination
+/// subsets modeled by the legacy reader. A malformed modifier invalidates the
+/// local style payload instead of applying a partial prefix.
 pub(crate) fn scan_paragraph_style_overrides(
     gp: &[u8],
-) -> Option<(ParagraphLayoutOverrides, ParagraphPaginationOverrides)> {
+) -> Option<(
+    ParagraphLayoutOverrides,
+    ParagraphIndentOverrides,
+    ParagraphPaginationOverrides,
+)> {
     let mut layout = ParagraphLayoutOverrides::default();
+    let mut indent = ParagraphIndentOverrides::default();
     let mut pagination = ParagraphPaginationOverrides::default();
     let mut pos = 0;
     while pos < gp.len() {
@@ -712,10 +739,11 @@ pub(crate) fn scan_paragraph_style_overrides(
         let operand_end = op.checked_add(len)?;
         let operand = gp.get(op..operand_end)?;
         apply_layout_sprm(&mut layout, sprm, operand);
+        apply_style_indent_sprm(&mut indent, sprm, operand);
         apply_pagination_sprm(&mut pagination, sprm, operand);
         pos = operand_end;
     }
-    Some((layout, pagination))
+    Some((layout, indent, pagination))
 }
 
 /// Operand length for a sprm, from its `spra` field ([MS-DOC] 2.2.5).
@@ -882,10 +910,39 @@ mod tests {
             ]),
             Some((
                 ParagraphLayoutOverrides::default(),
+                ParagraphIndentOverrides {
+                    logical_left_twips: Some(0x1234),
+                    ..ParagraphIndentOverrides::default()
+                },
                 ParagraphPaginationOverrides {
                     page_break_before: Some(true),
                     ..ParagraphPaginationOverrides::default()
                 },
+            ))
+        );
+    }
+
+    #[test]
+    fn paragraph_style_indents_are_strict_source_ordered_and_exclude_nest() {
+        assert_eq!(
+            scan_paragraph_style_overrides(&[
+                0x5E, 0x84, 0x90, 0x01, // logical left = 400
+                0x5E, 0x84, 0x00, 0x7D, // invalid XAS = 32000
+                0x5E, 0x84, 0xF4, 0x01, // logical left = 500
+                0x5D, 0x84, 0x40, 0x84, // logical right = -31680
+                0x5D, 0x84, 0x3F, 0x84, // invalid XAS = -31681
+                0x60, 0x84, 0xC0, 0x7B, // first line = 31680
+                0x5F, 0x46, 0x78, 0x00, // prohibited style nest is ignored
+            ]),
+            Some((
+                ParagraphLayoutOverrides::default(),
+                ParagraphIndentOverrides {
+                    logical_left_twips: Some(500),
+                    logical_right_twips: Some(-31_680),
+                    nest_twips: None,
+                    first_line_twips: Some(31_680),
+                },
+                ParagraphPaginationOverrides::default(),
             ))
         );
     }

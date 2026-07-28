@@ -7173,8 +7173,8 @@ mod tests {
                 "StyleRtl",
                 vec![
                     0x00, 0x46, 0x01, 0x00, // paragraph style 1 supplies RTL
-                    0x5E, 0x84, 0xD0, 0x02, // direct logical left = 720
-                    0x5D, 0x84, 0xA0, 0x05, // direct logical right = 1440
+                    0x5E, 0x84, 0xE8, 0x03, // direct logical left = 1000
+                    0x5D, 0x84, 0x58, 0x02, // direct logical right = 600
                     0x5F, 0x46, 0x78, 0x00, // direct nest = 120
                     0x60, 0x84, 0xF0, 0x00, // direct first line = 240
                 ],
@@ -7182,8 +7182,21 @@ mod tests {
             (
                 "StyleNestOnly",
                 vec![
-                    0x00, 0x46, 0x01, 0x00, // style left indent is intentionally unmodeled
+                    0x00, 0x46, 0x01, 0x00, // style supplies direction and indent base
                     0x5F, 0x46, 0x78, 0x00, // nest without a direct left base
+                ],
+            ),
+            (
+                "StyleOnly",
+                vec![
+                    0x00, 0x46, 0x01, 0x00, // style supplies all paragraph properties
+                ],
+            ),
+            (
+                "StyleDirectLtr",
+                vec![
+                    0x00, 0x46, 0x01, 0x00, // style supplies RTL indents
+                    0x41, 0x24, 0x00, // final direct direction is LTR
                 ],
             ),
         ] {
@@ -7197,7 +7210,9 @@ mod tests {
         let text_end = text.encode_utf16().count() as u32;
         let stylesheet = synthetic_paragraph_stylesheet_grpprl(&[
             0x41, 0x24, 0x01, // style RTL
-            0x5E, 0x84, 0xD0, 0x02, // unmodeled style logical left = 720
+            0x5E, 0x84, 0xD0, 0x02, // style logical left = 720
+            0x5D, 0x84, 0xA0, 0x05, // style logical right = 1440
+            0x60, 0x84, 0x98, 0xFE, // style hanging indent = -360
         ]);
         synth_doc_with_ccp_and_tables(
             &text,
@@ -7281,17 +7296,40 @@ mod tests {
             (
                 "StyleRtl".to_string(),
                 true,
-                Some(72.0),
-                Some(42.0),
+                Some(30.0),
+                Some(56.0),
                 Some(12.0),
                 None,
             ),
-            ("StyleNestOnly".to_string(), true, None, None, None, None),
+            (
+                "StyleNestOnly".to_string(),
+                true,
+                Some(72.0),
+                Some(42.0),
+                None,
+                Some(18.0),
+            ),
+            (
+                "StyleOnly".to_string(),
+                true,
+                Some(72.0),
+                Some(36.0),
+                None,
+                Some(18.0),
+            ),
+            (
+                "StyleDirectLtr".to_string(),
+                false,
+                Some(36.0),
+                Some(72.0),
+                None,
+                Some(18.0),
+            ),
         ]
     }
 
     #[test]
-    fn opened_legacy_doc_preserves_direct_logical_paragraph_indents() {
+    fn opened_legacy_doc_preserves_modern_logical_paragraph_indents() {
         let document = Document::open(&legacy_paragraph_indent_doc()).unwrap();
 
         assert_eq!(
@@ -7302,7 +7340,7 @@ mod tests {
 
     #[cfg(feature = "docx")]
     #[test]
-    fn legacy_doc_direct_logical_paragraph_indents_roundtrip_to_docx() {
+    fn legacy_doc_modern_logical_paragraph_indents_roundtrip_to_docx() {
         let legacy = Document::open(&legacy_paragraph_indent_doc()).unwrap();
         let reopened = Document::open(&legacy.to_docx()).unwrap();
 

@@ -33,18 +33,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   exceptions, floating or nested-grid placement, negative outdents, table
   `both` justification, and legacy `.doc` outer table geometry remain outside
   this preview-grade bridge.
-- Opened legacy `.doc` paragraphs now preserve strict direct modern logical
-  `sprmPDxaLeft`, `sprmPDxaRight`, additive `sprmPNest`, and
-  `sprmPDxaLeft1` signed-twip indents. Logical leading/trailing edges resolve
-  against final resolved paragraph direction, positive first-line offsets remain
-  first-line indents, and negative offsets become hanging indents through the
-  shared model and `.docx` conversion/reopen. Invalid XAS values do not replace
-  the last valid value, and truncated modifiers retain the valid prefix.
-  `sprmPNest` is materialized only when the same direct PAPX supplies its
-  logical-left base; nest-only values remain unresolved rather than being
-  incorrectly added to zero when an unmodeled style indent could apply.
-  Paragraph-style/list-level, compatibility-era, character-unit, and
-  mirrored indents, plus negative-indent PDF outdenting, remain unsupported.
+- Opened legacy `.doc` paragraphs now preserve strict modern logical
+  `sprmPDxaLeft`, `sprmPDxaRight`, and `sprmPDxaLeft1` signed-twip indents from
+  direct PAPX and paragraph styles. Sparse style values resolve through the
+  existing cycle/depth-bounded STSH base chain before final direct overrides.
+  Logical leading/trailing edges resolve against final paragraph direction,
+  positive first-line offsets remain first-line indents, and negative offsets
+  become hanging indents through the shared model and `.docx`
+  conversion/reopen. Direct `sprmPNest` is additive when a style-derived or
+  direct logical-left base exists; prohibited style nesting and direct
+  nest-only values without a base remain unmaterialized. Invalid XAS values do
+  not replace the last valid local value, structurally malformed styles fall
+  back safely, and truncated direct modifiers retain the valid prefix.
+  List-level, compatibility-era, character-unit, and mirrored indents, plus
+  negative-indent PDF outdenting, remain unsupported.
 - Opened legacy `.doc` tables now preserve strict direct `sprmTFBiDi` and
   compatibility `sprmTFBiDi90` Bool16 direction from row-terminating PAPX.
   Repeated values of each property apply in source order, either final
@@ -67,9 +69,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   alignment when present. The same bounded direction/justification subset now
   resolves through cycle/depth-bounded paragraph-style STSH inheritance before
   final direct PAPX overrides. Character-style/language-derived direction,
-  paragraph-style/list-level and compatibility-era/character-unit/mirrored legacy
-  indents, exact RTL list-level layout, table-style-derived visual RTL, piece
-  `Pcd.Prm`, and Markdown/HTML visual RTL remain unsupported.
+  list-level and compatibility-era/character-unit/mirrored legacy indents,
+  exact RTL list-level layout, table-style-derived visual RTL, piece `Pcd.Prm`,
+  and Markdown/HTML visual RTL remain unsupported.
 - Opened legacy `.doc` CHPX runs now preserve literal direct `sprmCFBiDi`
   on/off values through the shared model, `.docx` conversion, and PDF run
   isolation. Style-relative operands use the conservative unknown fallback,

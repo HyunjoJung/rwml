@@ -328,23 +328,25 @@ logical start/center/end alignment from `sprmPJc80` and `sprmPJc` through
 `.docx` conversion/reopen and existing PDF body/table-cell shaping; paragraph
 styles additionally resolve this bounded direction/justification subset
 through cycle-guarded, depth-bounded STSH inheritance before final direct PAPX
-overrides. Direct modern logical `sprmPDxaLeft`, `sprmPDxaRight`,
-`sprmPNest`, and `sprmPDxaLeft1` twip indents are also retained: logical edges
-resolve against final resolved paragraph direction, nesting is additive when
-the same direct PAPX supplies its logical-left base, and a negative first-line
-offset becomes a hanging indent. Nest-only values remain unmaterialized while
-style-derived indents are outside the bridge. Paragraph direction does not
-imply table mirroring. Opened legacy tables preserve strict direct row-mark
+overrides. Modern logical `sprmPDxaLeft`, `sprmPDxaRight`, and
+`sprmPDxaLeft1` twip indents are also retained from direct PAPX and paragraph
+styles: sparse style values resolve through the same bounded base chain before
+final direct overrides, logical edges resolve against final paragraph
+direction, and a negative first-line offset becomes a hanging indent. Direct
+`sprmPNest` is additive when a style-derived or direct logical-left base exists;
+the prohibited style form and direct nest-only values without a base remain
+unmaterialized. Paragraph direction does not imply table mirroring. Opened
+legacy tables preserve strict direct row-mark
 `sprmTFBiDi` and compatibility
 `sprmTFBiDi90` Bool16 values: either final property enables visual RTL,
 direction changes split adjacent rows into separate tables, and cells remain
 in source-logical order for `.docx` conversion and PDF column mirroring.
 Distribution and language-specific justification collapse to generic justify.
 Character-style or language-derived direction, table-style-derived direction,
-indented logical justification, paragraph-style/list-level and
-compatibility-era/character-unit/mirrored legacy indents, exact RTL list-level
-layout, negative-indent PDF outdenting, piece `Pcd.Prm`, and Markdown/HTML
-visual RTL remain outside these bounded bridges.
+indented logical justification, list-level, compatibility-era, character-unit,
+and mirrored legacy indents, exact RTL list-level layout, negative-indent PDF
+outdenting, piece `Pcd.Prm`, and Markdown/HTML visual RTL remain outside these
+bounded bridges.
 
 > **Scope:** this is a fast, in-process **preview / report** renderer, not a Word
 > layout engine. It is faithful to the model and produces selectable text, but
