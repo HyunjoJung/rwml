@@ -13,7 +13,7 @@
 //! Reference: [MS-DOC] 2.8.26 (PlcBteChpx), 2.9.32 (ChpxFkp), 2.9.31 (Chpx),
 //! 2.6.1 (character sprms).
 
-use crate::model::Color;
+use crate::model::{Color, VertAlign};
 use crate::util::{u16le, u32le};
 
 const FKP_SIZE: usize = 512;
@@ -50,10 +50,15 @@ const SPRM_C_F_STRIKE: u16 = 0x0837;
 const SPRM_C_F_VANISH: u16 = 0x083C; // hidden text (NOT 0x0838 — that is Outline)
 const SPRM_C_F_SPEC: u16 = 0x0855; // run's special char is a real object (1-byte)
 const SPRM_C_HIGHLIGHT: u16 = 0x2A0C; // one-byte Ico highlight palette
+const SPRM_C_ISTD: u16 = 0x4A30; // apply a character style
+const SPRM_C_ISTD_PERMUTE: u16 = 0xCA31; // conditionally remap character style
+const SPRM_C_PLAIN: u16 = 0x2A33; // reset to the paragraph style
 const SPRM_C_KUL: u16 = 0x2A3E; // underline kind (0 = none)
 const SPRM_C_PIC_LOCATION: u16 = 0x6A03; // fcPic into the Data stream (4-byte)
 const SPRM_C_HPS: u16 = 0x4A43; // font size, half-points (2-byte)
 const SPRM_C_RG_FTC0: u16 = 0x4A4F; // font index into SttbfFfn (2-byte)
+const SPRM_C_MAJORITY: u16 = 0xCA47; // conditional reset to paragraph style
+const SPRM_C_ISS: u16 = 0x2A48; // 0 normal, 1 superscript, 2 subscript
 const SPRM_C_CV: u16 = 0x6870; // 24-bit color COLORREF (4-byte)
 const SPRM_C_ICO: u16 = 0x2A42; // legacy 0–16 palette color index (1-byte)
 
@@ -121,6 +126,8 @@ pub(crate) struct Chp {
     pub color: Option<Color>,
     /// Highlight Ico (`sprmCHighlight`), including explicit clear (`0`).
     pub highlight: Option<u8>,
+    /// Direct `sprmCIss`, including explicit baseline.
+    pub vert_align: Option<VertAlign>,
     /// For a special-char run (`fSpec`) that is an inline picture, the `fcPic`
     /// offset into the `Data` stream.
     pub pic: Option<u32>,
@@ -375,6 +382,25 @@ fn scan_grpprl(gp: &[u8]) -> Chp {
                     chp.highlight = Some(value);
                 }
             }
+            SPRM_C_ISS => {
+                let value = match operand[0] {
+                    0 => Some(VertAlign::Baseline),
+                    1 => Some(VertAlign::Super),
+                    2 => Some(VertAlign::Sub),
+                    _ => None,
+                };
+                if value.is_some() {
+                    chp.vert_align = value;
+                }
+            }
+            // These operators make vertical alignment style-derived. Legacy
+            // character-style resolution is outside this bounded CHPX pass.
+            SPRM_C_ISTD | SPRM_C_ISTD_PERMUTE | SPRM_C_MAJORITY => {
+                chp.vert_align = None;
+            }
+            SPRM_C_PLAIN if operand[0] == 0 => {
+                chp.vert_align = None;
+            }
             SPRM_C_CV => {
                 // COLORREF: bytes [R, G, B, reserved].
                 chp.color = Some(Color {
@@ -533,6 +559,76 @@ mod tests {
             0x0C, 0x2A, // truncated modifier
         ]);
         assert_eq!(chp.highlight, Some(7));
+    }
+
+    #[test]
+    fn vertical_alignment_values_are_bounded() {
+        for (value, expected) in [VertAlign::Baseline, VertAlign::Super, VertAlign::Sub]
+            .into_iter()
+            .enumerate()
+        {
+            assert_eq!(
+                scan_grpprl(&[0x48, 0x2A, value as u8]).vert_align,
+                Some(expected)
+            );
+        }
+        assert_eq!(scan_grpprl(&[0x48, 0x2A, 3]).vert_align, None);
+        assert_eq!(scan_grpprl(&[0x48, 0x2A, u8::MAX]).vert_align, None);
+    }
+
+    #[test]
+    fn vertical_alignment_uses_last_valid_value_and_explicit_baseline() {
+        let chp = scan_grpprl(&[
+            0x48, 0x2A, 1, // superscript
+            0x48, 0x2A, 2, // subscript
+            0x48, 0x2A, 0, // explicit baseline
+        ]);
+        assert_eq!(chp.vert_align, Some(VertAlign::Baseline));
+    }
+
+    #[test]
+    fn invalid_or_truncated_vertical_alignment_preserves_prior_valid_value() {
+        let chp = scan_grpprl(&[
+            0x48, 0x2A, 1, // superscript
+            0x48, 0x2A, 3, // invalid Iss
+            0x33, 0x2A, 1, // invalid sprmCPlain operand
+            0x48, 0x2A, // truncated modifier
+        ]);
+        assert_eq!(chp.vert_align, Some(VertAlign::Super));
+    }
+
+    #[test]
+    fn style_and_reset_operators_discard_stale_direct_vertical_alignment() {
+        let cplain = scan_grpprl(&[
+            0x48, 0x2A, 1, // superscript
+            0x33, 0x2A, 0, // sprmCPlain
+        ]);
+        assert_eq!(cplain.vert_align, None);
+
+        let cistd = scan_grpprl(&[
+            0x48, 0x2A, 1, // superscript
+            0x30, 0x4A, 0x0A, 0x00, // sprmCIstd
+        ]);
+        assert_eq!(cistd.vert_align, None);
+
+        let cistd_permute = scan_grpprl(&[
+            0x48, 0x2A, 1, // superscript
+            0x31, 0xCA, 0x07, 0x00, 0x0A, 0x00, 0x0A, 0x00, 0x0A, 0x00,
+        ]);
+        assert_eq!(cistd_permute.vert_align, None);
+
+        let cmajority = scan_grpprl(&[
+            0x48, 0x2A, 1, // superscript
+            0x47, 0xCA, 0x03, 0x48, 0x2A, 0x01, // matching Iss comparison
+        ]);
+        assert_eq!(cmajority.vert_align, None);
+
+        let direct_after_reset = scan_grpprl(&[
+            0x48, 0x2A, 1, // superscript
+            0x33, 0x2A, 0, // sprmCPlain
+            0x48, 0x2A, 2, // later direct subscript
+        ]);
+        assert_eq!(direct_after_reset.vert_align, Some(VertAlign::Sub));
     }
 
     #[test]

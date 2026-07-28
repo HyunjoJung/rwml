@@ -890,6 +890,7 @@ impl<'a, 'l> Asm<'a, 'l> {
                 size_half_pt: chp.size_half_pt,
                 color: chp.color,
                 highlight: chp.highlight.and_then(highlight_name).map(str::to_owned),
+                vert_align: chp.vert_align.unwrap_or_default(),
                 font: chp.ftc.and_then(|ftc| crate::ffn::name_of(self.fonts, ftc)),
                 ..Default::default()
             };
