@@ -102,23 +102,28 @@ pub(crate) struct Chp {
 
 #[derive(Debug, Clone, Copy)]
 struct ChpEntry {
+    fc_start: u32,
     fc_lim: u32,
     chp: Chp,
 }
 
-/// All character runs' properties, sorted by FC, for point lookup by a
-/// character's FC.
+/// All represented character-property ranges, sorted and non-overlapping by
+/// FC, for point lookup by a character's FC.
 #[derive(Debug, Default)]
 pub(crate) struct ChpxTable {
     entries: Vec<ChpEntry>,
 }
 
 impl ChpxTable {
-    /// The character properties at `WordDocument` byte offset `fc` (the first run
-    /// whose `fc_lim > fc`). Default (all-off) when no CHPX covers `fc`.
+    /// The character properties at `WordDocument` byte offset `fc`. Default
+    /// (all-off) when no CHPX range covers `fc`.
     pub(crate) fn chp_at(&self, fc: u32) -> Chp {
         let i = self.entries.partition_point(|e| e.fc_lim <= fc);
-        self.entries.get(i).map(|e| e.chp).unwrap_or_default()
+        self.entries
+            .get(i)
+            .filter(|e| e.fc_start <= fc)
+            .map(|e| e.chp)
+            .unwrap_or_default()
     }
 
     /// The `fcPic` (offset into the `Data` stream) for an inline-picture run at
@@ -136,16 +141,56 @@ pub(crate) fn parse(word: &[u8], table: &[u8], fc_plcf: usize, lcb_plcf: usize) 
     if lcb_plcf < 4 {
         return ChpxTable { entries };
     }
-    let Some(plc) = table.get(fc_plcf..fc_plcf.saturating_add(lcb_plcf)) else {
+    let Some(plc_end) = fc_plcf.checked_add(lcb_plcf) else {
+        return ChpxTable { entries };
+    };
+    let Some(plc) = table.get(fc_plcf..plc_end) else {
         return ChpxTable { entries };
     };
     // PlcBteChpx: (n+1) FCs then n PnFkpChpx (4 bytes each). n = (lcb-4)/8.
-    // Bound page iterations and accumulated entries: a crafted .doc can make `n` huge and
-    // point every page number at one valid FKP page, amplifying a small table into billions
-    // of entries (memory/CPU DoS). Cap and break once the cumulative budget is hit.
+    // A PLC size that does not yield a whole number of entries is malformed.
+    let payload_len = plc.len() - 4;
+    if payload_len % 8 != 0 {
+        return ChpxTable { entries };
+    }
+    let declared_n = payload_len / 8;
+    if declared_n == 0 {
+        return ChpxTable { entries };
+    }
+    // The Pn array follows every declared FC, even when processing is capped.
+    let Some(pn_base) = declared_n
+        .checked_add(1)
+        .and_then(|count| count.checked_mul(4))
+    else {
+        return ChpxTable { entries };
+    };
+
+    // Bound page iterations and accumulated entries: a crafted .doc can make
+    // `n` huge and point every page number at one valid FKP page, amplifying a
+    // small table into billions of entries (memory/CPU DoS).
     let cap = max_fkp_entries();
-    let n = (plc.len().saturating_sub(4) / 8).min(cap);
-    let pn_base = 4 * (n + 1);
+    let n = declared_n.min(cap);
+
+    // Validate every outer range that this bounded parse will process before
+    // accepting any page, so malformed order cannot yield a partial table.
+    for i in 0..n {
+        let Some(fc_start) = u32le(plc, i * 4) else {
+            return ChpxTable {
+                entries: Vec::new(),
+            };
+        };
+        let Some(fc_lim) = u32le(plc, (i + 1) * 4) else {
+            return ChpxTable {
+                entries: Vec::new(),
+            };
+        };
+        if fc_start >= fc_lim {
+            return ChpxTable {
+                entries: Vec::new(),
+            };
+        }
+    }
+
     for i in 0..n {
         if entries.len() >= cap {
             break;
@@ -154,50 +199,122 @@ pub(crate) fn parse(word: &[u8], table: &[u8], fc_plcf: usize, lcb_plcf: usize) 
             break;
         };
         let page = (pn_raw & 0x003F_FFFF) as usize; // low 22 bits = page number
-        let off = page.saturating_mul(FKP_SIZE);
-        parse_fkp(word, off, &mut entries);
+        let Some(off) = page.checked_mul(FKP_SIZE) else {
+            continue;
+        };
+        let Some(fc_start) = u32le(plc, i * 4) else {
+            break;
+        };
+        let Some(fc_lim) = u32le(plc, (i + 1) * 4) else {
+            break;
+        };
+        parse_fkp(
+            word,
+            off,
+            fc_start,
+            fc_lim,
+            cap - entries.len(),
+            &mut entries,
+        );
     }
-    entries.sort_by_key(|e| e.fc_lim);
     ChpxTable { entries }
 }
 
 /// Parse one 512-byte CHPX FKP at `page_off`, appending its runs.
-fn parse_fkp(word: &[u8], page_off: usize, out: &mut Vec<ChpEntry>) {
-    let Some(page) = word.get(page_off..page_off + FKP_SIZE) else {
+fn parse_fkp(
+    word: &[u8],
+    page_off: usize,
+    outer_start: u32,
+    outer_lim: u32,
+    budget: usize,
+    out: &mut Vec<ChpEntry>,
+) {
+    if budget == 0 {
+        return;
+    }
+    let Some(page_end) = page_off.checked_add(FKP_SIZE) else {
+        return;
+    };
+    let Some(page) = word.get(page_off..page_end) else {
         return;
     };
     let crun = page[FKP_SIZE - 1] as usize;
     // rgfc is (crun+1) u32; rgb is crun single bytes.
-    if crun == 0 || 4 * (crun + 1) + crun >= FKP_SIZE {
+    if !(1..=0x65).contains(&crun) {
         return;
     }
+    let rgfc_end = 4 * (crun + 1);
+    let rgb_start = rgfc_end;
+    let rgb_end = rgb_start + crun;
+    if rgb_end > FKP_SIZE - 1 {
+        return;
+    }
+
+    // Every run is [rgfc[i], rgfc[i+1]); malformed pages are ignored as a
+    // unit so sorting or duplicates cannot create ambiguous lookup ranges.
     for i in 0..crun {
-        let Some(fc_lim) = u32le(page, 4 * (i + 1)) else {
+        let Some(fc_start) = u32le(page, i * 4) else {
+            return;
+        };
+        let Some(fc_lim) = u32le(page, (i + 1) * 4) else {
+            return;
+        };
+        if fc_start >= fc_lim {
+            return;
+        }
+    }
+
+    let mut remaining = budget;
+    for i in 0..crun {
+        if remaining == 0 {
+            break;
+        }
+        let Some(run_start) = u32le(page, i * 4) else {
             break;
         };
-        // rgb[i] is a single byte: word offset of this run's CHPX (0 = default).
-        let b = page.get(4 * (crun + 1) + i).copied().unwrap_or(0) as usize;
+        let Some(run_lim) = u32le(page, (i + 1) * 4) else {
+            break;
+        };
+        let fc_start = run_start.max(outer_start);
+        let fc_lim = run_lim.min(outer_lim);
+        if fc_start >= fc_lim {
+            continue;
+        }
+        let Some(&b) = page.get(rgb_start + i) else {
+            break;
+        };
         let chp = if b == 0 {
             Chp::default()
         } else {
-            parse_chpx(page, b * 2)
+            parse_chpx(page, b as usize * 2, rgb_end).unwrap_or_default()
         };
-        out.push(ChpEntry { fc_lim, chp });
+        out.push(ChpEntry {
+            fc_start,
+            fc_lim,
+            chp,
+        });
+        remaining -= 1;
     }
 }
 
 /// Read a `Chpx` (cb byte + grpprl) at `off` within an FKP page.
-fn parse_chpx(page: &[u8], off: usize) -> Chp {
-    let Some(&cb) = page.get(off) else {
-        return Chp::default();
-    };
-    match page.get(off + 1..off + 1 + cb as usize) {
-        Some(gp) => scan_grpprl(gp),
-        None => Chp::default(),
+fn parse_chpx(page: &[u8], off: usize, metadata_end: usize) -> Option<Chp> {
+    // Nonzero rgb offsets point after rgfc+rgb, and neither the size byte nor
+    // grpprl may consume the final crun byte.
+    if off < metadata_end || off >= FKP_SIZE - 1 {
+        return None;
     }
+    let cb = *page.get(off)? as usize;
+    let data_start = off.checked_add(1)?;
+    let data_end = data_start.checked_add(cb)?;
+    if data_end > FKP_SIZE - 1 {
+        return None;
+    }
+    Some(scan_grpprl(page.get(data_start..data_end)?))
 }
 
-/// Walk a CHPX grpprl, extracting the styling toggles. Stops on an unsizeable sprm.
+/// Walk a CHPX grpprl, extracting the styling toggles. Stops on an unsizeable
+/// or truncated sprm.
 fn scan_grpprl(gp: &[u8]) -> Chp {
     let mut chp = Chp::default();
     let mut fspec = false;
@@ -209,31 +326,38 @@ fn scan_grpprl(gp: &[u8]) -> Chp {
         let Some(len) = operand_len(sprm, gp, op) else {
             break;
         };
-        let toggle = || matches!(gp.get(op).copied().unwrap_or(0), 0x01 | 0x81);
+        let Some(operand_end) = op.checked_add(len) else {
+            break;
+        };
+        let Some(operand) = gp.get(op..operand_end) else {
+            break;
+        };
+        let toggle = || matches!(operand.first().copied().unwrap_or(0), 0x01 | 0x81);
         match sprm {
             SPRM_C_F_BOLD => chp.bold = toggle(),
             SPRM_C_F_ITALIC => chp.italic = toggle(),
             SPRM_C_F_STRIKE => chp.strike = toggle(),
             SPRM_C_F_VANISH => chp.hidden = toggle(),
-            SPRM_C_F_SPEC => fspec = gp.get(op).copied().unwrap_or(0) != 0,
-            SPRM_C_KUL => chp.underline = gp.get(op).copied().unwrap_or(0) != 0,
-            SPRM_C_PIC_LOCATION => picloc = u32le(gp, op),
-            SPRM_C_HPS => chp.size_half_pt = u16le(gp, op),
-            SPRM_C_RG_FTC0 => chp.ftc = u16le(gp, op),
+            SPRM_C_F_SPEC => fspec = operand.first().copied().unwrap_or(0) != 0,
+            SPRM_C_KUL => chp.underline = operand.first().copied().unwrap_or(0) != 0,
+            SPRM_C_PIC_LOCATION => picloc = u32le(operand, 0),
+            SPRM_C_HPS => chp.size_half_pt = u16le(operand, 0),
+            SPRM_C_RG_FTC0 => chp.ftc = u16le(operand, 0),
             SPRM_C_CV => {
                 // COLORREF: bytes [R, G, B, reserved].
-                if let (Some(&r), Some(&g), Some(&b)) = (gp.get(op), gp.get(op + 1), gp.get(op + 2))
-                {
-                    chp.color = Some(Color { r, g, b });
-                }
+                chp.color = Some(Color {
+                    r: operand[0],
+                    g: operand[1],
+                    b: operand[2],
+                });
             }
             // Legacy palette color, only when no 24-bit `sprmCCv` was seen.
             SPRM_C_ICO if chp.color.is_none() => {
-                chp.color = ico_color(gp.get(op).copied().unwrap_or(0));
+                chp.color = ico_color(operand.first().copied().unwrap_or(0));
             }
             _ => {}
         }
-        pos = op + len;
+        pos = operand_end;
     }
     // A picture run sets both fSpec and a picture location.
     chp.pic = if fspec { picloc } else { None };
@@ -257,6 +381,56 @@ fn operand_len(sprm: u16, data: &[u8], op: usize) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const BOLD_ON: &[u8] = &[0x35, 0x08, 0x01];
+    const ITALIC_ON: &[u8] = &[0x36, 0x08, 0x01];
+
+    fn plc(boundaries: &[u32], pages: &[u32]) -> Vec<u8> {
+        assert_eq!(boundaries.len(), pages.len() + 1);
+        let pn_base = boundaries.len() * 4;
+        let mut bytes = vec![0; pn_base + pages.len() * 4];
+        for (i, value) in boundaries.iter().chain(pages).enumerate() {
+            bytes[i * 4..i * 4 + 4].copy_from_slice(&value.to_le_bytes());
+        }
+        bytes
+    }
+
+    fn fkp(boundaries: &[u32], grpprls: &[Option<&[u8]>]) -> [u8; FKP_SIZE] {
+        assert_eq!(boundaries.len(), grpprls.len() + 1);
+        assert!(grpprls.len() <= 0x65);
+        let crun = grpprls.len();
+        let rgb_start = boundaries.len() * 4;
+        let mut page = [0u8; FKP_SIZE];
+        for (i, value) in boundaries.iter().enumerate() {
+            page[i * 4..i * 4 + 4].copy_from_slice(&value.to_le_bytes());
+        }
+        let mut payload = (rgb_start + crun + 1) & !1;
+        for (i, grpprl) in grpprls.iter().enumerate() {
+            let Some(grpprl) = grpprl else { continue };
+            assert!(grpprl.len() <= u8::MAX as usize);
+            assert!(payload + 1 + grpprl.len() < FKP_SIZE - 1);
+            page[rgb_start + i] = (payload / 2) as u8;
+            page[payload] = grpprl.len() as u8;
+            page[payload + 1..payload + 1 + grpprl.len()].copy_from_slice(grpprl);
+            payload = (payload + 1 + grpprl.len() + 1) & !1;
+        }
+        page[FKP_SIZE - 1] = crun as u8;
+        page
+    }
+
+    fn word_with_pages(pages: &[(usize, [u8; FKP_SIZE])]) -> Vec<u8> {
+        let page_count = pages
+            .iter()
+            .map(|(number, _)| number + 1)
+            .max()
+            .unwrap_or(0);
+        let mut word = vec![0; page_count * FKP_SIZE];
+        for (number, page) in pages {
+            let start = number * FKP_SIZE;
+            word[start..start + FKP_SIZE].copy_from_slice(page);
+        }
+        word
+    }
 
     #[test]
     fn scans_bold_italic_hidden() {
@@ -287,10 +461,133 @@ mod tests {
     }
 
     #[test]
+    fn truncated_operands_preserve_prior_complete_properties() {
+        let chp = scan_grpprl(&[
+            0x35, 0x08, 0x01, // bold on
+            0x35, 0x08, // truncated bold toggle
+        ]);
+        assert!(chp.bold);
+
+        let chp = scan_grpprl(&[
+            0x43, 0x4A, 0x18, 0x00, // 12 pt
+            0x43, 0x4A, 0x20, // truncated font size
+        ]);
+        assert_eq!(chp.size_half_pt, Some(24));
+
+        let chp = scan_grpprl(&[
+            0x36, 0x08, 0x01, // italic on
+            0x00, 0xC0, 0x04, 0xAA, // variable operand declares four bytes
+        ]);
+        assert!(chp.italic);
+    }
+
+    #[test]
+    fn declared_plc_count_locates_page_numbers_when_processing_is_capped() {
+        let word = word_with_pages(&[(1, fkp(&[100, 200], &[Some(BOLD_ON)]))]);
+        let plc = plc(&[100, 200, 300], &[1, 0]);
+
+        set_test_max_fkp(1);
+        let table = parse(&word, &plc, 0, plc.len());
+        set_test_max_fkp(MAX_FKP_ENTRIES);
+
+        assert!(table.chp_at(150).bold);
+        assert_eq!(table.entries.len(), 1);
+    }
+
+    #[test]
+    fn cumulative_entry_budget_is_exact() {
+        let boundaries = (0..=0x65).collect::<Vec<_>>();
+        let grpprls = vec![None; 0x65];
+        let word = word_with_pages(&[(0, fkp(&boundaries, &grpprls))]);
+        let plc = plc(&[0, 0x65], &[0]);
+
+        set_test_max_fkp(64);
+        let table = parse(&word, &plc, 0, plc.len());
+        set_test_max_fkp(MAX_FKP_ENTRIES);
+
+        assert_eq!(table.entries.len(), 64);
+    }
+
+    #[test]
+    fn malformed_or_unordered_plc_is_ignored() {
+        let word = word_with_pages(&[(0, fkp(&[100, 200], &[Some(BOLD_ON)]))]);
+
+        let mut noncanonical = plc(&[100, 200], &[0]);
+        noncanonical.push(0);
+        assert!(parse(&word, &noncanonical, 0, noncanonical.len())
+            .entries
+            .is_empty());
+
+        let unordered = plc(&[200, 100], &[0]);
+        assert!(parse(&word, &unordered, 0, unordered.len())
+            .entries
+            .is_empty());
+    }
+
+    #[test]
+    fn malformed_fkp_ranges_are_ignored() {
+        for boundaries in [[100, 200, 150], [100, 100, 200]] {
+            let word = word_with_pages(&[(0, fkp(&boundaries, &[None, None]))]);
+            let plc = plc(&[100, 200], &[0]);
+            assert!(parse(&word, &plc, 0, plc.len()).entries.is_empty());
+        }
+    }
+
+    #[test]
+    fn lookup_respects_run_starts_and_uncovered_gaps() {
+        let word = word_with_pages(&[
+            (0, fkp(&[120, 180], &[Some(BOLD_ON)])),
+            (1, fkp(&[220, 280], &[Some(ITALIC_ON)])),
+        ]);
+        let plc = plc(&[100, 200, 300], &[0, 1]);
+        let table = parse(&word, &plc, 0, plc.len());
+
+        assert_eq!(table.chp_at(119), Chp::default());
+        assert!(table.chp_at(120).bold);
+        assert!(table.chp_at(179).bold);
+        assert_eq!(table.chp_at(180), Chp::default());
+        assert_eq!(table.chp_at(219), Chp::default());
+        assert!(table.chp_at(220).italic);
+        assert!(table.chp_at(279).italic);
+        assert_eq!(table.chp_at(280), Chp::default());
+    }
+
+    #[test]
+    fn chpx_offsets_cannot_target_metadata_or_crun() {
+        let mut metadata = [0u8; FKP_SIZE];
+        metadata[0..4].copy_from_slice(&100u32.to_le_bytes());
+        metadata[4..8].copy_from_slice(&0x0108_3503u32.to_le_bytes());
+        metadata[8] = 2; // offset 4, inside rgfc
+        metadata[FKP_SIZE - 1] = 1;
+        let word = word_with_pages(&[(0, metadata)]);
+        let metadata_plc = plc(&[100, 0x0108_3503], &[0]);
+        assert_eq!(
+            parse(&word, &metadata_plc, 0, metadata_plc.len()).chp_at(100),
+            Chp::default()
+        );
+
+        let mut overlaps_crun = [0u8; FKP_SIZE];
+        overlaps_crun[0..4].copy_from_slice(&100u32.to_le_bytes());
+        overlaps_crun[4..8].copy_from_slice(&200u32.to_le_bytes());
+        overlaps_crun[8] = 254; // offset 508
+        overlaps_crun[508] = 3;
+        overlaps_crun[509] = 0x35;
+        overlaps_crun[510] = 0x08;
+        overlaps_crun[FKP_SIZE - 1] = 1; // also the apparent bold operand
+        let word = word_with_pages(&[(0, overlaps_crun)]);
+        let crun_plc = plc(&[100, 200], &[0]);
+        assert_eq!(
+            parse(&word, &crun_plc, 0, crun_plc.len()).chp_at(150),
+            Chp::default()
+        );
+    }
+
+    #[test]
     fn lookup_by_fc() {
         let t = ChpxTable {
             entries: vec![
                 ChpEntry {
+                    fc_start: 0,
                     fc_lim: 100,
                     chp: Chp {
                         bold: true,
@@ -298,6 +595,7 @@ mod tests {
                     },
                 },
                 ChpEntry {
+                    fc_start: 100,
                     fc_lim: 200,
                     chp: Chp {
                         italic: true,
@@ -312,21 +610,18 @@ mod tests {
     }
 
     #[test]
-    fn bin_table_entry_count_is_capped() {
-        // One valid FKP page (page 0): crun = 101 default entries.
-        let mut word = vec![0u8; FKP_SIZE];
-        word[FKP_SIZE - 1] = 101;
-        // 10 pages, every page number 0 (all point at the same valid page).
-        let n_pages = 10usize;
-        let plc = vec![0u8; 4 * (n_pages + 1) + 4 * n_pages];
-        set_test_max_fkp(64);
-        let t = parse(&word, &plc, 0, plc.len());
+    fn bin_table_page_iterations_are_capped() {
+        let word = word_with_pages(&[(0, fkp(&[0, 10], &[None]))]);
+        let boundaries = (0..=10).collect::<Vec<_>>();
+        let pages = vec![0; 10];
+        let plc = plc(&boundaries, &pages);
+
+        set_test_max_fkp(3);
+        let table = parse(&word, &plc, 0, plc.len());
         set_test_max_fkp(MAX_FKP_ENTRIES);
-        // Uncapped this would be 10 * 101 = 1010; the cap stops it well before, no hang/panic.
-        assert!(
-            t.entries.len() >= 64 && t.entries.len() < n_pages * 101,
-            "entry cap did not bound the repeated-page bin table: {}",
-            t.entries.len()
-        );
+
+        assert_eq!(table.entries.len(), 3);
+        assert_eq!(table.entries[0].fc_start, 0);
+        assert_eq!(table.entries[2].fc_lim, 3);
     }
 }
