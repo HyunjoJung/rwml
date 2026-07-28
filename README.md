@@ -273,13 +273,16 @@ and line-breaks (Korean/CJK [UAX #14] line-breaking + script font fallback),
 `krilla` emits the PDF with subsetted embedded fonts and **selectable text**. Rich
 runs (color/size/font, highlight, decorations, super/subscript, caps/small-caps),
 paragraph shading, line spacing, first/hanging indents, lists with real autonumber
-labels, bordered tables with shaded vertically-aligned cells and authored column
-widths, images, and **clickable hyperlink annotations** are drawn. Page geometry,
-equal-width section columns, and per-side margins come from the document;
-multi-page tables repeat their header rows. Opened `.docx` rows may split across
-pages by default, while effective `w:cantSplit` from direct row properties or
-an inherited table-style chain keeps a fitting row together and an over-tall row
-still splits at line boundaries. Table styles include direct non-conditional
+labels, bordered tables with shaded vertically-aligned cells, authored column
+widths, bounded preferred-percentage outer widths, logical leading/center/trailing
+placement, and non-negative leading indentation, images, and **clickable hyperlink
+annotations** are drawn. Narrow RTL tables reverse logical placement and mirror
+their cells inside the local table box. Page geometry, equal-width section
+columns, and per-side margins come from the document; multi-page tables repeat
+their header rows without losing outer placement. Opened `.docx` rows may split
+across pages by default, while effective `w:cantSplit` from direct row properties
+or an inherited table-style chain keeps a fitting row together and an over-tall
+row still splits at line boundaries. Table styles include direct non-conditional
 row properties and bounded `wholeTable`/`firstRow`/`lastRow` conditional
 regions selected by direct table `w:tblLook` or row `w:cnfStyle`; later regions
 and direct row formatting retain Word precedence. Model-only renders retain
@@ -362,7 +365,13 @@ visual RTL remain outside these bounded bridges.
 > paragraphs remain unsupported. Legacy absolute table width, autofit,
 > indentation, preferred cell-width modifiers, row-specific outer-edge
 > geometry, table-style-derived RTL, and additional table-boundary properties
-> remain outside the bounded direct-property bridges.
+> remain outside the bounded direct-property bridges. PDF table placement treats
+> a finite positive relative width as a preferred width within the active page or
+> section column and bounds leading indentation to the remaining horizontal
+> space. Absolute/auto table widths, `tblGrid` and cell-width conflict resolution,
+> a Word-exact fixed/autofit algorithm split, table-style and `tblPrEx` placement,
+> floating or nested-grid placement, negative outdents, and table `both`
+> justification retain deterministic fallbacks.
 >
 > Opened-document renders draw bounded approximate overlay boxes for recovered
 > `.docx` floating-shape geometry on the recovered top-level body block page. A

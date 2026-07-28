@@ -2587,6 +2587,64 @@ struct TablePaginationView<'a> {
     nested: Option<&'a TableCellNestedPaginationHints>,
 }
 
+fn table_placement(t: &Table, available_width: f32) -> (f32, f32) {
+    let available_width = if available_width.is_finite() && available_width > 0.0 {
+        available_width
+    } else {
+        1.0
+    };
+    let width = t
+        .width_pct
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .map(|value| available_width * value.min(1.0))
+        .unwrap_or(available_width)
+        .clamp(1.0, available_width);
+    let slack = (available_width - width).max(0.0);
+    // ECMA-376 17.4.29/17.4.51/17.4.64: table alignment is logical
+    // under bidiVisual, and leading indentation applies only at that edge.
+    let logical_x = match t.align.unwrap_or(Align::Left) {
+        Align::Left => t.indent_twips.unwrap_or(0).max(0) as f32 / 20.0,
+        Align::Center => slack * 0.5,
+        Align::Right => slack,
+        Align::Justify => 0.0,
+    }
+    .clamp(0.0, slack);
+    let x = if t.bidi_visual {
+        slack - logical_x
+    } else {
+        logical_x
+    };
+    (x, width)
+}
+
+fn authored_table_column_edges(widths: &[f32], ncols: usize, content_w: f32) -> Option<Vec<f32>> {
+    if widths.len() != ncols
+        || widths
+            .iter()
+            .any(|width| !width.is_finite() || *width <= 0.0)
+    {
+        return None;
+    }
+    let sum = widths.iter().map(|width| f64::from(*width)).sum::<f64>();
+    if !sum.is_finite() || sum <= 0.0 {
+        return None;
+    }
+
+    let mut edges = Vec::with_capacity(ncols + 1);
+    edges.push(0.0);
+    let mut cumulative = 0.0_f64;
+    for width in widths {
+        cumulative += f64::from(*width);
+        let edge = ((f64::from(content_w) * cumulative / sum) as f32).min(content_w);
+        if !edge.is_finite() || edge <= *edges.last()? {
+            return None;
+        }
+        edges.push(edge);
+    }
+    *edges.last_mut()? = content_w;
+    Some(edges)
+}
+
 fn layout_table_with_row_pagination(
     t: &Table,
     out: &mut Vec<FlowItem>,
@@ -2596,41 +2654,40 @@ fn layout_table_with_row_pagination(
     pagination: TablePaginationView<'_>,
 ) {
     let (grid, ncols) = reconstruct_grid(t);
-    let content_w = geom.content_w();
+    let (table_x, content_w) = table_placement(t, geom.content_w());
 
     // Column edges: honor authored percentages when they match the grid, else
     // size to content (min 20pt/col) and scale to fill the content width.
-    let mut col_x = vec![0.0_f32; ncols + 1];
-    if t.col_widths_pct.len() == ncols && t.col_widths_pct.iter().all(|w| *w > 0.0) {
-        let sum: f32 = t.col_widths_pct.iter().sum();
-        for c in 0..ncols {
-            col_x[c + 1] = col_x[c] + content_w * (t.col_widths_pct[c] / sum);
-        }
-    } else {
-        let mut col_nat = vec![20.0_f32; ncols];
-        for placed_row in &grid {
-            for pc in placed_row {
-                if let Some(c) = pc.cell {
-                    let txt = c.text().replace('\n', " ");
-                    let insets = cell_insets(c.margins, content_w);
-                    let per = (natural_width(&txt, cx) + insets.left + insets.right)
-                        / pc.span.max(1) as f32;
-                    for slot in col_nat
-                        .iter_mut()
-                        .take((pc.col + pc.span).min(ncols))
-                        .skip(pc.col)
-                    {
-                        *slot = slot.max(per);
+    let col_x =
+        if let Some(edges) = authored_table_column_edges(&t.col_widths_pct, ncols, content_w) {
+            edges
+        } else {
+            let mut edges = vec![0.0_f32; ncols + 1];
+            let mut col_nat = vec![20.0_f32; ncols];
+            for placed_row in &grid {
+                for pc in placed_row {
+                    if let Some(c) = pc.cell {
+                        let txt = c.text().replace('\n', " ");
+                        let insets = cell_insets(c.margins, content_w);
+                        let per = (natural_width(&txt, cx) + insets.left + insets.right)
+                            / pc.span.max(1) as f32;
+                        for slot in col_nat
+                            .iter_mut()
+                            .take((pc.col + pc.span).min(ncols))
+                            .skip(pc.col)
+                        {
+                            *slot = slot.max(per);
+                        }
                     }
                 }
             }
-        }
-        let total: f32 = col_nat.iter().sum();
-        let scale = if total > 0.0 { content_w / total } else { 1.0 };
-        for c in 0..ncols {
-            col_x[c + 1] = col_x[c] + col_nat[c] * scale;
-        }
-    }
+            let total: f32 = col_nat.iter().sum();
+            let scale = if total > 0.0 { content_w / total } else { 1.0 };
+            for c in 0..ncols {
+                edges[c + 1] = edges[c] + col_nat[c] * scale;
+            }
+            edges
+        };
 
     // Pass 2: shape each cell richly at its column width and build the rows.
     let mut rows: Vec<RowLayout> = Vec::with_capacity(grid.len());
@@ -2644,11 +2701,12 @@ fn layout_table_with_row_pagination(
             let end = (pc.col + pc.span).min(ncols);
             let logical_x = col_x[pc.col];
             let width = col_x[end] - logical_x;
-            let x = if t.bidi_visual {
-                content_w - col_x[end]
-            } else {
-                logical_x
-            };
+            let x = table_x
+                + if t.bidi_visual {
+                    content_w - col_x[end]
+                } else {
+                    logical_x
+                };
             let (direct_pagination, direct_nested_pagination) = if pc.cell.is_some() {
                 let paragraph_hints = row_cell_pagination
                     .and_then(|cells| cells.get(source_cell_index))
@@ -7581,6 +7639,322 @@ mod tests {
 
         assert_eq!(count_missing_image_bytes(&hidden), 0);
         assert_eq!(count_missing_image_bytes(&visible), 1);
+    }
+
+    fn laid_out_table_boxes(table: &Table, geom: Geom) -> Vec<(f32, f32)> {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut flow = Vec::new();
+        let mut capture = LayoutCapture::default();
+        layout_table(table, &mut flow, geom, &mut tcx, &mut capture);
+        let FlowItem::Table { mut rows, .. } = flow.remove(0) else {
+            panic!("table flow")
+        };
+        rows.remove(0)
+            .cells
+            .into_iter()
+            .map(|cell| (cell.x, cell.width))
+            .collect()
+    }
+
+    fn table_box_bounds(boxes: &[(f32, f32)]) -> (f32, f32) {
+        boxes.iter().fold(
+            (f32::INFINITY, f32::NEG_INFINITY),
+            |(left, right), (x, width)| (left.min(*x), right.max(*x + *width)),
+        )
+    }
+
+    fn assert_table_boxes(actual: &[(f32, f32)], expected: &[(f32, f32)]) {
+        assert_eq!(actual.len(), expected.len());
+        for ((actual_x, actual_width), (expected_x, expected_width)) in actual.iter().zip(expected)
+        {
+            assert!(
+                (actual_x - expected_x).abs() < 0.1,
+                "x mismatch: actual={actual:?}, expected={expected:?}"
+            );
+            assert!(
+                (actual_width - expected_width).abs() < 0.1,
+                "width mismatch: actual={actual:?}, expected={expected:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn preferred_table_width_alignment_indent_and_bidi_define_local_box() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let base = Table {
+            rows: vec![Row {
+                cells: vec![cell("A"), cell("B")],
+            }],
+            col_widths_pct: vec![0.25, 0.75],
+            width_pct: Some(0.5),
+            ..Table::default()
+        };
+        let cases = [
+            (
+                "ltr center ignores indent",
+                Some(Align::Center),
+                false,
+                Some(720),
+                vec![(45.0, 22.5), (67.5, 67.5)],
+            ),
+            (
+                "ltr trailing ignores indent",
+                Some(Align::Right),
+                false,
+                Some(720),
+                vec![(90.0, 22.5), (112.5, 67.5)],
+            ),
+            (
+                "ltr leading indent",
+                Some(Align::Left),
+                false,
+                Some(720),
+                vec![(36.0, 22.5), (58.5, 67.5)],
+            ),
+            (
+                "ltr default leading indent",
+                None,
+                false,
+                Some(720),
+                vec![(36.0, 22.5), (58.5, 67.5)],
+            ),
+            (
+                "rtl center ignores indent",
+                Some(Align::Center),
+                true,
+                Some(720),
+                vec![(112.5, 22.5), (45.0, 67.5)],
+            ),
+            (
+                "rtl leading indent and local mirror",
+                Some(Align::Left),
+                true,
+                Some(720),
+                vec![(121.5, 22.5), (54.0, 67.5)],
+            ),
+            (
+                "rtl trailing ignores indent",
+                Some(Align::Right),
+                true,
+                Some(720),
+                vec![(67.5, 22.5), (0.0, 67.5)],
+            ),
+        ];
+
+        for (name, align, bidi_visual, indent_twips, expected) in cases {
+            let boxes = laid_out_table_boxes(
+                &Table {
+                    align,
+                    bidi_visual,
+                    indent_twips,
+                    ..base.clone()
+                },
+                geom,
+            );
+            assert_table_boxes(&boxes, &expected);
+            assert!(
+                (table_box_bounds(&boxes).1 - table_box_bounds(&boxes).0 - 90.0).abs() < 0.1,
+                "{name}: boxes={boxes:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn preferred_table_width_is_column_relative_and_malformed_values_are_bounded() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let base = Table {
+            rows: vec![Row {
+                cells: vec![cell("A"), cell("B")],
+            }],
+            col_widths_pct: vec![0.5, 0.5],
+            align: Some(Align::Center),
+            ..Table::default()
+        };
+
+        let column_boxes = laid_out_table_boxes(
+            &Table {
+                width_pct: Some(0.5),
+                ..base.clone()
+            },
+            geom.with_content_width(81.0),
+        );
+        assert_table_boxes(&column_boxes, &[(20.25, 20.25), (40.5, 20.25)]);
+
+        for width_pct in [
+            None,
+            Some(0.0),
+            Some(-0.5),
+            Some(f32::NAN),
+            Some(f32::NEG_INFINITY),
+            Some(f32::INFINITY),
+            Some(2.0),
+        ] {
+            let boxes = laid_out_table_boxes(
+                &Table {
+                    width_pct,
+                    ..base.clone()
+                },
+                geom,
+            );
+            assert_table_boxes(&boxes, &[(0.0, 90.0), (90.0, 90.0)]);
+        }
+
+        let bounded_indent = laid_out_table_boxes(
+            &Table {
+                width_pct: Some(0.5),
+                align: Some(Align::Left),
+                indent_twips: Some(i32::MAX),
+                ..base.clone()
+            },
+            geom,
+        );
+        assert_table_boxes(&bounded_indent, &[(90.0, 45.0), (135.0, 45.0)]);
+
+        let negative_indent = laid_out_table_boxes(
+            &Table {
+                width_pct: Some(0.5),
+                align: Some(Align::Left),
+                indent_twips: Some(-720),
+                ..base.clone()
+            },
+            geom,
+        );
+        assert_table_boxes(&negative_indent, &[(0.0, 45.0), (45.0, 45.0)]);
+
+        let justify_fallback = laid_out_table_boxes(
+            &Table {
+                width_pct: Some(0.5),
+                align: Some(Align::Justify),
+                indent_twips: Some(720),
+                ..base.clone()
+            },
+            geom,
+        );
+        assert_table_boxes(&justify_fallback, &[(0.0, 45.0), (45.0, 45.0)]);
+        let rtl_justify_fallback = laid_out_table_boxes(
+            &Table {
+                width_pct: Some(0.5),
+                align: Some(Align::Justify),
+                bidi_visual: true,
+                indent_twips: Some(720),
+                ..base.clone()
+            },
+            geom,
+        );
+        assert_table_boxes(&rtl_justify_fallback, &[(135.0, 45.0), (90.0, 45.0)]);
+
+        let malformed_columns = laid_out_table_boxes(
+            &Table {
+                width_pct: Some(0.5),
+                col_widths_pct: vec![f32::INFINITY, 1.0],
+                ..base.clone()
+            },
+            geom,
+        );
+        assert!(malformed_columns
+            .iter()
+            .all(|(x, width)| x.is_finite() && width.is_finite() && *width > 0.0));
+        assert!((table_box_bounds(&malformed_columns).0 - 45.0).abs() < 0.1);
+        assert!((table_box_bounds(&malformed_columns).1 - 135.0).abs() < 0.1);
+
+        let underflowing_columns = laid_out_table_boxes(
+            &Table {
+                width_pct: Some(0.5),
+                col_widths_pct: vec![f32::MIN_POSITIVE, f32::MAX],
+                ..base
+            },
+            geom,
+        );
+        assert!(underflowing_columns
+            .iter()
+            .all(|(x, width)| x.is_finite() && width.is_finite() && *width > 0.0));
+        assert!((table_box_bounds(&underflowing_columns).0 - 45.0).abs() < 0.1);
+        assert!((table_box_bounds(&underflowing_columns).1 - 135.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn table_box_survives_header_repetition_and_row_splitting() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let tall_blocks = (0..12)
+            .map(|index| para(&format!("line {index}"), None))
+            .collect();
+        let table = Table {
+            rows: vec![
+                Row {
+                    cells: vec![cell("Header A"), cell("Header B")],
+                },
+                Row {
+                    cells: vec![
+                        Cell {
+                            blocks: tall_blocks,
+                            ..Cell::default()
+                        },
+                        cell("Body"),
+                    ],
+                },
+            ],
+            header_rows: 1,
+            col_widths_pct: vec![0.5, 0.5],
+            width_pct: Some(0.5),
+            align: Some(Align::Left),
+            indent_twips: Some(400),
+            ..Table::default()
+        };
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut flow = Vec::new();
+        let mut capture = LayoutCapture::default();
+        layout_table(&table, &mut flow, geom, &mut tcx, &mut capture);
+        let pagination = paginate(flow, geom, &SectionSetup::default());
+        assert!(pagination.pages.len() > 1);
+        let row_boxes = pagination
+            .pages
+            .iter()
+            .flatten()
+            .filter_map(|placed| match &placed.item {
+                FlowItem::Row(row) => Some(
+                    row.cells
+                        .iter()
+                        .map(|cell| (cell.x, cell.width))
+                        .collect::<Vec<_>>(),
+                ),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(row_boxes.len() > table.rows.len());
+        for boxes in row_boxes {
+            assert_table_boxes(&boxes, &[(20.0, 45.0), (65.0, 45.0)]);
+        }
     }
 
     #[test]
