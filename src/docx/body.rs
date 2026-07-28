@@ -35,9 +35,8 @@ use crate::model::{
     DocGridType, FieldRole, FieldUnsupportedReason, Image, Indent, ListInfo, PageNumberFormat,
     PageSetup, PaginationHint, ParaProps, Paragraph, Row, Run, SectionBreakKind, SectionSetup,
     Spacing, TabAlignment, TabStop, Table, TableBorderColors, TableBorderSide, TableBorderSizes,
-    TableBorderStyle, TableBorderStyles, TableCellNestedPaginationHints,
-    TableCellPaginationHints, TablePaginationHints, TableRowPaginationHint, TextDirection, VCell,
-    MAX_TAB_STOPS,
+    TableBorderStyle, TableBorderStyles, TableCellNestedPaginationHints, TableCellPaginationHints,
+    TablePaginationHints, TableRowPaginationHint, TextDirection, VCell, MAX_TAB_STOPS,
 };
 use crate::text;
 use crate::CoreProperties;
@@ -1849,12 +1848,6 @@ struct BlockBatch {
 }
 
 impl BlockBatch {
-    fn push(&mut self, block: Block, pagination: Option<PaginationHint>) {
-        self.blocks.push(block);
-        self.pagination.push(pagination);
-        self.nested_tables.push(None);
-    }
-
     fn push_table(&mut self, block: Block, pagination: TablePaginationHints) {
         self.blocks.push(block);
         self.pagination.push(None);
@@ -5277,11 +5270,7 @@ fn read_table_block(
     }
 }
 
-fn read_table(
-    r: &mut Xml<'_>,
-    ctx: &Ctx<'_>,
-    depth: u32,
-) -> (Table, TablePaginationHints) {
+fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Table, TablePaginationHints) {
     if depth > MAX_DEPTH {
         skip_subtree(r);
         return (Table::default(), TablePaginationHints::default());
@@ -6065,25 +6054,32 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
                 b"tcPr" => tc = Some(read_tcpr(r)),
                 b"p" => {
-                    read_paragraph_block_batch(r, ctx, depth + 1)
-                        .append_to(&mut blocks, &mut pagination, &mut nested_tables);
+                    read_paragraph_block_batch(r, ctx, depth + 1).append_to(
+                        &mut blocks,
+                        &mut pagination,
+                        &mut nested_tables,
+                    );
                 }
                 b"tbl" => {
-                    if let Some((table, table_pagination)) =
-                        read_table_block(r, ctx, depth + 1)
-                    {
+                    if let Some((table, table_pagination)) = read_table_block(r, ctx, depth + 1) {
                         pagination.push(None);
                         nested_tables.push(Some(table_pagination));
                         blocks.push(table);
                     }
                 }
                 b"sdt" | b"sdtContent" | b"customXml" | b"smartTag" | b"ins" | b"moveTo" => {
-                    read_blocks_with_pagination(r, ctx, depth + 1)
-                        .append_to(&mut blocks, &mut pagination, &mut nested_tables);
+                    read_blocks_with_pagination(r, ctx, depth + 1).append_to(
+                        &mut blocks,
+                        &mut pagination,
+                        &mut nested_tables,
+                    );
                 }
                 b"AlternateContent" => {
-                    read_alternate_content_blocks_with_pagination(r, ctx, depth + 1)
-                        .append_to(&mut blocks, &mut pagination, &mut nested_tables);
+                    read_alternate_content_blocks_with_pagination(r, ctx, depth + 1).append_to(
+                        &mut blocks,
+                        &mut pagination,
+                        &mut nested_tables,
+                    );
                 }
                 _ => skip_subtree(r),
             },
@@ -7096,12 +7092,7 @@ mod tests {
         </w:body></w:document>"#;
 
         let (blocks, _, _, _, _, nested_tables) =
-            parse_with_media_styles_and_pagination(
-                xml,
-                HashMap::new(),
-                Styles::default(),
-                true,
-            );
+            parse_with_media_styles_and_pagination(xml, HashMap::new(), Styles::default(), true);
 
         let nested = nested_tables[0][0][0][0]
             .as_ref()
@@ -7120,6 +7111,140 @@ mod tests {
         );
         assert_eq!(nested.nested, vec![vec![vec![None]]]);
         assert_eq!(blocks.len(), 1);
+    }
+
+    #[test]
+    fn nested_table_pagination_tracks_selected_wrappers_and_merge_survivors() {
+        let xml = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+            <w:tbl>
+                <w:tr>
+                    <w:tc>
+                        <w:tcPr><w:vMerge w:val="restart"/></w:tcPr>
+                        <w:tbl><w:tr><w:tc>
+                            <w:p><w:pPr><w:keepNext/></w:pPr><w:r><w:t>owner</w:t></w:r></w:p>
+                        </w:tc></w:tr></w:tbl>
+                    </w:tc>
+                    <w:tc><w:p><w:r><w:t>peer</w:t></w:r></w:p></w:tc>
+                </w:tr>
+                <w:tr>
+                    <w:tc>
+                        <w:tcPr><w:vMerge/></w:tcPr>
+                        <w:tbl><w:tr><w:tc>
+                            <w:p><w:pPr><w:keepNext/></w:pPr><w:r><w:t>dropped</w:t></w:r></w:p>
+                        </w:tc></w:tr></w:tbl>
+                    </w:tc>
+                    <w:tc>
+                        <w:tcPr><w:gridSpan w:val="2"/></w:tcPr>
+                        <w:customXml><mc:AlternateContent>
+                            <mc:Choice Requires="w14">
+                                <w:tbl><w:tr><w:tc>
+                                    <w:sdt><w:sdtContent>
+                                        <w:tbl><w:tr><w:tc>
+                                            <w:p><w:pPr><w:keepLines/><w:widowControl w:val="off"/></w:pPr>
+                                                <w:r><w:t>deep</w:t></w:r>
+                                            </w:p>
+                                        </w:tc></w:tr></w:tbl>
+                                    </w:sdtContent></w:sdt>
+                                    <w:p><w:pPr><w:keepNext/></w:pPr><w:r><w:t>trail</w:t></w:r></w:p>
+                                </w:tc></w:tr></w:tbl>
+                            </mc:Choice>
+                            <mc:Fallback>
+                                <w:tbl><w:tr><w:tc>
+                                    <w:p><w:r><w:t>fallback</w:t></w:r></w:p>
+                                </w:tc></w:tr></w:tbl>
+                            </mc:Fallback>
+                        </mc:AlternateContent></w:customXml>
+                    </w:tc>
+                </w:tr>
+            </w:tbl>
+        </w:body></w:document>"#;
+
+        let (blocks, _, _, _, _, nested_tables) =
+            parse_with_media_styles_and_pagination(xml, HashMap::new(), Styles::default(), true);
+
+        let Block::Table(outer) = &blocks[0] else {
+            panic!("outer table");
+        };
+        assert_eq!(outer.rows[0].cells[0].row_span, 2);
+        assert_eq!(outer.rows[1].cells.len(), 1);
+        assert_eq!(outer.rows[1].cells[0].col_span, 2);
+        let Block::Table(selected_table) = &outer.rows[1].cells[0].blocks[0] else {
+            panic!("selected nested table");
+        };
+        let Block::Table(deep_table) = &selected_table.rows[0].cells[0].blocks[0] else {
+            panic!("second nested table level");
+        };
+        let Block::Paragraph(deep_paragraph) = &deep_table.rows[0].cells[0].blocks[0] else {
+            panic!("deep paragraph");
+        };
+        let Block::Paragraph(trail_paragraph) = &selected_table.rows[0].cells[0].blocks[1] else {
+            panic!("selected trailing paragraph");
+        };
+        assert_eq!(deep_paragraph.text(), "deep");
+        assert_eq!(trail_paragraph.text(), "trail");
+
+        let outer_nested = &nested_tables[0];
+        assert_eq!(outer_nested.len(), 2);
+        assert_eq!(outer_nested[0].len(), 2);
+        assert_eq!(outer_nested[1].len(), 1);
+        let selected = outer_nested[1][0][0]
+            .as_ref()
+            .expect("surviving selected nested table");
+        assert_eq!(
+            selected.cells[0][0],
+            vec![
+                None,
+                Some(PaginationHint {
+                    keep_next: true,
+                    widow_control: true,
+                    ..PaginationHint::default()
+                }),
+            ]
+        );
+        let deep = selected.nested[0][0][0]
+            .as_ref()
+            .expect("second nested level");
+        assert_eq!(
+            deep.cells[0][0],
+            vec![Some(PaginationHint {
+                keep_lines: true,
+                widow_control: false,
+                ..PaginationHint::default()
+            })]
+        );
+        assert_eq!(deep.nested, vec![vec![vec![None]]]);
+    }
+
+    #[test]
+    fn deeply_nested_table_pagination_stops_at_the_depth_limit() {
+        let nesting = MAX_DEPTH + 4;
+        let mut xml = String::from("<w:document><w:body>");
+        for _ in 0..nesting {
+            xml.push_str("<w:tbl><w:tr><w:tc>");
+        }
+        xml.push_str("<w:p><w:pPr><w:keepLines/></w:pPr><w:r><w:t>too deep</w:t></w:r></w:p>");
+        for _ in 0..nesting {
+            xml.push_str("</w:tc></w:tr></w:tbl>");
+        }
+        xml.push_str("</w:body></w:document>");
+
+        let (blocks, _, _, _, _, nested_tables) =
+            parse_with_media_styles_and_pagination(&xml, HashMap::new(), Styles::default(), true);
+
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(nested_tables.len(), blocks.len());
+    }
+
+    #[test]
+    fn malformed_nested_table_pagination_remains_aligned() {
+        let xml = r#"<w:document><w:body><w:tbl><w:tr><w:tc>
+            <w:tbl><w:tr><w:tc>
+                <w:p><w:pPr><w:keepLines/></w:pPr><w:r><w:t>truncated</w:t></w:r>"#;
+
+        let (blocks, _, _, _, _, nested_tables) =
+            parse_with_media_styles_and_pagination(xml, HashMap::new(), Styles::default(), true);
+
+        assert_eq!(nested_tables.len(), blocks.len());
     }
 
     #[test]
@@ -7265,6 +7390,7 @@ mod tests {
         CellRaw {
             blocks: Vec::new(),
             pagination: Vec::new(),
+            nested_tables: Vec::new(),
             col_span: 1,
             vmerge,
             shading: None,

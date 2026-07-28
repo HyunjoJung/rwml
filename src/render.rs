@@ -2334,6 +2334,7 @@ fn natural_width(text: &str, cx: &mut TextCx<'_>) -> f32 {
 /// ever surfaced. A **nested table** inside a cell is flattened to its cells'
 /// lines (no nested grid), recursively — so a document wrapped in an outer table
 /// of inner tables still renders its text. Recursion is depth-capped.
+#[cfg(test)]
 fn shape_cell(
     cell: &Cell,
     inner_w: f32,
@@ -2576,7 +2577,14 @@ fn layout_table(
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
 ) {
-    layout_table_with_row_pagination(t, out, geom, cx, capture, None, None, None);
+    layout_table_with_row_pagination(t, out, geom, cx, capture, TablePaginationView::default());
+}
+
+#[derive(Clone, Copy, Default)]
+struct TablePaginationView<'a> {
+    rows: Option<&'a [TableRowPaginationHint]>,
+    cells: Option<&'a TableCellPaginationHints>,
+    nested: Option<&'a TableCellNestedPaginationHints>,
 }
 
 fn layout_table_with_row_pagination(
@@ -2585,9 +2593,7 @@ fn layout_table_with_row_pagination(
     geom: Geom,
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
-    row_pagination: Option<&[TableRowPaginationHint]>,
-    cell_pagination: Option<&TableCellPaginationHints>,
-    nested_pagination: Option<&TableCellNestedPaginationHints>,
+    pagination: TablePaginationView<'_>,
 ) {
     let (grid, ncols) = reconstruct_grid(t);
     let content_w = geom.content_w();
@@ -2631,8 +2637,8 @@ fn layout_table_with_row_pagination(
     for (row_index, placed_row) in grid.into_iter().enumerate() {
         let mut cells = Vec::with_capacity(placed_row.len());
         let mut row_h = 0.0_f32;
-        let row_cell_pagination = cell_pagination.and_then(|rows| rows.get(row_index));
-        let row_nested_pagination = nested_pagination.and_then(|rows| rows.get(row_index));
+        let row_cell_pagination = pagination.cells.and_then(|rows| rows.get(row_index));
+        let row_nested_pagination = pagination.nested.and_then(|rows| rows.get(row_index));
         let mut source_cell_index = 0usize;
         for pc in placed_row {
             let end = (pc.col + pc.span).min(ncols);
@@ -2688,7 +2694,8 @@ fn layout_table_with_row_pagination(
         rows.push(RowLayout {
             height: row_h,
             cells,
-            cant_split: row_pagination
+            cant_split: pagination
+                .rows
                 .and_then(|rows| rows.get(row_index))
                 .map(|row| row.cant_split)
                 .unwrap_or(true),
@@ -3138,9 +3145,11 @@ fn collect_blocks_inner(
                     block_geom,
                     cx,
                     capture,
-                    row_pagination,
-                    cell_pagination,
-                    nested_pagination,
+                    TablePaginationView {
+                        rows: row_pagination,
+                        cells: cell_pagination,
+                        nested: nested_pagination,
+                    },
                 );
                 out.push(FlowItem::Gap(PARA_GAP));
             }
@@ -6841,12 +6850,12 @@ mod tests {
         layout_table, layout_table_with_row_pagination, page_field_text, paginate, rgb,
         running_header_footer_blocks_for_page, shape, shape_cell, split_row,
         unsupported_placeholder_texts, FlowItem, Geom, LayoutCapture, LineLayout, StyledText,
-        TextCx,
+        TablePaginationView, TextCx,
     };
     use crate::model::{
         Align, Block, Cell, CellMargins, CharProps, Color, DocModel, FieldRole, Image, Indent,
         PageSetup, PaginationHint, ParaProps, Paragraph, Row, Run, SectionSetup, Spacing,
-        TabAlignment, TabStop, Table, VertAlign,
+        TabAlignment, TabStop, Table, TablePaginationHints, TableRowPaginationHint, VertAlign,
     };
     use crate::report::FeatureInventory;
     use crate::{FloatingShape, ShapeEffectExtent, ShapeExtent, ShapePoint, ShapePosition};
@@ -7897,9 +7906,170 @@ mod tests {
             geom,
             &mut tcx,
             &mut capture,
-            None,
-            Some(&cell_pagination),
-            None,
+            TablePaginationView {
+                cells: Some(&cell_pagination),
+                ..TablePaginationView::default()
+            },
+        );
+        let FlowItem::Table { mut rows, .. } = flow.remove(0) else {
+            panic!("table flow item")
+        };
+        rows.remove(0)
+    }
+
+    fn nested_cell_row_with_pagination(
+        nested_cells: &[Vec<(&str, PaginationHint)>],
+    ) -> super::RowLayout {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let nested_row = Row {
+            cells: nested_cells
+                .iter()
+                .map(|paragraphs| Cell {
+                    blocks: paragraphs
+                        .iter()
+                        .map(|(text, _)| {
+                            Block::Paragraph(Paragraph {
+                                runs: vec![Run {
+                                    text: (*text).to_string(),
+                                    ..Run::default()
+                                }],
+                                ..Paragraph::default()
+                            })
+                        })
+                        .collect(),
+                    ..Cell::default()
+                })
+                .collect(),
+        };
+        let table = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: vec![Block::Table(Table {
+                        rows: vec![nested_row],
+                        ..Table::default()
+                    })],
+                    ..Cell::default()
+                }],
+            }],
+            ..Table::default()
+        };
+        let cell_pagination = vec![vec![vec![None]]];
+        let nested_pagination = vec![vec![vec![Some(TablePaginationHints {
+            rows: vec![TableRowPaginationHint::default()],
+            cells: vec![nested_cells
+                .iter()
+                .map(|paragraphs| {
+                    paragraphs
+                        .iter()
+                        .map(|(_, hint)| Some(*hint))
+                        .collect::<Vec<_>>()
+                })
+                .collect()],
+            nested: vec![nested_cells
+                .iter()
+                .map(|paragraphs| vec![None; paragraphs.len()])
+                .collect()],
+        })]]];
+        let mut flow = Vec::new();
+        let mut capture = LayoutCapture::default();
+        layout_table_with_row_pagination(
+            &table,
+            &mut flow,
+            geom,
+            &mut tcx,
+            &mut capture,
+            TablePaginationView {
+                cells: Some(&cell_pagination),
+                nested: Some(&nested_pagination),
+                ..TablePaginationView::default()
+            },
+        );
+        let FlowItem::Table { mut rows, .. } = flow.remove(0) else {
+            panic!("table flow item")
+        };
+        rows.remove(0)
+    }
+
+    fn deeply_nested_cell_row(depth: u32) -> super::RowLayout {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let mut cell = Cell {
+            blocks: vec![Block::Paragraph(Paragraph {
+                runs: vec![Run {
+                    text: "bounded".to_string(),
+                    ..Run::default()
+                }],
+                ..Paragraph::default()
+            })],
+            ..Cell::default()
+        };
+        let mut direct_hints = vec![Some(PaginationHint {
+            keep_lines: true,
+            ..PaginationHint::default()
+        })];
+        let mut nested_hints = vec![None];
+        for _ in 0..depth {
+            let table_hints = TablePaginationHints {
+                rows: vec![TableRowPaginationHint::default()],
+                cells: vec![vec![direct_hints]],
+                nested: vec![vec![nested_hints]],
+            };
+            cell = Cell {
+                blocks: vec![Block::Table(Table {
+                    rows: vec![Row { cells: vec![cell] }],
+                    ..Table::default()
+                })],
+                ..Cell::default()
+            };
+            direct_hints = vec![None];
+            nested_hints = vec![Some(table_hints)];
+        }
+        let table = Table {
+            rows: vec![Row { cells: vec![cell] }],
+            ..Table::default()
+        };
+        let cell_pagination = vec![vec![direct_hints]];
+        let nested_pagination = vec![vec![nested_hints]];
+        let mut flow = Vec::new();
+        let mut capture = LayoutCapture::default();
+        layout_table_with_row_pagination(
+            &table,
+            &mut flow,
+            geom,
+            &mut tcx,
+            &mut capture,
+            TablePaginationView {
+                cells: Some(&cell_pagination),
+                nested: Some(&nested_pagination),
+                ..TablePaginationView::default()
+            },
         );
         let FlowItem::Table { mut rows, .. } = flow.remove(0) else {
             panic!("table flow item")
@@ -7997,6 +8167,109 @@ mod tests {
             + cell.insets.bottom;
 
         assert!((first_row_fragment_height(&row) - expected).abs() < 0.01);
+    }
+
+    #[test]
+    fn nested_table_cell_keep_next_chains_same_cell_paragraphs() {
+        let keep_next = PaginationHint {
+            keep_next: true,
+            ..PaginationHint::default()
+        };
+        let row = nested_cell_row_with_pagination(&[vec![
+            ("heading one", keep_next),
+            ("heading two", keep_next),
+            ("body", PaginationHint::default()),
+        ]]);
+        let cell = &row.cells[0];
+        assert_eq!(cell.lines.len(), 3);
+        assert_eq!(
+            cell.lines[0]
+                .cell_paragraph
+                .expect("first nested paragraph")
+                .scope_id,
+            cell.lines[2]
+                .cell_paragraph
+                .expect("last nested paragraph")
+                .scope_id
+        );
+        let expected = cell.insets.top
+            + cell.lines.iter().map(|line| line.height).sum::<f32>()
+            + cell.insets.bottom;
+
+        assert!((first_row_fragment_height(&row) - expected).abs() < 0.01);
+    }
+
+    #[test]
+    fn nested_table_cell_keep_next_does_not_cross_cell_scopes() {
+        let row = nested_cell_row_with_pagination(&[
+            vec![(
+                "heading",
+                PaginationHint {
+                    keep_next: true,
+                    ..PaginationHint::default()
+                },
+            )],
+            vec![("separate cell", PaginationHint::default())],
+        ]);
+        let cell = &row.cells[0];
+        assert_eq!(cell.lines.len(), 2);
+        let first = cell.lines[0]
+            .cell_paragraph
+            .expect("first nested cell paragraph");
+        let second = cell.lines[1]
+            .cell_paragraph
+            .expect("second nested cell paragraph");
+        assert_ne!(first.scope_id, second.scope_id);
+        let expected = cell.insets.top + cell.lines[0].height;
+
+        assert!((first_row_fragment_height(&row) - expected).abs() < 0.01);
+    }
+
+    #[test]
+    fn nested_table_cell_widow_control_avoids_a_three_plus_one_split() {
+        let row = nested_cell_row_with_pagination(&[vec![(
+            "one\ntwo\nthree\nfour",
+            PaginationHint {
+                widow_control: true,
+                ..PaginationHint::default()
+            },
+        )]]);
+        assert_eq!(row.cells[0].lines.len(), 4);
+        let avail = row_avail_for_lines(&row, 3);
+
+        let (head, tail) = split_row(row, avail);
+        let tail = tail.expect("two nested widow-protected lines remain");
+
+        assert_eq!(head.cells[0].lines.len(), 2);
+        assert_eq!(tail.cells[0].lines.len(), 2);
+    }
+
+    #[test]
+    fn over_tall_nested_kept_table_cell_still_splits_for_progress() {
+        let row = nested_cell_row_with_pagination(&[vec![(
+            "one\ntwo\nthree\nfour\nfive",
+            PaginationHint {
+                keep_lines: true,
+                ..PaginationHint::default()
+            },
+        )]]);
+        assert_eq!(row.cells[0].lines.len(), 5);
+        let avail = row_avail_for_lines(&row, 2);
+
+        let (head, tail) = split_row(row, avail);
+        let tail = tail.expect("over-tall nested kept content remains");
+
+        assert_eq!(head.cells[0].lines.len(), 2);
+        assert_eq!(tail.cells[0].lines.len(), 3);
+    }
+
+    #[test]
+    fn nested_table_pagination_stops_at_the_render_depth_limit() {
+        let at_limit = deeply_nested_cell_row(super::MAX_CELL_DEPTH);
+        let beyond_limit = deeply_nested_cell_row(super::MAX_CELL_DEPTH + 1);
+
+        assert_eq!(at_limit.cells[0].lines.len(), 1);
+        assert!(beyond_limit.cells[0].lines.is_empty());
     }
 
     #[test]

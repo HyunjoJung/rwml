@@ -346,8 +346,7 @@ pub(crate) struct TablePaginationHints {
 }
 
 #[cfg(any(feature = "docx", feature = "render"))]
-pub(crate) type TableCellNestedPaginationHints =
-    Vec<Vec<Vec<Option<TablePaginationHints>>>>;
+pub(crate) type TableCellNestedPaginationHints = Vec<Vec<Vec<Option<TablePaginationHints>>>>;
 
 #[cfg(any(feature = "docx", feature = "render"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

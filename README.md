@@ -288,8 +288,9 @@ additionally honor resolved left/center/right/decimal tab stops in top-level
 body paragraphs, authored zero after-spacing, and source-aligned `keepNext`,
 `keepLines`, and default-on `widowControl` pagination hints in top-level body
 paragraphs and direct or accepted-current wrapper-contained paragraphs in
-ordinary table cells, without adding those source-only render hints to the
-public `DocModel`.
+ordinary or recursively nested table cells, without adding those source-only
+render hints to the public `DocModel`. Nested table content remains a flattened
+text preview rather than a nested grid layout.
 Eligible front-of-text
 `wrapTopAndBottom` shapes with explicit page/margin or enabled `simplePos`
 vertical geometry also exclude later flow from their page-wide vertical band
@@ -311,9 +312,10 @@ Word-exact list-level alignment, punctuation, or table typography.
 > semantics retain their cached display text with diagnostics.
 > Conditional table-style horizontal/vertical bands, first/last-column and
 > corner regions, configurable band sizes, and `w:tblPrEx` row-group exceptions
-> do not yet contribute `cantSplit`. Cell paragraph controls do not yet cover
-> nested tables or Word-exact cell spacing/tab geometry; legacy `.doc`
-> row-break SPRMs remain outside this slice.
+> do not yet contribute `cantSplit`. Nested-table paragraph controls retain the
+> renderer's 32-level flattening bound; nested grid/border geometry, nested-row
+> `cantSplit`, Word-exact cell spacing/tab geometry, and legacy `.doc` row-break
+> SPRMs remain outside this slice.
 >
 > Opened-document renders draw bounded approximate overlay boxes for recovered
 > `.docx` floating-shape geometry on the recovered top-level body block page. A
@@ -773,7 +775,7 @@ evidence.
 - [x] **PDF renderer** - `parley` + `krilla` with rich text/tables/images/lists/
       hyperlinks, paragraph page-break-before, header-row repeat, oversized-row split,
       direct and non-conditional table-style DOCX table-row `cantSplit`, direct DOCX
-      table-cell keep/widow controls, font registration
+      and recursively nested table-cell keep/widow controls, font registration
 - [x] Reader: `.docx` headers/footers, text boxes (`w:txbxContent` incl. run-level
       `mc:AlternateContent`) including `text_boxes()` records, footnotes/endnotes
       including `notes()` records, per-level numbering labels, caps
@@ -909,8 +911,8 @@ evidence.
       `report().edit` expose read-only reasons; `opc` + `xmltree` internals;
       fallible `try_write_docx`
 - [ ] Renderer: Word-exact pagination beyond bounded section columns and opened-DOCX
-      top-level/direct-cell keep/widow controls, floating-shape wrap/reflow beyond bounded forward
-      page-wide `wrapTopAndBottom`,
+      top-level/direct-and-nested-cell keep/widow controls, floating-shape wrap/reflow
+      beyond bounded forward page-wide `wrapTopAndBottom`,
       full layout-derived `PAGE`/`PAGEREF` values beyond trusted source markers,
       remaining render-time TOC/REF/NOTEREF policy where layout context is
       required, broader bundled script coverage, and full Word-exact RTL typography

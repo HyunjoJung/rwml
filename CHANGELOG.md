@@ -35,9 +35,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   deterministically. Banded, column/corner, `w:tblPrEx`, and legacy `.doc`
   row-break cases remain unsupported.
 - Opened `.docx` table rows now honor resolved `keepNext`, `keepLines`, and
-  default-on `widowControl` for direct or accepted-current wrapper-contained
-  cell paragraphs when choosing legal row fragments, while retaining
-  deterministic progress for over-tall content.
+  default-on `widowControl` for direct, accepted-current wrapper-contained, and
+  recursively nested cell paragraphs when choosing legal row fragments, while
+  isolating paragraph chains by cell and retaining deterministic progress for
+  over-tall content. Nested content remains a bounded flattened-text preview,
+  not nested grid layout.
 - Opened `.docx` renders now resolve inherited and direct left, center, right,
   and decimal tab stops in top-level body paragraphs, including `clear`
   overrides, and preserve authored zero paragraph after-spacing instead of
