@@ -40,13 +40,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   takes precedence when both are present, and over-tall rows still split for
   deterministic progress. Inherited/table-style and nested legacy row controls
   remain unsupported.
-- Opened legacy `.doc` rendering now honors direct PAPX `sprmPFKeep`,
-  `sprmPFKeepFollow`, and default-on `sprmPFWidowControl` for emitted nonblank
-  top-level and ordinary table-cell paragraphs through private source-aligned
-  hints. Direct `sprmPFPageBreakBefore` maps to the existing model property;
-  over-tall content still splits deterministically. STSH/table-style/list
-  inheritance, piece `Pcd.Prm` modifiers, nested legacy tables, and controls on
-  discarded blank top-level paragraphs remain unsupported.
+- Opened legacy `.doc` rendering now resolves paragraph-style STSH inheritance
+  followed by direct PAPX for `sprmPFKeep`, `sprmPFKeepFollow`, default-on
+  `sprmPFWidowControl`, and `sprmPFPageBreakBefore` on emitted nonblank
+  top-level and ordinary table-cell paragraphs. Private source-aligned hints
+  carry keep/widow behavior, the existing model property carries page breaks,
+  and explicit direct-off values override inherited-on values. Over-tall
+  content still splits deterministically. Other STSH properties,
+  table/list-style effects, piece `Pcd.Prm` modifiers, nested legacy tables,
+  and controls on discarded blank top-level paragraphs remain unsupported.
 - Opened `.docx` table rows now honor resolved `keepNext`, `keepLines`, and
   default-on `widowControl` for direct, accepted-current wrapper-contained, and
   recursively nested cell paragraphs when choosing legal row fragments, while
