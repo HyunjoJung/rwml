@@ -208,7 +208,7 @@ pub(crate) struct DocxState {
     /// Renderer-only resolved explicit tab stops aligned to body model blocks.
     #[cfg(feature = "render")]
     pub tab_stops: Vec<Vec<crate::model::TabStop>>,
-    /// Renderer-only direct table-row pagination controls aligned to body model blocks.
+    /// Renderer-only effective table-row pagination controls aligned to body model blocks.
     #[cfg(feature = "render")]
     pub table_row_pagination: Vec<Vec<crate::model::TableRowPaginationHint>>,
     /// Renderer-only direct table-cell paragraph controls aligned to body model blocks.

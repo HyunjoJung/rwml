@@ -27,10 +27,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   rectangle, and physical left/right/top/bottom margin bands; bounded
   `wrapTopAndBottom` flow also honors top/bottom-margin anchors when their visual
   bounds intersect body text.
-- Opened `.docx` rendering now honors direct table-row `w:cantSplit`: default
-  rows may use remaining page space, fitting protected rows move whole, and
-  over-tall rows still split deterministically. Table-style inheritance and
-  legacy `.doc` row-break SPRMs remain unsupported.
+- Opened `.docx` rendering now honors effective table-row `w:cantSplit` from
+  direct row properties and non-conditional inherited table-style chains:
+  default rows may use remaining page space, fitting protected rows move whole,
+  and over-tall rows still split deterministically. Conditional `w:tblStylePr`
+  regions and legacy `.doc` row-break SPRMs remain unsupported.
 - Opened `.docx` table rows now honor resolved `keepNext`, `keepLines`, and
   default-on `widowControl` for direct cell paragraphs when choosing legal row
   fragments, while retaining deterministic progress for over-tall content.

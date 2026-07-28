@@ -6,8 +6,9 @@
 //! table rows — which are flowed top-to-bottom onto fixed A4 pages, then each
 //! page's glyph runs and table borders are drawn with krilla. A table that spans
 //! pages repeats its header rows after each break. Opened DOCX rows may split at
-//! legal direct-cell paragraph boundaries unless direct `w:cantSplit` keeps a
-//! fitting row together; an over-tall row still splits to guarantee progress.
+//! legal direct-cell paragraph boundaries unless effective `w:cantSplit` from
+//! direct row properties or a non-conditional table-style chain keeps a fitting
+//! row together; an over-tall row still splits to guarantee progress.
 //! Tables are rendered as a
 //! real grid: columns are reconstructed
 //! (including `col_span`/`row_span` placement), sized to authored `col_widths_pct`
