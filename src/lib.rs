@@ -7099,6 +7099,219 @@ mod tests {
         ]
     }
 
+    fn legacy_paragraph_indent_doc() -> Vec<u8> {
+        let paragraphs = [
+            (
+                "LtrFirst",
+                false,
+                [(0x845Eu16, 720i16), (0x845D, 1440), (0x465F, 120)],
+                240i16,
+                false,
+                false,
+            ),
+            (
+                "RtlFirst",
+                true,
+                [(0x845E, 720), (0x845D, 1440), (0x465F, 120)],
+                240,
+                false,
+                false,
+            ),
+            (
+                "RtlHanging",
+                true,
+                [(0x845E, 720), (0x845D, 360), (0x465F, 0)],
+                -360,
+                false,
+                false,
+            ),
+            (
+                "LastValid",
+                false,
+                [(0x845E, 400), (0x845E, 32000), (0x465F, 0)],
+                0,
+                true,
+                false,
+            ),
+            (
+                "RtlLate",
+                true,
+                [(0x845E, 720), (0x845D, 1440), (0x465F, 120)],
+                240,
+                false,
+                true,
+            ),
+        ];
+        let mut text = String::new();
+        let mut runs = Vec::new();
+        for (label, bidi, indents, first_line, truncate_suffix, bidi_after) in paragraphs {
+            text.push_str(label);
+            text.push('\r');
+            let mut grpprl = Vec::new();
+            if !bidi_after {
+                grpprl.extend_from_slice(&[0x41, 0x24, u8::from(bidi)]);
+            }
+            for (sprm, value) in indents {
+                grpprl.extend_from_slice(&sprm.to_le_bytes());
+                grpprl.extend_from_slice(&value.to_le_bytes());
+            }
+            grpprl.extend_from_slice(&0x8460u16.to_le_bytes());
+            grpprl.extend_from_slice(&first_line.to_le_bytes());
+            if truncate_suffix {
+                grpprl.extend_from_slice(&0x845Du16.to_le_bytes());
+            }
+            if bidi_after {
+                grpprl.extend_from_slice(&[0x41, 0x24, u8::from(bidi)]);
+            }
+            runs.push(SyntheticPapxRun {
+                cp_lim: text.encode_utf16().count() as u32,
+                grpprl,
+            });
+        }
+        for (label, grpprl) in [
+            (
+                "StyleRtl",
+                vec![
+                    0x00, 0x46, 0x01, 0x00, // paragraph style 1 supplies RTL
+                    0x5E, 0x84, 0xD0, 0x02, // direct logical left = 720
+                    0x5D, 0x84, 0xA0, 0x05, // direct logical right = 1440
+                    0x5F, 0x46, 0x78, 0x00, // direct nest = 120
+                    0x60, 0x84, 0xF0, 0x00, // direct first line = 240
+                ],
+            ),
+            (
+                "StyleNestOnly",
+                vec![
+                    0x00, 0x46, 0x01, 0x00, // style left indent is intentionally unmodeled
+                    0x5F, 0x46, 0x78, 0x00, // nest without a direct left base
+                ],
+            ),
+        ] {
+            text.push_str(label);
+            text.push('\r');
+            runs.push(SyntheticPapxRun {
+                cp_lim: text.encode_utf16().count() as u32,
+                grpprl,
+            });
+        }
+        let text_end = text.encode_utf16().count() as u32;
+        let stylesheet = synthetic_paragraph_stylesheet_grpprl(&[
+            0x41, 0x24, 0x01, // style RTL
+            0x5E, 0x84, 0xD0, 0x02, // unmodeled style logical left = 720
+        ]);
+        synth_doc_with_ccp_and_tables(
+            &text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [text_end, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                stylesheet: Some(&stylesheet),
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    type ParagraphIndentSignature = (
+        String,
+        bool,
+        Option<f32>,
+        Option<f32>,
+        Option<f32>,
+        Option<f32>,
+    );
+
+    fn paragraph_indent_signature(model: &DocModel) -> Vec<ParagraphIndentSignature> {
+        model
+            .blocks
+            .iter()
+            .map(|block| {
+                let Block::Paragraph(paragraph) = block else {
+                    panic!("synthetic legacy block must be a paragraph");
+                };
+                (
+                    paragraph.text(),
+                    paragraph.props.bidi,
+                    paragraph.props.indent.left_pt,
+                    paragraph.props.indent.right_pt,
+                    paragraph.props.indent.first_line_pt,
+                    paragraph.props.indent.hanging_pt,
+                )
+            })
+            .collect()
+    }
+
+    fn expected_legacy_paragraph_indent_signature() -> Vec<ParagraphIndentSignature> {
+        vec![
+            (
+                "LtrFirst".to_string(),
+                false,
+                Some(42.0),
+                Some(72.0),
+                Some(12.0),
+                None,
+            ),
+            (
+                "RtlFirst".to_string(),
+                true,
+                Some(72.0),
+                Some(42.0),
+                Some(12.0),
+                None,
+            ),
+            (
+                "RtlHanging".to_string(),
+                true,
+                Some(18.0),
+                Some(36.0),
+                None,
+                Some(18.0),
+            ),
+            ("LastValid".to_string(), false, Some(20.0), None, None, None),
+            (
+                "RtlLate".to_string(),
+                true,
+                Some(72.0),
+                Some(42.0),
+                Some(12.0),
+                None,
+            ),
+            (
+                "StyleRtl".to_string(),
+                true,
+                Some(72.0),
+                Some(42.0),
+                Some(12.0),
+                None,
+            ),
+            ("StyleNestOnly".to_string(), true, None, None, None, None),
+        ]
+    }
+
+    #[test]
+    fn opened_legacy_doc_preserves_direct_logical_paragraph_indents() {
+        let document = Document::open(&legacy_paragraph_indent_doc()).unwrap();
+
+        assert_eq!(
+            paragraph_indent_signature(&document.model()),
+            expected_legacy_paragraph_indent_signature()
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_doc_direct_logical_paragraph_indents_roundtrip_to_docx() {
+        let legacy = Document::open(&legacy_paragraph_indent_doc()).unwrap();
+        let reopened = Document::open(&legacy.to_docx()).unwrap();
+
+        assert_eq!(
+            paragraph_indent_signature(&reopened.model()),
+            expected_legacy_paragraph_indent_signature()
+        );
+    }
+
     #[test]
     fn opened_legacy_doc_preserves_direct_paragraph_bidi_and_justification() {
         let document = Document::open(&legacy_paragraph_bidi_doc()).unwrap();
@@ -7502,13 +7715,22 @@ mod tests {
     }
 
     fn synthetic_paragraph_stylesheet(properties: &[(u16, u8)]) -> Vec<u8> {
+        let mut grpprl = Vec::with_capacity(properties.len() * 3);
+        for &(sprm, value) in properties {
+            grpprl.extend_from_slice(&sprm.to_le_bytes());
+            grpprl.push(value);
+        }
+        synthetic_paragraph_stylesheet_grpprl(&grpprl)
+    }
+
+    fn synthetic_paragraph_stylesheet_grpprl(properties: &[u8]) -> Vec<u8> {
         fn push_style(
             stylesheet: &mut Vec<u8>,
             istd: u16,
             sti: u16,
             base: u16,
             name: &str,
-            properties: &[(u16, u8)],
+            properties: &[u8],
         ) {
             let mut std = vec![0u8; 10];
             std[0..2].copy_from_slice(&(sti & 0x0FFF).to_le_bytes());
@@ -7522,12 +7744,9 @@ mod tests {
             }
             std.extend_from_slice(&0u16.to_le_bytes());
 
-            let mut papx = Vec::with_capacity(2 + properties.len() * 3);
+            let mut papx = Vec::with_capacity(2 + properties.len());
             papx.extend_from_slice(&istd.to_le_bytes());
-            for &(sprm, value) in properties {
-                papx.extend_from_slice(&sprm.to_le_bytes());
-                papx.push(value);
-            }
+            papx.extend_from_slice(properties);
             std.extend_from_slice(&(papx.len() as u16).to_le_bytes());
             std.extend_from_slice(&papx);
             if papx.len() % 2 == 1 {
