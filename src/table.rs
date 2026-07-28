@@ -80,6 +80,40 @@ struct Out {
     dropped: bool,
 }
 
+fn normalized_column_widths(rows: &[RowBuild], bounds: &[i16]) -> Vec<f32> {
+    let Some(first) = rows.first().and_then(|row| row.def.as_ref()) else {
+        return Vec::new();
+    };
+    let Some((&left, &right)) = first.rgdxa.first().zip(first.rgdxa.last()) else {
+        return Vec::new();
+    };
+    if first.rgdxa.len() < 2 {
+        return Vec::new();
+    }
+
+    for row in rows {
+        let Some(def) = row.def.as_ref() else {
+            return Vec::new();
+        };
+        if def.rgdxa.len() < 2
+            || def.rgdxa.first() != Some(&left)
+            || def.rgdxa.last() != Some(&right)
+            || def.rgdxa.windows(2).any(|pair| pair[0] >= pair[1])
+        {
+            return Vec::new();
+        }
+    }
+
+    let total = i32::from(right) - i32::from(left);
+    if total <= 0 || bounds.len() < 2 {
+        return Vec::new();
+    }
+    bounds
+        .windows(2)
+        .map(|pair| (i32::from(pair[1]) - i32::from(pair[0])) as f32 / total as f32)
+        .collect()
+}
+
 /// Fold streamed rows into a merge-aware table.
 ///
 /// Column geometry uses the **global set of cell-boundary x-positions**
@@ -97,6 +131,7 @@ pub(crate) fn build(rows: Vec<RowBuild>) -> TableBuildOutput {
         .collect();
     bounds.sort_unstable();
     bounds.dedup();
+    let col_widths_pct = normalized_column_widths(&rows, &bounds);
     let col_of = |x: i16| bounds.binary_search(&x).unwrap_or_else(|e| e);
 
     // Phase A: per-row cells, folding `fMerged` left and computing colspan/col
@@ -203,6 +238,7 @@ pub(crate) fn build(rows: Vec<RowBuild>) -> TableBuildOutput {
         table: Table {
             rows: model_rows,
             header_rows,
+            col_widths_pct,
             ..Default::default()
         },
         cell_pagination,
@@ -222,6 +258,18 @@ mod tests {
                 ..Default::default()
             }],
         })]
+    }
+
+    fn row_with_bounds(bounds: &[i16]) -> RowBuild {
+        let cell_count = bounds.len().saturating_sub(1);
+        RowBuild {
+            cells: (0..cell_count).map(|_| CellBuild::default()).collect(),
+            def: Some(TableDef {
+                rgdxa: bounds.to_vec(),
+                tcgrf: vec![0; cell_count],
+            }),
+            header: false,
+        }
     }
 
     #[test]
@@ -265,6 +313,54 @@ mod tests {
         .table;
         assert_eq!(t.rows[0].cells.len(), 1);
         assert_eq!(t.rows[0].cells[0].col_span, 2);
+    }
+
+    #[test]
+    fn mixed_row_grids_preserve_global_column_proportions() {
+        let table = build(vec![
+            row_with_bounds(&[-500, 500, 3500]),
+            row_with_bounds(&[-500, 1500, 3500]),
+        ])
+        .table;
+
+        assert_eq!(table.col_widths_pct, vec![0.25, 0.25, 0.5]);
+        assert_eq!(
+            table.rows[0]
+                .cells
+                .iter()
+                .map(|cell| cell.col_span)
+                .collect::<Vec<_>>(),
+            vec![1, 2]
+        );
+        assert_eq!(
+            table.rows[1]
+                .cells
+                .iter()
+                .map(|cell| cell.col_span)
+                .collect::<Vec<_>>(),
+            vec![2, 1]
+        );
+    }
+
+    #[test]
+    fn unusable_row_geometry_keeps_content_sized_width_fallback() {
+        let cases = [
+            vec![RowBuild {
+                cells: vec![CellBuild::default()],
+                def: None,
+                header: false,
+            }],
+            vec![row_with_bounds(&[0, 0, 100])],
+            vec![row_with_bounds(&[0, 200, 100])],
+            vec![
+                row_with_bounds(&[0, 100, 300]),
+                row_with_bounds(&[10, 100, 300]),
+            ],
+        ];
+
+        for rows in cases {
+            assert!(build(rows).table.col_widths_pct.is_empty());
+        }
     }
 
     #[test]

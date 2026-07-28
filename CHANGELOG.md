@@ -23,6 +23,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Opened legacy `.doc` tables now preserve relative column proportions from
+  coherent `sprmTDefTable` `rgdxaCenter` row boundaries, including mixed
+  internal row grids represented through the existing global column spans.
+  Missing, zero-width, descending, or inconsistent outer-edge geometry keeps
+  the deterministic content-sized fallback; absolute table sizing, autofit,
+  indentation, preferred cell widths, legacy table RTL, and nested legacy
+  tables remain unsupported.
 - Floating-shape preview coordinates now distinguish the page, page-margin text
   rectangle, and physical left/right/top/bottom margin bands; bounded
   `wrapTopAndBottom` flow also honors top/bottom-margin anchors when their visual

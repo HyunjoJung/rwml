@@ -302,6 +302,10 @@ paragraphs and direct or accepted-current wrapper-contained paragraphs in
 ordinary or recursively nested table cells, without adding those source-only
 render hints to the public `DocModel`. Nested table content remains a flattened
 text preview rather than a nested grid layout.
+Opened legacy `.doc` tables with strictly increasing `sprmTDefTable` row
+boundaries and common logical outer edges also retain normalized relative
+column proportions, including mixed internal row grids represented by column
+spans. Missing or inconsistent geometry retains content-sized columns.
 Eligible front-of-text
 `wrapTopAndBottom` shapes with explicit page/margin or enabled `simplePos`
 vertical geometry also exclude later flow from their page-wide vertical band
@@ -329,7 +333,9 @@ Word-exact list-level alignment, punctuation, or table typography.
 > slice. Legacy STSH properties beyond the four paragraph-pagination controls,
 > table/list-style paragraph effects, piece `Pcd.Prm` modifiers, nested legacy
 > tables/rows, and controls attached only to discarded blank top-level
-> paragraphs remain unsupported.
+> paragraphs remain unsupported. Legacy absolute table width, autofit,
+> indentation, preferred cell-width modifiers, row-specific outer-edge
+> geometry, and table RTL remain outside the bounded relative-width bridge.
 >
 > Opened-document renders draw bounded approximate overlay boxes for recovered
 > `.docx` floating-shape geometry on the recovered top-level body block page. A
@@ -468,8 +474,9 @@ text in the document's ANSI codepage derived from the FIB language id (`lid`) â€
 Korean (`0x0412` â†’ cp949), Japanese, Cyrillic, etc. decode correctly. The **rich
 model** is a lazy second pass: the CHPX character-property bins (bold/italic/
 underline/strike, **font name from `SttbfFfn`, half-point size, color**), the STSH
-style sheet + outline levels (headings), `sprmTDefTable` (merge-aware tables), list
-autonumbers, hyperlink field marks, and `PICF` inline images.
+style sheet + outline levels (headings), `sprmTDefTable` (merge-aware tables with
+bounded relative column proportions), list autonumbers, hyperlink field marks,
+and `PICF` inline images.
 
 The `.docx` **writer** is the inverse of the reader, part by part: `document.xml`
 (`w:rPr`/`w:pPr` with the full property set), a synthesized `styles.xml`
@@ -773,7 +780,8 @@ evidence.
 
 - [x] Codepage-aware `.doc` text; encryption / Word 6/95 detection gates
 - [x] Full read model: runs (CHPX incl. font/size/color), headings (STSH), tables
-      (`sprmTDefTable`), list autonumbers, hyperlinks, inline images
+      (`sprmTDefTable` merges and bounded relative column proportions), list
+      autonumbers, hyperlinks, inline images
 - [x] Unified `.docx` reader into the same model (98.6% recall vs python-docx)
 - [x] **`.docx` writer** - styled authoring (named styles, rich tables with typed nested cell blocks, page setup,
       styled runs, leveled lists, paragraph page-break-before, simple fields, `PAGEREF` helper runs, dirty TOC heading-range fields,

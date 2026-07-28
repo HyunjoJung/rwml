@@ -6689,6 +6689,60 @@ mod tests {
         zw.finish().unwrap().into_inner()
     }
 
+    #[test]
+    fn opened_legacy_doc_preserves_tdef_table_column_proportions() {
+        let text = "left\u{7}right\u{7}\u{7}";
+        let first_cell_end = "left\u{7}".encode_utf16().count() as u32;
+        let second_cell_end = "left\u{7}right\u{7}".encode_utf16().count() as u32;
+        let row_end = text.encode_utf16().count() as u32;
+        let mut row_grpprl = vec![
+            0x16, 0x24, 0x01, // sprmPFInTable
+            0x17, 0x24, 0x01, // sprmPFTtp
+            0x08, 0xD6, 0x30, 0x00, // sprmTDefTable, cb=48
+            0x02, // two cells
+        ];
+        for boundary in [-500i16, 500, 3500] {
+            row_grpprl.extend_from_slice(&boundary.to_le_bytes());
+        }
+        row_grpprl.extend_from_slice(&[0u8; 40]); // two TC80 records
+        let runs = [
+            SyntheticPapxRun {
+                cp_lim: first_cell_end,
+                grpprl: vec![0x16, 0x24, 0x01],
+            },
+            SyntheticPapxRun {
+                cp_lim: second_cell_end,
+                grpprl: vec![0x16, 0x24, 0x01],
+            },
+            SyntheticPapxRun {
+                cp_lim: row_end,
+                grpprl: row_grpprl,
+            },
+        ];
+        let bytes = synth_doc_with_ccp_and_tables(
+            text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [row_end, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        );
+
+        let document = Document::open(&bytes).unwrap();
+        let model = document.model();
+        let Block::Table(table) = &model.blocks[0] else {
+            panic!("synthetic legacy block must be a table");
+        };
+        assert_eq!(table.rows[0].cells.len(), 2);
+        assert_eq!(table.col_widths_pct.len(), 2);
+        assert!((table.col_widths_pct[0] - 0.25).abs() < f32::EPSILON);
+        assert!((table.col_widths_pct[1] - 0.75).abs() < f32::EPSILON);
+    }
+
     #[cfg(all(feature = "docx", feature = "render"))]
     #[test]
     fn opened_docx_layout_uses_private_keep_lines_hints() {
