@@ -7,14 +7,15 @@
 //! (`istdBase`), a display name, and length-prefixed UPX property differences.
 //! A paragraph's `istd` (from its PAPX) indexes this array; the heading level is
 //! derived from `sti` (1–9 = Heading 1–9), the base-style chain, or the localized
-//! name (`Heading N` / `제목 N`). Paragraph styles also resolve the four
-//! pagination SPRMs modeled by the renderer through the bounded base chain.
+//! name (`Heading N` / `제목 N`). Paragraph styles also resolve the bounded
+//! layout and pagination SPRM subsets through the same base chain.
 //!
 //! Reference: [MS-DOC] 2.9.271 (STSH), 2.9.272 (STSHI), 2.9.135 (LPStd),
 //! 2.9.270 (STD), 2.9.270.1 (StdfBase), 2.9.276 (sti).
 
 use crate::papx::{
-    scan_paragraph_pagination_overrides, ParagraphPagination, ParagraphPaginationOverrides,
+    scan_paragraph_style_overrides, ParagraphLayoutOverrides, ParagraphPagination,
+    ParagraphPaginationOverrides,
 };
 use crate::util::u16le;
 
@@ -29,14 +30,15 @@ struct StyleDescription {
 
 struct ParsedStyle {
     description: StyleDescription,
-    pagination: Option<ParagraphPaginationOverrides>,
+    properties: Option<(ParagraphLayoutOverrides, ParagraphPaginationOverrides)>,
 }
 
-/// The parsed stylesheet: per-`istd` heading, name, and resolved pagination.
+/// The parsed stylesheet: per-`istd` heading, name, layout, and pagination.
 #[derive(Debug, Default)]
 pub(crate) struct StyleSheet {
     heading: Vec<Option<u8>>,
     names: Vec<String>,
+    layout: Vec<ParagraphLayoutOverrides>,
     pagination: Vec<ParagraphPagination>,
 }
 
@@ -54,6 +56,11 @@ impl StyleSheet {
             .filter(|s| !s.is_empty())
     }
 
+    /// Layout properties resolved through the paragraph style's base chain.
+    pub(crate) fn paragraph_layout(&self, istd: u16) -> ParagraphLayoutOverrides {
+        self.layout.get(istd as usize).copied().unwrap_or_default()
+    }
+
     /// Pagination properties resolved through the paragraph style's base chain.
     pub(crate) fn paragraph_pagination(&self, istd: u16) -> ParagraphPagination {
         self.pagination
@@ -68,6 +75,7 @@ impl StyleSheet {
         Self {
             heading: vec![None; len],
             names: vec![String::new(); len],
+            layout: vec![ParagraphLayoutOverrides::default(); len],
             pagination,
         }
     }
@@ -95,13 +103,13 @@ impl StyleSheet {
 
         let mut p = 2usize.saturating_add(cb_stshi as usize);
         let mut descs: Vec<Option<StyleDescription>> = Vec::with_capacity(cstd as usize);
-        let mut local_pagination = Vec::with_capacity(cstd as usize);
+        let mut local_properties = Vec::with_capacity(cstd as usize);
         for _ in 0..cstd {
             let Some(cb_std) = u16le(stsh, p) else { break };
             p += 2;
             if cb_std == 0 {
                 descs.push(None); // empty slot still consumes an istd index
-                local_pagination.push(None);
+                local_properties.push(None);
                 continue;
             }
             let cb_std = cb_std as usize;
@@ -111,13 +119,14 @@ impl StyleSheet {
             p += cb_std;
             let istd = descs.len() as u16;
             let parsed = parse_std(std, base_len, istd);
-            local_pagination.push(parsed.as_ref().and_then(|style| style.pagination));
+            local_properties.push(parsed.as_ref().and_then(|style| style.properties));
             descs.push(parsed.map(|style| style.description));
         }
 
         let n = descs.len();
         let mut heading = vec![None; n];
         let mut names = vec![String::new(); n];
+        let mut layout = vec![ParagraphLayoutOverrides::default(); n];
         let mut pagination = vec![ParagraphPagination::default(); n];
         // Per-style cycle guard by epoch: `visited[i]` is the pass (`gen`) that last touched
         // style `i`. "Clearing" between styles is just a fresh `gen` (O(1)) — refilling the
@@ -125,13 +134,17 @@ impl StyleSheet {
         // a CPU DoS on a crafted `.doc`. `gen` starts at 1 so 0 reads as never-visited; `n`
         // is bounded by `cstd` (u16), so `gen = istd + 1` never overflows `u32`.
         let mut visited = vec![0u32; n];
+        let mut layout_visited = vec![0u32; n];
         let mut pagination_visited = vec![0u32; n];
         for istd in 0..n {
             let gen = istd as u32 + 1;
             heading[istd] = resolve_level(&descs, istd, &mut visited, gen, 0);
+            layout[istd] =
+                resolve_layout(&descs, &local_properties, istd, &mut layout_visited, gen, 0)
+                    .unwrap_or_default();
             pagination[istd] = resolve_pagination(
                 &descs,
-                &local_pagination,
+                &local_properties,
                 istd,
                 &mut pagination_visited,
                 gen,
@@ -145,6 +158,7 @@ impl StyleSheet {
         StyleSheet {
             heading,
             names,
+            layout,
             pagination,
         }
     }
@@ -158,8 +172,8 @@ fn parse_std(std: &[u8], base_len: usize, istd: u16) -> Option<ParsedStyle> {
     let cupx = (u16le(std, 4)? & 0x000F) as u8;
     let has_original_style = base_len == 18 && u16le(std, 10)? & 0x1000 != 0;
     let (name, grlp_offset) = parse_xstz(std, base_len)?;
-    let pagination = if sgc == 1 {
-        parse_paragraph_style_pagination(std.get(grlp_offset..)?, cupx, has_original_style, istd)
+    let properties = if sgc == 1 {
+        parse_paragraph_style_properties(std.get(grlp_offset..)?, cupx, has_original_style, istd)
     } else {
         None
     };
@@ -170,7 +184,7 @@ fn parse_std(std: &[u8], base_len: usize, istd: u16) -> Option<ParsedStyle> {
             istd_base,
             name,
         },
-        pagination,
+        properties,
     })
 }
 
@@ -187,12 +201,12 @@ fn parse_xstz(std: &[u8], offset: usize) -> Option<(String, usize)> {
     Some((utf16le(chars), terminator_end))
 }
 
-fn parse_paragraph_style_pagination(
+fn parse_paragraph_style_properties(
     grlp: &[u8],
     cupx: u8,
     has_original_style: bool,
     istd: u16,
-) -> Option<ParagraphPaginationOverrides> {
+) -> Option<(ParagraphLayoutOverrides, ParagraphPaginationOverrides)> {
     if !matches!((cupx, has_original_style), (2, false) | (3, true)) {
         return None;
     }
@@ -200,7 +214,7 @@ fn parse_paragraph_style_pagination(
     if papx.len() < 2 || u16le(papx, 0)? != istd {
         return None;
     }
-    let pagination = scan_paragraph_pagination_overrides(&papx[2..])?;
+    let properties = scan_paragraph_style_overrides(&papx[2..])?;
 
     let (_, next) = read_lp_upx(grlp, offset)?;
     offset = next;
@@ -211,7 +225,7 @@ fn parse_paragraph_style_pagination(
         validate_revision_paragraph_upx(grlp.get(start..end)?)?;
         offset = end;
     }
-    (offset == grlp.len()).then_some(pagination)
+    (offset == grlp.len()).then_some(properties)
 }
 
 fn validate_revision_paragraph_upx(data: &[u8]) -> Option<()> {
@@ -273,7 +287,7 @@ fn resolve_level(
 
 fn resolve_pagination(
     descs: &[Option<StyleDescription>],
-    local: &[Option<ParagraphPaginationOverrides>],
+    local: &[Option<(ParagraphLayoutOverrides, ParagraphPaginationOverrides)>],
     istd: usize,
     visited: &mut [u32],
     gen: u32,
@@ -290,11 +304,46 @@ fn resolve_pagination(
     if description.sgc != 1 {
         return None;
     }
-    let overrides = local.get(istd).copied().flatten()?;
+    let overrides = local.get(istd).copied().flatten()?.1;
     let inherited = if description.istd_base == 0x0FFF {
         ParagraphPagination::default()
     } else {
         resolve_pagination(
+            descs,
+            local,
+            description.istd_base as usize,
+            visited,
+            gen,
+            depth + 1,
+        )?
+    };
+    Some(inherited.apply(overrides))
+}
+
+fn resolve_layout(
+    descs: &[Option<StyleDescription>],
+    local: &[Option<(ParagraphLayoutOverrides, ParagraphPaginationOverrides)>],
+    istd: usize,
+    visited: &mut [u32],
+    gen: u32,
+    depth: usize,
+) -> Option<ParagraphLayoutOverrides> {
+    if depth > MAX_STYLE_BASE_DEPTH
+        || istd >= descs.len()
+        || visited.get(istd).copied().unwrap_or(gen) == gen
+    {
+        return None;
+    }
+    visited[istd] = gen;
+    let description = descs.get(istd)?.as_ref()?;
+    if description.sgc != 1 {
+        return None;
+    }
+    let overrides = local.get(istd).copied().flatten()?.0;
+    let inherited = if description.istd_base == 0x0FFF {
+        ParagraphLayoutOverrides::default()
+    } else {
+        resolve_layout(
             descs,
             local,
             description.istd_base as usize,
@@ -339,6 +388,7 @@ fn utf16le(b: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::papx::ParagraphJustification;
 
     fn paragraph_style_std(
         base_len: usize,
@@ -417,6 +467,87 @@ mod tests {
         StyleSheet::parse(&stsh, 0, stsh.len()).paragraph_pagination(istd)
     }
 
+    fn parsed_layout(
+        base_len: usize,
+        styles: &[Option<Vec<u8>>],
+        istd: u16,
+    ) -> ParagraphLayoutOverrides {
+        let stsh = stylesheet(base_len, styles);
+        StyleSheet::parse(&stsh, 0, stsh.len()).paragraph_layout(istd)
+    }
+
+    #[test]
+    fn resolves_paragraph_layout_inheritance_for_both_std_sizes() {
+        for base_len in [10, 18] {
+            let styles = vec![
+                Some(paragraph_style_std(
+                    base_len,
+                    0,
+                    0x0FFF,
+                    "Normal",
+                    &[(0x2441, 1), (0x2461, 0)],
+                    false,
+                )),
+                Some(paragraph_style_std(
+                    base_len,
+                    1,
+                    0,
+                    "Parent",
+                    &[(0x2403, 0)],
+                    false,
+                )),
+                Some(paragraph_style_std(
+                    base_len,
+                    2,
+                    1,
+                    "Child",
+                    &[(0x2441, 0)],
+                    false,
+                )),
+            ];
+            assert_eq!(
+                parsed_layout(base_len, &styles, 1),
+                ParagraphLayoutOverrides {
+                    bidi: Some(true),
+                    justification: Some(ParagraphJustification::PhysicalLeft),
+                }
+            );
+            assert_eq!(
+                parsed_layout(base_len, &styles, 2),
+                ParagraphLayoutOverrides {
+                    bidi: Some(false),
+                    justification: Some(ParagraphJustification::PhysicalLeft),
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn paragraph_style_layout_is_source_ordered_and_strict() {
+        let styles = vec![Some(paragraph_style_std(
+            10,
+            0,
+            0x0FFF,
+            "Normal",
+            &[
+                (0x2441, 1),
+                (0x2441, 2),
+                (0x2441, 0),
+                (0x2403, 2),
+                (0x2461, 0),
+                (0x2461, 10),
+            ],
+            false,
+        ))];
+        assert_eq!(
+            parsed_layout(10, &styles, 0),
+            ParagraphLayoutOverrides {
+                bidi: Some(false),
+                justification: Some(ParagraphJustification::LogicalStart),
+            }
+        );
+    }
+
     #[test]
     fn resolves_paragraph_pagination_inheritance_for_both_std_sizes() {
         for base_len in [10, 18] {
@@ -493,7 +624,7 @@ mod tests {
             0,
             0x0FFF,
             "Normal",
-            &[(0x2406, 1), (0x2431, 0)],
+            &[(0x2406, 1), (0x2431, 0), (0x2441, 1), (0x2461, 2)],
             true,
         ))];
         assert_eq!(
@@ -505,11 +636,19 @@ mod tests {
                 widow_control: false,
             }
         );
+        assert_eq!(
+            parsed_layout(18, &styles, 0),
+            ParagraphLayoutOverrides {
+                bidi: Some(true),
+                justification: Some(ParagraphJustification::LogicalEnd),
+            }
+        );
     }
 
     #[test]
     fn malformed_paragraph_style_upx_falls_back_without_partial_values() {
-        let valid = paragraph_style_std(10, 0, 0x0FFF, "Normal", &[(0x2405, 1)], false);
+        let valid =
+            paragraph_style_std(10, 0, 0x0FFF, "Normal", &[(0x2405, 1), (0x2441, 1)], false);
         let grlp = 10 + 2 + "Normal".encode_utf16().count() * 2 + 2;
 
         let mut cases = Vec::new();
@@ -544,22 +683,32 @@ mod tests {
         cases.push(missing_name_terminator);
 
         for std in cases {
+            let stsh = stylesheet(10, &[Some(std)]);
+            let parsed = StyleSheet::parse(&stsh, 0, stsh.len());
             assert_eq!(
-                parsed_pagination(10, &[Some(std)], 0),
+                parsed.paragraph_pagination(0),
                 ParagraphPagination::default()
+            );
+            assert_eq!(
+                parsed.paragraph_layout(0),
+                ParagraphLayoutOverrides::default()
             );
         }
     }
 
     #[test]
     fn invalid_base_chains_do_not_apply_partial_style_values() {
-        let page_break = &[(0x2407, 1)];
+        let properties = &[(0x2407, 1), (0x2441, 1)];
         let out_of_range = vec![Some(paragraph_style_std(
-            10, 0, 7, "BadBase", page_break, false,
+            10, 0, 7, "BadBase", properties, false,
         ))];
         assert_eq!(
             parsed_pagination(10, &out_of_range, 0),
             ParagraphPagination::default()
+        );
+        assert_eq!(
+            parsed_layout(10, &out_of_range, 0),
+            ParagraphLayoutOverrides::default()
         );
 
         let empty_base = vec![
@@ -569,7 +718,7 @@ mod tests {
                 1,
                 0,
                 "EmptyBase",
-                page_break,
+                properties,
                 false,
             )),
         ];
@@ -577,14 +726,22 @@ mod tests {
             parsed_pagination(10, &empty_base, 1),
             ParagraphPagination::default()
         );
+        assert_eq!(
+            parsed_layout(10, &empty_base, 1),
+            ParagraphLayoutOverrides::default()
+        );
 
         let cycle = vec![
-            Some(paragraph_style_std(10, 0, 1, "CycleA", page_break, false)),
+            Some(paragraph_style_std(10, 0, 1, "CycleA", properties, false)),
             Some(paragraph_style_std(10, 1, 0, "CycleB", &[], false)),
         ];
         assert_eq!(
             parsed_pagination(10, &cycle, 0),
             ParagraphPagination::default()
+        );
+        assert_eq!(
+            parsed_layout(10, &cycle, 0),
+            ParagraphLayoutOverrides::default()
         );
     }
 
@@ -596,7 +753,7 @@ mod tests {
             0,
             0x0FFF,
             "Root",
-            &[(0x2407, 1)],
+            &[(0x2407, 1), (0x2441, 1)],
             false,
         )));
         for istd in 1..=MAX_STYLE_BASE_DEPTH + 2 {
@@ -612,6 +769,10 @@ mod tests {
         assert_eq!(
             parsed_pagination(10, &styles, (styles.len() - 1) as u16),
             ParagraphPagination::default()
+        );
+        assert_eq!(
+            parsed_layout(10, &styles, (styles.len() - 1) as u16),
+            ParagraphLayoutOverrides::default()
         );
     }
 
