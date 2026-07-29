@@ -347,6 +347,7 @@ pub(crate) fn parse_with_note_numbering(
     let mut fields = Vec::new();
     let mut current = Vec::new();
     let mut xml_depth = 0usize;
+    let mut run_depth = 0usize;
     let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
@@ -360,6 +361,9 @@ pub(crate) fn parse_with_note_numbering(
                 if matches!(name, b"del" | b"moveFrom" | b"pPrChange") {
                     skip_subtree(&mut r);
                     continue;
+                }
+                if name == b"r" {
+                    run_depth = run_depth.saturating_add(1);
                 }
                 let mut consumed_element = false;
                 match name {
@@ -392,16 +396,20 @@ pub(crate) fn parse_with_note_numbering(
                     b"t" => {
                         let text = read_text(&mut r);
                         consumed_element = true;
-                        if let Some(field) = current.last_mut() {
-                            if field.phase == FieldPhase::Result {
-                                field.result.push_str(&text);
+                        if run_depth > 0 {
+                            if let Some(field) = current.last_mut() {
+                                if field.phase == FieldPhase::Result {
+                                    field.result.push_str(&text);
+                                }
                             }
                         }
                     }
                     _ => {
-                        if let Some(field) = current.last_mut() {
-                            if field.phase == FieldPhase::Result {
-                                append_field_result_inline(&mut field.result, &e);
+                        if run_depth > 0 {
+                            if let Some(field) = current.last_mut() {
+                                if field.phase == FieldPhase::Result {
+                                    append_field_result_inline(&mut field.result, &e);
+                                }
                             }
                         }
                     }
@@ -428,9 +436,11 @@ pub(crate) fn parse_with_note_numbering(
                         apply_fld_char(&e, &mut current, &mut fields);
                     }
                     _ => {
-                        if let Some(field) = current.last_mut() {
-                            if field.phase == FieldPhase::Result {
-                                append_field_result_inline(&mut field.result, &e);
+                        if run_depth > 0 {
+                            if let Some(field) = current.last_mut() {
+                                if field.phase == FieldPhase::Result {
+                                    append_field_result_inline(&mut field.result, &e);
+                                }
                             }
                         }
                     }
@@ -441,6 +451,9 @@ pub(crate) fn parse_with_note_numbering(
                 let name = local(qname.as_ref());
                 if name == b"AlternateContent" {
                     alternate_content_stack.pop();
+                }
+                if name == b"r" {
+                    run_depth = run_depth.saturating_sub(1);
                 }
                 xml_depth = xml_depth.saturating_sub(1);
             }
