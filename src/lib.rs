@@ -549,6 +549,7 @@ struct DocState {
     pieces: Vec<clx::Piece>,
     papx: papx::PapxTable,
     chpx: chpx::ChpxTable,
+    prm1_patches: Vec<Option<chpx::PcdPrm1Patch>>,
     stylesheet: stsh::StyleSheet,
     lists: list::Lists,
     /// Font-name table (`SttbfFfn`), for resolving CHPX font indices to names.
@@ -582,6 +583,7 @@ fn legacy_build_output_from_doc_state(state: &DocState) -> assemble::LegacyBuild
             enc: state.enc,
             papx: &state.papx,
             chpx: &state.chpx,
+            prm1_patches: &state.prm1_patches,
             stylesheet: &state.stylesheet,
             data: &state.data,
             fonts: &state.fonts,
@@ -5179,10 +5181,11 @@ impl DocState {
             .get(fib.fc_clx..end)
             .ok_or_else(|| Error::PieceTable("CLX out of table bounds".into()))?;
 
-        let pieces = clx::parse(clx)?;
+        let clx::ParsedClx { pieces, prcs } = clx::parse(clx)?;
         if pieces.is_empty() {
             return Err(Error::PieceTable("empty piece table".into()));
         }
+        let prm1_patches = chpx::compile_pcd_prm1_patches(&prcs);
 
         // Paragraph properties (best-effort) for table reconstruction; an empty
         // table degrades gracefully to plain-paragraph rendering.
@@ -5219,6 +5222,7 @@ impl DocState {
             pieces,
             papx,
             chpx,
+            prm1_patches,
             stylesheet,
             lists,
             fonts,
@@ -5421,6 +5425,7 @@ mod tests {
         endnote_ref_lcb_override: Option<u32>,
         shape_anchor_cps: Option<&'a [u32]>,
         shape_anchor_lcb_override: Option<u32>,
+        prcs: Option<&'a [&'a [u8]]>,
         piece_prms: [u16; 2],
         chpx_runs: Option<&'a [SyntheticChpxRun]>,
         papx_runs: Option<&'a [SyntheticPapxRun]>,
@@ -5510,7 +5515,14 @@ mod tests {
         plc.extend_from_slice(&(0x4000_0000u32 | (fc2 as u32 * 2)).to_le_bytes());
         plc.extend_from_slice(&tables.piece_prms[1].to_le_bytes());
 
-        let mut clx = vec![0x02u8];
+        let mut clx = Vec::new();
+        for grpprl in tables.prcs.unwrap_or_default() {
+            assert!(grpprl.len() <= 0x3FA2);
+            clx.push(0x01);
+            clx.extend_from_slice(&(grpprl.len() as i16).to_le_bytes());
+            clx.extend_from_slice(grpprl);
+        }
+        clx.push(0x02);
         clx.extend_from_slice(&(plc.len() as u32).to_le_bytes());
         clx.extend_from_slice(&plc);
 
@@ -7721,6 +7733,11 @@ mod tests {
         (u16::from(value) << 8) | (u16::from(isprm) << 1)
     }
 
+    fn prm1(index: u16) -> u16 {
+        assert!(index <= 0x7FFF);
+        (index << 1) | 1
+    }
+
     fn legacy_pcd_prm0_doc(
         text_utf16: &str,
         ansi_tail: &str,
@@ -7739,6 +7756,33 @@ mod tests {
             0,
             [ccp_text, 0, 0, 0, 0, 0],
             SyntheticDocTables {
+                piece_prms,
+                chpx_runs,
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    fn legacy_pcd_prm1_doc(
+        text_utf16: &str,
+        ansi_tail: &str,
+        piece_prms: [u16; 2],
+        prcs: &[&[u8]],
+        chpx_runs: Option<&[SyntheticChpxRun]>,
+    ) -> Vec<u8> {
+        let ccp_text = text_utf16
+            .encode_utf16()
+            .count()
+            .saturating_add(ansi_tail.len()) as u32;
+        synth_doc_with_ccp_and_tables(
+            text_utf16,
+            ansi_tail,
+            0x00C1,
+            0,
+            0,
+            [ccp_text, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                prcs: Some(prcs),
                 piece_prms,
                 chpx_runs,
                 ..SyntheticDocTables::default()
@@ -7789,6 +7833,273 @@ mod tests {
                 "literal Prm0 isprm 0x{isprm:02X} was not applied"
             );
         }
+    }
+
+    #[test]
+    fn opened_legacy_doc_applies_bounded_pcd_prm1_character_formatting() {
+        let formatting = [
+            0x35, 0x08, 1, // bold
+            0x36, 0x08, 1, // italic
+            0x37, 0x08, 1, // strike
+            0x3C, 0x08, 1, // hidden
+            0x3A, 0x08, 1, // small caps
+            0x3B, 0x08, 1, // caps
+            0x5A, 0x08, 1, // RTL
+            0x3E, 0x2A, 1, // underline
+            0x0C, 0x2A, 7, // yellow highlight
+            0x48, 0x2A, 1, // superscript
+        ];
+        let prcs = [&formatting[..]];
+        let bytes = legacy_pcd_prm1_doc("Complex\r", "", [prm1(0), 0], &prcs, None);
+        let model = Document::open(&bytes).unwrap().model();
+
+        assert_eq!(paragraph_run_toggles(&model), vec![("Complex", [true; 6])]);
+        let Block::Paragraph(paragraph) = &model.blocks[0] else {
+            panic!("synthetic legacy block must be a paragraph");
+        };
+        let props = &paragraph.runs[0].props;
+        assert!(props.underline);
+        assert!(props.rtl);
+        assert_eq!(props.highlight.as_deref(), Some("yellow"));
+        assert_eq!(props.vert_align, VertAlign::Super);
+    }
+
+    #[test]
+    fn legacy_doc_pcd_prm1_stays_aligned_across_piece_encodings_and_surrogates() {
+        let bold = [0x35, 0x08, 1];
+        let italic = [0x36, 0x08, 1];
+        let prcs = [&bold[..], &italic[..]];
+        let bytes = legacy_pcd_prm1_doc("A\u{1F600}", "Tail\r", [prm1(0), prm1(1)], &prcs, None);
+        let document = Document::open(&bytes).unwrap();
+
+        assert_eq!(document.text(), "A\u{1F600}Tail");
+        assert_eq!(
+            paragraph_run_toggles(&document.model()),
+            vec![
+                ("A\u{1F600}", [true, false, false, false, false, false]),
+                ("Tail", [false, true, false, false, false, false]),
+            ]
+        );
+    }
+
+    #[test]
+    fn legacy_doc_pcd_prm1_overrides_chpx_and_preserves_unmodified_properties() {
+        let chpx = [SyntheticChpxRun {
+            cp_lim: 4,
+            grpprl: vec![
+                0x35, 0x08, 1, // bold
+                0x0C, 0x2A, 7, // yellow highlight
+            ],
+        }];
+        let overlay = [
+            0x35, 0x08, 0, // bold off
+            0x36, 0x08, 1, // italic on
+        ];
+        let prcs = [&overlay[..]];
+        let bytes = legacy_pcd_prm1_doc("Mix\r", "", [prm1(0), 0], &prcs, Some(&chpx));
+        let model = Document::open(&bytes).unwrap().model();
+
+        assert_eq!(
+            paragraph_run_toggles(&model),
+            vec![("Mix", [false, true, false, false, false, false])]
+        );
+        let Block::Paragraph(paragraph) = &model.blocks[0] else {
+            panic!("synthetic legacy block must be a paragraph");
+        };
+        assert_eq!(paragraph.runs[0].props.highlight.as_deref(), Some("yellow"));
+    }
+
+    #[test]
+    fn missing_or_style_dependent_pcd_prm1_keeps_chpx_formatting() {
+        let bold_chpx = [SyntheticChpxRun {
+            cp_lim: 4,
+            grpprl: vec![0x35, 0x08, 1],
+        }];
+        let style_relative = [0x35, 0x08, 0x80];
+        let prcs = [&style_relative[..]];
+        for raw_prm in [prm1(0), prm1(1)] {
+            let bytes = legacy_pcd_prm1_doc("Keep\r", "", [raw_prm, 0], &prcs, Some(&bold_chpx));
+            assert_eq!(
+                paragraph_run_toggles(&Document::open(&bytes).unwrap().model()),
+                vec![("Keep", [true, false, false, false, false, false])]
+            );
+        }
+    }
+
+    #[test]
+    fn equal_effective_pcd_prm1_properties_coalesce_across_piece_boundaries() {
+        let bold_a = [0x35, 0x08, 1];
+        let bold_b = [0x35, 0x08, 1];
+        let prcs = [&bold_a[..], &bold_b[..]];
+        let bytes = legacy_pcd_prm1_doc("A\u{1F600}", "Tail\r", [prm1(0), prm1(1)], &prcs, None);
+
+        assert_eq!(
+            paragraph_run_toggles(&Document::open(&bytes).unwrap().model()),
+            vec![("A\u{1F600}Tail", [true, false, false, false, false, false])]
+        );
+    }
+
+    #[test]
+    fn legacy_doc_pcd_prm1_stays_aligned_across_story_regions() {
+        let bold = [0x35, 0x08, 1];
+        let italic = [0x36, 0x08, 1];
+        let prcs = [&bold[..], &italic[..]];
+        let bytes = synth_doc_with_ccp_and_tables(
+            "Main\r",
+            "Note\r",
+            0x00C1,
+            0,
+            0,
+            [5, 5, 0, 0, 0, 0],
+            SyntheticDocTables {
+                prcs: Some(&prcs),
+                piece_prms: [prm1(0), prm1(1)],
+                ..SyntheticDocTables::default()
+            },
+        );
+        let model = Document::open(&bytes).unwrap().model();
+
+        for (kind, text, expected) in [
+            (
+                SourceRegionKind::Main,
+                "Main",
+                [true, false, false, false, false, false],
+            ),
+            (
+                SourceRegionKind::Footnote,
+                "Note",
+                [false, true, false, false, false, false],
+            ),
+        ] {
+            let region = model
+                .regions
+                .iter()
+                .find(|region| region.kind == kind)
+                .expect("synthetic source region");
+            let Block::Paragraph(paragraph) = &model.blocks[region.block_start] else {
+                panic!("synthetic source region must contain a paragraph");
+            };
+            assert_eq!(paragraph.runs.len(), 1);
+            assert_eq!(paragraph.runs[0].text, text);
+            assert_eq!(
+                [
+                    paragraph.runs[0].props.bold,
+                    paragraph.runs[0].props.italic,
+                    paragraph.runs[0].props.strike,
+                    paragraph.runs[0].props.small_caps,
+                    paragraph.runs[0].props.caps,
+                    paragraph.runs[0].props.hidden,
+                ],
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_doc_pcd_prm1_reaches_every_modeled_story_region() {
+        let bold = [0x35, 0x08, 1];
+        let prcs = [&bold[..]];
+        let bytes = synth_doc_with_ccp_and_tables(
+            "BODYFTNHEADANNENDBOX",
+            "",
+            0x00C1,
+            0,
+            0,
+            [4, 3, 4, 3, 3, 3],
+            SyntheticDocTables {
+                prcs: Some(&prcs),
+                piece_prms: [prm1(0), 0],
+                ..SyntheticDocTables::default()
+            },
+        );
+        let model = Document::open(&bytes).unwrap().model();
+
+        for (kind, text) in [
+            (SourceRegionKind::Main, "BODY"),
+            (SourceRegionKind::Footnote, "FTN"),
+            (SourceRegionKind::HeaderFooter, "HEAD"),
+            (SourceRegionKind::Annotation, "ANN"),
+            (SourceRegionKind::Endnote, "END"),
+            (SourceRegionKind::TextBox, "BOX"),
+        ] {
+            let region = model
+                .regions
+                .iter()
+                .find(|region| region.kind == kind)
+                .expect("synthetic source region");
+            let Block::Paragraph(paragraph) = &model.blocks[region.block_start] else {
+                panic!("synthetic source region must contain a paragraph");
+            };
+            assert_eq!(paragraph.runs.len(), 1);
+            assert_eq!(paragraph.runs[0].text, text);
+            assert!(paragraph.runs[0].props.bold);
+        }
+    }
+
+    #[test]
+    fn explicit_clear_pcd_prm1_properties_coalesce_with_implicit_defaults() {
+        let clears = [
+            0x35, 0x08, 0, // bold
+            0x36, 0x08, 0, // italic
+            0x37, 0x08, 0, // strike
+            0x3C, 0x08, 0, // hidden
+            0x3A, 0x08, 0, // small caps
+            0x3B, 0x08, 0, // caps
+            0x5A, 0x08, 0, // RTL
+            0x3E, 0x2A, 0, // underline
+            0x0C, 0x2A, 0, // highlight
+            0x48, 0x2A, 0, // baseline
+        ];
+        let prcs = [&clears[..]];
+        let bytes = legacy_pcd_prm1_doc("A\u{1F600}", "Tail\r", [prm1(0), 0], &prcs, None);
+        let model = Document::open(&bytes).unwrap().model();
+
+        assert_eq!(
+            paragraph_run_toggles(&model),
+            vec![("A\u{1F600}Tail", [false; 6])]
+        );
+        let Block::Paragraph(paragraph) = &model.blocks[0] else {
+            panic!("synthetic legacy block must be a paragraph");
+        };
+        let props = &paragraph.runs[0].props;
+        assert!(!props.underline);
+        assert!(!props.rtl);
+        assert_eq!(props.highlight, None);
+        assert_eq!(props.vert_align, VertAlign::Baseline);
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_doc_pcd_prm1_character_formatting_roundtrips_to_docx() {
+        let formatting = [
+            0x35, 0x08, 1, // bold
+            0x36, 0x08, 1, // italic
+            0x37, 0x08, 1, // strike
+            0x3C, 0x08, 1, // hidden
+            0x3A, 0x08, 1, // small caps
+            0x3B, 0x08, 1, // caps
+            0x5A, 0x08, 1, // RTL
+            0x3E, 0x2A, 1, // underline
+            0x0C, 0x2A, 7, // yellow highlight
+            0x48, 0x2A, 2, // subscript
+        ];
+        let prcs = [&formatting[..]];
+        let legacy =
+            Document::open(&legacy_pcd_prm1_doc("X\r", "", [prm1(0), 0], &prcs, None)).unwrap();
+        let reopened = Document::open(&legacy.to_docx()).unwrap();
+
+        assert_eq!(
+            paragraph_run_toggles(&reopened.model()),
+            vec![("X", [true; 6])]
+        );
+        let Block::Paragraph(paragraph) = &reopened.model().blocks[0] else {
+            panic!("reopened DOCX must contain a paragraph");
+        };
+        let props = &paragraph.runs[0].props;
+        assert!(props.underline);
+        assert!(props.rtl);
+        assert_eq!(props.highlight.as_deref(), Some("yellow"));
+        assert_eq!(props.vert_align, VertAlign::Sub);
     }
 
     #[test]

@@ -16,6 +16,10 @@ use crate::util::{u16le, u32le};
 /// real documents have at most thousands), but it bounds a crafted PlcPcd that would
 /// otherwise declare millions of overlapping pieces to amplify decoding (see `parse_plcpcd`).
 const MAX_PIECES: usize = 1 << 20;
+/// A `Prm1.igrpprl` is 15 bits, so only this many ordered PRCs are addressable.
+const MAX_PRCS: usize = 1 << 15;
+/// [MS-DOC] `PrcData.cbGrpprl` upper bound.
+const MAX_PRC_GRPPRL_LEN: usize = 0x3FA2;
 
 /// One text piece resolved from the piece table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,9 +34,22 @@ pub(crate) struct Piece {
     pub prm: u16,
 }
 
-/// Parse the CLX, returning the ordered piece list.
-pub(crate) fn parse(clx: &[u8]) -> Result<Vec<Piece>> {
+/// Parsed CLX structures retained by the legacy reader.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ParsedClx {
+    pub pieces: Vec<Piece>,
+    /// Ordered `PrcData.GrpPrl` payloads addressed by `Prm1.igrpprl`.
+    pub prcs: Vec<Vec<u8>>,
+}
+
+/// Parse the CLX, returning its ordered PRCs and piece list.
+pub(crate) fn parse(clx: &[u8]) -> Result<ParsedClx> {
+    parse_with_limits(clx, MAX_PRCS, MAX_PRC_GRPPRL_LEN)
+}
+
+fn parse_with_limits(clx: &[u8], max_prcs: usize, max_prc_len: usize) -> Result<ParsedClx> {
     let mut pos = 0usize;
+    let mut prcs = Vec::new();
     loop {
         let marker = *clx
             .get(pos)
@@ -42,10 +59,30 @@ pub(crate) fn parse(clx: &[u8]) -> Result<Vec<Piece>> {
                 // Prc: 1-byte clxt + 2-byte cbGrpprl + cbGrpprl bytes.
                 let cb = u16le(clx, pos + 1)
                     .ok_or_else(|| Error::PieceTable("truncated Prc".into()))?
-                    as usize;
-                pos = pos
-                    .checked_add(3 + cb)
+                    as i16;
+                let cb = usize::try_from(cb)
+                    .map_err(|_| Error::PieceTable("negative Prc length".into()))?;
+                if cb > max_prc_len {
+                    return Err(Error::PieceTable(format!(
+                        "Prc grpprl length {cb} exceeds limit {max_prc_len}"
+                    )));
+                }
+                if prcs.len() >= max_prcs {
+                    return Err(Error::PieceTable(format!(
+                        "Prc count exceeds limit {max_prcs}"
+                    )));
+                }
+                let start = pos
+                    .checked_add(3)
                     .ok_or_else(|| Error::PieceTable("Prc length overflow".into()))?;
+                let end = start
+                    .checked_add(cb)
+                    .ok_or_else(|| Error::PieceTable("Prc length overflow".into()))?;
+                let grpprl = clx
+                    .get(start..end)
+                    .ok_or_else(|| Error::PieceTable("Prc out of CLX bounds".into()))?;
+                prcs.push(grpprl.to_vec());
+                pos = end;
             }
             0x02 => {
                 // Pcdt: 1-byte clxt + 4-byte lcb + PlcPcd[lcb].
@@ -56,7 +93,10 @@ pub(crate) fn parse(clx: &[u8]) -> Result<Vec<Piece>> {
                 let plc = clx
                     .get(start..start.saturating_add(lcb))
                     .ok_or_else(|| Error::PieceTable("PlcPcd out of CLX bounds".into()))?;
-                return parse_plcpcd(plc);
+                return Ok(ParsedClx {
+                    pieces: parse_plcpcd(plc)?,
+                    prcs,
+                });
             }
             other => {
                 return Err(Error::PieceTable(format!(
@@ -133,9 +173,10 @@ mod tests {
 
     #[test]
     fn parses_single_uncompressed_piece() {
-        let pieces = parse(&one_piece_pcdt()).unwrap();
+        let parsed = parse(&one_piece_pcdt()).unwrap();
+        assert!(parsed.prcs.is_empty());
         assert_eq!(
-            pieces,
+            parsed.pieces,
             vec![Piece {
                 cch: 5,
                 fc: 0x100,
@@ -191,9 +232,55 @@ mod tests {
         // Prc: 0x01 + cbGrpprl(2) + 2 bytes, then the Pcdt.
         let mut clx = vec![0x01u8, 0x02, 0x00, 0xAA, 0xBB];
         clx.extend_from_slice(&one_piece_pcdt());
-        let pieces = parse(&clx).unwrap();
-        assert_eq!(pieces.len(), 1);
-        assert_eq!(pieces[0].fc, 0x100);
+        let parsed = parse(&clx).unwrap();
+        assert_eq!(parsed.prcs, vec![vec![0xAA, 0xBB]]);
+        assert_eq!(parsed.pieces.len(), 1);
+        assert_eq!(parsed.pieces[0].fc, 0x100);
+    }
+
+    #[test]
+    fn retains_ordered_and_empty_prc_payloads() {
+        let mut clx = vec![
+            0x01, 0x00, 0x00, // empty PRC at index 0
+            0x01, 0x03, 0x00, 0x35, 0x08, 0x01, // bold PRC at index 1
+        ];
+        clx.extend_from_slice(&one_piece_pcdt());
+
+        assert_eq!(
+            parse(&clx).unwrap().prcs,
+            vec![Vec::new(), vec![0x35, 0x08, 0x01]]
+        );
+    }
+
+    #[test]
+    fn validates_signed_size_and_count_prc_boundaries() {
+        assert!(parse(&[0x01, 0xFF, 0xFF]).is_err());
+        assert!(parse_with_limits(&[0x01, 0x03, 0x00, 1, 2, 3], 1, 2).is_err());
+        assert!(parse(&[0x01, 0x02, 0x00, 1]).is_err());
+
+        let mut maximum = vec![0x01];
+        maximum.extend_from_slice(&(MAX_PRC_GRPPRL_LEN as i16).to_le_bytes());
+        maximum.resize(3 + MAX_PRC_GRPPRL_LEN, 0);
+        maximum.extend_from_slice(&one_piece_pcdt());
+        assert_eq!(parse(&maximum).unwrap().prcs[0].len(), MAX_PRC_GRPPRL_LEN);
+
+        let mut oversized = vec![0x01];
+        oversized.extend_from_slice(&((MAX_PRC_GRPPRL_LEN + 1) as i16).to_le_bytes());
+        assert!(parse(&oversized).is_err());
+
+        let mut maximum_count = Vec::with_capacity(MAX_PRCS * 3 + one_piece_pcdt().len());
+        for _ in 0..MAX_PRCS {
+            maximum_count.extend_from_slice(&[0x01, 0x00, 0x00]);
+        }
+        maximum_count.extend_from_slice(&one_piece_pcdt());
+        assert_eq!(parse(&maximum_count).unwrap().prcs.len(), MAX_PRCS);
+
+        let mut excess = vec![
+            0x01, 0x00, 0x00, // index 0
+            0x01, 0x00, 0x00, // exceeds the test cap
+        ];
+        excess.extend_from_slice(&one_piece_pcdt());
+        assert!(parse_with_limits(&excess, 1, MAX_PRC_GRPPRL_LEN).is_err());
     }
 
     #[test]

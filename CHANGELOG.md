@@ -77,16 +77,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Source-authored display extents, crop/flip/effects, floating-anchor offsets,
   exclusion-zone reflow, table-cell images, and Word-exact inline baseline
   placement remain unsupported.
-- Opened legacy `.doc` pieces now retain their raw PCD `Prm` and apply the
-  bounded literal `Prm0` character-toggle subset after CHPX: bold, italic,
-  strike, small caps, caps, and hidden text can be forced off or on. The
+- Opened legacy `.doc` pieces now retain their raw PCD `Prm` plus ordered CLX
+  PRCs and apply bounded character formatting after CHPX. Literal `Prm0`
+  values force bold, italic, strike, small caps, caps, and hidden text off or
+  on. Precompiled `Prm1` groups additionally support literal underline and RTL,
+  highlight palette values, and baseline/superscript/subscript, with supported
+  values applied in source order and explicit clears preserved; underline
+  styles collapse to the shared boolean model. Signed PRC lengths, payload
+  bounds, and the 15-bit addressable count are validated, each group is scanned
+  once during open, and complete unrelated property operands are skipped. The
   modifier remains aligned per emitted UTF-16 unit across compressed and
   uncompressed pieces, surrogate pairs, overlapping FC ranges, and every
   modeled story region; effective properties drive run boundaries and survive
-  `.docx` conversion/reopen. Explicit PCD values override the corresponding
-  CHPX value, while Prm1, style-relative/invalid operands, unknown or other
-  `isprm` values, paragraph modifiers, and picture-anchor formatting leave the
-  existing CHPX-derived result unchanged.
+  `.docx` conversion/reopen. Missing indices and malformed, style/reset-
+  dependent, or style-relative groups atomically leave the CHPX-derived result
+  unchanged. Piece-level font/size/color and complex-script effects,
+  pictures/OLE, paragraph/list/table/section properties, tab changes,
+  revision-original formatting, and full character-style resolution remain
+  unsupported.
 - Opened legacy `.doc` paragraphs now preserve valid unsigned-twip
   `sprmPDyaBefore`/`sprmPDyaAfter` spacing and positive proportional
   `sprmPDyaLine` LSPD values from paragraph styles and direct PAPX. Sparse
@@ -184,7 +192,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Cells stay in source-logical order through the shared model and `.docx`
   conversion while the existing PDF renderer mirrors their visual positions.
   Invalid Bool16 values are ignored and truncated modifiers retain only the
-  valid prefix. Table-style/Data-stream/`Pcd.Prm` direction, additional
+  valid prefix. Table-style/Data-stream/`Pcd.Prm` table direction, additional
   position/wrapping/protection boundaries, and nested legacy tables remain
   unsupported.
 - Opened legacy `.doc` paragraphs now preserve valid direct `sprmPFBiDi`
@@ -200,15 +208,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   final direct PAPX overrides. Character-style/language-derived direction,
   list-level and compatibility-era/character-unit/mirrored legacy indents,
   exact RTL list-level layout, table-style-derived visual RTL, piece `Pcd.Prm`
-  direction/paragraph modifiers,
+  paragraph direction/modifiers,
   and Markdown/HTML visual RTL remain unsupported.
 - Opened legacy `.doc` CHPX runs now preserve literal direct `sprmCFBiDi`
   on/off values through the shared model, `.docx` conversion, and PDF run
   isolation. Style-relative operands use the conservative unknown fallback,
   while character-style/reset operators preserve established direction as
   required by MS-DOC. Character-style/language-derived direction,
-  complex-script properties, table-style-derived visual RTL, piece `Pcd.Prm`
-  direction modifiers,
+  complex-script properties, table-style-derived visual RTL, style-relative or
+  style/reset-dependent piece `Pcd.Prm` direction modifiers,
   and Markdown/HTML visual RTL remain unsupported.
 - Opened legacy `.doc` CHPX runs now preserve literal direct
   `sprmCFSmallCaps` and `sprmCFCaps` on/off values through the shared model,
@@ -221,16 +229,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   superscript, and subscript values through the shared model, `.docx`
   conversion, and PDF rendering. Complete character-style/reset modifiers
   conservatively discard stale direct state and use the baseline fallback until
-  a later valid direct value; character-style-derived alignment, piece
-  `Pcd.Prm` vertical-alignment modifiers, arbitrary `sprmCHpsPos` baseline
-  shifts, and Markdown/HTML visual
+  a later valid direct value; character-style-derived alignment,
+  style/reset-dependent piece `Pcd.Prm` vertical-alignment modifiers,
+  arbitrary `sprmCHpsPos` baseline shifts, and Markdown/HTML visual
   super/subscript remain unsupported.
 - Opened legacy `.doc` CHPX runs now preserve `sprmCHighlight` Ico palette
   values through the shared model, `.docx` conversion, and PDF rendering,
   including explicit highlight clearing and deterministic rejection of invalid
-  or truncated operands. This covers FKP/CHPX-resident modifiers; piece
-  `Pcd.Prm` highlighting, full legacy character-style resolution, and
-  Markdown/HTML visual highlighting remain unsupported.
+  or truncated operands. Style/reset-dependent piece `Pcd.Prm` highlighting,
+  full legacy character-style resolution, and Markdown/HTML visual
+  highlighting remain unsupported.
 - Opened legacy `.doc` tables now preserve relative column proportions from
   coherent `sprmTDefTable` `rgdxaCenter` row boundaries, including mixed
   internal row grids represented through the existing global column spans.
