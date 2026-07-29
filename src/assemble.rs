@@ -17,13 +17,14 @@ use crate::fib::{self, Fib};
 use crate::list::Numberer;
 use crate::model::{
     normalize_field_instruction, Align, Block, CharProps, DocMeta, DocModel, DocSetup, FieldRole,
-    Image, Indent, ListInfo, PaginationHint, ParaProps, Paragraph, SectionBreakKind, SectionSetup,
-    SourceRegion, SourceRegionKind, Stats, TableCellPaginationHints, TableRowPaginationHint,
+    Image, Indent, ListInfo, PageSetup, PaginationHint, ParaProps, Paragraph, SectionBreakKind,
+    SectionSetup, SourceRegion, SourceRegionKind, Stats, TableCellPaginationHints,
+    TableRowPaginationHint,
 };
 use crate::papx::{PapxTable, ParagraphIndentOverrides, ParagraphJustification};
 use crate::stsh::StyleSheet;
 use crate::table::{self, CellBuild, RowBuild};
-use crate::util::u32le;
+use crate::util::{u16le, u32le};
 
 /// Immutable source structures threaded through legacy model assembly: the decoded
 /// `(units, fcs)` stream plus the property/style/font tables. Bundled so the region
@@ -107,7 +108,7 @@ pub(crate) fn build_model_with_render_hints(
     } = build_legacy_region_blocks(&src, numberer, fib, table, &section_spans);
     let mut blocks = blocks;
     let stats = compute_stats(&blocks);
-    let setup = legacy_doc_setup_from_regions(&mut blocks, &regions);
+    let setup = legacy_doc_setup_from_regions(&mut blocks, &regions, &section_spans);
     LegacyBuildOutput {
         model: DocModel {
             blocks,
@@ -127,16 +128,29 @@ pub(crate) fn build_model_with_render_hints(
     }
 }
 
-fn legacy_doc_setup_from_regions(blocks: &mut [Block], regions: &[SourceRegion]) -> DocSetup {
+fn legacy_doc_setup_from_regions(
+    blocks: &mut [Block],
+    regions: &[SourceRegion],
+    section_spans: &[LegacySectionSpan],
+) -> DocSetup {
     let section_count = blocks
         .iter()
         .filter(|block| matches!(block, Block::SectionBreak(_)))
         .count()
         .saturating_add(1);
     if section_count > 1 {
-        return legacy_doc_section_setups_from_regions(blocks, regions, section_count);
+        return legacy_doc_section_setups_from_regions(
+            blocks,
+            regions,
+            section_count,
+            section_spans,
+        );
     }
-    legacy_doc_flat_setup_from_regions(blocks, regions)
+    let mut setup = legacy_doc_flat_setup_from_regions(blocks, regions);
+    if let [span] = section_spans {
+        setup.page = span.page;
+    }
+    setup
 }
 
 fn legacy_doc_flat_setup_from_regions(blocks: &[Block], regions: &[SourceRegion]) -> DocSetup {
@@ -160,11 +174,28 @@ fn legacy_doc_section_setups_from_regions(
     blocks: &mut [Block],
     regions: &[SourceRegion],
     section_count: usize,
+    section_spans: &[LegacySectionSpan],
 ) -> DocSetup {
     let mut section_setups = vec![SectionSetup::default(); section_count];
+    for (setup, span) in section_setups.iter_mut().zip(section_spans) {
+        setup.page = span.page;
+    }
     for region in regions.iter().filter(|region| {
         region.kind == SourceRegionKind::HeaderFooter && region.block_start < region.block_end
     }) {
+        let start = region.block_start.min(blocks.len());
+        let end = region.block_end.min(blocks.len());
+        if start >= end {
+            continue;
+        }
+        if region.source_story_index.is_none() {
+            for section_setup in &mut section_setups {
+                if section_setup.header.is_empty() {
+                    section_setup.header = blocks[start..end].to_vec();
+                }
+            }
+            continue;
+        }
         let Some(section_index) = legacy_header_footer_section_index(region.source_story_index)
         else {
             continue;
@@ -177,9 +208,7 @@ fn legacy_doc_section_setups_from_regions(
         else {
             continue;
         };
-        let start = region.block_start.min(blocks.len());
-        let end = region.block_end.min(blocks.len());
-        if start < end && slot.is_empty() {
+        if slot.is_empty() {
             *slot = blocks[start..end].to_vec();
         }
     }
@@ -206,6 +235,7 @@ fn legacy_doc_section_setups_from_regions(
 }
 
 fn apply_legacy_section_setup_to_doc_setup(section: &SectionSetup, setup: &mut DocSetup) {
+    setup.page = section.page;
     setup.header = section.header.clone();
     setup.first_header = section.first_header.clone();
     setup.even_header = section.even_header.clone();
@@ -229,10 +259,7 @@ fn build_legacy_region_blocks(
         .any(|story| story.story_index >= HEADER_FOOTER_STORY_BASE);
 
     for (kind, source_len_cp) in legacy_region_specs(fib) {
-        if kind == SourceRegionKind::Main
-            && has_header_footer_setup_stories
-            && section_spans.len() > 1
-        {
+        if kind == SourceRegionKind::Main && section_spans.len() > 1 {
             push_legacy_main_section_regions(
                 src,
                 numberer,
@@ -302,7 +329,7 @@ fn push_legacy_main_section_regions(
         if index + 1 < section_spans.len() {
             output
                 .blocks
-                .push(Block::SectionBreak(legacy_section_break_setup()));
+                .push(Block::SectionBreak(legacy_section_break_setup(span.page)));
             output.pagination_hints.push(PaginationHint::default());
             output.table_row_pagination.push(Vec::new());
             output.table_cell_pagination.push(Vec::new());
@@ -310,10 +337,10 @@ fn push_legacy_main_section_regions(
     }
 }
 
-fn legacy_section_break_setup() -> SectionSetup {
+fn legacy_section_break_setup(page: PageSetup) -> SectionSetup {
     SectionSetup {
-        // PlcfSed gives CP boundaries; Sepx decoding can upgrade the break kind.
         section_break: Some(SectionBreakKind::NextPage),
+        page,
         ..SectionSetup::default()
     }
 }
@@ -403,6 +430,13 @@ struct HeaderStoryRange {
 const HEADER_FOOTER_STORY_BASE: usize = 6;
 const FIB_FCLCB_PLCF_SED: usize = 6;
 const SED_RECORD_LEN: usize = 12;
+const SPRM_S_B_ORIENTATION: u16 = 0x301D;
+const SPRM_S_XA_PAGE: u16 = 0xB01F;
+const SPRM_S_YA_PAGE: u16 = 0xB020;
+const SPRM_S_DXA_LEFT: u16 = 0xB021;
+const SPRM_S_DXA_RIGHT: u16 = 0xB022;
+const SPRM_S_DYA_TOP: u16 = 0x9023;
+const SPRM_S_DYA_BOTTOM: u16 = 0x9024;
 
 fn legacy_header_footer_setup_slot(
     setup: &mut DocSetup,
@@ -478,10 +512,11 @@ fn header_footer_story_ranges(fib: &Fib, table: &[u8]) -> Vec<HeaderStoryRange> 
     stories
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct LegacySectionSpan {
     start_cp: usize,
     end_cp: usize,
+    page: PageSetup,
 }
 
 fn legacy_section_spans(word: &[u8], table: &[u8], main_len_cp: usize) -> Vec<LegacySectionSpan> {
@@ -503,7 +538,7 @@ fn parse_legacy_section_spans(
         return None;
     }
     let section_count = payload_len / section_width;
-    if section_count <= 1 {
+    if section_count == 0 {
         return None;
     }
     let end = fc.checked_add(lcb)?;
@@ -517,23 +552,130 @@ fn parse_legacy_section_spans(
     for index in 0..=section_count {
         cps.push(u32le(slice, index * 4)? as usize);
     }
-    if cps.first().copied() != Some(0) || cps.last().copied() != Some(main_len_cp) {
+    // [MS-DOC] 2.8.26 permits the final CP at or beyond the main-story end.
+    if cps.first().copied() != Some(0)
+        || cps
+            .last()
+            .copied()
+            .is_none_or(|last_cp| last_cp < main_len_cp)
+    {
         return None;
     }
     let mut spans = Vec::with_capacity(section_count);
-    for pair in cps.windows(2) {
+    for (index, pair) in cps.windows(2).enumerate() {
         let [start_cp, end_cp] = pair else {
             return None;
         };
-        if start_cp >= end_cp || *end_cp > main_len_cp {
+        let bounded_end_cp = (*end_cp).min(main_len_cp);
+        if start_cp >= end_cp || *start_cp >= bounded_end_cp {
             return None;
         }
+        let record_offset = cp_bytes.checked_add(index.checked_mul(SED_RECORD_LEN)?)?;
+        let fc_sepx = u32le(slice, record_offset.checked_add(2)?)? as i32;
+        let page = legacy_sepx_page_setup_at(word, fc_sepx);
         spans.push(LegacySectionSpan {
             start_cp: *start_cp,
-            end_cp: *end_cp,
+            end_cp: bounded_end_cp,
+            page,
         });
     }
     Some(spans)
+}
+
+fn legacy_sepx_page_setup_at(word: &[u8], fc_sepx: i32) -> PageSetup {
+    usize::try_from(fc_sepx)
+        .ok()
+        .filter(|offset| *offset != 0)
+        .and_then(|offset| parse_legacy_sepx_page_setup(word, offset))
+        .unwrap_or_else(legacy_section_page_setup_default)
+}
+
+fn parse_legacy_sepx_page_setup(word: &[u8], offset: usize) -> Option<PageSetup> {
+    let cb = u16le(word, offset)? as i16;
+    let cb = usize::try_from(cb).ok()?;
+    let start = offset.checked_add(2)?;
+    let end = start.checked_add(cb)?;
+    scan_legacy_section_page_grpprl(word.get(start..end)?)
+}
+
+fn scan_legacy_section_page_grpprl(grpprl: &[u8]) -> Option<PageSetup> {
+    let mut page = legacy_section_page_setup_default();
+    let mut pos = 0usize;
+    while pos < grpprl.len() {
+        let sprm = u16le(grpprl, pos)?;
+        let operand_start = pos.checked_add(2)?;
+        let operand_len = legacy_sprm_operand_len(sprm, grpprl, operand_start)?;
+        let operand_end = operand_start.checked_add(operand_len)?;
+        let operand = grpprl.get(operand_start..operand_end)?;
+
+        match sprm {
+            SPRM_S_B_ORIENTATION => match operand.first().copied() {
+                // [MS-DOC] 2.9.236: 1 = portrait, 2 = landscape.
+                Some(1) => page.landscape = false,
+                Some(2) => page.landscape = true,
+                _ => {}
+            },
+            SPRM_S_XA_PAGE => {
+                if let Some(value @ 144..=31_680) = u16le(operand, 0) {
+                    page.width_pt = twips_to_points(value);
+                }
+            }
+            SPRM_S_YA_PAGE => {
+                if let Some(value @ 144..=31_680) = u16le(operand, 0) {
+                    page.height_pt = twips_to_points(value);
+                }
+            }
+            SPRM_S_DXA_LEFT => {
+                if let Some(value @ 0..=31_680) = u16le(operand, 0) {
+                    page.margin_left_pt = Some(twips_to_points(value));
+                }
+            }
+            SPRM_S_DXA_RIGHT => {
+                if let Some(value @ 0..=31_680) = u16le(operand, 0) {
+                    page.margin_right_pt = Some(twips_to_points(value));
+                }
+            }
+            SPRM_S_DYA_TOP => {
+                let value = u16le(operand, 0)? as i16;
+                if (0..=31_665).contains(&value) {
+                    page.margin_top_pt = Some(f32::from(value) / 20.0);
+                }
+            }
+            SPRM_S_DYA_BOTTOM => {
+                let value = u16le(operand, 0)? as i16;
+                if (0..=31_665).contains(&value) {
+                    page.margin_bottom_pt = Some(f32::from(value) / 20.0);
+                }
+            }
+            _ => {}
+        }
+        pos = operand_end;
+    }
+    Some(page)
+}
+
+fn legacy_section_page_setup_default() -> PageSetup {
+    // [MS-DOC] 2.6.4 defaults omitted legacy section sizes to US Letter.
+    PageSetup {
+        width_pt: 612.0,
+        height_pt: 792.0,
+        ..PageSetup::default()
+    }
+}
+
+fn legacy_sprm_operand_len(sprm: u16, data: &[u8], operand_start: usize) -> Option<usize> {
+    match (sprm >> 13) & 0x7 {
+        0 | 1 => Some(1),
+        2 | 4 | 5 => Some(2),
+        3 => Some(4),
+        7 => Some(3),
+        6 => Some(1usize.checked_add(usize::from(*data.get(operand_start)?))?),
+        _ => None,
+    }
+}
+
+fn twips_to_points(value: u16) -> f32 {
+    f32::from(value) / 20.0
 }
 
 fn legacy_region_specs(fib: &Fib) -> [(SourceRegionKind, usize); 6] {
@@ -1672,6 +1814,49 @@ mod tests {
     }
 
     #[test]
+    fn legacy_sepx_page_scanner_keeps_last_valid_values() {
+        let mut grpprl = vec![
+            0x00, 0xC0, 0x02, 0xAA, 0xBB, // unknown variable-length sprm
+            0x1D, 0x30, 0x02, // landscape
+        ];
+        for value in [12_240u16, 15_840, 100] {
+            grpprl.extend_from_slice(&SPRM_S_XA_PAGE.to_le_bytes());
+            grpprl.extend_from_slice(&value.to_le_bytes());
+        }
+        grpprl.extend_from_slice(&SPRM_S_DXA_LEFT.to_le_bytes());
+        grpprl.extend_from_slice(&0u16.to_le_bytes());
+        for value in [1_440i16, -720] {
+            grpprl.extend_from_slice(&SPRM_S_DYA_TOP.to_le_bytes());
+            grpprl.extend_from_slice(&value.to_le_bytes());
+        }
+        grpprl.extend_from_slice(&SPRM_S_B_ORIENTATION.to_le_bytes());
+        grpprl.push(0);
+
+        let page = scan_legacy_section_page_grpprl(&grpprl).unwrap();
+
+        assert_eq!(page.width_pt, 792.0);
+        assert_eq!(page.margin_left_pt, Some(0.0));
+        assert_eq!(page.margin_top_pt, Some(72.0));
+        assert!(page.landscape);
+    }
+
+    #[test]
+    fn legacy_sepx_page_parser_rejects_malformed_payloads() {
+        assert!(scan_legacy_section_page_grpprl(&[0x1D]).is_none());
+        assert!(scan_legacy_section_page_grpprl(&[0x00, 0xC0, 0x02, 0xAA]).is_none());
+        assert!(parse_legacy_sepx_page_setup(&(-1i16).to_le_bytes(), 0).is_none());
+
+        let truncated = [4, 0, 0x1D, 0x30, 0x01];
+        assert!(parse_legacy_sepx_page_setup(&truncated, 0).is_none());
+        for fc_sepx in [-1, 0, i32::MAX] {
+            let page = legacy_sepx_page_setup_at(&truncated, fc_sepx);
+            assert_eq!(page.width_pt, 612.0);
+            assert_eq!(page.height_pt, 792.0);
+            assert!(!page.landscape);
+        }
+    }
+
+    #[test]
     fn legacy_section_break_keeps_row_pagination_sidecar_aligned() {
         let units = [b'A' as u16, PARA_MARK, b'B' as u16, PARA_MARK];
         let fcs: Vec<u32> = (0..units.len() as u32).collect();
@@ -1700,10 +1885,12 @@ mod tests {
                 LegacySectionSpan {
                     start_cp: 0,
                     end_cp: 2,
+                    page: PageSetup::default(),
                 },
                 LegacySectionSpan {
                     start_cp: 2,
                     end_cp: 4,
+                    page: PageSetup::default(),
                 },
             ],
         );

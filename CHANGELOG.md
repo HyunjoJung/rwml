@@ -23,6 +23,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Opened legacy `.doc` sections now preserve valid SED/SEPX page width, height,
+  portrait/landscape orientation, and nonnegative left/right/top/bottom margins
+  through the shared model and `.docx` conversion/reopen. Valid `PlcfSed`
+  boundaries create sections independently of header stories, and single-section
+  geometry reaches the final `DocSetup`. Strict signed
+  `fcSepx`/`cb` bounds and complete SPRM walking isolate malformed local payloads
+  to the deterministic default while valid neighboring sections survive.
+  Break kinds, columns, gutters/facing pages, header/footer distances, page
+  borders/grids, vertical justification, and negative fixed-position
+  top/bottom semantics remain unsupported.
 - PDF rendering now applies finite positive preferred-percentage table widths
   within the active page or section column, maps logical leading/center/trailing
   table placement through visual RTL, bounds non-negative leading indentation
