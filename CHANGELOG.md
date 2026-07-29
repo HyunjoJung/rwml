@@ -30,6 +30,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- DOCX `fill_content_control_by_tag`, `fill_content_controls_by_tag`, and
+  `fill_template_fields` now encode input tabs/newlines as WordprocessingML
+  `w:tab`/text-wrapping `w:br` run content in every already-supported body,
+  real-note, and referenced header/footer location. Marker-to-plain refills
+  remove stale text-wrapping markers, marker-only values written by these APIs
+  retain an empty `w:t` anchor across save/reopen, alternate WML prefixes remain
+  namespace-valid, and page/column breaks or foreign same-local-name elements
+  are preserved. Exact marker-fragment node budgets, edge-whitespace attribute
+  limits, overlap checks, and clone-and-swap rollback remain atomic. This does
+  not create paragraphs, redistribute rich runs, synchronize data bindings,
+  target source controls/results without any writable `w:t`, or expand the
+  supported story set.
 - Package-preserving `.docx` body text, cached field-result, content-control,
   and template-fill edits now traverse only the first direct
   `mc:Choice`/`mc:Fallback` branch of each `mc:AlternateContent`, including

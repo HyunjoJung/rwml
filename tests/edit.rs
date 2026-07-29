@@ -2128,6 +2128,171 @@ fn fill_content_control_by_tag_updates_matching_controls() {
 }
 
 #[test]
+fn fill_content_control_by_tag_writes_markers_and_clears_them_on_refill() {
+    let mut doc = Document::open(&content_control_docx()).expect("fixture opens");
+    let marked_value = "Client\tName\nSecond line";
+
+    assert_eq!(
+        doc.fill_content_control_by_tag("client-name", marked_value)
+            .expect("tagged content controls filled with markers"),
+        2
+    );
+
+    let marked = doc.save().expect("save marker-filled docx");
+    let marked_body = String::from_utf8(unzip_parts(&marked)["word/document.xml"].clone()).unwrap();
+    let marked_xml = "<w:t>Client</w:t><w:tab/><w:t>Name</w:t><w:br/><w:t>Second line</w:t>";
+    assert_eq!(
+        marked_body.matches(marked_xml).count(),
+        2,
+        "each matching content control should use WML run-content markers: {marked_body}"
+    );
+    assert!(
+        marked_body.contains("<w:t>Keep Project</w:t>"),
+        "non-matching content control changed: {marked_body}"
+    );
+    let reopened_marked = Document::open(&marked).expect("reopen marker-filled docx");
+    assert_eq!(
+        reopened_marked.text().matches(marked_value).count(),
+        2,
+        "reopened content-control values lost markers"
+    );
+
+    assert_eq!(
+        doc.fill_content_control_by_tag("client-name", marked_value)
+            .expect("repeat marker fill"),
+        2
+    );
+    let repeated = doc.save().expect("save repeated marker fill");
+    assert_eq!(
+        unzip_parts(&repeated)["word/document.xml"],
+        unzip_parts(&marked)["word/document.xml"],
+        "repeating the same marker fill should not accumulate empty text fragments"
+    );
+
+    assert_eq!(
+        doc.fill_content_control_by_tag("client-name", "Plain client")
+            .expect("refill tagged content controls"),
+        2
+    );
+    let plain = doc.save().expect("save refilled docx");
+    let plain_body = String::from_utf8(unzip_parts(&plain)["word/document.xml"].clone()).unwrap();
+    assert_eq!(
+        plain_body.matches("<w:t>Plain client</w:t>").count(),
+        2,
+        "plain refill missing: {plain_body}"
+    );
+    assert!(
+        !plain_body.contains("<w:tab") && !plain_body.contains("<w:br"),
+        "plain refill retained stale run-content markers: {plain_body}"
+    );
+    let reopened_plain = Document::open(&plain).expect("reopen plain-refilled docx");
+    assert_eq!(reopened_plain.text().matches("Plain client").count(), 2);
+    assert!(!reopened_plain.text().contains(marked_value));
+}
+
+#[test]
+fn fill_content_control_marker_only_value_remains_refillable_after_reopen() {
+    let mut doc = Document::open(&content_control_docx()).expect("fixture opens");
+
+    assert_eq!(
+        doc.fill_content_control_by_tag("client-name", "\t\n")
+            .expect("tagged controls filled with marker-only value"),
+        2
+    );
+    let marked = doc.save().expect("save marker-only controls");
+    let marked_body = String::from_utf8(unzip_parts(&marked)["word/document.xml"].clone()).unwrap();
+    assert_eq!(
+        marked_body.matches("<w:tab/><w:br/><w:t></w:t>").count(),
+        2,
+        "marker-only fills should retain an empty refill anchor: {marked_body}"
+    );
+
+    let mut reopened = Document::open(&marked).expect("reopen marker-only controls");
+    assert_eq!(
+        reopened
+            .fill_content_control_by_tag("client-name", "Refilled")
+            .expect("refill marker-only controls"),
+        2
+    );
+    let refilled = reopened.save().expect("save refilled controls");
+    let refilled_body =
+        String::from_utf8(unzip_parts(&refilled)["word/document.xml"].clone()).unwrap();
+    assert_eq!(refilled_body.matches("<w:t>Refilled</w:t>").count(), 2);
+    assert!(
+        !refilled_body.contains("<w:tab") && !refilled_body.contains("<w:br"),
+        "refill retained marker-only siblings: {refilled_body}"
+    );
+}
+
+#[test]
+fn fill_content_control_markers_follow_wml_prefix_and_preserve_other_breaks() {
+    let fixture = docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<x:document xmlns:x="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:f="urn:foreign"><x:body><x:sdt><x:sdtPr><x:tag x:val="client-name"/></x:sdtPr><x:sdtContent><x:p><x:pPr><x:tabs><x:tab x:val="left" x:pos="720"/></x:tabs></x:pPr><x:r><x:t>Old</x:t><x:br x:type="page"/><x:br x:type="column"/><x:br type="page"/><x:br f:type="page"/><x:br/><x:tab/><f:tab/><x:t>Tail</x:t></x:r></x:p></x:sdtContent></x:sdt><x:p><x:r><x:tab/><x:br/><x:t>Sentinel</x:t></x:r></x:p></x:body></x:document>"#,
+        ),
+    ]);
+    let mut doc = Document::open(&fixture).expect("alternate-prefix fixture opens");
+
+    assert_eq!(
+        doc.fill_content_control_by_tag("client-name", "New\tLine\nNext")
+            .expect("alternate-prefix control filled"),
+        1
+    );
+    let saved = doc.save().expect("save alternate-prefix control");
+    let body = String::from_utf8(unzip_parts(&saved)["word/document.xml"].clone()).unwrap();
+    assert!(
+        body.contains("<x:t>New</x:t><x:tab/><x:t>Line</x:t><x:br/><x:t>Next</x:t>"),
+        "generated markers did not use the bound WML prefix: {body}"
+    );
+    assert!(
+        !body.contains("<w:"),
+        "generated an unbound canonical WML prefix: {body}"
+    );
+    assert!(
+        body.contains(r#"<x:br x:type="page"/>"#)
+            && body.contains(r#"<x:br x:type="column"/>"#)
+            && body.contains(r#"<x:br type="page"/>"#),
+        "page or column break was consumed by a text fill: {body}"
+    );
+    assert!(
+        body.contains(r#"<x:pPr><x:tabs><x:tab x:val="left" x:pos="720"/></x:tabs></x:pPr>"#),
+        "paragraph tab-stop definition was consumed by a text fill: {body}"
+    );
+    assert!(
+        !body.contains(r#"<x:br f:type="page"/>"#),
+        "foreign break type prevented cleanup of a default text-wrapping break: {body}"
+    );
+    assert!(
+        body.contains("<f:tab/>"),
+        "foreign same-local-name marker was consumed: {body}"
+    );
+    assert_eq!(
+        body.matches("<x:tab/>").count(),
+        2,
+        "stale WML tab survived the replacement: {body}"
+    );
+    assert_eq!(
+        body.matches("<x:br/>").count(),
+        2,
+        "stale text-wrapping break survived the replacement: {body}"
+    );
+    assert!(
+        body.contains("<x:tab/><x:br/><x:t>Sentinel</x:t>"),
+        "unmatched same-part markers were consumed: {body}"
+    );
+    Document::open(&saved).expect("alternate-prefix result reopens");
+}
+
+#[test]
 fn fill_content_control_by_tag_skips_deleted_controls() {
     let fixture = docx_fixture(&[
         (
@@ -2357,6 +2522,280 @@ fn fill_template_fields_updates_content_controls_and_merge_fields() {
 }
 
 #[test]
+fn fill_template_fields_writes_body_markers_and_clears_them_on_refill() {
+    let mut doc = Document::open(&merge_template_docx()).expect("fixture opens");
+    let client = "Client\tValue\nNext";
+    let project = "Project\tValue\nNext";
+
+    assert_eq!(
+        doc.fill_template_fields([("client-name", client), ("project-name", project)])
+            .expect("body template fields filled with markers"),
+        3
+    );
+
+    let marked = doc.save().expect("save marker-filled template");
+    let marked_body = String::from_utf8(unzip_parts(&marked)["word/document.xml"].clone()).unwrap();
+    let client_xml = "<w:t>Client</w:t><w:tab/><w:t>Value</w:t><w:br/><w:t>Next</w:t>";
+    let project_xml = "<w:t>Project</w:t><w:tab/><w:t>Value</w:t><w:br/><w:t>Next</w:t>";
+    assert_eq!(
+        marked_body.matches(client_xml).count(),
+        2,
+        "content control and simple MERGEFIELD should both use markers: {marked_body}"
+    );
+    assert_eq!(
+        marked_body.matches(project_xml).count(),
+        1,
+        "complex MERGEFIELD should use markers: {marked_body}"
+    );
+    let mut reopened_marked = Document::open(&marked).expect("reopen marker-filled template");
+    let marked_fields = reopened_marked.fields();
+    assert_eq!(marked_fields[0].result, client);
+    assert_eq!(marked_fields[1].result, project);
+    assert_eq!(reopened_marked.text().matches(client).count(), 2);
+    assert!(reopened_marked.text().contains(project));
+    assert_eq!(
+        reopened_marked
+            .fill_template_fields([
+                ("client-name", "Reopened client"),
+                ("project-name", "Reopened project"),
+            ])
+            .expect("refill reopened body template fields"),
+        3
+    );
+    let reopened_refill = reopened_marked
+        .save()
+        .expect("save reopened template refill");
+    let reopened_body =
+        String::from_utf8(unzip_parts(&reopened_refill)["word/document.xml"].clone()).unwrap();
+    assert!(
+        !reopened_body.contains("<w:tab") && !reopened_body.contains("<w:br"),
+        "post-reopen refill retained stale template markers: {reopened_body}"
+    );
+    let reopened_refill_doc =
+        Document::open(&reopened_refill).expect("reopen post-reopen template refill");
+    let reopened_refill_fields = reopened_refill_doc.fields();
+    assert_eq!(reopened_refill_fields[0].result, "Reopened client");
+    assert_eq!(reopened_refill_fields[1].result, "Reopened project");
+
+    assert_eq!(
+        doc.fill_template_fields([
+            ("client-name", "Plain client"),
+            ("project-name", "Plain project"),
+        ])
+        .expect("refill body template fields"),
+        3
+    );
+    let plain = doc.save().expect("save refilled template");
+    let plain_body = String::from_utf8(unzip_parts(&plain)["word/document.xml"].clone()).unwrap();
+    assert!(
+        !plain_body.contains("<w:tab") && !plain_body.contains("<w:br"),
+        "plain refill retained stale template markers: {plain_body}"
+    );
+    let reopened_plain = Document::open(&plain).expect("reopen refilled template");
+    let plain_fields = reopened_plain.fields();
+    assert_eq!(plain_fields[0].result, "Plain client");
+    assert_eq!(plain_fields[1].result, "Plain project");
+}
+
+#[test]
+fn fill_template_fields_marker_only_results_remain_refillable_after_reopen() {
+    let mut doc = Document::open(&merge_template_docx()).expect("fixture opens");
+
+    assert_eq!(
+        doc.fill_template_fields([("client-name", "\t\n"), ("project-name", "\t\n")])
+            .expect("body template fields filled with marker-only values"),
+        3
+    );
+    let marked = doc.save().expect("save marker-only template fields");
+    let marked_body = String::from_utf8(unzip_parts(&marked)["word/document.xml"].clone()).unwrap();
+    assert_eq!(
+        marked_body.matches("<w:tab/><w:br/><w:t></w:t>").count(),
+        3,
+        "marker-only template fills should retain empty refill anchors: {marked_body}"
+    );
+
+    let mut reopened = Document::open(&marked).expect("reopen marker-only template fields");
+    assert_eq!(
+        reopened
+            .fill_template_fields([
+                ("client-name", "Refilled client"),
+                ("project-name", "Refilled project"),
+            ])
+            .expect("refill marker-only template fields"),
+        3
+    );
+    let refilled = reopened.save().expect("save refilled template fields");
+    let refilled_body =
+        String::from_utf8(unzip_parts(&refilled)["word/document.xml"].clone()).unwrap();
+    assert!(
+        !refilled_body.contains("<w:tab") && !refilled_body.contains("<w:br"),
+        "refill retained marker-only template siblings: {refilled_body}"
+    );
+    let reopened_refill = Document::open(&refilled).expect("reopen refilled template fields");
+    let fields = reopened_refill.fields();
+    assert_eq!(fields[0].result, "Refilled client");
+    assert_eq!(fields[1].result, "Refilled project");
+}
+
+#[test]
+fn fill_template_fields_markers_follow_alternate_wml_prefix_for_merge_fields() {
+    let fixture = docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<x:document xmlns:x="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><x:body><x:p><x:fldSimple x:instr=" MERGEFIELD client-name "><x:r><x:t>Old client</x:t></x:r></x:fldSimple></x:p><x:p><x:r><x:fldChar x:fldCharType="begin"/></x:r><x:r><x:instrText> MERGEFIELD project-name </x:instrText></x:r><x:r><x:fldChar x:fldCharType="separate"/></x:r><x:r><x:t>Old project</x:t></x:r><x:r><x:fldChar x:fldCharType="end"/></x:r></x:p></x:body></x:document>"#,
+        ),
+    ]);
+    let mut doc = Document::open(&fixture).expect("alternate-prefix merge fixture opens");
+
+    assert_eq!(
+        doc.fill_template_fields([
+            ("client-name", "Client\tValue\nNext"),
+            ("project-name", "Project\tValue\nNext"),
+        ])
+        .expect("alternate-prefix merge fields filled"),
+        2
+    );
+    let saved = doc.save().expect("save alternate-prefix merge fields");
+    let body = String::from_utf8(unzip_parts(&saved)["word/document.xml"].clone()).unwrap();
+    assert!(
+        body.contains("<x:t>Client</x:t><x:tab/><x:t>Value</x:t><x:br/><x:t>Next</x:t>")
+            && body.contains("<x:t>Project</x:t><x:tab/><x:t>Value</x:t><x:br/><x:t>Next</x:t>"),
+        "simple or complex MERGEFIELD did not use the bound WML prefix: {body}"
+    );
+    assert!(
+        !body.contains("<w:"),
+        "alternate-prefix MERGEFIELD generated an unbound canonical prefix: {body}"
+    );
+    let reopened = Document::open(&saved).expect("alternate-prefix merge result reopens");
+    let fields = reopened.fields();
+    assert_eq!(fields[0].result, "Client\tValue\nNext");
+    assert_eq!(fields[1].result, "Project\tValue\nNext");
+}
+
+#[test]
+fn fill_template_fields_preserves_paragraph_tab_stops_in_complex_field_results() {
+    let fixture = docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> MERGEFIELD project-name </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r></w:p><w:p><w:pPr><w:tabs><w:tab w:val="right" w:pos="1440"/></w:tabs></w:pPr><w:r><w:t>Old</w:t><w:tab/><w:t>result</w:t><w:br/></w:r></w:p><w:p><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:body></w:document>"#,
+        ),
+    ]);
+    let mut doc = Document::open(&fixture).expect("paragraph-spanning merge fixture opens");
+
+    assert_eq!(
+        doc.fill_template_fields([("project-name", "Project\tValue\nNext")])
+            .expect("paragraph-spanning merge field filled"),
+        1
+    );
+    let saved = doc.save().expect("save paragraph-spanning merge field");
+    let body = String::from_utf8(unzip_parts(&saved)["word/document.xml"].clone()).unwrap();
+    assert!(
+        body.contains(r#"<w:pPr><w:tabs><w:tab w:val="right" w:pos="1440"/></w:tabs></w:pPr>"#),
+        "complex field fill consumed a paragraph tab-stop definition: {body}"
+    );
+    assert!(
+        body.contains("<w:t>Project</w:t><w:tab/><w:t>Value</w:t><w:br/><w:t>Next</w:t>"),
+        "complex field fill did not replace actual run content: {body}"
+    );
+
+    Document::open(&saved).expect("paragraph-spanning merge result reopens");
+}
+
+#[test]
+fn fill_template_fields_rejects_overlapping_body_targets_without_mutation() {
+    let fixture = docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:sdt><w:sdtPr><w:tag w:val="outer-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Outer</w:t></w:r><w:sdt><w:sdtPr><w:tag w:val="inner-name"/></w:sdtPr><w:sdtContent><w:r><w:t>Inner</w:t></w:r></w:sdtContent></w:sdt></w:p></w:sdtContent></w:sdt></w:body></w:document>"#,
+        ),
+    ]);
+    let before = unzip_parts(&fixture);
+    let mut doc = Document::open(&fixture).expect("nested body template opens");
+
+    let err = doc
+        .fill_template_fields([
+            ("outer-name", "Outer\tvalue"),
+            ("inner-name", "Inner\nvalue"),
+        ])
+        .expect_err("overlapping body template targets rejected");
+
+    assert!(err.to_string().contains("overlap"), "{err}");
+    assert!(doc.edited_parts().is_empty());
+    assert_eq!(
+        unzip_parts(&doc.save().expect("save rejected body overlap")),
+        before,
+        "body overlap rejection changed the package"
+    );
+}
+
+#[test]
+fn fill_template_fields_rejects_overlapping_story_targets_without_mutation() {
+    let fixture = docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:r><w:t>Body</w:t></w:r></w:p><w:sectPr><w:headerReference w:type="default" r:id="rIdHeader"/></w:sectPr></w:body></w:document>"#,
+        ),
+        (
+            "word/header1.xml",
+            r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:sdt><w:sdtPr><w:tag w:val="outer-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Outer</w:t></w:r><w:sdt><w:sdtPr><w:tag w:val="inner-name"/></w:sdtPr><w:sdtContent><w:r><w:t>Inner</w:t></w:r></w:sdtContent></w:sdt></w:p></w:sdtContent></w:sdt></w:hdr>"#,
+        ),
+    ]);
+    let before = unzip_parts(&fixture);
+    let mut doc = Document::open(&fixture).expect("nested story template opens");
+
+    let err = doc
+        .fill_template_fields([
+            ("outer-name", "Outer\tvalue"),
+            ("inner-name", "Inner\nvalue"),
+        ])
+        .expect_err("overlapping story template targets rejected");
+
+    assert!(err.to_string().contains("overlap"), "{err}");
+    assert!(doc.edited_parts().is_empty());
+    assert_eq!(
+        unzip_parts(&doc.save().expect("save rejected story overlap")),
+        before,
+        "story overlap rejection changed the package"
+    );
+}
+
+#[test]
 fn fill_template_fields_updates_unquoted_multi_token_merge_field_names() {
     let mut doc =
         Document::open(&unquoted_multi_token_merge_template_docx()).expect("fixture opens");
@@ -2538,6 +2977,136 @@ fn fill_template_fields_updates_note_content_controls_and_merge_fields() {
     assert!(reopened.footnote_text().contains("Roadmap"));
     assert!(reopened.endnote_text().contains("Acme & Co"));
     assert!(reopened.endnote_text().contains("Roadmap"));
+}
+
+#[test]
+fn fill_template_fields_writes_markers_in_header_footer_and_note_stories() {
+    let client = "Client\tValue\nNext";
+    let project = "Project\tValue\nNext";
+
+    let header_fixture = header_footer_merge_template_docx();
+    let header_before = unzip_parts(&header_fixture);
+    let mut header_doc = Document::open(&header_fixture).expect("header fixture opens");
+    assert_eq!(
+        header_doc
+            .fill_template_fields([("client-name", client), ("project-name", project)])
+            .expect("header/footer template fields filled with markers"),
+        2
+    );
+    assert_eq!(
+        header_doc.edited_parts(),
+        ["word/footer1.xml", "word/header1.xml"]
+    );
+    let header_saved = header_doc.save().expect("save header/footer template");
+    let header_parts = unzip_parts(&header_saved);
+    let header = String::from_utf8(header_parts["word/header1.xml"].clone()).unwrap();
+    let footer = String::from_utf8(header_parts["word/footer1.xml"].clone()).unwrap();
+    assert!(
+        header.contains("<w:t>Client</w:t><w:tab/><w:t>Value</w:t><w:br/><w:t>Next</w:t>"),
+        "header MERGEFIELD did not use WML markers: {header}"
+    );
+    assert!(
+        footer.contains("<w:t>Project</w:t><w:tab/><w:t>Value</w:t><w:br/><w:t>Next</w:t>"),
+        "footer MERGEFIELD did not use WML markers: {footer}"
+    );
+    assert_eq!(
+        header_parts["word/document.xml"], header_before["word/document.xml"],
+        "story-only fill rewrote the body part"
+    );
+    assert_eq!(
+        header_parts["word/header2.xml"], header_before["word/header2.xml"],
+        "story-only fill rewrote an unreferenced header"
+    );
+    let mut reopened_header =
+        Document::open(&header_saved).expect("reopen marker-filled header/footer template");
+    assert!(reopened_header.header_text().contains(client));
+    assert!(reopened_header.header_text().contains(project));
+    assert_eq!(
+        reopened_header
+            .fill_template_fields([
+                ("client-name", "Reopened client"),
+                ("project-name", "Reopened project"),
+            ])
+            .expect("refill reopened header/footer template"),
+        2
+    );
+    assert_eq!(
+        reopened_header.edited_parts(),
+        ["word/footer1.xml", "word/header1.xml"]
+    );
+    let header_refilled = reopened_header
+        .save()
+        .expect("save refilled header/footer template");
+    let header_refilled_parts = unzip_parts(&header_refilled);
+    assert_eq!(
+        header_refilled_parts["word/document.xml"],
+        header_before["word/document.xml"]
+    );
+    assert_eq!(
+        header_refilled_parts["word/header2.xml"],
+        header_before["word/header2.xml"]
+    );
+    for part in ["word/header1.xml", "word/footer1.xml"] {
+        let xml = String::from_utf8(header_refilled_parts[part].clone()).unwrap();
+        assert!(
+            !xml.contains("<w:tab") && !xml.contains("<w:br"),
+            "post-reopen {part} refill retained stale markers: {xml}"
+        );
+    }
+
+    let mut note_doc = Document::open(&note_template_docx()).expect("note fixture opens");
+    assert_eq!(
+        note_doc
+            .fill_template_fields([("client-name", client), ("project-name", project)])
+            .expect("note template fields filled with markers"),
+        4
+    );
+    assert_eq!(
+        note_doc.edited_parts(),
+        ["word/endnotes.xml", "word/footnotes.xml"]
+    );
+    let note_saved = note_doc.save().expect("save marker-filled notes");
+    let note_parts = unzip_parts(&note_saved);
+    for (part, expected_count) in [("word/footnotes.xml", 2), ("word/endnotes.xml", 2)] {
+        let xml = String::from_utf8(note_parts[part].clone()).unwrap();
+        assert_eq!(
+            xml.matches("<w:tab/>").count(),
+            expected_count,
+            "{part} did not preserve every template tab: {xml}"
+        );
+        assert_eq!(
+            xml.matches("<w:br/>").count(),
+            expected_count,
+            "{part} did not preserve every template break: {xml}"
+        );
+    }
+    let mut reopened_notes = Document::open(&note_saved).expect("reopen marker-filled notes");
+    assert!(reopened_notes.footnote_text().contains(client));
+    assert!(reopened_notes.footnote_text().contains(project));
+    assert!(reopened_notes.endnote_text().contains(client));
+    assert!(reopened_notes.endnote_text().contains(project));
+    assert_eq!(
+        reopened_notes
+            .fill_template_fields([
+                ("client-name", "Reopened client"),
+                ("project-name", "Reopened project"),
+            ])
+            .expect("refill reopened note template"),
+        4
+    );
+    assert_eq!(
+        reopened_notes.edited_parts(),
+        ["word/endnotes.xml", "word/footnotes.xml"]
+    );
+    let notes_refilled = reopened_notes.save().expect("save refilled note template");
+    let notes_refilled_parts = unzip_parts(&notes_refilled);
+    for part in ["word/footnotes.xml", "word/endnotes.xml"] {
+        let xml = String::from_utf8(notes_refilled_parts[part].clone()).unwrap();
+        assert!(
+            !xml.contains("<w:tab") && !xml.contains("<w:br"),
+            "post-reopen {part} refill retained stale markers: {xml}"
+        );
+    }
 }
 
 #[test]

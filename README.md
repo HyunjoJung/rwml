@@ -220,6 +220,15 @@ let touched = doc.edited_parts();               // package parts dirtied by edit
 std::fs::write("out.docx", doc.save()?)?;        // untouched parts preserved
 ```
 
+Body content-control fills, plus logical template fills in their currently
+supported body, note, and referenced header/footer locations, encode input `\t`
+and `\n` as WordprocessingML `w:tab` and text-wrapping `w:br` run content.
+Repeated fills clear prior text-wrapping markers, including after save/reopen;
+marker-only values written by these APIs retain an empty `w:t` refill anchor.
+Newlines remain inline breaks rather than new paragraphs, while existing
+page/column breaks, other run objects, data bindings, and rich-run structure
+remain preserved rather than interpreted or redistributed.
+
 Several existing edit methods can share one package rollback boundary:
 
 ```rust
