@@ -14,7 +14,8 @@
 //! (including `col_span`/`row_span` placement), sized to authored `col_widths_pct`
 //! or to content, then bordered; cells carry rich per-run text (bold/italic/color/
 //! size/font), background shading, and vertical alignment. Images (block-level
-//! and inline) are decoded and drawn as raster pictures, fit to the content box.
+//! and inline) are decoded and drawn as raster pictures; model-backed clockwise
+//! rotation contributes to their fitted visual bounds and pagination.
 //!
 //! Fonts come from the system font collection (parley's default `FontContext`),
 //! so Korean renders when a Hangul-capable face is installed. For headless/server
@@ -320,6 +321,15 @@ struct TopBottomBand {
     anchor_offset: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ImageLayout {
+    image_w: f32,
+    image_h: f32,
+    bounds_w: f32,
+    bounds_h: f32,
+    rotation_degrees: i32,
+}
+
 /// A unit of block flow, paginated top-to-bottom. `Table` groups its rows (with the
 /// header-row count) so pagination can repeat headers and split oversized rows;
 /// `Row` is an individual placed row produced during pagination.
@@ -345,8 +355,7 @@ enum FlowItem {
     },
     Picture {
         image: PdfImage,
-        w: f32,
-        h: f32,
+        layout: ImageLayout,
     },
     Chart {
         chart: Chart,
@@ -450,26 +459,100 @@ fn decode_model_image(img: &Image) -> Option<(PdfImage, u32, u32)> {
     decode_image(bytes, img.mime.as_deref())
 }
 
+fn clockwise_rotation_components(degrees: i32) -> (f32, f32) {
+    match degrees.rem_euclid(360) {
+        0 => (1.0, 0.0),
+        90 => (0.0, 1.0),
+        180 => (-1.0, 0.0),
+        270 => (0.0, -1.0),
+        degrees => {
+            let radians = (degrees as f32).to_radians();
+            (radians.cos(), radians.sin())
+        }
+    }
+}
+
+fn image_layout(
+    width_px: u32,
+    height_px: u32,
+    rotation_degrees: Option<i32>,
+    max_w: f32,
+    max_h: f32,
+) -> Option<ImageLayout> {
+    let mut image_w = width_px as f32 * 0.75;
+    let mut image_h = height_px as f32 * 0.75;
+    let rotation_degrees = rotation_degrees.unwrap_or(0).rem_euclid(360);
+    let (cos, sin) = clockwise_rotation_components(rotation_degrees);
+    let mut bounds_w = image_w * cos.abs() + image_h * sin.abs();
+    let mut bounds_h = image_w * sin.abs() + image_h * cos.abs();
+    if ![image_w, image_h, bounds_w, bounds_h, max_w, max_h]
+        .into_iter()
+        .all(|value| value.is_finite() && value > 0.0)
+    {
+        return None;
+    }
+
+    if bounds_w > max_w {
+        let scale = max_w / bounds_w;
+        image_w *= scale;
+        image_h *= scale;
+        bounds_w = max_w;
+        bounds_h *= scale;
+    }
+    if bounds_h > max_h {
+        let scale = max_h / bounds_h;
+        image_w *= scale;
+        image_h *= scale;
+        bounds_w *= scale;
+        bounds_h = max_h;
+    }
+    if ![image_w, image_h, bounds_w, bounds_h]
+        .into_iter()
+        .all(|value| value.is_finite() && value > 0.0)
+    {
+        return None;
+    }
+    Some(ImageLayout {
+        image_w,
+        image_h,
+        bounds_w,
+        bounds_h,
+        rotation_degrees,
+    })
+}
+
+fn image_paint_transform(layout: ImageLayout, bounds_x: f32, bounds_y: f32) -> Transform {
+    if layout.rotation_degrees == 0 {
+        return Transform::from_translate(bounds_x, bounds_y);
+    }
+    let (cos, sin) = clockwise_rotation_components(layout.rotation_degrees);
+    let center_x = bounds_x + layout.bounds_w * 0.5;
+    let center_y = bounds_y + layout.bounds_h * 0.5;
+    let image_center_x = layout.image_w * 0.5;
+    let image_center_y = layout.image_h * 0.5;
+    Transform::from_row(
+        cos,
+        sin,
+        -sin,
+        cos,
+        center_x - cos * image_center_x + sin * image_center_y,
+        center_y - sin * image_center_x - cos * image_center_y,
+    )
+}
+
 /// Decode a model image and size it to a [`FlowItem::Picture`] (96-dpi px → PDF
-/// points, fit to the content box and a single page height, aspect preserved).
+/// points, rotated bounds fit to the content box and one page, aspect preserved).
 /// `None` if there are no bytes or the format is undecodable.
 fn image_flow_item(img: &Image, geom: Geom) -> Option<FlowItem> {
-    let (image, wpx, hpx) = decode_model_image(img)?;
-    let mut w = wpx as f32 * 0.75;
-    let mut h = hpx as f32 * 0.75;
-    let content_w = geom.content_w();
-    if w > content_w {
-        let s = content_w / w;
-        w = content_w;
-        h *= s;
-    }
-    let max_h = geom.bottom() - geom.top();
-    if h > max_h {
-        let s = max_h / h;
-        h = max_h;
-        w *= s;
-    }
-    (w > 0.0 && h > 0.0).then_some(FlowItem::Picture { image, w, h })
+    let (image, width_px, height_px) = decode_model_image(img)?;
+    let layout = image_layout(
+        width_px,
+        height_px,
+        img.rotation_degrees,
+        geom.content_w(),
+        geom.bottom() - geom.top(),
+    )?;
+    Some(FlowItem::Picture { image, layout })
 }
 
 fn image_is_undecodable(img: &Image) -> bool {
@@ -6325,11 +6408,11 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
                 );
                 current_line_index = current_line_index.saturating_add(1);
             }
-            FlowItem::Picture { image, w, h } => {
+            FlowItem::Picture { image, layout } => {
                 ensure_outside_top_bottom_bands(
                     &mut pages,
                     &mut cursor,
-                    h,
+                    layout.bounds_h,
                     geom,
                     &active_top_bottom_bands,
                     current_block,
@@ -6342,8 +6425,8 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
                 place_item(
                     &mut pages,
                     &mut cursor,
-                    FlowItem::Picture { image, w, h },
-                    h,
+                    FlowItem::Picture { image, layout },
+                    layout.bounds_h,
                 );
             }
             FlowItem::Chart { chart, w, h } => {
@@ -6952,11 +7035,12 @@ fn render_pdf(
                 | FlowItem::PageBreak
                 | FlowItem::SectionBreak(_)
                 | FlowItem::Table { .. } => {}
-                FlowItem::Picture { image, w, h } => {
-                    // Center horizontally within the active body column.
-                    let x = geom.left + column_x + ((placed.width - w) * 0.5).max(0.0);
-                    if let Some(sz) = Size::from_wh(w, h) {
-                        surface.push_transform(&Transform::from_translate(x, top));
+                FlowItem::Picture { image, layout } => {
+                    // Center the rotated visual bounds within the active body column.
+                    let bounds_x =
+                        geom.left + column_x + ((placed.width - layout.bounds_w) * 0.5).max(0.0);
+                    if let Some(sz) = Size::from_wh(layout.image_w, layout.image_h) {
+                        surface.push_transform(&image_paint_transform(layout, bounds_x, top));
                         surface.draw_image(image, sz);
                         surface.pop();
                     }
@@ -7063,11 +7147,11 @@ mod tests {
 
     use super::{
         assign_section_to_render_pages, cell_insets, cell_line_origin, count_missing_image_bytes,
-        display_text, first_row_fragment_height, layout_page_number_line, layout_paragraph,
-        layout_table, layout_table_with_row_pagination, page_field_text, paginate, rgb,
-        running_header_footer_blocks_for_page, shape, shape_cell, split_row,
-        unsupported_placeholder_texts, FlowItem, Geom, LayoutCapture, LineLayout, StyledText,
-        TablePaginationView, TextCx,
+        display_text, first_row_fragment_height, image_layout, image_paint_transform,
+        layout_page_number_line, layout_paragraph, layout_table, layout_table_with_row_pagination,
+        page_field_text, paginate, rgb, running_header_footer_blocks_for_page, shape, shape_cell,
+        split_row, unsupported_placeholder_texts, FlowItem, Geom, LayoutCapture, LineLayout,
+        StyledText, TablePaginationView, TextCx,
     };
     use crate::model::{
         Align, Block, Cell, CellMargins, CharProps, Color, DocModel, FieldRole, Image, Indent,
@@ -7090,6 +7174,201 @@ mod tests {
             collection,
             source_cache: SourceCache::default(),
         }
+    }
+
+    fn assert_close(actual: f32, expected: f32) {
+        assert!(
+            (actual - expected).abs() < 0.001,
+            "expected {expected}, got {actual}"
+        );
+    }
+
+    #[test]
+    fn image_layout_normalizes_rotation_and_uses_exact_quarter_turn_bounds() {
+        let unrotated = image_layout(200, 100, None, 1_000.0, 1_000.0).unwrap();
+        assert_eq!(unrotated.rotation_degrees, 0);
+        assert_eq!(unrotated.image_w, 150.0);
+        assert_eq!(unrotated.image_h, 75.0);
+        assert_eq!(unrotated.bounds_w, 150.0);
+        assert_eq!(unrotated.bounds_h, 75.0);
+
+        for degrees in [90, 450, -270] {
+            let rotated = image_layout(200, 100, Some(degrees), 1_000.0, 1_000.0).unwrap();
+            assert_eq!(rotated.rotation_degrees, 90);
+            assert_eq!(rotated.image_w, 150.0);
+            assert_eq!(rotated.image_h, 75.0);
+            assert_eq!(rotated.bounds_w, 75.0);
+            assert_eq!(rotated.bounds_h, 150.0);
+        }
+
+        for degrees in [180, -180] {
+            let rotated = image_layout(200, 100, Some(degrees), 1_000.0, 1_000.0).unwrap();
+            assert_eq!(rotated.rotation_degrees, 180);
+            assert_eq!(rotated.bounds_w, 150.0);
+            assert_eq!(rotated.bounds_h, 75.0);
+        }
+
+        let rotated = image_layout(200, 100, Some(270), 1_000.0, 1_000.0).unwrap();
+        assert_eq!(rotated.bounds_w, 75.0);
+        assert_eq!(rotated.bounds_h, 150.0);
+    }
+
+    #[test]
+    fn image_layout_fits_arbitrary_rotated_bounds_proportionally() {
+        let rotated = image_layout(200, 100, Some(45), 1_000.0, 1_000.0).unwrap();
+        let expected_bounds = 225.0 * std::f32::consts::FRAC_1_SQRT_2;
+        assert_close(rotated.bounds_w, expected_bounds);
+        assert_close(rotated.bounds_h, expected_bounds);
+
+        let fitted = image_layout(200, 100, Some(90), 50.0, 1_000.0).unwrap();
+        assert_close(fitted.image_w, 100.0);
+        assert_close(fitted.image_h, 50.0);
+        assert_close(fitted.bounds_w, 50.0);
+        assert_close(fitted.bounds_h, 100.0);
+
+        assert!(image_layout(0, 100, Some(90), 50.0, 100.0).is_none());
+        assert!(image_layout(100, 100, Some(90), 0.0, 100.0).is_none());
+        assert!(image_layout(100, 100, Some(90), f32::NAN, 100.0).is_none());
+        assert!(
+            image_layout(
+                u32::MAX,
+                u32::MAX,
+                Some(45),
+                f32::MIN_POSITIVE,
+                f32::MIN_POSITIVE,
+            )
+            .is_none(),
+            "underflowed fitted dimensions must be rejected"
+        );
+    }
+
+    #[test]
+    fn image_paint_transform_rotates_clockwise_within_visual_bounds() {
+        let layout = image_layout(200, 100, Some(90), 1_000.0, 1_000.0).unwrap();
+        let transform = image_paint_transform(layout, 10.0, 20.0);
+        let map = |x: f32, y: f32| {
+            (
+                transform.sx() * x + transform.kx() * y + transform.tx(),
+                transform.ky() * x + transform.sy() * y + transform.ty(),
+            )
+        };
+
+        let top_left = map(0.0, 0.0);
+        let top_right = map(layout.image_w, 0.0);
+        let bottom_left = map(0.0, layout.image_h);
+        assert_close(top_left.0, 85.0);
+        assert_close(top_left.1, 20.0);
+        assert_close(top_right.0, 85.0);
+        assert_close(top_right.1, 170.0);
+        assert_close(bottom_left.0, 10.0);
+        assert_close(bottom_left.1, 20.0);
+    }
+
+    #[test]
+    fn rotated_image_bounds_drive_block_pagination() {
+        let bytes = vec![0; 100 * 800 * 4];
+        let image = Image {
+            bytes: Some(bytes),
+            mime: Some(crate::image::MIME_RAW_RGBA.to_string()),
+            width_px: Some(100),
+            height_px: Some(800),
+            ..Image::default()
+        };
+        let model = |rotation_degrees| DocModel {
+            blocks: vec![
+                Block::Image(Image {
+                    rotation_degrees,
+                    ..image.clone()
+                }),
+                Block::Image(Image {
+                    rotation_degrees,
+                    ..image.clone()
+                }),
+            ],
+            ..DocModel::default()
+        };
+
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let unrotated = super::layout_pages_with_fonts(&model(None), &fonts).unwrap();
+        let rotated = super::layout_pages_with_fonts(&model(Some(90)), &fonts).unwrap();
+        assert_eq!(unrotated.pages, 2);
+        assert_eq!(unrotated.block_pages, vec![Some(1), Some(2)]);
+        assert_eq!(rotated.pages, 1);
+        assert_eq!(rotated.block_pages, vec![Some(1), Some(1)]);
+    }
+
+    #[test]
+    fn rotated_images_fit_and_advance_within_active_columns() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let page = PageSetup {
+            width_pt: 220.0,
+            height_pt: 200.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        };
+        let image = Image {
+            bytes: Some(vec![0; 200 * 200 * 4]),
+            mime: Some(crate::image::MIME_RAW_RGBA.to_string()),
+            width_px: Some(200),
+            height_px: Some(200),
+            rotation_degrees: Some(90),
+            ..Image::default()
+        };
+        let model = DocModel {
+            blocks: vec![Block::Image(image.clone()), Block::Image(image)],
+            setup: crate::model::DocSetup {
+                page,
+                columns: Some(2),
+                ..Default::default()
+            },
+            ..DocModel::default()
+        };
+        let geom = Geom::from_setup(&page);
+        let mut capture = LayoutCapture::default();
+        let flow = super::collect_pdf_flow_items(
+            &model,
+            geom,
+            &mut tcx,
+            &mut capture,
+            super::SourceRenderHints::default(),
+            &[],
+            None,
+        );
+        let layouts = flow
+            .iter()
+            .filter_map(|item| match item {
+                FlowItem::Picture { layout, .. } => Some(*layout),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(layouts.len(), 2);
+        for layout in layouts {
+            assert_close(layout.bounds_w, 81.0);
+            assert_close(layout.bounds_h, 81.0);
+        }
+
+        let setup = SectionSetup::from(&model.setup);
+        let pagination = paginate(flow, geom, &setup);
+        assert_eq!(pagination.pages.len(), 1);
+        let pictures = pagination.pages[0]
+            .iter()
+            .filter_map(|placed| {
+                matches!(&placed.item, FlowItem::Picture { .. }).then_some((placed.x, placed.width))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(pictures.len(), 2);
+        assert_close(pictures[0].0, 0.0);
+        assert_close(pictures[0].1, 81.0);
+        assert!(pictures[1].0 > 90.0);
+        assert_close(pictures[1].1, 81.0);
     }
 
     fn paragraph_lines_with_marker(

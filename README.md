@@ -276,11 +276,14 @@ paragraph shading, line spacing, first/hanging indents, lists with real autonumb
 labels, bordered tables with uniform model-backed border colors and bounded
 eighth-point widths, shaded vertically-aligned cells, authored column widths,
 bounded preferred-percentage outer widths, logical leading/center/trailing
-placement, and non-negative leading indentation, images, and **clickable
-hyperlink annotations** are drawn. Narrow RTL tables reverse logical placement
-and mirror their cells inside the local table box. Page geometry, equal-width
-section columns, and per-side margins come from the document; multi-page tables
-repeat their header rows without losing outer placement or border paint. Opened
+placement, and non-negative leading indentation, top-level and run-attached body
+images with model-backed whole-degree clockwise rotation, and **clickable
+hyperlink annotations** are drawn. Rotated raster bounds drive proportional
+content-box/page-height fitting and pagination. Narrow RTL tables reverse logical
+placement and mirror their cells inside the local table box. Page geometry,
+equal-width section columns, and per-side margins come from the document;
+multi-page tables repeat their header rows without losing outer placement or
+border paint. Opened
 `.docx` rows may split across pages by default, while effective `w:cantSplit`
 from direct row properties or an inherited table-style chain keeps a fitting
 row together and an over-tall row still splits at line boundaries. Table styles
@@ -394,6 +397,11 @@ Markdown/HTML visual RTL remain outside these bounded bridges.
 > inheritance, spacing/conflict resolution, merged-edge suppression,
 > nested-grid borders, and legacy `.doc` border recovery remain outside this
 > bounded renderer slice.
+> PDF image rotation normalizes direct-model angles modulo 360 and rotates the
+> decoded raster around its center. Source-authored display extents, crop/flip/
+> effects, floating-anchor offsets, exclusion-zone reflow, table-cell images,
+> and Word-exact inline baseline placement remain outside this bounded image
+> bridge.
 >
 > Opened-document renders draw bounded approximate overlay boxes for recovered
 > `.docx` floating-shape geometry on the recovered top-level body block page. A
@@ -882,7 +890,8 @@ evidence.
       `ChartBuilder`, `DocModel`, and
       `write_docx`
 - [x] **PDF renderer** - `parley` + `krilla` with rich text/tables/images/lists/
-      hyperlinks, uniform model-backed table border color/width, paragraph
+      hyperlinks, model-backed clockwise image rotation, uniform model-backed
+      table border color/width, paragraph
       page-break-before, header-row repeat, oversized-row split,
       direct and non-conditional table-style DOCX table-row `cantSplit`, direct DOCX
       and recursively nested table-cell keep/widow controls, direct and

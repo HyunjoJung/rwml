@@ -4300,6 +4300,110 @@ fn image_builder_adds_rotation() {
     assert_eq!(images[0].rotation_degrees, Some(90));
 }
 
+#[cfg(feature = "render")]
+#[test]
+fn authored_image_rotation_survives_reopen_and_changes_pdf() {
+    let image = ImageBuilder::new(tiny_png(), "image/png")
+        .size_px(200, 100)
+        .build();
+    let model_with_rotation = |rotation_degrees| DocModel {
+        blocks: vec![
+            Block::Image(rwml::Image {
+                rotation_degrees,
+                ..image.clone()
+            }),
+            Block::Paragraph(Paragraph {
+                runs: vec![rwml::Run {
+                    image: Some(rwml::Image {
+                        rotation_degrees,
+                        ..image.clone()
+                    }),
+                    ..rwml::Run::default()
+                }],
+                ..Paragraph::default()
+            }),
+        ],
+        ..DocModel::default()
+    };
+
+    let default_reopened = Document::open(&rwml::write_docx(&model_with_rotation(None)))
+        .expect("unrotated image document reopens");
+    let rotated_reopened = Document::open(&rwml::write_docx(&model_with_rotation(Some(90))))
+        .expect("rotated image document reopens");
+    assert_eq!(
+        rotated_reopened
+            .images()
+            .iter()
+            .map(|image| image.rotation_degrees)
+            .collect::<Vec<_>>(),
+        vec![Some(90), Some(90)]
+    );
+
+    let default_pdf = default_reopened
+        .try_to_pdf()
+        .expect("unrotated image document renders");
+    let rotated_pdf = rotated_reopened
+        .try_to_pdf()
+        .expect("rotated image document renders");
+    assert!(rotated_pdf.starts_with(b"%PDF"));
+    assert_ne!(
+        rotated_pdf, default_pdf,
+        "reopened image rotation must affect PDF bytes"
+    );
+    assert_eq!(
+        rotated_pdf,
+        rotated_reopened
+            .try_to_pdf()
+            .expect("rotated image document repeat render")
+    );
+
+    let direct_default = rwml::try_render_pdf(&model_with_rotation(None))
+        .expect("direct unrotated image model renders");
+    let direct_full_turn = rwml::try_render_pdf(&model_with_rotation(Some(360)))
+        .expect("direct full-turn image model renders");
+    assert_eq!(
+        direct_full_turn, direct_default,
+        "a normalized full turn must preserve unrotated PDF output"
+    );
+    let direct_quarter_turn = rwml::try_render_pdf(&model_with_rotation(Some(90)))
+        .expect("direct quarter-turn image model renders");
+    let direct_negative_equivalent = rwml::try_render_pdf(&model_with_rotation(Some(-270)))
+        .expect("direct negative equivalent image model renders");
+    assert_eq!(
+        direct_negative_equivalent, direct_quarter_turn,
+        "equivalent direct-model angles must render identically"
+    );
+    let direct_arbitrary = rwml::try_render_pdf(&model_with_rotation(Some(45)))
+        .expect("direct arbitrary-angle image model renders");
+    assert_eq!(
+        direct_arbitrary,
+        rwml::try_render_pdf(&model_with_rotation(Some(45)))
+            .expect("direct arbitrary-angle image model repeat render")
+    );
+
+    let run_only_model = |rotation_degrees| DocModel {
+        blocks: vec![Block::Paragraph(Paragraph {
+            runs: vec![rwml::Run {
+                image: Some(rwml::Image {
+                    rotation_degrees,
+                    ..image.clone()
+                }),
+                ..rwml::Run::default()
+            }],
+            ..Paragraph::default()
+        })],
+        ..DocModel::default()
+    };
+    let run_only_default =
+        rwml::try_render_pdf(&run_only_model(None)).expect("run-only unrotated model renders");
+    let run_only_rotated =
+        rwml::try_render_pdf(&run_only_model(Some(90))).expect("run-only rotated model renders");
+    assert_ne!(
+        run_only_rotated, run_only_default,
+        "run-attached image rotation must independently affect PDF bytes"
+    );
+}
+
 #[test]
 fn image_builder_adds_floating_anchor_offset() {
     let png = tiny_png();
