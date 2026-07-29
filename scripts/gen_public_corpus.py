@@ -9,7 +9,8 @@ intact: tracked changes (w:ins/w:del), content controls (w:sdt), text boxes
 hyperlinks, unsupported object markers, tables, floating shape placement metadata, and
 an inline PNG image. Dedicated render fixtures additionally activate modeled paint,
 hidden text, explicit tabs, bounded pagination, equal-width columns, RTL tables, and
-top-and-bottom floating-object flow.
+top-and-bottom floating-object flow. A dedicated table-list fixture covers numbering
+through direct and recursively nested cells.
 
 Usage:
     python scripts/gen_public_corpus.py            # writes corpus/public/synthetic/*.docx
@@ -586,6 +587,59 @@ def rtl_table() -> bytes:
     return _minimal_docx(document)
 
 
+def table_cell_lists() -> bytes:
+    document = _b(
+        XML_DECL
+        + f'<w:document xmlns:w="{W}"><w:body>'
+        '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="11"/>'
+        '</w:numPr></w:pPr><w:r><w:t>Body item before table</w:t></w:r></w:p>'
+        '<w:tbl><w:tblPr><w:bidiVisual/><w:tblW w:w="9000" w:type="dxa"/>'
+        '</w:tblPr><w:tblGrid><w:gridCol w:w="4500"/><w:gridCol w:w="4500"/>'
+        '</w:tblGrid><w:tr>'
+        '<w:tc><w:p><w:pPr><w:bidi/><w:jc w:val="right"/>'
+        '<w:numPr><w:ilvl w:val="0"/><w:numId w:val="11"/></w:numPr></w:pPr>'
+        '<w:r><w:rPr><w:rtl/></w:rPr><w:t>عنصر خلية مباشر</w:t></w:r></w:p>'
+        '<w:p><w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="12"/>'
+        '</w:numPr></w:pPr><w:r><w:t>Nested bullet level</w:t></w:r></w:p>'
+        '</w:tc>'
+        '<w:tc><w:tbl><w:tblGrid><w:gridCol w:w="4200"/></w:tblGrid><w:tr><w:tc>'
+        '<w:p><w:pPr><w:bidi/><w:jc w:val="right"/>'
+        '<w:numPr><w:ilvl w:val="0"/><w:numId w:val="11"/></w:numPr></w:pPr>'
+        '<w:r><w:rPr><w:rtl/></w:rPr><w:t>פריט תא מקונן</w:t></w:r></w:p>'
+        '</w:tc></w:tr></w:tbl></w:tc>'
+        '</w:tr></w:tbl>'
+        '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="11"/>'
+        '</w:numPr></w:pPr><w:r><w:t>Body item after table</w:t></w:r></w:p>'
+        '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>'
+        '<w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720"/>'
+        '</w:sectPr></w:body></w:document>'
+    )
+    numbering = _b(
+        XML_DECL
+        + f'<w:numbering xmlns:w="{W}">'
+        '<w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0">'
+        '<w:start w:val="4"/><w:numFmt w:val="decimal"/>'
+        '<w:lvlText w:val="%1."/></w:lvl></w:abstractNum>'
+        '<w:num w:numId="11"><w:abstractNumId w:val="1"/></w:num>'
+        '<w:abstractNum w:abstractNumId="2"><w:lvl w:ilvl="1">'
+        '<w:numFmt w:val="bullet"/><w:lvlText w:val="○"/>'
+        '</w:lvl></w:abstractNum>'
+        '<w:num w:numId="12"><w:abstractNumId w:val="2"/></w:num>'
+        '</w:numbering>'
+    )
+    return _minimal_docx(
+        document,
+        doc_rels=[("rIdNumbering", f"{R}/numbering", "numbering.xml")],
+        overrides=[
+            (
+                "/word/numbering.xml",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml",
+            )
+        ],
+        extra_parts=[("word/numbering.xml", numbering)],
+    )
+
+
 def wrap_top_bottom() -> bytes:
     document = _b(
         XML_DECL
@@ -626,6 +680,7 @@ CORPUS = {
     "pagination-keep.docx": pagination_keep,
     "two-columns.docx": two_columns,
     "rtl-table.docx": rtl_table,
+    "table-cell-lists.docx": table_cell_lists,
     "wrap-top-bottom.docx": wrap_top_bottom,
 }
 

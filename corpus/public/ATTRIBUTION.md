@@ -17,6 +17,7 @@ content; these files are part of rwml and covered by the repository's own licens
 | `floating_z_order_pair.docx` | two floating anchors with `behindDoc` and `relativeHeight` metadata |
 | `floating_wrap_policy.docx` | floating anchor and wrap distances plus `wrapTight` polygon metadata |
 | `floating_text_bearing.docx` | text-bearing floating shape with containing-block anchor text |
+| `table-cell-lists.docx` | numbering start values across body, direct table cells, and a recursively nested cell; bullet fallback; bidi paragraphs; visual RTL table order |
 
 ## benchmark/ - generated legacy fixtures
 

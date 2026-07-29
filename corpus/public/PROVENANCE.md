@@ -22,4 +22,5 @@ content is included.
 | `synthetic/pagination-keep.docx` | Direct and style-inherited keep/widow controls on bounded page geometry. |
 | `synthetic/two-columns.docx` | Equal-width section flow across column and page boundaries. |
 | `synthetic/rtl-table.docx` | Mixed Arabic/Hebrew paragraph direction, run isolation, and RTL table cells. |
+| `synthetic/table-cell-lists.docx` | Numbered and bullet paragraphs across body, direct cells, and a recursively nested cell in source-logical visual-RTL table order. |
 | `synthetic/wrap-top-bottom.docx` | One bounded top-and-bottom floating-shape exclusion band. |

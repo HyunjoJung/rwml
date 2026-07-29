@@ -96,6 +96,14 @@ class PublicCorpusGeneratorTests(unittest.TestCase):
                 "<w:bidiVisual",
                 "<w:tblCellMar",
             ),
+            "table-cell-lists.docx": (
+                "<w:numPr",
+                "<w:bidi",
+                "<w:rtl",
+                "<w:bidiVisual",
+                "Nested bullet level",
+                "<w:tc><w:tbl>",
+            ),
             "wrap-top-bottom.docx": (
                 "<wp:anchor",
                 "<wp:positionH",
@@ -116,6 +124,13 @@ class PublicCorpusGeneratorTests(unittest.TestCase):
                         self.assertIn('<w:style w:type="paragraph"', styles_xml)
                         self.assertIn("<w:keepNext", styles_xml)
                         self.assertIn("<w:keepLines", styles_xml)
+                    if name == "table-cell-lists.docx":
+                        numbering_xml = archive.read("word/numbering.xml").decode(
+                            "utf-8"
+                        )
+                        self.assertIn('<w:start w:val="4"', numbering_xml)
+                        self.assertIn('<w:numFmt w:val="decimal"', numbering_xml)
+                        self.assertIn('<w:numFmt w:val="bullet"', numbering_xml)
                 for marker in markers:
                     self.assertIn(marker, document_xml)
 
