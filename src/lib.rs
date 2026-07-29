@@ -5497,6 +5497,11 @@ mod tests {
         grpprl
     }
 
+    fn push_section_break_kind(grpprl: &mut Vec<u8>, kind: u8) {
+        grpprl.extend_from_slice(&0x3009u16.to_le_bytes());
+        grpprl.push(kind);
+    }
+
     fn legacy_doc_with_section_page_grpprls(
         text: &str,
         section_cps: &[u32],
@@ -6425,6 +6430,124 @@ mod tests {
         assert_eq!(final_page.margin_top_pt, Some(72.0));
         assert_eq!(final_page.margin_bottom_pt, Some(36.0));
         assert!(final_page.landscape);
+    }
+
+    #[test]
+    fn legacy_doc_sepx_preserves_even_and_odd_section_breaks() {
+        let section_cps = [0, 5, 10, 15];
+        let mut first = section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        let mut second = section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        let mut final_section =
+            section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_break_kind(&mut first, 0x03);
+        push_section_break_kind(&mut second, 0x04);
+        push_section_break_kind(&mut final_section, 0x02);
+        let sepx_grpprls = [
+            first.as_slice(),
+            second.as_slice(),
+            final_section.as_slice(),
+        ];
+        let bytes =
+            legacy_doc_with_section_page_grpprls("AAAAABBBBBCCCCC", &section_cps, &sepx_grpprls);
+
+        let doc = Document::open(&bytes).unwrap();
+        let kinds = doc
+            .model()
+            .blocks
+            .iter()
+            .filter_map(|block| match block {
+                Block::SectionBreak(setup) => setup.section_break,
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            kinds,
+            vec![SectionBreakKind::EvenPage, SectionBreakKind::OddPage]
+        );
+
+        #[cfg(feature = "render")]
+        {
+            let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+            let model = doc.model();
+            let layout = layout_pages_with_fonts(&model, &fonts).expect("layout legacy DOC");
+            let section_break_pages = model
+                .blocks
+                .iter()
+                .zip(&layout.block_pages)
+                .filter_map(|(block, page)| match block {
+                    Block::SectionBreak(setup) => setup.section_break.map(|kind| (kind, *page)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+
+            assert_eq!(layout.pages, 3);
+            assert_eq!(
+                section_break_pages,
+                vec![
+                    (SectionBreakKind::EvenPage, Some(2)),
+                    (SectionBreakKind::OddPage, Some(3))
+                ]
+            );
+        }
+
+        #[cfg(feature = "docx")]
+        {
+            let docx = doc.to_docx();
+            let document_xml = docx_part(&docx, "word/document.xml");
+            let even = document_xml
+                .find(r#"<w:type w:val="evenPage"/>"#)
+                .expect("even-page section mark");
+            let odd = document_xml
+                .find(r#"<w:type w:val="oddPage"/>"#)
+                .expect("odd-page section mark");
+            assert!(even < odd, "section marks must preserve source order");
+
+            let reopened = Document::open(&docx).unwrap();
+            let reopened_kinds = reopened
+                .model()
+                .blocks
+                .iter()
+                .filter_map(|block| match block {
+                    Block::SectionBreak(setup) => setup.section_break,
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(reopened_kinds, kinds);
+        }
+    }
+
+    #[test]
+    fn legacy_doc_malformed_sepx_defaults_its_break_without_harming_neighbor() {
+        let section_cps = [0, 5, 10, 15];
+        let mut malformed = section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_break_kind(&mut malformed, 0x03);
+        malformed.push(0xFF);
+        let mut valid = section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_break_kind(&mut valid, 0x04);
+        let final_section = section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        let sepx_grpprls = [
+            malformed.as_slice(),
+            valid.as_slice(),
+            final_section.as_slice(),
+        ];
+        let bytes =
+            legacy_doc_with_section_page_grpprls("AAAAABBBBBCCCCC", &section_cps, &sepx_grpprls);
+
+        let doc = Document::open(&bytes).unwrap();
+        let kinds = doc
+            .model()
+            .blocks
+            .iter()
+            .filter_map(|block| match block {
+                Block::SectionBreak(setup) => setup.section_break,
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            kinds,
+            vec![SectionBreakKind::NextPage, SectionBreakKind::OddPage]
+        );
     }
 
     #[test]

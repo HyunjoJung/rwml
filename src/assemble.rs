@@ -182,6 +182,7 @@ fn legacy_doc_section_setups_from_regions(
     let mut section_setups = vec![SectionSetup::default(); section_count];
     for (setup, span) in section_setups.iter_mut().zip(section_spans) {
         setup.page = span.page;
+        setup.section_break = Some(span.section_break);
     }
     for region in regions.iter().filter(|region| {
         region.kind == SourceRegionKind::HeaderFooter && region.block_start < region.block_end
@@ -224,9 +225,7 @@ fn legacy_doc_section_setups_from_regions(
         let Some(section_setup) = section_setups.get(section_index) else {
             break;
         };
-        let mut section_setup = section_setup.clone();
-        section_setup.section_break = Some(SectionBreakKind::NextPage);
-        *setup = section_setup;
+        *setup = section_setup.clone();
         section_index = section_index.saturating_add(1);
     }
 
@@ -332,7 +331,10 @@ fn push_legacy_main_section_regions(
         if index + 1 < section_spans.len() {
             output
                 .blocks
-                .push(Block::SectionBreak(legacy_section_break_setup(span.page)));
+                .push(Block::SectionBreak(legacy_section_break_setup(
+                    span.page,
+                    span.section_break,
+                )));
             output.pagination_hints.push(PaginationHint::default());
             output.table_row_pagination.push(Vec::new());
             output.table_cell_pagination.push(Vec::new());
@@ -340,9 +342,9 @@ fn push_legacy_main_section_regions(
     }
 }
 
-fn legacy_section_break_setup(page: PageSetup) -> SectionSetup {
+fn legacy_section_break_setup(page: PageSetup, section_break: SectionBreakKind) -> SectionSetup {
     SectionSetup {
-        section_break: Some(SectionBreakKind::NextPage),
+        section_break: Some(section_break),
         page,
         ..SectionSetup::default()
     }
@@ -433,6 +435,7 @@ struct HeaderStoryRange {
 const HEADER_FOOTER_STORY_BASE: usize = 6;
 const FIB_FCLCB_PLCF_SED: usize = 6;
 const SED_RECORD_LEN: usize = 12;
+const SPRM_S_BKC: u16 = 0x3009;
 const SPRM_S_B_ORIENTATION: u16 = 0x301D;
 const SPRM_S_XA_PAGE: u16 = 0xB01F;
 const SPRM_S_YA_PAGE: u16 = 0xB020;
@@ -520,6 +523,13 @@ struct LegacySectionSpan {
     start_cp: usize,
     end_cp: usize,
     page: PageSetup,
+    section_break: SectionBreakKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct LegacySectionProperties {
+    page: PageSetup,
+    section_break: SectionBreakKind,
 }
 
 fn legacy_section_spans(word: &[u8], table: &[u8], main_len_cp: usize) -> Vec<LegacySectionSpan> {
@@ -575,34 +585,38 @@ fn parse_legacy_section_spans(
         }
         let record_offset = cp_bytes.checked_add(index.checked_mul(SED_RECORD_LEN)?)?;
         let fc_sepx = u32le(slice, record_offset.checked_add(2)?)? as i32;
-        let page = legacy_sepx_page_setup_at(word, fc_sepx);
+        let properties = legacy_sepx_section_properties_at(word, fc_sepx);
         spans.push(LegacySectionSpan {
             start_cp: *start_cp,
             end_cp: bounded_end_cp,
-            page,
+            page: properties.page,
+            section_break: properties.section_break,
         });
     }
     Some(spans)
 }
 
-fn legacy_sepx_page_setup_at(word: &[u8], fc_sepx: i32) -> PageSetup {
+fn legacy_sepx_section_properties_at(word: &[u8], fc_sepx: i32) -> LegacySectionProperties {
     usize::try_from(fc_sepx)
         .ok()
         .filter(|offset| *offset != 0)
-        .and_then(|offset| parse_legacy_sepx_page_setup(word, offset))
-        .unwrap_or_else(legacy_section_page_setup_default)
+        .and_then(|offset| parse_legacy_sepx_section_properties(word, offset))
+        .unwrap_or_else(legacy_section_properties_default)
 }
 
-fn parse_legacy_sepx_page_setup(word: &[u8], offset: usize) -> Option<PageSetup> {
+fn parse_legacy_sepx_section_properties(
+    word: &[u8],
+    offset: usize,
+) -> Option<LegacySectionProperties> {
     let cb = u16le(word, offset)? as i16;
     let cb = usize::try_from(cb).ok()?;
     let start = offset.checked_add(2)?;
     let end = start.checked_add(cb)?;
-    scan_legacy_section_page_grpprl(word.get(start..end)?)
+    scan_legacy_section_grpprl(word.get(start..end)?)
 }
 
-fn scan_legacy_section_page_grpprl(grpprl: &[u8]) -> Option<PageSetup> {
-    let mut page = legacy_section_page_setup_default();
+fn scan_legacy_section_grpprl(grpprl: &[u8]) -> Option<LegacySectionProperties> {
+    let mut properties = legacy_section_properties_default();
     let mut pos = 0usize;
     while pos < grpprl.len() {
         let sprm = u16le(grpprl, pos)?;
@@ -612,49 +626,63 @@ fn scan_legacy_section_page_grpprl(grpprl: &[u8]) -> Option<PageSetup> {
         let operand = grpprl.get(operand_start..operand_end)?;
 
         match sprm {
+            SPRM_S_BKC => match operand.first().copied() {
+                // Continuous/new-column cannot be represented by the shared model.
+                Some(0..=2) => properties.section_break = SectionBreakKind::NextPage,
+                Some(3) => properties.section_break = SectionBreakKind::EvenPage,
+                Some(4) => properties.section_break = SectionBreakKind::OddPage,
+                _ => {}
+            },
             SPRM_S_B_ORIENTATION => match operand.first().copied() {
                 // [MS-DOC] 2.9.236: 1 = portrait, 2 = landscape.
-                Some(1) => page.landscape = false,
-                Some(2) => page.landscape = true,
+                Some(1) => properties.page.landscape = false,
+                Some(2) => properties.page.landscape = true,
                 _ => {}
             },
             SPRM_S_XA_PAGE => {
                 if let Some(value @ 144..=31_680) = u16le(operand, 0) {
-                    page.width_pt = twips_to_points(value);
+                    properties.page.width_pt = twips_to_points(value);
                 }
             }
             SPRM_S_YA_PAGE => {
                 if let Some(value @ 144..=31_680) = u16le(operand, 0) {
-                    page.height_pt = twips_to_points(value);
+                    properties.page.height_pt = twips_to_points(value);
                 }
             }
             SPRM_S_DXA_LEFT => {
                 if let Some(value @ 0..=31_680) = u16le(operand, 0) {
-                    page.margin_left_pt = Some(twips_to_points(value));
+                    properties.page.margin_left_pt = Some(twips_to_points(value));
                 }
             }
             SPRM_S_DXA_RIGHT => {
                 if let Some(value @ 0..=31_680) = u16le(operand, 0) {
-                    page.margin_right_pt = Some(twips_to_points(value));
+                    properties.page.margin_right_pt = Some(twips_to_points(value));
                 }
             }
             SPRM_S_DYA_TOP => {
                 let value = u16le(operand, 0)? as i16;
                 if (0..=31_665).contains(&value) {
-                    page.margin_top_pt = Some(f32::from(value) / 20.0);
+                    properties.page.margin_top_pt = Some(f32::from(value) / 20.0);
                 }
             }
             SPRM_S_DYA_BOTTOM => {
                 let value = u16le(operand, 0)? as i16;
                 if (0..=31_665).contains(&value) {
-                    page.margin_bottom_pt = Some(f32::from(value) / 20.0);
+                    properties.page.margin_bottom_pt = Some(f32::from(value) / 20.0);
                 }
             }
             _ => {}
         }
         pos = operand_end;
     }
-    Some(page)
+    Some(properties)
+}
+
+fn legacy_section_properties_default() -> LegacySectionProperties {
+    LegacySectionProperties {
+        page: legacy_section_page_setup_default(),
+        section_break: SectionBreakKind::NextPage,
+    }
 }
 
 fn legacy_section_page_setup_default() -> PageSetup {
@@ -1835,7 +1863,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_sepx_page_scanner_keeps_last_valid_values() {
+    fn legacy_sepx_scanner_keeps_last_valid_values() {
         let mut grpprl = vec![
             0x00, 0xC0, 0x02, 0xAA, 0xBB, // unknown variable-length sprm
             0x1D, 0x30, 0x02, // landscape
@@ -1853,27 +1881,65 @@ mod tests {
         grpprl.extend_from_slice(&SPRM_S_B_ORIENTATION.to_le_bytes());
         grpprl.push(0);
 
-        let page = scan_legacy_section_page_grpprl(&grpprl).unwrap();
+        let properties = scan_legacy_section_grpprl(&grpprl).unwrap();
 
-        assert_eq!(page.width_pt, 792.0);
-        assert_eq!(page.margin_left_pt, Some(0.0));
-        assert_eq!(page.margin_top_pt, Some(72.0));
-        assert!(page.landscape);
+        assert_eq!(properties.page.width_pt, 792.0);
+        assert_eq!(properties.page.margin_left_pt, Some(0.0));
+        assert_eq!(properties.page.margin_top_pt, Some(72.0));
+        assert!(properties.page.landscape);
+        assert_eq!(properties.section_break, SectionBreakKind::NextPage);
+
+        let push_break = |grpprl: &mut Vec<u8>, value| {
+            grpprl.extend_from_slice(&SPRM_S_BKC.to_le_bytes());
+            grpprl.push(value);
+        };
+        push_break(&mut grpprl, 3);
+        assert_eq!(
+            scan_legacy_section_grpprl(&grpprl).unwrap().section_break,
+            SectionBreakKind::EvenPage
+        );
+        push_break(&mut grpprl, 5);
+        assert_eq!(
+            scan_legacy_section_grpprl(&grpprl).unwrap().section_break,
+            SectionBreakKind::EvenPage
+        );
+        push_break(&mut grpprl, 2);
+        assert_eq!(
+            scan_legacy_section_grpprl(&grpprl).unwrap().section_break,
+            SectionBreakKind::NextPage
+        );
+        push_break(&mut grpprl, 3);
+        push_break(&mut grpprl, 1);
+        assert_eq!(
+            scan_legacy_section_grpprl(&grpprl).unwrap().section_break,
+            SectionBreakKind::NextPage
+        );
+        push_break(&mut grpprl, 4);
+        assert_eq!(
+            scan_legacy_section_grpprl(&grpprl).unwrap().section_break,
+            SectionBreakKind::OddPage
+        );
+        push_break(&mut grpprl, 0);
+        assert_eq!(
+            scan_legacy_section_grpprl(&grpprl).unwrap().section_break,
+            SectionBreakKind::NextPage
+        );
     }
 
     #[test]
-    fn legacy_sepx_page_parser_rejects_malformed_payloads() {
-        assert!(scan_legacy_section_page_grpprl(&[0x1D]).is_none());
-        assert!(scan_legacy_section_page_grpprl(&[0x00, 0xC0, 0x02, 0xAA]).is_none());
-        assert!(parse_legacy_sepx_page_setup(&(-1i16).to_le_bytes(), 0).is_none());
+    fn legacy_sepx_parser_rejects_malformed_payloads() {
+        assert!(scan_legacy_section_grpprl(&[0x1D]).is_none());
+        assert!(scan_legacy_section_grpprl(&[0x00, 0xC0, 0x02, 0xAA]).is_none());
+        assert!(parse_legacy_sepx_section_properties(&(-1i16).to_le_bytes(), 0).is_none());
 
         let truncated = [4, 0, 0x1D, 0x30, 0x01];
-        assert!(parse_legacy_sepx_page_setup(&truncated, 0).is_none());
+        assert!(parse_legacy_sepx_section_properties(&truncated, 0).is_none());
         for fc_sepx in [-1, 0, i32::MAX] {
-            let page = legacy_sepx_page_setup_at(&truncated, fc_sepx);
-            assert_eq!(page.width_pt, 612.0);
-            assert_eq!(page.height_pt, 792.0);
-            assert!(!page.landscape);
+            let properties = legacy_sepx_section_properties_at(&truncated, fc_sepx);
+            assert_eq!(properties.page.width_pt, 612.0);
+            assert_eq!(properties.page.height_pt, 792.0);
+            assert!(!properties.page.landscape);
+            assert_eq!(properties.section_break, SectionBreakKind::NextPage);
         }
     }
 
@@ -1907,11 +1973,13 @@ mod tests {
                     start_cp: 0,
                     end_cp: 2,
                     page: PageSetup::default(),
+                    section_break: SectionBreakKind::NextPage,
                 },
                 LegacySectionSpan {
                     start_cp: 2,
                     end_cp: 4,
                     page: PageSetup::default(),
+                    section_break: SectionBreakKind::NextPage,
                 },
             ],
         );

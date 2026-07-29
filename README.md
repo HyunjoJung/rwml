@@ -433,7 +433,12 @@ and top-level block lands on — matching rwml's own PDF output, **not**
 Microsoft Word's pagination. Supplied fonts are used strictly (system fonts
 disabled), so identical document + font bytes give identical pages; results
 live in a separate `LayoutPages` record and never overwrite reader-path
-`computed_result` semantics.
+`computed_result` semantics. Modeled next/even/odd section breaks advance at
+least one physical page; even/odd starts add one body-empty filler when needed
+to reach the requested 1-based physical parity. Section display-number
+restarts/formats do not affect that preview parity. Word-exact filler-page
+running surfaces, section-relative odd/even header selection, and mixed
+section-local geometry remain outside this bounded behavior.
 
 You can also convert a parsed document straight to PDF:
 `Document::open(&bytes)?.to_pdf()` / `try_to_pdf()`, pass font blobs with
@@ -782,11 +787,14 @@ code points.
   Valid `PlcfSed` SED records also preserve each section's SEPX page size,
   orientation, and nonnegative left/right/top/bottom margins through
   `SectionSetup` plus the final `DocSetup`, including headerless and
-  single-section documents. Malformed local SEPX data keeps that section's
+  single-section documents. Boundary SEPX records preserve new/even/odd
+  `sprmSBkc` break kinds through the shared model and fresh `.docx`
+  conversion/reopen. Malformed local SEPX data keeps that section's
   deterministic default without discarding valid neighboring sections.
-  Legacy section-break kinds, columns, gutters/facing pages, header/footer
-  distances, page borders/grids, vertical justification, and negative
-  fixed-position top/bottom semantics remain outside this bounded reader path.
+  Continuous/new-column section marks normalize to the shared model's
+  next-page fallback. Columns, gutters/facing pages, header/footer distances,
+  page borders/grids, vertical justification, and negative fixed-position
+  top/bottom semantics remain outside this bounded reader path.
   Exact multi-note/endnote reference markers and exact text-box shape anchors
   are not yet fully promoted, so non-body regions still remain in the flat
   block stream;
