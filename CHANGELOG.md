@@ -41,18 +41,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   source restart metadata, marker fonts/glyphs/tabs/alignment, nested-grid
   layout, and Word-exact RTL list typography remain outside this bounded
   support.
-- Opened legacy `.doc` paragraphs now preserve direct `sprmPShd80` palette and
-  `sprmPShd` COLORREF shading when the source result collapses exactly to one
-  explicit RGB fill. Clear shading uses its explicit background, solid shading
-  uses its explicit foreground, and another supported pattern is retained only
-  when both explicit colors are identical. Supported fills flow through the
-  shared model, `.docx` conversion/reopen, and existing PDF paragraph paint
-  without changing `LayoutPages`. Repeated modifiers apply in source order;
-  later automatic, nil, patterned, invalid, wrong-sized, or truncated shading
-  suppresses stale positive state, while a later paragraph-style modifier
-  resets earlier direct shading. Pattern fidelity, theme/automatic/nil colors,
-  style-derived shading, paragraph borders, table-style effects, and piece
-  `Pcd.Prm` paragraph properties remain unsupported.
+- Opened legacy `.doc` paragraphs now preserve direct and paragraph-style
+  `sprmPShd80` palette and `sprmPShd` COLORREF shading when the source result
+  collapses exactly to one explicit RGB fill. Clear shading uses its explicit
+  background, solid shading uses its explicit foreground, and another
+  supported pattern is retained only when both explicit colors are identical.
+  Style-local values resolve through the bounded base chain before final
+  direct-PAPX precedence. Repeated modifiers apply in source order; later
+  structurally complete automatic, nil, patterned, invalid, or wrong-sized
+  shading suppresses inherited or stale positive state, while a later valid
+  modifier recovers. A truncated or unsizeable direct shading modifier
+  suppresses and stops that PAPX scan; a structurally malformed style UPX
+  invalidates its local style payload. Supported fills flow through the shared
+  model, `.docx` conversion/reopen, and existing PDF paragraph paint without
+  changing `LayoutPages`. Pattern fidelity, theme/automatic/nil distinction,
+  document-default and table/list-style conditional shading, original legacy
+  style-graph preservation through `.docx` conversion, paragraph borders,
+  table-style effects, and piece `Pcd.Prm` paragraph properties remain
+  unsupported.
 - Opened legacy `.doc` tables now recover coherent positive physical top,
   left, bottom, right, inside-horizontal, and inside-vertical border channels
   from complete `sprmTDefTable` `TC80` records and direct row-mark
