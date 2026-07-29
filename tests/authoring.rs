@@ -3815,6 +3815,60 @@ fn authored_uniform_table_border_paint_survives_reopen_and_changes_pdf() {
     assert_eq!(styled_pdf, reopened.try_to_pdf().expect("repeat render"));
 }
 
+#[cfg(feature = "render")]
+#[test]
+fn authored_six_way_table_border_paint_survives_reopen_and_changes_pdf() {
+    let baseline_model = DocBuilder::new()
+        .rich_table(
+            TableBuilder::new()
+                .row([CellBuilder::text("A"), CellBuilder::text("B")])
+                .row([CellBuilder::text("C"), CellBuilder::text("D")]),
+        )
+        .build();
+    let baseline =
+        Document::open(&rwml::write_docx(&baseline_model)).expect("baseline table .docx reopens");
+    let baseline_pdf = baseline.try_to_pdf().expect("baseline table renders");
+
+    for (index, side) in [
+        TableBorderSide::Top,
+        TableBorderSide::Left,
+        TableBorderSide::Bottom,
+        TableBorderSide::Right,
+        TableBorderSide::InsideHorizontal,
+        TableBorderSide::InsideVertical,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let color = Color::rgb(0x31 + index as u8, 0x72, 0xB4);
+        let size = 16 + index as u16;
+        let model = DocBuilder::new()
+            .rich_table(
+                TableBuilder::new()
+                    .border_side_color(side, color)
+                    .border_side_size_eighths(side, size)
+                    .row([CellBuilder::text("A"), CellBuilder::text("B")])
+                    .row([CellBuilder::text("C"), CellBuilder::text("D")]),
+            )
+            .build();
+        let reopened =
+            Document::open(&rwml::write_docx(&model)).expect("six-way table .docx reopens");
+        let Block::Table(table) = &reopened.model().blocks[0] else {
+            panic!("expected reopened table");
+        };
+        assert_eq!(table.border_colors.get(side), Some(color), "side={side:?}");
+        assert_eq!(table.border_sizes.get(side), Some(size), "side={side:?}");
+
+        let pdf = reopened.try_to_pdf().expect("six-way table renders");
+        assert_ne!(pdf, baseline_pdf, "side={side:?}");
+        assert_eq!(
+            pdf,
+            reopened.try_to_pdf().expect("repeat six-way render"),
+            "side={side:?}"
+        );
+    }
+}
+
 #[test]
 fn table_builder_adds_table_border_style() {
     let model = DocBuilder::new()
