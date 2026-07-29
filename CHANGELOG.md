@@ -8,6 +8,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Adds package-preserving plain top-level DOCX paragraph insertion through
+  `Document::insert_body_paragraph`. Its `0..=body_blocks().len()` position
+  space inserts before an indexed atomic direct paragraph/table/content-control
+  or before final body section properties, reuses the existing WML escaping,
+  significant-whitespace, tab, line-break, Unicode, and forbidden-control
+  handling, and remains transactional under `EditSession`. Synthetic retained
+  trees cover prefixed/default namespaces, middle/append/blank placement,
+  internal section-boundary adjacency, untouched-part byte stability,
+  deterministic reopen, stale/committed/rolled back read views, node-budget
+  failure, invalid positions, and opaque or cross-block structural hazards.
+  Rich paragraph/block properties, numbering, fields, bookmarks, revisions,
+  relationships, nested/story-part insertion, duplication, and indexed content
+  replacement remain outside this bounded API.
 - Adds explicit part-local cached field inventory and result editing through
   `Document::fields_in_part` and `Document::set_field_result_in_part` for the
   main body, real standard footnotes/endnotes, and correctly typed existing

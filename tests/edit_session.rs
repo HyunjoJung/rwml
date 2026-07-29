@@ -95,6 +95,38 @@ fn committed_edit_session_refreshes_body_and_note_read_views() {
 }
 
 #[test]
+fn body_paragraph_insertion_commits_and_rolls_back_transactionally() {
+    let mut document = Document::try_new().unwrap();
+    let before_parts = package_parts(&document.save().unwrap());
+    let before_text = document.main_text().to_string();
+    let before_blocks = document.body_blocks().unwrap().len();
+
+    let mut rolled_back = document.edit_session().unwrap();
+    rolled_back
+        .insert_body_paragraph(0, "Temporary body paragraph")
+        .unwrap();
+    assert_eq!(rolled_back.main_text(), before_text);
+    assert_eq!(rolled_back.body_blocks().unwrap().len(), before_blocks + 1);
+    rolled_back.rollback();
+
+    assert_eq!(package_parts(&document.save().unwrap()), before_parts);
+    assert_eq!(document.main_text(), before_text);
+    assert_eq!(document.body_blocks().unwrap().len(), before_blocks);
+    assert!(document.edited_parts().is_empty());
+
+    let mut committed = document.edit_session().unwrap();
+    committed
+        .insert_body_paragraph(0, "Committed body paragraph")
+        .unwrap();
+    assert_eq!(committed.main_text(), before_text);
+    committed.commit().unwrap();
+
+    assert!(document.main_text().contains("Committed body paragraph"));
+    assert_eq!(document.body_blocks().unwrap().len(), before_blocks + 1);
+    assert_eq!(document.edited_parts(), ["word/document.xml"]);
+}
+
+#[test]
 fn explicit_refresh_updates_body_view_and_preserves_touched_parts() {
     let mut document = Document::open(include_bytes!(
         "../corpus/public/synthetic/kitchen_sink.docx"
