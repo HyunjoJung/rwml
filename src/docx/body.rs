@@ -61,6 +61,7 @@ type Xml<'a> = Reader<&'a [u8]>;
 /// descent's stack — a process abort that breaks the panic-free contract. Past
 /// this depth the subtree is skipped rather than recursed into.
 const MAX_DEPTH: u32 = 128;
+const MAX_TABLE_GRID_COLS: usize = 1024;
 const PAGE_BREAK_MARKER: char = '\u{000C}';
 
 #[derive(Default)]
@@ -5277,16 +5278,18 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Table, TablePagina
     }
     let mut rows: Vec<RowRaw> = Vec::new();
     let mut props = TableProps::default();
+    let mut grid_widths = Vec::new();
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
                 b"tblPr" => props = read_tblpr(r),
+                b"tblGrid" => grid_widths = read_tbl_grid(r).unwrap_or_default(),
                 b"tr" => rows.push(read_row(r, ctx, depth)),
                 b"AlternateContent" => {
                     rows.extend(read_table_alternate_content_rows(r, ctx, depth + 1))
                 }
                 name if is_current_table_structural_wrapper(name) => {}
-                _ => skip_subtree(r), // tblGrid, …
+                _ => skip_subtree(r),
             },
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"tbl" => break,
             Ok(Event::Eof) | Err(_) => break,
@@ -5309,7 +5312,7 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Table, TablePagina
             row.props.pagination(style_cant_split)
         })
         .collect();
-    let (table, cell_pagination, nested_pagination) = build_table(rows, props);
+    let (table, cell_pagination, nested_pagination) = build_table(rows, props, grid_widths);
     (
         table,
         TablePaginationHints {
@@ -5318,6 +5321,45 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Table, TablePagina
             nested: nested_pagination,
         },
     )
+}
+
+fn read_tbl_grid(r: &mut Xml<'_>) -> Option<Vec<u32>> {
+    let mut widths = Vec::new();
+    let mut valid = true;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblGridChange" => {
+                skip_subtree(r);
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"gridCol" => {
+                if widths.len() >= MAX_TABLE_GRID_COLS {
+                    valid = false;
+                } else if let Some(width) = attr_u32(&e, b"w").filter(|width| *width > 0) {
+                    widths.push(width);
+                } else {
+                    valid = false;
+                }
+                skip_subtree(r);
+            }
+            Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"gridCol" => {
+                if widths.len() >= MAX_TABLE_GRID_COLS {
+                    valid = false;
+                } else if let Some(width) = attr_u32(&e, b"w").filter(|width| *width > 0) {
+                    widths.push(width);
+                } else {
+                    valid = false;
+                }
+            }
+            Ok(Event::Start(_)) => skip_subtree(r),
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"tblGrid" => break,
+            Ok(Event::Eof) | Err(_) => {
+                valid = false;
+                break;
+            }
+            _ => {}
+        }
+    }
+    (valid && !widths.is_empty()).then_some(widths)
 }
 
 fn is_current_table_structural_wrapper(name: &[u8]) -> bool {
@@ -6311,6 +6353,7 @@ fn apply_tc_mar_side(margins: &mut CellMargins, seen: &mut bool, e: &BytesStart<
 fn build_table(
     raw_rows: Vec<RowRaw>,
     props: TableProps,
+    grid_widths: Vec<u32>,
 ) -> (
     Table,
     TableCellPaginationHints,
@@ -6338,6 +6381,7 @@ fn build_table(
     }
 
     let mut grid: Vec<Vec<Placed>> = Vec::with_capacity(raw_rows.len());
+    let mut model_grid_cols = 0usize;
     for raw_row in raw_rows {
         let header = raw_row.props.header.unwrap_or(false);
         let mut col = 0usize;
@@ -6361,6 +6405,7 @@ fn build_table(
             });
             col += cs as usize;
         }
+        model_grid_cols = model_grid_cols.max(col);
         grid.push(row);
     }
 
@@ -6418,6 +6463,7 @@ fn build_table(
         Table {
             rows,
             header_rows,
+            col_widths_pct: normalize_table_grid_widths(&grid_widths, model_grid_cols),
             bidi_visual: props.bidi_visual,
             fixed_layout: props.fixed_layout,
             indent_twips: props.indent_twips,
@@ -6429,11 +6475,24 @@ fn build_table(
             border_sizes: props.border_sizes,
             border_style: props.border_style,
             border_styles: props.border_styles,
-            ..Default::default()
         },
         table_cell_pagination,
         table_nested_pagination,
     )
+}
+
+fn normalize_table_grid_widths(widths: &[u32], model_grid_cols: usize) -> Vec<f32> {
+    if widths.len() != model_grid_cols || widths.is_empty() {
+        return Vec::new();
+    }
+    let sum = widths.iter().map(|width| u64::from(*width)).sum::<u64>();
+    if sum == 0 {
+        return Vec::new();
+    }
+    widths
+        .iter()
+        .map(|width| (*width as f64 / sum as f64) as f32)
+        .collect()
 }
 
 #[cfg(test)]
@@ -8362,6 +8421,104 @@ mod tests {
     }
 
     #[test]
+    fn table_grid_widths_populate_model_proportions_in_logical_order() {
+        let xml = r#"<w:document><w:body><w:tbl>
+            <w:tblPr><w:bidiVisual/></w:tblPr>
+            <w:tblGrid>
+                <w:gridCol w:w=" 1200 "/>
+                <w:gridCol w:w="2400"/>
+                <w:gridCol w:w="3600"/>
+            </w:tblGrid>
+            <w:tr>
+                <w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr><w:p><w:r><w:t>A</w:t></w:r></w:p></w:tc>
+                <w:tc><w:p><w:r><w:t>B</w:t></w:r></w:p></w:tc>
+            </w:tr>
+        </w:tbl></w:body></w:document>"#;
+        let Block::Table(table) = &parse(xml)[0] else {
+            panic!("table")
+        };
+
+        assert!(table.bidi_visual);
+        assert_eq!(table.rows[0].cells[0].col_span, 2);
+        assert_eq!(table.col_widths_pct.len(), 3);
+        for (actual, expected) in table
+            .col_widths_pct
+            .iter()
+            .zip([1.0 / 6.0, 1.0 / 3.0, 1.0 / 2.0])
+        {
+            assert!((actual - expected).abs() < 1e-6, "{actual} != {expected}");
+        }
+    }
+
+    #[test]
+    fn table_grid_ignores_revision_history_and_rejects_incomplete_widths() {
+        let xml = r#"<w:document><w:body>
+            <w:tbl>
+                <w:tblGrid>
+                    <w:gridCol w:w="1000"/>
+                    <w:gridCol w:w="3000"/>
+                    <w:tblGridChange w:id="7">
+                        <w:tblGrid>
+                            <w:gridCol w:w="9000"/>
+                            <w:gridCol w:w="1000"/>
+                        </w:tblGrid>
+                    </w:tblGridChange>
+                </w:tblGrid>
+                <w:tr><w:tc><w:p/></w:tc><w:tc><w:p/></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblGrid><w:gridCol w:w="1000"/><w:gridCol/></w:tblGrid>
+                <w:tr><w:tc><w:p/></w:tc><w:tc><w:p/></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblGrid><w:gridCol w:w="0"/><w:gridCol w:w="1000"/></w:tblGrid>
+                <w:tr><w:tc><w:p/></w:tc><w:tc><w:p/></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblGrid><w:gridCol w:w="1000"/><w:gridCol w:w="invalid"/></w:tblGrid>
+                <w:tr><w:tc><w:p/></w:tc><w:tc><w:p/></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblGrid><w:gridCol w:w="1000"/></w:tblGrid>
+                <w:tr><w:tc><w:p/></w:tc><w:tc><w:p/></w:tc></w:tr>
+            </w:tbl>
+        </w:body></w:document>"#;
+        let blocks = parse(xml);
+        let tables = blocks
+            .iter()
+            .map(|block| match block {
+                Block::Table(table) => table,
+                _ => panic!("table"),
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(tables.len(), 5);
+        assert_eq!(tables[0].col_widths_pct, vec![0.25, 0.75]);
+        for table in &tables[1..] {
+            assert!(table.col_widths_pct.is_empty());
+        }
+    }
+
+    #[test]
+    fn excessive_table_grid_widths_fall_back_without_panicking() {
+        let mut xml = String::from("<w:document><w:body><w:tbl><w:tblGrid>");
+        for _ in 0..=MAX_TABLE_GRID_COLS {
+            xml.push_str(r#"<w:gridCol w:w="1"/>"#);
+        }
+        xml.push_str("</w:tblGrid><w:tr>");
+        for _ in 0..=MAX_TABLE_GRID_COLS {
+            xml.push_str("<w:tc><w:p/></w:tc>");
+        }
+        xml.push_str("</w:tr></w:tbl></w:body></w:document>");
+
+        let Block::Table(table) = &parse(&xml)[0] else {
+            panic!("table")
+        };
+        assert_eq!(table.rows[0].cells.len(), MAX_TABLE_GRID_COLS + 1);
+        assert!(table.col_widths_pct.is_empty());
+    }
+
+    #[test]
     fn table_vmerge_restart_trims_ooxml_value() {
         let xml = r#"<w:document><w:body><w:tbl>
             <w:tr>
@@ -8396,7 +8553,7 @@ mod tests {
             props: RowProps::default(),
         }));
 
-        let table = build_table(rows, TableProps::default()).0;
+        let table = build_table(rows, TableProps::default(), Vec::new()).0;
 
         assert_eq!(table.rows[0].cells[0].row_span, u16::MAX);
     }

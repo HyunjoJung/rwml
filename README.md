@@ -278,11 +278,12 @@ and line-breaks (Korean/CJK [UAX #14] line-breaking + script font fallback),
 runs (color/size/font, highlight, decorations, super/subscript, caps/small-caps),
 paragraph shading, line spacing, first/hanging indents, lists with real autonumber
 labels, bordered tables with six-way model-backed solid colors and bounded
-per-side eighth-point widths, shaded vertically-aligned cells, authored column widths,
-bounded preferred-percentage outer widths, logical leading/center/trailing
-placement, and non-negative leading indentation, top-level and run-attached body
-images with model-backed whole-degree clockwise rotation, and **clickable
-hyperlink annotations** are drawn. Rotated raster bounds drive proportional
+per-side eighth-point widths, shaded vertically-aligned cells, authored and
+opened-DOCX `tblGrid` column proportions, bounded preferred-percentage outer
+widths, logical leading/center/trailing placement, and non-negative leading
+indentation, top-level and run-attached body images with model-backed
+whole-degree clockwise rotation, and **clickable hyperlink annotations** are
+drawn. Rotated raster bounds drive proportional
 content-box/page-height fitting and pagination. Narrow RTL tables reverse logical
 placement and mirror their cells inside the local table box. Page geometry,
 equal-width section columns, and per-side margins come from the document;
@@ -393,16 +394,20 @@ these bounded bridges.
 > remain outside the bounded direct-property bridges. PDF table placement treats
 > a finite positive relative width as a preferred width within the active page or
 > section column and bounds leading indentation to the remaining horizontal
-> space. Absolute/auto table widths, `tblGrid` and cell-width conflict resolution,
-> a Word-exact fixed/autofit algorithm split, table-style and `tblPrEx` placement,
-> floating or nested-grid placement, negative outdents, and table `both`
-> justification retain deterministic fallbacks. PDF table-border paint resolves
-> physical top, left, bottom, right, inside-horizontal, and inside-vertical
-> colors and widths from side-specific model values before uniform and
-> black/0.4-point fallbacks. Widths are capped at 12 points, then conservatively
-> bounded across the table by its smallest laid-out cell. Physical sides remain
-> attached after visual RTL placement, modeled row/column spans suppress covered
-> inside edges, and split row fragments omit artificial horizontal seams.
+> space. A complete positive direct DOCX `tblGrid` supplies relative model column
+> proportions only when its count matches the reconstructed cell/span grid;
+> malformed, revision-history, excessive, and mismatched grids keep the
+> content-sized fallback. Absolute/auto table widths, preferred-cell/table/grid
+> conflict resolution, a Word-exact fixed/autofit algorithm split, table-style
+> and `tblPrEx` placement, floating or nested-grid placement, negative outdents,
+> and table `both` justification retain deterministic fallbacks. PDF
+> table-border paint resolves physical top, left, bottom, right,
+> inside-horizontal, and inside-vertical colors and widths from side-specific
+> model values before uniform and black/0.4-point fallbacks. Widths are capped at
+> 12 points, then conservatively bounded across the table by its smallest laid-out
+> cell. Physical sides remain attached after visual RTL placement, modeled
+> row/column spans suppress covered inside edges, and split row fragments omit
+> artificial horizontal seams.
 > Non-solid/none styles, cell borders, theme/style inheritance, cell spacing and
 > border-conflict resolution, ragged-row repair, nested-grid borders, and legacy
 > `.doc` border recovery remain outside this bounded renderer slice.
@@ -843,7 +848,10 @@ code points.
   `w:rPr` is read,
   matching the `.doc` CHPX behavior).
   Headers/footers, text boxes, footnotes/endnotes, and per-level numbering labels
-  **are** now extracted; `header_footers()` exposes `.docx` referenced
+  **are** now extracted; complete positive direct table grids whose column count
+  matches the reconstructed cell/span grid populate normalized model column
+  proportions, while invalid or count-mismatched grids retain the content-sized
+  fallback; `header_footers()` exposes `.docx` referenced
   header/footer part records with `part#type` ids and default/even/first-page
   variants, while `DocSetup`/`SectionSetup` model default, first-page, and
   even-page variants for paragraph section breaks and the final section,
@@ -896,7 +904,7 @@ evidence.
       run-anchored comments with reply parent ids and commentsExtended metadata, tracked insertion/deletion runs,
       run-level content controls with data-binding metadata, bookmarked runs, authored footnotes/endnotes, inline/standalone hyperlinks,
       string custom document properties, raw custom XML data-store items, explicit Word document ids, web-extension task pane package shells, styled default/first/even headers/footers + page numbers, section columns, document grids, text direction, title pages, page-number restarts/formats, next/even/odd section breaks, images with inline rotation and page-relative floating offsets,
-      table width, fixed-layout tables, table alignment, indentation, uniform/per-side border widths, styles, and colors, per-cell table margins,
+      table width, fixed-layout tables, table alignment, indentation, authored column proportions, uniform/per-side border widths, styles, and colors, per-cell table margins,
       and the [core OOXML chart families](#chart-families) with embedded workbook-backed data) via `DocBuilder`,
       `ParagraphBuilder`, `RunBuilder`, `CommentBuilder`, `RevisionBuilder`,
       `ContentControlBuilder`, `TableBuilder`, `CellBuilder`, `ImageBuilder`,
