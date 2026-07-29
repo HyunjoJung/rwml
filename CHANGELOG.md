@@ -32,6 +32,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Opened `.docx` PDF previews now keep resolved left, center, right, and
+  decimal custom tab stops in page-text-margin coordinates under supported
+  left, positive first-line, and hanging indents in left/start-aligned LTR
+  top-level body paragraphs. Default-tab fallback targets use the same
+  margin-anchored grid and are clamped to the active paragraph box. Synthetic
+  fixed-font geometry covers final field placement at resolved stops, all four
+  supported tab alignments, continuation-line hanging indents, and
+  exact-edge/out-of-box fallback. Separate opened-DOCX evidence covers parsed
+  first-line/hanging values, private tab-sidecar activation, deterministic
+  layout/PDF output, and unchanged page counts for the bounded fixtures.
+  Table-cell and RTL tab semantics, center/right/justified paragraph
+  alignment, leaders and bar tabs, settings-defined default-tab intervals,
+  implicit hanging-indent/list-marker tabs, post-tab field containment,
+  custom-tab-aware line reflow, and Word-exact text-ruler behavior remain
+  outside this bounded correction.
 - PDF table cells now apply finite positive model-backed paragraph before/after
   spacing on emitted paragraphs to row measurement, row splitting, vertical
   alignment, repeated headers, and `LayoutPages` block and modeled `PAGE`-field

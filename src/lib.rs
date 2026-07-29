@@ -10368,6 +10368,54 @@ mod tests {
         assert_eq!(opened_document_layout.pages, 2);
     }
 
+    #[cfg(all(feature = "docx", feature = "render"))]
+    #[test]
+    fn opened_docx_tabs_keep_page_margin_coordinates_under_paragraph_indents() {
+        let make_document = |indent: &str| {
+            let xml = format!(
+                r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                    <w:p><w:pPr>{indent}<w:tabs><w:tab w:val="left" w:pos="2000"/></w:tabs></w:pPr>
+                        <w:r><w:tab/><w:t>B</w:t></w:r>
+                    </w:p>
+                    <w:sectPr><w:pgSz w:w="4400" w:h="2200"/><w:pgMar w:top="400" w:right="400" w:bottom="400" w:left="400"/></w:sectPr>
+                </w:body></w:document>"#
+            );
+            Document::open(&minimal_docx(&xml)).unwrap()
+        };
+        let baseline = make_document("");
+        let first_line = make_document(r#"<w:ind w:left="400" w:firstLine="200"/>"#);
+        let hanging = make_document(r#"<w:ind w:left="800" w:hanging="400"/>"#);
+        let Block::Paragraph(first_line_paragraph) = &first_line.model().blocks[0] else {
+            panic!("synthetic DOCX must contain a paragraph");
+        };
+        assert_eq!(first_line_paragraph.props.indent.left_pt, Some(20.0));
+        assert_eq!(first_line_paragraph.props.indent.first_line_pt, Some(10.0));
+        let Block::Paragraph(hanging_paragraph) = &hanging.model().blocks[0] else {
+            panic!("synthetic DOCX must contain a paragraph");
+        };
+        assert_eq!(hanging_paragraph.props.indent.left_pt, Some(40.0));
+        assert_eq!(hanging_paragraph.props.indent.hanging_pt, Some(20.0));
+
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let baseline_layout = baseline.layout_pages_with_fonts(&fonts).unwrap();
+        for document in [&baseline, &first_line, &hanging] {
+            let opened_layout = document.layout_pages_with_fonts(&fonts).unwrap();
+            assert_eq!(opened_layout, baseline_layout);
+            assert_eq!(
+                opened_layout,
+                document.layout_pages_with_fonts(&fonts).unwrap()
+            );
+
+            let opened_pdf = document.try_to_pdf_with_fonts(&fonts).unwrap();
+            assert_eq!(opened_pdf, document.try_to_pdf_with_fonts(&fonts).unwrap());
+            assert_ne!(
+                opened_pdf,
+                render_pdf_with_fonts(&document.model(), &fonts),
+                "model-only rendering has no opened-document custom-tab sidecar"
+            );
+        }
+    }
+
     fn synthetic_paragraph_stylesheet(properties: &[(u16, u8)]) -> Vec<u8> {
         let mut grpprl = Vec::with_capacity(properties.len() * 3);
         for &(sprm, value) in properties {
