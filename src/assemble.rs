@@ -1311,6 +1311,7 @@ impl<'a, 'l> Asm<'a, 'l> {
                 list,
                 spacing,
                 indent,
+                shading: self.papx.paragraph_shading_at(fc),
                 page_break_before: source_pagination.page_break_before,
                 bidi,
                 ..Default::default()
