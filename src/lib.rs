@@ -7663,6 +7663,246 @@ mod tests {
         );
     }
 
+    fn push_paragraph_spacing_twips(grpprl: &mut Vec<u8>, sprm: u16, value: u16) {
+        grpprl.extend_from_slice(&sprm.to_le_bytes());
+        grpprl.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn push_paragraph_line_spacing(grpprl: &mut Vec<u8>, dya_line: u16, multiple: u16) {
+        grpprl.extend_from_slice(&0x6412u16.to_le_bytes());
+        grpprl.extend_from_slice(&dya_line.to_le_bytes());
+        grpprl.extend_from_slice(&multiple.to_le_bytes());
+    }
+
+    fn legacy_paragraph_spacing_doc() -> Vec<u8> {
+        const SPRM_P_DYA_BEFORE: u16 = 0xA413;
+        const SPRM_P_DYA_AFTER: u16 = 0xA414;
+
+        let mut style_grpprl = Vec::new();
+        push_paragraph_spacing_twips(&mut style_grpprl, SPRM_P_DYA_BEFORE, 360);
+        push_paragraph_spacing_twips(&mut style_grpprl, SPRM_P_DYA_AFTER, 180);
+        push_paragraph_line_spacing(&mut style_grpprl, 360, 1);
+        let stylesheet = synthetic_paragraph_stylesheet_grpprl(&style_grpprl);
+
+        let mut paragraphs = Vec::new();
+        paragraphs.push(("Default", Vec::new()));
+
+        let mut direct = Vec::new();
+        push_paragraph_spacing_twips(&mut direct, SPRM_P_DYA_BEFORE, 240);
+        push_paragraph_spacing_twips(&mut direct, SPRM_P_DYA_AFTER, 120);
+        push_paragraph_line_spacing(&mut direct, 360, 1);
+        paragraphs.push(("Direct", direct));
+
+        let mut last_valid = Vec::new();
+        push_paragraph_spacing_twips(&mut last_valid, SPRM_P_DYA_BEFORE, 200);
+        push_paragraph_spacing_twips(&mut last_valid, SPRM_P_DYA_BEFORE, 32_000);
+        push_paragraph_spacing_twips(&mut last_valid, SPRM_P_DYA_AFTER, 100);
+        push_paragraph_spacing_twips(&mut last_valid, SPRM_P_DYA_AFTER, 32_000);
+        push_paragraph_line_spacing(&mut last_valid, 480, 1);
+        push_paragraph_line_spacing(&mut last_valid, 32_000, 1);
+        paragraphs.push(("LastValid", last_valid));
+
+        let mut at_least = Vec::new();
+        push_paragraph_line_spacing(&mut at_least, 240, 0);
+        paragraphs.push(("AtLeast", at_least));
+
+        paragraphs.push(("StyleOnly", vec![0x00, 0x46, 0x01, 0x00]));
+
+        let mut style_direct = vec![0x00, 0x46, 0x01, 0x00];
+        push_paragraph_spacing_twips(&mut style_direct, SPRM_P_DYA_AFTER, 0);
+        push_paragraph_line_spacing(&mut style_direct, 480, 1);
+        paragraphs.push(("StyleDirect", style_direct));
+
+        let mut style_at_least = vec![0x00, 0x46, 0x01, 0x00];
+        push_paragraph_line_spacing(&mut style_at_least, 240, 0);
+        paragraphs.push(("StyleAtLeast", style_at_least));
+
+        let mut style_exact = vec![0x00, 0x46, 0x01, 0x00];
+        push_paragraph_line_spacing(&mut style_exact, 0xFF10, 0);
+        paragraphs.push(("StyleExact", style_exact));
+
+        let mut style_zero_line = vec![0x00, 0x46, 0x01, 0x00];
+        push_paragraph_line_spacing(&mut style_zero_line, 0, 1);
+        paragraphs.push(("StyleZeroLine", style_zero_line));
+
+        let mut style_invalid_line = vec![0x00, 0x46, 0x01, 0x00];
+        push_paragraph_line_spacing(&mut style_invalid_line, 480, 2);
+        paragraphs.push(("StyleInvalidLine", style_invalid_line));
+
+        let mut style_reset = Vec::new();
+        push_paragraph_spacing_twips(&mut style_reset, SPRM_P_DYA_BEFORE, 240);
+        push_paragraph_line_spacing(&mut style_reset, 480, 1);
+        style_reset.extend_from_slice(&[0x00, 0x46, 0x01, 0x00]);
+        push_paragraph_spacing_twips(&mut style_reset, SPRM_P_DYA_AFTER, 60);
+        paragraphs.push(("StyleReset", style_reset));
+
+        let mut valid_prefix = Vec::new();
+        push_paragraph_spacing_twips(&mut valid_prefix, SPRM_P_DYA_BEFORE, 300);
+        valid_prefix.extend_from_slice(&SPRM_P_DYA_AFTER.to_le_bytes());
+        paragraphs.push(("ValidPrefix", valid_prefix));
+
+        let mut text = String::new();
+        let mut runs = Vec::new();
+        for (label, grpprl) in paragraphs {
+            text.push_str(label);
+            text.push('\r');
+            runs.push(SyntheticPapxRun {
+                cp_lim: text.encode_utf16().count() as u32,
+                grpprl,
+            });
+        }
+        let text_end = text.encode_utf16().count() as u32;
+        synth_doc_with_ccp_and_tables(
+            &text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [text_end, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                stylesheet: Some(&stylesheet),
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    type ParagraphSpacingSignature = (String, Option<f32>, Option<f32>, Option<f32>);
+
+    fn paragraph_spacing_signature(model: &DocModel) -> Vec<ParagraphSpacingSignature> {
+        model
+            .blocks
+            .iter()
+            .map(|block| {
+                let Block::Paragraph(paragraph) = block else {
+                    panic!("synthetic legacy block must be a paragraph");
+                };
+                (
+                    paragraph.text(),
+                    paragraph.props.spacing.before_pt,
+                    paragraph.props.spacing.after_pt,
+                    paragraph.props.spacing.line_pct,
+                )
+            })
+            .collect()
+    }
+
+    fn expected_legacy_paragraph_spacing_signature() -> Vec<ParagraphSpacingSignature> {
+        vec![
+            ("Default".to_string(), Some(0.0), Some(0.0), Some(1.0)),
+            ("Direct".to_string(), Some(12.0), Some(6.0), Some(1.5)),
+            ("LastValid".to_string(), Some(10.0), Some(5.0), Some(2.0)),
+            ("AtLeast".to_string(), Some(0.0), Some(0.0), None),
+            ("StyleOnly".to_string(), Some(18.0), Some(9.0), Some(1.5)),
+            ("StyleDirect".to_string(), Some(18.0), Some(0.0), Some(2.0)),
+            ("StyleAtLeast".to_string(), Some(18.0), Some(9.0), None),
+            ("StyleExact".to_string(), Some(18.0), Some(9.0), None),
+            ("StyleZeroLine".to_string(), Some(18.0), Some(9.0), None),
+            (
+                "StyleInvalidLine".to_string(),
+                Some(18.0),
+                Some(9.0),
+                Some(1.5),
+            ),
+            ("StyleReset".to_string(), Some(18.0), Some(3.0), Some(1.5)),
+            ("ValidPrefix".to_string(), Some(15.0), Some(0.0), Some(1.0)),
+        ]
+    }
+
+    #[test]
+    fn opened_legacy_doc_preserves_bounded_paragraph_spacing() {
+        let document = Document::open(&legacy_paragraph_spacing_doc()).unwrap();
+
+        assert_eq!(
+            paragraph_spacing_signature(&document.model()),
+            expected_legacy_paragraph_spacing_signature()
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_doc_bounded_paragraph_spacing_roundtrips_to_docx() {
+        let legacy = Document::open(&legacy_paragraph_spacing_doc()).unwrap();
+        let reopened = Document::open(&legacy.to_docx()).unwrap();
+
+        assert_eq!(
+            paragraph_spacing_signature(&reopened.model()),
+            expected_legacy_paragraph_spacing_signature()
+        );
+    }
+
+    #[cfg(feature = "render")]
+    fn legacy_paragraph_spacing_layout_doc(
+        paragraph_count: usize,
+        line_twips: Option<u16>,
+    ) -> Vec<u8> {
+        let mut text = String::new();
+        for index in 0..paragraph_count {
+            text.push_str(&format!("line {index}\r"));
+        }
+        let text_end = text.encode_utf16().count() as u32;
+        let mut grpprl = Vec::new();
+        if let Some(line_twips) = line_twips {
+            push_paragraph_line_spacing(&mut grpprl, line_twips, 1);
+        }
+        let runs = [SyntheticPapxRun {
+            cp_lim: text_end,
+            grpprl,
+        }];
+        synth_doc_with_ccp_and_tables(
+            &text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [text_end, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_paragraph_spacing_changes_preview_layout() {
+        const PARAGRAPH_COUNT: usize = 40;
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let single = Document::open(&legacy_paragraph_spacing_layout_doc(PARAGRAPH_COUNT, None))
+            .unwrap()
+            .model();
+        let double = Document::open(&legacy_paragraph_spacing_layout_doc(
+            PARAGRAPH_COUNT,
+            Some(480),
+        ))
+        .unwrap()
+        .model();
+        let mut unset_fallback = single.clone();
+        for block in &mut unset_fallback.blocks {
+            let Block::Paragraph(paragraph) = block else {
+                panic!("synthetic legacy block must be a paragraph");
+            };
+            paragraph.props.spacing = Default::default();
+        }
+
+        let single_layout = layout_pages_with_fonts(&single, &fonts).unwrap();
+        let double_layout = layout_pages_with_fonts(&double, &fonts).unwrap();
+        let unset_layout = layout_pages_with_fonts(&unset_fallback, &fonts).unwrap();
+
+        assert_eq!(single.blocks.len(), PARAGRAPH_COUNT);
+        assert_eq!(
+            (
+                single_layout.pages,
+                single_layout.block_pages[PARAGRAPH_COUNT - 1],
+                double_layout.pages,
+                double_layout.block_pages[PARAGRAPH_COUNT - 1],
+                unset_layout.pages,
+                unset_layout.block_pages[PARAGRAPH_COUNT - 1],
+            ),
+            (1, Some(1), 2, Some(2), 2, Some(2))
+        );
+    }
+
     #[test]
     fn opened_legacy_doc_preserves_direct_paragraph_bidi_and_justification() {
         let document = Document::open(&legacy_paragraph_bidi_doc()).unwrap();
@@ -8122,6 +8362,12 @@ mod tests {
     }
 
     #[cfg(feature = "render")]
+    fn push_legacy_pagination_fixture_spacing(grpprl: &mut Vec<u8>) {
+        push_paragraph_spacing_twips(grpprl, 0xA414, 120);
+        push_paragraph_line_spacing(grpprl, 324, 1);
+    }
+
+    #[cfg(feature = "render")]
     fn legacy_paragraph_style_pagination_doc(
         line_count: usize,
         style_properties: &[(u16, u8)],
@@ -8147,14 +8393,19 @@ mod tests {
         let text_end = text.encode_utf16().count() as u32;
 
         let mut target_grpprl = vec![0x00, 0x46, 0x01, 0x00];
+        push_legacy_pagination_fixture_spacing(&mut target_grpprl);
         for &(sprm, value) in direct_properties {
             target_grpprl.extend_from_slice(&sprm.to_le_bytes());
             target_grpprl.push(value);
         }
+        let mut seed_grpprl = vec![0x31, 0x24, 0x00];
+        push_legacy_pagination_fixture_spacing(&mut seed_grpprl);
+        let mut after_grpprl = vec![0x31, 0x24, 0x00];
+        push_legacy_pagination_fixture_spacing(&mut after_grpprl);
         let runs = [
             SyntheticPapxRun {
                 cp_lim: seed_end,
-                grpprl: vec![0x31, 0x24, 0x00],
+                grpprl: seed_grpprl,
             },
             SyntheticPapxRun {
                 cp_lim: target_end,
@@ -8162,7 +8413,7 @@ mod tests {
             },
             SyntheticPapxRun {
                 cp_lim: text_end,
-                grpprl: vec![0x31, 0x24, 0x00],
+                grpprl: after_grpprl,
             },
         ];
         let stylesheet = synthetic_paragraph_stylesheet(style_properties);
@@ -8213,14 +8464,20 @@ mod tests {
             row_grpprl.push(value);
         }
 
+        let mut seed_grpprl = Vec::new();
+        push_legacy_pagination_fixture_spacing(&mut seed_grpprl);
+        let mut cell_grpprl = vec![0x16, 0x24, 0x01];
+        push_legacy_pagination_fixture_spacing(&mut cell_grpprl);
+        let mut after_grpprl = Vec::new();
+        push_legacy_pagination_fixture_spacing(&mut after_grpprl);
         let runs = [
             SyntheticPapxRun {
                 cp_lim: table_start,
-                grpprl: Vec::new(),
+                grpprl: seed_grpprl,
             },
             SyntheticPapxRun {
                 cp_lim: cell_end,
-                grpprl: vec![0x16, 0x24, 0x01],
+                grpprl: cell_grpprl,
             },
             SyntheticPapxRun {
                 cp_lim: row_end,
@@ -8228,7 +8485,7 @@ mod tests {
             },
             SyntheticPapxRun {
                 cp_lim: text_end,
-                grpprl: Vec::new(),
+                grpprl: after_grpprl,
             },
         ];
         synth_doc_with_ccp_and_tables(
@@ -8256,9 +8513,11 @@ mod tests {
             text.push_str(&format!("seed {index}\r"));
         }
         let seed_end = text.encode_utf16().count() as u32;
+        let mut seed_grpprl = vec![0x31, 0x24, 0x00];
+        push_legacy_pagination_fixture_spacing(&mut seed_grpprl);
         let mut runs = vec![SyntheticPapxRun {
             cp_lim: seed_end,
-            grpprl: vec![0x31, 0x24, 0x00],
+            grpprl: seed_grpprl,
         }];
 
         for (paragraph_index, &(line_count, properties)) in paragraphs.iter().enumerate() {
@@ -8270,6 +8529,7 @@ mod tests {
             }
             text.push('\r');
             let mut grpprl = Vec::with_capacity(properties.len() * 3);
+            push_legacy_pagination_fixture_spacing(&mut grpprl);
             for &(sprm, value) in properties {
                 grpprl.extend_from_slice(&sprm.to_le_bytes());
                 grpprl.push(value);
@@ -8284,9 +8544,11 @@ mod tests {
             text.push_str(&format!("after {index}\r"));
         }
         let text_end = text.encode_utf16().count() as u32;
+        let mut after_grpprl = vec![0x31, 0x24, 0x00];
+        push_legacy_pagination_fixture_spacing(&mut after_grpprl);
         runs.push(SyntheticPapxRun {
             cp_lim: text_end,
-            grpprl: vec![0x31, 0x24, 0x00],
+            grpprl: after_grpprl,
         });
         synth_doc_with_ccp_and_tables(
             &text,
@@ -8329,7 +8591,10 @@ mod tests {
         }
         let text_end = text.encode_utf16().count() as u32;
 
+        let mut seed_grpprl = vec![0x31, 0x24, 0x00];
+        push_legacy_pagination_fixture_spacing(&mut seed_grpprl);
         let mut cell_grpprl = vec![0x16, 0x24, 0x01];
+        push_legacy_pagination_fixture_spacing(&mut cell_grpprl);
         for &(sprm, value) in cell_properties {
             cell_grpprl.extend_from_slice(&sprm.to_le_bytes());
             cell_grpprl.push(value);
@@ -8342,10 +8607,12 @@ mod tests {
             0x00, 0x00, 0xD0, 0x07, // cell boundaries 0..2000 twips
         ];
         row_grpprl.extend_from_slice(&[0u8; 20]);
+        let mut after_grpprl = vec![0x31, 0x24, 0x00];
+        push_legacy_pagination_fixture_spacing(&mut after_grpprl);
         let runs = [
             SyntheticPapxRun {
                 cp_lim: seed_end,
-                grpprl: vec![0x31, 0x24, 0x00],
+                grpprl: seed_grpprl,
             },
             SyntheticPapxRun {
                 cp_lim: cell_end,
@@ -8357,7 +8624,7 @@ mod tests {
             },
             SyntheticPapxRun {
                 cp_lim: text_end,
-                grpprl: vec![0x31, 0x24, 0x00],
+                grpprl: after_grpprl,
             },
         ];
         synth_doc_with_ccp_and_tables(

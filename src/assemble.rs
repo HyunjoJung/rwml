@@ -18,10 +18,13 @@ use crate::list::Numberer;
 use crate::model::{
     normalize_field_instruction, Align, Block, CharProps, DocMeta, DocModel, DocSetup, FieldRole,
     Image, Indent, ListInfo, PageSetup, PaginationHint, ParaProps, Paragraph, SectionBreakKind,
-    SectionSetup, SourceRegion, SourceRegionKind, Stats, TableCellPaginationHints,
+    SectionSetup, SourceRegion, SourceRegionKind, Spacing, Stats, TableCellPaginationHints,
     TableRowPaginationHint,
 };
-use crate::papx::{PapxTable, ParagraphIndentOverrides, ParagraphJustification};
+use crate::papx::{
+    PapxTable, ParagraphIndentOverrides, ParagraphJustification, ParagraphLineSpacing,
+    ParagraphSpacingOverrides,
+};
 use crate::stsh::StyleSheet;
 use crate::table::{self, CellBuild, RowBuild};
 use crate::util::{u16le, u32le};
@@ -859,6 +862,18 @@ fn resolve_paragraph_indent(source: ParagraphIndentOverrides, bidi: bool) -> Ind
     }
 }
 
+fn resolve_paragraph_spacing(source: ParagraphSpacingOverrides) -> Spacing {
+    Spacing {
+        before_pt: Some(source.before_twips.unwrap_or(0) as f32 / 20.0),
+        after_pt: Some(source.after_twips.unwrap_or(0) as f32 / 20.0),
+        line_pct: match source.line {
+            Some(ParagraphLineSpacing::ProportionalTwips(value)) => Some(value as f32 / 240.0),
+            Some(ParagraphLineSpacing::Unrepresentable) => None,
+            None => Some(1.0),
+        },
+    }
+}
+
 impl<'a, 'l> Asm<'a, 'l> {
     fn new(
         papx: &'a PapxTable,
@@ -1122,6 +1137,11 @@ impl<'a, 'l> Asm<'a, 'l> {
                 .apply(self.papx.paragraph_indent_overrides_at(fc)),
             bidi,
         );
+        let spacing = resolve_paragraph_spacing(
+            self.stylesheet
+                .paragraph_spacing(istd)
+                .apply(self.papx.paragraph_spacing_overrides_at(fc)),
+        );
         let source_pagination = self
             .stylesheet
             .paragraph_pagination(istd)
@@ -1170,6 +1190,7 @@ impl<'a, 'l> Asm<'a, 'l> {
                 align,
                 outline_level: outlvl,
                 list,
+                spacing,
                 indent,
                 page_break_before: source_pagination.page_break_before,
                 bidi,

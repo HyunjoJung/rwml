@@ -23,6 +23,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Opened legacy `.doc` paragraphs now preserve valid unsigned-twip
+  `sprmPDyaBefore`/`sprmPDyaAfter` spacing and positive proportional
+  `sprmPDyaLine` LSPD values from paragraph styles and direct PAPX. Sparse
+  style values resolve through the cycle/depth-bounded STSH base chain before
+  final direct overrides; omitted values materialize the MS-DOC zero-before,
+  zero-after, and single-spacing defaults through the shared model, `.docx`
+  conversion/reopen, and top-level PDF preview layout. Table-cell PDF preview
+  applies the resolved line multiplier but still ignores before/after spacing.
+  Repeated values apply in source order, invalid values do not replace the last
+  valid value, `sprmPIstd` discards earlier direct spacing, structurally
+  malformed styles fall back atomically, and truncated direct modifiers retain
+  their valid prefix.
+  At-least/exact and explicit zero proportional LSPD values clear inherited
+  multipliers but remain unset because the shared model cannot express those
+  line rules. Line-unit, auto, and contextual spacing; Word-exact adjacent
+  spacing; table/list-style effects; piece `Pcd.Prm`; and Data-stream
+  indirection remain unsupported.
 - Opened legacy `.doc` sections now preserve valid SED/SEPX page width, height,
   portrait/landscape orientation, and nonnegative left/right/top/bottom margins
   through the shared model and `.docx` conversion/reopen. Valid `PlcfSed`

@@ -8,14 +8,15 @@
 //! A paragraph's `istd` (from its PAPX) indexes this array; the heading level is
 //! derived from `sti` (1–9 = Heading 1–9), the base-style chain, or the localized
 //! name (`Heading N` / `제목 N`). Paragraph styles also resolve the bounded
-//! layout, indent, and pagination SPRM subsets through the same base chain.
+//! layout, indent, spacing, and pagination SPRM subsets through the same base
+//! chain.
 //!
 //! Reference: [MS-DOC] 2.9.271 (STSH), 2.9.272 (STSHI), 2.9.135 (LPStd),
 //! 2.9.270 (STD), 2.9.270.1 (StdfBase), 2.9.276 (sti).
 
 use crate::papx::{
     scan_paragraph_style_overrides, ParagraphIndentOverrides, ParagraphLayoutOverrides,
-    ParagraphPagination, ParagraphPaginationOverrides,
+    ParagraphPagination, ParagraphPaginationOverrides, ParagraphSpacingOverrides,
 };
 use crate::util::u16le;
 
@@ -32,6 +33,7 @@ type ParagraphStyleProperties = (
     ParagraphLayoutOverrides,
     ParagraphIndentOverrides,
     ParagraphPaginationOverrides,
+    ParagraphSpacingOverrides,
 );
 
 struct ParsedStyle {
@@ -39,13 +41,14 @@ struct ParsedStyle {
     properties: Option<ParagraphStyleProperties>,
 }
 
-/// The parsed stylesheet: per-`istd` heading, name, layout, indent, and pagination.
+/// The parsed stylesheet: per-`istd` heading, name, layout, indent, spacing, and pagination.
 #[derive(Debug, Default)]
 pub(crate) struct StyleSheet {
     heading: Vec<Option<u8>>,
     names: Vec<String>,
     layout: Vec<ParagraphLayoutOverrides>,
     indent: Vec<ParagraphIndentOverrides>,
+    spacing: Vec<ParagraphSpacingOverrides>,
     pagination: Vec<ParagraphPagination>,
 }
 
@@ -73,6 +76,11 @@ impl StyleSheet {
         self.indent.get(istd as usize).copied().unwrap_or_default()
     }
 
+    /// Spacing properties resolved through the paragraph style's base chain.
+    pub(crate) fn paragraph_spacing(&self, istd: u16) -> ParagraphSpacingOverrides {
+        self.spacing.get(istd as usize).copied().unwrap_or_default()
+    }
+
     /// Pagination properties resolved through the paragraph style's base chain.
     pub(crate) fn paragraph_pagination(&self, istd: u16) -> ParagraphPagination {
         self.pagination
@@ -89,6 +97,7 @@ impl StyleSheet {
             names: vec![String::new(); len],
             layout: vec![ParagraphLayoutOverrides::default(); len],
             indent: vec![ParagraphIndentOverrides::default(); len],
+            spacing: vec![ParagraphSpacingOverrides::default(); len],
             pagination,
         }
     }
@@ -141,6 +150,7 @@ impl StyleSheet {
         let mut names = vec![String::new(); n];
         let mut layout = vec![ParagraphLayoutOverrides::default(); n];
         let mut indent = vec![ParagraphIndentOverrides::default(); n];
+        let mut spacing = vec![ParagraphSpacingOverrides::default(); n];
         let mut pagination = vec![ParagraphPagination::default(); n];
         // Per-style cycle guard by epoch: `visited[i]` is the pass (`gen`) that last touched
         // style `i`. "Clearing" between styles is just a fresh `gen` (O(1)) — refilling the
@@ -150,6 +160,7 @@ impl StyleSheet {
         let mut visited = vec![0u32; n];
         let mut layout_visited = vec![0u32; n];
         let mut indent_visited = vec![0u32; n];
+        let mut spacing_visited = vec![0u32; n];
         let mut pagination_visited = vec![0u32; n];
         for istd in 0..n {
             let gen = istd as u32 + 1;
@@ -160,6 +171,15 @@ impl StyleSheet {
             indent[istd] =
                 resolve_indent(&descs, &local_properties, istd, &mut indent_visited, gen, 0)
                     .unwrap_or_default();
+            spacing[istd] = resolve_spacing(
+                &descs,
+                &local_properties,
+                istd,
+                &mut spacing_visited,
+                gen,
+                0,
+            )
+            .unwrap_or_default();
             pagination[istd] = resolve_pagination(
                 &descs,
                 &local_properties,
@@ -178,6 +198,7 @@ impl StyleSheet {
             names,
             layout,
             indent,
+            spacing,
             pagination,
         }
     }
@@ -409,6 +430,41 @@ fn resolve_indent(
     Some(inherited.apply(overrides))
 }
 
+fn resolve_spacing(
+    descs: &[Option<StyleDescription>],
+    local: &[Option<ParagraphStyleProperties>],
+    istd: usize,
+    visited: &mut [u32],
+    gen: u32,
+    depth: usize,
+) -> Option<ParagraphSpacingOverrides> {
+    if depth > MAX_STYLE_BASE_DEPTH
+        || istd >= descs.len()
+        || visited.get(istd).copied().unwrap_or(gen) == gen
+    {
+        return None;
+    }
+    visited[istd] = gen;
+    let description = descs.get(istd)?.as_ref()?;
+    if description.sgc != 1 {
+        return None;
+    }
+    let overrides = local.get(istd).copied().flatten()?.3;
+    let inherited = if description.istd_base == 0x0FFF {
+        ParagraphSpacingOverrides::default()
+    } else {
+        resolve_spacing(
+            descs,
+            local,
+            description.istd_base as usize,
+            visited,
+            gen,
+            depth + 1,
+        )?
+    };
+    Some(inherited.apply(overrides))
+}
+
 /// `Heading N` (any case) or Korean `제목 N` → the digit `N` (1–9). Shared with
 /// the `.docx` style resolver (`w:styleId` / `w:name` use the same conventions).
 pub(crate) fn heading_from_name(name: &str) -> Option<u8> {
@@ -442,7 +498,7 @@ fn utf16le(b: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::papx::ParagraphJustification;
+    use crate::papx::{ParagraphJustification, ParagraphLineSpacing};
 
     fn paragraph_style_std(
         base_len: usize,
@@ -552,6 +608,15 @@ mod tests {
         StyleSheet::parse(&stsh, 0, stsh.len()).paragraph_indent(istd)
     }
 
+    fn parsed_spacing(
+        base_len: usize,
+        styles: &[Option<Vec<u8>>],
+        istd: u16,
+    ) -> ParagraphSpacingOverrides {
+        let stsh = stylesheet(base_len, styles);
+        StyleSheet::parse(&stsh, 0, stsh.len()).paragraph_spacing(istd)
+    }
+
     #[test]
     fn resolves_paragraph_layout_inheritance_for_both_std_sizes() {
         for base_len in [10, 18] {
@@ -652,6 +717,64 @@ mod tests {
                     logical_right_twips: Some(1000),
                     nest_twips: None,
                     first_line_twips: Some(240),
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn resolves_paragraph_spacing_inheritance_for_both_std_sizes() {
+        for base_len in [10, 18] {
+            let styles = vec![
+                Some(paragraph_style_std_grpprl(
+                    base_len,
+                    0,
+                    0x0FFF,
+                    "Normal",
+                    &[
+                        0x13, 0xA4, 0xF0, 0x00, // before = 240
+                        0x14, 0xA4, 0x78, 0x00, // after = 120
+                        0x12, 0x64, 0x68, 0x01, 0x01, 0x00, // 1.5 lines
+                    ],
+                    false,
+                )),
+                Some(paragraph_style_std_grpprl(
+                    base_len,
+                    1,
+                    0,
+                    "Parent",
+                    &[
+                        0x14, 0xA4, 0x3C, 0x00, // after = 60
+                        0x12, 0x64, 0x40, 0x84, 0x00, 0x00, // exact spacing
+                    ],
+                    false,
+                )),
+                Some(paragraph_style_std_grpprl(
+                    base_len,
+                    2,
+                    1,
+                    "Child",
+                    &[
+                        0x13, 0xA4, 0x00, 0x00, // before = 0
+                        0x12, 0x64, 0xE0, 0x01, 0x01, 0x00, // 2 lines
+                    ],
+                    false,
+                )),
+            ];
+            assert_eq!(
+                parsed_spacing(base_len, &styles, 1),
+                ParagraphSpacingOverrides {
+                    before_twips: Some(240),
+                    after_twips: Some(60),
+                    line: Some(ParagraphLineSpacing::Unrepresentable),
+                }
+            );
+            assert_eq!(
+                parsed_spacing(base_len, &styles, 2),
+                ParagraphSpacingOverrides {
+                    before_twips: Some(0),
+                    after_twips: Some(60),
+                    line: Some(ParagraphLineSpacing::ProportionalTwips(480)),
                 }
             );
         }
@@ -799,8 +922,20 @@ mod tests {
 
     #[test]
     fn malformed_paragraph_style_upx_falls_back_without_partial_values() {
-        let valid =
-            paragraph_style_std(10, 0, 0x0FFF, "Normal", &[(0x2405, 1), (0x2441, 1)], false);
+        let valid = paragraph_style_std_grpprl(
+            10,
+            0,
+            0x0FFF,
+            "Normal",
+            &[
+                0x05, 0x24, 0x01, // keep lines
+                0x41, 0x24, 0x01, // RTL
+                0x07, 0x24, 0x01, // page break before
+                0x13, 0xA4, 0xF0, 0x00, // before = 240
+                0x12, 0x64, 0x68, 0x01, 0x01, 0x00, // 1.5 lines
+            ],
+            false,
+        );
         let grlp = 10 + 2 + "Normal".encode_utf16().count() * 2 + 2;
 
         let mut cases = Vec::new();
@@ -830,6 +965,11 @@ mod tests {
         truncated_sprm.remove(grlp + 2 + 4);
         cases.push(truncated_sprm);
 
+        let mut truncated_chpx = valid.clone();
+        let chpx_len = truncated_chpx.len();
+        truncated_chpx[chpx_len - 2..].copy_from_slice(&1u16.to_le_bytes());
+        cases.push(truncated_chpx);
+
         let mut missing_name_terminator = valid;
         missing_name_terminator[grlp - 2..grlp].copy_from_slice(&1u16.to_le_bytes());
         cases.push(missing_name_terminator);
@@ -849,6 +989,10 @@ mod tests {
                 parsed.paragraph_indent(0),
                 ParagraphIndentOverrides::default()
             );
+            assert_eq!(
+                parsed.paragraph_spacing(0),
+                ParagraphSpacingOverrides::default()
+            );
         }
     }
 
@@ -865,6 +1009,21 @@ mod tests {
         assert_eq!(
             parsed_layout(10, &out_of_range, 0),
             ParagraphLayoutOverrides::default()
+        );
+        let out_of_range_spacing = vec![Some(paragraph_style_std_grpprl(
+            10,
+            0,
+            7,
+            "BadBase",
+            &[
+                0x13, 0xA4, 0xF0, 0x00, // before = 240
+                0x12, 0x64, 0x68, 0x01, 0x01, 0x00, // 1.5 lines
+            ],
+            false,
+        ))];
+        assert_eq!(
+            parsed_spacing(10, &out_of_range_spacing, 0),
+            ParagraphSpacingOverrides::default()
         );
         let out_of_range_indent = vec![Some(paragraph_style_std_grpprl(
             10,
@@ -911,6 +1070,24 @@ mod tests {
             parsed_layout(10, &cycle, 0),
             ParagraphLayoutOverrides::default()
         );
+        let spacing_cycle = vec![
+            Some(paragraph_style_std_grpprl(
+                10,
+                0,
+                1,
+                "CycleA",
+                &[
+                    0x13, 0xA4, 0xF0, 0x00, // before = 240
+                    0x12, 0x64, 0x68, 0x01, 0x01, 0x00, // 1.5 lines
+                ],
+                false,
+            )),
+            Some(paragraph_style_std(10, 1, 0, "CycleB", &[], false)),
+        ];
+        assert_eq!(
+            parsed_spacing(10, &spacing_cycle, 0),
+            ParagraphSpacingOverrides::default()
+        );
         let indent_cycle = vec![
             Some(paragraph_style_std_grpprl(
                 10,
@@ -929,7 +1106,7 @@ mod tests {
     }
 
     #[test]
-    fn paragraph_pagination_base_chain_has_a_depth_bound() {
+    fn paragraph_property_base_chain_has_a_depth_bound() {
         let mut styles = Vec::new();
         styles.push(Some(paragraph_style_std_grpprl(
             10,
@@ -940,6 +1117,8 @@ mod tests {
                 0x07, 0x24, 0x01, // page break before
                 0x41, 0x24, 0x01, // RTL
                 0x5E, 0x84, 0xD0, 0x02, // logical left = 720
+                0x13, 0xA4, 0xF0, 0x00, // before = 240
+                0x12, 0x64, 0x68, 0x01, 0x01, 0x00, // 1.5 lines
             ],
             false,
         )));
@@ -965,16 +1144,24 @@ mod tests {
             parsed_indent(10, &styles, (styles.len() - 1) as u16),
             ParagraphIndentOverrides::default()
         );
+        assert_eq!(
+            parsed_spacing(10, &styles, (styles.len() - 1) as u16),
+            ParagraphSpacingOverrides::default()
+        );
     }
 
     #[test]
     fn invalid_std_base_size_and_revision_shape_fall_back() {
-        let styles = vec![Some(paragraph_style_std(
+        let styles = vec![Some(paragraph_style_std_grpprl(
             10,
             0,
             0x0FFF,
             "Normal",
-            &[(0x2407, 1)],
+            &[
+                0x07, 0x24, 0x01, // page break before
+                0x13, 0xA4, 0xF0, 0x00, // before = 240
+                0x12, 0x64, 0x68, 0x01, 0x01, 0x00, // 1.5 lines
+            ],
             false,
         ))];
         let malformed_header = stylesheet(12, &styles);
@@ -983,11 +1170,32 @@ mod tests {
             parsed.paragraph_pagination(0),
             ParagraphPagination::default()
         );
-
-        let invalid_revision = paragraph_style_std(10, 0, 0x0FFF, "Normal", &[(0x2407, 1)], true);
         assert_eq!(
-            parsed_pagination(10, &[Some(invalid_revision)], 0),
+            parsed.paragraph_spacing(0),
+            ParagraphSpacingOverrides::default()
+        );
+
+        let invalid_revision = paragraph_style_std_grpprl(
+            10,
+            0,
+            0x0FFF,
+            "Normal",
+            &[
+                0x07, 0x24, 0x01, // page break before
+                0x13, 0xA4, 0xF0, 0x00, // before = 240
+                0x12, 0x64, 0x68, 0x01, 0x01, 0x00, // 1.5 lines
+            ],
+            true,
+        );
+        let invalid_revision = stylesheet(10, &[Some(invalid_revision)]);
+        let parsed = StyleSheet::parse(&invalid_revision, 0, invalid_revision.len());
+        assert_eq!(
+            parsed.paragraph_pagination(0),
             ParagraphPagination::default()
+        );
+        assert_eq!(
+            parsed.paragraph_spacing(0),
+            ParagraphSpacingOverrides::default()
         );
     }
 

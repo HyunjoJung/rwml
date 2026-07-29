@@ -335,7 +335,17 @@ final direct overrides, logical edges resolve against final paragraph
 direction, and a negative first-line offset becomes a hanging indent. Direct
 `sprmPNest` is additive when a style-derived or direct logical-left base exists;
 the prohibited style form and direct nest-only values without a base remain
-unmaterialized. Paragraph direction does not imply table mirroring. Opened
+unmaterialized. Valid `sprmPDyaBefore` and `sprmPDyaAfter` unsigned-twip
+paragraph spacing plus positive proportional `sprmPDyaLine` LSPD values resolve
+through the same style inheritance and final direct-PAPX precedence. Omitted
+values materialize the MS-DOC defaults of zero points before/after and single
+line spacing; supported values survive shared-model use, `.docx`
+conversion/reopen, and top-level PDF preview layout. Table-cell PDF preview
+applies the resolved line multiplier but still ignores before/after spacing.
+At-least/exact and explicit
+zero proportional LSPD values clear an inherited multiplier but remain unset
+because the shared model has no corresponding line-rule representation.
+Paragraph direction does not imply table mirroring. Opened
 legacy tables preserve strict direct row-mark
 `sprmTFBiDi` and compatibility
 `sprmTFBiDi90` Bool16 values: either final property enables visual RTL,
@@ -344,9 +354,10 @@ in source-logical order for `.docx` conversion and PDF column mirroring.
 Distribution and language-specific justification collapse to generic justify.
 Character-style or language-derived direction, table-style-derived direction,
 indented logical justification, list-level, compatibility-era, character-unit,
-and mirrored legacy indents, exact RTL list-level layout, negative-indent PDF
-outdenting, piece `Pcd.Prm`, and Markdown/HTML visual RTL remain outside these
-bounded bridges.
+and mirrored legacy indents, line-unit/auto/contextual paragraph spacing,
+Word-exact adjacent-spacing resolution, table/list-style spacing effects, exact
+RTL list-level layout, negative-indent PDF outdenting, piece `Pcd.Prm`, and
+Markdown/HTML visual RTL remain outside these bounded bridges.
 
 > **Scope:** this is a fast, in-process **preview / report** renderer, not a Word
 > layout engine. It is faithful to the model and produces selectable text, but
@@ -360,8 +371,9 @@ bounded bridges.
 > do not yet contribute `cantSplit`. Nested-table paragraph controls retain the
 > renderer's 32-level flattening bound; nested grid/border geometry, nested-row
 > `cantSplit`, and Word-exact cell spacing/tab geometry remain outside this
-> slice. Legacy STSH properties beyond the bounded paragraph-pagination and
-> direction/justification subsets,
+> slice. Legacy STSH properties beyond the bounded paragraph-pagination,
+> direction/justification, modern logical-indent, and paragraph-spacing
+> subsets,
 > table/list-style paragraph effects, piece `Pcd.Prm` modifiers, nested legacy
 > tables/rows, and controls attached only to discarded blank top-level
 > paragraphs remain unsupported. Legacy absolute table width, autofit,
@@ -856,7 +868,10 @@ evidence.
       and recursively nested table-cell keep/widow controls, direct and
       paragraph-style-inherited legacy DOC
       `sprmPFKeep`/`sprmPFKeepFollow`/`sprmPFWidowControl`/`sprmPFPageBreakBefore`
-      plus direct row `sprmTFCantSplit`/`sprmTFCantSplit90`, font registration
+      plus bounded direct/style top-level
+      `sprmPDyaBefore`/`sprmPDyaAfter`/proportional `sprmPDyaLine` spacing
+      (table cells apply the line multiplier only) and direct row
+      `sprmTFCantSplit`/`sprmTFCantSplit90`, font registration
 - [x] Reader: `.docx` headers/footers, text boxes (`w:txbxContent` incl. run-level
       `mc:AlternateContent`) including `text_boxes()` records, footnotes/endnotes
       including `notes()` records, per-level numbering labels, caps

@@ -50,6 +50,9 @@ const SPRM_P_FTTP: u16 = 0x2417;
 const SPRM_P_FWIDOW_CONTROL: u16 = 0x2431;
 const SPRM_P_F_BIDI: u16 = 0x2441;
 const SPRM_P_JC: u16 = 0x2461; // logical paragraph justification (1-byte)
+const SPRM_P_DYA_LINE: u16 = 0x6412; // LSPD (4-byte)
+const SPRM_P_DYA_BEFORE: u16 = 0xA413; // unsigned twips
+const SPRM_P_DYA_AFTER: u16 = 0xA414; // unsigned twips
 const SPRM_P_DXA_RIGHT: u16 = 0x845D; // logical right indent (signed twips)
 const SPRM_P_DXA_LEFT: u16 = 0x845E; // logical left indent (signed twips)
 const SPRM_P_NEST: u16 = 0x465F; // additive logical left indent (signed twips)
@@ -169,6 +172,35 @@ impl ParagraphIndentOverrides {
     }
 }
 
+/// The bounded legacy line-spacing forms represented by the shared model.
+///
+/// At-least, exact, and zero-multiplier LSPD values cannot be expressed
+/// by `Spacing::line_pct`. The sentinel still has to override an inherited
+/// multiplier instead of silently retaining it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ParagraphLineSpacing {
+    ProportionalTwips(u16),
+    Unrepresentable,
+}
+
+/// Sparse legacy paragraph-spacing modifiers in source units.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct ParagraphSpacingOverrides {
+    pub(crate) before_twips: Option<u16>,
+    pub(crate) after_twips: Option<u16>,
+    pub(crate) line: Option<ParagraphLineSpacing>,
+}
+
+impl ParagraphSpacingOverrides {
+    pub(crate) fn apply(self, overrides: Self) -> Self {
+        Self {
+            before_twips: overrides.before_twips.or(self.before_twips),
+            after_twips: overrides.after_twips.or(self.after_twips),
+            line: overrides.line.or(self.line),
+        }
+    }
+}
+
 /// Per-paragraph properties over an FC range `[fc_start, fc_lim)`.
 #[derive(Debug, Clone, Default)]
 struct PapEntry {
@@ -187,6 +219,8 @@ struct PapEntry {
     layout: ParagraphLayoutOverrides,
     /// Sparse direct modern logical paragraph indents.
     indent: ParagraphIndentOverrides,
+    /// Sparse direct legacy paragraph spacing.
+    spacing: ParagraphSpacingOverrides,
     /// Sparse direct paragraph pagination modifiers.
     pagination: ParagraphPaginationOverrides,
     /// Row repeats as a table header (`sprmTTableHeader`).
@@ -210,6 +244,7 @@ struct Pap {
     outlvl: Option<u8>,
     layout: ParagraphLayoutOverrides,
     indent: ParagraphIndentOverrides,
+    spacing: ParagraphSpacingOverrides,
     pagination: ParagraphPaginationOverrides,
     table_header: bool,
     table_cant_split_90: Option<bool>,
@@ -274,6 +309,11 @@ impl PapxTable {
     /// Sparse direct modern logical paragraph indents at `fc`.
     pub(crate) fn paragraph_indent_overrides_at(&self, fc: u32) -> ParagraphIndentOverrides {
         self.entry_at(fc).map(|e| e.indent).unwrap_or_default()
+    }
+
+    /// Sparse direct legacy paragraph spacing at `fc`.
+    pub(crate) fn paragraph_spacing_overrides_at(&self, fc: u32) -> ParagraphSpacingOverrides {
+        self.entry_at(fc).map(|e| e.spacing).unwrap_or_default()
     }
 
     /// Direct paragraph pagination controls at `fc`, with MS-DOC defaults.
@@ -465,6 +505,7 @@ fn parse_fkp(word: &[u8], page_off: usize, out: &mut Vec<PapEntry>) {
             outlvl: pap.outlvl,
             layout: pap.layout,
             indent: pap.indent,
+            spacing: pap.spacing,
             pagination: pap.pagination,
             table_header: pap.table_header,
             table_cant_split: pap.resolved_cant_split(),
@@ -506,8 +547,8 @@ fn parse_papx(page: &[u8], off: usize) -> (Pap, Option<TableDef>) {
 }
 
 /// Walk a grpprl, extracting table flags, list (`ilfo`/`ilvl`), style index,
-/// outline level, justification, and direct pagination. Stops on an unsizeable
-/// or truncated sprm.
+/// outline level, layout, indent, spacing, and direct pagination. Stops on an
+/// unsizeable or truncated sprm.
 fn scan_grpprl(gp: &[u8], istd: u16) -> (Pap, Option<TableDef>) {
     let mut pap = Pap {
         istd,
@@ -536,6 +577,10 @@ fn scan_grpprl(gp: &[u8], istd: u16) -> (Pap, Option<TableDef>) {
             continue;
         }
         if apply_indent_sprm(&mut pap.indent, sprm, &gp[op..operand_end]) {
+            pos = operand_end;
+            continue;
+        }
+        if apply_spacing_sprm(&mut pap.spacing, sprm, &gp[op..operand_end]) {
             pos = operand_end;
             continue;
         }
@@ -591,10 +636,12 @@ fn apply_paragraph_style_to_modeled_properties(pap: &mut Pap, istd: u16) {
     pap.outlvl = (1..=9).contains(&istd).then_some((istd - 1) as u8);
     pap.layout = ParagraphLayoutOverrides::default();
     pap.indent = ParagraphIndentOverrides::default();
+    pap.spacing = ParagraphSpacingOverrides::default();
     pap.pagination = ParagraphPaginationOverrides::default();
     // Table membership and row properties are intentionally preserved by a
-    // paragraph-style change. Style-derived layout and pagination are resolved
-    // during assembly; style-derived list values remain outside this scanner.
+    // paragraph-style change. Style-derived layout, indent, spacing, and
+    // pagination are resolved during assembly; style-derived list values remain
+    // outside this scanner.
 }
 
 fn permuted_istd(operand: &[u8], current_istd: u16) -> Option<u16> {
@@ -684,6 +731,28 @@ fn apply_style_indent_sprm(
     apply_indent_sprm(indent, sprm, operand)
 }
 
+fn apply_spacing_sprm(spacing: &mut ParagraphSpacingOverrides, sprm: u16, operand: &[u8]) -> bool {
+    match sprm {
+        SPRM_P_DYA_BEFORE => {
+            if let Some(value) = strict_unsigned_yas(operand) {
+                spacing.before_twips = Some(value);
+            }
+        }
+        SPRM_P_DYA_AFTER => {
+            if let Some(value) = strict_unsigned_yas(operand) {
+                spacing.after_twips = Some(value);
+            }
+        }
+        SPRM_P_DYA_LINE => {
+            if let Some(value) = strict_line_spacing(operand) {
+                spacing.line = Some(value);
+            }
+        }
+        _ => return false,
+    }
+    true
+}
+
 fn physical_justification(value: u8) -> Option<ParagraphJustification> {
     match value {
         0 => Some(ParagraphJustification::PhysicalLeft),
@@ -718,7 +787,25 @@ fn strict_xas(operand: &[u8]) -> Option<i16> {
     (-31_680..=31_680).contains(&value).then_some(value)
 }
 
-/// Strictly scan a style `grpprlPapx` for the layout, indent, and pagination
+fn strict_unsigned_yas(operand: &[u8]) -> Option<u16> {
+    let value = u16le(operand, 0)?;
+    (value <= 0x7BC0).then_some(value)
+}
+
+fn strict_line_spacing(operand: &[u8]) -> Option<ParagraphLineSpacing> {
+    let dya_line = u16le(operand, 0)?;
+    let multiple = u16le(operand, 2)?;
+    if multiple > 1 {
+        return None;
+    }
+    match dya_line {
+        1..=0x7BC0 if multiple == 1 => Some(ParagraphLineSpacing::ProportionalTwips(dya_line)),
+        0..=0x7BC0 | 0x8440..=u16::MAX => Some(ParagraphLineSpacing::Unrepresentable),
+        _ => None,
+    }
+}
+
+/// Strictly scan a style `grpprlPapx` for the bounded paragraph-property
 /// subsets modeled by the legacy reader. A malformed modifier invalidates the
 /// local style payload instead of applying a partial prefix.
 pub(crate) fn scan_paragraph_style_overrides(
@@ -727,10 +814,12 @@ pub(crate) fn scan_paragraph_style_overrides(
     ParagraphLayoutOverrides,
     ParagraphIndentOverrides,
     ParagraphPaginationOverrides,
+    ParagraphSpacingOverrides,
 )> {
     let mut layout = ParagraphLayoutOverrides::default();
     let mut indent = ParagraphIndentOverrides::default();
     let mut pagination = ParagraphPaginationOverrides::default();
+    let mut spacing = ParagraphSpacingOverrides::default();
     let mut pos = 0;
     while pos < gp.len() {
         let sprm = u16le(gp, pos)?;
@@ -741,9 +830,10 @@ pub(crate) fn scan_paragraph_style_overrides(
         apply_layout_sprm(&mut layout, sprm, operand);
         apply_style_indent_sprm(&mut indent, sprm, operand);
         apply_pagination_sprm(&mut pagination, sprm, operand);
+        apply_spacing_sprm(&mut spacing, sprm, operand);
         pos = operand_end;
     }
-    Some((layout, indent, pagination))
+    Some((layout, indent, pagination, spacing))
 }
 
 /// Operand length for a sprm, from its `spra` field ([MS-DOC] 2.2.5).
@@ -918,8 +1008,133 @@ mod tests {
                     page_break_before: Some(true),
                     ..ParagraphPaginationOverrides::default()
                 },
+                ParagraphSpacingOverrides::default(),
             ))
         );
+    }
+
+    #[test]
+    fn resolves_bounded_paragraph_spacing_in_strict_source_order() {
+        let (default, _) = scan_grpprl(&[], 0);
+        assert_eq!(default.spacing, ParagraphSpacingOverrides::default());
+
+        let (source_ordered, _) = scan_grpprl(
+            &[
+                0x13, 0xA4, 0xC8, 0x00, // before = 200
+                0x13, 0xA4, 0x00, 0x7D, // invalid before = 32000
+                0x13, 0xA4, 0x00, 0x00, // before = 0
+                0x14, 0xA4, 0x64, 0x00, // after = 100
+                0x14, 0xA4, 0x00, 0x7D, // invalid after = 32000
+                0x12, 0x64, 0x68, 0x01, 0x01, 0x00, // 1.5 lines
+                0x12, 0x64, 0xE0, 0x01, 0x02, 0x00, // invalid multiplier
+                0x12, 0x64, 0xE0, 0x01, 0x01, 0x00, // 2 lines
+            ],
+            0,
+        );
+        assert_eq!(
+            source_ordered.spacing,
+            ParagraphSpacingOverrides {
+                before_twips: Some(0),
+                after_twips: Some(100),
+                line: Some(ParagraphLineSpacing::ProportionalTwips(480)),
+            }
+        );
+
+        let (inclusive_boundaries, _) = scan_grpprl(
+            &[
+                0x13, 0xA4, 0xC0, 0x7B, // maximum valid before = 0x7BC0
+                0x13, 0xA4, 0xC1, 0x7B, // immediate invalid before
+                0x14, 0xA4, 0xC0, 0x7B, // maximum valid after = 0x7BC0
+                0x14, 0xA4, 0xC1, 0x7B, // immediate invalid after
+                0x12, 0x64, 0xC0, 0x7B, 0x01, 0x00, // maximum proportional LSPD
+                0x12, 0x64, 0xC1, 0x7B, 0x01, 0x00, // invalid LSPD gap
+            ],
+            0,
+        );
+        assert_eq!(
+            inclusive_boundaries.spacing,
+            ParagraphSpacingOverrides {
+                before_twips: Some(0x7BC0),
+                after_twips: Some(0x7BC0),
+                line: Some(ParagraphLineSpacing::ProportionalTwips(0x7BC0)),
+            }
+        );
+
+        for operand in [
+            [0xF0, 0x00, 0x00, 0x00], // at least 240 twips
+            [0x40, 0x84, 0x00, 0x00], // exactly 31680 twips
+            [0x00, 0x00, 0x01, 0x00], // explicit zero multiplier
+        ] {
+            let mut grpprl = vec![0x12, 0x64];
+            grpprl.extend_from_slice(&operand);
+            let (parsed, _) = scan_grpprl(&grpprl, 0);
+            assert_eq!(
+                parsed.spacing.line,
+                Some(ParagraphLineSpacing::Unrepresentable)
+            );
+        }
+
+        let (valid_prefix, _) = scan_grpprl(
+            &[
+                0x13, 0xA4, 0x2C, 0x01, // before = 300
+                0x14, 0xA4, // truncated after operand
+            ],
+            0,
+        );
+        assert_eq!(
+            valid_prefix.spacing,
+            ParagraphSpacingOverrides {
+                before_twips: Some(300),
+                ..ParagraphSpacingOverrides::default()
+            }
+        );
+
+        let (style_reset, _) = scan_grpprl(
+            &[
+                0x13, 0xA4, 0xF0, 0x00, // direct before = 240
+                0x12, 0x64, 0xE0, 0x01, 0x01, 0x00, // direct 2 lines
+                0x00, 0x46, 0x01, 0x00, // apply paragraph style 1
+                0x14, 0xA4, 0x3C, 0x00, // direct after = 60
+            ],
+            0,
+        );
+        assert_eq!(
+            style_reset.spacing,
+            ParagraphSpacingOverrides {
+                before_twips: None,
+                after_twips: Some(60),
+                line: None,
+            }
+        );
+    }
+
+    #[test]
+    fn paragraph_style_spacing_is_source_ordered_and_structurally_strict() {
+        assert_eq!(
+            scan_paragraph_style_overrides(&[
+                0x13, 0xA4, 0xC8, 0x00, // before = 200
+                0x13, 0xA4, 0x00, 0x7D, // invalid before preserves 200
+                0x14, 0xA4, 0x64, 0x00, // after = 100
+                0x12, 0x64, 0x68, 0x01, 0x01, 0x00, // 1.5 lines
+                0x12, 0x64, 0x40, 0x84, 0x01, 0x00, // exact spacing
+                0x12, 0x64, 0xE0, 0x01, 0x02, 0x00, // invalid multiplier
+            ]),
+            Some((
+                ParagraphLayoutOverrides::default(),
+                ParagraphIndentOverrides::default(),
+                ParagraphPaginationOverrides::default(),
+                ParagraphSpacingOverrides {
+                    before_twips: Some(200),
+                    after_twips: Some(100),
+                    line: Some(ParagraphLineSpacing::Unrepresentable),
+                },
+            ))
+        );
+        assert!(scan_paragraph_style_overrides(&[
+            0x13, 0xA4, 0xC8, 0x00, // valid prefix
+            0x12, 0x64, 0x68, // truncated LSPD
+        ])
+        .is_none());
     }
 
     #[test]
@@ -943,6 +1158,7 @@ mod tests {
                     first_line_twips: Some(31_680),
                 },
                 ParagraphPaginationOverrides::default(),
+                ParagraphSpacingOverrides::default(),
             ))
         );
     }
@@ -1345,6 +1561,7 @@ mod tests {
             outlvl: None,
             layout: ParagraphLayoutOverrides::default(),
             indent: ParagraphIndentOverrides::default(),
+            spacing: ParagraphSpacingOverrides::default(),
             pagination: ParagraphPaginationOverrides::default(),
             table_header: false,
             table_cant_split: false,
