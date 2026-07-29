@@ -1908,6 +1908,43 @@ fn note_template_docx() -> Vec<u8> {
     ])
 }
 
+fn alternate_content_template_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/header2.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rIdEnd" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/><Relationship Id="rIdHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:compat="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><compat:AlternateContent><compat:Choice Requires="w14"><alt:AlternateContent xmlns:alt="http://schemas.openxmlformats.org/markup-compatibility/2006"><alt:Fallback><w:sdt><w:sdtPr><w:tag w:val="body-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Body selected</w:t></w:r></w:p></w:sdtContent></w:sdt></alt:Fallback></alt:AlternateContent></compat:Choice><compat:Fallback><w:sdt><w:sdtPr><w:tag w:val="body-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Body fallback</w:t></w:r></w:p></w:sdtContent></w:sdt></compat:Fallback></compat:AlternateContent><w:p><w:r><w:footnoteReference w:id="1"/></w:r><w:r><w:endnoteReference w:id="2"/></w:r></w:p><w:sectPr><w:headerReference w:type="default" r:id="rIdHeader"/></w:sectPr></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mcx="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:footnote w:type="separator" w:id="-1"><w:sdt><w:sdtPr><w:tag w:val="foot-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Foot separator</w:t></w:r></w:p></w:sdtContent></w:sdt></w:footnote><mcx:AlternateContent><mcx:Choice Requires="w14"><w:footnote w:id="1"><mcx:AlternateContent><mcx:Choice Requires="w15"><w:sdt><w:sdtPr><w:tag w:val="foot-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Foot selected</w:t></w:r></w:p></w:sdtContent></w:sdt></mcx:Choice><mcx:Fallback><w:sdt><w:sdtPr><w:tag w:val="foot-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Foot fallback</w:t></w:r></w:p></w:sdtContent></w:sdt></mcx:Fallback></mcx:AlternateContent></w:footnote></mcx:Choice><mcx:Fallback><w:footnote w:id="9"><w:sdt><w:sdtPr><w:tag w:val="foot-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Foot entry fallback</w:t></w:r></w:p></w:sdtContent></w:sdt></w:footnote></mcx:Fallback></mcx:AlternateContent></w:footnotes>"#,
+        ),
+        (
+            "word/endnotes.xml",
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:alt="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:endnote w:type="continuationSeparator" w:id="0"><w:p><w:fldSimple w:instr=" MERGEFIELD end-name "><w:r><w:t>End separator</w:t></w:r></w:fldSimple></w:p></w:endnote><w:endnote w:id="2"><alt:AlternateContent><alt:Choice Requires="w14"><w:p><w:fldSimple w:instr=" MERGEFIELD keep-name "><w:r><w:t>End selected keep</w:t></w:r></w:fldSimple></w:p></alt:Choice><alt:Fallback><w:p><w:fldSimple w:instr=" MERGEFIELD end-name "><w:r><w:t>End fallback hidden</w:t></w:r></w:fldSimple></w:p></alt:Fallback></alt:AlternateContent><w:p><w:fldSimple w:instr=" MERGEFIELD end-name "><w:r><w:t>End visible</w:t></w:r></w:fldSimple></w:p></w:endnote></w:endnotes>"#,
+        ),
+        (
+            "word/header1.xml",
+            r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:m="http://schemas.openxmlformats.org/markup-compatibility/2006"><m:AlternateContent><m:Choice Requires="w14"><w:sdt><w:sdtPr><w:tag w:val="header-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Header selected</w:t></w:r></w:p></w:sdtContent></w:sdt></m:Choice><m:Fallback><w:sdt><w:sdtPr><w:tag w:val="header-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Header fallback</w:t></w:r></w:p></w:sdtContent></w:sdt></m:Fallback></m:AlternateContent></w:hdr>"#,
+        ),
+        (
+            "word/header2.xml",
+            r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:sdt><w:sdtPr><w:tag w:val="header-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Orphan header</w:t></w:r></w:p></w:sdtContent></w:sdt></w:hdr>"#,
+        ),
+    ])
+}
+
 fn tracked_revisions_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -2501,6 +2538,103 @@ fn fill_template_fields_updates_note_content_controls_and_merge_fields() {
     assert!(reopened.footnote_text().contains("Roadmap"));
     assert!(reopened.endnote_text().contains("Acme & Co"));
     assert!(reopened.endnote_text().contains("Roadmap"));
+}
+
+#[test]
+fn fill_template_fields_only_edits_selected_alternate_content_branches() {
+    let mut doc = Document::open(&alternate_content_template_docx()).expect("fixture opens");
+
+    let changed = doc
+        .fill_template_fields([
+            ("body-name", "Body updated"),
+            ("foot-name", "Foot updated"),
+            ("end-name", "End updated"),
+            ("header-name", "Header updated"),
+        ])
+        .expect("selected template fields filled");
+
+    assert_eq!(changed, 4);
+    assert_eq!(
+        doc.edited_parts(),
+        [
+            "word/document.xml",
+            "word/endnotes.xml",
+            "word/footnotes.xml",
+            "word/header1.xml"
+        ]
+    );
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let body = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let footnotes = String::from_utf8(parts["word/footnotes.xml"].clone()).unwrap();
+    let endnotes = String::from_utf8(parts["word/endnotes.xml"].clone()).unwrap();
+    let header = String::from_utf8(parts["word/header1.xml"].clone()).unwrap();
+
+    assert!(body.contains("<w:t>Body updated</w:t>"), "{body}");
+    assert!(
+        body.contains(r#"<compat:Fallback><w:sdt><w:sdtPr><w:tag w:val="body-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Body fallback</w:t></w:r></w:p></w:sdtContent></w:sdt></compat:Fallback>"#),
+        "{body}"
+    );
+    assert!(
+        footnotes.contains("<w:t>Foot updated</w:t>")
+            && footnotes.contains(r#"<mcx:Fallback><w:sdt><w:sdtPr><w:tag w:val="foot-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Foot fallback</w:t></w:r></w:p></w:sdtContent></w:sdt></mcx:Fallback>"#)
+            && footnotes.contains(r#"<mcx:Fallback><w:footnote w:id="9"><w:sdt><w:sdtPr><w:tag w:val="foot-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Foot entry fallback</w:t></w:r></w:p></w:sdtContent></w:sdt></w:footnote></mcx:Fallback>"#)
+            && footnotes.contains(r#"<w:footnote w:type="separator" w:id="-1"><w:sdt><w:sdtPr><w:tag w:val="foot-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Foot separator</w:t></w:r></w:p></w:sdtContent></w:sdt></w:footnote>"#),
+        "{footnotes}"
+    );
+    assert!(
+        endnotes.contains("<w:t>End updated</w:t>")
+            && endnotes.contains(r#"<alt:Fallback><w:p><w:fldSimple w:instr=" MERGEFIELD end-name "><w:r><w:t>End fallback hidden</w:t></w:r></w:fldSimple></w:p></alt:Fallback>"#)
+            && endnotes.contains("<w:t>End selected keep</w:t>")
+            && endnotes.contains(r#"<w:endnote w:type="continuationSeparator" w:id="0"><w:p><w:fldSimple w:instr=" MERGEFIELD end-name "><w:r><w:t>End separator</w:t></w:r></w:fldSimple></w:p></w:endnote>"#),
+        "{endnotes}"
+    );
+    assert!(
+        header.contains("<w:t>Header updated</w:t>")
+            && header.contains(r#"<m:Fallback><w:sdt><w:sdtPr><w:tag w:val="header-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Header fallback</w:t></w:r></w:p></w:sdtContent></w:sdt></m:Fallback>"#),
+        "{header}"
+    );
+    assert_eq!(
+        parts.get("word/header2.xml"),
+        unzip_parts(&alternate_content_template_docx()).get("word/header2.xml"),
+        "unreferenced header should remain byte-preserved"
+    );
+}
+
+#[test]
+fn fill_template_fields_treats_foreign_alternate_content_as_ordinary_xml() {
+    let fixture = docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:foreign="urn:not-markup-compatibility"><w:body><foreign:AlternateContent><foreign:Choice><w:p><w:fldSimple w:instr=" MERGEFIELD keep-name "><w:r><w:t>Keep choice</w:t></w:r></w:fldSimple></w:p></foreign:Choice><foreign:Fallback><w:p><w:fldSimple w:instr=" MERGEFIELD client-name "><w:r><w:t>Foreign client</w:t></w:r></w:fldSimple></w:p></foreign:Fallback></foreign:AlternateContent><w:p><w:fldSimple w:instr=" MERGEFIELD client-name "><w:r><w:t>Visible client</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ]);
+    let mut doc = Document::open(&fixture).expect("fixture opens");
+
+    assert_eq!(
+        doc.fill_template_fields([("client-name", "Updated client")])
+            .expect("foreign-wrapper fields filled"),
+        2
+    );
+
+    let body = String::from_utf8(
+        unzip_parts(&doc.save().expect("save edited docx"))["word/document.xml"].clone(),
+    )
+    .unwrap();
+    assert_eq!(
+        body.matches("<w:t>Updated client</w:t>").count(),
+        2,
+        "{body}"
+    );
+    assert!(body.contains("<w:t>Keep choice</w:t>"), "{body}");
 }
 
 #[test]
@@ -3256,6 +3390,42 @@ fn replace_text_in_part_edits_one_existing_wml_part() {
             .is_err(),
         "missing target part should be an error"
     );
+}
+
+#[test]
+fn replace_text_in_part_keeps_all_alternate_content_branches_explicitly_editable() {
+    let fixture = docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/header2.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Body</w:t></w:r></w:p></w:body></w:document>"#,
+        ),
+        (
+            "word/header2.xml",
+            r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:AlternateContent><mc:Choice Requires="w14"><w:p><w:r><w:t>OLD</w:t></w:r></w:p></mc:Choice><mc:Fallback><w:p><w:r><w:t>OLD</w:t></w:r></w:p></mc:Fallback></mc:AlternateContent><mc:AlternateContent><w:p><w:r><w:t>OLD</w:t></w:r></w:p></mc:AlternateContent></w:hdr>"#,
+        ),
+    ]);
+    let mut doc = Document::open(&fixture).expect("fixture opens");
+
+    assert_eq!(
+        doc.replace_text_in_part("word/header2.xml", "OLD", "NEW")
+            .expect("all explicit part descendants edited"),
+        3
+    );
+
+    let header = String::from_utf8(
+        unzip_parts(&doc.save().expect("save edited docx"))["word/header2.xml"].clone(),
+    )
+    .unwrap();
+    assert_eq!(header.matches("<w:t>NEW</w:t>").count(), 3, "{header}");
+    assert!(!header.contains("<w:t>OLD</w:t>"), "{header}");
 }
 
 #[test]

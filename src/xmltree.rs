@@ -120,6 +120,7 @@ fn commit_should_fail() -> bool {
 /// The WordprocessingML namespace URI — used to resolve which `t` elements are real
 /// body text runs vs DrawingML text.
 pub(crate) const WML_NS: &[u8] = b"http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+const MC_NS: &[u8] = b"http://schemas.openxmlformats.org/markup-compatibility/2006";
 const OOXML_REL_NS: &[u8] = b"http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 
 fn wml_ns_str() -> &'static str {
@@ -149,6 +150,19 @@ enum WmlRevisionEditAction {
     Remove,
     Unwrap,
     RenameDeletedText,
+}
+
+#[derive(Clone, Copy)]
+enum AlternateContentBranch {
+    NotAlternateContent,
+    Selected(NodeId),
+    Missing,
+}
+
+#[derive(Clone, Copy)]
+enum AlternateContentTraversal {
+    Selected,
+    All,
 }
 
 #[derive(Clone, Copy)]
@@ -624,6 +638,18 @@ struct FieldScan {
 struct ComplexFieldScan {
     result_phase: bool,
     result_runs: Vec<NodeId>,
+}
+
+#[derive(Debug, Default)]
+struct FieldInstructionScan {
+    fields: Vec<String>,
+    complex: Vec<ComplexFieldInstructionScan>,
+}
+
+#[derive(Debug)]
+struct ComplexFieldInstructionScan {
+    instruction: String,
+    result_phase: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1501,6 +1527,85 @@ impl XmlTree {
             == Some(ns)
     }
 
+    fn selected_alternate_content_branch(
+        &self,
+        id: NodeId,
+        scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+    ) -> AlternateContentBranch {
+        if !self.resolves_to(id, MC_NS, b"AlternateContent", scope) {
+            return AlternateContentBranch::NotAlternateContent;
+        }
+        for i in 0..self.nodes[id.0 as usize].children.len() {
+            let child = self.nodes[id.0 as usize].children[i];
+            let base = scope.len();
+            self.push_xmlns(child, scope);
+            let selected = self.resolves_to(child, MC_NS, b"Choice", scope)
+                || self.resolves_to(child, MC_NS, b"Fallback", scope);
+            scope.truncate(base);
+            if selected {
+                return AlternateContentBranch::Selected(child);
+            }
+        }
+        AlternateContentBranch::Missing
+    }
+
+    fn alternate_content_matches_local_reader_policy(
+        &self,
+        id: NodeId,
+        scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+    ) -> bool {
+        let base = scope.len();
+        self.push_xmlns(id, scope);
+        if self.wml_revision_edit_action(id, scope, WmlRevisionEditPolicy::Accept)
+            == WmlRevisionEditAction::Remove
+        {
+            scope.truncate(base);
+            return true;
+        }
+        if self.local_name(id) == Some(b"AlternateContent") {
+            if !self.resolves_to(id, MC_NS, b"AlternateContent", scope) {
+                scope.truncate(base);
+                return false;
+            }
+            let mut first_local_branch = None;
+            let mut first_mc_branch = None;
+            for i in 0..self.nodes[id.0 as usize].children.len() {
+                let child = self.nodes[id.0 as usize].children[i];
+                let child_base = scope.len();
+                self.push_xmlns(child, scope);
+                if first_local_branch.is_none()
+                    && matches!(self.local_name(child), Some(b"Choice") | Some(b"Fallback"))
+                {
+                    first_local_branch = Some(child);
+                }
+                if first_mc_branch.is_none()
+                    && (self.resolves_to(child, MC_NS, b"Choice", scope)
+                        || self.resolves_to(child, MC_NS, b"Fallback", scope))
+                {
+                    first_mc_branch = Some(child);
+                }
+                scope.truncate(child_base);
+            }
+            let compatible = match (first_local_branch, first_mc_branch) {
+                (Some(local_branch), Some(mc_branch)) if local_branch == mc_branch => {
+                    self.alternate_content_matches_local_reader_policy(local_branch, scope)
+                }
+                _ => false,
+            };
+            scope.truncate(base);
+            return compatible;
+        }
+        for i in 0..self.nodes[id.0 as usize].children.len() {
+            let child = self.nodes[id.0 as usize].children[i];
+            if !self.alternate_content_matches_local_reader_policy(child, scope) {
+                scope.truncate(base);
+                return false;
+            }
+        }
+        scope.truncate(base);
+        true
+    }
+
     fn scope_binds_prefix(scope: &[(Vec<u8>, Vec<u8>)], prefix: &[u8], ns: &[u8]) -> bool {
         scope
             .iter()
@@ -1562,19 +1667,38 @@ impl XmlTree {
     }
 
     /// Every `t` element **under `body`** that resolves to the **WordprocessingML**
-    /// namespace — i.e. genuine `w:t` body text, *including* text-box runs nested in
-    /// `w:drawing`/`mc:AlternateContent`, while correctly excluding DrawingML text
-    /// (`a:t`, or a bare `<t>` under a subtree that binds DrawingML as the default
-    /// namespace). The walk is anchored to `body` (typically [`Self::wml_body_strict`]), so a
-    /// stray `w:t` *sibling* of the body — in malformed or extension-heavy input — is
-    /// not touched. The namespace scope is seeded from `body`'s ancestors + own
-    /// declarations so prefixes still resolve.
+    /// namespace — i.e. genuine `w:t` body text, *including* text-box runs in the
+    /// selected branch of nested `w:drawing`/`mc:AlternateContent`, while correctly
+    /// excluding untaken branches and DrawingML text (`a:t`, or a bare `<t>` under a
+    /// subtree that binds DrawingML as the default namespace). The walk is anchored
+    /// to `body` (typically [`Self::wml_body_strict`]), so a stray `w:t` *sibling* of
+    /// the body — in malformed or extension-heavy input — is not touched. The
+    /// namespace scope is seeded from `body`'s ancestors + own declarations so
+    /// prefixes still resolve.
     pub(crate) fn wml_text_runs_under(&self, body: NodeId) -> Vec<NodeId> {
         let mut out = Vec::new();
         let mut scope = self.ns_scope_at(body); // ancestors + body's own xmlns
         for i in 0..self.nodes[body.0 as usize].children.len() {
             let c = self.nodes[body.0 as usize].children[i];
             self.collect_wml_t(c, &mut scope, &mut out);
+        }
+        out
+    }
+
+    /// Every descendant WordprocessingML `w:t` under `root`, retaining text from
+    /// every `mc:AlternateContent` branch. This is reserved for the explicit
+    /// part-level text escape hatch; semantic edits use [`Self::wml_text_runs_under`].
+    pub(crate) fn wml_all_branch_text_runs_under(&self, root: NodeId) -> Vec<NodeId> {
+        let mut out = Vec::new();
+        let mut scope = self.ns_scope_at(root);
+        for i in 0..self.nodes[root.0 as usize].children.len() {
+            let child = self.nodes[root.0 as usize].children[i];
+            self.collect_wml_t_with_alternate_content(
+                child,
+                &mut scope,
+                &mut out,
+                AlternateContentTraversal::All,
+            );
         }
         out
     }
@@ -1617,6 +1741,31 @@ impl XmlTree {
         scan.target
     }
 
+    /// Raw instructions for fields in the exact namespace-aware order used by
+    /// [`Self::wml_field_result_runs_under`].
+    pub(crate) fn wml_field_instructions_under(&self, body: NodeId) -> Vec<String> {
+        let mut scan = FieldInstructionScan::default();
+        let mut scope = self.ns_scope_at(body);
+        for i in 0..self.nodes[body.0 as usize].children.len() {
+            let child = self.nodes[body.0 as usize].children[i];
+            self.collect_wml_field_instructions(child, &mut scope, &mut scan);
+        }
+        scan.fields
+    }
+
+    /// Whether the namespace-aware editor and the current local-name streaming
+    /// field reader choose the same compatibility branch everywhere under `body`.
+    pub(crate) fn wml_field_alternate_content_policy_matches_reader(&self, body: NodeId) -> bool {
+        let mut scope = self.ns_scope_at(body);
+        for i in 0..self.nodes[body.0 as usize].children.len() {
+            let child = self.nodes[body.0 as usize].children[i];
+            if !self.alternate_content_matches_local_reader_policy(child, &mut scope) {
+                return false;
+            }
+        }
+        true
+    }
+
     /// Visible `w:t` nodes for body content controls whose `w:sdtPr/w:tag/@w:val`
     /// exactly matches `tag`, in body order.
     pub(crate) fn wml_content_control_text_runs_by_tag_under(
@@ -1629,6 +1778,22 @@ impl XmlTree {
         for i in 0..self.nodes[body.0 as usize].children.len() {
             let c = self.nodes[body.0 as usize].children[i];
             self.collect_wml_content_control_text_by_tag(c, &mut scope, tag.as_bytes(), &mut out);
+        }
+        out
+    }
+
+    /// Real note entry roots directly under a footnotes/endnotes root or its
+    /// selected compatibility branches, excluding Word's separator boilerplate.
+    pub(crate) fn wml_real_note_entries_under(
+        &self,
+        root: NodeId,
+        note_local: &[u8],
+    ) -> Vec<NodeId> {
+        let mut out = Vec::new();
+        let mut scope = self.ns_scope_at(root);
+        for i in 0..self.nodes[root.0 as usize].children.len() {
+            let child = self.nodes[root.0 as usize].children[i];
+            self.collect_wml_real_note_entry(child, &mut scope, note_local, &mut out);
         }
         out
     }
@@ -2358,6 +2523,21 @@ impl XmlTree {
         scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
         out: &mut Vec<NodeId>,
     ) {
+        self.collect_wml_t_with_alternate_content(
+            id,
+            scope,
+            out,
+            AlternateContentTraversal::Selected,
+        );
+    }
+
+    fn collect_wml_t_with_alternate_content(
+        &self,
+        id: NodeId,
+        scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+        out: &mut Vec<NodeId>,
+        alternate_content: AlternateContentTraversal,
+    ) {
         let base = scope.len();
         self.push_xmlns(id, scope);
         if self.wml_revision_edit_action(id, scope, WmlRevisionEditPolicy::Accept)
@@ -2365,6 +2545,25 @@ impl XmlTree {
         {
             scope.truncate(base);
             return;
+        }
+        if matches!(alternate_content, AlternateContentTraversal::Selected) {
+            match self.selected_alternate_content_branch(id, scope) {
+                AlternateContentBranch::Selected(branch) => {
+                    self.collect_wml_t_with_alternate_content(
+                        branch,
+                        scope,
+                        out,
+                        alternate_content,
+                    );
+                    scope.truncate(base);
+                    return;
+                }
+                AlternateContentBranch::Missing => {
+                    scope.truncate(base);
+                    return;
+                }
+                AlternateContentBranch::NotAlternateContent => {}
+            }
         }
         if let Node::Element { name, .. } = &self.nodes[id.0 as usize].node {
             let (prefix, lname): (&[u8], &[u8]) = match name.iter().position(|&b| b == b':') {
@@ -2380,7 +2579,7 @@ impl XmlTree {
         }
         for i in 0..self.nodes[id.0 as usize].children.len() {
             let c = self.nodes[id.0 as usize].children[i];
-            self.collect_wml_t(c, scope, out);
+            self.collect_wml_t_with_alternate_content(c, scope, out, alternate_content);
         }
         scope.truncate(base);
     }
@@ -2400,6 +2599,18 @@ impl XmlTree {
             scope.truncate(base);
             return;
         }
+        match self.selected_alternate_content_branch(id, scope) {
+            AlternateContentBranch::Selected(branch) => {
+                self.collect_wml_content_control_text_by_tag(branch, scope, tag, out);
+                scope.truncate(base);
+                return;
+            }
+            AlternateContentBranch::Missing => {
+                scope.truncate(base);
+                return;
+            }
+            AlternateContentBranch::NotAlternateContent => {}
+        }
         if self.resolves_to(id, WML_NS, b"sdt", scope) && self.wml_sdt_tag_matches(id, scope, tag) {
             let mut runs = Vec::new();
             self.collect_wml_t(id, scope, &mut runs);
@@ -2412,6 +2623,61 @@ impl XmlTree {
             self.collect_wml_content_control_text_by_tag(c, scope, tag, out);
         }
         scope.truncate(base);
+    }
+
+    fn collect_wml_real_note_entry(
+        &self,
+        id: NodeId,
+        scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+        note_local: &[u8],
+        out: &mut Vec<NodeId>,
+    ) {
+        let base = scope.len();
+        self.push_xmlns(id, scope);
+        match self.selected_alternate_content_branch(id, scope) {
+            AlternateContentBranch::Selected(branch) => {
+                self.collect_wml_real_note_entries_in_container(branch, scope, note_local, out);
+            }
+            AlternateContentBranch::Missing => {}
+            AlternateContentBranch::NotAlternateContent => {
+                if self.resolves_to(id, WML_NS, note_local, scope)
+                    && self.is_real_wml_note_entry(id)
+                {
+                    out.push(id);
+                }
+            }
+        }
+        scope.truncate(base);
+    }
+
+    fn collect_wml_real_note_entries_in_container(
+        &self,
+        container: NodeId,
+        scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+        note_local: &[u8],
+        out: &mut Vec<NodeId>,
+    ) {
+        let base = scope.len();
+        self.push_xmlns(container, scope);
+        for i in 0..self.nodes[container.0 as usize].children.len() {
+            let child = self.nodes[container.0 as usize].children[i];
+            self.collect_wml_real_note_entry(child, scope, note_local, out);
+        }
+        scope.truncate(base);
+    }
+
+    fn is_real_wml_note_entry(&self, id: NodeId) -> bool {
+        let Node::Element { attrs, .. } = &self.nodes[id.0 as usize].node else {
+            return false;
+        };
+        let boilerplate = matches!(
+            attr_value_local(attrs, b"type").map(trim_ascii_whitespace),
+            Some(b"separator") | Some(b"continuationSeparator") | Some(b"continuationNotice")
+        );
+        !boilerplate
+            && attr_value_local(attrs, b"id")
+                .map(trim_ascii_whitespace)
+                .is_some_and(|id| !id.is_empty())
     }
 
     fn wml_sdt_tag_matches(
@@ -2713,6 +2979,85 @@ impl XmlTree {
         scope.truncate(base);
     }
 
+    fn collect_wml_field_instructions(
+        &self,
+        id: NodeId,
+        scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+        scan: &mut FieldInstructionScan,
+    ) {
+        let base = scope.len();
+        let mut fld_char_type: Option<Vec<u8>> = None;
+        self.push_xmlns(id, scope);
+        if self.wml_revision_edit_action(id, scope, WmlRevisionEditPolicy::Accept)
+            == WmlRevisionEditAction::Remove
+        {
+            scope.truncate(base);
+            return;
+        }
+        match self.selected_alternate_content_branch(id, scope) {
+            AlternateContentBranch::Selected(branch) => {
+                self.collect_wml_field_instructions(branch, scope, scan);
+                scope.truncate(base);
+                return;
+            }
+            AlternateContentBranch::Missing => {
+                scope.truncate(base);
+                return;
+            }
+            AlternateContentBranch::NotAlternateContent => {}
+        }
+        if let Node::Element { attrs, .. } = &self.nodes[id.0 as usize].node {
+            if self.resolves_to(id, WML_NS, b"fldSimple", scope) {
+                let instruction = attr_value_local(attrs, b"instr")
+                    .map(String::from_utf8_lossy)
+                    .map(std::borrow::Cow::into_owned)
+                    .unwrap_or_default();
+                scan.fields.push(instruction);
+                scope.truncate(base);
+                return;
+            }
+            if self.resolves_to(id, WML_NS, b"fldChar", scope) {
+                fld_char_type = attr_value_local(attrs, b"fldCharType")
+                    .map(trim_ascii_whitespace)
+                    .map(Vec::from);
+            } else if self.resolves_to(id, WML_NS, b"instrText", scope) {
+                if let Some(complex) = scan.complex.last_mut() {
+                    if !complex.result_phase {
+                        complex.instruction.push_str(&self.text_of(id));
+                    }
+                }
+            }
+        }
+
+        match fld_char_type.as_deref() {
+            Some(b"begin") => {
+                scan.complex.push(ComplexFieldInstructionScan {
+                    instruction: String::new(),
+                    result_phase: false,
+                });
+            }
+            Some(b"separate") => {
+                if let Some(complex) = scan.complex.last_mut() {
+                    complex.result_phase = true;
+                }
+            }
+            Some(b"end") => {
+                if let Some(complex) = scan.complex.pop() {
+                    scan.fields.push(complex.instruction);
+                }
+                scope.truncate(base);
+                return;
+            }
+            _ => {}
+        }
+
+        for i in 0..self.nodes[id.0 as usize].children.len() {
+            let child = self.nodes[id.0 as usize].children[i];
+            self.collect_wml_field_instructions(child, scope, scan);
+        }
+        scope.truncate(base);
+    }
+
     fn collect_wml_field_results(
         &self,
         id: NodeId,
@@ -2730,6 +3075,18 @@ impl XmlTree {
         {
             scope.truncate(base);
             return;
+        }
+        match self.selected_alternate_content_branch(id, scope) {
+            AlternateContentBranch::Selected(branch) => {
+                self.collect_wml_field_results(branch, scope, scan);
+                scope.truncate(base);
+                return;
+            }
+            AlternateContentBranch::Missing => {
+                scope.truncate(base);
+                return;
+            }
+            AlternateContentBranch::NotAlternateContent => {}
         }
         if let Node::Element { attrs, .. } = &self.nodes[id.0 as usize].node {
             if self.resolves_to(id, WML_NS, b"fldSimple", scope) {
@@ -3064,6 +3421,23 @@ mod tests {
             texts,
             vec!["A".to_string()],
             "only the WML w:t should match"
+        );
+    }
+
+    #[test]
+    fn wml_text_runs_selects_only_markup_compatibility_alternatives() {
+        let xml = br#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:alias="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:foreign="urn:foreign"><w:body><alias:AlternateContent><alias:Fallback><w:r><w:t>Selected fallback</w:t></w:r></alias:Fallback><alias:Choice><w:r><w:t>Untaken choice</w:t></w:r></alias:Choice></alias:AlternateContent><foreign:AlternateContent><foreign:Choice><w:r><w:t>Foreign choice</w:t></w:r></foreign:Choice><foreign:Fallback><w:r><w:t>Foreign fallback</w:t></w:r></foreign:Fallback></foreign:AlternateContent><alias:AlternateContent><w:r><w:t>Malformed direct content</w:t></w:r></alias:AlternateContent></w:body></w:document>"#;
+        let tree = XmlTree::parse(xml).unwrap();
+        let body = tree.wml_body_strict().unwrap();
+        let texts: Vec<String> = tree
+            .wml_text_runs_under(body)
+            .into_iter()
+            .map(|id| tree.text_of(id))
+            .collect();
+
+        assert_eq!(
+            texts,
+            ["Selected fallback", "Foreign choice", "Foreign fallback"]
         );
     }
 

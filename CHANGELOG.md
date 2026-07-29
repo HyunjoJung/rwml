@@ -23,6 +23,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Package-preserving `.docx` body text, cached field-result, content-control,
+  and template-fill edits now traverse only the first direct
+  `mc:Choice`/`mc:Fallback` branch of each `mc:AlternateContent`, including
+  nested containers and namespace aliases. Untaken branches and malformed
+  containers without a branch remain untouched; body field edits reject a
+  reader/editor branch-inventory mismatch before mutation. Referenced
+  header/footer and real-note template fills follow the same policy while
+  excluding separator boilerplate. The explicit `replace_text_in_part` escape
+  hatch retains its all-descendant behavior. This deliberately does not evaluate
+  `Requires`, preprocess or delete alternate branches, or introduce a
+  package-global writable field index.
 - PDF rendering now honors model-backed whole-degree clockwise rotation for
   top-level and run-attached body raster images. Direct-model angles normalize
   modulo 360, images rotate around their centers, and finite axis-aligned
