@@ -4140,7 +4140,7 @@ fn cell_builder_adds_cell_margins() {
     let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
     assert!(
         document_xml.contains(
-            r#"<w:tcMar><w:top w:w="120" w:type="dxa"/><w:right w:w="240" w:type="dxa"/><w:bottom w:w="360" w:type="dxa"/><w:left w:w="480" w:type="dxa"/></w:tcMar>"#
+            r#"<w:tcMar><w:top w:w="120" w:type="dxa"/><w:left w:w="480" w:type="dxa"/><w:bottom w:w="360" w:type="dxa"/><w:right w:w="240" w:type="dxa"/></w:tcMar>"#
         ),
         "cell margin XML missing: {document_xml}"
     );

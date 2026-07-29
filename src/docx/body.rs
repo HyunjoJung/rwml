@@ -5425,6 +5425,122 @@ fn finalize_paragraph(
     (paragraph, pagination, resolved_tab_stops)
 }
 
+const DEFAULT_HORIZONTAL_CELL_MARGIN_TWIPS: u32 = 115;
+
+#[derive(Clone, Copy, Default)]
+struct CellMarginSpec {
+    top: Option<u32>,
+    trailing: Option<u32>,
+    bottom: Option<u32>,
+    leading: Option<u32>,
+}
+
+#[derive(Clone, Copy, Default)]
+struct MarginDeclaration {
+    present: bool,
+    value: Option<u32>,
+}
+
+impl MarginDeclaration {
+    fn record(&mut self, value: Option<u32>) {
+        self.present = true;
+        if value.is_some() {
+            self.value = value;
+        }
+    }
+}
+
+#[derive(Clone, Copy, Default)]
+struct ParsedCellMargins {
+    top: Option<u32>,
+    legacy_trailing: Option<u32>,
+    trailing: MarginDeclaration,
+    bottom: Option<u32>,
+    legacy_leading: Option<u32>,
+    leading: MarginDeclaration,
+}
+
+impl ParsedCellMargins {
+    fn finish(self) -> CellMarginSpec {
+        CellMarginSpec {
+            top: self.top,
+            trailing: if self.trailing.present {
+                self.trailing.value
+            } else {
+                self.legacy_trailing
+            },
+            bottom: self.bottom,
+            leading: if self.leading.present {
+                self.leading.value
+            } else {
+                self.legacy_leading
+            },
+        }
+    }
+}
+
+impl CellMarginSpec {
+    fn overlay(&mut self, other: Self) {
+        if other.top.is_some() {
+            self.top = other.top;
+        }
+        if other.trailing.is_some() {
+            self.trailing = other.trailing;
+        }
+        if other.bottom.is_some() {
+            self.bottom = other.bottom;
+        }
+        if other.leading.is_some() {
+            self.leading = other.leading;
+        }
+    }
+
+    fn is_empty(self) -> bool {
+        self.top.is_none()
+            && self.trailing.is_none()
+            && self.bottom.is_none()
+            && self.leading.is_none()
+    }
+}
+
+fn resolve_cell_margins(
+    table: CellMarginSpec,
+    cell: CellMarginSpec,
+    bidi_visual: bool,
+    defaults_active: bool,
+) -> Option<CellMargins> {
+    if !defaults_active {
+        return None;
+    }
+    let mut effective = CellMarginSpec {
+        top: Some(0),
+        trailing: Some(DEFAULT_HORIZONTAL_CELL_MARGIN_TWIPS),
+        bottom: Some(0),
+        leading: Some(DEFAULT_HORIZONTAL_CELL_MARGIN_TWIPS),
+    };
+    effective.overlay(table);
+    effective.overlay(cell);
+    let top = effective.top.unwrap_or(0);
+    let trailing = effective
+        .trailing
+        .unwrap_or(DEFAULT_HORIZONTAL_CELL_MARGIN_TWIPS);
+    let bottom = effective.bottom.unwrap_or(0);
+    let leading = effective
+        .leading
+        .unwrap_or(DEFAULT_HORIZONTAL_CELL_MARGIN_TWIPS);
+    let (right, left) = if bidi_visual {
+        (leading, trailing)
+    } else {
+        (trailing, leading)
+    };
+    Some(CellMargins {
+        top,
+        right,
+        bottom,
+        left,
+    })
+}
+
 /// A streamed cell before vertical-merge resolution.
 struct CellRaw {
     blocks: Vec<Block>,
@@ -5435,7 +5551,7 @@ struct CellRaw {
     shading: Option<Color>,
     valign: VCell,
     width_pct: Option<f32>,
-    margins: Option<CellMargins>,
+    margins: CellMarginSpec,
 }
 
 struct RowRaw {
@@ -5508,9 +5624,12 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Table, TablePagina
                 b"tblPr" => props = read_tblpr(r),
                 b"tblGrid" => grid_widths = read_tbl_grid(r).unwrap_or_default(),
                 b"tr" => rows.push(read_row(r, ctx, depth)),
-                b"AlternateContent" => {
-                    rows.extend(read_table_alternate_content_rows(r, ctx, depth + 1))
-                }
+                b"AlternateContent" => rows.extend(read_table_alternate_content_rows(
+                    r,
+                    ctx,
+                    depth + 1,
+                    &mut props,
+                )),
                 name if is_current_table_structural_wrapper(name) => {}
                 _ => skip_subtree(r),
             },
@@ -5597,7 +5716,12 @@ fn is_current_table_structural_wrapper(name: &[u8]) -> bool {
     )
 }
 
-fn read_table_alternate_content_rows(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> Vec<RowRaw> {
+fn read_table_alternate_content_rows(
+    r: &mut Xml<'_>,
+    ctx: &Ctx<'_>,
+    depth: u32,
+    props: &mut TableProps,
+) -> Vec<RowRaw> {
     if depth > MAX_DEPTH {
         skip_subtree(r);
         return Vec::new();
@@ -5617,10 +5741,16 @@ fn read_table_alternate_content_rows(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32)
                             ctx,
                             depth + 1,
                             name,
+                            props,
                         ));
                     }
                     _ => skip_subtree(r),
                 }
+            }
+            Ok(Event::Empty(e))
+                if matches!(local(e.name().as_ref()), b"Choice" | b"Fallback") && !took =>
+            {
+                took = true;
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
             Ok(Event::Eof) | Err(_) => break,
@@ -5635,14 +5765,20 @@ fn read_table_alternate_content_branch_rows(
     ctx: &Ctx<'_>,
     depth: u32,
     branch: &[u8],
+    props: &mut TableProps,
 ) -> Vec<RowRaw> {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return Vec::new();
+    }
     let mut rows = Vec::new();
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
+                b"tblPr" => *props = read_tblpr(r),
                 b"tr" => rows.push(read_row(r, ctx, depth)),
                 b"AlternateContent" => {
-                    rows.extend(read_table_alternate_content_rows(r, ctx, depth + 1))
+                    rows.extend(read_table_alternate_content_rows(r, ctx, depth + 1, props))
                 }
                 name if is_current_table_structural_wrapper(name) => {}
                 _ => skip_subtree(r),
@@ -5660,6 +5796,7 @@ struct TableProps {
     style_id: Option<String>,
     look: Option<TableLook>,
     row_band_size: Option<u8>,
+    cell_margins: CellMarginSpec,
     bidi_visual: bool,
     fixed_layout: bool,
     indent_twips: Option<i32>,
@@ -5738,6 +5875,39 @@ fn read_table_look(e: &BytesStart<'_>) -> TableLook {
     }
 }
 
+fn apply_tblpr_child(props: &mut TableProps, e: &BytesStart<'_>) {
+    match local(e.name().as_ref()) {
+        b"tblStyle" => props.style_id = attr_local_trimmed(e, b"val"),
+        b"tblLook" => props.look = Some(read_table_look(e)),
+        b"tblStyleRowBandSize" => {
+            if let Some(size) = attr_u8(e, b"val").filter(|size| *size <= 3) {
+                props.row_band_size = Some(size);
+            }
+        }
+        b"bidiVisual" => props.bidi_visual = toggle_on(attr_local(e, b"val")),
+        b"tblW" if attr_local_trimmed(e, b"type").is_some_and(|value| value == "pct") => {
+            props.width_pct = attr_f32(e, b"w").map(|percentage| percentage / 5000.0);
+        }
+        b"tblLayout" => {
+            props.fixed_layout =
+                attr_local_trimmed(e, b"type").is_some_and(|value| value == "fixed");
+        }
+        b"tblInd" if type_defaults_to_dxa(e) => {
+            props.indent_twips = attr_i32(e, b"w");
+        }
+        b"jc" => {
+            props.align = match attr_local_trimmed(e, b"val").as_deref() {
+                Some("center") => Some(Align::Center),
+                Some("right") => Some(Align::Right),
+                Some("both") => Some(Align::Justify),
+                Some("left") | Some("start") => Some(Align::Left),
+                _ => None,
+            };
+        }
+        _ => {}
+    }
+}
+
 /// Read `<w:tblPr>` layout metadata.
 fn read_tblpr(r: &mut Xml<'_>) -> TableProps {
     let mut props = TableProps::default();
@@ -5747,53 +5917,12 @@ fn read_tblpr(r: &mut Xml<'_>) -> TableProps {
                 skip_subtree(r);
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
-                read_tblpr_alternate_content(r, &mut props);
+                read_tblpr_alternate_content(r, &mut props, 0);
             }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e))
-                if local(e.name().as_ref()) == b"tblStyle" =>
-            {
-                props.style_id = attr_local_trimmed(&e, b"val");
-            }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"tblLook" => {
-                props.look = Some(read_table_look(&e));
-            }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e))
-                if local(e.name().as_ref()) == b"tblStyleRowBandSize" =>
-            {
-                if let Some(size) = attr_u8(&e, b"val").filter(|size| *size <= 3) {
-                    props.row_band_size = Some(size);
-                }
-            }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e))
-                if local(e.name().as_ref()) == b"bidiVisual" =>
-            {
-                props.bidi_visual = toggle_on(attr_local(&e, b"val"));
-            }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e))
-                if local(e.name().as_ref()) == b"tblW"
-                    && attr_local_trimmed(&e, b"type").is_some_and(|value| value == "pct") =>
-            {
-                props.width_pct = attr_f32(&e, b"w").map(|p| p / 5000.0);
-            }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e))
-                if local(e.name().as_ref()) == b"tblLayout" =>
-            {
-                props.fixed_layout =
-                    attr_local_trimmed(&e, b"type").is_some_and(|value| value == "fixed");
-            }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e))
-                if local(e.name().as_ref()) == b"tblInd" && type_defaults_to_dxa(&e) =>
-            {
-                props.indent_twips = attr_i32(&e, b"w");
-            }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"jc" => {
-                props.align = match attr_local_trimmed(&e, b"val").as_deref() {
-                    Some("center") => Some(Align::Center),
-                    Some("right") | Some("end") => Some(Align::Right),
-                    Some("both") => Some(Align::Justify),
-                    Some("left") | Some("start") => Some(Align::Left),
-                    _ => None,
-                };
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblCellMar" => {
+                props
+                    .cell_margins
+                    .overlay(read_cell_margins(r, b"tblCellMar", 0));
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblBorders" => {
                 let borders = read_tbl_borders(r);
@@ -5804,6 +5933,11 @@ fn read_tblpr(r: &mut Xml<'_>) -> TableProps {
                 props.border_style = borders.4;
                 props.border_styles = borders.5;
             }
+            Ok(Event::Start(e)) => {
+                apply_tblpr_child(&mut props, &e);
+                skip_subtree(r);
+            }
+            Ok(Event::Empty(e)) => apply_tblpr_child(&mut props, &e),
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"tblPr" => break,
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
@@ -5812,7 +5946,11 @@ fn read_tblpr(r: &mut Xml<'_>) -> TableProps {
     props
 }
 
-fn read_tblpr_alternate_content(r: &mut Xml<'_>, props: &mut TableProps) {
+fn read_tblpr_alternate_content(r: &mut Xml<'_>, props: &mut TableProps, depth: u32) {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return;
+    }
     let mut took = false;
     loop {
         match r.read_event() {
@@ -5822,10 +5960,15 @@ fn read_tblpr_alternate_content(r: &mut Xml<'_>, props: &mut TableProps) {
                 match name {
                     b"Choice" | b"Fallback" if !took => {
                         took = true;
-                        read_tblpr_alternate_content_branch(r, props, name);
+                        read_tblpr_alternate_content_branch(r, props, name, depth + 1);
                     }
                     _ => skip_subtree(r),
                 }
+            }
+            Ok(Event::Empty(e))
+                if matches!(local(e.name().as_ref()), b"Choice" | b"Fallback") && !took =>
+            {
+                took = true;
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
             Ok(Event::Eof) | Err(_) => break,
@@ -5834,60 +5977,28 @@ fn read_tblpr_alternate_content(r: &mut Xml<'_>, props: &mut TableProps) {
     }
 }
 
-fn read_tblpr_alternate_content_branch(r: &mut Xml<'_>, props: &mut TableProps, branch: &[u8]) {
+fn read_tblpr_alternate_content_branch(
+    r: &mut Xml<'_>,
+    props: &mut TableProps,
+    branch: &[u8],
+    depth: u32,
+) {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return;
+    }
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblPrChange" => {
                 skip_subtree(r);
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
-                read_tblpr_alternate_content(r, props);
+                read_tblpr_alternate_content(r, props, depth + 1);
             }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e))
-                if local(e.name().as_ref()) == b"tblStyle" =>
-            {
-                props.style_id = attr_local_trimmed(&e, b"val");
-            }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"tblLook" => {
-                props.look = Some(read_table_look(&e));
-            }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e))
-                if local(e.name().as_ref()) == b"tblStyleRowBandSize" =>
-            {
-                if let Some(size) = attr_u8(&e, b"val").filter(|size| *size <= 3) {
-                    props.row_band_size = Some(size);
-                }
-            }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e))
-                if local(e.name().as_ref()) == b"bidiVisual" =>
-            {
-                props.bidi_visual = toggle_on(attr_local(&e, b"val"));
-            }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e))
-                if local(e.name().as_ref()) == b"tblW"
-                    && attr_local_trimmed(&e, b"type").is_some_and(|value| value == "pct") =>
-            {
-                props.width_pct = attr_f32(&e, b"w").map(|p| p / 5000.0);
-            }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e))
-                if local(e.name().as_ref()) == b"tblLayout" =>
-            {
-                props.fixed_layout =
-                    attr_local_trimmed(&e, b"type").is_some_and(|value| value == "fixed");
-            }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e))
-                if local(e.name().as_ref()) == b"tblInd" && type_defaults_to_dxa(&e) =>
-            {
-                props.indent_twips = attr_i32(&e, b"w");
-            }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"jc" => {
-                props.align = match attr_local_trimmed(&e, b"val").as_deref() {
-                    Some("center") => Some(Align::Center),
-                    Some("right") | Some("end") => Some(Align::Right),
-                    Some("both") => Some(Align::Justify),
-                    Some("left") | Some("start") => Some(Align::Left),
-                    _ => None,
-                };
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblCellMar" => {
+                props
+                    .cell_margins
+                    .overlay(read_cell_margins(r, b"tblCellMar", depth + 1));
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblBorders" => {
                 let borders = read_tbl_borders(r);
@@ -5898,6 +6009,11 @@ fn read_tblpr_alternate_content_branch(r: &mut Xml<'_>, props: &mut TableProps, 
                 props.border_style = borders.4;
                 props.border_styles = borders.5;
             }
+            Ok(Event::Start(e)) => {
+                apply_tblpr_child(props, &e);
+                skip_subtree(r);
+            }
+            Ok(Event::Empty(e)) => apply_tblpr_child(props, &e),
             Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
@@ -6350,7 +6466,7 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
             shading: None,
             valign: VCell::Top,
             width_pct: None,
-            margins: None,
+            margins: CellMarginSpec::default(),
         };
     }
     let mut blocks = Vec::new();
@@ -6382,13 +6498,8 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
                         &mut nested_tables,
                     );
                 }
-                b"AlternateContent" => {
-                    read_alternate_content_blocks_with_pagination(r, ctx, depth + 1).append_to(
-                        &mut blocks,
-                        &mut pagination,
-                        &mut nested_tables,
-                    );
-                }
+                b"AlternateContent" => read_cell_alternate_content(r, ctx, depth + 1, &mut tc)
+                    .append_to(&mut blocks, &mut pagination, &mut nested_tables),
                 _ => skip_subtree(r),
             },
             Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => break,
@@ -6401,7 +6512,7 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
         shading: None,
         valign: VCell::Top,
         width_pct: None,
-        margins: None,
+        margins: CellMarginSpec::default(),
     });
     CellRaw {
         blocks,
@@ -6416,6 +6527,88 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
     }
 }
 
+fn read_cell_alternate_content(
+    r: &mut Xml<'_>,
+    ctx: &Ctx<'_>,
+    depth: u32,
+    tc: &mut Option<TcPr>,
+) -> BlockBatch {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return BlockBatch::default();
+    }
+    let mut batch = BlockBatch::default();
+    let mut took = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                match name {
+                    b"Choice" | b"Fallback" if !took => {
+                        took = true;
+                        batch.extend(read_cell_alternate_content_branch(
+                            r,
+                            ctx,
+                            depth + 1,
+                            name,
+                            tc,
+                        ));
+                    }
+                    _ => skip_subtree(r),
+                }
+            }
+            Ok(Event::Empty(e))
+                if matches!(local(e.name().as_ref()), b"Choice" | b"Fallback") && !took =>
+            {
+                took = true;
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    batch
+}
+
+fn read_cell_alternate_content_branch(
+    r: &mut Xml<'_>,
+    ctx: &Ctx<'_>,
+    depth: u32,
+    branch: &[u8],
+    tc: &mut Option<TcPr>,
+) -> BlockBatch {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return BlockBatch::default();
+    }
+    let mut batch = BlockBatch::default();
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
+                b"tcPr" => *tc = Some(read_tcpr(r)),
+                b"p" => batch.extend(read_paragraph_block_batch(r, ctx, depth + 1)),
+                b"tbl" => {
+                    if let Some((table, pagination)) = read_table_block(r, ctx, depth + 1) {
+                        batch.push_table(table, pagination);
+                    }
+                }
+                b"sdt" | b"sdtContent" | b"customXml" | b"smartTag" | b"ins" | b"moveTo" => {
+                    batch.extend(read_blocks_with_pagination(r, ctx, depth + 1));
+                }
+                b"AlternateContent" => {
+                    batch.extend(read_cell_alternate_content(r, ctx, depth + 1, tc));
+                }
+                _ => skip_subtree(r),
+            },
+            Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    batch
+}
+
 /// Collected `<w:tcPr>` properties.
 struct TcPr {
     gs: u16,
@@ -6423,7 +6616,7 @@ struct TcPr {
     shading: Option<Color>,
     valign: VCell,
     width_pct: Option<f32>,
-    margins: Option<CellMargins>,
+    margins: CellMarginSpec,
 }
 
 /// Read `<w:tcPr>` → gridSpan / vMerge / shading / vAlign / width.
@@ -6434,7 +6627,7 @@ fn read_tcpr(r: &mut Xml<'_>) -> TcPr {
         shading: None,
         valign: VCell::Top,
         width_pct: None,
-        margins: None,
+        margins: CellMarginSpec::default(),
     };
     loop {
         match r.read_event() {
@@ -6442,12 +6635,16 @@ fn read_tcpr(r: &mut Xml<'_>) -> TcPr {
                 skip_subtree(r);
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
-                read_tcpr_alternate_content(r, &mut t);
+                read_tcpr_alternate_content(r, &mut t, 0);
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tcMar" => {
-                t.margins = read_tc_mar(r);
+                t.margins.overlay(read_cell_margins(r, b"tcMar", 0));
             }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => apply_tcpr_child(&mut t, &e),
+            Ok(Event::Start(e)) => {
+                apply_tcpr_child(&mut t, &e);
+                skip_subtree(r);
+            }
+            Ok(Event::Empty(e)) => apply_tcpr_child(&mut t, &e),
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"tcPr" => break,
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
@@ -6456,7 +6653,11 @@ fn read_tcpr(r: &mut Xml<'_>) -> TcPr {
     t
 }
 
-fn read_tcpr_alternate_content(r: &mut Xml<'_>, t: &mut TcPr) {
+fn read_tcpr_alternate_content(r: &mut Xml<'_>, t: &mut TcPr, depth: u32) {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return;
+    }
     let mut took = false;
     loop {
         match r.read_event() {
@@ -6466,10 +6667,15 @@ fn read_tcpr_alternate_content(r: &mut Xml<'_>, t: &mut TcPr) {
                 match name {
                     b"Choice" | b"Fallback" if !took => {
                         took = true;
-                        read_tcpr_alternate_content_branch(r, t, name);
+                        read_tcpr_alternate_content_branch(r, t, name, depth + 1);
                     }
                     _ => skip_subtree(r),
                 }
+            }
+            Ok(Event::Empty(e))
+                if matches!(local(e.name().as_ref()), b"Choice" | b"Fallback") && !took =>
+            {
+                took = true;
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
             Ok(Event::Eof) | Err(_) => break,
@@ -6478,19 +6684,27 @@ fn read_tcpr_alternate_content(r: &mut Xml<'_>, t: &mut TcPr) {
     }
 }
 
-fn read_tcpr_alternate_content_branch(r: &mut Xml<'_>, t: &mut TcPr, branch: &[u8]) {
+fn read_tcpr_alternate_content_branch(r: &mut Xml<'_>, t: &mut TcPr, branch: &[u8], depth: u32) {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return;
+    }
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tcPrChange" => {
                 skip_subtree(r);
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tcMar" => {
-                t.margins = read_tc_mar(r);
+                t.margins.overlay(read_cell_margins(r, b"tcMar", depth + 1));
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
-                read_tcpr_alternate_content(r, t);
+                read_tcpr_alternate_content(r, t, depth + 1);
             }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => apply_tcpr_child(t, &e),
+            Ok(Event::Start(e)) => {
+                apply_tcpr_child(t, &e);
+                skip_subtree(r);
+            }
+            Ok(Event::Empty(e)) => apply_tcpr_child(t, &e),
             Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
@@ -6528,26 +6742,39 @@ fn apply_tcpr_child(t: &mut TcPr, e: &BytesStart<'_>) {
     }
 }
 
-fn read_tc_mar(r: &mut Xml<'_>) -> Option<CellMargins> {
-    let mut margins = CellMargins::default();
-    let mut seen = false;
+fn read_cell_margins(r: &mut Xml<'_>, end: &[u8], depth: u32) -> CellMarginSpec {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return CellMarginSpec::default();
+    }
+    let mut margins = ParsedCellMargins::default();
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
-                read_tc_mar_alternate_content(r, &mut margins, &mut seen);
+                read_cell_margins_alternate_content(r, &mut margins, depth + 1);
             }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
-                apply_tc_mar_side(&mut margins, &mut seen, &e);
+            Ok(Event::Start(e)) => {
+                apply_cell_margin_side(&mut margins, &e);
+                skip_subtree(r);
             }
-            Ok(Event::End(e)) if local(e.name().as_ref()) == b"tcMar" => break,
+            Ok(Event::Empty(e)) => apply_cell_margin_side(&mut margins, &e),
+            Ok(Event::End(e)) if local(e.name().as_ref()) == end => break,
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
     }
-    seen.then_some(margins)
+    margins.finish()
 }
 
-fn read_tc_mar_alternate_content(r: &mut Xml<'_>, margins: &mut CellMargins, seen: &mut bool) {
+fn read_cell_margins_alternate_content(
+    r: &mut Xml<'_>,
+    margins: &mut ParsedCellMargins,
+    depth: u32,
+) {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return;
+    }
     let mut took = false;
     loop {
         match r.read_event() {
@@ -6557,10 +6784,15 @@ fn read_tc_mar_alternate_content(r: &mut Xml<'_>, margins: &mut CellMargins, see
                 match name {
                     b"Choice" | b"Fallback" if !took => {
                         took = true;
-                        read_tc_mar_alternate_content_branch(r, margins, seen, name);
+                        read_cell_margins_alternate_content_branch(r, margins, name, depth + 1);
                     }
                     _ => skip_subtree(r),
                 }
+            }
+            Ok(Event::Empty(e))
+                if matches!(local(e.name().as_ref()), b"Choice" | b"Fallback") && !took =>
+            {
+                took = true;
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
             Ok(Event::Eof) | Err(_) => break,
@@ -6569,20 +6801,26 @@ fn read_tc_mar_alternate_content(r: &mut Xml<'_>, margins: &mut CellMargins, see
     }
 }
 
-fn read_tc_mar_alternate_content_branch(
+fn read_cell_margins_alternate_content_branch(
     r: &mut Xml<'_>,
-    margins: &mut CellMargins,
-    seen: &mut bool,
+    margins: &mut ParsedCellMargins,
     branch: &[u8],
+    depth: u32,
 ) {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return;
+    }
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
-                read_tc_mar_alternate_content(r, margins, seen);
+                read_cell_margins_alternate_content(r, margins, depth + 1);
             }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => {
-                apply_tc_mar_side(margins, seen, &e);
+            Ok(Event::Start(e)) => {
+                apply_cell_margin_side(margins, &e);
+                skip_subtree(r);
             }
+            Ok(Event::Empty(e)) => apply_cell_margin_side(margins, &e),
             Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
@@ -6590,26 +6828,33 @@ fn read_tc_mar_alternate_content_branch(
     }
 }
 
-fn apply_tc_mar_side(margins: &mut CellMargins, seen: &mut bool, e: &BytesStart<'_>) {
+fn cell_margin_value(e: &BytesStart<'_>) -> Option<u32> {
+    match attr_local(e, b"type").as_deref().map(str::trim) {
+        None | Some("dxa") => attr_u32(e, b"w"),
+        Some("nil") => Some(0),
+        Some(_) => None,
+    }
+}
+
+fn apply_cell_margin_side(margins: &mut ParsedCellMargins, e: &BytesStart<'_>) {
     let name = e.name();
     let side = local(name.as_ref());
-    if !matches!(side, b"top" | b"right" | b"bottom" | b"left") {
+    if !matches!(
+        side,
+        b"top" | b"right" | b"end" | b"bottom" | b"left" | b"start"
+    ) {
         return;
     }
-    if !type_defaults_to_dxa(e) {
-        return;
-    }
-    let Some(value) = attr_u32(e, b"w") else {
-        return;
-    };
+    let value = cell_margin_value(e);
     match side {
-        b"top" => margins.top = value,
-        b"right" => margins.right = value,
-        b"bottom" => margins.bottom = value,
-        b"left" => margins.left = value,
+        b"top" if value.is_some() => margins.top = value,
+        b"right" if value.is_some() => margins.legacy_trailing = value,
+        b"end" => margins.trailing.record(value),
+        b"bottom" if value.is_some() => margins.bottom = value,
+        b"left" if value.is_some() => margins.legacy_leading = value,
+        b"start" => margins.leading.record(value),
         _ => {}
     }
-    *seen = true;
 }
 
 /// Place cells over a running column index and resolve vertical merges
@@ -6643,7 +6888,7 @@ fn build_table(
         shading: Option<Color>,
         valign: VCell,
         width_pct: Option<f32>,
-        margins: Option<CellMargins>,
+        margins: CellMarginSpec,
     }
 
     let mut grid: Vec<Vec<Placed>> = Vec::with_capacity(raw_rows.len());
@@ -6700,6 +6945,11 @@ fn build_table(
         }
     }
 
+    let cell_margin_defaults_active = !props.cell_margins.is_empty()
+        || grid
+            .iter()
+            .flatten()
+            .any(|cell| !cell.dropped && !cell.margins.is_empty());
     let mut rows = Vec::with_capacity(grid.len());
     let mut table_cell_pagination = Vec::with_capacity(grid.len());
     let mut table_nested_pagination = Vec::with_capacity(grid.len());
@@ -6718,7 +6968,12 @@ fn build_table(
                 shading: p.shading,
                 valign: p.valign,
                 width_pct: p.width_pct,
-                margins: p.margins,
+                margins: resolve_cell_margins(
+                    props.cell_margins,
+                    p.margins,
+                    props.bidi_visual,
+                    cell_margin_defaults_active,
+                ),
             });
         }
         rows.push(Row { cells });
@@ -7979,7 +8234,7 @@ mod tests {
             shading: None,
             valign: VCell::Top,
             width_pct: None,
-            margins: None,
+            margins: CellMarginSpec::default(),
         }
     }
 
@@ -8664,7 +8919,8 @@ mod tests {
             Some(CellMargins {
                 top: 120,
                 right: 240,
-                ..CellMargins::default()
+                bottom: 0,
+                left: DEFAULT_HORIZONTAL_CELL_MARGIN_TWIPS,
             })
         );
     }

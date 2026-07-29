@@ -1169,18 +1169,20 @@ impl Ctx {
         }
     }
 
-    fn write_cell_margins(out: &mut String, margins: CellMargins) {
+    fn write_cell_margins(out: &mut String, margins: CellMargins, bidi_visual: bool) {
+        let (leading, trailing) = if bidi_visual {
+            (margins.right, margins.left)
+        } else {
+            (margins.left, margins.right)
+        };
         out.push_str("<w:tcMar>");
         out.push_str(&format!(r#"<w:top w:w="{}" w:type="dxa"/>"#, margins.top));
-        out.push_str(&format!(
-            r#"<w:right w:w="{}" w:type="dxa"/>"#,
-            margins.right
-        ));
+        out.push_str(&format!(r#"<w:left w:w="{leading}" w:type="dxa"/>"#));
         out.push_str(&format!(
             r#"<w:bottom w:w="{}" w:type="dxa"/>"#,
             margins.bottom
         ));
-        out.push_str(&format!(r#"<w:left w:w="{}" w:type="dxa"/>"#, margins.left));
+        out.push_str(&format!(r#"<w:right w:w="{}" w:type="dxa"/>"#, trailing));
         out.push_str("</w:tcMar>");
     }
 
@@ -1256,7 +1258,7 @@ impl Ctx {
                         ));
                     }
                     if let Some(margins) = c.margins {
-                        Self::write_cell_margins(&mut row_xml, margins);
+                        Self::write_cell_margins(&mut row_xml, margins, t.bidi_visual);
                     }
                     row_xml.push_str("</w:tcPr>");
                     self.write_cell_blocks(&mut row_xml, &c.blocks);
