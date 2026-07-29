@@ -925,6 +925,28 @@ impl Document {
         }
     }
 
+    /// Extract the editable cached fields in one explicit `.docx`
+    /// WordprocessingML story part.
+    ///
+    /// Supported parts are `word/document.xml`, the standard
+    /// `word/footnotes.xml` and `word/endnotes.xml` parts, and existing header or
+    /// footer parts with the corresponding OOXML content type. Header/footer
+    /// parts do not need to be referenced by the current section graph. Note
+    /// separator entries, rejected revision content, and untaken
+    /// `mc:AlternateContent` branches are excluded.
+    ///
+    /// The returned zero-based order is the order accepted by
+    /// [`Document::set_field_result_in_part`]. It inventories the live package,
+    /// including staged edits, and exposes cached results only:
+    /// [`Field::computed_result`] is always `None`. The document's general read
+    /// views remain unchanged until explicitly refreshed or reopened.
+    #[cfg(feature = "docx")]
+    pub fn fields_in_part(&self, part_name: &str) -> Result<Vec<Field>> {
+        let d = self.docx_tree_editable_ref()?;
+        let target = explicit_field_story_target(&d.package, part_name, "fields_in_part")?;
+        field_story_inventory(&d.package, &target, "fields_in_part")
+    }
+
     /// Extract fields like [`Document::fields`], additionally computing
     /// volatile fields the caller-supplied [`FieldContext`] covers (`DATE`/
     /// `TIME` with an explicit `\@` picture, `USERNAME`/`USERINITIALS`/
@@ -1349,90 +1371,45 @@ impl Document {
     #[cfg(feature = "docx")]
     pub fn set_field_result(&mut self, field_index: usize, result: &str) -> Result<()> {
         let d = self.docx_tree_editable()?;
-        let raw = d
-            .package
-            .part("word/document.xml")
-            .ok_or_else(|| Error::Docx("missing word/document.xml".into()))?;
-        let raw_xml = String::from_utf8_lossy(&raw);
-        let body_fields = docx::parse_fields(&raw_xml);
-        if field_index >= body_fields.len() {
-            return Err(Error::Docx(format!(
-                "field index {field_index} is outside the editable body field range"
-            )));
-        }
-        let probe = xmltree::XmlTree::parse(&raw)?;
-        let probe_body = probe.wml_body_strict()?;
-        if !probe.wml_field_alternate_content_policy_matches_reader(probe_body) {
-            return Err(Error::Docx(
-                "editable body field inventory differs from the accepted-current read view".into(),
-            ));
-        }
-        let editable_instructions: Vec<_> = probe
-            .wml_field_instructions_under(probe_body)
-            .into_iter()
-            .map(|instruction| annotation::normalized_field_instruction(&instruction))
-            .collect();
-        let read_instructions: Vec<_> = body_fields
-            .iter()
-            .map(|field| field.instruction.clone())
-            .collect();
-        if editable_instructions != read_instructions {
-            return Err(Error::Docx(
-                "editable body field inventory differs from the accepted-current read view".into(),
-            ));
-        }
+        set_field_result_in_story(
+            d,
+            &FieldStoryTarget::body(),
+            field_index,
+            result,
+            "set_field_result",
+            "the editable body field range",
+        )
+    }
 
-        let mut pkg = d.package.clone();
-        {
-            let tree = pkg.part_tree_mut("word/document.xml")?;
-            let body = tree.wml_body_strict()?;
-            let runs = tree
-                .wml_field_result_runs_under(body, field_index)
-                .ok_or_else(|| Error::Docx(format!("field index {field_index} out of range")))?;
-            if runs.is_empty() {
-                return Err(Error::Docx(format!(
-                    "field index {field_index} has no cached result text"
-                )));
-            }
-
-            let needs_markers = result.contains('\t') || result.contains('\n');
-            let new_nodes = if needs_markers {
-                let first_replacement_nodes = xmltree::wml_text_run_content_node_count(result)?;
-                first_replacement_nodes.saturating_add(
-                    runs.iter()
-                        .skip(1)
-                        .filter(|&&id| !tree.has_text_carrier(id))
-                        .count(),
-                )
-            } else {
-                runs.iter()
-                    .filter(|&&id| !tree.has_text_carrier(id))
-                    .count()
-            };
-            if tree.node_count().saturating_add(new_nodes) > xmltree::node_budget() {
-                return Err(Error::Docx(
-                    "set_field_result: edit would exceed the node budget".into(),
-                ));
-            }
-
-            let needs_space = result != result.trim_matches([' ', '\t', '\n', '\r']);
-            if !needs_markers && needs_space && !tree.can_set_attr(runs[0], b"xml:space") {
-                return Err(Error::Docx(
-                    "set_field_result: edit would exceed an element's attribute budget".into(),
-                ));
-            }
-
-            for (i, id) in runs.into_iter().enumerate() {
-                if i == 0 && needs_markers {
-                    tree.replace_wml_text_element_with_run_content(id, result)?;
-                } else {
-                    tree.set_element_text(id, if i == 0 { result } else { "" })?;
-                }
-            }
-        }
-        pkg.ensure_content_type("word/document.xml", CT_DOCUMENT_MAIN);
-        commit_docx_package(d, pkg)?;
-        Ok(())
+    /// **Element-tree editing: rewrite one explicit story part's cached field
+    /// result.** The zero-based `field_index` is obtained from
+    /// [`Document::fields_in_part`] for the same `part_name`.
+    ///
+    /// The supported story parts and accepted-current selection rules are the
+    /// same as [`Document::fields_in_part`]. Only cached result `w:t` content is
+    /// changed; instructions, note separator entries, untaken compatibility
+    /// branches, and every other package part are preserved. The edit is
+    /// transactional, and read views remain stale until explicitly refreshed or
+    /// reopened.
+    #[cfg(feature = "docx")]
+    pub fn set_field_result_in_part(
+        &mut self,
+        part_name: &str,
+        field_index: usize,
+        result: &str,
+    ) -> Result<()> {
+        let d = self.docx_tree_editable()?;
+        let target =
+            explicit_field_story_target(&d.package, part_name, "set_field_result_in_part")?;
+        let range = format!("the editable field range for {part_name:?}");
+        set_field_result_in_story(
+            d,
+            &target,
+            field_index,
+            result,
+            "set_field_result_in_part",
+            &range,
+        )
     }
 
     /// **Template-fill edit: replace body content-control text by tag.** Finds
@@ -3733,6 +3710,29 @@ struct StoryTemplateTarget {
 
 #[cfg(feature = "docx")]
 #[derive(Clone, Debug)]
+struct FieldStoryTarget {
+    part: String,
+    root_local: &'static [u8],
+    note_local: Option<&'static [u8]>,
+    content_type: &'static str,
+    body: bool,
+}
+
+#[cfg(feature = "docx")]
+impl FieldStoryTarget {
+    fn body() -> Self {
+        Self {
+            part: "word/document.xml".to_string(),
+            root_local: b"document",
+            note_local: None,
+            content_type: CT_DOCUMENT_MAIN,
+            body: true,
+        }
+    }
+}
+
+#[cfg(feature = "docx")]
+#[derive(Clone, Debug)]
 struct StoryTemplateMatch {
     target: StoryTemplateTarget,
     content_count: usize,
@@ -4043,6 +4043,193 @@ fn story_field_result_runs(
         field_index -= field_count;
     }
     None
+}
+
+#[cfg(feature = "docx")]
+fn explicit_field_story_target(
+    package: &opc::Package,
+    part_name: &str,
+    caller: &str,
+) -> Result<FieldStoryTarget> {
+    wml_xml_part_name(part_name, caller)?;
+    if package.part(part_name).is_none() {
+        return Err(Error::Docx(format!(
+            "{caller}: editable field story part {part_name:?} does not exist"
+        )));
+    }
+
+    let target = match part_name {
+        "word/document.xml" => FieldStoryTarget::body(),
+        "word/footnotes.xml" => FieldStoryTarget {
+            part: part_name.to_string(),
+            root_local: b"footnotes",
+            note_local: Some(b"footnote"),
+            content_type: CT_FOOTNOTES,
+            body: false,
+        },
+        "word/endnotes.xml" => FieldStoryTarget {
+            part: part_name.to_string(),
+            root_local: b"endnotes",
+            note_local: Some(b"endnote"),
+            content_type: CT_ENDNOTES,
+            body: false,
+        },
+        _ if package.part_resolves_as(part_name, CT_HEADER) => FieldStoryTarget {
+            part: part_name.to_string(),
+            root_local: b"hdr",
+            note_local: None,
+            content_type: CT_HEADER,
+            body: false,
+        },
+        _ if package.part_resolves_as(part_name, CT_FOOTER) => FieldStoryTarget {
+            part: part_name.to_string(),
+            root_local: b"ftr",
+            note_local: None,
+            content_type: CT_FOOTER,
+            body: false,
+        },
+        _ => {
+            return Err(Error::Docx(format!(
+                "{caller}: {part_name:?} is not an editable field story part"
+            )));
+        }
+    };
+
+    if !package.part_resolves_as(part_name, target.content_type) {
+        return Err(Error::Docx(format!(
+            "{caller}: {part_name:?} is not an editable field story part with the expected content type"
+        )));
+    }
+    Ok(target)
+}
+
+#[cfg(feature = "docx")]
+fn field_story_roots(
+    tree: &xmltree::XmlTree,
+    target: &FieldStoryTarget,
+) -> Result<(xmltree::NodeId, Vec<xmltree::NodeId>)> {
+    if target.body {
+        let body = tree.wml_body_strict()?;
+        return Ok((body, vec![body]));
+    }
+
+    let root = tree.wml_part_root_strict(&target.part, target.root_local)?;
+    let roots = target.note_local.map_or_else(
+        || vec![root],
+        |note_local| tree.wml_real_note_entries_under(root, note_local),
+    );
+    Ok((root, roots))
+}
+
+#[cfg(feature = "docx")]
+fn field_story_inventory(
+    package: &opc::Package,
+    target: &FieldStoryTarget,
+    caller: &str,
+) -> Result<Vec<Field>> {
+    let raw = package
+        .part(&target.part)
+        .ok_or_else(|| Error::Docx(format!("{caller}: missing {}", target.part)))?;
+    let tree = xmltree::XmlTree::parse(&raw)?;
+    let (policy_root, roots) = field_story_roots(&tree, target)?;
+    if !tree.wml_field_alternate_content_policy_matches_reader(policy_root) {
+        return Err(Error::Docx(format!(
+            "{caller}: editable field inventory for {:?} differs from the accepted-current read view",
+            target.part
+        )));
+    }
+
+    let editable_instructions: Vec<_> = story_field_instructions(&tree, &roots)
+        .into_iter()
+        .map(|instruction| annotation::normalized_field_instruction(&instruction))
+        .collect();
+    let mut fields = Vec::new();
+    for root in roots {
+        let xml = tree.serialize_subtree(root);
+        fields.extend(docx::parse_fields(&String::from_utf8_lossy(&xml)));
+    }
+    for field in &mut fields {
+        field.computed_result = None;
+    }
+    let read_instructions: Vec<_> = fields
+        .iter()
+        .map(|field| field.instruction.clone())
+        .collect();
+    if editable_instructions != read_instructions {
+        return Err(Error::Docx(format!(
+            "{caller}: editable field inventory for {:?} differs from the accepted-current read view",
+            target.part
+        )));
+    }
+    Ok(fields)
+}
+
+#[cfg(feature = "docx")]
+fn set_field_result_in_story(
+    state: &mut docx::DocxState,
+    target: &FieldStoryTarget,
+    field_index: usize,
+    result: &str,
+    caller: &str,
+    range: &str,
+) -> Result<()> {
+    let fields = field_story_inventory(&state.package, target, caller)?;
+    if field_index >= fields.len() {
+        return Err(Error::Docx(format!(
+            "field index {field_index} is outside {range}"
+        )));
+    }
+
+    let mut package = state.package.clone();
+    {
+        let tree = package.part_tree_mut(&target.part)?;
+        let (_, roots) = field_story_roots(tree, target)?;
+        let runs = story_field_result_runs(tree, &roots, field_index)
+            .ok_or_else(|| Error::Docx(format!("field index {field_index} out of range")))?;
+        if runs.is_empty() {
+            return Err(Error::Docx(format!(
+                "field index {field_index} has no cached result text"
+            )));
+        }
+
+        let needs_markers = result.contains('\t') || result.contains('\n');
+        let new_nodes = if needs_markers {
+            let first_replacement_nodes = xmltree::wml_text_run_content_node_count(result)?;
+            first_replacement_nodes.saturating_add(
+                runs.iter()
+                    .skip(1)
+                    .filter(|&&id| !tree.has_text_carrier(id))
+                    .count(),
+            )
+        } else {
+            runs.iter()
+                .filter(|&&id| !tree.has_text_carrier(id))
+                .count()
+        };
+        if tree.node_count().saturating_add(new_nodes) > xmltree::node_budget() {
+            return Err(Error::Docx(format!(
+                "{caller}: edit would exceed the node budget"
+            )));
+        }
+
+        let needs_space = result != result.trim_matches([' ', '\t', '\n', '\r']);
+        if !needs_markers && needs_space && !tree.can_set_attr(runs[0], b"xml:space") {
+            return Err(Error::Docx(format!(
+                "{caller}: edit would exceed an element's attribute budget"
+            )));
+        }
+
+        for (index, id) in runs.into_iter().enumerate() {
+            if index == 0 && needs_markers {
+                tree.replace_wml_text_element_with_run_content(id, result)?;
+            } else {
+                tree.set_element_text(id, if index == 0 { result } else { "" })?;
+            }
+        }
+    }
+    package.ensure_content_type(&target.part, target.content_type);
+    commit_docx_package(state, package)?;
+    Ok(())
 }
 
 #[cfg(feature = "docx")]

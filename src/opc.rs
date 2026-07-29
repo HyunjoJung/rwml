@@ -602,6 +602,12 @@ impl Package {
         self.parts.keys().any(|p| p.eq_ignore_ascii_case(name))
     }
 
+    /// Whether the package declares exactly `content_type` for `part`, through
+    /// either a matching Override or the part extension's Default.
+    pub(crate) fn part_resolves_as(&self, part: &str, content_type: &str) -> bool {
+        self.ctypes.resolves_as(part, content_type)
+    }
+
     /// All retained part names, without a leading slash.
     pub(crate) fn part_names(&self) -> impl Iterator<Item = &str> {
         self.parts.keys().map(String::as_str)

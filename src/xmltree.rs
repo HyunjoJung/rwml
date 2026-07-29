@@ -335,6 +335,15 @@ impl XmlTree {
         out
     }
 
+    /// Serialize one element subtree without promoting or mutating the source
+    /// package part. Streaming semantic readers use this to inventory one
+    /// accepted-current story root at a time.
+    pub(crate) fn serialize_subtree(&self, root: NodeId) -> Vec<u8> {
+        let mut out = Vec::new();
+        self.write_node(root, &mut out);
+        out
+    }
+
     fn write_node(&self, id: NodeId, out: &mut Vec<u8>) {
         let data = &self.nodes[id.0 as usize];
         match &data.node {

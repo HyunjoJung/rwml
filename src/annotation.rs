@@ -4466,7 +4466,7 @@ impl FieldContext {
     }
 }
 
-/// A Word field observed in a `.docx` body.
+/// A Word field observed in a document story.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Field {
     /// Field kind derived from the first instruction token.

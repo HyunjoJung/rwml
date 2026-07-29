@@ -4614,6 +4614,55 @@ fn note_body_field_docx() -> Vec<u8> {
     ])
 }
 
+fn explicit_part_field_edit_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/><Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/header9.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/headerWrong.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/><Override PartName="/word/footer7.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdFoot" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/><Relationship Id="rIdEnd" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes" Target="endnotes.xml"/><Relationship Id="rIdHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:fldSimple w:instr=" PAGE "><w:r><w:t>1</w:t></w:r></w:fldSimple></w:p><w:p><w:r><w:footnoteReference w:id="1"/></w:r><w:r><w:footnoteReference w:id="2"/></w:r><w:r><w:endnoteReference w:id="3"/></w:r></w:p><w:p><w:pPr><w:sectPr><w:headerReference w:type="default" r:id="rIdHeader"/></w:sectPr></w:pPr></w:p><w:sectPr><w:headerReference w:type="default" r:id="rIdHeader"/></w:sectPr></w:body></w:document>"#,
+        ),
+        (
+            "word/footnotes.xml",
+            r#"<w:footnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:footnote w:type="separator" w:id="-1"><w:p><w:fldSimple w:instr=" CUSTOM separator "><w:r><w:t>Separator cached</w:t></w:r></w:fldSimple></w:p></w:footnote><w:footnote w:type="continuationSeparator" w:id="0"><w:p><w:fldSimple w:instr=" CUSTOM continuation "><w:r><w:t>Continuation cached</w:t></w:r></w:fldSimple></w:p></w:footnote><w:footnote w:id="1"><w:p><w:fldSimple w:instr=" CUSTOM foot-one "><w:r><w:t>Foot one old</w:t></w:r></w:fldSimple></w:p><w:ins w:id="6"><w:p><w:fldSimple w:instr=" CUSTOM inserted-note "><w:r><w:t>Inserted old</w:t></w:r></w:fldSimple></w:p></w:ins><w:del w:id="7"><w:p><w:fldSimple w:instr=" CUSTOM deleted "><w:r><w:delText>Deleted cached</w:delText></w:r></w:fldSimple></w:p></w:del></w:footnote><mc:AlternateContent><mc:Choice Requires="w14"><w:footnote w:id="2"><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> CUSTOM foot-outer </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Before </w:t></w:r><w:fldSimple w:instr=" MERGEFIELD Inner "><w:r><w:t>Inner old</w:t></w:r></w:fldSimple><w:r><w:t> after</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:footnote></mc:Choice><mc:Fallback><w:footnote w:id="9"><w:p><w:fldSimple w:instr=" CUSTOM fallback "><w:r><w:t>Fallback cached</w:t></w:r></w:fldSimple></w:p></w:footnote></mc:Fallback></mc:AlternateContent></w:footnotes>"#,
+        ),
+        (
+            "word/endnotes.xml",
+            r#"<w:endnotes xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:endnote w:type="continuationSeparator" w:id="0"><w:p><w:fldSimple w:instr=" CUSTOM end-separator "><w:r><w:t>End separator cached</w:t></w:r></w:fldSimple></w:p></w:endnote><w:endnote w:id="3"><w:p><w:fldSimple w:instr=" CUSTOM end-real "><w:r><w:t>End old</w:t></w:r></w:fldSimple></w:p></w:endnote></w:endnotes>"#,
+        ),
+        (
+            "word/header1.xml",
+            r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:AlternateContent><mc:Choice Requires="w14"><w:p><w:fldSimple w:instr=" CUSTOM shared-header "><w:r><w:t>Shared old</w:t></w:r></w:fldSimple></w:p></mc:Choice><mc:Fallback><w:p><w:fldSimple w:instr=" CUSTOM hidden-header "><w:r><w:t>Hidden header</w:t></w:r></w:fldSimple></w:p></mc:Fallback></mc:AlternateContent></w:hdr>"#,
+        ),
+        (
+            "word/header9.xml",
+            r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> CUSTOM unreferenced-header </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Unreferenced old</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:hdr>"#,
+        ),
+        (
+            "word/headerWrong.xml",
+            r#"<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:fldSimple w:instr=" CUSTOM wrong-root "><w:r><w:t>Wrong root old</w:t></w:r></w:fldSimple></w:p></w:ftr>"#,
+        ),
+        (
+            "word/footer7.xml",
+            r#"<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:fldSimple w:instr=" CUSTOM unreferenced-footer "><w:r><w:t>Footer old</w:t></w:r></w:fldSimple></w:p></w:ftr>"#,
+        ),
+        (
+            "word/custom.xml",
+            r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:fldSimple w:instr=" CUSTOM arbitrary "><w:r><w:t>Arbitrary old</w:t></w:r></w:fldSimple></w:p></w:hdr>"#,
+        ),
+    ])
+}
+
 fn note_ref_stale_computed_field_result_marker_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -25622,6 +25671,170 @@ fn set_field_result_updates_simple_and_complex_cached_results() {
     assert_eq!(fields[5].instruction, "FILENAME \\p");
     assert_eq!(fields[5].result, "renamed.docx");
     assert!(reopened.set_field_result(6, "missing").is_err());
+}
+
+#[test]
+fn fields_in_part_lists_only_editable_accepted_current_story_fields() {
+    let doc = Document::open(&explicit_part_field_edit_docx()).expect("fixture opens");
+
+    let cases = [
+        ("word/document.xml", vec![("PAGE", "1")]),
+        (
+            "word/footnotes.xml",
+            vec![
+                ("CUSTOM foot-one", "Foot one old"),
+                ("CUSTOM inserted-note", "Inserted old"),
+                ("MERGEFIELD Inner", "Inner old"),
+                ("CUSTOM foot-outer", "Before Inner old after"),
+            ],
+        ),
+        ("word/endnotes.xml", vec![("CUSTOM end-real", "End old")]),
+        (
+            "word/header1.xml",
+            vec![("CUSTOM shared-header", "Shared old")],
+        ),
+        (
+            "word/header9.xml",
+            vec![("CUSTOM unreferenced-header", "Unreferenced old")],
+        ),
+        (
+            "word/footer7.xml",
+            vec![("CUSTOM unreferenced-footer", "Footer old")],
+        ),
+    ];
+
+    for (part, expected) in cases {
+        let fields = doc.fields_in_part(part).expect("story field inventory");
+        assert_eq!(
+            fields
+                .iter()
+                .map(|field| (field.instruction.as_str(), field.result.as_str()))
+                .collect::<Vec<_>>(),
+            expected,
+            "{part}"
+        );
+        assert!(
+            fields.iter().all(|field| field.computed_result.is_none()),
+            "{part} inventory must expose cached results without standalone evaluation"
+        );
+    }
+}
+
+#[test]
+fn set_field_result_in_part_edits_real_note_and_preserves_excluded_markup() {
+    let fixture = explicit_part_field_edit_docx();
+    let before = unzip_parts(&fixture);
+    let mut doc = Document::open(&fixture).expect("fixture opens");
+
+    doc.set_field_result_in_part("word/footnotes.xml", 2, "Inner\nupdated\tvalue")
+        .expect("edit selected real-note field");
+
+    let saved = doc.save().expect("save edited docx");
+    let parts = unzip_parts(&saved);
+    let footnotes = String::from_utf8(parts["word/footnotes.xml"].clone()).unwrap();
+    assert!(footnotes.contains("Separator cached"), "{footnotes}");
+    assert!(footnotes.contains("Continuation cached"), "{footnotes}");
+    assert!(footnotes.contains("Deleted cached"), "{footnotes}");
+    assert!(footnotes.contains("Fallback cached"), "{footnotes}");
+    assert!(
+        footnotes.contains("<w:t>Inner</w:t><w:br/><w:t>updated</w:t><w:tab/><w:t>value</w:t>"),
+        "{footnotes}"
+    );
+    for part in [
+        "word/document.xml",
+        "word/endnotes.xml",
+        "word/header1.xml",
+        "word/header9.xml",
+        "word/footer7.xml",
+    ] {
+        assert_eq!(before.get(part), parts.get(part), "{part} changed");
+    }
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    let fields = reopened
+        .fields_in_part("word/footnotes.xml")
+        .expect("re-read footnote fields");
+    assert_eq!(fields[2].result, "Inner\nupdated\tvalue");
+}
+
+#[test]
+fn set_field_result_in_part_edits_shared_and_unreferenced_headers() {
+    let mut doc = Document::open(&explicit_part_field_edit_docx()).expect("fixture opens");
+
+    doc.set_field_result_in_part("word/header1.xml", 0, "Shared updated")
+        .expect("edit shared referenced header");
+    doc.set_field_result_in_part("word/header9.xml", 0, "Unreferenced updated")
+        .expect("edit unreferenced header");
+    doc.set_field_result_in_part("word/footer7.xml", 0, "Footer updated")
+        .expect("edit unreferenced footer");
+
+    let saved = doc.save().expect("save edited headers");
+    let parts = unzip_parts(&saved);
+    let shared = String::from_utf8(parts["word/header1.xml"].clone()).unwrap();
+    let unreferenced = String::from_utf8(parts["word/header9.xml"].clone()).unwrap();
+    let footer = String::from_utf8(parts["word/footer7.xml"].clone()).unwrap();
+    assert!(shared.contains("<w:t>Shared updated</w:t>"), "{shared}");
+    assert!(shared.contains("<w:t>Hidden header</w:t>"), "{shared}");
+    assert!(
+        unreferenced.contains("<w:t>Unreferenced updated</w:t>"),
+        "{unreferenced}"
+    );
+    assert!(footer.contains("<w:t>Footer updated</w:t>"), "{footer}");
+}
+
+#[test]
+fn part_field_edits_reject_non_story_and_separator_indexes_without_mutation() {
+    let fixture = explicit_part_field_edit_docx();
+    let before = unzip_parts(&fixture);
+    let mut doc = Document::open(&fixture).expect("fixture opens");
+
+    let separator_err = doc
+        .set_field_result_in_part("word/endnotes.xml", 1, "Do not edit separator")
+        .expect_err("separator is outside real-note field inventory");
+    assert!(
+        separator_err.to_string().contains("field range"),
+        "{separator_err}"
+    );
+    let arbitrary_err = doc
+        .set_field_result_in_part("word/custom.xml", 0, "Do not edit arbitrary part")
+        .expect_err("arbitrary WML-shaped part rejected");
+    assert!(
+        arbitrary_err
+            .to_string()
+            .contains("editable field story part"),
+        "{arbitrary_err}"
+    );
+    assert!(doc.fields_in_part("word/custom.xml").is_err());
+    assert!(doc.fields_in_part("word/headerWrong.xml").is_err());
+    assert!(doc.edited_parts().is_empty());
+
+    let after = unzip_parts(&doc.save().expect("save rejected edits"));
+    assert_eq!(before, after);
+}
+
+#[test]
+fn part_field_inventory_tracks_staged_edits_and_session_rollback() {
+    let fixture = explicit_part_field_edit_docx();
+    let before = unzip_parts(&fixture);
+    let mut doc = Document::open(&fixture).expect("fixture opens");
+
+    {
+        let mut edits = doc.edit_session().expect("begin edit session");
+        edits
+            .set_field_result_in_part("word/endnotes.xml", 0, "Staged endnote")
+            .expect("stage endnote field edit");
+        assert_eq!(
+            edits
+                .fields_in_part("word/endnotes.xml")
+                .expect("inventory staged package")[0]
+                .result,
+            "Staged endnote"
+        );
+        edits.rollback();
+    }
+
+    assert!(doc.edited_parts().is_empty());
+    assert_eq!(unzip_parts(&doc.save().expect("save rollback")), before);
 }
 
 #[test]
