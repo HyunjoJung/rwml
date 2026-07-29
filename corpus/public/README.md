@@ -27,7 +27,7 @@ Every file here is safe to redistribute:
   You own these outright (no third-party content). They deliberately carry the **unmodeled
   content a package-preserving editor must round-trip intact**: tracked changes (`w:ins`/`w:del`),
   content controls (`w:sdt`), text boxes (`mc:AlternateContent` + `w:txbxContent`), footnotes,
-  comments, headers/footers, fields, hyperlinks, nested tables, unsupported object markers, tables, floating shape placement metadata, and an inline PNG image. Dedicated render fixtures activate run paint and hidden text, explicit top-level body tabs, table margins and RTL order, small-page keep pagination, equal-width columns, mixed Arabic/Hebrew direction, and bounded `wrapTopAndBottom` flow. Regenerate with
+  comments, headers/footers, fields, hyperlinks, nested tables, unsupported object markers, tables, floating shape placement metadata, and an inline PNG image. Dedicated render fixtures activate run paint and hidden text, explicit top-level body tabs, table margins and RTL order, small-page keep pagination, equal-width columns, mixed Arabic/Hebrew direction, bounded `wrapTopAndBottom` flow, and `table-cell-lists.docx` body/direct-cell/nested-cell numbering, bullet fallback, and RTL table placement. Regenerate with
   `python scripts/gen_public_corpus.py` (deterministic — a no-op in git if unchanged).
 - `vendored/` — a few real-producer files copied from permissively-licensed upstreams
   (CC0 / MIT only). See [`ATTRIBUTION.md`](ATTRIBUTION.md) for the source and license of each.

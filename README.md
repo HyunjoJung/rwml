@@ -285,8 +285,10 @@ Lay any model out to a paginated **PDF** with native typesetting — `parley` sh
 and line-breaks (Korean/CJK [UAX #14] line-breaking + script font fallback),
 `krilla` emits the PDF with subsetted embedded fonts and **selectable text**. Rich
 runs (color/size/font, highlight, decorations, super/subscript, caps/small-caps),
-paragraph shading, line spacing, first/hanging indents, lists with real autonumber
-labels, bordered tables with six-way model-backed solid colors and bounded
+paragraph shading, line spacing, first/hanging indents, lists with
+reader-captured autonumber labels or deterministic empty-label fallbacks in
+top-level body and ordinary or recursively flattened table cells, bordered
+tables with six-way model-backed solid colors and bounded
 per-side eighth-point widths, shaded vertically-aligned cells, authored and
 opened-DOCX `tblGrid` column proportions, bounded preferred-percentage outer
 widths, logical leading/center/trailing placement, and non-negative leading
@@ -324,6 +326,10 @@ paragraphs and direct or accepted-current wrapper-contained paragraphs in
 ordinary or recursively nested table cells, without adding those source-only
 render hints to the public `DocModel`. Nested table content remains a flattened
 text preview rather than a nested grid layout.
+One per-story fallback-counter state follows source-logical order across body,
+direct-cell, nested-cell, and later body paragraphs. `w:bidiVisual` changes
+physical cell placement without reversing numbering, and split rows or repeated
+headers reuse the already-shaped marker.
 Opened legacy `.doc` tables with strictly increasing `sprmTDefTable` row
 boundaries and common logical outer edges also retain normalized relative
 column proportions, including mixed internal row grids represented by column
@@ -354,6 +360,13 @@ Bounded RTL rendering applies `w:bidi` paragraph base direction, `w:rtl` run
 isolation, logical alignment/list placement, and `w:bidiVisual` table column
 mirroring. This improves mixed Arabic/Hebrew documents without claiming
 Word-exact list-level alignment, punctuation, or table typography.
+`ListInfo` does not retain list-instance identity, source `numId`/`ilfo`,
+restart/start overrides, marker fonts or glyph metadata, or marker
+tabs/alignment/exact hanging indents. Independent or restarted empty-label
+lists therefore use deterministic preview numbering rather than Word-exact
+numbering. Marker-aware table autofit, nested-grid geometry, table-cell images,
+legacy nested-table recovery, and Word-exact RTL list typography remain outside
+this preview.
 Opened legacy `.doc` runs additionally preserve literal direct
 `sprmCFBiDi` on/off values from complete FKP/CHPX payloads through `.docx`
 conversion and PDF run isolation. Opened legacy paragraphs preserve valid
@@ -953,7 +966,8 @@ evidence.
       `ContentControlBuilder`, `TableBuilder`, `CellBuilder`, `ImageBuilder`,
       `ChartBuilder`, `DocModel`, and
       `write_docx`
-- [x] **PDF renderer** - `parley` + `krilla` with rich text/tables/images/lists/
+- [x] **PDF renderer** - `parley` + `krilla` with rich text/tables/images,
+      body and ordinary/recursively flattened table-cell list markers,
       hyperlinks, model-backed clockwise image rotation, six-way solid
       model-backed table border color/width, paragraph
       page-break-before, header-row repeat, oversized-row split,

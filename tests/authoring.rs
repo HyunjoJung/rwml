@@ -4214,6 +4214,82 @@ fn cell_builder_adds_typed_nested_blocks() {
 }
 
 #[test]
+fn authored_table_cell_lists_round_trip_in_source_order() {
+    let numbered = |text: &str| Paragraph {
+        props: ParaProps {
+            list: Some(rwml::ListInfo {
+                level: 0,
+                ordered: true,
+                label: String::new(),
+            }),
+            ..ParaProps::default()
+        },
+        runs: vec![RunBuilder::new(text).build()],
+    };
+    let model = DocBuilder::new()
+        .rich_table(
+            TableBuilder::new().row([CellBuilder::new()
+                .rich_paragraph(numbered("Direct cell"))
+                .rich_table(
+                    TableBuilder::new()
+                        .row([CellBuilder::new().rich_paragraph(numbered("Nested cell"))]),
+                )]),
+        )
+        .build();
+
+    let bytes = rwml::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    let rels = String::from_utf8(parts["word/_rels/document.xml.rels"].clone()).unwrap();
+    assert_eq!(document_xml.matches("<w:numPr>").count(), 2);
+    assert!(parts.contains_key("word/numbering.xml"));
+    assert!(
+        rels.contains("relationships/numbering") && rels.contains(r#"Target="numbering.xml""#),
+        "numbering relationship missing: {rels}"
+    );
+
+    let reopened = Document::open(&bytes).expect("table-cell lists .docx reopens");
+    let reopened_model = reopened.model();
+    let [Block::Table(table)] = reopened_model.blocks.as_slice() else {
+        panic!("expected one table block");
+    };
+    let Block::Paragraph(direct) = &table.rows[0].cells[0].blocks[0] else {
+        panic!("expected direct cell list paragraph");
+    };
+    let Block::Table(nested) = &table.rows[0].cells[0].blocks[1] else {
+        panic!("expected nested table");
+    };
+    let Block::Paragraph(nested_item) = &nested.rows[0].cells[0].blocks[0] else {
+        panic!("expected nested cell list paragraph");
+    };
+
+    let paragraphs = [direct, nested_item];
+    let observed: Vec<_> = paragraphs
+        .into_iter()
+        .map(|paragraph| {
+            let list = paragraph
+                .props
+                .list
+                .as_ref()
+                .expect("reopened paragraph remains a list item");
+            (
+                paragraph.text(),
+                list.level,
+                list.ordered,
+                list.label.clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        observed,
+        [
+            ("Direct cell".to_string(), 0, true, "1.".to_string()),
+            ("Nested cell".to_string(), 0, true, "2.".to_string()),
+        ]
+    );
+}
+
+#[test]
 fn image_builder_adds_alt_text_and_size() {
     let png = tiny_png();
     let model = DocBuilder::new()
