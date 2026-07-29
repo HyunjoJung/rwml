@@ -30,6 +30,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- DOCX table-formula operand scanning now ignores paragraph-property subtrees,
+  so custom `w:pPr/w:tabs/w:tab` definitions no longer become visible cell
+  tabs that block cached-result promotion and dependent formula evaluation.
+  Genuine run-content markers, formula grammar, and tab-position layout retain
+  their existing behavior.
 - DOCX cached complex-field inventory now collects visible text and supported
   inline markers only while the paragraph-spanning result scan is inside run
   content. Custom paragraph tab-stop definitions under `w:pPr/w:tabs` therefore
