@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Expands strict single-DIB metafile raster extraction to source-bearing
+  `EMR_BITBLT`, `EMR_STRETCHBLT`, `META_DIBBITBLT`, and
+  `META_DIBSTRETCHBLT` records when they use exact `SRCCOPY`, zero source
+  origins, one-to-one full-frame geometry, canonical contiguous DIB payloads,
+  and, for EMF, an identity source transform with `DIB_RGB_COLORS`. Raw and
+  gzip-wrapped forms use the same bounded path. Source-less WMF forms,
+  1-bit EMF source blits, scaling, cropping, mirroring, composition, and
+  general vector replay remain unsupported.
 - Adds package-preserving plain top-level DOCX paragraph insertion through
   `Document::insert_body_paragraph`. Its `0..=body_blocks().len()` position
   space inserts before an indexed atomic direct paragraph/table/content-control

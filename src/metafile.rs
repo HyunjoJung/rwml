@@ -2,7 +2,16 @@ use std::io::Read;
 
 const MAX_METAFILE_INFLATE: usize = 1 << 20;
 const MAX_METAFILE_RGBA: usize = 64 << 20;
+const SRCCOPY: u32 = 0x00CC_0020;
+const EMR_BITBLT: u32 = 76;
+const EMR_STRETCHBLT: u32 = 77;
+const EMR_SETDIBITSTODEVICE: u32 = 80;
+const EMR_STRETCHDIBITS: u32 = 81;
 const EMR_STRETCHDIBITS_FIXED_SIZE: usize = 80;
+const META_DIBBITBLT: u16 = 0x0940;
+const META_DIBSTRETCHBLT: u16 = 0x0B41;
+const META_SETDIBTODEV: u16 = 0x0D33;
+const META_STRETCHDIB: u16 = 0x0F43;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MetafileKind {
@@ -79,8 +88,8 @@ pub(crate) fn extract_raster(
     };
     let frame = metafile_frame(kind, payload)?;
     let raster = match kind {
-        MetafileKind::Emf => extract_emf_stretchdibits(payload, frame)?,
-        MetafileKind::Wmf => extract_wmf_stretchdib(payload, frame)?,
+        MetafileKind::Emf => extract_emf_single_dib(payload, frame)?,
+        MetafileKind::Wmf => extract_wmf_single_dib(payload, frame)?,
     };
     (raster.width_px == frame.width_px && raster.height_px == frame.height_px).then_some(raster)
 }
@@ -151,7 +160,7 @@ fn wmf_frame(bytes: &[u8]) -> Option<MetafileFrame> {
     })
 }
 
-fn extract_emf_stretchdibits(bytes: &[u8], frame: MetafileFrame) -> Option<MetafileRaster> {
+fn extract_emf_single_dib(bytes: &[u8], frame: MetafileFrame) -> Option<MetafileRaster> {
     if bytes.len() < 88
         || read_u32le(bytes, 0)? != 1
         || read_u32le(bytes, 48)? as usize != bytes.len()
@@ -178,15 +187,17 @@ fn extract_emf_stretchdibits(bytes: &[u8], frame: MetafileFrame) -> Option<Metaf
         let record = bytes.get(offset..end)?;
         match record_type {
             1 if offset == 0 && record_size >= 88 => {}
-            80 | 81 if !saw_eof => {
+            EMR_BITBLT | EMR_STRETCHBLT | EMR_SETDIBITSTODEVICE | EMR_STRETCHDIBITS if !saw_eof => {
                 raster_records += 1;
                 if raster_records > 1 {
                     return None;
                 }
-                let candidate = if record_type == 80 {
-                    extract_emf_setdibits_to_device_record(record)
-                } else {
-                    extract_emf_stretchdibits_record(record)
+                let candidate = match record_type {
+                    EMR_BITBLT => extract_emf_source_blt_record(record, false),
+                    EMR_STRETCHBLT => extract_emf_source_blt_record(record, true),
+                    EMR_SETDIBITSTODEVICE => extract_emf_setdibits_to_device_record(record),
+                    EMR_STRETCHDIBITS => extract_emf_stretchdibits_record(record),
+                    _ => None,
                 }?;
                 if !emf_dib_covers_frame(record, record_type, frame, &candidate) {
                     return None;
@@ -249,9 +260,55 @@ fn emf_dib_covers_frame(
     {
         return false;
     }
-    record_type != 81
-        || (read_i32le(record, 72) == i32::try_from(frame.logical_width).ok()
-            && read_i32le(record, 76) == i32::try_from(frame.logical_height).ok())
+    match record_type {
+        EMR_BITBLT | EMR_STRETCHBLT => {
+            read_i32le(record, 32) == Some(width) && read_i32le(record, 36) == Some(height)
+        }
+        EMR_SETDIBITSTODEVICE => true,
+        EMR_STRETCHDIBITS => {
+            read_i32le(record, 72) == Some(width) && read_i32le(record, 76) == Some(height)
+        }
+        _ => false,
+    }
+}
+
+fn extract_emf_source_blt_record(record: &[u8], stretches_source: bool) -> Option<MetafileRaster> {
+    // [MS-EMF] 2.3.1.2 (EMR_BITBLT) and 2.3.1.6 (EMR_STRETCHBLT).
+    let fixed_size = if stretches_source { 108 } else { 100 };
+    if record.len() < fixed_size
+        || read_u32le(record, 40)? != SRCCOPY
+        || read_i32le(record, 44)? != 0
+        || read_i32le(record, 48)? != 0
+        || read_u32le(record, 52)? != 1.0f32.to_bits()
+        || read_u32le(record, 56)? != 0.0f32.to_bits()
+        || read_u32le(record, 60)? != 0.0f32.to_bits()
+        || read_u32le(record, 64)? != 1.0f32.to_bits()
+        || read_u32le(record, 68)? != 0.0f32.to_bits()
+        || read_u32le(record, 72)? != 0.0f32.to_bits()
+        || read_u32le(record, 76)? & 0xFF00_0000 != 0
+        || read_u32le(record, 80)? != 0
+    {
+        return None;
+    }
+    let destination_width = read_i32le(record, 32)?;
+    let destination_height = read_i32le(record, 36)?;
+    if destination_width <= 0 || destination_height <= 0 {
+        return None;
+    }
+    if stretches_source {
+        let source_width = read_i32le(record, 100)?;
+        let source_height = read_i32le(record, 104)?;
+        if source_width <= 0
+            || source_height <= 0
+            || destination_width != source_width
+            || destination_height != source_height
+        {
+            return None;
+        }
+    }
+    let raster = extract_emf_dib_payload_at(record, fixed_size, 84, false)?;
+    (destination_width as u32 == raster.width_px && destination_height as u32 == raster.height_px)
+        .then_some(raster)
 }
 
 fn extract_emf_stretchdibits_record(record: &[u8]) -> Option<MetafileRaster> {
@@ -259,7 +316,7 @@ fn extract_emf_stretchdibits_record(record: &[u8]) -> Option<MetafileRaster> {
         || read_i32le(record, 32)? != 0
         || read_i32le(record, 36)? != 0
         || read_u32le(record, 64)? != 0
-        || read_u32le(record, 68)? != 0x00CC_0020
+        || read_u32le(record, 68)? != SRCCOPY
     {
         return None;
     }
@@ -303,13 +360,22 @@ fn extract_emf_setdibits_to_device_record(record: &[u8]) -> Option<MetafileRaste
 }
 
 fn extract_emf_dib_payload(record: &[u8], fixed_size: usize) -> Option<MetafileRaster> {
+    extract_emf_dib_payload_at(record, fixed_size, 48, true)
+}
+
+fn extract_emf_dib_payload_at(
+    record: &[u8],
+    fixed_size: usize,
+    fields_offset: usize,
+    allow_monochrome: bool,
+) -> Option<MetafileRaster> {
     if record.len() < fixed_size {
         return None;
     }
-    let off_bmi = read_u32le(record, 48)? as usize;
-    let cb_bmi = read_u32le(record, 52)? as usize;
-    let off_bits = read_u32le(record, 56)? as usize;
-    let cb_bits = read_u32le(record, 60)? as usize;
+    let off_bmi = read_u32le(record, fields_offset)? as usize;
+    let cb_bmi = read_u32le(record, fields_offset.checked_add(4)?)? as usize;
+    let off_bits = read_u32le(record, fields_offset.checked_add(8)?)? as usize;
+    let cb_bits = read_u32le(record, fields_offset.checked_add(12)?)? as usize;
     let bmi_end = off_bmi.checked_add(cb_bmi)?;
     let bits_end = off_bits.checked_add(cb_bits)?;
     if off_bmi != fixed_size || bmi_end != off_bits || bits_end != record.len() {
@@ -317,10 +383,13 @@ fn extract_emf_dib_payload(record: &[u8], fixed_size: usize) -> Option<MetafileR
     }
     let bmi = record.get(off_bmi..bmi_end)?;
     let bits = record.get(off_bits..bits_end)?;
+    if !allow_monochrome && read_u16le(bmi, 14)? == 1 {
+        return None;
+    }
     decode_dib(bmi, bits)
 }
 
-fn extract_wmf_stretchdib(bytes: &[u8], frame: MetafileFrame) -> Option<MetafileRaster> {
+fn extract_wmf_single_dib(bytes: &[u8], frame: MetafileFrame) -> Option<MetafileRaster> {
     if !wmf_single_dib_header_is_valid(bytes) {
         return None;
     }
@@ -347,15 +416,19 @@ fn extract_wmf_stretchdib(bytes: &[u8], frame: MetafileFrame) -> Option<Metafile
             0 if !saw_eof && record_words == 3 => {
                 saw_eof = true;
             }
-            0x0D33 | 0x0F43 if !saw_eof => {
+            META_DIBBITBLT | META_DIBSTRETCHBLT | META_SETDIBTODEV | META_STRETCHDIB
+                if !saw_eof =>
+            {
                 raster_records += 1;
                 if raster_records > 1 {
                     return None;
                 }
-                let candidate = if function == 0x0D33 {
-                    extract_wmf_setdib_to_device_record(record)
-                } else {
-                    extract_wmf_stretchdib_record(record)
+                let candidate = match function {
+                    META_DIBBITBLT => extract_wmf_source_dib_blt_record(record, false),
+                    META_DIBSTRETCHBLT => extract_wmf_source_dib_blt_record(record, true),
+                    META_SETDIBTODEV => extract_wmf_setdib_to_device_record(record),
+                    META_STRETCHDIB => extract_wmf_stretchdib_record(record),
+                    _ => None,
                 }?;
                 if !wmf_dib_covers_frame(record, function, frame, &candidate) {
                     return None;
@@ -407,32 +480,93 @@ fn wmf_dib_covers_frame(
     frame: MetafileFrame,
     raster: &MetafileRaster,
 ) -> bool {
-    let covers_frame = if function == 0x0D33 {
-        let (Ok(left), Ok(top), Ok(width), Ok(height)) = (
-            u16::try_from(frame.left),
-            u16::try_from(frame.top),
-            u16::try_from(frame.logical_width),
-            u16::try_from(frame.logical_height),
-        ) else {
-            return false;
-        };
-        read_u16le(record, 20) == Some(top)
-            && read_u16le(record, 22) == Some(left)
-            && read_u16le(record, 16) == Some(height)
-            && read_u16le(record, 18) == Some(width)
-    } else {
-        read_i16le(record, 24) == i16::try_from(frame.top).ok()
-            && read_i16le(record, 26) == i16::try_from(frame.left).ok()
-            && read_i16le(record, 20) == i16::try_from(frame.logical_height).ok()
-            && read_i16le(record, 22) == i16::try_from(frame.logical_width).ok()
+    let covers_frame = match function {
+        META_DIBBITBLT => {
+            read_i16le(record, 18) == i16::try_from(frame.top).ok()
+                && read_i16le(record, 20) == i16::try_from(frame.left).ok()
+                && read_i16le(record, 14) == i16::try_from(frame.logical_height).ok()
+                && read_i16le(record, 16) == i16::try_from(frame.logical_width).ok()
+        }
+        META_DIBSTRETCHBLT => {
+            read_i16le(record, 22) == i16::try_from(frame.top).ok()
+                && read_i16le(record, 24) == i16::try_from(frame.left).ok()
+                && read_i16le(record, 18) == i16::try_from(frame.logical_height).ok()
+                && read_i16le(record, 20) == i16::try_from(frame.logical_width).ok()
+        }
+        META_SETDIBTODEV => {
+            let (Ok(left), Ok(top), Ok(width), Ok(height)) = (
+                u16::try_from(frame.left),
+                u16::try_from(frame.top),
+                u16::try_from(frame.logical_width),
+                u16::try_from(frame.logical_height),
+            ) else {
+                return false;
+            };
+            read_u16le(record, 20) == Some(top)
+                && read_u16le(record, 22) == Some(left)
+                && read_u16le(record, 16) == Some(height)
+                && read_u16le(record, 18) == Some(width)
+        }
+        META_STRETCHDIB => {
+            read_i16le(record, 24) == i16::try_from(frame.top).ok()
+                && read_i16le(record, 26) == i16::try_from(frame.left).ok()
+                && read_i16le(record, 20) == i16::try_from(frame.logical_height).ok()
+                && read_i16le(record, 22) == i16::try_from(frame.logical_width).ok()
+        }
+        _ => false,
     };
     covers_frame && raster.width_px == frame.width_px && raster.height_px == frame.height_px
+}
+
+fn extract_wmf_source_dib_blt_record(
+    record: &[u8],
+    stretches_source: bool,
+) -> Option<MetafileRaster> {
+    // [MS-WMF] 2.3.1.2 (META_DIBBITBLT) and 2.3.1.3 (META_DIBSTRETCHBLT).
+    let fixed_size: usize = if stretches_source { 26 } else { 22 };
+    if record.len() < fixed_size.checked_add(40)? || read_u32le(record, 6)? != SRCCOPY {
+        return None;
+    }
+    let (source_height, source_width, source_y, source_x, destination_height, destination_width) =
+        if stretches_source {
+            (
+                read_i16le(record, 10)?,
+                read_i16le(record, 12)?,
+                read_i16le(record, 14)?,
+                read_i16le(record, 16)?,
+                read_i16le(record, 18)?,
+                read_i16le(record, 20)?,
+            )
+        } else {
+            let destination_height = read_i16le(record, 14)?;
+            let destination_width = read_i16le(record, 16)?;
+            (
+                destination_height,
+                destination_width,
+                read_i16le(record, 10)?,
+                read_i16le(record, 12)?,
+                destination_height,
+                destination_width,
+            )
+        };
+    if source_x != 0
+        || source_y != 0
+        || source_width <= 0
+        || source_height <= 0
+        || destination_width != source_width
+        || destination_height != source_height
+    {
+        return None;
+    }
+    let raster = decode_packed_dib(record.get(fixed_size..)?)?;
+    (source_width as u32 == raster.width_px && source_height as u32 == raster.height_px)
+        .then_some(raster)
 }
 
 fn extract_wmf_stretchdib_record(record: &[u8]) -> Option<MetafileRaster> {
     const FIXED_SIZE: usize = 28;
     if record.len() < FIXED_SIZE
-        || read_u32le(record, 6)? != 0x00CC_0020
+        || read_u32le(record, 6)? != SRCCOPY
         || read_u16le(record, 10)? != 0
         || read_i16le(record, 16)? != 0
         || read_i16le(record, 18)? != 0
@@ -710,8 +844,9 @@ mod tests {
     use std::io::Write;
 
     use super::{
-        decode_dib, decode_packed_dib, dib_rgba_len, dimensions, extract_emf_stretchdibits_record,
-        extract_raster, inflate_gzip_metafile, read_u16le, read_u32le, MetafileKind,
+        bitmap_info_header_len, decode_dib, decode_packed_dib, dib_rgba_len, dimensions,
+        extract_emf_stretchdibits_record, extract_raster, inflate_gzip_metafile, read_u16le,
+        read_u32le, MetafileKind,
     };
 
     fn put_u16le(out: &mut [u8], offset: usize, value: u16) {
@@ -720,6 +855,10 @@ mod tests {
 
     fn put_u32le(out: &mut [u8], offset: usize, value: u32) {
         out[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
+    }
+
+    fn put_i16le(out: &mut [u8], offset: usize, value: i16) {
+        out[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
     }
 
     fn put_i32le(out: &mut [u8], offset: usize, value: i32) {
@@ -801,6 +940,46 @@ mod tests {
         bytes[40..44].copy_from_slice(b" EMF");
         put_u32le(&mut bytes, 44, 0x0001_0000);
         bytes.extend_from_slice(&emf_stretchdibits_record(raster_operation, source_x));
+        append_emf_eof(&mut bytes, 3);
+        bytes
+    }
+
+    fn emf_with_source_blt(record_type: u32) -> Vec<u8> {
+        emf_with_source_blt_dib(record_type, &packed_rgb32_dib())
+    }
+
+    fn emf_with_source_blt_dib(record_type: u32, dib: &[u8]) -> Vec<u8> {
+        let fixed_size = match record_type {
+            76 => 100,
+            77 => 108,
+            _ => panic!("unsupported source blit record type"),
+        };
+        let bmi_len = bitmap_info_header_len(dib).expect("test DIB header");
+        let bits_len = dib.len() - bmi_len;
+        let mut bytes = vec![0u8; 88];
+        put_u32le(&mut bytes, 0, 1);
+        put_u32le(&mut bytes, 4, 88);
+        bytes[40..44].copy_from_slice(b" EMF");
+        put_u32le(&mut bytes, 44, 0x0001_0000);
+        let start = bytes.len();
+        let record_size = fixed_size + dib.len();
+        bytes.resize(start + record_size, 0);
+        put_u32le(&mut bytes, start, record_type);
+        put_u32le(&mut bytes, start + 4, record_size as u32);
+        put_i32le(&mut bytes, start + 32, 1);
+        put_i32le(&mut bytes, start + 36, 1);
+        put_u32le(&mut bytes, start + 40, 0x00CC_0020);
+        put_u32le(&mut bytes, start + 52, 1.0f32.to_bits());
+        put_u32le(&mut bytes, start + 64, 1.0f32.to_bits());
+        put_u32le(&mut bytes, start + 84, fixed_size as u32);
+        put_u32le(&mut bytes, start + 88, bmi_len as u32);
+        put_u32le(&mut bytes, start + 92, (fixed_size + bmi_len) as u32);
+        put_u32le(&mut bytes, start + 96, bits_len as u32);
+        if record_type == 77 {
+            put_i32le(&mut bytes, start + 100, 1);
+            put_i32le(&mut bytes, start + 104, 1);
+        }
+        bytes[start + fixed_size..start + record_size].copy_from_slice(dib);
         append_emf_eof(&mut bytes, 3);
         bytes
     }
@@ -896,6 +1075,82 @@ mod tests {
         bytes.resize(eof + 6, 0);
         put_u32le(&mut bytes, eof, 3);
         finalize_wmf_profile(&mut bytes, record_size / 2);
+        bytes
+    }
+
+    fn wmf_with_source_dib_blt(function: u16) -> Vec<u8> {
+        wmf_with_source_dib_blt_dib(function, &packed_rgb32_dib())
+    }
+
+    fn wmf_with_source_dib_blt_dib(function: u16, dib: &[u8]) -> Vec<u8> {
+        let fixed_size = match function {
+            0x0940 => 22,
+            0x0B41 => 26,
+            _ => panic!("unsupported source DIB blit function"),
+        };
+        let mut bytes = vec![0u8; 40];
+        put_u32le(&mut bytes, 0, 0x9AC6_CDD7);
+        put_u16le(&mut bytes, 10, 1);
+        put_u16le(&mut bytes, 12, 1);
+        put_u16le(&mut bytes, 14, 96);
+        let start = bytes.len();
+        let record_size = fixed_size + dib.len();
+        bytes.resize(start + record_size, 0);
+        put_u32le(&mut bytes, start, (record_size / 2) as u32);
+        put_u16le(&mut bytes, start + 4, function);
+        put_u32le(&mut bytes, start + 6, 0x00CC_0020);
+        match function {
+            0x0940 => {
+                put_u16le(&mut bytes, start + 14, 1);
+                put_u16le(&mut bytes, start + 16, 1);
+            }
+            0x0B41 => {
+                put_u16le(&mut bytes, start + 10, 1);
+                put_u16le(&mut bytes, start + 12, 1);
+                put_u16le(&mut bytes, start + 18, 1);
+                put_u16le(&mut bytes, start + 20, 1);
+            }
+            _ => unreachable!(),
+        }
+        bytes[start + fixed_size..start + record_size].copy_from_slice(dib);
+        let eof = bytes.len();
+        bytes.resize(eof + 6, 0);
+        put_u32le(&mut bytes, eof, 3);
+        finalize_wmf_profile(&mut bytes, record_size / 2);
+        bytes
+    }
+
+    fn wmf_source_dib_blt_without_bitmap(function: u16) -> Vec<u8> {
+        let record_words = match function {
+            0x0940 => 12,
+            0x0B41 => 14,
+            _ => panic!("unsupported source DIB blit function"),
+        };
+        let record_size = record_words * 2;
+        let mut bytes = vec![0u8; 40 + record_size + 6];
+        put_u32le(&mut bytes, 0, 0x9AC6_CDD7);
+        put_u16le(&mut bytes, 10, 1);
+        put_u16le(&mut bytes, 12, 1);
+        put_u16le(&mut bytes, 14, 96);
+        put_u32le(&mut bytes, 40, record_words as u32);
+        put_u16le(&mut bytes, 44, function);
+        put_u32le(&mut bytes, 46, 0x00CC_0020);
+        match function {
+            0x0940 => {
+                put_u16le(&mut bytes, 54, 1);
+                put_u16le(&mut bytes, 56, 1);
+            }
+            0x0B41 => {
+                put_u16le(&mut bytes, 50, 1);
+                put_u16le(&mut bytes, 52, 1);
+                put_u16le(&mut bytes, 58, 1);
+                put_u16le(&mut bytes, 60, 1);
+            }
+            _ => unreachable!(),
+        }
+        let eof = 40 + record_size;
+        put_u32le(&mut bytes, eof, 3);
+        finalize_wmf_profile(&mut bytes, record_words);
         bytes
     }
 
@@ -1094,6 +1349,358 @@ mod tests {
             (MetafileKind::Wmf, wmf_with_setdib_to_device(1, 1)),
         ] {
             assert!(extract_raster(kind, &bytes, false).is_none());
+        }
+    }
+
+    #[test]
+    fn source_bearing_bitblt_records_extract_identity_srccopy_rasters() {
+        for (kind, bytes) in [
+            (MetafileKind::Emf, emf_with_source_blt(76)),
+            (MetafileKind::Emf, emf_with_source_blt(77)),
+            (MetafileKind::Wmf, wmf_with_source_dib_blt(0x0940)),
+            (MetafileKind::Wmf, wmf_with_source_dib_blt(0x0B41)),
+        ] {
+            let raster = extract_raster(kind, &bytes, false).expect("source-bearing BitBlt raster");
+            assert_eq!(raster.width_px, 1);
+            assert_eq!(raster.height_px, 1);
+            assert_eq!(raster.rgba, [0x11, 0x22, 0x33, 0xFF]);
+        }
+    }
+
+    #[test]
+    fn source_bearing_bitblt_records_accept_matching_nonzero_frame_origins() {
+        for record_type in [76, 77] {
+            let mut emf = emf_with_source_blt(record_type);
+            put_i32le(&mut emf, 8, 10);
+            put_i32le(&mut emf, 12, 20);
+            put_i32le(&mut emf, 16, 10);
+            put_i32le(&mut emf, 20, 20);
+            put_i32le(&mut emf, 88 + 8, 10);
+            put_i32le(&mut emf, 88 + 12, 20);
+            put_i32le(&mut emf, 88 + 16, 10);
+            put_i32le(&mut emf, 88 + 20, 20);
+            put_i32le(&mut emf, 88 + 24, 10);
+            put_i32le(&mut emf, 88 + 28, 20);
+            assert!(
+                extract_raster(MetafileKind::Emf, &emf, false).is_some(),
+                "record_type={record_type}"
+            );
+        }
+
+        for (function, destination_y, destination_x) in [(0x0940, 18, 20), (0x0B41, 22, 24)] {
+            let mut wmf = wmf_with_source_dib_blt(function);
+            put_i16le(&mut wmf, 6, -10);
+            put_i16le(&mut wmf, 8, -20);
+            put_i16le(&mut wmf, 10, -9);
+            put_i16le(&mut wmf, 12, -19);
+            put_i16le(&mut wmf, 40 + destination_y, -20);
+            put_i16le(&mut wmf, 40 + destination_x, -10);
+            let max_record_words = read_u32le(&wmf, 34).unwrap() as usize;
+            finalize_wmf_profile(&mut wmf, max_record_words);
+            assert!(
+                extract_raster(MetafileKind::Wmf, &wmf, false).is_some(),
+                "function={function:#06x}"
+            );
+        }
+    }
+
+    #[test]
+    fn source_bearing_bitblt_records_require_srccopy_and_zero_source_origins() {
+        for (kind, mut bytes, raster_operation) in [
+            (MetafileKind::Emf, emf_with_source_blt(76), 88 + 40),
+            (MetafileKind::Emf, emf_with_source_blt(77), 88 + 40),
+            (MetafileKind::Wmf, wmf_with_source_dib_blt(0x0940), 40 + 6),
+            (MetafileKind::Wmf, wmf_with_source_dib_blt(0x0B41), 40 + 6),
+        ] {
+            put_u32le(&mut bytes, raster_operation, 0x0066_0046);
+            assert!(extract_raster(kind, &bytes, false).is_none());
+        }
+
+        for (kind, bytes, source_offsets) in [
+            (
+                MetafileKind::Emf,
+                emf_with_source_blt(76),
+                [88 + 44, 88 + 48],
+            ),
+            (
+                MetafileKind::Emf,
+                emf_with_source_blt(77),
+                [88 + 44, 88 + 48],
+            ),
+            (
+                MetafileKind::Wmf,
+                wmf_with_source_dib_blt(0x0940),
+                [40 + 10, 40 + 12],
+            ),
+            (
+                MetafileKind::Wmf,
+                wmf_with_source_dib_blt(0x0B41),
+                [40 + 14, 40 + 16],
+            ),
+        ] {
+            for offset in source_offsets {
+                let mut shifted = bytes.clone();
+                if kind == MetafileKind::Emf {
+                    put_i32le(&mut shifted, offset, 1);
+                } else {
+                    put_i16le(&mut shifted, offset, 1);
+                }
+                assert!(
+                    extract_raster(kind, &shifted, false).is_none(),
+                    "kind={kind:?}, offset={offset}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_bearing_bitblt_records_reject_scaling_and_invalid_dimensions() {
+        for (kind, bytes, dimension_offsets) in [
+            (
+                MetafileKind::Emf,
+                emf_with_source_blt(76),
+                [88 + 32, 88 + 36],
+            ),
+            (
+                MetafileKind::Emf,
+                emf_with_source_blt(77),
+                [88 + 32, 88 + 36],
+            ),
+            (
+                MetafileKind::Wmf,
+                wmf_with_source_dib_blt(0x0940),
+                [40 + 14, 40 + 16],
+            ),
+            (
+                MetafileKind::Wmf,
+                wmf_with_source_dib_blt(0x0B41),
+                [40 + 18, 40 + 20],
+            ),
+        ] {
+            for offset in dimension_offsets {
+                let mut zero = bytes.clone();
+                if kind == MetafileKind::Emf {
+                    put_i32le(&mut zero, offset, 0);
+                } else {
+                    put_i16le(&mut zero, offset, 0);
+                }
+                assert!(extract_raster(kind, &zero, false).is_none());
+            }
+        }
+
+        let mut emf_scaled = emf_with_source_blt(77);
+        put_i32le(&mut emf_scaled, 88 + 100, 2);
+        assert!(extract_raster(MetafileKind::Emf, &emf_scaled, false).is_none());
+
+        let mut emf_negative = emf_with_source_blt(77);
+        put_i32le(&mut emf_negative, 88 + 104, -1);
+        assert!(extract_raster(MetafileKind::Emf, &emf_negative, false).is_none());
+
+        let mut wmf_scaled = wmf_with_source_dib_blt(0x0B41);
+        put_i16le(&mut wmf_scaled, 40 + 12, 2);
+        assert!(extract_raster(MetafileKind::Wmf, &wmf_scaled, false).is_none());
+
+        let mut wmf_negative = wmf_with_source_dib_blt(0x0B41);
+        put_i16le(&mut wmf_negative, 40 + 10, -1);
+        assert!(extract_raster(MetafileKind::Wmf, &wmf_negative, false).is_none());
+    }
+
+    #[test]
+    fn emf_source_blits_require_exact_identity_source_state() {
+        for (offset, invalid) in [
+            (52, 0.0f32.to_bits()),
+            (56, 1.0f32.to_bits()),
+            (60, 1.0f32.to_bits()),
+            (64, 0.0f32.to_bits()),
+            (68, 1.0f32.to_bits()),
+            (72, 1.0f32.to_bits()),
+            (56, (-0.0f32).to_bits()),
+            (52, f32::NAN.to_bits()),
+        ] {
+            let mut emf = emf_with_source_blt(76);
+            put_u32le(&mut emf, 88 + offset, invalid);
+            assert!(
+                extract_raster(MetafileKind::Emf, &emf, false).is_none(),
+                "offset={offset}, value={invalid:#010x}"
+            );
+        }
+
+        let mut color_reserved = emf_with_source_blt(76);
+        put_u32le(&mut color_reserved, 88 + 76, 0x0100_0000);
+        assert!(extract_raster(MetafileKind::Emf, &color_reserved, false).is_none());
+
+        let mut palette_usage = emf_with_source_blt(76);
+        put_u32le(&mut palette_usage, 88 + 80, 1);
+        assert!(extract_raster(MetafileKind::Emf, &palette_usage, false).is_none());
+    }
+
+    #[test]
+    fn source_bearing_bitblt_records_require_exact_full_frame_coverage() {
+        for record_type in [76, 77] {
+            for destination_offset in [24, 28] {
+                let mut shifted = emf_with_source_blt(record_type);
+                put_i32le(&mut shifted, 88 + destination_offset, 1);
+                assert!(extract_raster(MetafileKind::Emf, &shifted, false).is_none());
+            }
+        }
+
+        let mut contradictory_bounds = emf_with_source_blt(76);
+        put_i32le(&mut contradictory_bounds, 88 + 8, 100);
+        put_i32le(&mut contradictory_bounds, 88 + 12, 100);
+        put_i32le(&mut contradictory_bounds, 88 + 16, 100);
+        put_i32le(&mut contradictory_bounds, 88 + 20, 100);
+        assert!(extract_raster(MetafileKind::Emf, &contradictory_bounds, false).is_none());
+
+        for (function, destination_offsets) in [(0x0940, [18, 20]), (0x0B41, [22, 24])] {
+            for offset in destination_offsets {
+                let mut shifted = wmf_with_source_dib_blt(function);
+                put_i16le(&mut shifted, 40 + offset, 1);
+                assert!(extract_raster(MetafileKind::Wmf, &shifted, false).is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn emf_source_blits_reject_monochrome_but_retain_other_palette_dibs() {
+        let monochrome = packed_palette_dib(
+            1,
+            1,
+            &[[0x00, 0x00, 0x00, 0], [0xFF, 0xFF, 0xFF, 0]],
+            &[0, 0, 0, 0],
+        );
+        let indexed = packed_palette_dib(
+            4,
+            1,
+            &[[0x00, 0x00, 0x00, 0], [0xFF, 0xFF, 0xFF, 0]],
+            &[0, 0, 0, 0],
+        );
+
+        for record_type in [76, 77] {
+            assert!(extract_raster(
+                MetafileKind::Emf,
+                &emf_with_source_blt_dib(record_type, &monochrome),
+                false,
+            )
+            .is_none());
+            assert!(extract_raster(
+                MetafileKind::Emf,
+                &emf_with_source_blt_dib(record_type, &indexed),
+                false,
+            )
+            .is_some());
+        }
+
+        for function in [0x0940, 0x0B41] {
+            assert!(extract_raster(
+                MetafileKind::Wmf,
+                &wmf_with_source_dib_blt_dib(function, &monochrome),
+                false,
+            )
+            .is_some());
+        }
+    }
+
+    #[test]
+    fn emf_source_blits_require_canonical_contiguous_dib_payloads() {
+        for (field_offset, invalid) in [(84, 104), (88, 36), (92, 136), (96, 3)] {
+            let mut emf = emf_with_source_blt(76);
+            put_u32le(&mut emf, 88 + field_offset, invalid);
+            assert!(
+                extract_raster(MetafileKind::Emf, &emf, false).is_none(),
+                "field_offset={field_offset}"
+            );
+        }
+
+        let mut tail = emf_with_source_blt(76);
+        let eof = tail.split_off(tail.len() - 20);
+        let record_size = read_u32le(&tail, 88 + 4).unwrap();
+        tail.extend_from_slice(&[0; 4]);
+        tail.extend_from_slice(&eof);
+        put_u32le(&mut tail, 88 + 4, record_size + 4);
+        let byte_len = tail.len() as u32;
+        put_u32le(&mut tail, 48, byte_len);
+        assert!(extract_raster(MetafileKind::Emf, &tail, false).is_none());
+    }
+
+    #[test]
+    fn wmf_source_blits_reject_source_less_forms_and_nearby_functions() {
+        for function in [0x0940, 0x0B41] {
+            assert!(extract_raster(
+                MetafileKind::Wmf,
+                &wmf_source_dib_blt_without_bitmap(function),
+                false,
+            )
+            .is_none());
+
+            let mut nearby = wmf_with_source_dib_blt(function);
+            put_u16le(&mut nearby, 40 + 4, function ^ 0x0100);
+            assert!(extract_raster(MetafileKind::Wmf, &nearby, false).is_none());
+        }
+    }
+
+    #[test]
+    fn source_bearing_bitblt_records_reject_malformed_payloads_and_tails() {
+        let mut malformed_emf = emf_with_source_blt(76);
+        put_u16le(&mut malformed_emf, 88 + 100 + 14, 2);
+        assert!(extract_raster(MetafileKind::Emf, &malformed_emf, false).is_none());
+
+        let mut malformed_wmf = wmf_with_source_dib_blt(0x0940);
+        put_u16le(&mut malformed_wmf, 40 + 22 + 14, 2);
+        assert!(extract_raster(MetafileKind::Wmf, &malformed_wmf, false).is_none());
+
+        let mut wmf_tail = wmf_with_source_dib_blt(0x0B41);
+        let eof = wmf_tail.split_off(wmf_tail.len() - 6);
+        let record_words = read_u32le(&wmf_tail, 40).unwrap() as usize;
+        wmf_tail.extend_from_slice(&[0; 2]);
+        wmf_tail.extend_from_slice(&eof);
+        put_u32le(&mut wmf_tail, 40, (record_words + 1) as u32);
+        finalize_wmf_profile(&mut wmf_tail, record_words + 1);
+        assert!(extract_raster(MetafileKind::Wmf, &wmf_tail, false).is_none());
+    }
+
+    #[test]
+    fn source_bearing_bitblt_profiles_reject_composition_and_duplicate_rasters() {
+        let mut emf_composed = emf_with_source_blt(76);
+        insert_emf_setpixel_before_eof(&mut emf_composed);
+        assert!(extract_raster(MetafileKind::Emf, &emf_composed, false).is_none());
+
+        let mut wmf_composed = wmf_with_source_dib_blt(0x0940);
+        insert_wmf_setpixel_before_eof(&mut wmf_composed);
+        assert!(extract_raster(MetafileKind::Wmf, &wmf_composed, false).is_none());
+
+        let mut emf_duplicate = emf_with_source_blt(77);
+        let record = emf_duplicate[88..emf_duplicate.len() - 20].to_vec();
+        let eof = emf_duplicate.split_off(emf_duplicate.len() - 20);
+        emf_duplicate.extend_from_slice(&record);
+        emf_duplicate.extend_from_slice(&eof);
+        let byte_len = emf_duplicate.len() as u32;
+        put_u32le(&mut emf_duplicate, 48, byte_len);
+        put_u32le(&mut emf_duplicate, 52, 4);
+        assert!(extract_raster(MetafileKind::Emf, &emf_duplicate, false).is_none());
+
+        let mut wmf_duplicate = wmf_with_source_dib_blt(0x0B41);
+        let record = wmf_duplicate[40..wmf_duplicate.len() - 6].to_vec();
+        let eof = wmf_duplicate.split_off(wmf_duplicate.len() - 6);
+        wmf_duplicate.extend_from_slice(&record);
+        wmf_duplicate.extend_from_slice(&eof);
+        let max_record_words = read_u32le(&wmf_duplicate, 34).unwrap() as usize;
+        finalize_wmf_profile(&mut wmf_duplicate, max_record_words);
+        assert!(extract_raster(MetafileKind::Wmf, &wmf_duplicate, false).is_none());
+    }
+
+    #[test]
+    fn source_bearing_bitblt_records_extract_from_gzip_wrappers() {
+        for (kind, bytes) in [
+            (MetafileKind::Emf, emf_with_source_blt(76)),
+            (MetafileKind::Emf, emf_with_source_blt(77)),
+            (MetafileKind::Wmf, wmf_with_source_dib_blt(0x0940)),
+            (MetafileKind::Wmf, wmf_with_source_dib_blt(0x0B41)),
+        ] {
+            let mut encoder =
+                flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+            encoder.write_all(&bytes).unwrap();
+            let compressed = encoder.finish().unwrap();
+            assert!(extract_raster(kind, &compressed, true).is_some());
         }
     }
 
