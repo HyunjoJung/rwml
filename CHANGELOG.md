@@ -30,6 +30,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Opened legacy `.doc` tables now recover coherent positive physical top,
+  left, bottom, right, inside-horizontal, and inside-vertical border channels
+  from complete `sprmTDefTable` `TC80` records and direct row-mark
+  `sprmTTableBorders80`/`sprmTTableBorders` operands. Compatible and modern
+  direct properties following the definition apply in source order only while
+  embedded cell edges remain default/inheritable. Visual RTL maps logical outer
+  edges onto their physical sides, and recovered colors, widths, and supported
+  line styles survive shared-model use and `.docx` conversion/reopen; PDF
+  preview consumes the colors and widths through its existing solid-stroke
+  paint without changing `LayoutPages`. Projection is limited to strict
+  rectangular, unmerged tables with at least two rows and columns and six
+  mutually coherent positive roles. Valid definitions with fewer or excess
+  complete `TC80` records or equal boundaries still preserve table structure,
+  while malformed operands, incomplete or zero-width grids, mixed
+  automatic/explicit colors, nil/no-border roles, unsupported line effects,
+  conflicting shared edges, pre-definition row borders, topology modifiers,
+  and per-cell overrides retain the existing border fallback. Arbitrary
+  per-cell conflict resolution, merged/ragged/nested, table-style-derived,
+  piece-`Pcd.Prm`, PDF non-solid style paint, and Word-exact border rendering
+  remain unsupported.
 - DOCX table-formula operand scanning now ignores paragraph-property subtrees,
   so custom `w:pPr/w:tabs/w:tab` definitions no longer become visible cell
   tabs that block cached-result promotion and dependent formula evaluation.
@@ -168,8 +188,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   horizontal seams. Repeated headers retain paint and edge identity while
   `LayoutPages` remains unchanged. Non-solid/none styles, cell borders, theme
   and table-style inheritance, cell spacing and border-conflict resolution,
-  ragged-row repair, nested-grid borders, and legacy `.doc` border recovery
-  remain unsupported.
+  ragged-row repair, nested-grid borders, and legacy `.doc` per-cell,
+  no-border, conflicting, merged/ragged, nested, or style-derived border
+  recovery remain unsupported.
 - Opened legacy `.doc` paragraphs now preserve strict modern logical
   `sprmPDxaLeft`, `sprmPDxaRight`, and `sprmPDxaLeft1` signed-twip indents from
   direct PAPX and paragraph styles. Sparse style values resolve through the

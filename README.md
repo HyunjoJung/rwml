@@ -328,6 +328,21 @@ Opened legacy `.doc` tables with strictly increasing `sprmTDefTable` row
 boundaries and common logical outer edges also retain normalized relative
 column proportions, including mixed internal row grids represented by column
 spans. Missing or inconsistent geometry retains content-sized columns.
+Strict rectangular, unmerged tables with at least two rows and columns
+additionally recover coherent positive top, left, bottom, right,
+inside-horizontal, and inside-vertical borders from complete `TC80` records
+plus later direct row-mark `sprmTTableBorders80` and `sprmTTableBorders`
+operands when the embedded cell edges remain default/inheritable. Compatible
+and modern direct values apply in source order, and physical sides remain
+correct for visual RTL tables. Recovered colors, widths, and supported line
+styles survive `.docx` conversion/reopen; PDF preview consumes the colors and
+widths through its existing solid-stroke table paint. Mixed automatic/explicit
+colors, nil/no-border roles, unsupported line effects, conflicting shared
+edges, malformed operands, pre-definition row borders, topology-changing
+modifiers, per-cell overrides, and incomplete or zero-width grids retain the
+border fallback instead of projecting a misleading whole-table result. Valid
+definitions with fewer or excess complete `TC80` records or equal boundaries
+still preserve table structure.
 Eligible front-of-text
 `wrapTopAndBottom` shapes with explicit page/margin or enabled `simplePos`
 vertical geometry also exclude later flow from their page-wide vertical band
@@ -419,8 +434,9 @@ these bounded bridges.
 > row/column spans suppress covered inside edges, and split row fragments omit
 > artificial horizontal seams.
 > Non-solid/none styles, cell borders, theme/style inheritance, cell spacing and
-> border-conflict resolution, ragged-row repair, nested-grid borders, and legacy
-> `.doc` border recovery remain outside this bounded renderer slice.
+> border-conflict resolution, ragged-row repair, nested-grid borders, and
+> legacy `.doc` per-cell, no-border, conflicting, merged/ragged, nested, or
+> style-derived border recovery remain outside this bounded renderer slice.
 > PDF image rotation normalizes direct-model angles modulo 360 and rotates the
 > decoded raster around its center. Source-authored display extents, crop/flip/
 > effects, floating-anchor offsets, exclusion-zone reflow, table-cell images,

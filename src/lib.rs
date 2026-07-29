@@ -9418,6 +9418,346 @@ mod tests {
         );
     }
 
+    #[derive(Clone, Copy)]
+    enum SyntheticLegacyTableBorderSource {
+        EmbeddedTc80,
+        DirectCompatibility,
+        DirectModern,
+    }
+
+    fn legacy_table_borders_doc(
+        bidi_visual: bool,
+        source: SyntheticLegacyTableBorderSource,
+        auto_color: bool,
+    ) -> Vec<u8> {
+        let mut borders80 = [
+            [2, 0x01, 2, 0],
+            [4, 0x03, 3, 0],
+            [6, 0x06, 4, 0],
+            [8, 0x07, 5, 0],
+            [10, 0x01, 6, 0],
+            [12, 0x03, 7, 0],
+        ];
+        if auto_color {
+            for border in &mut borders80 {
+                border[2] = 0;
+            }
+        }
+        let mut text = String::new();
+        let mut runs = Vec::new();
+        for (row_index, (first, second)) in [("A1", "A2"), ("B1", "B2")].into_iter().enumerate() {
+            text.push_str(first);
+            text.push('\u{7}');
+            runs.push(SyntheticPapxRun {
+                cp_lim: text.encode_utf16().count() as u32,
+                grpprl: vec![0x16, 0x24, 0x01],
+            });
+            text.push_str(second);
+            text.push('\u{7}');
+            runs.push(SyntheticPapxRun {
+                cp_lim: text.encode_utf16().count() as u32,
+                grpprl: vec![0x16, 0x24, 0x01],
+            });
+            text.push('\u{7}');
+            let mut row_grpprl = vec![
+                0x16, 0x24, 0x01, // sprmPFInTable
+                0x17, 0x24, 0x01, // sprmPFTtp
+            ];
+            if bidi_visual {
+                row_grpprl.extend_from_slice(&[
+                    0x0B, 0x56, 0x01, 0x00, // sprmTFBiDi
+                ]);
+            }
+            row_grpprl.extend_from_slice(&[
+                0x08, 0xD6, 0x30, 0x00, // sprmTDefTable, cb=48
+                0x02, // two cells
+                0x00, 0x00, 0xE8, 0x03, 0xD0, 0x07, // boundaries 0..1000..2000
+            ]);
+            match source {
+                SyntheticLegacyTableBorderSource::EmbeddedTc80 => {
+                    let cell_borders = if row_index == 0 {
+                        [
+                            [borders80[0], borders80[1], borders80[4], borders80[5]],
+                            [borders80[0], borders80[5], borders80[4], borders80[3]],
+                        ]
+                    } else {
+                        [
+                            [borders80[4], borders80[1], borders80[2], borders80[5]],
+                            [borders80[4], borders80[5], borders80[2], borders80[3]],
+                        ]
+                    };
+                    for borders in cell_borders {
+                        row_grpprl.extend_from_slice(&[0u8; 4]);
+                        for border in borders {
+                            row_grpprl.extend_from_slice(&border);
+                        }
+                    }
+                }
+                SyntheticLegacyTableBorderSource::DirectCompatibility
+                | SyntheticLegacyTableBorderSource::DirectModern => {
+                    row_grpprl.extend_from_slice(&[0u8; 40]);
+                }
+            }
+            match source {
+                SyntheticLegacyTableBorderSource::EmbeddedTc80 => {}
+                SyntheticLegacyTableBorderSource::DirectCompatibility => {
+                    row_grpprl.extend_from_slice(&[
+                        0x05, 0xD6, 0x18, // sprmTTableBorders80, cb=24
+                    ]);
+                    for border in borders80 {
+                        row_grpprl.extend_from_slice(&border);
+                    }
+                }
+                SyntheticLegacyTableBorderSource::DirectModern => {
+                    row_grpprl.extend_from_slice(&[
+                        0x13, 0xD6, 0x30, // sprmTTableBorders, cb=48
+                    ]);
+                    for (border, color) in borders80.into_iter().zip([
+                        Color::rgb(0, 0, 0xFF),
+                        Color::rgb(0, 0xFF, 0xFF),
+                        Color::rgb(0, 0xFF, 0),
+                        Color::rgb(0xFF, 0, 0xFF),
+                        Color::rgb(0xFF, 0, 0),
+                        Color::rgb(0xFF, 0xFF, 0),
+                    ]) {
+                        row_grpprl.extend_from_slice(&[
+                            color.r, color.g, color.b, 0, border[0], border[1], 0, 0,
+                        ]);
+                    }
+                }
+            }
+            runs.push(SyntheticPapxRun {
+                cp_lim: text.encode_utf16().count() as u32,
+                grpprl: row_grpprl,
+            });
+        }
+        let text_end = text.encode_utf16().count() as u32;
+        synth_doc_with_ccp_and_tables(
+            &text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [text_end, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    fn legacy_table_borders80_doc(bidi_visual: bool) -> Vec<u8> {
+        legacy_table_borders_doc(
+            bidi_visual,
+            SyntheticLegacyTableBorderSource::DirectCompatibility,
+            false,
+        )
+    }
+
+    type LegacyTableBorderSignature = Vec<(
+        TableBorderSide,
+        Option<Color>,
+        Option<u16>,
+        Option<TableBorderStyle>,
+    )>;
+
+    fn legacy_table_border_signature(model: &DocModel) -> LegacyTableBorderSignature {
+        let Block::Table(table) = &model.blocks[0] else {
+            panic!("synthetic legacy block must be a table");
+        };
+        [
+            TableBorderSide::Top,
+            TableBorderSide::Left,
+            TableBorderSide::Bottom,
+            TableBorderSide::Right,
+            TableBorderSide::InsideHorizontal,
+            TableBorderSide::InsideVertical,
+        ]
+        .into_iter()
+        .map(|side| {
+            (
+                side,
+                table.border_colors.get(side).or(table.border_color),
+                table.border_sizes.get(side).or(table.border_size_eighths),
+                table.border_styles.get(side).or(table.border_style),
+            )
+        })
+        .collect()
+    }
+
+    fn expected_legacy_table_border_signature(bidi_visual: bool) -> LegacyTableBorderSignature {
+        let logical_left = (
+            Some(Color::rgb(0, 0xFF, 0xFF)),
+            Some(4),
+            Some(TableBorderStyle::Double),
+        );
+        let logical_right = (
+            Some(Color::rgb(0xFF, 0, 0xFF)),
+            Some(8),
+            Some(TableBorderStyle::Dashed),
+        );
+        let (left, right) = if bidi_visual {
+            (logical_right, logical_left)
+        } else {
+            (logical_left, logical_right)
+        };
+        vec![
+            (
+                TableBorderSide::Top,
+                Some(Color::rgb(0, 0, 0xFF)),
+                Some(2),
+                Some(TableBorderStyle::Single),
+            ),
+            (TableBorderSide::Left, left.0, left.1, left.2),
+            (
+                TableBorderSide::Bottom,
+                Some(Color::rgb(0, 0xFF, 0)),
+                Some(6),
+                Some(TableBorderStyle::Dotted),
+            ),
+            (TableBorderSide::Right, right.0, right.1, right.2),
+            (
+                TableBorderSide::InsideHorizontal,
+                Some(Color::rgb(0xFF, 0, 0)),
+                Some(10),
+                Some(TableBorderStyle::Single),
+            ),
+            (
+                TableBorderSide::InsideVertical,
+                Some(Color::rgb(0xFF, 0xFF, 0)),
+                Some(12),
+                Some(TableBorderStyle::Double),
+            ),
+        ]
+    }
+
+    #[test]
+    fn opened_legacy_doc_recovers_coherent_direct_table_borders80() {
+        let document = Document::open(&legacy_table_borders80_doc(false)).unwrap();
+
+        assert_eq!(
+            legacy_table_border_signature(&document.model()),
+            expected_legacy_table_border_signature(false)
+        );
+    }
+
+    #[test]
+    fn opened_legacy_doc_recovers_coherent_embedded_tc80_table_borders() {
+        for bidi_visual in [false, true] {
+            let document = Document::open(&legacy_table_borders_doc(
+                bidi_visual,
+                SyntheticLegacyTableBorderSource::EmbeddedTc80,
+                false,
+            ))
+            .unwrap();
+
+            assert_eq!(
+                legacy_table_border_signature(&document.model()),
+                expected_legacy_table_border_signature(bidi_visual)
+            );
+        }
+    }
+
+    #[test]
+    fn opened_legacy_doc_maps_logical_table_borders80_to_physical_rtl_sides() {
+        let document = Document::open(&legacy_table_borders80_doc(true)).unwrap();
+
+        assert_eq!(
+            legacy_table_border_signature(&document.model()),
+            expected_legacy_table_border_signature(true)
+        );
+    }
+
+    #[test]
+    fn opened_legacy_doc_recovers_coherent_direct_modern_table_borders() {
+        for bidi_visual in [false, true] {
+            let document = Document::open(&legacy_table_borders_doc(
+                bidi_visual,
+                SyntheticLegacyTableBorderSource::DirectModern,
+                false,
+            ))
+            .unwrap();
+
+            assert_eq!(
+                legacy_table_border_signature(&document.model()),
+                expected_legacy_table_border_signature(bidi_visual)
+            );
+        }
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_doc_table_borders_roundtrip_to_docx() {
+        for source in [
+            SyntheticLegacyTableBorderSource::EmbeddedTc80,
+            SyntheticLegacyTableBorderSource::DirectCompatibility,
+            SyntheticLegacyTableBorderSource::DirectModern,
+        ] {
+            for bidi_visual in [false, true] {
+                let legacy =
+                    Document::open(&legacy_table_borders_doc(bidi_visual, source, false)).unwrap();
+                let reopened = Document::open(&legacy.to_docx()).unwrap();
+
+                assert_eq!(
+                    legacy_table_border_signature(&reopened.model()),
+                    expected_legacy_table_border_signature(bidi_visual)
+                );
+            }
+        }
+
+        let legacy = Document::open(&legacy_table_borders_doc(
+            false,
+            SyntheticLegacyTableBorderSource::EmbeddedTc80,
+            true,
+        ))
+        .unwrap();
+        let reopened = Document::open(&legacy.to_docx()).unwrap();
+        assert_eq!(
+            legacy_table_border_signature(&reopened.model()),
+            legacy_table_border_signature(&legacy.model())
+        );
+        assert!(legacy_table_border_signature(&reopened.model())
+            .iter()
+            .all(|(_, color, _, _)| color.is_none()));
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn legacy_doc_table_border_recovery_changes_pdf_without_changing_layout() {
+        for source in [
+            SyntheticLegacyTableBorderSource::EmbeddedTc80,
+            SyntheticLegacyTableBorderSource::DirectCompatibility,
+            SyntheticLegacyTableBorderSource::DirectModern,
+        ] {
+            for bidi_visual in [false, true] {
+                let document =
+                    Document::open(&legacy_table_borders_doc(bidi_visual, source, false)).unwrap();
+                let recovered = document.model();
+                let mut baseline = recovered.clone();
+                let Block::Table(table) = &mut baseline.blocks[0] else {
+                    panic!("synthetic legacy block must be a table");
+                };
+                table.border_color = None;
+                table.border_colors = TableBorderColors::default();
+                table.border_size_eighths = None;
+                table.border_sizes = TableBorderSizes::default();
+                table.border_style = None;
+                table.border_styles = TableBorderStyles::default();
+
+                let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+                let recovered_pdf = render_pdf_with_fonts(&recovered, &fonts);
+                let baseline_pdf = render_pdf_with_fonts(&baseline, &fonts);
+
+                assert_ne!(recovered_pdf, baseline_pdf);
+                assert_eq!(recovered_pdf, render_pdf_with_fonts(&recovered, &fonts));
+                assert_eq!(
+                    layout_pages_with_fonts(&recovered, &fonts).unwrap(),
+                    layout_pages_with_fonts(&baseline, &fonts).unwrap()
+                );
+            }
+        }
+    }
+
     #[test]
     fn opened_legacy_doc_preserves_tdef_table_column_proportions() {
         let text = "left\u{7}right\u{7}\u{7}";
@@ -9470,6 +9810,66 @@ mod tests {
         assert_eq!(table.col_widths_pct.len(), 2);
         assert!((table.col_widths_pct[0] - 0.25).abs() < f32::EPSILON);
         assert!((table.col_widths_pct[1] - 0.75).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn malformed_partial_tc80_doc_preserves_table_structure_without_projecting_borders() {
+        let text = "left\u{7}right\u{7}\u{7}";
+        let first_cell_end = "left\u{7}".encode_utf16().count() as u32;
+        let second_cell_end = "left\u{7}right\u{7}".encode_utf16().count() as u32;
+        let row_end = text.encode_utf16().count() as u32;
+        let mut row_grpprl = vec![
+            0x16, 0x24, 0x01, // sprmPFInTable
+            0x17, 0x24, 0x01, // sprmPFTtp
+            0x08, 0xD6, 0x1F, 0x00, // sprmTDefTable, cb=31
+            0x02, // two cells
+            0x00, 0x00, 0xE8, 0x03, 0xD0, 0x07, // boundaries 0..1000..2000
+        ];
+        row_grpprl.extend_from_slice(&[0u8; 23]); // one TC80 plus a malformed tail
+        let runs = [
+            SyntheticPapxRun {
+                cp_lim: first_cell_end,
+                grpprl: vec![0x16, 0x24, 0x01],
+            },
+            SyntheticPapxRun {
+                cp_lim: second_cell_end,
+                grpprl: vec![0x16, 0x24, 0x01],
+            },
+            SyntheticPapxRun {
+                cp_lim: row_end,
+                grpprl: row_grpprl,
+            },
+        ];
+        let bytes = synth_doc_with_ccp_and_tables(
+            text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [row_end, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        );
+
+        let document = Document::open(&bytes).unwrap();
+        let model = document.model();
+        let Block::Table(table) = &model.blocks[0] else {
+            panic!("synthetic legacy block must be a table");
+        };
+        assert_eq!(
+            table.rows[0]
+                .cells
+                .iter()
+                .map(Cell::text)
+                .collect::<Vec<_>>(),
+            ["left", "right"]
+        );
+        assert_eq!(table.col_widths_pct, vec![0.5, 0.5]);
+        assert!(legacy_table_border_signature(&model)
+            .iter()
+            .all(|(_, color, size, style)| color.is_none() && size.is_none() && style.is_none()));
     }
 
     #[cfg(all(feature = "docx", feature = "render"))]

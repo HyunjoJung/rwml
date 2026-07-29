@@ -80,7 +80,7 @@ const ISPRM_C_F_CAPS: u8 = 0x5B;
 const ISPRM_C_F_VANISH: u8 = 0x5C;
 
 /// Map a legacy `sprmCIco` palette index (0–16) to RGB ([MS-DOC] Ico).
-fn ico_color(i: u8) -> Option<Color> {
+pub(crate) fn ico_color(i: u8) -> Option<Color> {
     let (r, g, b) = match i {
         0 | 1 => (0, 0, 0),       // auto / black
         2 => (0, 0, 0xFF),        // blue
