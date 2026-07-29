@@ -65,6 +65,14 @@ const SPRM_C_ISS: u16 = 0x2A48; // 0 normal, 1 superscript, 2 subscript
 const SPRM_C_CV: u16 = 0x6870; // 24-bit color COLORREF (4-byte)
 const SPRM_C_ICO: u16 = 0x2A42; // legacy 0–16 palette color index (1-byte)
 
+// Prm0 uses compact `isprm` values rather than the 16-bit Sprm encodings above.
+const ISPRM_C_F_BOLD: u8 = 0x55;
+const ISPRM_C_F_ITALIC: u8 = 0x56;
+const ISPRM_C_F_STRIKE: u8 = 0x57;
+const ISPRM_C_F_SMALL_CAPS: u8 = 0x5A;
+const ISPRM_C_F_CAPS: u8 = 0x5B;
+const ISPRM_C_F_VANISH: u8 = 0x5C;
+
 /// Map a legacy `sprmCIco` palette index (0–16) to RGB ([MS-DOC] Ico).
 fn ico_color(i: u8) -> Option<Color> {
     let (r, g, b) = match i {
@@ -140,6 +148,32 @@ pub(crate) struct Chp {
     /// For a special-char run (`fSpec`) that is an inline picture, the `fcPic`
     /// offset into the `Data` stream.
     pub pic: Option<u32>,
+}
+
+impl Chp {
+    /// Apply the bounded literal character-toggle subset of a PCD `Prm0`.
+    ///
+    /// Direct character formatting appends this modifier after CHPX, so a
+    /// recognized literal operand replaces the corresponding CHPX value.
+    pub(crate) fn apply_pcd_prm0(&mut self, raw: u16) {
+        if raw & 1 != 0 {
+            return;
+        }
+        let value = match (raw >> 8) as u8 {
+            0 => false,
+            1 => true,
+            _ => return,
+        };
+        match ((raw >> 1) & 0x7F) as u8 {
+            ISPRM_C_F_BOLD => self.bold = value,
+            ISPRM_C_F_ITALIC => self.italic = value,
+            ISPRM_C_F_STRIKE => self.strike = value,
+            ISPRM_C_F_SMALL_CAPS => self.small_caps = Some(value),
+            ISPRM_C_F_CAPS => self.caps = Some(value),
+            ISPRM_C_F_VANISH => self.hidden = value,
+            _ => {}
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -700,6 +734,106 @@ mod tests {
         ]);
         assert_eq!(later_literal.small_caps, Some(true));
         assert_eq!(later_literal.caps, Some(false));
+    }
+
+    fn prm0(isprm: u8, value: u8) -> u16 {
+        (u16::from(value) << 8) | (u16::from(isprm) << 1)
+    }
+
+    #[test]
+    fn pcd_prm0_applies_six_literal_character_toggles() {
+        for (isprm, expected) in [
+            (
+                ISPRM_C_F_BOLD,
+                Chp {
+                    bold: true,
+                    ..Chp::default()
+                },
+            ),
+            (
+                ISPRM_C_F_ITALIC,
+                Chp {
+                    italic: true,
+                    ..Chp::default()
+                },
+            ),
+            (
+                ISPRM_C_F_STRIKE,
+                Chp {
+                    strike: true,
+                    ..Chp::default()
+                },
+            ),
+            (
+                ISPRM_C_F_SMALL_CAPS,
+                Chp {
+                    small_caps: Some(true),
+                    ..Chp::default()
+                },
+            ),
+            (
+                ISPRM_C_F_CAPS,
+                Chp {
+                    caps: Some(true),
+                    ..Chp::default()
+                },
+            ),
+            (
+                ISPRM_C_F_VANISH,
+                Chp {
+                    hidden: true,
+                    ..Chp::default()
+                },
+            ),
+        ] {
+            let mut chp = Chp::default();
+            chp.apply_pcd_prm0(prm0(isprm, 1));
+            assert_eq!(chp, expected);
+        }
+
+        let mut chp = Chp {
+            bold: true,
+            italic: true,
+            strike: true,
+            hidden: true,
+            small_caps: Some(true),
+            caps: Some(true),
+            ..Chp::default()
+        };
+        for isprm in [
+            ISPRM_C_F_BOLD,
+            ISPRM_C_F_ITALIC,
+            ISPRM_C_F_STRIKE,
+            ISPRM_C_F_SMALL_CAPS,
+            ISPRM_C_F_CAPS,
+            ISPRM_C_F_VANISH,
+        ] {
+            chp.apply_pcd_prm0(prm0(isprm, 0));
+        }
+        assert!(!chp.bold && !chp.italic && !chp.strike && !chp.hidden);
+        assert_eq!(chp.small_caps, Some(false));
+        assert_eq!(chp.caps, Some(false));
+    }
+
+    #[test]
+    fn pcd_prm0_ignores_complex_relative_unknown_and_invalid_values() {
+        let original = Chp {
+            bold: true,
+            caps: Some(true),
+            ..Chp::default()
+        };
+        for raw in [
+            0,
+            1,
+            prm0(0x54, 1),
+            prm0(ISPRM_C_F_BOLD, 2),
+            prm0(ISPRM_C_F_BOLD, 0x80),
+            prm0(ISPRM_C_F_BOLD, 0x81),
+        ] {
+            let mut chp = original;
+            chp.apply_pcd_prm0(raw);
+            assert_eq!(chp, original, "raw PRM 0x{raw:04X} changed CHP");
+        }
     }
 
     #[test]

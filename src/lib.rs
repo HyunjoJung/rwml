@@ -5324,6 +5324,7 @@ mod tests {
         endnote_ref_lcb_override: Option<u32>,
         shape_anchor_cps: Option<&'a [u32]>,
         shape_anchor_lcb_override: Option<u32>,
+        piece_prms: [u16; 2],
         chpx_runs: Option<&'a [SyntheticChpxRun]>,
         papx_runs: Option<&'a [SyntheticPapxRun]>,
     }
@@ -5396,8 +5397,8 @@ mod tests {
             .collect();
 
         // --- 1Table stream: CLX = Pcdt(0x02) + lcb + PlcPcd(2 pieces) ---
-        let cch1 = text_utf16.chars().count() as u32;
-        let cch2 = ansi_tail.chars().count() as u32;
+        let cch1 = text_utf16.encode_utf16().count() as u32;
+        let cch2 = ansi_tail.len() as u32;
         let mut plc = Vec::new();
         // CPs: [0, cch1, cch1+cch2]
         plc.extend_from_slice(&0u32.to_le_bytes());
@@ -5406,11 +5407,11 @@ mod tests {
         // PCD 1: uncompressed, fc = fc1
         plc.extend_from_slice(&0u16.to_le_bytes());
         plc.extend_from_slice(&(fc1 as u32).to_le_bytes());
-        plc.extend_from_slice(&0u16.to_le_bytes());
+        plc.extend_from_slice(&tables.piece_prms[0].to_le_bytes());
         // PCD 2: compressed, FcCompressed = bit30 | (fc2*2)
         plc.extend_from_slice(&0u16.to_le_bytes());
         plc.extend_from_slice(&(0x4000_0000u32 | (fc2 as u32 * 2)).to_le_bytes());
-        plc.extend_from_slice(&0u16.to_le_bytes());
+        plc.extend_from_slice(&tables.piece_prms[1].to_le_bytes());
 
         let mut clx = vec![0x02u8];
         clx.extend_from_slice(&(plc.len() as u32).to_le_bytes());
@@ -7617,6 +7618,224 @@ mod tests {
             zw.write_all(b.as_bytes()).unwrap();
         }
         zw.finish().unwrap().into_inner()
+    }
+
+    fn prm0(isprm: u8, value: u8) -> u16 {
+        (u16::from(value) << 8) | (u16::from(isprm) << 1)
+    }
+
+    fn legacy_pcd_prm0_doc(
+        text_utf16: &str,
+        ansi_tail: &str,
+        piece_prms: [u16; 2],
+        chpx_runs: Option<&[SyntheticChpxRun]>,
+    ) -> Vec<u8> {
+        let ccp_text = text_utf16
+            .encode_utf16()
+            .count()
+            .saturating_add(ansi_tail.len()) as u32;
+        synth_doc_with_ccp_and_tables(
+            text_utf16,
+            ansi_tail,
+            0x00C1,
+            0,
+            0,
+            [ccp_text, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                piece_prms,
+                chpx_runs,
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    fn paragraph_run_toggles(model: &DocModel) -> Vec<(&str, [bool; 6])> {
+        let Block::Paragraph(paragraph) = &model.blocks[0] else {
+            panic!("synthetic legacy block must be a paragraph");
+        };
+        paragraph
+            .runs
+            .iter()
+            .map(|run| {
+                (
+                    run.text.as_str(),
+                    [
+                        run.props.bold,
+                        run.props.italic,
+                        run.props.strike,
+                        run.props.small_caps,
+                        run.props.caps,
+                        run.props.hidden,
+                    ],
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn opened_legacy_doc_applies_literal_pcd_prm0_character_toggles() {
+        for (isprm, expected) in [
+            (0x55, [true, false, false, false, false, false]),
+            (0x56, [false, true, false, false, false, false]),
+            (0x57, [false, false, true, false, false, false]),
+            (0x5A, [false, false, false, true, false, false]),
+            (0x5B, [false, false, false, false, true, false]),
+            (0x5C, [false, false, false, false, false, true]),
+        ] {
+            let bytes = legacy_pcd_prm0_doc("X\r", "", [prm0(isprm, 1), 0], None);
+            let document = Document::open(&bytes).unwrap();
+            let model = document.model();
+
+            assert_eq!(
+                paragraph_run_toggles(&model),
+                vec![("X", expected)],
+                "literal Prm0 isprm 0x{isprm:02X} was not applied"
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_doc_pcd_prm0_stays_aligned_across_piece_encodings_and_surrogates() {
+        let bytes =
+            legacy_pcd_prm0_doc("A\u{1F600}", "Tail\r", [prm0(0x55, 1), prm0(0x56, 1)], None);
+        let document = Document::open(&bytes).unwrap();
+        assert_eq!(document.text(), "A\u{1F600}Tail");
+
+        assert_eq!(
+            paragraph_run_toggles(&document.model()),
+            vec![
+                ("A\u{1F600}", [true, false, false, false, false, false]),
+                ("Tail", [false, true, false, false, false, false]),
+            ]
+        );
+    }
+
+    #[test]
+    fn legacy_doc_pcd_prm0_stays_aligned_across_story_regions() {
+        let bytes = synth_doc_with_ccp_and_tables(
+            "Main\r",
+            "Note\r",
+            0x00C1,
+            0,
+            0,
+            [5, 5, 0, 0, 0, 0],
+            SyntheticDocTables {
+                piece_prms: [prm0(0x55, 1), prm0(0x56, 1)],
+                ..SyntheticDocTables::default()
+            },
+        );
+        let model = Document::open(&bytes).unwrap().model();
+
+        for (kind, text, expected) in [
+            (
+                SourceRegionKind::Main,
+                "Main",
+                [true, false, false, false, false, false],
+            ),
+            (
+                SourceRegionKind::Footnote,
+                "Note",
+                [false, true, false, false, false, false],
+            ),
+        ] {
+            let region = model
+                .regions
+                .iter()
+                .find(|region| region.kind == kind)
+                .expect("synthetic source region");
+            let Block::Paragraph(paragraph) = &model.blocks[region.block_start] else {
+                panic!("synthetic source region must contain a paragraph");
+            };
+            assert_eq!(paragraph.runs.len(), 1);
+            assert_eq!(paragraph.runs[0].text, text);
+            assert_eq!(
+                [
+                    paragraph.runs[0].props.bold,
+                    paragraph.runs[0].props.italic,
+                    paragraph.runs[0].props.strike,
+                    paragraph.runs[0].props.small_caps,
+                    paragraph.runs[0].props.caps,
+                    paragraph.runs[0].props.hidden,
+                ],
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_doc_pcd_prm0_overrides_chpx_but_preserves_other_properties() {
+        let bold = [SyntheticChpxRun {
+            cp_lim: 4,
+            grpprl: vec![0x35, 0x08, 1],
+        }];
+
+        let explicit_off = legacy_pcd_prm0_doc("Off\r", "", [prm0(0x55, 0), 0], Some(&bold));
+        assert_eq!(
+            paragraph_run_toggles(&Document::open(&explicit_off).unwrap().model()),
+            vec![("Off", [false; 6])]
+        );
+
+        let additive = legacy_pcd_prm0_doc("Add\r", "", [prm0(0x56, 1), 0], Some(&bold));
+        assert_eq!(
+            paragraph_run_toggles(&Document::open(&additive).unwrap().model()),
+            vec![("Add", [true, true, false, false, false, false])]
+        );
+    }
+
+    #[test]
+    fn unsupported_pcd_prm_values_leave_chpx_formatting_unchanged() {
+        let bold = [SyntheticChpxRun {
+            cp_lim: 5,
+            grpprl: vec![0x35, 0x08, 1],
+        }];
+        for raw_prm in [
+            0,
+            1,
+            prm0(0x54, 1),
+            prm0(0x55, 0x80),
+            prm0(0x55, 0x81),
+            prm0(0x55, 2),
+        ] {
+            let bytes = legacy_pcd_prm0_doc("Keep\r", "", [raw_prm, 0], Some(&bold));
+            assert_eq!(
+                paragraph_run_toggles(&Document::open(&bytes).unwrap().model()),
+                vec![("Keep", [true, false, false, false, false, false])],
+                "unsupported raw PRM 0x{raw_prm:04X} changed CHPX formatting"
+            );
+        }
+    }
+
+    #[test]
+    fn equal_effective_pcd_prm0_properties_coalesce_across_piece_boundaries() {
+        let bytes =
+            legacy_pcd_prm0_doc("A\u{1F600}", "Tail\r", [prm0(0x55, 1), prm0(0x55, 1)], None);
+        assert_eq!(
+            paragraph_run_toggles(&Document::open(&bytes).unwrap().model()),
+            vec![("A\u{1F600}Tail", [true, false, false, false, false, false])]
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_doc_pcd_prm0_character_toggles_roundtrip_to_docx() {
+        for (isprm, expected) in [
+            (0x55, [true, false, false, false, false, false]),
+            (0x56, [false, true, false, false, false, false]),
+            (0x57, [false, false, true, false, false, false]),
+            (0x5A, [false, false, false, true, false, false]),
+            (0x5B, [false, false, false, false, true, false]),
+            (0x5C, [false, false, false, false, false, true]),
+        ] {
+            let legacy =
+                Document::open(&legacy_pcd_prm0_doc("X\r", "", [prm0(isprm, 1), 0], None)).unwrap();
+            let reopened = Document::open(&legacy.to_docx()).unwrap();
+
+            assert_eq!(
+                paragraph_run_toggles(&reopened.model()),
+                vec![("X", expected)],
+                "literal Prm0 isprm 0x{isprm:02X} did not survive DOCX reopen"
+            );
+        }
     }
 
     fn legacy_chpx_highlight_doc() -> Vec<u8> {

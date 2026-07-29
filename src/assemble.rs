@@ -3,9 +3,9 @@
 //!
 //! This never runs for the fast [`crate::Document::text`] path; it is built only
 //! when a caller asks for the model or an exporter. It decodes the pieces a
-//! second time into a CP-aligned `(units, fcs)` pair (each UTF-16 code unit
-//! tagged with its source `WordDocument` byte offset) so character properties
-//! (CHPX, keyed by FC) can be attached per run.
+//! second time into a CP-aligned `(units, fcs, prms)` stream (each UTF-16 code
+//! unit tagged with its source `WordDocument` byte offset and PCD modifier) so
+//! character properties can be attached per run.
 
 use std::collections::HashMap;
 
@@ -30,12 +30,13 @@ use crate::table::{self, CellBuild, RowBuild};
 use crate::util::{u16le, u32le};
 
 /// Immutable source structures threaded through legacy model assembly: the decoded
-/// `(units, fcs)` stream plus the property/style/font tables. Bundled so the region
+/// `(units, fcs, prms)` stream plus the property/style/font tables. Bundled so the region
 /// builders take one borrow instead of a long parallel argument list. The
 /// `Numberer` is passed alongside because it is mutated per paragraph.
 struct LegacySource<'a> {
     units: &'a [u16],
     fcs: &'a [u32],
+    prms: &'a [u16],
     papx: &'a PapxTable,
     chpx: &'a ChpxTable,
     stylesheet: &'a StyleSheet,
@@ -90,11 +91,12 @@ pub(crate) fn build_model_with_render_hints(
         fonts,
         fib,
     } = inputs;
-    let (units, fcs) = decode_with_fc(word, pieces, enc);
+    let (units, fcs, prms) = decode_with_fc_and_prm(word, pieces, enc);
     let section_spans = legacy_section_spans(word, table, fib.ccp_text as usize);
     let src = LegacySource {
         units: &units,
         fcs: &fcs,
+        prms: &prms,
         papx,
         chpx,
         stylesheet,
@@ -387,9 +389,12 @@ fn push_legacy_region(
             src.fonts,
             numberer,
         );
-        asm.run(
+        let prm_start = actual_start.min(src.prms.len());
+        let prm_end = actual_end.min(src.prms.len());
+        asm.run_with_prms(
             &src.units[actual_start..actual_end],
             &src.fcs[actual_start..actual_end],
+            &src.prms[prm_start..prm_end],
         );
         asm.finish_with_render_hints()
     } else {
@@ -757,8 +762,27 @@ pub(crate) fn decode_with_fc(
     pieces: &[Piece],
     enc: &'static Encoding,
 ) -> (Vec<u16>, Vec<u32>) {
+    let (units, fcs, _) = decode_piece_stream(word, pieces, enc, false);
+    (units, fcs)
+}
+
+fn decode_with_fc_and_prm(
+    word: &[u8],
+    pieces: &[Piece],
+    enc: &'static Encoding,
+) -> (Vec<u16>, Vec<u32>, Vec<u16>) {
+    decode_piece_stream(word, pieces, enc, true)
+}
+
+fn decode_piece_stream(
+    word: &[u8],
+    pieces: &[Piece],
+    enc: &'static Encoding,
+    track_prms: bool,
+) -> (Vec<u16>, Vec<u32>, Vec<u16>) {
     let mut units: Vec<u16> = Vec::new();
     let mut fcs: Vec<u32> = Vec::new();
+    let mut prms: Vec<u16> = Vec::new();
     // Bound cumulative decoded bytes (see `text::decode_pieces`): valid pieces partition the
     // stream (total ≤ word.len()), but overlapping pieces in a crafted piece table would
     // re-decode it per piece — a quadratic memory/CPU DoS. Stop once the budget is reached.
@@ -794,8 +818,7 @@ pub(crate) fn decode_with_fc(
                 let (eb, _, had_err) = enc.encode(chs);
                 let blen = if had_err { 1 } else { eb.len().clamp(1, 2) } as u32;
                 for u in ch.encode_utf16(&mut ubuf) {
-                    units.push(*u);
-                    fcs.push(fc);
+                    push_decoded_unit(&mut units, &mut fcs, &mut prms, track_prms, *u, fc, p.prm);
                 }
                 fc = fc.saturating_add(blen);
             }
@@ -807,12 +830,36 @@ pub(crate) fn decode_with_fc(
             };
             consumed = consumed.saturating_add(slice.len());
             for (i, c) in slice.chunks_exact(2).enumerate() {
-                units.push(u16::from_le_bytes([c[0], c[1]]));
-                fcs.push((p.fc + i * 2) as u32);
+                push_decoded_unit(
+                    &mut units,
+                    &mut fcs,
+                    &mut prms,
+                    track_prms,
+                    u16::from_le_bytes([c[0], c[1]]),
+                    (p.fc + i * 2) as u32,
+                    p.prm,
+                );
             }
         }
     }
-    (units, fcs)
+    (units, fcs, prms)
+}
+
+#[inline]
+fn push_decoded_unit(
+    units: &mut Vec<u16>,
+    fcs: &mut Vec<u32>,
+    prms: &mut Vec<u16>,
+    track_prms: bool,
+    unit: u16,
+    fc: u32,
+    prm: u16,
+) {
+    units.push(unit);
+    fcs.push(fc);
+    if track_prms {
+        prms.push(prm);
+    }
 }
 
 // Word control characters.
@@ -998,9 +1045,15 @@ impl<'a, 'l> Asm<'a, 'l> {
         }
     }
 
+    #[cfg(test)]
     fn run(&mut self, units: &[u16], fcs: &[u32]) {
+        self.run_with_prms(units, fcs, &[]);
+    }
+
+    fn run_with_prms(&mut self, units: &[u16], fcs: &[u32], prms: &[u16]) {
         for (i, &u) in units.iter().enumerate() {
             let fc = fcs.get(i).copied().unwrap_or(0);
+            let prm = prms.get(i).copied().unwrap_or(0);
             match u {
                 FIELD_BEGIN => {
                     self.flush_run();
@@ -1032,7 +1085,7 @@ impl<'a, 'l> Asm<'a, 'l> {
                 PARA_MARK => self.end_paragraph(fc, false),
                 CELL_MARK => self.end_paragraph(fc, true),
                 0x0001 => self.picture(fc),
-                _ => self.push_content(u, fc),
+                _ => self.push_content(u, fc, prm),
             }
         }
     }
@@ -1104,7 +1157,7 @@ impl<'a, 'l> Asm<'a, 'l> {
 
     /// Append a content code unit to the current run, splitting the run when the
     /// character properties or field role change.
-    fn push_content(&mut self, u: u16, fc: u32) {
+    fn push_content(&mut self, u: u16, fc: u32, prm: u16) {
         // Map Word control characters to plain text; drop the unrenderable ones.
         let mapped: Option<u16> = match u {
             0x0B | 0x0C | 0x0E => Some(0x000A), // line / page / column break → newline
@@ -1117,7 +1170,8 @@ impl<'a, 'l> Asm<'a, 'l> {
         };
         let Some(unit) = mapped else { return };
 
-        let chp = self.chpx.chp_at(fc);
+        let mut chp = self.chpx.chp_at(fc);
+        chp.apply_pcd_prm0(prm);
         // Start a new run only when the (cheap) char properties change or after a flush
         // (e.g. a field mark, which is also the only place `active_url` changes). The owned
         // `CharProps`/`FieldRole` — which clone the font name and URL — are then built once
@@ -2041,6 +2095,7 @@ mod tests {
     fn legacy_section_break_keeps_row_pagination_sidecar_aligned() {
         let units = [b'A' as u16, PARA_MARK, b'B' as u16, PARA_MARK];
         let fcs: Vec<u32> = (0..units.len() as u32).collect();
+        let prms = [0; 4];
         let papx = PapxTable::default();
         let chpx = ChpxTable::default();
         let stsh = StyleSheet::default();
@@ -2049,6 +2104,7 @@ mod tests {
         let source = LegacySource {
             units: &units,
             fcs: &fcs,
+            prms: &prms,
             papx: &papx,
             chpx: &chpx,
             stylesheet: &stsh,
@@ -2171,6 +2227,7 @@ mod tests {
         let mut units = us("HDR");
         units.push(PARA_MARK);
         let fcs: Vec<u32> = (0..units.len() as u32).collect();
+        let prms = vec![0; units.len()];
         let mut plcf_hdd = Vec::new();
         for cp in [0u32, units.len() as u32, units.len() as u32] {
             plcf_hdd.extend_from_slice(&cp.to_le_bytes());
@@ -2185,6 +2242,7 @@ mod tests {
         let src = LegacySource {
             units: &units,
             fcs: &fcs,
+            prms: &prms,
             papx: &papx,
             chpx: &chpx,
             stylesheet: &stsh,
@@ -2391,24 +2449,97 @@ mod tests {
     }
 
     #[test]
-    fn decode_with_fc_keeps_fc_aligned_past_an_undecodable_byte() {
+    fn pcd_prm0_identity_splits_runs_when_units_share_an_fc() {
+        let units = [b'A' as u16, b'B' as u16, PARA_MARK];
+        let fcs = [0, 0, 0];
+        let prms = [0x01AA, 0x01AC, 0];
+        let papx = PapxTable::default();
+        let chpx = ChpxTable::default();
+        let stsh = StyleSheet::default();
+        let lists = Lists::default();
+        let mut numberer = Numberer::new(&lists);
+        let mut asm = Asm::new(&papx, &chpx, &stsh, &[], &[], &mut numberer);
+
+        asm.run_with_prms(&units, &fcs, &prms);
+        let blocks = asm.finish();
+        let [Block::Paragraph(paragraph)] = blocks.as_slice() else {
+            panic!("expected one paragraph");
+        };
+        assert_eq!(paragraph.runs.len(), 2);
+        assert_eq!(paragraph.runs[0].text, "A");
+        assert!(paragraph.runs[0].props.bold);
+        assert!(!paragraph.runs[0].props.italic);
+        assert_eq!(paragraph.runs[1].text, "B");
+        assert!(!paragraph.runs[1].props.bold);
+        assert!(paragraph.runs[1].props.italic);
+    }
+
+    #[test]
+    fn rich_decode_keeps_fc_and_prm_aligned_across_encodings() {
         use crate::clx::Piece;
         // cp1252 piece: 'A', 0x81 (undefined → U+FFFD), 'B'. Each source byte is
         // one char, so FCs must be base, base+1, base+2 — not blown out by the
-        // U+FFFD re-encoding into a numeric character reference.
+        // U+FFFD re-encoding into a numeric character reference. A following
+        // UTF-16 surrogate pair carries one piece PRM on both code units.
         let base = 0x200usize;
         let mut word = vec![0u8; base];
         word.extend_from_slice(&[b'A', 0x81, b'B']);
-        let pieces = [Piece {
-            cch: 3,
-            fc: base,
-            compressed: true,
-        }];
-        let (units, fcs) = decode_with_fc(&word, &pieces, encoding_rs::WINDOWS_1252);
-        assert_eq!(units.len(), 3);
-        assert_eq!(fcs, vec![base as u32, base as u32 + 1, base as u32 + 2]);
+        word.extend_from_slice(&[0x3D, 0xD8, 0x00, 0xDE]);
+        let pieces = [
+            Piece {
+                cch: 3,
+                fc: base,
+                compressed: true,
+                prm: 0x01AA,
+            },
+            Piece {
+                cch: 2,
+                fc: base + 3,
+                compressed: false,
+                prm: 0x01AC,
+            },
+        ];
+        let (units, fcs, prms) = decode_with_fc_and_prm(&word, &pieces, encoding_rs::WINDOWS_1252);
+        assert_eq!(units.len(), 5);
+        assert_eq!(
+            fcs,
+            vec![
+                base as u32,
+                base as u32 + 1,
+                base as u32 + 2,
+                base as u32 + 3,
+                base as u32 + 5,
+            ]
+        );
+        assert_eq!(prms, vec![0x01AA, 0x01AA, 0x01AA, 0x01AC, 0x01AC]);
         assert_eq!(units[0], b'A' as u16);
         assert_eq!(units[2], b'B' as u16);
+        assert_eq!(&units[3..], &[0xD83D, 0xDE00]);
+    }
+
+    #[test]
+    fn rich_decode_keeps_prm_identity_when_pieces_share_an_fc() {
+        use crate::clx::Piece;
+        let word = b"X\0";
+        let pieces = [
+            Piece {
+                cch: 1,
+                fc: 0,
+                compressed: false,
+                prm: 0x01AA,
+            },
+            Piece {
+                cch: 1,
+                fc: 0,
+                compressed: false,
+                prm: 0x01AC,
+            },
+        ];
+
+        let (units, fcs, prms) = decode_with_fc_and_prm(word, &pieces, encoding_rs::WINDOWS_1252);
+        assert_eq!(units, vec![b'X' as u16, b'X' as u16]);
+        assert_eq!(fcs, vec![0, 0]);
+        assert_eq!(prms, vec![0x01AA, 0x01AC]);
     }
 
     #[test]

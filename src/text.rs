@@ -294,6 +294,7 @@ mod tests {
                 cch: 50,
                 fc: 0,
                 compressed: false,
+                prm: 0,
             })
             .collect();
         let lists = crate::list::parse(&[], 0, 0, 0, 0);
