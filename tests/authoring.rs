@@ -3775,6 +3775,46 @@ fn table_builder_adds_table_border_size() {
     assert_eq!(reopened_table.border_size_eighths, Some(12));
 }
 
+#[cfg(feature = "render")]
+#[test]
+fn authored_uniform_table_border_paint_survives_reopen_and_changes_pdf() {
+    let border = Color::rgb(0xB3, 0x1B, 0x34);
+    let styled_model = DocBuilder::new()
+        .rich_table(
+            TableBuilder::new()
+                .border_color(border)
+                .border_size_eighths(24)
+                .row([CellBuilder::text("Border paint")]),
+        )
+        .build();
+    let reopened =
+        Document::open(&rwml::write_docx(&styled_model)).expect("styled table .docx reopens");
+    let Block::Table(reopened_table) = &reopened.model().blocks[0] else {
+        panic!("expected reopened table");
+    };
+    assert_eq!(reopened_table.border_color, Some(border));
+    assert_eq!(reopened_table.border_size_eighths, Some(24));
+
+    let default_model = DocBuilder::new()
+        .rich_table(TableBuilder::new().row([CellBuilder::text("Border paint")]))
+        .build();
+    let default_reopened =
+        Document::open(&rwml::write_docx(&default_model)).expect("default table .docx reopens");
+    let default_pdf = default_reopened
+        .try_to_pdf()
+        .expect("reopened default table renders");
+    let styled_pdf = reopened
+        .try_to_pdf()
+        .expect("reopened styled table renders");
+
+    assert!(styled_pdf.starts_with(b"%PDF"));
+    assert!(
+        styled_pdf != default_pdf,
+        "reopened uniform border paint must affect PDF bytes"
+    );
+    assert_eq!(styled_pdf, reopened.try_to_pdf().expect("repeat render"));
+}
+
 #[test]
 fn table_builder_adds_table_border_style() {
     let model = DocBuilder::new()
