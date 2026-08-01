@@ -11,7 +11,7 @@ use std::collections::HashMap;
 
 use encoding_rs::Encoding;
 
-use crate::chpx::{highlight_name, Chp, ChpxTable};
+use crate::chpx::{highlight_name, Chp, ChpxTable, PcdPrm1Patch};
 use crate::clx::Piece;
 use crate::fib::{self, Fib};
 use crate::list::Numberer;
@@ -37,6 +37,7 @@ struct LegacySource<'a> {
     units: &'a [u16],
     fcs: &'a [u32],
     prms: &'a [u16],
+    prm1_patches: &'a [Option<PcdPrm1Patch>],
     papx: &'a PapxTable,
     chpx: &'a ChpxTable,
     stylesheet: &'a StyleSheet,
@@ -62,6 +63,7 @@ pub(crate) struct BuildInputs<'a> {
     pub enc: &'static Encoding,
     pub papx: &'a PapxTable,
     pub chpx: &'a ChpxTable,
+    pub prm1_patches: &'a [Option<PcdPrm1Patch>],
     pub stylesheet: &'a StyleSheet,
     pub data: &'a [u8],
     pub fonts: &'a [String],
@@ -86,6 +88,7 @@ pub(crate) fn build_model_with_render_hints(
         enc,
         papx,
         chpx,
+        prm1_patches,
         stylesheet,
         data,
         fonts,
@@ -97,6 +100,7 @@ pub(crate) fn build_model_with_render_hints(
         units: &units,
         fcs: &fcs,
         prms: &prms,
+        prm1_patches,
         papx,
         chpx,
         stylesheet,
@@ -389,6 +393,7 @@ fn push_legacy_region(
             src.fonts,
             numberer,
         );
+        asm.prm1_patches = src.prm1_patches;
         let prm_start = actual_start.min(src.prms.len());
         let prm_end = actual_end.min(src.prms.len());
         asm.run_with_prms(
@@ -873,6 +878,7 @@ const FIELD_END: u16 = 0x15;
 struct Asm<'a, 'l> {
     papx: &'a PapxTable,
     chpx: &'a ChpxTable,
+    prm1_patches: &'a [Option<PcdPrm1Patch>],
     stylesheet: &'a StyleSheet,
     data: &'a [u8],
     fonts: &'a [String],
@@ -990,6 +996,7 @@ impl<'a, 'l> Asm<'a, 'l> {
         Asm {
             papx,
             chpx,
+            prm1_patches: &[],
             stylesheet,
             data,
             fonts,
@@ -1171,7 +1178,8 @@ impl<'a, 'l> Asm<'a, 'l> {
         let Some(unit) = mapped else { return };
 
         let mut chp = self.chpx.chp_at(fc);
-        chp.apply_pcd_prm0(prm);
+        chp.apply_pcd_prm(prm, self.prm1_patches);
+        chp.normalize_model_defaults();
         // Start a new run only when the (cheap) char properties change or after a flush
         // (e.g. a field mark, which is also the only place `active_url` changes). The owned
         // `CharProps`/`FieldRole` — which clone the font name and URL — are then built once
@@ -2105,6 +2113,7 @@ mod tests {
             units: &units,
             fcs: &fcs,
             prms: &prms,
+            prm1_patches: &[],
             papx: &papx,
             chpx: &chpx,
             stylesheet: &stsh,
@@ -2243,6 +2252,7 @@ mod tests {
             units: &units,
             fcs: &fcs,
             prms: &prms,
+            prm1_patches: &[],
             papx: &papx,
             chpx: &chpx,
             stylesheet: &stsh,
@@ -2459,6 +2469,35 @@ mod tests {
         let lists = Lists::default();
         let mut numberer = Numberer::new(&lists);
         let mut asm = Asm::new(&papx, &chpx, &stsh, &[], &[], &mut numberer);
+
+        asm.run_with_prms(&units, &fcs, &prms);
+        let blocks = asm.finish();
+        let [Block::Paragraph(paragraph)] = blocks.as_slice() else {
+            panic!("expected one paragraph");
+        };
+        assert_eq!(paragraph.runs.len(), 2);
+        assert_eq!(paragraph.runs[0].text, "A");
+        assert!(paragraph.runs[0].props.bold);
+        assert!(!paragraph.runs[0].props.italic);
+        assert_eq!(paragraph.runs[1].text, "B");
+        assert!(!paragraph.runs[1].props.bold);
+        assert!(paragraph.runs[1].props.italic);
+    }
+
+    #[test]
+    fn pcd_prm1_identity_splits_runs_when_units_share_an_fc() {
+        let units = [b'A' as u16, b'B' as u16, PARA_MARK];
+        let fcs = [0, 0, 0];
+        let prms = [1, 3, 0];
+        let prm1_patches =
+            crate::chpx::compile_pcd_prm1_patches(&[vec![0x35, 0x08, 1], vec![0x36, 0x08, 1]]);
+        let papx = PapxTable::default();
+        let chpx = ChpxTable::default();
+        let stsh = StyleSheet::default();
+        let lists = Lists::default();
+        let mut numberer = Numberer::new(&lists);
+        let mut asm = Asm::new(&papx, &chpx, &stsh, &[], &[], &mut numberer);
+        asm.prm1_patches = &prm1_patches;
 
         asm.run_with_prms(&units, &fcs, &prms);
         let blocks = asm.finish();

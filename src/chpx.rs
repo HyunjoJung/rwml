@@ -55,6 +55,7 @@ const SPRM_C_F_BIDI: u16 = 0x085A; // right-to-left run layout (ToggleOperand)
 const SPRM_C_HIGHLIGHT: u16 = 0x2A0C; // one-byte Ico highlight palette
 const SPRM_C_ISTD: u16 = 0x4A30; // apply a character style
 const SPRM_C_ISTD_PERMUTE: u16 = 0xCA31; // conditionally remap character style
+const SPRM_C_DEFAULT: u16 = 0x2A32; // reset direct character properties
 const SPRM_C_PLAIN: u16 = 0x2A33; // reset to the paragraph style
 const SPRM_C_KUL: u16 = 0x2A3E; // underline kind (0 = none)
 const SPRM_C_PIC_LOCATION: u16 = 0x6A03; // fcPic into the Data stream (4-byte)
@@ -64,6 +65,11 @@ const SPRM_C_MAJORITY: u16 = 0xCA47; // conditional reset to paragraph style
 const SPRM_C_ISS: u16 = 0x2A48; // 0 normal, 1 superscript, 2 subscript
 const SPRM_C_CV: u16 = 0x6870; // 24-bit color COLORREF (4-byte)
 const SPRM_C_ICO: u16 = 0x2A42; // legacy 0–16 palette color index (1-byte)
+
+// Mixed-property PRCs can contain these non-character variable operands.
+const SPRM_P_CHG_TABS: u16 = 0xC615;
+const SPRM_T_DEF_TABLE: u16 = 0xD608;
+const TC80_LEN: usize = 20;
 
 // Prm0 uses compact `isprm` values rather than the 16-bit Sprm encodings above.
 const ISPRM_C_F_BOLD: u8 = 0x55;
@@ -174,6 +180,245 @@ impl Chp {
             _ => {}
         }
     }
+
+    /// Apply either the compact `Prm0` subset or a precompiled complex
+    /// `Prm1` character overlay.
+    pub(crate) fn apply_pcd_prm(&mut self, raw: u16, prm1_patches: &[Option<PcdPrm1Patch>]) {
+        if raw & 1 == 0 {
+            self.apply_pcd_prm0(raw);
+            return;
+        }
+        if let Some(Some(patch)) = prm1_patches.get(usize::from(raw >> 1)) {
+            patch.apply(self);
+        }
+    }
+
+    /// Collapse distinct legacy encodings that materialize as the same shared
+    /// model properties before run comparison.
+    pub(crate) fn normalize_model_defaults(&mut self) {
+        if self.highlight == Some(0) {
+            self.highlight = None;
+        }
+        if self.vert_align == Some(VertAlign::Baseline) {
+            self.vert_align = None;
+        }
+        if self.small_caps == Some(false) {
+            self.small_caps = None;
+        }
+        if self.caps == Some(false) {
+            self.caps = None;
+        }
+        if self.rtl == Some(false) {
+            self.rtl = None;
+        }
+    }
+}
+
+/// Sparse deterministic character effects compiled once from one CLX PRC.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct PcdPrm1Patch {
+    bold: Option<bool>,
+    italic: Option<bool>,
+    underline: Option<bool>,
+    strike: Option<bool>,
+    hidden: Option<bool>,
+    highlight: Option<u8>,
+    vert_align: Option<VertAlign>,
+    small_caps: Option<bool>,
+    caps: Option<bool>,
+    rtl: Option<bool>,
+}
+
+impl PcdPrm1Patch {
+    fn apply(self, chp: &mut Chp) {
+        if let Some(value) = self.bold {
+            chp.bold = value;
+        }
+        if let Some(value) = self.italic {
+            chp.italic = value;
+        }
+        if let Some(value) = self.underline {
+            chp.underline = value;
+        }
+        if let Some(value) = self.strike {
+            chp.strike = value;
+        }
+        if let Some(value) = self.hidden {
+            chp.hidden = value;
+        }
+        if let Some(value) = self.highlight {
+            chp.highlight = Some(value);
+        }
+        if let Some(value) = self.vert_align {
+            chp.vert_align = Some(value);
+        }
+        if let Some(value) = self.small_caps {
+            chp.small_caps = Some(value);
+        }
+        if let Some(value) = self.caps {
+            chp.caps = Some(value);
+        }
+        if let Some(value) = self.rtl {
+            chp.rtl = Some(value);
+        }
+    }
+}
+
+/// Compile every retained CLX PRC once. `None` is an inert malformed or
+/// style-dependent group; callers then preserve the CHPX-derived result.
+pub(crate) fn compile_pcd_prm1_patches(prcs: &[Vec<u8>]) -> Vec<Option<PcdPrm1Patch>> {
+    prcs.iter()
+        .map(|grpprl| compile_pcd_prm1_patch(grpprl))
+        .collect()
+}
+
+fn compile_pcd_prm1_patch(grpprl: &[u8]) -> Option<PcdPrm1Patch> {
+    let mut patch = PcdPrm1Patch::default();
+    let mut pos = 0usize;
+    while pos < grpprl.len() {
+        let sprm = u16le(grpprl, pos)?;
+        let operand_start = pos.checked_add(2)?;
+        let operand_len = pcd_prm1_operand_len(sprm, grpprl, operand_start)?;
+        let operand_end = operand_start.checked_add(operand_len)?;
+        let operand = grpprl.get(operand_start..operand_end)?;
+
+        if ((sprm >> 10) & 0x7) == 2 {
+            // ToggleOperand style-relative values require effective style
+            // state even when the specific character property is unmodeled.
+            if ((sprm >> 13) & 0x7) == 0 && matches!(operand[0], 0x80 | 0x81) {
+                return None;
+            }
+            match sprm {
+                // These require effective character/paragraph style state.
+                SPRM_C_ISTD | SPRM_C_ISTD_PERMUTE | SPRM_C_DEFAULT | SPRM_C_PLAIN
+                | SPRM_C_MAJORITY => {
+                    return None;
+                }
+                SPRM_C_F_BOLD => patch.bold = Some(literal_toggle(operand)?),
+                SPRM_C_F_ITALIC => patch.italic = Some(literal_toggle(operand)?),
+                SPRM_C_F_STRIKE => patch.strike = Some(literal_toggle(operand)?),
+                SPRM_C_F_VANISH => patch.hidden = Some(literal_toggle(operand)?),
+                SPRM_C_F_SMALL_CAPS => patch.small_caps = Some(literal_toggle(operand)?),
+                SPRM_C_F_CAPS => patch.caps = Some(literal_toggle(operand)?),
+                SPRM_C_F_BIDI => patch.rtl = Some(literal_toggle(operand)?),
+                SPRM_C_KUL => patch.underline = Some(valid_kul(operand[0])? != 0),
+                SPRM_C_HIGHLIGHT => {
+                    let value = operand[0];
+                    if value > 16 {
+                        return None;
+                    }
+                    patch.highlight = Some(value);
+                }
+                SPRM_C_ISS => {
+                    patch.vert_align = Some(match operand[0] {
+                        0 => VertAlign::Baseline,
+                        1 => VertAlign::Super,
+                        2 => VertAlign::Sub,
+                        _ => return None,
+                    });
+                }
+                _ => {}
+            }
+        }
+        pos = operand_end;
+    }
+    Some(patch)
+}
+
+fn literal_toggle(operand: &[u8]) -> Option<bool> {
+    match operand.first().copied()? {
+        0 => Some(false),
+        1 => Some(true),
+        _ => None,
+    }
+}
+
+fn valid_kul(value: u8) -> Option<u8> {
+    matches!(
+        value,
+        0x00 | 0x01
+            | 0x02
+            | 0x03
+            | 0x04
+            | 0x06
+            | 0x07
+            | 0x09
+            | 0x0A
+            | 0x0B
+            | 0x14
+            | 0x17
+            | 0x19
+            | 0x1A
+            | 0x1B
+            | 0x27
+            | 0x2B
+            | 0x37
+    )
+    .then_some(value)
+}
+
+fn pcd_prm1_operand_len(sprm: u16, data: &[u8], operand_start: usize) -> Option<usize> {
+    match (sprm >> 13) & 0x7 {
+        0 | 1 => Some(1),
+        2 | 4 | 5 => Some(2),
+        3 => Some(4),
+        7 => Some(3),
+        6 if sprm == SPRM_T_DEF_TABLE => tdef_table_operand_len(data, operand_start),
+        6 if sprm == SPRM_P_CHG_TABS => pchg_tabs_operand_len(data, operand_start),
+        6 => 1usize.checked_add(usize::from(*data.get(operand_start)?)),
+        _ => None,
+    }
+}
+
+fn tdef_table_operand_len(data: &[u8], operand_start: usize) -> Option<usize> {
+    let cb = usize::from(u16le(data, operand_start)?);
+    let total_len = cb.checked_add(1)?;
+    let operand_end = operand_start.checked_add(total_len)?;
+    let operand = data.get(operand_start..operand_end)?;
+
+    let column_count = usize::from(*operand.get(2)?);
+    if column_count > 63 {
+        return None;
+    }
+    let center_count = column_count.checked_add(1)?;
+    let centers_end = 3usize.checked_add(center_count.checked_mul(2)?)?;
+    let centers = operand.get(3..centers_end)?;
+    let mut previous = None;
+    for center in centers.chunks_exact(2) {
+        let value = i16::from_le_bytes([center[0], center[1]]);
+        if previous.is_some_and(|previous| previous > value) {
+            return None;
+        }
+        previous = Some(value);
+    }
+    if (total_len.checked_sub(centers_end)?) % TC80_LEN != 0 {
+        return None;
+    }
+    Some(total_len)
+}
+
+fn pchg_tabs_operand_len(data: &[u8], operand_start: usize) -> Option<usize> {
+    let cb = usize::from(*data.get(operand_start)?);
+    let del_count_offset = operand_start.checked_add(1)?;
+    let del_count = usize::from(*data.get(del_count_offset)?);
+    if del_count > 64 {
+        return None;
+    }
+    let add_count_offset = del_count_offset
+        .checked_add(1)?
+        .checked_add(del_count.checked_mul(4)?)?;
+    let add_count = usize::from(*data.get(add_count_offset)?);
+    if add_count > 64 {
+        return None;
+    }
+    let remainder_len = add_count_offset
+        .checked_add(1)?
+        .checked_add(add_count.checked_mul(3)?)?
+        .checked_sub(del_count_offset)?;
+    if cb != u8::MAX as usize && cb != remainder_len {
+        return None;
+    }
+    remainder_len.checked_add(1)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -813,6 +1058,175 @@ mod tests {
         assert!(!chp.bold && !chp.italic && !chp.strike && !chp.hidden);
         assert_eq!(chp.small_caps, Some(false));
         assert_eq!(chp.caps, Some(false));
+    }
+
+    #[test]
+    fn pcd_prm1_compiles_bounded_character_effects_in_source_order() {
+        let grpprl = [
+            0x35, 0x08, 0, // bold off
+            0x35, 0x08, 1, // bold on (last wins)
+            0x36, 0x08, 0, // italic off
+            0x37, 0x08, 1, // strike on
+            0x3C, 0x08, 0, // hidden off
+            0x3A, 0x08, 1, // small caps on
+            0x3B, 0x08, 0, // caps off
+            0x5A, 0x08, 1, // RTL on
+            0x3E, 0x2A, 0x0B, // wavy underline
+            0x0C, 0x2A, 14, // dark yellow highlight
+            0x48, 0x2A, 2, // subscript
+        ];
+        let patch = compile_pcd_prm1_patch(&grpprl).unwrap();
+        let color = Color {
+            r: 0x11,
+            g: 0x22,
+            b: 0x33,
+        };
+        let mut chp = Chp {
+            italic: true,
+            hidden: true,
+            highlight: Some(7),
+            vert_align: Some(VertAlign::Super),
+            small_caps: Some(false),
+            caps: Some(true),
+            rtl: Some(false),
+            size_half_pt: Some(24),
+            color: Some(color),
+            ..Chp::default()
+        };
+
+        patch.apply(&mut chp);
+
+        assert!(chp.bold);
+        assert!(!chp.italic);
+        assert!(chp.underline);
+        assert!(chp.strike);
+        assert!(!chp.hidden);
+        assert_eq!(chp.small_caps, Some(true));
+        assert_eq!(chp.caps, Some(false));
+        assert_eq!(chp.rtl, Some(true));
+        assert_eq!(chp.highlight, Some(14));
+        assert_eq!(chp.vert_align, Some(VertAlign::Sub));
+        assert_eq!(chp.size_half_pt, Some(24));
+        assert_eq!(chp.color, Some(color));
+    }
+
+    #[test]
+    fn pcd_prm1_preserves_explicit_clear_values() {
+        let patch = compile_pcd_prm1_patch(&[
+            0x35, 0x08, 1, 0x35, 0x08, 0, // bold on then off
+            0x3E, 0x2A, 1, 0x3E, 0x2A, 0, // underline then none
+            0x0C, 0x2A, 7, 0x0C, 0x2A, 0, // highlight then clear
+            0x48, 0x2A, 1, 0x48, 0x2A, 0, // superscript then baseline
+        ])
+        .unwrap();
+        let mut chp = Chp {
+            bold: true,
+            underline: true,
+            highlight: Some(7),
+            vert_align: Some(VertAlign::Super),
+            ..Chp::default()
+        };
+
+        patch.apply(&mut chp);
+
+        assert!(!chp.bold);
+        assert!(!chp.underline);
+        assert_eq!(chp.highlight, Some(0));
+        assert_eq!(chp.vert_align, Some(VertAlign::Baseline));
+    }
+
+    #[test]
+    fn pcd_prm1_accepts_only_defined_underline_values() {
+        for value in [
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x06, 0x07, 0x09, 0x0A, 0x0B, 0x14, 0x17, 0x19, 0x1A,
+            0x1B, 0x27, 0x2B, 0x37,
+        ] {
+            assert!(
+                compile_pcd_prm1_patch(&[0x3E, 0x2A, value]).is_some(),
+                "valid Kul 0x{value:02X} was rejected"
+            );
+        }
+        for value in [0x05, 0x08, 0x0C, 0x13, 0x38, u8::MAX] {
+            assert!(
+                compile_pcd_prm1_patch(&[0x3E, 0x2A, value]).is_none(),
+                "undefined Kul 0x{value:02X} was accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn pcd_prm1_skips_complete_mixed_property_operands() {
+        let patch = compile_pcd_prm1_patch(&[
+            0x05, 0x24, 1, // paragraph keep-with-next
+            0x15, 0xC6, 2, 0, 0, // short PChgTabs with two-byte remainder
+            0x08, 0xD6, 4, 0, 0, 0, 0, // zero-column TDefTable
+            0x15, 0xC6, 0xFF, // extended PChgTabs
+            1, 0, 0, 0, 0, // one delete/close record
+            1, 0, 0, 0, // one add record
+            0x35, 0x08, 1, // bold on
+            0x36, 0x08, 1, // italic on
+        ])
+        .unwrap();
+        let mut chp = Chp::default();
+        patch.apply(&mut chp);
+        assert!(chp.bold && chp.italic);
+    }
+
+    #[test]
+    fn pcd_prm1_rejects_malformed_or_style_dependent_groups_atomically() {
+        let groups: &[&[u8]] = &[
+            &[0x35, 0x08],                            // truncated toggle
+            &[0x35, 0x08, 2],                         // invalid toggle
+            &[0x35, 0x08, 0x80],                      // style-relative toggle
+            &[0x35, 0x08, 0x81],                      // inverse-style toggle
+            &[0x38, 0x08, 0x80, 0x35, 0x08, 1],       // unmodeled style-relative outline
+            &[0x0C, 0x2A, 17],                        // invalid highlight Ico
+            &[0x48, 0x2A, 3],                         // invalid vertical alignment
+            &[0x32, 0x2A, 0],                         // sprmCDefault
+            &[0x33, 0x2A, 0],                         // sprmCPlain
+            &[0x30, 0x4A, 0x0A, 0x00],                // sprmCIstd
+            &[0x31, 0xCA, 0],                         // sprmCIstdPermute
+            &[0x47, 0xCA, 0],                         // sprmCMajority
+            &[0x15, 0xC6, 0],                         // invalid short PChgTabs cb
+            &[0x15, 0xC6, 1, 0],                      // invalid short PChgTabs cb
+            &[0x15, 0xC6, 2, 1, 0],                   // impossible PChgTabs counts
+            &[0x15, 0xC6, 3, 0, 0, 0],                // mismatched PChgTabs cb
+            &[0x15, 0xC6, 0xFF, 65],                  // excessive extended tab count
+            &[0x08, 0xD6, 0x03, 0x00, 0, 0],          // undersized TDefTable
+            &[0x08, 0xD6, 0x04, 0x00, 64, 0, 0],      // excessive TDefTable columns
+            &[0x08, 0xD6, 0x05, 0x00, 0, 0, 0, 0],    // partial TC80
+            &[0x08, 0xD6, 0x06, 0x00, 1, 5, 0, 4, 0], // descending centers
+            &[0x08, 0xD6, 0x03, 0x00, 0x00],          // truncated TDefTable
+        ];
+        for grpprl in groups {
+            assert!(
+                compile_pcd_prm1_patch(grpprl).is_none(),
+                "malformed/style-dependent grpprl was partially compiled: {grpprl:02X?}"
+            );
+        }
+    }
+
+    #[test]
+    fn pcd_prm_dispatch_preserves_prm0_and_missing_prm1_behavior() {
+        let patches = compile_pcd_prm1_patches(&[vec![0x35, 0x08, 1], vec![0x35, 0x08, 0x80]]);
+
+        let mut complex = Chp::default();
+        complex.apply_pcd_prm(1, &patches);
+        assert!(complex.bold);
+
+        let original = Chp {
+            bold: true,
+            ..Chp::default()
+        };
+        for raw in [3, 5] {
+            let mut chp = original;
+            chp.apply_pcd_prm(raw, &patches);
+            assert_eq!(chp, original);
+        }
+
+        let mut compact = Chp::default();
+        compact.apply_pcd_prm(prm0(ISPRM_C_F_ITALIC, 1), &patches);
+        assert!(compact.italic);
     }
 
     #[test]
