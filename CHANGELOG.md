@@ -109,17 +109,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   exceptions, floating or nested-grid placement, negative outdents, table
   `both` justification, and legacy `.doc` outer table geometry remain outside
   this preview-grade bridge.
-- PDF table grids now honor uniform model-backed border colors and positive
-  eighth-point widths. Line widths are capped at the ECMA-376 maximum of 96
-  eighths (12 points), then conservatively clamped table-wide to half the
-  smallest laid-out cell dimension. Centered rectangles share one visible-width
-  strip across unequal neighboring cells and rows and extend through corner
-  intersections. Absent or hostile zero direct-model widths retain the existing
-  0.4-point fallback; repeated headers and split-row fragments retain the same
-  paint, while `LayoutPages` remains unchanged. Per-side overrides,
-  non-solid/none styles, cell borders, theme and table-style inheritance,
-  spacing/conflict resolution, merged-edge suppression, nested-grid borders,
-  and legacy `.doc` border recovery remain unsupported.
+- PDF table grids now honor six-way model-backed solid border colors and
+  positive eighth-point widths. Physical top, left, bottom, right,
+  inside-horizontal, and inside-vertical channels resolve side-specific values
+  before uniform and black/0.4-point fallbacks. Line widths are capped at the
+  ECMA-376 maximum of 96 eighths (12 points), then conservatively clamped
+  table-wide to half the smallest laid-out cell dimension. Centered rectangles
+  share one visible-width strip across unequal neighboring cells and rows,
+  physical sides survive visual RTL placement, modeled row/column spans
+  suppress covered inside edges, and split row fragments omit artificial
+  horizontal seams. Repeated headers retain paint and edge identity while
+  `LayoutPages` remains unchanged. Non-solid/none styles, cell borders, theme
+  and table-style inheritance, cell spacing and border-conflict resolution,
+  ragged-row repair, nested-grid borders, and legacy `.doc` border recovery
+  remain unsupported.
 - Opened legacy `.doc` paragraphs now preserve strict modern logical
   `sprmPDxaLeft`, `sprmPDxaRight`, and `sprmPDxaLeft1` signed-twip indents from
   direct PAPX and paragraph styles. Sparse style values resolve through the

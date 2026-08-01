@@ -277,8 +277,8 @@ and line-breaks (Korean/CJK [UAX #14] line-breaking + script font fallback),
 `krilla` emits the PDF with subsetted embedded fonts and **selectable text**. Rich
 runs (color/size/font, highlight, decorations, super/subscript, caps/small-caps),
 paragraph shading, line spacing, first/hanging indents, lists with real autonumber
-labels, bordered tables with uniform model-backed border colors and bounded
-eighth-point widths, shaded vertically-aligned cells, authored column widths,
+labels, bordered tables with six-way model-backed solid colors and bounded
+per-side eighth-point widths, shaded vertically-aligned cells, authored column widths,
 bounded preferred-percentage outer widths, logical leading/center/trailing
 placement, and non-negative leading indentation, top-level and run-attached body
 images with model-backed whole-degree clockwise rotation, and **clickable
@@ -396,13 +396,16 @@ these bounded bridges.
 > space. Absolute/auto table widths, `tblGrid` and cell-width conflict resolution,
 > a Word-exact fixed/autofit algorithm split, table-style and `tblPrEx` placement,
 > floating or nested-grid placement, negative outdents, and table `both`
-> justification retain deterministic fallbacks. PDF table-border paint uses only
-> the model's uniform color and width. Width is capped at 12 points, then
-> conservatively bounded across the table by its smallest laid-out cell;
-> per-side overrides, non-solid/none styles, cell borders, theme/style
-> inheritance, spacing/conflict resolution, merged-edge suppression,
-> nested-grid borders, and legacy `.doc` border recovery remain outside this
-> bounded renderer slice.
+> justification retain deterministic fallbacks. PDF table-border paint resolves
+> physical top, left, bottom, right, inside-horizontal, and inside-vertical
+> colors and widths from side-specific model values before uniform and
+> black/0.4-point fallbacks. Widths are capped at 12 points, then conservatively
+> bounded across the table by its smallest laid-out cell. Physical sides remain
+> attached after visual RTL placement, modeled row/column spans suppress covered
+> inside edges, and split row fragments omit artificial horizontal seams.
+> Non-solid/none styles, cell borders, theme/style inheritance, cell spacing and
+> border-conflict resolution, ragged-row repair, nested-grid borders, and legacy
+> `.doc` border recovery remain outside this bounded renderer slice.
 > PDF image rotation normalizes direct-model angles modulo 360 and rotates the
 > decoded raster around its center. Source-authored display extents, crop/flip/
 > effects, floating-anchor offsets, exclusion-zone reflow, table-cell images,
@@ -900,8 +903,8 @@ evidence.
       `ChartBuilder`, `DocModel`, and
       `write_docx`
 - [x] **PDF renderer** - `parley` + `krilla` with rich text/tables/images/lists/
-      hyperlinks, model-backed clockwise image rotation, uniform model-backed
-      table border color/width, paragraph
+      hyperlinks, model-backed clockwise image rotation, six-way solid
+      model-backed table border color/width, paragraph
       page-break-before, header-row repeat, oversized-row split,
       direct and non-conditional table-style DOCX table-row `cantSplit`, direct DOCX
       and recursively nested table-cell keep/widow controls, direct and
