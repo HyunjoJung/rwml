@@ -821,7 +821,7 @@ dependencies = [
 
 [[package]]
 name = "rwml"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "cfb",
  "encoding_rs",
@@ -837,7 +837,7 @@ dependencies = [
 
 [[package]]
 name = "rwml-fonts"
-version = "0.1.1"
+version = "0.1.2"
 
 [[package]]
 name = "ryu"
