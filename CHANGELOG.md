@@ -23,6 +23,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- PDF rendering now honors model-backed whole-degree clockwise rotation for
+  top-level and run-attached body raster images. Direct-model angles normalize
+  modulo 360, images rotate around their centers, and finite axis-aligned
+  rotated bounds drive proportional active-column/page-height fitting and
+  pagination. Quarter turns use exact bounds, arbitrary angles retain
+  deterministic output, and missing or undecodable image behavior is unchanged.
+  Source-authored display extents, crop/flip/effects, floating-anchor offsets,
+  exclusion-zone reflow, table-cell images, and Word-exact inline baseline
+  placement remain unsupported.
 - Opened legacy `.doc` paragraphs now preserve valid unsigned-twip
   `sprmPDyaBefore`/`sprmPDyaAfter` spacing and positive proportional
   `sprmPDyaLine` LSPD values from paragraph styles and direct PAPX. Sparse
