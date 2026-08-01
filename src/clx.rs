@@ -66,6 +66,10 @@ pub(crate) fn parse(clx: &[u8]) -> Result<Vec<Piece>> {
 
 /// PlcPcd = (n+1) CP entries (u32) followed by n PCD entries (8 bytes each).
 fn parse_plcpcd(plc: &[u8]) -> Result<Vec<Piece>> {
+    parse_plcpcd_with_limit(plc, MAX_PIECES)
+}
+
+fn parse_plcpcd_with_limit(plc: &[u8], max_pieces: usize) -> Result<Vec<Piece>> {
     if plc.len() < 4 || (plc.len() - 4) % 12 != 0 {
         return Err(Error::PieceTable(format!(
             "bad PlcPcd length {}",
@@ -76,15 +80,18 @@ fn parse_plcpcd(plc: &[u8]) -> Result<Vec<Piece>> {
     // overlap (all point at the same WordDocument bytes), so an unbounded count is one half
     // of an N×W decode-amplification DoS (the other half is bounded in `text`/`assemble`).
     // Mirrors the FKP/FFN/style caps elsewhere; far above any real document's run count.
-    let n = ((plc.len() - 4) / 12).min(MAX_PIECES);
-    let mut pieces = Vec::with_capacity(n);
-    for i in 0..n {
+    let declared_n = (plc.len() - 4) / 12;
+    let processed_n = declared_n.min(max_pieces);
+    // Capping materialization must not move the descriptor array within the PLC.
+    let pcd_base = (declared_n + 1) * 4;
+    let mut pieces = Vec::with_capacity(processed_n);
+    for i in 0..processed_n {
         let cp0 = u32le(plc, i * 4).unwrap_or(0) as i64;
         let cp1 = u32le(plc, (i + 1) * 4).unwrap_or(0) as i64;
         let cch = (cp1 - cp0).max(0) as usize;
 
         // PCD: [0..2] flags, [2..6] FcCompressed, [6..8] prm.
-        let pcd_off = (n + 1) * 4 + i * 8;
+        let pcd_off = pcd_base + i * 8;
         let fc_compressed =
             u32le(plc, pcd_off + 2).ok_or_else(|| Error::PieceTable("truncated PCD".into()))?;
         let compressed = (fc_compressed & 0x4000_0000) != 0;
@@ -129,6 +136,38 @@ mod tests {
                 compressed: false
             }]
         );
+    }
+
+    #[test]
+    fn capped_piece_prefix_uses_declared_pcd_array_offset() {
+        let mut plc = Vec::new();
+        for cp in [0u32, 2, 5, 9] {
+            plc.extend_from_slice(&cp.to_le_bytes());
+        }
+        for fc in [0x100u32, 0x200, 0x300] {
+            plc.extend_from_slice(&0u16.to_le_bytes());
+            plc.extend_from_slice(&fc.to_le_bytes());
+            plc.extend_from_slice(&0u16.to_le_bytes());
+        }
+
+        assert_eq!(
+            parse_plcpcd_with_limit(&plc, 1).unwrap(),
+            vec![Piece {
+                cch: 2,
+                fc: 0x100,
+                compressed: false,
+            }]
+        );
+    }
+
+    #[test]
+    fn rejects_malformed_or_truncated_plcpcd() {
+        assert!(parse_plcpcd(&[0; 5]).is_err());
+
+        let mut clx = vec![0x02];
+        clx.extend_from_slice(&16u32.to_le_bytes());
+        clx.extend_from_slice(&[0; 4]);
+        assert!(parse(&clx).is_err());
     }
 
     #[test]
