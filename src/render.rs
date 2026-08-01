@@ -40,7 +40,7 @@ use krilla::text::{Font, GlyphId, KrillaGlyph};
 use krilla::{Data, Document as PdfDoc};
 use parley::layout::{Alignment, IndentOptions};
 use parley::style::{FontFamily, FontFamilyName, FontStyle, FontWeight, StyleProperty};
-use parley::{FontContext, LayoutContext};
+use parley::{FontContext, Layout, LayoutContext};
 
 use crate::model::{
     Align, Block, Cell, CellMargins, CharProps, Chart, ChartKind, ChartShape, Color, DocModel,
@@ -1965,13 +1965,51 @@ fn shape_with_options(
             },
         );
     }
-    layout.break_all_lines(Some(width.max(1.0)));
-    layout.align(align, Default::default());
     let adjust_default_tabs = !layout.is_rtl()
         && matches!(align, Alignment::Left | Alignment::Start)
         && text.contains('\t');
 
     let text_rc: Rc<str> = Rc::from(text);
+    let break_width = width.max(1.0);
+    // Tab advances resolve only after breaking, so a tab that pushes content
+    // past the paragraph box needs its line re-broken with room reserved for
+    // the widening. Reservations only ever tighten, so this settles.
+    let mut line_caps: Vec<f32> = Vec::new();
+    let mut out;
+    let mut pass = 0usize;
+    loop {
+        if line_caps.is_empty() {
+            layout.break_all_lines(Some(break_width));
+        } else {
+            break_lines_with_caps(&mut layout, break_width, &line_caps);
+        }
+        layout.align(align, Default::default());
+        out = shape_extract_lines(&layout, text, &text_rc, ranges, links, dynamic_ranges, cx);
+        if !adjust_default_tabs {
+            break;
+        }
+        let reservations =
+            apply_tab_stops(text, &mut out, options.tab_stops, width, options.tab_origin);
+        pass += 1;
+        if pass > TAB_REFLOW_PASSES
+            || !tighten_line_caps(&mut line_caps, &reservations, break_width)
+        {
+            break;
+        }
+    }
+    out
+}
+
+/// Build the drawable lines for an already-broken layout.
+fn shape_extract_lines(
+    layout: &Layout<rgb::Color>,
+    text: &str,
+    text_rc: &Rc<str>,
+    ranges: &[(usize, usize, CharProps)],
+    links: &[(usize, usize, Rc<str>)],
+    dynamic_ranges: &[(usize, usize, DynamicTextRun)],
+    cx: &mut TextCx<'_>,
+) -> Vec<LineLayout> {
     let mut out = Vec::new();
     for line in layout.lines() {
         let m = line.metrics();
@@ -2123,10 +2161,57 @@ fn shape_with_options(
             runs,
         });
     }
-    if adjust_default_tabs {
-        apply_tab_stops(text, &mut out, options.tab_stops, width, options.tab_origin);
-    }
     out
+}
+
+/// How far a line's tab advances widened it, and how far past the paragraph
+/// box the line ended up as a result.
+#[derive(Clone, Copy, Default)]
+struct TabReservation {
+    shift: f32,
+    overflow: f32,
+}
+
+/// Re-breaking passes allowed while reserving room for tab advances. Caps only
+/// tighten, so a small bound keeps the result deterministic.
+const TAB_REFLOW_PASSES: usize = 3;
+
+/// Tighten the per-line breaking caps for lines whose tab advances pushed
+/// content past the box. Returns whether any cap actually tightened.
+fn tighten_line_caps(caps: &mut Vec<f32>, reservations: &[TabReservation], width: f32) -> bool {
+    let mut changed = false;
+    for (index, reservation) in reservations.iter().enumerate() {
+        if reservation.overflow <= 0.5 || !reservation.shift.is_finite() || reservation.shift <= 0.0
+        {
+            continue;
+        }
+        let want = (width - reservation.shift).max(1.0);
+        if caps.len() <= index {
+            caps.resize(index + 1, width);
+        }
+        if want < caps[index] - 0.001 {
+            caps[index] = want;
+            changed = true;
+        }
+    }
+    changed
+}
+
+/// Break a layout with a per-line maximum advance, so lines that must reserve
+/// room for tab advances fit less content.
+fn break_lines_with_caps(layout: &mut Layout<rgb::Color>, width: f32, caps: &[f32]) {
+    let mut breaker = layout.break_lines();
+    breaker.state_mut().set_layout_max_advance(width);
+    let mut index = 0usize;
+    loop {
+        let cap = caps.get(index).copied().unwrap_or(width).clamp(1.0, width);
+        breaker.state_mut().set_line_max_advance(cap);
+        if breaker.break_next().is_none() {
+            break;
+        }
+        index += 1;
+    }
+    breaker.finish();
 }
 
 #[derive(Clone, Copy, Default)]
@@ -2239,9 +2324,11 @@ fn apply_tab_stops(
     tab_stops: &[TabStop],
     width: f32,
     origin: f32,
-) {
+) -> Vec<TabReservation> {
+    let mut reservations = Vec::with_capacity(lines.len());
     for line in lines {
         let mut accumulated_shift = 0.0;
+        let mut line_end: f32 = 0.0;
         for run_index in 0..line.runs.len() {
             line.runs[run_index].x += accumulated_shift;
             let mut cursor = line.runs[run_index].x;
@@ -2264,8 +2351,14 @@ fn apply_tab_stops(
                     cursor += original_advance;
                 }
             }
+            line_end = line_end.max(cursor);
         }
+        reservations.push(TabReservation {
+            shift: accumulated_shift,
+            overflow: (line_end - width).max(0.0),
+        });
     }
+    reservations
 }
 
 /// Per-document ordered-list counters (levels 0..=8). Bullets and reader-captured
@@ -7662,6 +7755,65 @@ mod tests {
         );
     }
 
+    /// Pins the parley contract the tab-aware breaking path relies on: driving
+    /// `break_lines` incrementally lets the caller narrow an individual line's
+    /// max advance, which moves trailing content onto the next line without
+    /// touching the shaped layout.
+    #[test]
+    fn per_line_max_advance_moves_trailing_content() {
+        use parley::style::StyleProperty;
+
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+
+        let text = "가나 다라";
+        let width = 120.0_f32;
+
+        let mut build = || {
+            let mut builder = layout_cx.ranged_builder(&mut font_cx, text, 1.0, false);
+            builder.push_default(StyleProperty::FontFamily(super::font_stack()));
+            builder.push_default(StyleProperty::FontSize(16.0));
+            builder.build(text)
+        };
+
+        // Baseline: the whole paragraph fits on one line at full width.
+        let mut layout = build();
+        layout.break_all_lines(Some(width));
+        assert_eq!(layout.len(), 1, "baseline must fit on one line");
+        let full_advance = layout.width();
+        assert!(full_advance > 1.0, "the test font must shape glyphs");
+
+        // Narrowing only the first line moves the trailing word down.
+        let mut layout = build();
+        let narrow = full_advance * 0.6;
+        {
+            let mut breaker = layout.break_lines();
+            breaker.state_mut().set_layout_max_advance(width);
+            let mut first = true;
+            loop {
+                breaker
+                    .state_mut()
+                    .set_line_max_advance(if first { narrow } else { width });
+                if breaker.break_next().is_none() {
+                    break;
+                }
+                first = false;
+            }
+            breaker.finish();
+        }
+        assert_eq!(
+            layout.len(),
+            2,
+            "a narrowed first line must push trailing content down"
+        );
+        let first_line_advance = layout.lines().next().unwrap().metrics().advance;
+        assert!(
+            first_line_advance <= narrow + 0.001,
+            "first line must respect the narrowed advance (got {first_line_advance}, max {narrow})"
+        );
+    }
+
     /// Pins the parley contract the tab-aware breaking path depends on: a
     /// caller-owned in-flow inline box contributes its width to line breaking,
     /// and that width can be changed on an already-shaped layout and re-broken
@@ -8370,6 +8522,48 @@ mod tests {
             (b_x - 36.0).abs() <= 1.0,
             "b_x={b_x}, glyphs={glyph_debug:?}"
         );
+    }
+
+    /// The end of the last glyph on a line, in paragraph-box coordinates.
+    fn line_end_x(line: &LineLayout) -> f32 {
+        let mut end: f32 = 0.0;
+        for run in &line.runs {
+            let mut x = run.x;
+            for glyph in &run.glyphs {
+                x += glyph.x_advance * run.size;
+            }
+            end = end.max(x);
+        }
+        end
+    }
+
+    #[test]
+    fn tab_advances_move_unfitting_content_to_the_next_line() {
+        // The content box is 180pt wide at page margin 20pt, so the default
+        // 36pt grid stops land at 36/72/108/144pt absolute. Four tabs leave the
+        // cursor 124pt into the box, which no longer leaves room for the word.
+        let text = "\t\t\t\t가나다라";
+        let lines = paragraph_lines_with_marker_and_tabs(
+            ParaProps::default(),
+            vec![Run {
+                text: text.to_string(),
+                ..Run::default()
+            }],
+            None,
+            &[],
+        );
+        let ends: Vec<f32> = lines.iter().map(line_end_x).collect();
+        assert_eq!(
+            lines.len(),
+            2,
+            "tab-driven overflow must wrap instead of running past the box (ends={ends:?})"
+        );
+        for (index, end) in ends.iter().enumerate() {
+            assert!(
+                *end <= 180.0 + 0.5,
+                "line {index} must stay inside the 180pt box (ends={ends:?})"
+            );
+        }
     }
 
     #[test]
