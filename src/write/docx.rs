@@ -511,6 +511,7 @@ const S_NS: &str = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 /// Hard cap on table columns / a cell's column or row span, so a hostile model
 /// (`col_span = u16::MAX`) cannot amplify into millions of `<w:gridCol>`/cells.
 const MAX_TABLE_COLS: usize = 1024;
+const TABLE_GRID_TWIPS: u32 = 9000;
 
 fn page_number_type_xml(setup: &SectionSetup) -> String {
     if setup.page_number_start.is_none() && setup.page_number_format.is_none() {
@@ -1361,14 +1362,53 @@ impl Ctx {
             out.push_str(r#"<w:tblLayout w:type="fixed"/>"#);
         }
         out.push_str("</w:tblPr><w:tblGrid>");
-        let colw = (9000 / ncols).max(1);
-        for _ in 0..ncols {
-            out.push_str(&format!(r#"<w:gridCol w:w="{colw}"/>"#));
+        if let Some(widths) = authored_table_grid_widths(&t.col_widths_pct, ncols) {
+            for width in widths {
+                out.push_str(&format!(r#"<w:gridCol w:w="{width}"/>"#));
+            }
+        } else {
+            let colw = (TABLE_GRID_TWIPS / ncols as u32).max(1);
+            for _ in 0..ncols {
+                out.push_str(&format!(r#"<w:gridCol w:w="{colw}"/>"#));
+            }
         }
         out.push_str("</w:tblGrid>");
         out.push_str(&rows_xml);
         out.push_str("</w:tbl>");
     }
+}
+
+fn authored_table_grid_widths(widths: &[f32], ncols: usize) -> Option<Vec<u32>> {
+    if widths.len() != ncols
+        || widths
+            .iter()
+            .any(|width| !width.is_finite() || *width <= 0.0)
+    {
+        return None;
+    }
+    let sum = widths.iter().map(|width| f64::from(*width)).sum::<f64>();
+    if !sum.is_finite() || sum <= 0.0 || ncols as u32 >= TABLE_GRID_TWIPS {
+        return None;
+    }
+
+    let mut out = Vec::with_capacity(ncols);
+    let mut cumulative = 0.0_f64;
+    let mut allocated = 0u32;
+    for (index, width) in widths.iter().enumerate() {
+        cumulative += f64::from(*width);
+        let remaining = (ncols - index - 1) as u32;
+        let minimum_target = allocated + 1;
+        let maximum_target = TABLE_GRID_TWIPS - remaining;
+        let target = if index + 1 == ncols {
+            TABLE_GRID_TWIPS
+        } else {
+            (cumulative / sum * f64::from(TABLE_GRID_TWIPS)).round() as u32
+        }
+        .clamp(minimum_target, maximum_target);
+        out.push(target - allocated);
+        allocated = target;
+    }
+    Some(out)
 }
 
 /// Write `<w:rPr>` toggles in schema order (b, i, strike, vanish, u). Free

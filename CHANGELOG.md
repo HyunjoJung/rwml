@@ -99,6 +99,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   top/bottom semantics, mixed section-local render geometry, section-relative
   odd/even running-surface selection, and Word-exact filler surfaces remain
   unsupported.
+- Opened `.docx` tables now preserve a complete positive direct `w:tblGrid` as
+  normalized `Table::col_widths_pct` when its column count matches the
+  reconstructed cell/span grid. Revision-history grids, omitted/zero/invalid
+  widths, excessive columns, and count mismatches retain the existing
+  content-sized fallback without panicking. Fresh `.docx` output now serializes
+  valid matching model proportions as deterministic positive `w:gridCol` twip
+  widths and retains the equal-grid fallback for hostile or incomplete model
+  values. The existing PDF path therefore honors opened-DOCX grid proportions,
+  including visual RTL mirroring and column spans. Word-exact fixed/autofit
+  layout, preferred-cell/table/grid conflict resolution, `gridBefore`/
+  `gridAfter`, style and row-exception widths, and absolute page-aware width
+  synthesis remain unsupported.
 - PDF rendering now applies finite positive preferred-percentage table widths
   within the active page or section column, maps logical leading/center/trailing
   table placement through visual RTL, bounds non-negative leading indentation

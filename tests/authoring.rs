@@ -3528,6 +3528,9 @@ fn table_builder_adds_rich_table_cells() {
     let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
     assert!(
         document_xml.contains("<w:tblHeader/>")
+            && document_xml.contains(
+                r#"<w:tblGrid><w:gridCol w:w="2250"/><w:gridCol w:w="4500"/><w:gridCol w:w="2250"/></w:tblGrid>"#
+            )
             && document_xml.contains(r#"<w:gridSpan w:val="2"/>"#)
             && document_xml.contains(r#"<w:vMerge w:val="restart"/>"#)
             && document_xml.contains(r#"<w:vAlign w:val="center"/>"#)
@@ -3537,12 +3540,14 @@ fn table_builder_adds_rich_table_cells() {
             && document_xml.contains("<w:b/>"),
         "rich table XML missing: {document_xml}"
     );
+    assert_eq!(bytes, rwml::write_docx(&model));
 
     let reopened = Document::open(&bytes).expect("rich builder table .docx reopens");
     let Block::Table(reopened_table) = &reopened.model().blocks[0] else {
         panic!("expected reopened rich table");
     };
     assert_eq!(reopened_table.header_rows, 1);
+    assert_eq!(reopened_table.col_widths_pct, vec![0.25, 0.50, 0.25]);
     assert_eq!(reopened_table.rows[0].cells[0].shading, Some(navy));
     assert_eq!(reopened_table.rows[0].cells[1].col_span, 2);
     assert_eq!(reopened_table.rows[1].cells[0].row_span, 2);
@@ -3620,6 +3625,79 @@ fn table_builder_adds_fixed_layout() {
         panic!("expected reopened table");
     };
     assert!(reopened_table.fixed_layout);
+}
+
+#[test]
+fn invalid_authored_table_grid_widths_use_equal_writer_fallback() {
+    for widths in [
+        vec![0.25],
+        vec![0.0, 1.0],
+        vec![f32::INFINITY, 1.0],
+        vec![f32::NAN, 1.0],
+    ] {
+        let model = DocModel {
+            blocks: vec![Block::Table(Table {
+                rows: vec![Row {
+                    cells: vec![
+                        CellBuilder::text("A").build(),
+                        CellBuilder::text("B").build(),
+                    ],
+                }],
+                col_widths_pct: widths,
+                ..Table::default()
+            })],
+            ..DocModel::default()
+        };
+
+        let bytes = rwml::write_docx(&model);
+        let parts = unzip_parts(&bytes);
+        let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+        assert!(
+            document_xml.contains(
+                r#"<w:tblGrid><w:gridCol w:w="4500"/><w:gridCol w:w="4500"/></w:tblGrid>"#
+            ),
+            "invalid widths must retain equal fallback: {document_xml}"
+        );
+        assert_eq!(bytes, rwml::write_docx(&model));
+    }
+}
+
+#[test]
+fn extreme_valid_table_grid_widths_serialize_as_positive_bounded_twips() {
+    let model = DocModel {
+        blocks: vec![Block::Table(Table {
+            rows: vec![Row {
+                cells: vec![
+                    CellBuilder::text("A").build(),
+                    CellBuilder::text("B").build(),
+                ],
+            }],
+            col_widths_pct: vec![f32::MIN_POSITIVE, f32::MAX],
+            ..Table::default()
+        })],
+        ..DocModel::default()
+    };
+
+    let bytes = rwml::write_docx(&model);
+    let parts = unzip_parts(&bytes);
+    let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    assert!(
+        document_xml
+            .contains(r#"<w:tblGrid><w:gridCol w:w="1"/><w:gridCol w:w="8999"/></w:tblGrid>"#),
+        "valid extreme proportions must remain positive and bounded: {document_xml}"
+    );
+    let reopened = Document::open(&bytes).expect("extreme grid .docx reopens");
+    let Block::Table(table) = &reopened.model().blocks[0] else {
+        panic!("expected reopened table");
+    };
+    assert_eq!(table.col_widths_pct.len(), 2);
+    assert!(table.col_widths_pct[0] > 0.0);
+    assert!(table.col_widths_pct[1] > table.col_widths_pct[0]);
+    assert_eq!(
+        bytes,
+        rwml::write_docx(&reopened.model()),
+        "normalized grid proportions must remain stable after reopen"
+    );
 }
 
 #[test]
