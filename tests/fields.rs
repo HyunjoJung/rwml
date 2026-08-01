@@ -3762,6 +3762,23 @@ fn complex_cached_result_inline_marker_docx() -> Vec<u8> {
     ])
 }
 
+fn complex_cached_result_paragraph_tab_stop_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> CUSTOM paragraphTab </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r></w:p><w:p><w:pPr><w:tabs><w:tab w:val="right" w:pos="1440"/></w:tabs></w:pPr><w:r><w:t>Visible</w:t><w:tab/><w:t>result</w:t><w:br/><w:t>tail</w:t></w:r></w:p><w:p><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn cached_field_result_symbol_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -18721,6 +18738,31 @@ fn docx_complex_field_result_preserves_cached_inline_markers() {
         "{:?}",
         doc.main_text()
     );
+}
+
+#[test]
+fn docx_complex_field_result_ignores_paragraph_tab_stop_definitions() {
+    let doc = Document::open(&complex_cached_result_paragraph_tab_stop_docx())
+        .expect("paragraph-spanning field fixture opens");
+    let expected = "Visible\tresult\ntail";
+    let fields = doc.fields();
+
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].kind, FieldKind::Unknown("CUSTOM".to_string()));
+    assert_eq!(fields[0].instruction, "CUSTOM paragraphTab");
+    assert_eq!(fields[0].result, expected);
+    assert_eq!(fields[0].computed_result, None);
+    assert!(
+        doc.main_text().contains(expected),
+        "visible text should retain only the run-content tab: {:?}",
+        doc.main_text()
+    );
+
+    let editable_fields = doc
+        .fields_in_part("word/document.xml")
+        .expect("editable body field inventory");
+    assert_eq!(editable_fields.len(), 1);
+    assert_eq!(editable_fields[0].result, expected);
 }
 
 #[test]

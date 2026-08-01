@@ -30,6 +30,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- DOCX cached complex-field inventory now collects visible text and supported
+  inline markers only while the paragraph-spanning result scan is inside run
+  content. Custom paragraph tab-stop definitions under `w:pPr/w:tabs` therefore
+  no longer appear as literal leading tabs in `Field::result` or
+  `fields_in_part`, while genuine run tabs, breaks, hyphens, symbols, nested
+  fields, accepted-current revisions, selected `mc:AlternateContent` branches,
+  field order, and computed results retain their existing behavior across the
+  already-supported body, real-note, and modeled header/footer stories. This
+  does not compute tab positions, add namespace processing, or change
+  field-family source-text reconstruction.
 - DOCX `fill_content_control_by_tag`, `fill_content_controls_by_tag`, and
   `fill_template_fields` now encode input tabs/newlines as WordprocessingML
   `w:tab`/text-wrapping `w:br` run content in every already-supported body,
