@@ -4,7 +4,8 @@
 //! `Prc` blocks (`0x01`) followed by one `Pcdt` (`0x02`) whose body is a
 //! `PlcPcd` — the piece table. The piece table maps character positions to byte
 //! offsets in the `WordDocument` stream and records, per piece, whether the
-//! text is 1-byte ANSI (`fCompressed`) or 2-byte UTF-16LE.
+//! text is 1-byte ANSI (`fCompressed`) or 2-byte UTF-16LE, plus the PCD's
+//! additional formatting modifier.
 //!
 //! Reference: [MS-DOC] 2.8.35 (Pcdt), 2.8.34 (Prc), 2.9.177 (PlcPcd), 2.9.176 (Pcd).
 
@@ -25,6 +26,8 @@ pub(crate) struct Piece {
     pub fc: usize,
     /// `true` = 1-byte ANSI (cp1252), `false` = 2-byte UTF-16LE.
     pub compressed: bool,
+    /// Raw PCD `Prm`; interpretation depends on its low `fComplex` bit.
+    pub prm: u16,
 }
 
 /// Parse the CLX, returning the ordered piece list.
@@ -97,10 +100,13 @@ fn parse_plcpcd_with_limit(plc: &[u8], max_pieces: usize) -> Result<Vec<Piece>> 
         let compressed = (fc_compressed & 0x4000_0000) != 0;
         let fc30 = (fc_compressed & 0x3FFF_FFFF) as usize;
         let fc = if compressed { fc30 / 2 } else { fc30 };
+        let prm =
+            u16le(plc, pcd_off + 6).ok_or_else(|| Error::PieceTable("truncated PCD".into()))?;
         pieces.push(Piece {
             cch,
             fc,
             compressed,
+            prm,
         });
     }
     Ok(pieces)
@@ -118,7 +124,7 @@ mod tests {
         plc.extend_from_slice(&5u32.to_le_bytes());
         plc.extend_from_slice(&0u16.to_le_bytes()); // PCD flags
         plc.extend_from_slice(&0x100u32.to_le_bytes()); // FcCompressed (uncompressed)
-        plc.extend_from_slice(&0u16.to_le_bytes()); // prm
+        plc.extend_from_slice(&0x01AAu16.to_le_bytes()); // Prm0: sprmCFBold on
         let mut clx = vec![0x02u8];
         clx.extend_from_slice(&(plc.len() as u32).to_le_bytes());
         clx.extend_from_slice(&plc);
@@ -133,7 +139,8 @@ mod tests {
             vec![Piece {
                 cch: 5,
                 fc: 0x100,
-                compressed: false
+                compressed: false,
+                prm: 0x01AA,
             }]
         );
     }
@@ -144,10 +151,10 @@ mod tests {
         for cp in [0u32, 2, 5, 9] {
             plc.extend_from_slice(&cp.to_le_bytes());
         }
-        for fc in [0x100u32, 0x200, 0x300] {
+        for (fc, prm) in [(0x100u32, 0x01AAu16), (0x200, 0x01AC), (0x300, 0)] {
             plc.extend_from_slice(&0u16.to_le_bytes());
             plc.extend_from_slice(&fc.to_le_bytes());
-            plc.extend_from_slice(&0u16.to_le_bytes());
+            plc.extend_from_slice(&prm.to_le_bytes());
         }
 
         assert_eq!(
@@ -156,6 +163,7 @@ mod tests {
                 cch: 2,
                 fc: 0x100,
                 compressed: false,
+                prm: 0x01AA,
             }]
         );
     }
@@ -163,6 +171,14 @@ mod tests {
     #[test]
     fn rejects_malformed_or_truncated_plcpcd() {
         assert!(parse_plcpcd(&[0; 5]).is_err());
+
+        let mut truncated_pcd = Vec::new();
+        truncated_pcd.extend_from_slice(&0u32.to_le_bytes());
+        truncated_pcd.extend_from_slice(&1u32.to_le_bytes());
+        truncated_pcd.extend_from_slice(&0u16.to_le_bytes());
+        truncated_pcd.extend_from_slice(&0x100u32.to_le_bytes());
+        truncated_pcd.push(0xAA);
+        assert!(parse_plcpcd(&truncated_pcd).is_err());
 
         let mut clx = vec![0x02];
         clx.extend_from_slice(&16u32.to_le_bytes());

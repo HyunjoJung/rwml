@@ -365,8 +365,9 @@ Character-style or language-derived direction, table-style-derived direction,
 indented logical justification, list-level, compatibility-era, character-unit,
 and mirrored legacy indents, line-unit/auto/contextual paragraph spacing,
 Word-exact adjacent-spacing resolution, table/list-style spacing effects, exact
-RTL list-level layout, negative-indent PDF outdenting, piece `Pcd.Prm`, and
-Markdown/HTML visual RTL remain outside these bounded bridges.
+RTL list-level layout, negative-indent PDF outdenting, piece `Pcd.Prm`
+direction/paragraph modifiers, and Markdown/HTML visual RTL remain outside
+these bounded bridges.
 
 > **Scope:** this is a fast, in-process **preview / report** renderer, not a Word
 > layout engine. It is faithful to the model and produces selectable text, but
@@ -383,7 +384,8 @@ Markdown/HTML visual RTL remain outside these bounded bridges.
 > slice. Legacy STSH properties beyond the bounded paragraph-pagination,
 > direction/justification, modern logical-indent, and paragraph-spacing
 > subsets,
-> table/list-style paragraph effects, piece `Pcd.Prm` modifiers, nested legacy
+> table/list-style paragraph effects, piece `Pcd.Prm` modifiers beyond the six
+> literal character toggles described below, nested legacy
 > tables/rows, and controls attached only to discarded blank top-level
 > paragraphs remain unsupported. Legacy absolute table width, autofit,
 > indentation, preferred cell-width modifiers, row-specific outer-edge
@@ -555,9 +557,12 @@ capitalization**), the STSH style sheet + outline levels (headings),
 `sprmTDefTable` (merge-aware tables with bounded relative column proportions),
 `PlcfSed`/SED section boundaries with SEPX page size, orientation, and
 nonnegative per-side margins, list autonumbers, hyperlink field marks, and
-`PICF` inline images. Highlight,
-direct vertical-alignment, and literal caps/small-caps values flow through
-`.docx` conversion and PDF rendering; piece `Pcd.Prm` character modifiers,
+`PICF` inline images. The rich pass also retains each piece's PCD `Prm` and
+applies literal off/on `Prm0` values for bold, italic, strike, small caps, caps,
+and hidden text after CHPX. These six piece modifiers, CHPX highlighting,
+direct vertical alignment, and literal caps/small-caps values flow through
+`.docx` conversion; supported visible properties also reach the existing PDF
+path. Prm1, style-relative and other `Pcd.Prm` character modifiers,
 character-style-derived vertical alignment/capitalization, arbitrary
 `sprmCHpsPos` shifts, and visual highlight/super/subscript/capitalization
 preservation in Markdown/HTML remain outside this path.
@@ -878,7 +883,8 @@ evidence.
 
 - [x] Codepage-aware `.doc` text; encryption / Word 6/95 detection gates
 - [x] Full read model: runs (CHPX incl. font/size/color and CHPX-resident
-      highlighting plus direct super/subscript and literal caps/small-caps),
+      highlighting plus direct super/subscript and literal caps/small-caps,
+      plus six literal piece `Pcd.Prm` character toggles applied after CHPX),
       headings (STSH), tables (`sprmTDefTable` merges and bounded relative
       column proportions), list autonumbers, hyperlinks, inline images
 - [x] Unified `.docx` reader into the same model (98.6% recall vs python-docx)
