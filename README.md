@@ -516,7 +516,9 @@ CHPX-resident `sprmCHighlight` palette highlighting plus direct `sprmCIss`
 super/subscript plus literal direct `sprmCFSmallCaps`/`sprmCFCaps`
 capitalization**), the STSH style sheet + outline levels (headings),
 `sprmTDefTable` (merge-aware tables with bounded relative column proportions),
-list autonumbers, hyperlink field marks, and `PICF` inline images. Highlight,
+`PlcfSed`/SED section boundaries with SEPX page size, orientation, and
+nonnegative per-side margins, list autonumbers, hyperlink field marks, and
+`PICF` inline images. Highlight,
 direct vertical-alignment, and literal caps/small-caps values flow through
 `.docx` conversion and PDF rendering; piece `Pcd.Prm` character modifiers,
 character-style-derived vertical alignment/capitalization, arbitrary
@@ -765,6 +767,14 @@ code points.
   `DocSetup` mirrors the first recovered default, even-page, and first-page
   legacy header/footer variants when story indexes are available, and falls back
   to a default running header for unsplit recovered header/footer text.
+  Valid `PlcfSed` SED records also preserve each section's SEPX page size,
+  orientation, and nonnegative left/right/top/bottom margins through
+  `SectionSetup` plus the final `DocSetup`, including headerless and
+  single-section documents. Malformed local SEPX data keeps that section's
+  deterministic default without discarding valid neighboring sections.
+  Legacy section-break kinds, columns, gutters/facing pages, header/footer
+  distances, page borders/grids, vertical justification, and negative
+  fixed-position top/bottom semantics remain outside this bounded reader path.
   Exact multi-note/endnote reference markers and exact text-box shape anchors
   are not yet fully promoted, so non-body regions still remain in the flat
   block stream;
@@ -963,9 +973,11 @@ evidence.
 - [x] Reader R2-e: bounded legacy `.doc` note anchors from
       `PlcffndRef`/`PlcfendRef`, count-aligned text-box anchors from `PlcSpaMom`,
       annotation author metadata, and per-section `PlcfHdd` header/footer story
-      application through `PlcfSed`. Missing annotation bookmark tables and
-      count-mismatched shape/text-box tables retain source-region fallbacks by
-      design
+      application through `PlcfSed`, plus SED/SEPX-backed page size,
+      orientation, and nonnegative per-side margins for single, headerless, and
+      multi-section documents. Missing annotation bookmark tables,
+      count-mismatched shape/text-box tables, malformed local SEPX data, and
+      unsupported section properties retain bounded fallbacks by design
 - [x] Reader side-table context parity: supported `STYLEREF` fields compute in
       accepted-current insertion/move-to revision text and note-reference anchor
       text with source-order-stable body context. Deletion/move-from text keeps

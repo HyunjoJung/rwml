@@ -5062,6 +5062,7 @@ mod tests {
         stylesheet: Option<&'a [u8]>,
         plcf_hdd_cps: Option<&'a [u32]>,
         plcf_sed_cps: Option<&'a [u32]>,
+        plcf_sed_sepx_grpprls: Option<&'a [&'a [u8]]>,
         plcf_sed_lcb_override: Option<u32>,
         annotation_refs: Option<&'a [(&'a str, u16)]>,
         annotation_owners: Option<&'a [&'a str]>,
@@ -5130,6 +5131,18 @@ mod tests {
         word.extend_from_slice(&utf16);
         let fc2 = word.len();
         word.extend_from_slice(ansi_tail.as_bytes());
+        let sepx_offsets: Vec<i32> = tables
+            .plcf_sed_sepx_grpprls
+            .unwrap_or_default()
+            .iter()
+            .map(|grpprl| {
+                let offset = i32::try_from(word.len()).expect("synthetic SEPX offset fits i32");
+                let cb = i16::try_from(grpprl.len()).expect("synthetic SEPX fits i16");
+                word.extend_from_slice(&cb.to_le_bytes());
+                word.extend_from_slice(grpprl);
+                offset
+            })
+            .collect();
 
         // --- 1Table stream: CLX = Pcdt(0x02) + lcb + PlcPcd(2 pieces) ---
         let cch1 = text_utf16.chars().count() as u32;
@@ -5170,7 +5183,12 @@ mod tests {
         }
 
         if let Some(cps) = tables.plcf_sed_cps {
-            let (offset, lcb) = append_plcf_sed(&mut clx, cps, tables.plcf_sed_lcb_override);
+            let (offset, lcb) = append_plcf_sed(
+                &mut clx,
+                cps,
+                (!sepx_offsets.is_empty()).then_some(sepx_offsets.as_slice()),
+                tables.plcf_sed_lcb_override,
+            );
             word[fclcb + 6 * 8..fclcb + 6 * 8 + 4].copy_from_slice(&offset.to_le_bytes());
             word[fclcb + 6 * 8 + 4..fclcb + 6 * 8 + 8].copy_from_slice(&lcb.to_le_bytes());
         }
@@ -5405,14 +5423,29 @@ mod tests {
         (offset, lcb_override.unwrap_or(actual_lcb))
     }
 
-    fn append_plcf_sed(clx: &mut Vec<u8>, cps: &[u32], lcb_override: Option<u32>) -> (u32, u32) {
+    fn append_plcf_sed(
+        clx: &mut Vec<u8>,
+        cps: &[u32],
+        sepx_offsets: Option<&[i32]>,
+        lcb_override: Option<u32>,
+    ) -> (u32, u32) {
         let offset = clx.len() as u32;
         for cp in cps {
             clx.extend_from_slice(&cp.to_le_bytes());
         }
-        for _ in 0..cps.len().saturating_sub(1) {
+        let section_count = cps.len().saturating_sub(1);
+        if let Some(offsets) = sepx_offsets {
+            assert_eq!(offsets.len(), section_count);
+        }
+        for index in 0..section_count {
             clx.extend_from_slice(&0u16.to_le_bytes());
-            clx.extend_from_slice(&0i32.to_le_bytes());
+            clx.extend_from_slice(
+                &sepx_offsets
+                    .and_then(|offsets| offsets.get(index))
+                    .copied()
+                    .unwrap_or_default()
+                    .to_le_bytes(),
+            );
             clx.extend_from_slice(&0u16.to_le_bytes());
             clx.extend_from_slice(&0i32.to_le_bytes());
         }
@@ -5433,6 +5466,54 @@ mod tests {
             &plcf_hdd,
             &plcf_sed,
             plcf_sed_lcb_override,
+        )
+    }
+
+    fn section_page_grpprl(
+        width_twips: u16,
+        height_twips: u16,
+        left_twips: u16,
+        right_twips: u16,
+        top_twips: i16,
+        bottom_twips: i16,
+        landscape: bool,
+    ) -> Vec<u8> {
+        let mut grpprl = Vec::new();
+        grpprl.extend_from_slice(&0x301Du16.to_le_bytes());
+        grpprl.push(if landscape { 2 } else { 1 });
+        for (sprm, value) in [
+            (0xB01Fu16, width_twips),
+            (0xB020, height_twips),
+            (0xB021, left_twips),
+            (0xB022, right_twips),
+        ] {
+            grpprl.extend_from_slice(&sprm.to_le_bytes());
+            grpprl.extend_from_slice(&value.to_le_bytes());
+        }
+        for (sprm, value) in [(0x9023u16, top_twips), (0x9024, bottom_twips)] {
+            grpprl.extend_from_slice(&sprm.to_le_bytes());
+            grpprl.extend_from_slice(&value.to_le_bytes());
+        }
+        grpprl
+    }
+
+    fn legacy_doc_with_section_page_grpprls(
+        text: &str,
+        section_cps: &[u32],
+        sepx_grpprls: &[&[u8]],
+    ) -> Vec<u8> {
+        synth_doc_with_ccp_and_tables(
+            text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [text.encode_utf16().count() as u32, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                plcf_sed_cps: Some(section_cps),
+                plcf_sed_sepx_grpprls: Some(sepx_grpprls),
+                ..SyntheticDocTables::default()
+            },
         )
     }
 
@@ -6307,6 +6388,238 @@ mod tests {
         assert_eq!(single_paragraph_text(&model.setup.even_footer), "e1");
         assert_eq!(single_paragraph_text(&model.setup.first_header), "F1");
         assert_eq!(single_paragraph_text(&model.setup.first_footer), "f1");
+    }
+
+    #[test]
+    fn legacy_doc_sepx_preserves_section_page_geometry() {
+        let section_cps = [0, 5, 10];
+        let first = section_page_grpprl(12_240, 15_840, 1_440, 1_800, 720, 900, false);
+        let second = section_page_grpprl(15_840, 12_240, 2_160, 1_080, 1_440, 720, true);
+        let sepx_grpprls = [first.as_slice(), second.as_slice()];
+        let bytes = legacy_doc_with_section_page_grpprls("FIRSTFINAL", &section_cps, &sepx_grpprls);
+
+        let doc = Document::open(&bytes).unwrap();
+        let model = doc.model();
+        let first_page = model
+            .blocks
+            .iter()
+            .find_map(|block| match block {
+                Block::SectionBreak(setup) => Some(setup.page),
+                _ => None,
+            })
+            .expect("SEPX section boundary");
+
+        assert_eq!(first_page.width_pt, 612.0);
+        assert_eq!(first_page.height_pt, 792.0);
+        assert_eq!(first_page.margin_left_pt, Some(72.0));
+        assert_eq!(first_page.margin_right_pt, Some(90.0));
+        assert_eq!(first_page.margin_top_pt, Some(36.0));
+        assert_eq!(first_page.margin_bottom_pt, Some(45.0));
+        assert!(!first_page.landscape);
+
+        let final_page = model.setup.page;
+        assert_eq!(final_page.width_pt, 792.0);
+        assert_eq!(final_page.height_pt, 612.0);
+        assert_eq!(final_page.margin_left_pt, Some(108.0));
+        assert_eq!(final_page.margin_right_pt, Some(54.0));
+        assert_eq!(final_page.margin_top_pt, Some(72.0));
+        assert_eq!(final_page.margin_bottom_pt, Some(36.0));
+        assert!(final_page.landscape);
+    }
+
+    #[test]
+    fn legacy_doc_sepx_preserves_single_section_page_geometry() {
+        let section_cps = [0, 4];
+        let only = section_page_grpprl(11_520, 16_560, 1_200, 1_600, 800, 1_000, false);
+        let sepx_grpprls = [only.as_slice()];
+        let bytes = legacy_doc_with_section_page_grpprls("ONLY", &section_cps, &sepx_grpprls);
+
+        let doc = Document::open(&bytes).unwrap();
+        let model = doc.model();
+
+        assert!(model
+            .blocks
+            .iter()
+            .all(|block| !matches!(block, Block::SectionBreak(_))));
+        assert_eq!(model.setup.page.width_pt, 576.0);
+        assert_eq!(model.setup.page.height_pt, 828.0);
+        assert_eq!(model.setup.page.margin_left_pt, Some(60.0));
+        assert_eq!(model.setup.page.margin_right_pt, Some(80.0));
+        assert_eq!(model.setup.page.margin_top_pt, Some(40.0));
+        assert_eq!(model.setup.page.margin_bottom_pt, Some(50.0));
+        assert!(!model.setup.page.landscape);
+    }
+
+    #[test]
+    fn legacy_doc_malformed_sepx_falls_back_per_section() {
+        let section_cps = [0, 5, 10];
+        let mut malformed = section_page_grpprl(12_240, 15_840, 1_440, 1_800, 720, 900, false);
+        malformed.push(0xFF);
+        let valid = section_page_grpprl(15_840, 12_240, 2_160, 1_080, 1_440, 720, true);
+        let sepx_grpprls = [malformed.as_slice(), valid.as_slice()];
+        let bytes = legacy_doc_with_section_page_grpprls("FIRSTFINAL", &section_cps, &sepx_grpprls);
+
+        let doc = Document::open(&bytes).unwrap();
+        let model = doc.model();
+        let first_page = model
+            .blocks
+            .iter()
+            .find_map(|block| match block {
+                Block::SectionBreak(setup) => Some(setup.page),
+                _ => None,
+            })
+            .expect("outer PlcfSed remains valid");
+
+        assert_eq!(first_page.width_pt, 612.0);
+        assert_eq!(first_page.height_pt, 792.0);
+        assert_eq!(first_page.margin_left_pt, None);
+        assert_eq!(first_page.margin_right_pt, None);
+        assert_eq!(first_page.margin_top_pt, None);
+        assert_eq!(first_page.margin_bottom_pt, None);
+        assert!(!first_page.landscape);
+        assert_eq!(model.setup.page.width_pt, 792.0);
+        assert_eq!(model.setup.page.height_pt, 612.0);
+        assert!(model.setup.page.landscape);
+    }
+
+    #[test]
+    fn legacy_doc_sepx_partial_geometry_uses_word_defaults() {
+        let section_cps = [0, 4];
+        let mut partial = Vec::new();
+        partial.extend_from_slice(&0xB021u16.to_le_bytes());
+        partial.extend_from_slice(&1_440u16.to_le_bytes());
+        let sepx_grpprls = [partial.as_slice()];
+        let bytes = legacy_doc_with_section_page_grpprls("ONLY", &section_cps, &sepx_grpprls);
+
+        let doc = Document::open(&bytes).unwrap();
+        let page = doc.model().setup.page;
+
+        assert_eq!(page.width_pt, 612.0);
+        assert_eq!(page.height_pt, 792.0);
+        assert_eq!(page.margin_left_pt, Some(72.0));
+        assert!(!page.landscape);
+    }
+
+    #[test]
+    fn legacy_doc_plcfsed_clamps_final_cp_beyond_main_story() {
+        let section_cps = [0, 5, 12];
+        let first = section_page_grpprl(12_240, 15_840, 1_440, 1_800, 720, 900, false);
+        let second = section_page_grpprl(15_840, 12_240, 2_160, 1_080, 1_440, 720, true);
+        let sepx_grpprls = [first.as_slice(), second.as_slice()];
+        let bytes = legacy_doc_with_section_page_grpprls("FIRSTFINAL", &section_cps, &sepx_grpprls);
+
+        let doc = Document::open(&bytes).unwrap();
+        let model = doc.model();
+
+        assert_eq!(
+            model
+                .blocks
+                .iter()
+                .filter(|block| matches!(block, Block::SectionBreak(_)))
+                .count(),
+            1
+        );
+        assert_eq!(model.setup.page.width_pt, 792.0);
+        assert_eq!(model.setup.page.height_pt, 612.0);
+        assert!(model.setup.page.landscape);
+    }
+
+    #[test]
+    fn legacy_doc_sections_preserve_unsplit_header_fallback() {
+        let section_cps = [0, 5, 10];
+        let first = section_page_grpprl(12_240, 15_840, 1_440, 1_800, 720, 900, false);
+        let second = section_page_grpprl(15_840, 12_240, 2_160, 1_080, 1_440, 720, true);
+        let sepx_grpprls = [first.as_slice(), second.as_slice()];
+        let bytes = synth_doc_with_ccp_and_tables(
+            "FIRSTFINALHEAD",
+            "",
+            0x00C1,
+            0,
+            0,
+            [10, 0, 4, 0, 0, 0],
+            SyntheticDocTables {
+                plcf_sed_cps: Some(&section_cps),
+                plcf_sed_sepx_grpprls: Some(&sepx_grpprls),
+                ..SyntheticDocTables::default()
+            },
+        );
+
+        let doc = Document::open(&bytes).unwrap();
+        let model = doc.model();
+
+        let first_section = model
+            .blocks
+            .iter()
+            .find_map(|block| match block {
+                Block::SectionBreak(setup) => Some(setup),
+                _ => None,
+            })
+            .expect("legacy section boundary");
+        assert_eq!(single_paragraph_text(&first_section.header), "HEAD");
+        assert_eq!(single_paragraph_text(&model.setup.header), "HEAD");
+        assert_eq!(model.setup.page.width_pt, 792.0);
+        assert!(model.setup.page.landscape);
+
+        #[cfg(feature = "docx")]
+        {
+            let reopened = Document::open(&doc.to_docx()).unwrap();
+            let reopened_model = reopened.model();
+            let reopened_first_section = reopened_model
+                .blocks
+                .iter()
+                .find_map(|block| match block {
+                    Block::SectionBreak(setup) => Some(setup),
+                    _ => None,
+                })
+                .expect("DOCX section boundary");
+            assert_eq!(
+                single_paragraph_text(&reopened_first_section.header),
+                "HEAD"
+            );
+            assert_eq!(single_paragraph_text(&reopened_model.setup.header), "HEAD");
+        }
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_doc_sepx_page_geometry_roundtrips_through_docx() {
+        let section_cps = [0, 5, 10];
+        let first = section_page_grpprl(12_240, 15_840, 1_440, 1_800, 720, 900, false);
+        let second = section_page_grpprl(15_840, 12_240, 2_160, 1_080, 1_440, 720, true);
+        let sepx_grpprls = [first.as_slice(), second.as_slice()];
+        let bytes = legacy_doc_with_section_page_grpprls("FIRSTFINAL", &section_cps, &sepx_grpprls);
+
+        let legacy = Document::open(&bytes).unwrap();
+        let docx = legacy.to_docx();
+        let document_xml = docx_part(&docx, "word/document.xml");
+        assert!(document_xml.contains(r#"<w:pgSz w:w="12240" w:h="15840"/>"#));
+        assert!(document_xml.contains(r#"<w:pgSz w:w="15840" w:h="12240" w:orient="landscape"/>"#));
+
+        let reopened = Document::open(&docx).unwrap();
+        let reopened_model = reopened.model();
+        let first_page = reopened_model
+            .blocks
+            .iter()
+            .find_map(|block| match block {
+                Block::SectionBreak(setup) => Some(setup.page),
+                _ => None,
+            })
+            .expect("DOCX section boundary");
+        assert_eq!(first_page.width_pt, 612.0);
+        assert_eq!(first_page.height_pt, 792.0);
+        assert_eq!(first_page.margin_left_pt, Some(72.0));
+        assert_eq!(first_page.margin_right_pt, Some(90.0));
+        assert_eq!(first_page.margin_top_pt, Some(36.0));
+        assert_eq!(first_page.margin_bottom_pt, Some(45.0));
+        assert!(!first_page.landscape);
+
+        assert_eq!(reopened_model.setup.page.width_pt, 792.0);
+        assert_eq!(reopened_model.setup.page.height_pt, 612.0);
+        assert_eq!(reopened_model.setup.page.margin_left_pt, Some(108.0));
+        assert_eq!(reopened_model.setup.page.margin_right_pt, Some(54.0));
+        assert_eq!(reopened_model.setup.page.margin_top_pt, Some(72.0));
+        assert_eq!(reopened_model.setup.page.margin_bottom_pt, Some(36.0));
+        assert!(reopened_model.setup.page.landscape);
     }
 
     #[cfg(feature = "docx")]
