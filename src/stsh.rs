@@ -8,15 +8,15 @@
 //! A paragraph's `istd` (from its PAPX) indexes this array; the heading level is
 //! derived from `sti` (1–9 = Heading 1–9), the base-style chain, or the localized
 //! name (`Heading N` / `제목 N`). Paragraph styles also resolve the bounded
-//! layout, indent, spacing, and pagination SPRM subsets through the same base
-//! chain.
+//! layout, indent, spacing, pagination, and flat-color shading SPRM subsets
+//! through the same base chain.
 //!
 //! Reference: [MS-DOC] 2.9.271 (STSH), 2.9.272 (STSHI), 2.9.135 (LPStd),
 //! 2.9.270 (STD), 2.9.270.1 (StdfBase), 2.9.276 (sti).
 
 use crate::papx::{
     scan_paragraph_style_overrides, ParagraphIndentOverrides, ParagraphLayoutOverrides,
-    ParagraphPagination, ParagraphPaginationOverrides, ParagraphSpacingOverrides,
+    ParagraphPagination, ParagraphShading, ParagraphSpacingOverrides, ParagraphStyleOverrides,
 };
 use crate::util::u16le;
 
@@ -29,19 +29,12 @@ struct StyleDescription {
     name: String,
 }
 
-type ParagraphStyleProperties = (
-    ParagraphLayoutOverrides,
-    ParagraphIndentOverrides,
-    ParagraphPaginationOverrides,
-    ParagraphSpacingOverrides,
-);
-
 struct ParsedStyle {
     description: StyleDescription,
-    properties: Option<ParagraphStyleProperties>,
+    properties: Option<ParagraphStyleOverrides>,
 }
 
-/// The parsed stylesheet: per-`istd` heading, name, layout, indent, spacing, and pagination.
+/// The parsed stylesheet: per-`istd` heading, name, and bounded paragraph properties.
 #[derive(Debug, Default)]
 pub(crate) struct StyleSheet {
     heading: Vec<Option<u8>>,
@@ -50,6 +43,7 @@ pub(crate) struct StyleSheet {
     indent: Vec<ParagraphIndentOverrides>,
     spacing: Vec<ParagraphSpacingOverrides>,
     pagination: Vec<ParagraphPagination>,
+    shading: Vec<Option<ParagraphShading>>,
 }
 
 impl StyleSheet {
@@ -89,6 +83,11 @@ impl StyleSheet {
             .unwrap_or_default()
     }
 
+    /// Shading resolved through the paragraph style's base chain.
+    pub(crate) fn paragraph_shading(&self, istd: u16) -> Option<ParagraphShading> {
+        self.shading.get(istd as usize).copied().flatten()
+    }
+
     #[cfg(test)]
     pub(crate) fn from_test_pagination(pagination: Vec<ParagraphPagination>) -> Self {
         let len = pagination.len();
@@ -99,6 +98,7 @@ impl StyleSheet {
             indent: vec![ParagraphIndentOverrides::default(); len],
             spacing: vec![ParagraphSpacingOverrides::default(); len],
             pagination,
+            shading: vec![None; len],
         }
     }
 
@@ -152,6 +152,7 @@ impl StyleSheet {
         let mut indent = vec![ParagraphIndentOverrides::default(); n];
         let mut spacing = vec![ParagraphSpacingOverrides::default(); n];
         let mut pagination = vec![ParagraphPagination::default(); n];
+        let mut shading = vec![None; n];
         // Per-style cycle guard by epoch: `visited[i]` is the pass (`gen`) that last touched
         // style `i`. "Clearing" between styles is just a fresh `gen` (O(1)) — refilling the
         // whole buffer each pass was O(n) per style = O(n^2) writes (≈4.3e9 for cstd=65535),
@@ -162,6 +163,7 @@ impl StyleSheet {
         let mut indent_visited = vec![0u32; n];
         let mut spacing_visited = vec![0u32; n];
         let mut pagination_visited = vec![0u32; n];
+        let mut shading_visited = vec![0u32; n];
         for istd in 0..n {
             let gen = istd as u32 + 1;
             heading[istd] = resolve_level(&descs, istd, &mut visited, gen, 0);
@@ -189,6 +191,15 @@ impl StyleSheet {
                 0,
             )
             .unwrap_or_default();
+            shading[istd] = resolve_shading(
+                &descs,
+                &local_properties,
+                istd,
+                &mut shading_visited,
+                gen,
+                0,
+            )
+            .flatten();
             if let Some(d) = &descs[istd] {
                 names[istd] = d.name.clone();
             }
@@ -200,6 +211,7 @@ impl StyleSheet {
             indent,
             spacing,
             pagination,
+            shading,
         }
     }
 }
@@ -246,7 +258,7 @@ fn parse_paragraph_style_properties(
     cupx: u8,
     has_original_style: bool,
     istd: u16,
-) -> Option<ParagraphStyleProperties> {
+) -> Option<ParagraphStyleOverrides> {
     if !matches!((cupx, has_original_style), (2, false) | (3, true)) {
         return None;
     }
@@ -327,7 +339,7 @@ fn resolve_level(
 
 fn resolve_pagination(
     descs: &[Option<StyleDescription>],
-    local: &[Option<ParagraphStyleProperties>],
+    local: &[Option<ParagraphStyleOverrides>],
     istd: usize,
     visited: &mut [u32],
     gen: u32,
@@ -344,7 +356,7 @@ fn resolve_pagination(
     if description.sgc != 1 {
         return None;
     }
-    let overrides = local.get(istd).copied().flatten()?.2;
+    let overrides = local.get(istd).copied().flatten()?.pagination;
     let inherited = if description.istd_base == 0x0FFF {
         ParagraphPagination::default()
     } else {
@@ -362,7 +374,7 @@ fn resolve_pagination(
 
 fn resolve_layout(
     descs: &[Option<StyleDescription>],
-    local: &[Option<ParagraphStyleProperties>],
+    local: &[Option<ParagraphStyleOverrides>],
     istd: usize,
     visited: &mut [u32],
     gen: u32,
@@ -379,7 +391,7 @@ fn resolve_layout(
     if description.sgc != 1 {
         return None;
     }
-    let overrides = local.get(istd).copied().flatten()?.0;
+    let overrides = local.get(istd).copied().flatten()?.layout;
     let inherited = if description.istd_base == 0x0FFF {
         ParagraphLayoutOverrides::default()
     } else {
@@ -397,7 +409,7 @@ fn resolve_layout(
 
 fn resolve_indent(
     descs: &[Option<StyleDescription>],
-    local: &[Option<ParagraphStyleProperties>],
+    local: &[Option<ParagraphStyleOverrides>],
     istd: usize,
     visited: &mut [u32],
     gen: u32,
@@ -414,7 +426,7 @@ fn resolve_indent(
     if description.sgc != 1 {
         return None;
     }
-    let overrides = local.get(istd).copied().flatten()?.1;
+    let overrides = local.get(istd).copied().flatten()?.indent;
     let inherited = if description.istd_base == 0x0FFF {
         ParagraphIndentOverrides::default()
     } else {
@@ -432,7 +444,7 @@ fn resolve_indent(
 
 fn resolve_spacing(
     descs: &[Option<StyleDescription>],
-    local: &[Option<ParagraphStyleProperties>],
+    local: &[Option<ParagraphStyleOverrides>],
     istd: usize,
     visited: &mut [u32],
     gen: u32,
@@ -449,7 +461,7 @@ fn resolve_spacing(
     if description.sgc != 1 {
         return None;
     }
-    let overrides = local.get(istd).copied().flatten()?.3;
+    let overrides = local.get(istd).copied().flatten()?.spacing;
     let inherited = if description.istd_base == 0x0FFF {
         ParagraphSpacingOverrides::default()
     } else {
@@ -463,6 +475,41 @@ fn resolve_spacing(
         )?
     };
     Some(inherited.apply(overrides))
+}
+
+fn resolve_shading(
+    descs: &[Option<StyleDescription>],
+    local: &[Option<ParagraphStyleOverrides>],
+    istd: usize,
+    visited: &mut [u32],
+    gen: u32,
+    depth: usize,
+) -> Option<Option<ParagraphShading>> {
+    if depth > MAX_STYLE_BASE_DEPTH
+        || istd >= descs.len()
+        || visited.get(istd).copied().unwrap_or(gen) == gen
+    {
+        return None;
+    }
+    visited[istd] = gen;
+    let description = descs.get(istd)?.as_ref()?;
+    if description.sgc != 1 {
+        return None;
+    }
+    let overrides = local.get(istd).copied().flatten()?.shading;
+    let inherited = if description.istd_base == 0x0FFF {
+        None
+    } else {
+        resolve_shading(
+            descs,
+            local,
+            description.istd_base as usize,
+            visited,
+            gen,
+            depth + 1,
+        )?
+    };
+    Some(overrides.or(inherited))
 }
 
 /// `Heading N` (any case) or Korean `제목 N` → the digit `N` (1–9). Shared with
@@ -498,6 +545,7 @@ fn utf16le(b: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::Color;
     use crate::papx::{ParagraphJustification, ParagraphLineSpacing};
 
     fn paragraph_style_std(
@@ -563,6 +611,32 @@ mod tests {
         std
     }
 
+    fn paragraph_shd80_sprm(foreground: u8, background: u8, pattern: u8) -> Vec<u8> {
+        let value =
+            u16::from(foreground) | (u16::from(background) << 5) | (u16::from(pattern) << 10);
+        let mut sprm = Vec::from(0x442Du16.to_le_bytes());
+        sprm.extend_from_slice(&value.to_le_bytes());
+        sprm
+    }
+
+    fn paragraph_shd_sprm(
+        foreground: Option<Color>,
+        background: Option<Color>,
+        pattern: u16,
+    ) -> Vec<u8> {
+        let mut sprm = Vec::from(0xC64Du16.to_le_bytes());
+        sprm.push(10);
+        for color in [foreground, background] {
+            if let Some(color) = color {
+                sprm.extend_from_slice(&[color.r, color.g, color.b, 0]);
+            } else {
+                sprm.extend_from_slice(&[0, 0, 0, 0xFF]);
+            }
+        }
+        sprm.extend_from_slice(&pattern.to_le_bytes());
+        sprm
+    }
+
     fn stylesheet(base_len: usize, styles: &[Option<Vec<u8>>]) -> Vec<u8> {
         let mut stsh = vec![0u8; 20];
         stsh[0..2].copy_from_slice(&18u16.to_le_bytes());
@@ -615,6 +689,15 @@ mod tests {
     ) -> ParagraphSpacingOverrides {
         let stsh = stylesheet(base_len, styles);
         StyleSheet::parse(&stsh, 0, stsh.len()).paragraph_spacing(istd)
+    }
+
+    fn parsed_shading(
+        base_len: usize,
+        styles: &[Option<Vec<u8>>],
+        istd: u16,
+    ) -> Option<ParagraphShading> {
+        let stsh = stylesheet(base_len, styles);
+        StyleSheet::parse(&stsh, 0, stsh.len()).paragraph_shading(istd)
     }
 
     #[test]
@@ -781,6 +864,66 @@ mod tests {
     }
 
     #[test]
+    fn resolves_paragraph_shading_inheritance_for_both_std_sizes() {
+        let inherited = Color::rgb(0x18, 0x52, 0x86);
+        let recovered = Color::rgb(0x24, 0x68, 0xAC);
+        for base_len in [10, 18] {
+            let styles = vec![
+                Some(paragraph_style_std_grpprl(
+                    base_len,
+                    0,
+                    0x0FFF,
+                    "Normal",
+                    &paragraph_shd_sprm(None, Some(inherited), 0),
+                    false,
+                )),
+                Some(paragraph_style_std(base_len, 1, 0, "Inherited", &[], false)),
+                Some(paragraph_style_std_grpprl(
+                    base_len,
+                    2,
+                    1,
+                    "Replacement",
+                    &paragraph_shd80_sprm(6, 0, 1),
+                    false,
+                )),
+                Some(paragraph_style_std_grpprl(
+                    base_len,
+                    3,
+                    2,
+                    "Suppressed",
+                    &paragraph_shd_sprm(None, None, 0),
+                    false,
+                )),
+                Some(paragraph_style_std_grpprl(
+                    base_len,
+                    4,
+                    3,
+                    "Recovered",
+                    &paragraph_shd_sprm(None, Some(recovered), 0),
+                    false,
+                )),
+            ];
+
+            assert_eq!(
+                parsed_shading(base_len, &styles, 1),
+                Some(ParagraphShading::Flat(inherited))
+            );
+            assert_eq!(
+                parsed_shading(base_len, &styles, 2),
+                Some(ParagraphShading::Flat(Color::rgb(0xFF, 0, 0)))
+            );
+            assert_eq!(
+                parsed_shading(base_len, &styles, 3),
+                Some(ParagraphShading::Unrepresentable)
+            );
+            assert_eq!(
+                parsed_shading(base_len, &styles, 4),
+                Some(ParagraphShading::Flat(recovered))
+            );
+        }
+    }
+
+    #[test]
     fn paragraph_style_layout_is_source_ordered_and_strict() {
         let styles = vec![Some(paragraph_style_std(
             10,
@@ -890,6 +1033,7 @@ mod tests {
                 0x5E, 0x84, 0xD0, 0x02, // logical left = 720
                 0x5D, 0x84, 0xA0, 0x05, // logical right = 1440
                 0x60, 0x84, 0x98, 0xFE, // hanging indent = -360
+                0x2D, 0x44, 0xE0, 0x00, // yellow clear shading
             ],
             true,
         ))];
@@ -918,6 +1062,10 @@ mod tests {
                 first_line_twips: Some(-360),
             }
         );
+        assert_eq!(
+            parsed_shading(18, &styles, 0),
+            Some(ParagraphShading::Flat(Color::rgb(0xFF, 0xFF, 0)))
+        );
     }
 
     #[test]
@@ -933,6 +1081,7 @@ mod tests {
                 0x07, 0x24, 0x01, // page break before
                 0x13, 0xA4, 0xF0, 0x00, // before = 240
                 0x12, 0x64, 0x68, 0x01, 0x01, 0x00, // 1.5 lines
+                0x2D, 0x44, 0xE0, 0x00, // yellow clear shading
             ],
             false,
         );
@@ -993,6 +1142,7 @@ mod tests {
                 parsed.paragraph_spacing(0),
                 ParagraphSpacingOverrides::default()
             );
+            assert_eq!(parsed.paragraph_shading(0), None);
         }
     }
 
@@ -1106,6 +1256,36 @@ mod tests {
     }
 
     #[test]
+    fn invalid_base_chains_do_not_apply_partial_style_shading() {
+        let shading = paragraph_shd80_sprm(0, 7, 0);
+        let out_of_range = vec![Some(paragraph_style_std_grpprl(
+            10, 0, 7, "BadBase", &shading, false,
+        ))];
+        assert_eq!(parsed_shading(10, &out_of_range, 0), None);
+
+        let empty_base = vec![
+            None,
+            Some(paragraph_style_std_grpprl(
+                10,
+                1,
+                0,
+                "EmptyBase",
+                &shading,
+                false,
+            )),
+        ];
+        assert_eq!(parsed_shading(10, &empty_base, 1), None);
+
+        let cycle = vec![
+            Some(paragraph_style_std_grpprl(
+                10, 0, 1, "CycleA", &shading, false,
+            )),
+            Some(paragraph_style_std(10, 1, 0, "CycleB", &[], false)),
+        ];
+        assert_eq!(parsed_shading(10, &cycle, 0), None);
+    }
+
+    #[test]
     fn paragraph_property_base_chain_has_a_depth_bound() {
         let mut styles = Vec::new();
         styles.push(Some(paragraph_style_std_grpprl(
@@ -1119,6 +1299,7 @@ mod tests {
                 0x5E, 0x84, 0xD0, 0x02, // logical left = 720
                 0x13, 0xA4, 0xF0, 0x00, // before = 240
                 0x12, 0x64, 0x68, 0x01, 0x01, 0x00, // 1.5 lines
+                0x2D, 0x44, 0xE0, 0x00, // yellow clear shading
             ],
             false,
         )));
@@ -1148,6 +1329,15 @@ mod tests {
             parsed_spacing(10, &styles, (styles.len() - 1) as u16),
             ParagraphSpacingOverrides::default()
         );
+        assert_eq!(
+            parsed_shading(10, &styles, MAX_STYLE_BASE_DEPTH as u16),
+            Some(ParagraphShading::Flat(Color::rgb(0xFF, 0xFF, 0)))
+        );
+        assert_eq!(
+            parsed_shading(10, &styles, (MAX_STYLE_BASE_DEPTH + 1) as u16),
+            None
+        );
+        assert_eq!(parsed_shading(10, &styles, (styles.len() - 1) as u16), None);
     }
 
     #[test]

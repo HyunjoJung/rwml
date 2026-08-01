@@ -389,13 +389,18 @@ values materialize the MS-DOC defaults of zero points before/after and single
 line spacing; supported values survive shared-model use, `.docx`
 conversion/reopen, and top-level PDF preview layout. Table-cell PDF preview
 applies the resolved line multiplier but still ignores before/after spacing.
-Direct PAPX `sprmPShd80` and `sprmPShd` paragraph shading also reaches the
-shared model, `.docx` conversion/reopen, and PDF preview when the source result
-collapses exactly to one explicit RGB fill: clear uses its background, solid
-uses its foreground, and other supported patterns require identical explicit
-foreground/background colors. Later automatic, nil, patterned, invalid, or
-malformed values suppress earlier positive state, and a later paragraph-style
-modifier resets the direct fill.
+Direct and paragraph-style `sprmPShd80` and `sprmPShd` paragraph shading also
+reaches the shared model, `.docx` conversion/reopen, and PDF preview when the
+source result collapses exactly to one explicit RGB fill: clear uses its
+background, solid uses its foreground, and other supported patterns require
+identical explicit foreground/background colors. Style-local values resolve
+through the bounded base chain before final direct-PAPX precedence. Later
+structurally complete automatic, nil, patterned, invalid, or wrong-sized values
+suppress inherited or earlier positive state, and a later valid value recovers.
+A truncated or unsizeable direct shading modifier suppresses the effective
+fill and stops that PAPX scan; a structurally malformed style UPX invalidates
+its local style payload. A later paragraph-style modifier resets earlier
+direct shading.
 At-least/exact and explicit
 zero proportional LSPD values clear an inherited multiplier but remain unset
 because the shared model has no corresponding line-rule representation.
@@ -410,8 +415,10 @@ Character-style or language-derived direction, table-style-derived direction,
 indented logical justification, list-level, compatibility-era, character-unit,
 and mirrored legacy indents, line-unit/auto/contextual paragraph spacing,
 Word-exact adjacent-spacing resolution, table/list-style spacing effects, exact
-RTL list-level layout, patterned/theme/automatic/nil or style-derived paragraph
-shading, negative-indent PDF outdenting, piece `Pcd.Prm` paragraph
+RTL list-level layout, patterned shading fidelity, theme/automatic/nil color
+distinction, document-default or table/list-style conditional shading, original
+legacy style-graph preservation through `.docx` conversion,
+negative-indent PDF outdenting, piece `Pcd.Prm` paragraph
 direction/modifiers, and Markdown/HTML visual RTL remain outside these bounded
 bridges.
 
@@ -951,7 +958,8 @@ evidence.
       plus bounded piece `Pcd.Prm` character formatting applied after CHPX:
       six literal `Prm0` toggles and precompiled literal `Prm1` toggles,
       underline, RTL, highlighting, and vertical alignment),
-      paragraphs (bounded direct flat-color `sprmPShd80`/`sprmPShd` shading),
+      paragraphs (bounded direct and style-derived flat-color
+      `sprmPShd80`/`sprmPShd` shading),
       headings (STSH), tables (`sprmTDefTable` merges and bounded relative
       column proportions), list autonumbers, hyperlinks, inline images
 - [x] Unified `.docx` reader into the same model (98.6% recall vs python-docx)

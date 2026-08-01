@@ -231,7 +231,7 @@ impl ParagraphSpacingOverrides {
     }
 }
 
-/// A direct paragraph-shading result representable by the shared model.
+/// A paragraph-shading result representable by the shared model.
 ///
 /// `Unrepresentable` is an override, not absence: a later patterned, automatic,
 /// nil, invalid, or malformed value must suppress an earlier flat color.
@@ -239,6 +239,25 @@ impl ParagraphSpacingOverrides {
 pub(crate) enum ParagraphShading {
     Flat(Color),
     Unrepresentable,
+}
+
+impl ParagraphShading {
+    pub(crate) fn flat_color(self) -> Option<Color> {
+        match self {
+            Self::Flat(color) => Some(color),
+            Self::Unrepresentable => None,
+        }
+    }
+}
+
+/// Sparse paragraph properties carried by one paragraph-style PAPX.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct ParagraphStyleOverrides {
+    pub(crate) layout: ParagraphLayoutOverrides,
+    pub(crate) indent: ParagraphIndentOverrides,
+    pub(crate) pagination: ParagraphPaginationOverrides,
+    pub(crate) spacing: ParagraphSpacingOverrides,
+    pub(crate) shading: Option<ParagraphShading>,
 }
 
 /// Per-paragraph properties over an FC range `[fc_start, fc_lim)`.
@@ -359,12 +378,9 @@ impl PapxTable {
         self.entry_at(fc).map(|e| e.spacing).unwrap_or_default()
     }
 
-    /// Bounded direct flat-color paragraph shading at `fc`.
-    pub(crate) fn paragraph_shading_at(&self, fc: u32) -> Option<Color> {
-        match self.entry_at(fc).and_then(|entry| entry.shading) {
-            Some(ParagraphShading::Flat(color)) => Some(color),
-            Some(ParagraphShading::Unrepresentable) | None => None,
-        }
+    /// Sparse direct paragraph-shading state at `fc`.
+    pub(crate) fn paragraph_shading_at(&self, fc: u32) -> Option<ParagraphShading> {
+        self.entry_at(fc).and_then(|entry| entry.shading)
     }
 
     /// Direct paragraph pagination controls at `fc`, with MS-DOC defaults.
@@ -796,9 +812,9 @@ fn apply_paragraph_style_to_modeled_properties(pap: &mut Pap, istd: u16) {
     pap.shading = None;
     pap.pagination = ParagraphPaginationOverrides::default();
     // Table membership and row properties are intentionally preserved by a
-    // paragraph-style change. Style-derived layout, indent, spacing, and
-    // pagination are resolved during assembly; style-derived list values remain
-    // outside this scanner.
+    // paragraph-style change. Style-derived layout, indent, spacing, shading,
+    // and pagination are resolved during assembly; style-derived list values
+    // remain outside this scanner.
 }
 
 fn permuted_istd(operand: &[u8], current_istd: u16) -> Option<u16> {
@@ -1038,18 +1054,12 @@ fn strict_line_spacing(operand: &[u8]) -> Option<ParagraphLineSpacing> {
 /// Strictly scan a style `grpprlPapx` for the bounded paragraph-property
 /// subsets modeled by the legacy reader. A malformed modifier invalidates the
 /// local style payload instead of applying a partial prefix.
-pub(crate) fn scan_paragraph_style_overrides(
-    gp: &[u8],
-) -> Option<(
-    ParagraphLayoutOverrides,
-    ParagraphIndentOverrides,
-    ParagraphPaginationOverrides,
-    ParagraphSpacingOverrides,
-)> {
+pub(crate) fn scan_paragraph_style_overrides(gp: &[u8]) -> Option<ParagraphStyleOverrides> {
     let mut layout = ParagraphLayoutOverrides::default();
     let mut indent = ParagraphIndentOverrides::default();
     let mut pagination = ParagraphPaginationOverrides::default();
     let mut spacing = ParagraphSpacingOverrides::default();
+    let mut shading = None;
     let mut pos = 0;
     while pos < gp.len() {
         let sprm = u16le(gp, pos)?;
@@ -1061,9 +1071,16 @@ pub(crate) fn scan_paragraph_style_overrides(
         apply_style_indent_sprm(&mut indent, sprm, operand);
         apply_pagination_sprm(&mut pagination, sprm, operand);
         apply_spacing_sprm(&mut spacing, sprm, operand);
+        apply_shading_sprm(&mut shading, sprm, operand);
         pos = operand_end;
     }
-    Some((layout, indent, pagination, spacing))
+    Some(ParagraphStyleOverrides {
+        layout,
+        indent,
+        pagination,
+        spacing,
+        shading,
+    })
 }
 
 /// Operand length for a sprm, from its `spra` field ([MS-DOC] 2.2.5).
@@ -1433,18 +1450,17 @@ mod tests {
                 0x0D, 0xC6, 0x02, 0x00, 0x00, // unrelated variable tab operand
                 0x07, 0x24, 0x01,
             ]),
-            Some((
-                ParagraphLayoutOverrides::default(),
-                ParagraphIndentOverrides {
+            Some(ParagraphStyleOverrides {
+                indent: ParagraphIndentOverrides {
                     logical_left_twips: Some(0x1234),
                     ..ParagraphIndentOverrides::default()
                 },
-                ParagraphPaginationOverrides {
+                pagination: ParagraphPaginationOverrides {
                     page_break_before: Some(true),
                     ..ParagraphPaginationOverrides::default()
                 },
-                ParagraphSpacingOverrides::default(),
-            ))
+                ..ParagraphStyleOverrides::default()
+            })
         );
     }
 
@@ -1631,6 +1647,68 @@ mod tests {
     }
 
     #[test]
+    fn paragraph_style_shading_is_source_ordered_and_structurally_strict() {
+        let yellow = Color::rgb(0xFF, 0xFF, 0);
+        let clear = Color::rgb(0x11, 0x22, 0x33);
+
+        assert_eq!(
+            scan_paragraph_style_overrides(&paragraph_shd80_sprm(0, 7, 0))
+                .unwrap()
+                .shading,
+            Some(ParagraphShading::Flat(yellow))
+        );
+        assert_eq!(
+            scan_paragraph_style_overrides(&paragraph_shd_sprm(
+                [0, 0, 0, 0xFF],
+                [clear.r, clear.g, clear.b, 0],
+                0,
+            ))
+            .unwrap()
+            .shading,
+            Some(ParagraphShading::Flat(clear))
+        );
+
+        let mut source_ordered = paragraph_shd80_sprm(0, 7, 0);
+        source_ordered.extend_from_slice(&paragraph_shd_sprm(
+            [0x10, 0x20, 0x30, 0],
+            [0xA0, 0xB0, 0xC0, 0],
+            8,
+        ));
+        assert_eq!(
+            scan_paragraph_style_overrides(&source_ordered)
+                .unwrap()
+                .shading,
+            Some(ParagraphShading::Unrepresentable)
+        );
+        source_ordered.extend_from_slice(&paragraph_shd_sprm(
+            [0, 0, 0, 0xFF],
+            [clear.r, clear.g, clear.b, 0],
+            0,
+        ));
+        assert_eq!(
+            scan_paragraph_style_overrides(&source_ordered)
+                .unwrap()
+                .shading,
+            Some(ParagraphShading::Flat(clear))
+        );
+
+        let shd80_nil = paragraph_shd80_sprm(31, 31, 63);
+        let mut shd_nil = Vec::from(SPRM_P_SHD.to_le_bytes());
+        shd_nil.extend_from_slice(&[10, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0, 0]);
+        for nil in [shd80_nil, shd_nil] {
+            assert_eq!(
+                scan_paragraph_style_overrides(&nil).unwrap().shading,
+                Some(ParagraphShading::Unrepresentable)
+            );
+        }
+
+        assert!(
+            scan_paragraph_style_overrides(&[0x4D, 0xC6, 10, 0, 0]).is_none(),
+            "a truncated style UPX must fail closed"
+        );
+    }
+
+    #[test]
     fn paragraph_style_spacing_is_source_ordered_and_structurally_strict() {
         assert_eq!(
             scan_paragraph_style_overrides(&[
@@ -1641,16 +1719,14 @@ mod tests {
                 0x12, 0x64, 0x40, 0x84, 0x01, 0x00, // exact spacing
                 0x12, 0x64, 0xE0, 0x01, 0x02, 0x00, // invalid multiplier
             ]),
-            Some((
-                ParagraphLayoutOverrides::default(),
-                ParagraphIndentOverrides::default(),
-                ParagraphPaginationOverrides::default(),
-                ParagraphSpacingOverrides {
+            Some(ParagraphStyleOverrides {
+                spacing: ParagraphSpacingOverrides {
                     before_twips: Some(200),
                     after_twips: Some(100),
                     line: Some(ParagraphLineSpacing::Unrepresentable),
                 },
-            ))
+                ..ParagraphStyleOverrides::default()
+            })
         );
         assert!(scan_paragraph_style_overrides(&[
             0x13, 0xA4, 0xC8, 0x00, // valid prefix
@@ -1671,17 +1747,15 @@ mod tests {
                 0x60, 0x84, 0xC0, 0x7B, // first line = 31680
                 0x5F, 0x46, 0x78, 0x00, // prohibited style nest is ignored
             ]),
-            Some((
-                ParagraphLayoutOverrides::default(),
-                ParagraphIndentOverrides {
+            Some(ParagraphStyleOverrides {
+                indent: ParagraphIndentOverrides {
                     logical_left_twips: Some(500),
                     logical_right_twips: Some(-31_680),
                     nest_twips: None,
                     first_line_twips: Some(31_680),
                 },
-                ParagraphPaginationOverrides::default(),
-                ParagraphSpacingOverrides::default(),
-            ))
+                ..ParagraphStyleOverrides::default()
+            })
         );
     }
 

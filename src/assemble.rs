@@ -1265,6 +1265,11 @@ impl<'a, 'l> Asm<'a, 'l> {
             .stylesheet
             .paragraph_pagination(istd)
             .apply(self.papx.paragraph_pagination_overrides_at(fc));
+        let shading = self
+            .papx
+            .paragraph_shading_at(fc)
+            .or_else(|| self.stylesheet.paragraph_shading(istd))
+            .and_then(|shading| shading.flat_color());
         let heading_level = match outlvl {
             Some(o) if o <= 8 => Some(o + 1),
             Some(_) => None,
@@ -1311,7 +1316,7 @@ impl<'a, 'l> Asm<'a, 'l> {
                 list,
                 spacing,
                 indent,
-                shading: self.papx.paragraph_shading_at(fc),
+                shading,
                 page_break_before: source_pagination.page_break_before,
                 bidi,
                 ..Default::default()

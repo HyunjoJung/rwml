@@ -9217,6 +9217,102 @@ mod tests {
         )
     }
 
+    fn legacy_paragraph_style_shading_doc() -> Vec<u8> {
+        let inherited = Color::rgb(0x18, 0x52, 0x86);
+        let recovered = Color::rgb(0x24, 0x68, 0xAC);
+        let direct = Color::rgb(0x44, 0x55, 0x66);
+
+        let mut root_style = Vec::new();
+        push_legacy_paragraph_shd(&mut root_style, None, Some(inherited), 0);
+        let inherited_style = Vec::new();
+        let mut suppressed_style = Vec::new();
+        push_legacy_paragraph_shd(&mut suppressed_style, None, None, 0);
+        let mut recovered_style = Vec::new();
+        push_legacy_paragraph_shd(&mut recovered_style, None, Some(recovered), 0);
+        let stylesheet = synthetic_paragraph_stylesheet_from_styles(&[
+            (0, 0, 0x0FFF, "Normal", &root_style),
+            (1, 0x0FFE, 0, "Inherited", &inherited_style),
+            (2, 0x0FFE, 1, "Suppressed", &suppressed_style),
+            (3, 0x0FFE, 2, "Recovered", &recovered_style),
+        ]);
+
+        let style = |istd: u16| {
+            let mut grpprl = Vec::from(0x4600u16.to_le_bytes());
+            grpprl.extend_from_slice(&istd.to_le_bytes());
+            grpprl
+        };
+        let mut direct_valid = style(1);
+        push_legacy_paragraph_shd(&mut direct_valid, Some(direct), None, 1);
+        let mut direct_suppress = style(1);
+        push_legacy_paragraph_shd(&mut direct_suppress, None, None, 0);
+        let mut direct_before_style = Vec::new();
+        push_legacy_paragraph_shd(&mut direct_before_style, Some(direct), None, 1);
+        direct_before_style.extend_from_slice(&style(1));
+        let mut direct_recovery = style(2);
+        push_legacy_paragraph_shd(&mut direct_recovery, Some(direct), None, 1);
+        let mut direct_invalid = style(1);
+        direct_invalid.extend_from_slice(&0xC64Du16.to_le_bytes());
+        direct_invalid.extend_from_slice(&[10, 0, 0, 0, 1, 0x11, 0x22, 0x33, 0, 0, 0]);
+        let mut direct_truncated = style(1);
+        direct_truncated.extend_from_slice(&[0x4D, 0xC6, 10, 0, 0]);
+
+        let paragraphs = [
+            ("RootStyle", Vec::new()),
+            ("InheritedStyle", style(1)),
+            ("SuppressedStyle", style(2)),
+            ("RecoveredStyle", style(3)),
+            ("DirectValid", direct_valid),
+            ("DirectSuppress", direct_suppress),
+            ("DirectBeforeStyle", direct_before_style),
+            ("DirectRecovery", direct_recovery),
+            ("DirectInvalid", direct_invalid),
+            ("DirectTruncated", direct_truncated),
+        ];
+        let mut text = String::new();
+        let mut runs = Vec::new();
+        for (label, grpprl) in paragraphs {
+            text.push_str(label);
+            text.push('\r');
+            runs.push(SyntheticPapxRun {
+                cp_lim: text.encode_utf16().count() as u32,
+                grpprl,
+            });
+        }
+        let text_end = text.encode_utf16().count() as u32;
+
+        synth_doc_with_ccp_and_tables(
+            &text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [text_end, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                stylesheet: Some(&stylesheet),
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    fn expected_legacy_paragraph_style_shading_signature() -> Vec<(String, Option<Color>)> {
+        let inherited = Some(Color::rgb(0x18, 0x52, 0x86));
+        let recovered = Some(Color::rgb(0x24, 0x68, 0xAC));
+        let direct = Some(Color::rgb(0x44, 0x55, 0x66));
+        vec![
+            ("RootStyle".to_string(), inherited),
+            ("InheritedStyle".to_string(), inherited),
+            ("SuppressedStyle".to_string(), None),
+            ("RecoveredStyle".to_string(), recovered),
+            ("DirectValid".to_string(), direct),
+            ("DirectSuppress".to_string(), None),
+            ("DirectBeforeStyle".to_string(), inherited),
+            ("DirectRecovery".to_string(), direct),
+            ("DirectInvalid".to_string(), None),
+            ("DirectTruncated".to_string(), None),
+        ]
+    }
+
     fn paragraph_shading_signature(model: &DocModel) -> Vec<(String, Option<Color>)> {
         model
             .blocks
@@ -9267,6 +9363,54 @@ mod tests {
         assert_eq!(
             paragraph_shading_signature(&document.model()),
             expected_legacy_paragraph_shading_signature()
+        );
+    }
+
+    #[test]
+    fn opened_legacy_doc_resolves_paragraph_style_shading_before_direct_overrides() {
+        let document = Document::open(&legacy_paragraph_style_shading_doc()).unwrap();
+
+        assert_eq!(
+            paragraph_shading_signature(&document.model()),
+            expected_legacy_paragraph_style_shading_signature()
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_doc_style_derived_paragraph_shading_roundtrips_to_docx() {
+        let legacy = Document::open(&legacy_paragraph_style_shading_doc()).unwrap();
+        let reopened = Document::open(&legacy.to_docx()).unwrap();
+
+        assert_eq!(
+            paragraph_shading_signature(&reopened.model()),
+            expected_legacy_paragraph_style_shading_signature()
+        );
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn legacy_doc_style_derived_shading_changes_pdf_without_changing_layout() {
+        let recovered = Document::open(&legacy_paragraph_style_shading_doc())
+            .unwrap()
+            .model();
+        let mut baseline = recovered.clone();
+        for block in &mut baseline.blocks {
+            let Block::Paragraph(paragraph) = block else {
+                panic!("synthetic legacy block must be a paragraph");
+            };
+            paragraph.props.shading = None;
+        }
+
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let recovered_pdf = render_pdf_with_fonts(&recovered, &fonts);
+        let baseline_pdf = render_pdf_with_fonts(&baseline, &fonts);
+
+        assert_ne!(recovered_pdf, baseline_pdf);
+        assert_eq!(recovered_pdf, render_pdf_with_fonts(&recovered, &fonts));
+        assert_eq!(
+            layout_pages_with_fonts(&recovered, &fonts).unwrap(),
+            layout_pages_with_fonts(&baseline, &fonts).unwrap()
         );
     }
 
@@ -10120,6 +10264,15 @@ mod tests {
     }
 
     fn synthetic_paragraph_stylesheet_grpprl(properties: &[u8]) -> Vec<u8> {
+        synthetic_paragraph_stylesheet_from_styles(&[
+            (0, 0, 0x0FFF, "Normal", &[]),
+            (1, 0x0FFE, 0, "Pagination", properties),
+        ])
+    }
+
+    fn synthetic_paragraph_stylesheet_from_styles(
+        styles: &[(u16, u16, u16, &str, &[u8])],
+    ) -> Vec<u8> {
         fn push_style(
             stylesheet: &mut Vec<u8>,
             istd: u16,
@@ -10158,11 +10311,12 @@ mod tests {
 
         let mut stylesheet = vec![0u8; 20];
         stylesheet[0..2].copy_from_slice(&18u16.to_le_bytes());
-        stylesheet[2..4].copy_from_slice(&2u16.to_le_bytes());
+        stylesheet[2..4].copy_from_slice(&(styles.len() as u16).to_le_bytes());
         stylesheet[4..6].copy_from_slice(&10u16.to_le_bytes());
         stylesheet[6..8].copy_from_slice(&1u16.to_le_bytes());
-        push_style(&mut stylesheet, 0, 0, 0x0FFF, "Normal", &[]);
-        push_style(&mut stylesheet, 1, 0x0FFE, 0, "Pagination", properties);
+        for &(istd, sti, base, name, properties) in styles {
+            push_style(&mut stylesheet, istd, sti, base, name, properties);
+        }
         stylesheet
     }
 
