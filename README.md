@@ -733,8 +733,8 @@ cap, and fixed-bundled-font mode; page canvases are white-padded without scaling
 and raster pairs are processed under hard pixel limits. Its `--soffice auto`
 default uses a local `soffice` when available and otherwise falls back to the
 Docker `lo-cli` backend. The public synthetic corpus also includes a render
-manifest checked by `cargo test --features render`. rwml is a **preview-grade**
-renderer, faithful to the model but **not** a LibreOffice replacement. Generated
+manifest checked by `cargo test --features render`. rwml is today a **preview-grade**
+renderer, faithful to the model but **not yet** a LibreOffice replacement. Generated
 running footer page numbers and body `PAGE` fields are computed from the emitted
 PDF page list; section-aware default/first/even running header/footer variants
 are selected with first-page variants scoped to each section and even variants
@@ -786,10 +786,12 @@ text boxes, nested tables, real list labels, caps; model-driven page geometry ma
 LibreOffice on exact pagination, exact floating-object layout, remaining
 layout-derived `PAGEREF` page-reference computation beyond trusted source markers,
 advanced TOC/REF/NOTEREF computed fields, and
-pixel-level visual fidelity; those are inherent to a compact native
-renderer, not bugs to be closed to parity. For Word-exact or archival PDF, render
-via LibreOffice. rwml aims to match specialist extractors on text/model recovery
-while staying dependency-light; render fidelity remains below LibreOffice.
+pixel-level visual fidelity. Those gaps describe the renderer as it stands
+today; closing them is the layout work tracked under [Roadmap](#roadmap), not
+scope that has been ruled out. Until it lands, render via LibreOffice for
+Word-exact or archival PDF. rwml aims to match specialist extractors on
+text/model recovery while staying dependency-light; render fidelity remains
+below LibreOffice.
 `render_pdf_with_report` / `to_pdf_with_report` expose the emitted page count and
 renderer warnings for unsupported fields, floating shapes, charts, OLE objects,
 WMF/EMF/EMZ/WMZ images, image nodes whose bytes are unavailable, and raster
@@ -886,7 +888,7 @@ code points.
   rectangle, or physical top/bottom margin bands, and overlay coordinates also
   distinguish physical left/right margin bands. Backward reflow, tables,
   parity-dependent inside/outside margins, character/column/line/paragraph
-  coordinates, and square/tight/through/polygon wrapping remain out of scope;
+  coordinates, and square/tight/through/polygon wrapping are not implemented yet;
   metafile metadata is exposed
   in diagnostics with bounded header inflation, and a strict single full-frame
   DIB (`BI_RGB` 1/4/8/24/32-bit or 16/32-bit `BI_BITFIELDS`) in an exact
@@ -990,8 +992,8 @@ code points.
   paragraph/table/content-control subtrees, insert one plain direct paragraph,
   and move or remove exact retained subtrees. Nested-container edits, arbitrary
   rich block insertion/duplication, cross-block range rewriting, and
-  relationship/media garbage collection remain out of scope, as do newer
-  extension chart families beyond the current authored set.
+  relationship/media garbage collection are not implemented yet, along with
+  newer extension chart families beyond the current authored set.
 - *Render:* preview-grade vs LibreOffice (see above); Word-exact end-to-end RTL
   typography beyond bounded paragraph/run/list/table behavior; the core crate
   embeds no CJK font, so use a system font, `render_pdf_with_fonts`, or the
@@ -1009,6 +1011,14 @@ Word-exact pagination and RTL typography, broader floating-object reflow,
 nested/package-aware structural editing, and full vector metafile replay. Future
 slices should move only with focused parser, renderer, report, or public-corpus
 evidence.
+
+Two conventions apply throughout this document. Everything described above the
+roadmap is implemented and covered by tests — support is never claimed ahead of
+a test, and each bounded slice names the cases it does not handle. Those named
+limits describe the current build; they are not scope that has been declined.
+The unchecked entries below are correspondingly open projects, not closed ones:
+they stay unchecked until evidence closes them, and describing a gap as a
+current limit never counts as finishing it.
 
 - [x] Codepage-aware `.doc` text; encryption / Word 6/95 detection gates
 - [x] Full read model: runs (CHPX incl. font/size/color and CHPX-resident

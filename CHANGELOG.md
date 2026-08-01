@@ -51,6 +51,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   IoU, explicit unmatched/capped page counts, configurable gates, and bounded
   page-pair raster streaming while retaining the historical page-1 aHash.
 
+### Changed
+
+- States the roadmap's two conventions explicitly: documented behavior is
+  implemented and covered by tests, and the named limits of each bounded slice
+  describe the current build rather than scope that has been declined.
+  Unchecked roadmap entries are stated as open projects that stay unchecked
+  until evidence closes them. Renderer parity wording no longer presents the
+  remaining pagination, floating-layout, computed-field, and visual-fidelity
+  gaps as inherent to the design. No behavior change.
+
 ### Fixed
 
 - Opened `.docx` PDF previews now keep resolved left, center, right, and
