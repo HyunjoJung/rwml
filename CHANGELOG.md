@@ -355,11 +355,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   bounds intersect body text.
 - Opened `.docx` rendering now honors effective table-row `w:cantSplit` from
   direct row properties and inherited table-style chains, including bounded
-  `wholeTable`, `firstRow`, and `lastRow` conditional regions selected by direct
-  table `w:tblLook` or row `w:cnfStyle`: default rows may use remaining page
-  space, fitting protected rows move whole, and over-tall rows still split
-  deterministically. Banded, column/corner, and `w:tblPrEx` cases remain
-  unsupported.
+  `wholeTable`, horizontal `band1Horz`/`band2Horz`, `firstRow`, and `lastRow`
+  conditional regions selected by direct table `w:tblLook` or row `w:cnfStyle`.
+  Horizontal bands honor inherited style and direct-table
+  `w:tblStyleRowBandSize` values in Word's 0-3 range. Default rows may use
+  remaining page space, fitting protected rows move whole, and over-tall rows
+  still split deterministically. Vertical/column/corner and `w:tblPrEx` cases
+  remain unsupported.
 - Opened legacy `.doc` rendering now honors direct table-row
   `sprmTFCantSplit` and compatibility `sprmTFCantSplit90`: rows remain
   splittable by default, fitting protected rows move whole, the modern property
