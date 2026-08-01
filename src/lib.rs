@@ -6968,6 +6968,69 @@ mod tests {
         );
     }
 
+    fn legacy_chpx_run_rtl_doc() -> Vec<u8> {
+        let text = "RtlPlainRtl";
+        let runs = [
+            SyntheticChpxRun {
+                cp_lim: 3,
+                grpprl: vec![0x5A, 0x08, 1],
+            },
+            SyntheticChpxRun {
+                cp_lim: 8,
+                grpprl: vec![0x5A, 0x08, 0],
+            },
+            SyntheticChpxRun {
+                cp_lim: 11,
+                grpprl: vec![0x5A, 0x08, 1],
+            },
+        ];
+        synth_doc_with_ccp_and_tables(
+            text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [text.encode_utf16().count() as u32, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                chpx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    fn paragraph_run_directions(model: &DocModel) -> Vec<(&str, bool)> {
+        let Block::Paragraph(paragraph) = &model.blocks[0] else {
+            panic!("synthetic legacy block must be a paragraph");
+        };
+        paragraph
+            .runs
+            .iter()
+            .map(|run| (run.text.as_str(), run.props.rtl))
+            .collect()
+    }
+
+    #[test]
+    fn opened_legacy_doc_preserves_chpx_run_rtl() {
+        let document = Document::open(&legacy_chpx_run_rtl_doc()).unwrap();
+
+        assert_eq!(
+            paragraph_run_directions(&document.model()),
+            vec![("Rtl", true), ("Plain", false), ("Rtl", true)]
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_doc_chpx_run_rtl_roundtrips_to_docx() {
+        let legacy = Document::open(&legacy_chpx_run_rtl_doc()).unwrap();
+        let reopened = Document::open(&legacy.to_docx()).unwrap();
+
+        assert_eq!(
+            paragraph_run_directions(&reopened.model()),
+            vec![("Rtl", true), ("Plain", false), ("Rtl", true)]
+        );
+    }
+
     #[test]
     fn opened_legacy_doc_preserves_tdef_table_column_proportions() {
         let text = "left\u{7}right\u{7}\u{7}";
