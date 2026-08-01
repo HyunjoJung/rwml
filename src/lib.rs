@@ -407,7 +407,8 @@ pub enum BodyBlockKind {
 #[non_exhaustive]
 pub struct BodyBlockInfo {
     /// Zero-based index used by [`Document::remove_body_block`] and
-    /// [`Document::move_body_block`].
+    /// [`Document::move_body_block`], and the position before which
+    /// [`Document::insert_body_paragraph`] inserts.
     pub index: usize,
     /// Direct body element kind.
     pub kind: BodyBlockKind,
@@ -661,7 +662,8 @@ impl Document {
     /// [`Document::fill_content_control_by_tag`], [`Document::fill_content_controls_by_tag`],
     /// [`Document::fill_template_fields`],
     /// [`Document::accept_all_revisions`], [`Document::reject_all_revisions`],
-    /// [`Document::remove_body_block`], [`Document::move_body_block`],
+    /// [`Document::insert_body_paragraph`], [`Document::remove_body_block`],
+    /// [`Document::move_body_block`],
     /// [`Document::set_hyperlink_target`], [`Document::add_image_png`],
     /// [`Document::replace_image_png`]) mutate the package
     /// directly, not this model, so they are not visible here until
@@ -1015,7 +1017,8 @@ impl Document {
     /// [`Document::fill_content_control_by_tag`], [`Document::fill_content_controls_by_tag`],
     /// [`Document::fill_template_fields`],
     /// [`Document::accept_all_revisions`], [`Document::reject_all_revisions`],
-    /// [`Document::remove_body_block`], [`Document::move_body_block`],
+    /// [`Document::insert_body_paragraph`], [`Document::remove_body_block`],
+    /// [`Document::move_body_block`],
     /// [`Document::set_hyperlink_target`], [`Document::replace_image_png`]) mutate only
     /// their target XML/media/relationship parts, so
     /// untouched **non-metadata** parts stay byte-for-byte;
@@ -1283,6 +1286,34 @@ impl Document {
                 }),
         );
         Ok(blocks)
+    }
+
+    /// **Package-preserving structural edit: insert one plain top-level paragraph.**
+    ///
+    /// `block_index` is a position in the current [`Document::body_blocks`] space:
+    /// `0..=body_blocks().len()`. A position below the block count inserts
+    /// immediately before that atomic direct `w:p`, `w:tbl`, or `w:sdt`; the
+    /// block-count position appends before direct final `w:sectPr`.
+    ///
+    /// `text` is encoded as one unstyled WordprocessingML paragraph using the same
+    /// escaping and significant-whitespace rules as other package-preserving text
+    /// edits. Tabs become `w:tab`, line feeds become `w:br`, carriage returns and
+    /// XML-forbidden controls are omitted, and an empty result inserts a blank
+    /// `w:p`. Rich paragraph properties, numbering, fields, bookmarks, revisions,
+    /// relationships, nested containers, and other story parts are intentionally
+    /// outside this method.
+    ///
+    /// The same conservative structural preflight as move/remove rejects opaque
+    /// direct body elements and malformed or cross-block ranges/complex fields.
+    /// Read views remain stale until explicitly refreshed or reopened. On any
+    /// error the retained package is unchanged.
+    #[cfg(feature = "docx")]
+    pub fn insert_body_paragraph(&mut self, block_index: usize, text: &str) -> Result<()> {
+        let d = self.docx_tree_editable()?;
+        edit_docx_atomic_body_block(
+            d,
+            AtomicBodyBlockEdit::InsertParagraph { block_index, text },
+        )
     }
 
     /// **Package-preserving structural edit: remove one atomic top-level body block.**
@@ -3029,7 +3060,8 @@ impl Document {
 
 #[cfg(feature = "docx")]
 #[derive(Clone, Copy)]
-enum AtomicBodyBlockEdit {
+enum AtomicBodyBlockEdit<'a> {
+    InsertParagraph { block_index: usize, text: &'a str },
     Remove { block_index: usize },
     Move { from_index: usize, to_index: usize },
 }
@@ -3059,10 +3091,13 @@ fn ensure_docx_tree_editable(d: &docx::DocxState) -> Result<()> {
 #[cfg(feature = "docx")]
 fn apply_atomic_body_block_edit(
     tree: &mut xmltree::XmlTree,
-    edit: AtomicBodyBlockEdit,
+    edit: AtomicBodyBlockEdit<'_>,
 ) -> Result<()> {
     let body = tree.wml_body_strict()?;
     match edit {
+        AtomicBodyBlockEdit::InsertParagraph { block_index, text } => {
+            tree.insert_wml_plain_body_paragraph_under(body, block_index, text)
+        }
         AtomicBodyBlockEdit::Remove { block_index } => {
             tree.remove_wml_atomic_body_block_under(body, block_index)
         }
@@ -3074,7 +3109,10 @@ fn apply_atomic_body_block_edit(
 }
 
 #[cfg(feature = "docx")]
-fn edit_docx_atomic_body_block(d: &mut docx::DocxState, edit: AtomicBodyBlockEdit) -> Result<()> {
+fn edit_docx_atomic_body_block(
+    d: &mut docx::DocxState,
+    edit: AtomicBodyBlockEdit<'_>,
+) -> Result<()> {
     let raw = d
         .package
         .part("word/document.xml")
@@ -11442,6 +11480,68 @@ mod tests {
             unzip_parts(&document.save().unwrap())["word/document.xml"],
             hazardous_xml
         );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn body_paragraph_insertion_rolls_back_on_probe_node_budget_failure() {
+        let doc_xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>A</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#;
+        let bytes = minimal_docx(doc_xml);
+        let before = unzip_parts(&bytes);
+        let mut document = Document::open(&bytes).unwrap();
+        let document_nodes = xmltree::XmlTree::parse(doc_xml.as_bytes())
+            .unwrap()
+            .node_count();
+        xmltree::set_test_node_budget(document_nodes + 1);
+
+        let result = document.insert_body_paragraph(1, "Too many nodes");
+
+        xmltree::reset_test_node_budget();
+        assert!(result.is_err());
+        assert!(document.edited_parts().is_empty());
+        assert_eq!(unzip_parts(&document.save().unwrap()), before);
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn body_paragraph_insertion_rolls_back_on_second_pass_graft_failure() {
+        let doc_xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>A</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#;
+        let bytes = minimal_docx(doc_xml);
+        let before = unzip_parts(&bytes);
+        let mut document = Document::open(&bytes).unwrap();
+        xmltree::set_test_fail_commit_after(1);
+
+        let result = document.insert_body_paragraph(1, "Clone must not commit");
+
+        xmltree::reset_test_fail_commit();
+        assert!(result.is_err());
+        assert!(document.edited_parts().is_empty());
+        assert_eq!(unzip_parts(&document.save().unwrap()), before);
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn body_paragraph_insertion_rolls_back_on_part_size_failure() {
+        let doc_xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>A</w:t></w:r></w:p><w:sectPr/></w:body></w:document>"#;
+        let bytes = minimal_docx(doc_xml);
+        let before = unzip_parts(&bytes);
+        let max_original_part = before.values().map(Vec::len).max().unwrap();
+        let oversized_text = "x".repeat(max_original_part + 1);
+        let mut document = Document::open(&bytes).unwrap();
+        crate::opc::set_test_max_part(max_original_part as u64);
+
+        let result = document.insert_body_paragraph(1, &oversized_text);
+
+        crate::opc::reset_test_max_part();
+        let error = result.unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("word/document.xml exceeds the per-part size budget"),
+            "{error}"
+        );
+        assert!(document.edited_parts().is_empty());
+        assert_eq!(unzip_parts(&document.save().unwrap()), before);
     }
 
     #[cfg(feature = "docx")]

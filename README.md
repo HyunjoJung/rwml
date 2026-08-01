@@ -183,6 +183,11 @@ if blocks.len() >= 3 {
     doc.move_body_block(blocks[0].index, 2)?;    // exact subtree, final index 2
     doc.remove_body_block(1)?;                   // conservative exact-subtree removal
 }
+let append_position = doc.body_blocks()?.len(); // re-enumerate after structural edits
+doc.insert_body_paragraph(
+    append_position,
+    "Appended plain paragraph",
+)?;                                              // before final body sectPr
 doc.fill_content_controls_by_tag([
     ("client-name", "Acme & Co"),
     ("project-name", "Roadmap"),
@@ -259,11 +264,16 @@ comments, tracked changes) — is structurally preserved; `save()` re-serializes
 only the parts you changed, while untouched package-part payloads stay
 byte-for-byte.
 `body_blocks()` enumerates conservative atomic direct `w:p`, `w:tbl`, and
-`w:sdt` subtrees for `move_body_block` / `remove_body_block`. Those edits reject
-opaque direct children, cross-block ranges or complex fields, and section-boundary
-targets/moves; they preserve but do not garbage-collect relationships or media
-made unreachable by a removal. Read/model views remain stale until explicitly
-refreshed or reopened.
+`w:sdt` subtrees. `insert_body_paragraph` inserts one unstyled direct paragraph
+before an indexed block, or before final body `w:sectPr` at the block-count
+position, while reusing the edit layer's WML whitespace, tab, line-break, Unicode,
+and forbidden-control handling. Structural edits reject opaque direct children
+and cross-block ranges or complex fields; move/remove also protect section-boundary
+targets and moves. Rich paragraph/block insertion, nested containers, and
+relationship-bearing content remain outside this bounded API. Existing exact
+subtrees and untouched package parts are preserved, but removals do not
+garbage-collect relationships or media they make unreachable. Read/model views
+remain stale until explicitly refreshed or reopened.
 Regenerated relationship parts are validated before save, so internal
 relationship targets must point at retained package parts unless they are
 explicitly external.
@@ -945,9 +955,10 @@ code points.
   properties.
 - *Write/edit:* editing an opened `.docx` preserves arbitrary OOXML parts
   verbatim and the writer/edit surfaces are broad (see **Write** and **Edit**
-  above). Structural edits now enumerate, move, and remove conservative atomic
-  direct body paragraph/table/content-control subtrees. Nested-container edits,
-  arbitrary rich block insertion/duplication, cross-block range rewriting, and
+  above). Structural edits now enumerate conservative atomic direct body
+  paragraph/table/content-control subtrees, insert one plain direct paragraph,
+  and move or remove exact retained subtrees. Nested-container edits, arbitrary
+  rich block insertion/duplication, cross-block range rewriting, and
   relationship/media garbage collection remain out of scope, as do newer
   extension chart families beyond the current authored set.
 - *Render:* preview-grade vs LibreOffice (see above); Word-exact end-to-end RTL
@@ -1133,7 +1144,8 @@ evidence.
 - [x] **Package-preserving edit layer** — `Document::open`→edit→`save` keeps every
       unmodeled part verbatim; the element-tree edit methods (text/field/comment/
       note/image/content-control/revision/core-property plus conservative atomic
-      direct body block enumeration/move/removal, listed under
+      direct body block enumeration/plain-paragraph insertion/move/removal,
+      listed under
       [Edit](#edit--open-change-save-package-preserving)) preserve fields/shapes/
       content-controls/comments/revisions;
       `edited_parts` exposes touched package parts; `edit_capability` /

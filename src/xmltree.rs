@@ -78,12 +78,12 @@ pub(crate) fn node_budget() -> usize {
 }
 
 // A test-only seam that forces the Nth *commit-time* tree edit
-// (`set_element_text` / `insert_fragment_before_ns_local`) to fail, simulating the
+// (`set_element_text` / fragment insertion) to fail, simulating the
 // genuine-but-untriggerable `try_reserve` out-of-memory those paths now guard against.
-// It lets the transactional clone-and-swap in `Document::{replace_body_text,add_image_png}`
-// be tested: the edit must leave the document completely unchanged when a commit step
-// fails. `set_test_fail_commit_after(k)` lets the first `k` commit edits succeed, then the
-// next one fails (one-shot, self-disarming). Production never compiles this.
+// It lets transactional clone-and-swap edit paths be tested: the edit must leave the
+// document completely unchanged when a commit step fails.
+// `set_test_fail_commit_after(k)` lets the first `k` commit edits succeed, then the next
+// one fails (one-shot, self-disarming). Production never compiles this.
 #[cfg(test)]
 thread_local! {
     static FAIL_COMMIT_AFTER: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
@@ -1221,6 +1221,38 @@ impl XmlTree {
             }
         }
         body.ok_or_else(|| Error::Docx("document.xml has no w:body".into()))
+    }
+
+    /// Insert one plain paragraph before an atomic direct body block, or before
+    /// final section properties when `block_index` equals the block count.
+    pub(crate) fn insert_wml_plain_body_paragraph_under(
+        &mut self,
+        body: NodeId,
+        block_index: usize,
+        text: &str,
+    ) -> Result<()> {
+        let blocks = self.wml_atomic_body_blocks_under(body)?;
+        if block_index > blocks.len() {
+            return Err(Error::Docx(format!(
+                "body block insertion index {block_index} is out of range for {} atomic block positions",
+                blocks.len() + 1
+            )));
+        }
+
+        let content = wml_text_run_content_xml(text);
+        let paragraph = if content.is_empty() {
+            format!(r#"<w:p xmlns:w="{}"/>"#, wml_ns_str())
+        } else {
+            format!(
+                r#"<w:p xmlns:w="{}"><w:r>{content}</w:r></w:p>"#,
+                wml_ns_str()
+            )
+        };
+        if block_index == blocks.len() {
+            self.insert_fragment_before_ns_local(body, paragraph.as_bytes(), WML_NS, b"sectPr")
+        } else {
+            self.insert_fragment_at(body, blocks[block_index].child_index, paragraph.as_bytes())
+        }
     }
 
     /// Remove one conservative atomic direct body block (`w:p`, `w:tbl`, or
@@ -3870,6 +3902,81 @@ mod tests {
         let removed = s(&tree);
         assert!(!removed.contains("data-id=\"C\""));
         assert!(removed.contains("data-id=\"A\"") && removed.contains("data-id=\"B\""));
+    }
+
+    #[test]
+    fn atomic_body_blocks_insert_plain_paragraph_at_positions() {
+        let xml = br#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+            <w:p data-id="A"><w:r><w:t>A</w:t></w:r></w:p>
+            <w:tbl data-id="B"><w:tr><w:tc><w:p/></w:tc></w:tr></w:tbl>
+            <w:sectPr/>
+        </w:body></w:document>"#;
+        for (position, expected) in [
+            (0, ["Inserted", "data-id=\"A\"", "data-id=\"B\""]),
+            (1, ["data-id=\"A\"", "Inserted", "data-id=\"B\""]),
+            (2, ["data-id=\"A\"", "data-id=\"B\"", "Inserted"]),
+        ] {
+            let mut tree = XmlTree::parse(xml).unwrap();
+            let body = tree.wml_body_strict().unwrap();
+            tree.insert_wml_plain_body_paragraph_under(body, position, "Inserted")
+                .unwrap();
+            let serialized = s(&tree);
+            let first = serialized.find(expected[0]).unwrap();
+            let second = serialized.find(expected[1]).unwrap();
+            let third = serialized.find(expected[2]).unwrap();
+            let section = serialized.find("<w:sectPr/>").unwrap();
+            assert!(
+                first < second && second < third && third < section,
+                "unexpected position {position}: {serialized}"
+            );
+        }
+    }
+
+    #[test]
+    fn atomic_body_block_insertion_encodes_text_and_default_namespace() {
+        let xml = br#"<document xmlns="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><body><p><r><t>A</t></r></p><sectPr/></body></document>"#;
+        let mut tree = XmlTree::parse(xml).unwrap();
+        let body = tree.wml_body_strict().unwrap();
+
+        tree.insert_wml_plain_body_paragraph_under(
+            body,
+            0,
+            " <&> 한글\tline\nnext\u{1}\u{ffff} tail ",
+        )
+        .unwrap();
+
+        let serialized = s(&tree);
+        assert!(
+            serialized.contains(
+                r#"<w:t xml:space="preserve"> &lt;&amp;&gt; 한글</w:t><w:tab/><w:t>line</w:t><w:br/><w:t xml:space="preserve">next tail </w:t>"#
+            ),
+            "{serialized}"
+        );
+        assert!(serialized.find("<w:p xmlns:w=").unwrap() < serialized.find("<p>").unwrap());
+    }
+
+    #[test]
+    fn atomic_body_block_insertion_rejects_positions_and_hazards_without_mutation() {
+        for (body_xml, position) in [
+            (r#"<w:p/><w:sectPr/>"#, 2),
+            (r#"<w:p/><w:altChunk/><w:sectPr/>"#, 0),
+            (
+                r#"<w:p><w:bookmarkStart w:id="7"/></w:p><w:p><w:bookmarkEnd w:id="7"/></w:p><w:sectPr/>"#,
+                0,
+            ),
+        ] {
+            let xml = format!(
+                r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>{body_xml}</w:body></w:document>"#
+            );
+            let mut tree = XmlTree::parse(xml.as_bytes()).unwrap();
+            let body = tree.wml_body_strict().unwrap();
+            let before = s(&tree);
+
+            assert!(tree
+                .insert_wml_plain_body_paragraph_under(body, position, "X")
+                .is_err());
+            assert_eq!(s(&tree), before);
+        }
     }
 
     #[test]
