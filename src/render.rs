@@ -8567,6 +8567,112 @@ mod tests {
     }
 
     #[test]
+    fn fitting_tab_advances_do_not_reflow_the_line() {
+        // The same four-stop grid, but the trailing word still fits, so the
+        // reservation pass must leave the original single line alone.
+        let text = "\t가나";
+        let lines = paragraph_lines_with_marker_and_tabs(
+            ParaProps::default(),
+            vec![Run {
+                text: text.to_string(),
+                ..Run::default()
+            }],
+            None,
+            &[],
+        );
+        let ends: Vec<f32> = lines.iter().map(line_end_x).collect();
+        assert_eq!(
+            lines.len(),
+            1,
+            "a tab whose field fits must not move content down (ends={ends:?})"
+        );
+    }
+
+    #[test]
+    fn tab_reflow_is_deterministic_and_bounded_in_a_narrow_box() {
+        // Indents shrink the paragraph box far below the tab grid, so the
+        // reservation cannot be satisfied. This must stay panic-free, keep
+        // every glyph, and repeat identically.
+        let props = || ParaProps {
+            indent: Indent {
+                left_pt: Some(70.0),
+                right_pt: Some(70.0),
+                ..Indent::default()
+            },
+            ..ParaProps::default()
+        };
+        let text = "\t\t가나다라";
+        let run = || {
+            vec![Run {
+                text: text.to_string(),
+                ..Run::default()
+            }]
+        };
+        let first = paragraph_lines_with_marker_and_tabs(props(), run(), None, &[]);
+        let second = paragraph_lines_with_marker_and_tabs(props(), run(), None, &[]);
+
+        assert!(!first.is_empty(), "a narrow box must still produce lines");
+        assert_eq!(
+            first.len(),
+            second.len(),
+            "tab reflow must be deterministic across runs"
+        );
+        let geometry = |lines: &[LineLayout]| {
+            lines
+                .iter()
+                .map(|line| {
+                    line.runs
+                        .iter()
+                        .map(|run| {
+                            (
+                                run.x.to_bits(),
+                                run.glyphs
+                                    .iter()
+                                    .map(|g| g.x_advance.to_bits())
+                                    .collect::<Vec<_>>(),
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            geometry(&first),
+            geometry(&second),
+            "repeated shaping must be byte-identical"
+        );
+    }
+
+    #[test]
+    fn tab_reflow_only_applies_to_left_and_start_aligned_ltr_text() {
+        // Centered text keeps parley's own breaking: the reservation pass is
+        // scoped to the alignments whose tab positions rwml resolves.
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let text = "\t\t\t\t가나다라";
+        let centered = shape(
+            text,
+            StyledText::plain(&[(0, text.len(), CharProps::default())]),
+            None,
+            parley::layout::Alignment::Center,
+            180.0,
+            &mut tcx,
+        );
+        assert_eq!(
+            centered.len(),
+            1,
+            "centered text must keep parley's breaking untouched"
+        );
+    }
+
+    #[test]
     fn explicit_tabs_apply_left_center_right_and_decimal_alignment() {
         let cases = [
             ("A\tLEFT", 2..6, TabAlignment::Left, 90.0),
