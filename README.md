@@ -174,6 +174,10 @@ let mut doc = rwml::Document::open(&std::fs::read("in.docx")?)?;
 // Element-tree edit: preserves fields, content controls, shapes, comments…
 doc.replace_body_text("DRAFT", "FINAL")?;
 doc.set_field_result(0, "7")?;                  // cached result for body field index 0
+let note_fields = doc.fields_in_part("word/footnotes.xml")?;
+if !note_fields.is_empty() {
+    doc.set_field_result_in_part("word/footnotes.xml", 0, "Updated note field")?;
+} // explicit part-local index; also supports correctly typed header/footer parts
 let blocks = doc.body_blocks()?;                 // direct p/tbl/sdt edit indices + kinds
 if blocks.len() >= 3 {
     doc.move_body_block(blocks[0].index, 2)?;    // exact subtree, final index 2

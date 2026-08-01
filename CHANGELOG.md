@@ -8,6 +8,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Adds explicit part-local cached field inventory and result editing through
+  `Document::fields_in_part` and `Document::set_field_result_in_part` for the
+  main body, real standard footnotes/endnotes, and correctly typed existing
+  header/footer parts, including shared or unreferenced physical parts. The
+  inventory follows accepted-current revision and `mc:AlternateContent`
+  selection, excludes note separator boilerplate, and is the authoritative
+  zero-based index for the transactional edit.
 - Adds an RAII `EditSession` for grouping existing package-preserving `.docx`
   mutations behind one explicit commit or package-exact drop/unwind rollback,
   including restoration of the pre-session touched-part state.
