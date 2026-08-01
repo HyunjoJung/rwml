@@ -57,3 +57,56 @@ fn layout_pages_reports_first_page_each_top_level_block_touches() {
     assert_eq!(pages.block_pages[0], Some(1));
     assert_eq!(pages.block_pages[2], Some(2));
 }
+
+fn assert_section_target_page(model: rwml::DocModel, expected_pages: usize, target_block: usize) {
+    let font_bytes = fonts();
+    let pages = rwml::layout_pages_with_fonts(&model, &font_bytes).expect("layout pages");
+
+    assert_eq!(pages.pages, expected_pages);
+    assert_eq!(pages.block_pages[target_block], Some(expected_pages));
+    assert_eq!(pages.page_fields, vec![Some(expected_pages)]);
+    assert_eq!(
+        rwml::layout_pages_with_fonts(&model, &font_bytes).expect("layout pages repeat"),
+        pages
+    );
+
+    let rendered = rwml::render_pdf_with_fonts_and_report(&model, &font_bytes);
+    assert_eq!(rendered.report.pages, expected_pages);
+    assert!(rendered.pdf.starts_with(b"%PDF-"));
+}
+
+#[test]
+fn layout_pages_honors_physical_even_and_odd_section_break_parity() {
+    let page_one_even = DocBuilder::new()
+        .paragraph("page one")
+        .section_break_even_page()
+        .field("PAGE", "stale even target")
+        .build();
+    assert_section_target_page(page_one_even, 2, 2);
+
+    let page_one_odd = DocBuilder::new()
+        .paragraph("page one")
+        .section_break_odd_page()
+        .page_number_start(11)
+        .field("PAGE", "stale odd target")
+        .build();
+    assert_section_target_page(page_one_odd, 3, 2);
+
+    let page_two_odd = DocBuilder::new()
+        .paragraph("page one")
+        .page_break()
+        .paragraph("page two")
+        .section_break_odd_page()
+        .field("PAGE", "stale odd target")
+        .build();
+    assert_section_target_page(page_two_odd, 3, 4);
+
+    let page_two_even = DocBuilder::new()
+        .paragraph("page one")
+        .page_break()
+        .paragraph("page two")
+        .section_break_even_page()
+        .field("PAGE", "stale even target")
+        .build();
+    assert_section_target_page(page_two_even, 4, 4);
+}

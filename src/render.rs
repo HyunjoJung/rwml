@@ -43,9 +43,10 @@ use parley::{FontContext, LayoutContext};
 
 use crate::model::{
     Align, Block, Cell, CellMargins, CharProps, Chart, ChartKind, ChartShape, Color, DocModel,
-    FieldRole, Image, ListInfo, PageSetup, PaginationHint, ParaProps, Paragraph, Run, SectionSetup,
-    Spacing, TabAlignment, TabStop, Table, TableCellNestedPaginationHints,
-    TableCellPaginationHints, TablePaginationHints, TableRowPaginationHint, VCell, VertAlign,
+    FieldRole, Image, ListInfo, PageSetup, PaginationHint, ParaProps, Paragraph, Run,
+    SectionBreakKind, SectionSetup, Spacing, TabAlignment, TabStop, Table,
+    TableCellNestedPaginationHints, TableCellPaginationHints, TablePaginationHints,
+    TableRowPaginationHint, VCell, VertAlign,
 };
 use crate::report::{self, FeatureInventory, RenderReport, RenderWarning, RenderedPdf};
 use crate::{Error, Result};
@@ -5970,6 +5971,17 @@ fn move_to_fresh_column_for_required_height(
     }
 }
 
+fn page_after_section_break(current_page: usize, section_break: Option<SectionBreakKind>) -> usize {
+    let next_page = current_page + 1;
+    match section_break.unwrap_or(SectionBreakKind::NextPage) {
+        SectionBreakKind::EvenPage if next_page % 2 == 1 => next_page + 1,
+        SectionBreakKind::OddPage if next_page % 2 == 0 => next_page + 1,
+        SectionBreakKind::NextPage | SectionBreakKind::EvenPage | SectionBreakKind::OddPage => {
+            next_page
+        }
+    }
+}
+
 fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup) -> Pagination {
     // Paginate: flow items top-to-bottom through equal-width columns and then
     // across pages. Tables repeat headers after each break and split oversized rows.
@@ -6224,22 +6236,24 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
                 );
             }
             FlowItem::SectionBreak(section) => {
-                let section_end_page_index = pages.len().saturating_sub(1);
+                let next_section_page =
+                    page_after_section_break(pages.len(), section.section_break);
+                while pages.len() < next_section_page {
+                    cursor.force_page(&mut pages, geom);
+                }
                 page_sections.resize(pages.len(), None);
                 assign_section_to_render_pages(
                     &mut page_sections,
                     section_start_page_index,
-                    section_end_page_index,
+                    next_section_page.saturating_sub(2),
                     &section,
                 );
-                cursor.force_page(&mut pages, geom);
-                page_sections.resize(pages.len(), None);
                 record_pending_block_page(
                     &mut block_pages,
                     &mut pending_block,
                     pages.len().saturating_sub(1),
                 );
-                section_start_page_index = pages.len().saturating_sub(1);
+                section_start_page_index = next_section_page.saturating_sub(1);
             }
             // Rows reach pagination only inside a Table; place defensively.
             FlowItem::Row(r) => {
@@ -6912,8 +6926,9 @@ mod tests {
     };
     use crate::model::{
         Align, Block, Cell, CellMargins, CharProps, Color, DocModel, FieldRole, Image, Indent,
-        PageSetup, PaginationHint, ParaProps, Paragraph, Row, Run, SectionSetup, Spacing,
-        TabAlignment, TabStop, Table, TablePaginationHints, TableRowPaginationHint, VertAlign,
+        PageSetup, PaginationHint, ParaProps, Paragraph, Row, Run, SectionBreakKind, SectionSetup,
+        Spacing, TabAlignment, TabStop, Table, TablePaginationHints, TableRowPaginationHint,
+        VertAlign,
     };
     use crate::report::FeatureInventory;
     use crate::{FloatingShape, ShapeEffectExtent, ShapeExtent, ShapePoint, ShapePosition};
@@ -9496,6 +9511,81 @@ mod tests {
             second_page.first_page_index == 1,
         );
         assert_eq!(block_text(header), "second first header");
+    }
+
+    #[test]
+    fn parity_filler_stays_in_ending_section_and_target_stays_first_page() {
+        let ending = SectionSetup {
+            section_break: Some(SectionBreakKind::OddPage),
+            header: vec![para("ending section", None)],
+            ..SectionSetup::default()
+        };
+        let final_setup = SectionSetup {
+            header: vec![para("following section", None)],
+            ..SectionSetup::default()
+        };
+        let pagination = paginate(
+            vec![
+                pagination_line(10.0),
+                FlowItem::SectionBreak(ending),
+                pagination_line(10.0),
+            ],
+            Geom::from_setup(&PageSetup::default()),
+            &final_setup,
+        );
+
+        assert_eq!(page_line_counts(&pagination), vec![1, 0, 1]);
+        let filler = pagination.page_sections[1]
+            .as_ref()
+            .expect("parity filler section");
+        assert_eq!(block_text(&filler.setup.header), "ending section");
+        assert_eq!(filler.first_page_index, 0);
+        let target = pagination.page_sections[2]
+            .as_ref()
+            .expect("following section target");
+        assert_eq!(block_text(&target.setup.header), "following section");
+        assert_eq!(target.first_page_index, 2);
+    }
+
+    #[test]
+    fn parity_uses_pages_created_by_automatic_overflow() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let ending = SectionSetup {
+            section_break: Some(SectionBreakKind::EvenPage),
+            header: vec![para("ending section", None)],
+            ..SectionSetup::default()
+        };
+        let final_setup = SectionSetup {
+            header: vec![para("following section", None)],
+            ..SectionSetup::default()
+        };
+        let mut items = (0..5).map(|_| pagination_line(20.0)).collect::<Vec<_>>();
+        items.push(FlowItem::SectionBreak(ending));
+        items.push(pagination_line(20.0));
+
+        let pagination = paginate(items, geom, &final_setup);
+
+        assert_eq!(page_line_counts(&pagination), vec![3, 2, 0, 1]);
+        assert_eq!(
+            block_text(
+                &pagination.page_sections[2]
+                    .as_ref()
+                    .expect("parity filler section")
+                    .setup
+                    .header
+            ),
+            "ending section"
+        );
+        let target = pagination.page_sections[3]
+            .as_ref()
+            .expect("following section target");
+        assert_eq!(block_text(&target.setup.header), "following section");
+        assert_eq!(target.first_page_index, 3);
     }
 
     #[test]
