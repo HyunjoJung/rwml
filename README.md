@@ -875,8 +875,14 @@ code points.
   DIB (`BI_RGB` 1/4/8/24/32-bit or 16/32-bit `BI_BITFIELDS`) in an exact
   header/raster/EOF stream with a frame-covering identity
   `STRETCHDIB`/`STRETCHDIBITS` or full-scan `SETDIBTODEV`/`SETDIBITSTODEVICE`
-  record is extracted and rendered as a raster image, but additional drawing
-  records, composed raster operations, and general vector payloads are not rendered);
+  record is extracted and rendered as a raster image. Source-bearing
+  `EMR_BITBLT`, `EMR_STRETCHBLT`, `META_DIBBITBLT`, and
+  `META_DIBSTRETCHBLT` records are also extracted as RGBA rasters and rendered
+  only for exact `SRCCOPY`, zero source origins, positive one-to-one full-frame
+  dimensions, canonical contiguous DIB payloads, and an exact identity EMF
+  source transform using `DIB_RGB_COLORS`. Source-less WMF forms, 1-bit EMF
+  source blits, scaling, cropping, mirroring, additional drawing records,
+  composed raster operations, and general vector payloads are not rendered);
   unknown or broader fields' *computed* values
   (cached result text is kept, including inline tabs, line breaks, and
   no-break/soft hyphens for simple and common complex body fields; `.docx`
