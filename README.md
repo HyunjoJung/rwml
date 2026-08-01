@@ -355,9 +355,8 @@ outside this bounded tab support. Within that support, resolved tab advances
 now reserve line width before breaking, so content that no longer fits after a
 tab moves to the next line instead of running past the paragraph box; the
 reservation only ever tightens and is bounded to three passes, keeping the
-result deterministic. Emitted page counts follow the resulting line count.
-Post-tab field containment, Word-exact custom-tab-aware reflow, and Word-exact
-tab-driven pagination remain outside the claim. Nested table content remains
+result deterministic. Post-tab field containment, Word-exact custom-tab-aware
+reflow, and Word-exact tab-driven pagination remain outside the claim. Nested table content remains
 a flattened text preview rather than a nested grid layout.
 One per-story fallback-counter state follows source-logical order across body,
 direct-cell, nested-cell, and later body paragraphs. `w:bidiVisual` changes
