@@ -9093,6 +9093,221 @@ mod tests {
         );
     }
 
+    fn push_legacy_paragraph_shd80(
+        grpprl: &mut Vec<u8>,
+        foreground: u8,
+        background: u8,
+        pattern: u8,
+    ) {
+        assert!(foreground < 32 && background < 32 && pattern < 64);
+        grpprl.extend_from_slice(&0x442Du16.to_le_bytes());
+        let value =
+            u16::from(foreground) | (u16::from(background) << 5) | (u16::from(pattern) << 10);
+        grpprl.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn push_legacy_paragraph_shd(
+        grpprl: &mut Vec<u8>,
+        foreground: Option<Color>,
+        background: Option<Color>,
+        pattern: u16,
+    ) {
+        grpprl.extend_from_slice(&0xC64Du16.to_le_bytes());
+        grpprl.push(10);
+        for color in [foreground, background] {
+            if let Some(color) = color {
+                grpprl.extend_from_slice(&[color.r, color.g, color.b, 0]);
+            } else {
+                grpprl.extend_from_slice(&[0, 0, 0, 0xFF]);
+            }
+        }
+        grpprl.extend_from_slice(&pattern.to_le_bytes());
+    }
+
+    fn legacy_paragraph_shading_doc() -> Vec<u8> {
+        let clear = Color::rgb(0x11, 0x22, 0x33);
+        let solid = Color::rgb(0x44, 0x55, 0x66);
+        let equal = Color::rgb(0x24, 0x68, 0xAC);
+
+        let mut paragraphs = vec![("Default", Vec::new())];
+
+        let mut shd80_clear = Vec::new();
+        push_legacy_paragraph_shd80(&mut shd80_clear, 0, 7, 0);
+        paragraphs.push(("Shd80Clear", shd80_clear));
+
+        let mut shd80_solid = Vec::new();
+        push_legacy_paragraph_shd80(&mut shd80_solid, 6, 0, 1);
+        paragraphs.push(("Shd80Solid", shd80_solid));
+
+        let mut modern_clear = Vec::new();
+        push_legacy_paragraph_shd(&mut modern_clear, None, Some(clear), 0);
+        paragraphs.push(("ModernClear", modern_clear));
+
+        let mut modern_solid = Vec::new();
+        push_legacy_paragraph_shd(&mut modern_solid, Some(solid), None, 1);
+        paragraphs.push(("ModernSolid", modern_solid));
+
+        let mut equal_pattern = Vec::new();
+        push_legacy_paragraph_shd(&mut equal_pattern, Some(equal), Some(equal), 8);
+        paragraphs.push(("EqualPattern", equal_pattern));
+
+        let mut patterned = Vec::new();
+        push_legacy_paragraph_shd80(&mut patterned, 0, 7, 0);
+        push_legacy_paragraph_shd(
+            &mut patterned,
+            Some(Color::rgb(0x10, 0x20, 0x30)),
+            Some(Color::rgb(0xA0, 0xB0, 0xC0)),
+            8,
+        );
+        paragraphs.push(("Patterned", patterned));
+
+        let mut automatic = Vec::new();
+        push_legacy_paragraph_shd80(&mut automatic, 0, 7, 0);
+        push_legacy_paragraph_shd(&mut automatic, None, None, 0);
+        paragraphs.push(("Automatic", automatic));
+
+        let mut nil = Vec::new();
+        push_legacy_paragraph_shd80(&mut nil, 0, 7, 0);
+        nil.extend_from_slice(&0xC64Du16.to_le_bytes());
+        nil.extend_from_slice(&[10, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0, 0]);
+        paragraphs.push(("Nil", nil));
+
+        let mut style_reset = Vec::new();
+        push_legacy_paragraph_shd80(&mut style_reset, 0, 7, 0);
+        style_reset.extend_from_slice(&[0x00, 0x46, 0x0A, 0x00]);
+        paragraphs.push(("StyleReset", style_reset));
+
+        let mut style_then_direct = vec![0x00, 0x46, 0x0A, 0x00];
+        push_legacy_paragraph_shd(&mut style_then_direct, None, Some(clear), 0);
+        paragraphs.push(("StyleThenDirect", style_then_direct));
+
+        let mut invalid = Vec::new();
+        push_legacy_paragraph_shd80(&mut invalid, 0, 7, 0);
+        invalid.extend_from_slice(&0xC64Du16.to_le_bytes());
+        invalid.extend_from_slice(&[10, 0, 0, 0, 1, 0x11, 0x22, 0x33, 0, 0, 0]);
+        paragraphs.push(("Invalid", invalid));
+
+        let mut truncated = Vec::new();
+        push_legacy_paragraph_shd80(&mut truncated, 0, 7, 0);
+        truncated.extend_from_slice(&[0x4D, 0xC6, 10, 0, 0]);
+        paragraphs.push(("Truncated", truncated));
+
+        let mut text = String::new();
+        let mut runs = Vec::new();
+        for (label, grpprl) in paragraphs {
+            text.push_str(label);
+            text.push('\r');
+            runs.push(SyntheticPapxRun {
+                cp_lim: text.encode_utf16().count() as u32,
+                grpprl,
+            });
+        }
+        let text_end = text.encode_utf16().count() as u32;
+        synth_doc_with_ccp_and_tables(
+            &text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [text_end, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    fn paragraph_shading_signature(model: &DocModel) -> Vec<(String, Option<Color>)> {
+        model
+            .blocks
+            .iter()
+            .map(|block| {
+                let Block::Paragraph(paragraph) = block else {
+                    panic!("synthetic legacy block must be a paragraph");
+                };
+                (paragraph.text(), paragraph.props.shading)
+            })
+            .collect()
+    }
+
+    fn expected_legacy_paragraph_shading_signature() -> Vec<(String, Option<Color>)> {
+        vec![
+            ("Default".to_string(), None),
+            ("Shd80Clear".to_string(), Some(Color::rgb(0xFF, 0xFF, 0))),
+            ("Shd80Solid".to_string(), Some(Color::rgb(0xFF, 0, 0))),
+            (
+                "ModernClear".to_string(),
+                Some(Color::rgb(0x11, 0x22, 0x33)),
+            ),
+            (
+                "ModernSolid".to_string(),
+                Some(Color::rgb(0x44, 0x55, 0x66)),
+            ),
+            (
+                "EqualPattern".to_string(),
+                Some(Color::rgb(0x24, 0x68, 0xAC)),
+            ),
+            ("Patterned".to_string(), None),
+            ("Automatic".to_string(), None),
+            ("Nil".to_string(), None),
+            ("StyleReset".to_string(), None),
+            (
+                "StyleThenDirect".to_string(),
+                Some(Color::rgb(0x11, 0x22, 0x33)),
+            ),
+            ("Invalid".to_string(), None),
+            ("Truncated".to_string(), None),
+        ]
+    }
+
+    #[test]
+    fn opened_legacy_doc_preserves_bounded_direct_paragraph_shading() {
+        let document = Document::open(&legacy_paragraph_shading_doc()).unwrap();
+
+        assert_eq!(
+            paragraph_shading_signature(&document.model()),
+            expected_legacy_paragraph_shading_signature()
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_doc_bounded_direct_paragraph_shading_roundtrips_to_docx() {
+        let legacy = Document::open(&legacy_paragraph_shading_doc()).unwrap();
+        let reopened = Document::open(&legacy.to_docx()).unwrap();
+
+        assert_eq!(
+            paragraph_shading_signature(&reopened.model()),
+            expected_legacy_paragraph_shading_signature()
+        );
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn legacy_doc_paragraph_shading_changes_pdf_without_changing_layout() {
+        let recovered = Document::open(&legacy_paragraph_shading_doc())
+            .unwrap()
+            .model();
+        let mut baseline = recovered.clone();
+        for block in &mut baseline.blocks {
+            let Block::Paragraph(paragraph) = block else {
+                panic!("synthetic legacy block must be a paragraph");
+            };
+            paragraph.props.shading = None;
+        }
+
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let recovered_pdf = render_pdf_with_fonts(&recovered, &fonts);
+        let baseline_pdf = render_pdf_with_fonts(&baseline, &fonts);
+
+        assert_ne!(recovered_pdf, baseline_pdf);
+        assert_eq!(recovered_pdf, render_pdf_with_fonts(&recovered, &fonts));
+        assert_eq!(
+            layout_pages_with_fonts(&recovered, &fonts).unwrap(),
+            layout_pages_with_fonts(&baseline, &fonts).unwrap()
+        );
+    }
+
     #[test]
     fn opened_legacy_doc_preserves_direct_paragraph_bidi_and_justification() {
         let document = Document::open(&legacy_paragraph_bidi_doc()).unwrap();

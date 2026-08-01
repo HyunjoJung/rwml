@@ -1,7 +1,7 @@
 //! Paragraph-property (PAPX) reading — the minimum needed to reconstruct table
 //! structure and source paragraph layout: table membership/termination, list
 //! and style references, direct pagination and BiDi/justification controls,
-//! and row properties.
+//! bounded flat-color shading, and row properties.
 //!
 //! The `PlcfBtePapx` bin table (FIB `fcPlcfBtePapx`, in the table stream) points
 //! to 512-byte **PAPX FKP** pages in the `WordDocument` stream. Each FKP maps FC
@@ -10,6 +10,7 @@
 //!
 //! Reference: [MS-DOC] 2.8.25 (PlcBtePapx), 2.9.137 (PapxInFkp), 2.6.2 (sprm).
 
+use crate::model::Color;
 use crate::table::TableDef;
 use crate::util::{u16le, u32le};
 
@@ -53,6 +54,8 @@ const SPRM_P_JC: u16 = 0x2461; // logical paragraph justification (1-byte)
 const SPRM_P_DYA_LINE: u16 = 0x6412; // LSPD (4-byte)
 const SPRM_P_DYA_BEFORE: u16 = 0xA413; // unsigned twips
 const SPRM_P_DYA_AFTER: u16 = 0xA414; // unsigned twips
+const SPRM_P_SHD_80: u16 = 0x442D; // Shd80 (2-byte palette/pattern)
+const SPRM_P_SHD: u16 = 0xC64D; // SHDOperand (cb + 10-byte Shd)
 const SPRM_P_DXA_RIGHT: u16 = 0x845D; // logical right indent (signed twips)
 const SPRM_P_DXA_LEFT: u16 = 0x845E; // logical left indent (signed twips)
 const SPRM_P_NEST: u16 = 0x465F; // additive logical left indent (signed twips)
@@ -228,6 +231,16 @@ impl ParagraphSpacingOverrides {
     }
 }
 
+/// A direct paragraph-shading result representable by the shared model.
+///
+/// `Unrepresentable` is an override, not absence: a later patterned, automatic,
+/// nil, invalid, or malformed value must suppress an earlier flat color.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ParagraphShading {
+    Flat(Color),
+    Unrepresentable,
+}
+
 /// Per-paragraph properties over an FC range `[fc_start, fc_lim)`.
 #[derive(Debug, Clone, Default)]
 struct PapEntry {
@@ -248,6 +261,8 @@ struct PapEntry {
     indent: ParagraphIndentOverrides,
     /// Sparse direct legacy paragraph spacing.
     spacing: ParagraphSpacingOverrides,
+    /// Sparse direct paragraph shading.
+    shading: Option<ParagraphShading>,
     /// Sparse direct paragraph pagination modifiers.
     pagination: ParagraphPaginationOverrides,
     /// Row repeats as a table header (`sprmTTableHeader`).
@@ -272,6 +287,7 @@ struct Pap {
     layout: ParagraphLayoutOverrides,
     indent: ParagraphIndentOverrides,
     spacing: ParagraphSpacingOverrides,
+    shading: Option<ParagraphShading>,
     pagination: ParagraphPaginationOverrides,
     table_header: bool,
     table_cant_split_90: Option<bool>,
@@ -341,6 +357,14 @@ impl PapxTable {
     /// Sparse direct legacy paragraph spacing at `fc`.
     pub(crate) fn paragraph_spacing_overrides_at(&self, fc: u32) -> ParagraphSpacingOverrides {
         self.entry_at(fc).map(|e| e.spacing).unwrap_or_default()
+    }
+
+    /// Bounded direct flat-color paragraph shading at `fc`.
+    pub(crate) fn paragraph_shading_at(&self, fc: u32) -> Option<Color> {
+        match self.entry_at(fc).and_then(|entry| entry.shading) {
+            Some(ParagraphShading::Flat(color)) => Some(color),
+            Some(ParagraphShading::Unrepresentable) | None => None,
+        }
     }
 
     /// Direct paragraph pagination controls at `fc`, with MS-DOC defaults.
@@ -533,6 +557,7 @@ fn parse_fkp(word: &[u8], page_off: usize, out: &mut Vec<PapEntry>) {
             layout: pap.layout,
             indent: pap.indent,
             spacing: pap.spacing,
+            shading: pap.shading,
             pagination: pap.pagination,
             table_header: pap.table_header,
             table_cant_split: pap.resolved_cant_split(),
@@ -622,8 +647,8 @@ fn block_table_border_projection(
 }
 
 /// Walk a grpprl, extracting table flags, list (`ilfo`/`ilvl`), style index,
-/// outline level, layout, indent, spacing, and direct pagination. Stops on an
-/// unsizeable or truncated sprm.
+/// outline level, layout, indent, spacing, shading, and direct pagination.
+/// Stops on an unsizeable or truncated sprm.
 fn scan_grpprl(gp: &[u8], istd: u16) -> (Pap, Option<TableDef>) {
     let mut pap = Pap {
         istd,
@@ -636,18 +661,27 @@ fn scan_grpprl(gp: &[u8], istd: u16) -> (Pap, Option<TableDef>) {
         let Some(sprm) = u16le(gp, pos) else { break };
         let op = pos + 2;
         let Some(len) = operand_len(sprm, gp, op) else {
+            if is_paragraph_shading_sprm(sprm) {
+                pap.shading = Some(ParagraphShading::Unrepresentable);
+            }
             if touches_coherent_table_border_projection(sprm) {
                 block_table_border_projection(&mut table_def, &mut border_projection_blocked);
             }
             break;
         };
         let Some(operand_end) = op.checked_add(len) else {
+            if is_paragraph_shading_sprm(sprm) {
+                pap.shading = Some(ParagraphShading::Unrepresentable);
+            }
             if touches_coherent_table_border_projection(sprm) {
                 block_table_border_projection(&mut table_def, &mut border_projection_blocked);
             }
             break;
         };
         if gp.get(op..operand_end).is_none() {
+            if is_paragraph_shading_sprm(sprm) {
+                pap.shading = Some(ParagraphShading::Unrepresentable);
+            }
             if touches_coherent_table_border_projection(sprm) {
                 block_table_border_projection(&mut table_def, &mut border_projection_blocked);
             }
@@ -666,6 +700,10 @@ fn scan_grpprl(gp: &[u8], istd: u16) -> (Pap, Option<TableDef>) {
             continue;
         }
         if apply_spacing_sprm(&mut pap.spacing, sprm, &gp[op..operand_end]) {
+            pos = operand_end;
+            continue;
+        }
+        if apply_shading_sprm(&mut pap.shading, sprm, &gp[op..operand_end]) {
             pos = operand_end;
             continue;
         }
@@ -755,6 +793,7 @@ fn apply_paragraph_style_to_modeled_properties(pap: &mut Pap, istd: u16) {
     pap.layout = ParagraphLayoutOverrides::default();
     pap.indent = ParagraphIndentOverrides::default();
     pap.spacing = ParagraphSpacingOverrides::default();
+    pap.shading = None;
     pap.pagination = ParagraphPaginationOverrides::default();
     // Table membership and row properties are intentionally preserved by a
     // paragraph-style change. Style-derived layout, indent, spacing, and
@@ -869,6 +908,79 @@ fn apply_spacing_sprm(spacing: &mut ParagraphSpacingOverrides, sprm: u16, operan
         _ => return false,
     }
     true
+}
+
+fn is_paragraph_shading_sprm(sprm: u16) -> bool {
+    matches!(sprm, SPRM_P_SHD_80 | SPRM_P_SHD)
+}
+
+fn apply_shading_sprm(shading: &mut Option<ParagraphShading>, sprm: u16, operand: &[u8]) -> bool {
+    let parsed = match sprm {
+        SPRM_P_SHD_80 => parse_shd80(operand),
+        SPRM_P_SHD => parse_shd_operand(operand),
+        _ => return false,
+    };
+    *shading = Some(
+        parsed
+            .map(ParagraphShading::Flat)
+            .unwrap_or(ParagraphShading::Unrepresentable),
+    );
+    true
+}
+
+fn parse_shd80(operand: &[u8]) -> Option<Color> {
+    let value = u16le(operand, 0)?;
+    if operand.len() != 2 || value == u16::MAX {
+        return None;
+    }
+    let foreground = explicit_ico_color((value & 0x1F) as u8)?;
+    let background = explicit_ico_color(((value >> 5) & 0x1F) as u8)?;
+    let pattern = (value >> 10) & 0x3F;
+    flat_shading_color(foreground, background, pattern)
+}
+
+fn parse_shd_operand(operand: &[u8]) -> Option<Color> {
+    if operand.len() != 11 || operand.first().copied() != Some(10) {
+        return None;
+    }
+    let foreground = explicit_colorref(operand.get(1..5)?)?;
+    let background = explicit_colorref(operand.get(5..9)?)?;
+    let pattern = u16le(operand, 9)?;
+    flat_shading_color(foreground, background, pattern)
+}
+
+fn explicit_ico_color(value: u8) -> Option<Option<Color>> {
+    match value {
+        0 => Some(None),
+        1..=16 => crate::chpx::ico_color(value).map(Some),
+        _ => None,
+    }
+}
+
+fn explicit_colorref(bytes: &[u8]) -> Option<Option<Color>> {
+    let [red, green, blue, f_auto]: [u8; 4] = bytes.try_into().ok()?;
+    match f_auto {
+        0 => Some(Some(Color::rgb(red, green, blue))),
+        0xFF => Some(None),
+        _ => None,
+    }
+}
+
+fn flat_shading_color(
+    foreground: Option<Color>,
+    background: Option<Color>,
+    pattern: u16,
+) -> Option<Color> {
+    let valid_pattern = matches!(pattern, 0x0000..=0x0019 | 0x0023..=0x003D);
+    if !valid_pattern {
+        return None;
+    }
+    match pattern {
+        0 => background,
+        1 => foreground,
+        _ if foreground.is_some() && foreground == background => foreground,
+        _ => None,
+    }
 }
 
 fn physical_justification(value: u8) -> Option<ParagraphJustification> {
@@ -1013,6 +1125,23 @@ mod tests {
         for _ in 0..6 {
             sprm.extend_from_slice(&[color.r, color.g, color.b, 0, size, style, 0, 0]);
         }
+        sprm
+    }
+
+    fn paragraph_shd80_sprm(foreground: u8, background: u8, pattern: u8) -> Vec<u8> {
+        let value =
+            u16::from(foreground) | (u16::from(background) << 5) | (u16::from(pattern) << 10);
+        let mut sprm = Vec::from(SPRM_P_SHD_80.to_le_bytes());
+        sprm.extend_from_slice(&value.to_le_bytes());
+        sprm
+    }
+
+    fn paragraph_shd_sprm(foreground: [u8; 4], background: [u8; 4], pattern: u16) -> Vec<u8> {
+        let mut sprm = Vec::from(SPRM_P_SHD.to_le_bytes());
+        sprm.push(10);
+        sprm.extend_from_slice(&foreground);
+        sprm.extend_from_slice(&background);
+        sprm.extend_from_slice(&pattern.to_le_bytes());
         sprm
     }
 
@@ -1412,6 +1541,93 @@ mod tests {
                 line: None,
             }
         );
+    }
+
+    #[test]
+    fn resolves_bounded_flat_paragraph_shading_in_strict_source_order() {
+        let yellow = Color::rgb(0xFF, 0xFF, 0);
+        let red = Color::rgb(0xFF, 0, 0);
+        let clear = Color::rgb(0x11, 0x22, 0x33);
+        let solid = Color::rgb(0x44, 0x55, 0x66);
+        let equal = Color::rgb(0x24, 0x68, 0xAC);
+
+        let (default, _) = scan_grpprl(&[], 0);
+        assert_eq!(default.shading, None);
+
+        for (grpprl, expected) in [
+            (
+                paragraph_shd80_sprm(0, 7, 0),
+                ParagraphShading::Flat(yellow),
+            ),
+            (paragraph_shd80_sprm(6, 0, 1), ParagraphShading::Flat(red)),
+            (
+                paragraph_shd_sprm([0, 0, 0, 0xFF], [0x11, 0x22, 0x33, 0], 0),
+                ParagraphShading::Flat(clear),
+            ),
+            (
+                paragraph_shd_sprm([0x44, 0x55, 0x66, 0], [0, 0, 0, 0xFF], 1),
+                ParagraphShading::Flat(solid),
+            ),
+            (
+                paragraph_shd_sprm(
+                    [equal.r, equal.g, equal.b, 0],
+                    [equal.r, equal.g, equal.b, 0],
+                    8,
+                ),
+                ParagraphShading::Flat(equal),
+            ),
+        ] {
+            let (pap, _) = scan_grpprl(&grpprl, 0);
+            assert_eq!(pap.shading, Some(expected));
+        }
+
+        let mut source_ordered = paragraph_shd80_sprm(0, 7, 0);
+        source_ordered.extend_from_slice(&paragraph_shd_sprm(
+            [0x10, 0x20, 0x30, 0],
+            [0xA0, 0xB0, 0xC0, 0],
+            8,
+        ));
+        source_ordered.extend_from_slice(&paragraph_shd_sprm(
+            [0, 0, 0, 0xFF],
+            [clear.r, clear.g, clear.b, 0],
+            0,
+        ));
+        let (pap, _) = scan_grpprl(&source_ordered, 0);
+        assert_eq!(pap.shading, Some(ParagraphShading::Flat(clear)));
+
+        let mut style_reset = paragraph_shd80_sprm(0, 7, 0);
+        style_reset.extend_from_slice(&[0x00, 0x46, 0x0A, 0x00]);
+        let (pap, _) = scan_grpprl(&style_reset, 0);
+        assert_eq!(pap.shading, None);
+    }
+
+    #[test]
+    fn unsupported_or_malformed_paragraph_shading_suppresses_prior_color() {
+        let positive = paragraph_shd80_sprm(0, 7, 0);
+        let unsupported = [
+            paragraph_shd80_sprm(31, 31, 63),
+            paragraph_shd80_sprm(17, 7, 0),
+            paragraph_shd80_sprm(6, 7, 0x1A),
+            paragraph_shd_sprm([0, 0, 0, 0xFF], [0, 0, 0, 0xFF], 0),
+            paragraph_shd_sprm([0, 0, 0, 1], [0x11, 0x22, 0x33, 0], 0),
+            {
+                let mut wrong_size = Vec::from(SPRM_P_SHD.to_le_bytes());
+                wrong_size.extend_from_slice(&[9, 0, 0, 0, 0xFF, 0, 0, 0, 0xFF, 0]);
+                wrong_size
+            },
+            vec![0x4D, 0xC6, 10, 0, 0],
+        ];
+
+        for later in unsupported {
+            let mut grpprl = positive.clone();
+            grpprl.extend_from_slice(&later);
+            let (pap, _) = scan_grpprl(&grpprl, 0);
+            assert_eq!(
+                pap.shading,
+                Some(ParagraphShading::Unrepresentable),
+                "later operand: {later:02X?}"
+            );
+        }
     }
 
     #[test]
@@ -1868,6 +2084,7 @@ mod tests {
             layout: ParagraphLayoutOverrides::default(),
             indent: ParagraphIndentOverrides::default(),
             spacing: ParagraphSpacingOverrides::default(),
+            shading: None,
             pagination: ParagraphPaginationOverrides::default(),
             table_header: false,
             table_cant_split: false,
