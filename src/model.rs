@@ -895,7 +895,8 @@ pub struct Cell {
     pub valign: VCell,
     /// Cell width as a fraction of the table width, if set (`None` = auto).
     pub width_pct: Option<f32>,
-    /// Per-cell margins in twips, if explicitly set.
+    /// Effective physical cell margins in twips, if modeled from table defaults
+    /// or direct cell properties.
     pub margins: Option<CellMargins>,
 }
 

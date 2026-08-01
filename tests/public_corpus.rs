@@ -16,7 +16,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 #[cfg(feature = "render")]
-use rwml::Block;
+use rwml::{Block, CellMargins};
 use rwml::{Document, DocumentWarning};
 
 /// A genuinely valid 2x3 RGB PNG (correct chunk CRCs + a real zlib IDAT), so
@@ -554,6 +554,15 @@ fn render_activation_fixtures_preserve_opened_document_semantics() {
     assert!(table.bidi_visual);
     assert_eq!(table.rows[0].cells[0].text(), "LOGICAL LEFT");
     assert_eq!(table.rows[0].cells[1].text(), "LOGICAL RIGHT");
+    assert!(table.rows[0].cells.iter().all(|cell| {
+        cell.margins
+            == Some(CellMargins {
+                top: 180,
+                right: 360,
+                bottom: 180,
+                left: 360,
+            })
+    }));
 
     let fonts = vec![
         rwml_fonts::noto_sans_kr_subset_with_hanja().to_vec(),
@@ -630,6 +639,15 @@ fn render_activation_fixtures_preserve_opened_document_semantics() {
     assert!(rtl_table.bidi_visual);
     assert_eq!(rtl_table.rows[0].cells[0].text(), "أولى");
     assert_eq!(rtl_table.rows[0].cells[1].text(), "תא שני");
+    assert!(rtl_table.rows[0].cells.iter().all(|cell| {
+        cell.margins
+            == Some(CellMargins {
+                top: 0,
+                right: 300,
+                bottom: 0,
+                left: 300,
+            })
+    }));
     let rtl_pdf = rtl
         .try_to_pdf_with_fonts(&fonts)
         .expect("fixed-font RTL render");

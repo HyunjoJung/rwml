@@ -4121,12 +4121,10 @@ fn cell_builder_adds_cell_margins() {
     };
     let model = DocBuilder::new()
         .rich_table(
-            TableBuilder::new().row([CellBuilder::text("Padded").margins_twips(
-                margins.top,
-                margins.right,
-                margins.bottom,
-                margins.left,
-            )]),
+            TableBuilder::new().row([CellBuilder::text("Padded")
+                .shading(Color::rgb(0x11, 0x22, 0x33))
+                .margins_twips(margins.top, margins.right, margins.bottom, margins.left)
+                .valign(VCell::Bottom)]),
         )
         .build();
 
@@ -4140,9 +4138,9 @@ fn cell_builder_adds_cell_margins() {
     let document_xml = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
     assert!(
         document_xml.contains(
-            r#"<w:tcMar><w:top w:w="120" w:type="dxa"/><w:right w:w="240" w:type="dxa"/><w:bottom w:w="360" w:type="dxa"/><w:left w:w="480" w:type="dxa"/></w:tcMar>"#
+            r#"<w:tcPr><w:shd w:val="clear" w:color="auto" w:fill="112233"/><w:tcMar><w:top w:w="120" w:type="dxa"/><w:left w:w="480" w:type="dxa"/><w:bottom w:w="360" w:type="dxa"/><w:right w:w="240" w:type="dxa"/></w:tcMar><w:vAlign w:val="bottom"/></w:tcPr>"#
         ),
-        "cell margin XML missing: {document_xml}"
+        "cell property XML missing or out of schema order: {document_xml}"
     );
 
     let reopened = Document::open(&bytes).expect("cell margins .docx reopens");

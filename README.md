@@ -300,12 +300,17 @@ indents, lists with
 reader-captured autonumber labels or deterministic empty-label fallbacks in
 top-level body and ordinary or recursively flattened table cells, bordered
 tables with six-way model-backed solid colors and bounded
-per-side eighth-point widths, shaded vertically-aligned cells, authored and
+per-side eighth-point widths, shaded vertically-aligned cells with modeled
+physical cell margins, authored and
 opened-DOCX `tblGrid` column proportions, bounded preferred-percentage outer
 widths, logical leading/center/trailing placement, and non-negative leading
 indentation, top-level and run-attached body images with model-backed
 whole-degree clockwise rotation, and **clickable hyperlink annotations** are
-drawn. Rotated raster bounds drive proportional
+drawn. Opened `.docx` tables materialize direct `dxa`/`nil` `w:tblCellMar`
+defaults and per-side direct `w:tcMar` exceptions, including logical
+`start`/`end` mapping under `w:bidiVisual`; table-style, conditional-style,
+and `w:tblPrEx` margin inheritance remain outside this bounded subset.
+Rotated raster bounds drive proportional
 content-box/page-height fitting and pagination. Narrow RTL tables reverse logical
 placement and mirror their cells inside the local table box. Page geometry,
 equal-width section columns, and per-side margins come from the document;
@@ -1035,6 +1040,8 @@ evidence.
       bounded DOCX document-default, declared-default-style, and explicit
       paragraph-style spacing, line height, first/hanging indents, flat
       shading, and page-break-before,
+      direct DOCX table-cell margin defaults with per-side direct cell
+      exceptions,
       direct plus bounded whole/first/last/horizontal-band table-style DOCX
       table-row `cantSplit`, direct DOCX and recursively nested table-cell
       keep/widow controls, direct and

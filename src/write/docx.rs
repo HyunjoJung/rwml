@@ -1169,18 +1169,20 @@ impl Ctx {
         }
     }
 
-    fn write_cell_margins(out: &mut String, margins: CellMargins) {
+    fn write_cell_margins(out: &mut String, margins: CellMargins, bidi_visual: bool) {
+        let (leading, trailing) = if bidi_visual {
+            (margins.right, margins.left)
+        } else {
+            (margins.left, margins.right)
+        };
         out.push_str("<w:tcMar>");
         out.push_str(&format!(r#"<w:top w:w="{}" w:type="dxa"/>"#, margins.top));
-        out.push_str(&format!(
-            r#"<w:right w:w="{}" w:type="dxa"/>"#,
-            margins.right
-        ));
+        out.push_str(&format!(r#"<w:left w:w="{leading}" w:type="dxa"/>"#));
         out.push_str(&format!(
             r#"<w:bottom w:w="{}" w:type="dxa"/>"#,
             margins.bottom
         ));
-        out.push_str(&format!(r#"<w:left w:w="{}" w:type="dxa"/>"#, margins.left));
+        out.push_str(&format!(r#"<w:right w:w="{}" w:type="dxa"/>"#, trailing));
         out.push_str("</w:tcMar>");
     }
 
@@ -1240,6 +1242,15 @@ impl Ctx {
                     if rs > 1 {
                         row_xml.push_str(r#"<w:vMerge w:val="restart"/>"#);
                     }
+                    if let Some(col) = c.shading {
+                        row_xml.push_str(&format!(
+                            r#"<w:shd w:val="clear" w:color="auto" w:fill="{}"/>"#,
+                            hex(col)
+                        ));
+                    }
+                    if let Some(margins) = c.margins {
+                        Self::write_cell_margins(&mut row_xml, margins, t.bidi_visual);
+                    }
                     match c.valign {
                         crate::model::VCell::Center => {
                             row_xml.push_str(r#"<w:vAlign w:val="center"/>"#)
@@ -1248,15 +1259,6 @@ impl Ctx {
                             row_xml.push_str(r#"<w:vAlign w:val="bottom"/>"#)
                         }
                         crate::model::VCell::Top => {}
-                    }
-                    if let Some(col) = c.shading {
-                        row_xml.push_str(&format!(
-                            r#"<w:shd w:val="clear" w:color="auto" w:fill="{}"/>"#,
-                            hex(col)
-                        ));
-                    }
-                    if let Some(margins) = c.margins {
-                        Self::write_cell_margins(&mut row_xml, margins);
                     }
                     row_xml.push_str("</w:tcPr>");
                     self.write_cell_blocks(&mut row_xml, &c.blocks);

@@ -349,6 +349,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   per-instance start and replacement-format overrides and continue numbering
   across `ilfo` instances that share an `lsid`; malformed variable records retain
   deterministic fixed-LFO fallback without panicking.
+- Opened `.docx` tables now materialize direct `dxa`/`nil`
+  `w:tblCellMar` defaults and per-side direct `w:tcMar` exceptions into
+  physical cell margins, including logical `start`/`end` mapping under
+  `w:bidiVisual` and the `0/115/0/115`-twip schema fallback. Malformed,
+  percentage, and automatic declarations inherit from the lower layer;
+  table-style, conditional-style, and `w:tblPrEx` margin inheritance remain
+  unsupported.
 - Floating-shape preview coordinates now distinguish the page, page-margin text
   rectangle, and physical left/right/top/bottom margin bands; bounded
   `wrapTopAndBottom` flow also honors top/bottom-margin anchors when their visual
