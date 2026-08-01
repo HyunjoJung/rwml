@@ -20,7 +20,7 @@ use crate::model::{
     Image, ListInfo, PaginationHint, ParaProps, Paragraph, SectionBreakKind, SectionSetup,
     SourceRegion, SourceRegionKind, Stats, TableCellPaginationHints, TableRowPaginationHint,
 };
-use crate::papx::PapxTable;
+use crate::papx::{PapxTable, ParagraphJustification};
 use crate::stsh::StyleSheet;
 use crate::table::{self, CellBuild, RowBuild};
 use crate::util::u32le;
@@ -938,7 +938,9 @@ impl<'a, 'l> Asm<'a, 'l> {
         };
         // Heading level: an explicit outline level on the paragraph wins
         // (0..8 → h1..h9, 9 → body); otherwise the paragraph style decides.
-        let (istd, outlvl, jc) = self.papx.style_at(fc);
+        let (istd, outlvl) = self.papx.style_at(fc);
+        let layout = self.papx.paragraph_layout_overrides_at(fc);
+        let bidi = layout.bidi.unwrap_or(false);
         let source_pagination = self
             .stylesheet
             .paragraph_pagination(istd)
@@ -948,11 +950,34 @@ impl<'a, 'l> Asm<'a, 'l> {
             Some(_) => None,
             None => self.stylesheet.heading_level(istd),
         };
-        let align = match jc {
-            1 => Align::Center,
-            2 => Align::Right,
-            3 | 4 => Align::Justify,
-            _ => Align::Left,
+        let align = match layout.justification {
+            Some(ParagraphJustification::PhysicalLeft) => Align::Left,
+            Some(ParagraphJustification::Center) => Align::Center,
+            Some(ParagraphJustification::PhysicalRight) => Align::Right,
+            Some(ParagraphJustification::Justify) => Align::Justify,
+            Some(ParagraphJustification::LogicalEnd) => {
+                if bidi {
+                    Align::Left
+                } else {
+                    Align::Right
+                }
+            }
+            Some(ParagraphJustification::LogicalStart) => {
+                if bidi {
+                    Align::Right
+                } else {
+                    Align::Left
+                }
+            }
+            // The modern paragraph-justification default is logical start.
+            // The indented value keeps that edge while its indent stays a ceiling.
+            Some(ParagraphJustification::UnsupportedIndented) | None => {
+                if bidi {
+                    Align::Right
+                } else {
+                    Align::Left
+                }
+            }
         };
         let style_name = self.stylesheet.name(istd).map(str::to_string);
         // A heading takes precedence over list-item rendering.
@@ -965,6 +990,7 @@ impl<'a, 'l> Asm<'a, 'l> {
                 outline_level: outlvl,
                 list,
                 page_break_before: source_pagination.page_break_before,
+                bidi,
                 ..Default::default()
             },
             runs,

@@ -319,9 +319,15 @@ mirroring. This improves mixed Arabic/Hebrew documents without claiming
 Word-exact list-level alignment, punctuation, or table typography.
 Opened legacy `.doc` runs additionally preserve literal direct
 `sprmCFBiDi` on/off values from complete FKP/CHPX payloads through `.docx`
-conversion and PDF run isolation. Character-style or language-derived
-direction, complex-script properties, paragraph/table RTL, piece `Pcd.Prm`,
-and Markdown/HTML visual RTL remain outside this bounded bridge.
+conversion and PDF run isolation. Opened legacy paragraphs preserve valid
+direct `sprmPFBiDi` direction together with physical left/center/right and
+logical start/center/end alignment from `sprmPJc80` and `sprmPJc` through
+`.docx` conversion/reopen and existing PDF body/table-cell shaping; paragraph
+direction does not imply table mirroring. Distribution and language-specific
+justification collapse to generic justify. Character/paragraph-style or
+language-derived direction, indented logical justification, logical legacy
+indents, exact RTL list-level layout, table visual RTL, piece `Pcd.Prm`, and
+Markdown/HTML visual RTL remain outside these bounded bridges.
 
 > **Scope:** this is a fast, in-process **preview / report** renderer, not a Word
 > layout engine. It is faithful to the model and produces selectable text, but

@@ -3571,7 +3571,8 @@ fn rtl_properties_round_trip_through_docx() {
     assert!(
         document_xml.contains("<w:bidi/>")
             && document_xml.contains("<w:rtl/>")
-            && document_xml.contains("<w:bidiVisual/>"),
+            && document_xml.contains("<w:bidiVisual/>")
+            && document_xml.contains(r#"<w:jc w:val="left"/>"#),
         "RTL properties missing: {document_xml}"
     );
 
@@ -3581,6 +3582,7 @@ fn rtl_properties_round_trip_through_docx() {
         panic!("expected reopened paragraph");
     };
     assert!(paragraph.props.bidi);
+    assert_eq!(paragraph.props.align, Align::Left);
     assert!(paragraph.runs[0].props.rtl);
 
     let Block::Table(table) = &reopened_model.blocks[1] else {
