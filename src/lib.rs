@@ -1354,11 +1354,32 @@ impl Document {
             .part("word/document.xml")
             .ok_or_else(|| Error::Docx("missing word/document.xml".into()))?;
         let raw_xml = String::from_utf8_lossy(&raw);
-        let body_field_count = docx::parse_fields(&raw_xml).len();
-        if field_index >= body_field_count && field_index < d.fields.len() {
+        let body_fields = docx::parse_fields(&raw_xml);
+        if field_index >= body_fields.len() {
             return Err(Error::Docx(format!(
                 "field index {field_index} is outside the editable body field range"
             )));
+        }
+        let probe = xmltree::XmlTree::parse(&raw)?;
+        let probe_body = probe.wml_body_strict()?;
+        if !probe.wml_field_alternate_content_policy_matches_reader(probe_body) {
+            return Err(Error::Docx(
+                "editable body field inventory differs from the accepted-current read view".into(),
+            ));
+        }
+        let editable_instructions: Vec<_> = probe
+            .wml_field_instructions_under(probe_body)
+            .into_iter()
+            .map(|instruction| annotation::normalized_field_instruction(&instruction))
+            .collect();
+        let read_instructions: Vec<_> = body_fields
+            .iter()
+            .map(|field| field.instruction.clone())
+            .collect();
+        if editable_instructions != read_instructions {
+            return Err(Error::Docx(
+                "editable body field inventory differs from the accepted-current read view".into(),
+            ));
         }
 
         let mut pkg = d.package.clone();
@@ -1460,12 +1481,12 @@ impl Document {
     }
 
     /// **Template-fill edit: fill logical template fields by name.** Each
-    /// `(name, text)` pair fills every body, note, or accepted-current referenced
-    /// header/footer content control whose `w:sdtPr/w:tag/@w:val` exactly equals
-    /// `name` and every body, note, or accepted-current referenced header/footer
-    /// `MERGEFIELD` field whose instruction names the same merge field. Cached
-    /// merge-field result text is replaced while the field instruction markup is
-    /// preserved.
+    /// `(name, text)` pair fills every body, real footnote/endnote, or
+    /// accepted-current referenced header/footer content control whose
+    /// `w:sdtPr/w:tag/@w:val` exactly equals `name` and every matching
+    /// `MERGEFIELD` in those same story regions. Cached merge-field result text is
+    /// replaced while the field instruction markup is preserved; note separator
+    /// boilerplate is not edited.
     ///
     /// All fills are validated first and then committed as one
     /// package-preserving edit. Missing names are ignored, and the return value is
@@ -1621,8 +1642,7 @@ impl Document {
             .ok_or_else(|| Error::Docx("missing word/document.xml".into()))?;
         let probe = xmltree::XmlTree::parse(&raw)?;
         let probe_body = probe.wml_body_strict()?;
-        let raw_xml = String::from_utf8_lossy(&raw);
-        let body_fields = docx::parse_fields(&raw_xml);
+        let body_field_instructions = probe.wml_field_instructions_under(probe_body);
 
         let mut matched_runs = Vec::new();
         for (entry_index, (name, _)) in entries.iter().enumerate() {
@@ -1637,8 +1657,8 @@ impl Document {
         }
 
         let mut matched_fields = Vec::new();
-        for (field_index, field) in body_fields.iter().enumerate() {
-            let Some(name) = merge_field_name(&field.instruction) else {
+        for (field_index, instruction) in body_field_instructions.iter().enumerate() {
+            let Some(name) = merge_field_name(instruction) else {
                 continue;
             };
             let Some(entry_index) = entries
@@ -1778,15 +1798,20 @@ impl Document {
             {
                 let tree = pkg.part_tree_mut(&target.part)?;
                 let root = tree.wml_part_root_strict(&target.part, target.root_local)?;
+                let roots = story_template_roots(tree, target, root);
                 for (name, text) in &entries {
-                    for runs in tree.wml_content_control_text_runs_by_tag_under(root, name) {
-                        if runs.is_empty() {
-                            return Err(Error::Docx(format!(
-                                "{caller}: template field {name:?} has no visible text"
-                            )));
-                        }
-                        for (i, id) in runs.into_iter().enumerate() {
-                            tree.set_element_text(id, if i == 0 { text } else { "" })?;
+                    for &story_root in &roots {
+                        for runs in
+                            tree.wml_content_control_text_runs_by_tag_under(story_root, name)
+                        {
+                            if runs.is_empty() {
+                                return Err(Error::Docx(format!(
+                                    "{caller}: template field {name:?} has no visible text"
+                                )));
+                            }
+                            for (i, id) in runs.into_iter().enumerate() {
+                                tree.set_element_text(id, if i == 0 { text } else { "" })?;
+                            }
                         }
                     }
                 }
@@ -1798,11 +1823,11 @@ impl Document {
             {
                 let tree = pkg.part_tree_mut(&target.part)?;
                 let root = tree.wml_part_root_strict(&target.part, target.root_local)?;
+                let roots = story_template_roots(tree, target, root);
                 let name = &entries[*entry_index].0;
                 let text = &entries[*entry_index].1;
-                let runs = tree
-                    .wml_field_result_runs_under(root, *field_index)
-                    .ok_or_else(|| {
+                let runs =
+                    story_field_result_runs(tree, &roots, *field_index).ok_or_else(|| {
                         Error::Docx(format!(
                             "{caller}: merge field {name:?} has no cached result"
                         ))
@@ -2310,7 +2335,7 @@ impl Document {
         }
 
         let matched: Vec<_> = probe
-            .wml_text_runs_under(root)
+            .wml_all_branch_text_runs_under(root)
             .into_iter()
             .filter(|&id| probe.text_of(id) == old)
             .collect();
@@ -2343,7 +2368,7 @@ impl Document {
         let tree = pkg.part_tree_mut(part_name)?;
         let root = tree.wml_any_part_root_strict(part_name)?;
         let mut changed = 0usize;
-        for id in tree.wml_text_runs_under(root) {
+        for id in tree.wml_all_branch_text_runs_under(root) {
             if tree.text_of(id) == old {
                 set_wml_text_runs(tree, [id], new)?;
                 changed += 1;
@@ -3702,6 +3727,7 @@ struct NotePartTarget {
 struct StoryTemplateTarget {
     part: String,
     root_local: &'static [u8],
+    note_local: Option<&'static [u8]>,
     content_type: &'static str,
 }
 
@@ -3719,6 +3745,7 @@ impl From<HeaderFooterTarget> for StoryTemplateTarget {
         Self {
             part: target.part,
             root_local: target.root_local,
+            note_local: None,
             content_type: target.content_type,
         }
     }
@@ -3730,6 +3757,7 @@ impl From<NotePartTarget> for StoryTemplateTarget {
         Self {
             part: target.part.to_string(),
             root_local: target.root_local,
+            note_local: Some(target.note_local),
             content_type: target.content_type,
         }
     }
@@ -3982,6 +4010,42 @@ fn note_part_targets() -> [NotePartTarget; 2] {
 }
 
 #[cfg(feature = "docx")]
+fn story_template_roots(
+    tree: &xmltree::XmlTree,
+    target: &StoryTemplateTarget,
+    root: xmltree::NodeId,
+) -> Vec<xmltree::NodeId> {
+    target.note_local.map_or_else(
+        || vec![root],
+        |note_local| tree.wml_real_note_entries_under(root, note_local),
+    )
+}
+
+#[cfg(feature = "docx")]
+fn story_field_instructions(tree: &xmltree::XmlTree, roots: &[xmltree::NodeId]) -> Vec<String> {
+    roots
+        .iter()
+        .flat_map(|&root| tree.wml_field_instructions_under(root))
+        .collect()
+}
+
+#[cfg(feature = "docx")]
+fn story_field_result_runs(
+    tree: &xmltree::XmlTree,
+    roots: &[xmltree::NodeId],
+    mut field_index: usize,
+) -> Option<Vec<xmltree::NodeId>> {
+    for &root in roots {
+        let field_count = tree.wml_field_instructions_under(root).len();
+        if field_index < field_count {
+            return tree.wml_field_result_runs_under(root, field_index);
+        }
+        field_index -= field_count;
+    }
+    None
+}
+
+#[cfg(feature = "docx")]
 fn collect_story_template_match(
     package: &opc::Package,
     target: StoryTemplateTarget,
@@ -3993,26 +4057,28 @@ fn collect_story_template_match(
     };
     let probe = xmltree::XmlTree::parse(&raw)?;
     let root = probe.wml_part_root_strict(&target.part, target.root_local)?;
-    let raw_xml = String::from_utf8_lossy(&raw);
-    let fields = docx::parse_fields(&raw_xml);
+    let roots = story_template_roots(&probe, &target, root);
+    let field_instructions = story_field_instructions(&probe, &roots);
     let mut part_matches = Vec::new();
     let mut part_content_count = 0usize;
     let mut part_fields = Vec::new();
 
     for (entry_index, (name, _)) in entries.iter().enumerate() {
-        for runs in probe.wml_content_control_text_runs_by_tag_under(root, name) {
-            if runs.is_empty() {
-                return Err(Error::Docx(format!(
-                    "{caller}: template field {name:?} has no visible text"
-                )));
+        for &story_root in &roots {
+            for runs in probe.wml_content_control_text_runs_by_tag_under(story_root, name) {
+                if runs.is_empty() {
+                    return Err(Error::Docx(format!(
+                        "{caller}: template field {name:?} has no visible text"
+                    )));
+                }
+                part_content_count += 1;
+                part_matches.push((entry_index, runs));
             }
-            part_content_count += 1;
-            part_matches.push((entry_index, runs));
         }
     }
 
-    for (field_index, field) in fields.iter().enumerate() {
-        let Some(name) = merge_field_name(&field.instruction) else {
+    for (field_index, instruction) in field_instructions.iter().enumerate() {
+        let Some(name) = merge_field_name(instruction) else {
             continue;
         };
         let Some(entry_index) = entries
@@ -4021,13 +4087,11 @@ fn collect_story_template_match(
         else {
             continue;
         };
-        let runs = probe
-            .wml_field_result_runs_under(root, field_index)
-            .ok_or_else(|| {
-                Error::Docx(format!(
-                    "{caller}: merge field {name:?} has no cached result"
-                ))
-            })?;
+        let runs = story_field_result_runs(&probe, &roots, field_index).ok_or_else(|| {
+            Error::Docx(format!(
+                "{caller}: merge field {name:?} has no cached result"
+            ))
+        })?;
         if runs.is_empty() {
             return Err(Error::Docx(format!(
                 "{caller}: merge field {name:?} has no cached result text"
@@ -9669,6 +9733,21 @@ mod tests {
             body.contains("OUTSIDE") && body.contains("EDITED"),
             "out-of-body text must be untouched, in-body text edited: {body}"
         );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn replace_body_text_only_edits_selected_alternate_content_branch() {
+        let doc_xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:compat="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><compat:AlternateContent><compat:Choice Requires="w14"><w:p><w:r><w:t>OLD</w:t></w:r></w:p></compat:Choice><compat:Fallback><w:p><w:r><w:t>OLD</w:t></w:r></w:p></compat:Fallback></compat:AlternateContent></w:body></w:document>"#;
+        let mut doc = Document::open(&minimal_docx(doc_xml)).unwrap();
+
+        assert_eq!(doc.replace_body_text("OLD", "NEW").unwrap(), 1);
+
+        let body =
+            String::from_utf8(unzip_parts(&doc.save().unwrap())["word/document.xml"].clone())
+                .unwrap();
+        assert_eq!(body.matches("<w:t>NEW</w:t>").count(), 1, "{body}");
+        assert_eq!(body.matches("<w:t>OLD</w:t>").count(), 1, "{body}");
     }
 
     #[cfg(feature = "docx")]

@@ -3813,6 +3813,40 @@ fn nested_complex_field_docx() -> Vec<u8> {
     ])
 }
 
+fn alternate_content_field_edit_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:ac="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:p><w:fldSimple w:instr=" CUSTOM inline "><w:r><w:t>Inline old </w:t></w:r><ac:AlternateContent><ac:Choice Requires="w14"><alt:AlternateContent xmlns:alt="http://schemas.openxmlformats.org/markup-compatibility/2006"><alt:Choice Requires="w15"><w:r><w:t>Selected nested</w:t></w:r></alt:Choice><alt:Fallback><w:r><w:t>Nested fallback</w:t></w:r></alt:Fallback></alt:AlternateContent></ac:Choice><ac:Fallback><w:r><w:t>Outer fallback</w:t></w:r></ac:Fallback></ac:AlternateContent></w:fldSimple></w:p><ac:AlternateContent><ac:Choice Requires="w14"><w:p><w:fldSimple w:instr=" CUSTOM selected "><w:r><w:t>Selected branch</w:t></w:r></w:fldSimple></w:p></ac:Choice><ac:Fallback><w:p><w:fldSimple w:instr=" CUSTOM hidden "><w:r><w:t>Hidden fallback</w:t></w:r></w:fldSimple></w:p></ac:Fallback></ac:AlternateContent><w:p><w:fldSimple w:instr=" CUSTOM visible "><w:r><w:t>Visible old</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
+fn alternate_content_complex_field_docx() -> Vec<u8> {
+    docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mcx="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> CUSTOM crossing </w:instrText></w:r><mcx:AlternateContent><mcx:Choice Requires="w14"><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Selected complex</w:t></w:r></mcx:Choice><mcx:Fallback><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>Fallback complex</w:t></w:r></mcx:Fallback></mcx:AlternateContent><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:body></w:document>"#,
+        ),
+    ])
+}
+
 fn nested_complex_with_simple_field_docx() -> Vec<u8> {
     docx_fixture(&[
         (
@@ -25640,6 +25674,150 @@ fn set_field_result_uses_fields_order_for_nested_complex_fields() {
     assert_eq!(fields.len(), 2);
     assert_eq!(fields[1].instruction, "CUSTOM outer");
     assert_eq!(fields[1].result, "Outer Updated");
+}
+
+#[test]
+fn set_field_result_only_edits_selected_alternate_content_branches() {
+    let mut doc = Document::open(&alternate_content_field_edit_docx()).expect("fixture opens");
+
+    assert_eq!(
+        doc.fields()
+            .iter()
+            .map(|field| field.instruction.as_str())
+            .collect::<Vec<_>>(),
+        ["CUSTOM inline", "CUSTOM selected", "CUSTOM visible"]
+    );
+    doc.set_field_result(0, "Updated inline")
+        .expect("update field containing alternate content");
+    doc.set_field_result(2, "Updated visible")
+        .expect("update field after alternate content");
+
+    let saved = doc.save().expect("save edited docx");
+    let body = String::from_utf8(unzip_parts(&saved)["word/document.xml"].clone()).unwrap();
+    assert!(
+        body.contains("<alt:Fallback><w:r><w:t>Nested fallback</w:t></w:r></alt:Fallback>"),
+        "{body}"
+    );
+    assert!(
+        body.contains("<ac:Fallback><w:r><w:t>Outer fallback</w:t></w:r></ac:Fallback>"),
+        "{body}"
+    );
+    assert!(
+        body.contains(r#"<ac:Fallback><w:p><w:fldSimple w:instr=" CUSTOM hidden "><w:r><w:t>Hidden fallback</w:t></w:r></w:fldSimple></w:p></ac:Fallback>"#),
+        "{body}"
+    );
+
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    assert_eq!(
+        reopened
+            .fields()
+            .iter()
+            .map(|field| field.result.as_str())
+            .collect::<Vec<_>>(),
+        ["Updated inline", "Selected branch", "Updated visible"]
+    );
+}
+
+#[test]
+fn set_field_result_rejects_first_non_body_index_before_mutation() {
+    let fixture = alternate_content_field_edit_docx();
+    let before = unzip_parts(&fixture);
+    let mut doc = Document::open(&fixture).expect("fixture opens");
+
+    let err = doc
+        .set_field_result(3, "Hidden")
+        .expect_err("first non-body field index rejected");
+
+    assert!(
+        err.to_string().contains("editable body field range"),
+        "{err}"
+    );
+    assert!(doc.edited_parts().is_empty());
+    let after = unzip_parts(&doc.save().expect("save rejected edit"));
+    assert_eq!(
+        before.get("word/document.xml"),
+        after.get("word/document.xml")
+    );
+}
+
+#[test]
+fn set_field_result_tracks_complex_field_state_across_selected_branch() {
+    let mut doc = Document::open(&alternate_content_complex_field_docx()).expect("fixture opens");
+
+    assert_eq!(doc.fields().len(), 1);
+    assert_eq!(doc.fields()[0].result, "Selected complex");
+    doc.set_field_result(0, "Updated complex")
+        .expect("update cross-branch complex field");
+
+    let saved = doc.save().expect("save edited docx");
+    let body = String::from_utf8(unzip_parts(&saved)["word/document.xml"].clone()).unwrap();
+    assert!(body.contains("<w:t>Updated complex</w:t>"), "{body}");
+    assert!(body.contains("<w:t>Fallback complex</w:t>"), "{body}");
+    let reopened = Document::open(&saved).expect("reopen edited docx");
+    assert_eq!(reopened.fields()[0].result, "Updated complex");
+}
+
+#[test]
+fn set_field_result_rejects_malformed_alternate_content_without_mutation() {
+    let fixture = docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body><mc:AlternateContent><w:p><w:fldSimple w:instr=" CUSTOM malformed "><w:r><w:t>Preserve malformed</w:t></w:r></w:fldSimple></w:p></mc:AlternateContent><w:p><w:fldSimple w:instr=" CUSTOM visible "><w:r><w:t>Preserve visible</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ]);
+    let before = unzip_parts(&fixture);
+    let mut doc = Document::open(&fixture).expect("fixture opens");
+
+    assert!(doc.set_field_result(0, "Changed").is_err());
+    assert!(doc.edited_parts().is_empty());
+    let after = unzip_parts(&doc.save().expect("save rejected edit"));
+    assert_eq!(
+        before.get("word/document.xml"),
+        after.get("word/document.xml")
+    );
+}
+
+#[test]
+fn set_field_result_rejects_foreign_alternate_content_inventory_mismatch() {
+    let fixture = docx_fixture(&[
+        (
+            "[Content_Types].xml",
+            r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>"#,
+        ),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:foreign="urn:not-markup-compatibility"><w:body><foreign:AlternateContent><foreign:Choice><w:p><w:fldSimple w:instr=" CUSTOM foreign-choice "><w:r><w:t>Foreign choice</w:t></w:r></w:fldSimple></w:p></foreign:Choice><foreign:Fallback><w:p><w:fldSimple w:instr=" CUSTOM foreign-fallback "><w:r><w:t>Foreign fallback</w:t></w:r></w:fldSimple></w:p></foreign:Fallback></foreign:AlternateContent><w:p><w:fldSimple w:instr=" CUSTOM visible "><w:r><w:t>Preserve visible</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#,
+        ),
+    ]);
+    let before = unzip_parts(&fixture);
+    let mut doc = Document::open(&fixture).expect("fixture opens");
+
+    assert_eq!(
+        doc.fields()
+            .iter()
+            .map(|field| field.instruction.as_str())
+            .collect::<Vec<_>>(),
+        ["CUSTOM foreign-choice", "CUSTOM visible"]
+    );
+    assert!(doc.set_field_result(1, "Changed").is_err());
+    assert!(doc.edited_parts().is_empty());
+    let after = unzip_parts(&doc.save().expect("save rejected edit"));
+    assert_eq!(
+        before.get("word/document.xml"),
+        after.get("word/document.xml")
+    );
 }
 
 #[test]
