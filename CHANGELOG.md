@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-08-02
+
 ### Added
 
 - Expands strict single-DIB metafile raster extraction to source-bearing
@@ -707,7 +709,8 @@ with no JVM, no Apache POI, no other `.docx` crate, and no subprocess.
   preserve body-coordinated constructs, so package-preserving editing is
   element-tree only.
 
-[Unreleased]: https://github.com/HyunjoJung/rwml/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/HyunjoJung/rwml/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/HyunjoJung/rwml/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/HyunjoJung/rwml/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/HyunjoJung/rwml/releases/tag/v0.1.0
 [MS-DOC]: https://learn.microsoft.com/en-us/openspecs/office_file_formats/ms-doc/

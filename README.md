@@ -589,7 +589,7 @@ cargo run --example report   -- report.docx            # author a styled report
 cargo run --features render --example to_pdf -- file.docx out.pdf
 cargo run --features render --example to_pdf -- file.docx out.pdf --report-json render.json
 python scripts/render_validate.py --json --page-cap 32 --min-mean-recall 0.90 --max-skipped 0 corpus/public/**/*.docx > render.json
-VERSION=0.1.1
+VERSION=0.1.2
 REV="$(git rev-parse HEAD)"
 python scripts/bench_vs_mature.py --corpus corpus/public/benchmark --json \
   --version "$VERSION" --git-rev "$REV" \
