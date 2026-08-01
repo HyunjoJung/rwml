@@ -320,7 +320,6 @@ pub struct ParaProps {
     pub bidi: bool,
 }
 
-#[cfg(any(feature = "docx", feature = "render"))]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct PaginationHint {
     pub(crate) keep_next: bool,
@@ -333,7 +332,6 @@ pub(crate) struct TableRowPaginationHint {
     pub(crate) cant_split: bool,
 }
 
-#[cfg(any(feature = "docx", feature = "render"))]
 pub(crate) type TableCellPaginationHints = Vec<Vec<Vec<Option<PaginationHint>>>>;
 
 #[cfg(any(feature = "docx", feature = "render"))]

@@ -1,6 +1,6 @@
 //! Paragraph-property (PAPX) reading — the minimum needed to reconstruct table
-//! structure: for each paragraph, whether it is inside a table (`fInTable`) and
-//! whether it is a table-terminating paragraph (`fTtp`, the row end).
+//! structure and source paragraph layout: table membership/termination, list
+//! and style references, direct pagination controls, and row properties.
 //!
 //! The `PlcfBtePapx` bin table (FIB `fcPlcfBtePapx`, in the table stream) points
 //! to 512-byte **PAPX FKP** pages in the `WordDocument` stream. Each FKP maps FC
@@ -40,8 +40,12 @@ fn max_fkp_entries() -> usize {
 }
 const SPRM_P_ISTD: u16 = 0x4600; // direct istd override (2-byte)
 const SPRM_P_JC: u16 = 0x2403; // paragraph justification (1-byte)
+const SPRM_P_FKEEP: u16 = 0x2405;
+const SPRM_P_FKEEP_FOLLOW: u16 = 0x2406;
+const SPRM_P_FPAGE_BREAK_BEFORE: u16 = 0x2407;
 const SPRM_P_FIN_TABLE: u16 = 0x2416;
 const SPRM_P_FTTP: u16 = 0x2417;
+const SPRM_P_FWIDOW_CONTROL: u16 = 0x2431;
 const SPRM_P_OUT_LVL: u16 = 0x2640; // outline level 0..8, 9 = body (1-byte)
 const SPRM_P_ILVL: u16 = 0x260A;
 const SPRM_T_FCANT_SPLIT_90: u16 = 0x3403;
@@ -49,6 +53,26 @@ const SPRM_T_TABLE_HEADER: u16 = 0x3404; // row repeats as a header (1-byte)
 const SPRM_T_FCANT_SPLIT: u16 = 0x3466;
 const SPRM_P_ILFO: u16 = 0x460B;
 const SPRM_T_DEF_TABLE: u16 = 0xD608;
+
+/// Direct paragraph pagination resolved against the MS-DOC format defaults.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ParagraphPagination {
+    pub(crate) keep_next: bool,
+    pub(crate) keep_lines: bool,
+    pub(crate) page_break_before: bool,
+    pub(crate) widow_control: bool,
+}
+
+impl Default for ParagraphPagination {
+    fn default() -> Self {
+        Self {
+            keep_next: false,
+            keep_lines: false,
+            page_break_before: false,
+            widow_control: true,
+        }
+    }
+}
 
 /// Per-paragraph properties over an FC range `[fc_start, fc_lim)`.
 #[derive(Debug, Clone, Default)]
@@ -66,6 +90,8 @@ struct PapEntry {
     outlvl: Option<u8>,
     /// `sprmPJc` — justification (0 left, 1 center, 2 right, 3/4 justify).
     jc: u8,
+    /// Direct paragraph pagination resolved against format defaults.
+    pagination: ParagraphPagination,
     /// Row repeats as a table header (`sprmTTableHeader`).
     table_header: bool,
     /// Resolved `sprmTFCantSplit` / `sprmTFCantSplit90` row property.
@@ -84,6 +110,7 @@ struct Pap {
     istd: u16,
     outlvl: Option<u8>,
     jc: u8,
+    pagination: ParagraphPagination,
     table_header: bool,
     table_cant_split_90: Option<bool>,
     table_cant_split: Option<bool>,
@@ -133,6 +160,11 @@ impl PapxTable {
             .unwrap_or((0, None, 0))
     }
 
+    /// Direct paragraph pagination controls at `fc`, with MS-DOC defaults.
+    pub(crate) fn paragraph_pagination_at(&self, fc: u32) -> ParagraphPagination {
+        self.entry_at(fc).map(|e| e.pagination).unwrap_or_default()
+    }
+
     /// The `sprmTDefTable` row definition for the row ending at `fc` (TTP), if any.
     pub(crate) fn table_def_at(&self, fc: u32) -> Option<&TableDef> {
         self.entry_at(fc).and_then(|e| e.table_def.as_ref())
@@ -166,6 +198,27 @@ impl PapxTable {
                     table_cant_split,
                     ..PapEntry::default()
                 })
+                .collect(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_test_entries_with_pagination(
+        entries: &[(u32, bool, bool, bool, ParagraphPagination)],
+    ) -> Self {
+        Self {
+            entries: entries
+                .iter()
+                .map(
+                    |&(fc_lim, in_table, ttp, table_cant_split, pagination)| PapEntry {
+                        fc_lim,
+                        in_table,
+                        ttp,
+                        table_cant_split,
+                        pagination,
+                        ..PapEntry::default()
+                    },
+                )
                 .collect(),
         }
     }
@@ -236,6 +289,7 @@ fn parse_fkp(word: &[u8], page_off: usize, out: &mut Vec<PapEntry>) {
             istd: pap.istd,
             outlvl: pap.outlvl,
             jc: pap.jc,
+            pagination: pap.pagination,
             table_header: pap.table_header,
             table_cant_split: pap.resolved_cant_split(),
             table_def,
@@ -275,7 +329,8 @@ fn parse_papx(page: &[u8], off: usize) -> (Pap, Option<TableDef>) {
 }
 
 /// Walk a grpprl, extracting table flags, list (`ilfo`/`ilvl`), style index,
-/// outline level, and justification. Stops on an unsizeable sprm.
+/// outline level, justification, and direct pagination. Stops on an unsizeable
+/// or truncated sprm.
 fn scan_grpprl(gp: &[u8], istd: u16) -> (Pap, Option<TableDef>) {
     let mut pap = Pap {
         istd,
@@ -289,11 +344,29 @@ fn scan_grpprl(gp: &[u8], istd: u16) -> (Pap, Option<TableDef>) {
         let Some(len) = operand_len(sprm, gp, op) else {
             break;
         };
+        let Some(operand_end) = op.checked_add(len) else {
+            break;
+        };
+        if gp.get(op..operand_end).is_none() {
+            break;
+        }
         match sprm {
             SPRM_P_ISTD => pap.istd = u16le(gp, op).unwrap_or(istd),
             SPRM_P_JC => pap.jc = gp.get(op).copied().unwrap_or(0),
+            SPRM_P_FKEEP => {
+                pap.pagination.keep_lines = gp.get(op).copied().unwrap_or(0) != 0;
+            }
+            SPRM_P_FKEEP_FOLLOW => {
+                pap.pagination.keep_next = gp.get(op).copied().unwrap_or(0) != 0;
+            }
+            SPRM_P_FPAGE_BREAK_BEFORE => {
+                pap.pagination.page_break_before = gp.get(op).copied().unwrap_or(0) != 0;
+            }
             SPRM_P_FIN_TABLE => pap.in_table = gp.get(op).copied().unwrap_or(0) != 0,
             SPRM_P_FTTP => pap.ttp = gp.get(op).copied().unwrap_or(0) != 0,
+            SPRM_P_FWIDOW_CONTROL => {
+                pap.pagination.widow_control = gp.get(op).copied().unwrap_or(0) != 0;
+            }
             SPRM_P_OUT_LVL => pap.outlvl = Some(gp.get(op).copied().unwrap_or(9)),
             SPRM_T_FCANT_SPLIT_90 => {
                 pap.table_cant_split_90 = Some(gp.get(op).copied().unwrap_or(0) != 0);
@@ -311,7 +384,7 @@ fn scan_grpprl(gp: &[u8], istd: u16) -> (Pap, Option<TableDef>) {
             }
             _ => {}
         }
-        pos = op + len;
+        pos = operand_end;
     }
     (pap, table_def)
 }
@@ -380,6 +453,109 @@ mod tests {
     }
 
     #[test]
+    fn resolves_direct_paragraph_pagination_properties_and_defaults() {
+        let (default, _) = scan_grpprl(&[], 0);
+        assert_eq!(
+            default.pagination,
+            ParagraphPagination {
+                keep_next: false,
+                keep_lines: false,
+                page_break_before: false,
+                widow_control: true,
+            }
+        );
+
+        let (enabled, _) = scan_grpprl(
+            &[
+                0x05, 0x24, 0x01, // sprmPFKeep
+                0x06, 0x24, 0x01, // sprmPFKeepFollow
+                0x07, 0x24, 0x01, // sprmPFPageBreakBefore
+                0x31, 0x24, 0x00, // sprmPFWidowControl
+            ],
+            0,
+        );
+        assert_eq!(
+            enabled.pagination,
+            ParagraphPagination {
+                keep_next: true,
+                keep_lines: true,
+                page_break_before: true,
+                widow_control: false,
+            }
+        );
+
+        let (last_value_wins, _) = scan_grpprl(
+            &[
+                0x05, 0x24, 0x01, 0x05, 0x24, 0x00, 0x06, 0x24, 0x00, 0x06, 0x24, 0x01, 0x07, 0x24,
+                0x01, 0x07, 0x24, 0x00, 0x31, 0x24, 0x00, 0x31, 0x24, 0x01,
+            ],
+            0,
+        );
+        assert_eq!(
+            last_value_wins.pagination,
+            ParagraphPagination {
+                keep_next: true,
+                keep_lines: false,
+                page_break_before: false,
+                widow_control: true,
+            }
+        );
+
+        let (truncated, _) = scan_grpprl(
+            &[
+                0x05, 0x24, 0x01, // valid keep-lines survives
+                0x31, 0x24, // truncated widow-control operand is ignored
+            ],
+            0,
+        );
+        assert_eq!(
+            truncated.pagination,
+            ParagraphPagination {
+                keep_next: false,
+                keep_lines: true,
+                page_break_before: false,
+                widow_control: true,
+            }
+        );
+    }
+
+    #[test]
+    fn paragraph_pagination_lookup_uses_fc_ranges_and_safe_defaults() {
+        let table = PapxTable {
+            entries: vec![
+                PapEntry {
+                    fc_lim: 100,
+                    pagination: ParagraphPagination {
+                        keep_lines: true,
+                        ..ParagraphPagination::default()
+                    },
+                    ..PapEntry::default()
+                },
+                PapEntry {
+                    fc_lim: 200,
+                    pagination: ParagraphPagination {
+                        keep_next: true,
+                        page_break_before: true,
+                        widow_control: false,
+                        ..ParagraphPagination::default()
+                    },
+                    ..PapEntry::default()
+                },
+            ],
+        };
+
+        assert!(table.paragraph_pagination_at(50).keep_lines);
+        let second = table.paragraph_pagination_at(150);
+        assert!(second.keep_next);
+        assert!(second.page_break_before);
+        assert!(!second.widow_control);
+        assert_eq!(
+            table.paragraph_pagination_at(999),
+            ParagraphPagination::default()
+        );
+    }
+
+    #[test]
     fn scans_list_props() {
         // sprmPIlvl (0x260A, 1-byte) = 2, then sprmPIlfo (0x460B, 2-byte) = 5.
         let (p, _) = scan_grpprl(&[0x0A, 0x26, 0x02, 0x0B, 0x46, 0x05, 0x00], 0);
@@ -426,6 +602,7 @@ mod tests {
             istd: 0,
             outlvl: None,
             jc: 0,
+            pagination: ParagraphPagination::default(),
             table_header: false,
             table_cant_split: false,
             table_def: None,

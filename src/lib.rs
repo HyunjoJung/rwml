@@ -565,7 +565,9 @@ struct DocState {
 fn doc_model_from_doc_state(state: &DocState) -> DocModel {
     let assemble::LegacyBuildOutput {
         model,
+        pagination_hints: _pagination_hints,
         table_row_pagination: _table_row_pagination,
+        table_cell_pagination: _table_cell_pagination,
     } = legacy_build_output_from_doc_state(state);
     model
 }
@@ -2843,7 +2845,9 @@ impl Document {
                 render_document(
                     &assembled.model,
                     render::SourceRenderHints {
+                        pagination: &assembled.pagination_hints,
                         table_row_pagination: &assembled.table_row_pagination,
+                        table_cell_pagination: &assembled.table_cell_pagination,
                         ..render::SourceRenderHints::default()
                     },
                 )
@@ -6763,6 +6767,335 @@ mod tests {
                 ..SyntheticDocTables::default()
             },
         )
+    }
+
+    #[cfg(feature = "render")]
+    fn legacy_paragraph_pagination_doc(
+        seed_count: usize,
+        paragraphs: &[(usize, &[(u16, u8)])],
+        after_count: usize,
+    ) -> Vec<u8> {
+        let mut text = String::new();
+        for index in 0..seed_count {
+            text.push_str(&format!("seed {index}\r"));
+        }
+        let seed_end = text.encode_utf16().count() as u32;
+        let mut runs = vec![SyntheticPapxRun {
+            cp_lim: seed_end,
+            grpprl: vec![0x31, 0x24, 0x00],
+        }];
+
+        for (paragraph_index, &(line_count, properties)) in paragraphs.iter().enumerate() {
+            for line_index in 0..line_count {
+                if line_index > 0 {
+                    text.push('\u{b}');
+                }
+                text.push_str(&format!("target {paragraph_index} line {line_index}"));
+            }
+            text.push('\r');
+            let mut grpprl = Vec::with_capacity(properties.len() * 3);
+            for &(sprm, value) in properties {
+                grpprl.extend_from_slice(&sprm.to_le_bytes());
+                grpprl.push(value);
+            }
+            runs.push(SyntheticPapxRun {
+                cp_lim: text.encode_utf16().count() as u32,
+                grpprl,
+            });
+        }
+
+        for index in 0..after_count {
+            text.push_str(&format!("after {index}\r"));
+        }
+        let text_end = text.encode_utf16().count() as u32;
+        runs.push(SyntheticPapxRun {
+            cp_lim: text_end,
+            grpprl: vec![0x31, 0x24, 0x00],
+        });
+        synth_doc_with_ccp_and_tables(
+            &text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [text_end, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    #[cfg(feature = "render")]
+    fn legacy_table_cell_pagination_doc(
+        seed_count: usize,
+        line_count: usize,
+        cell_properties: &[(u16, u8)],
+        after_count: usize,
+    ) -> Vec<u8> {
+        let mut text = String::new();
+        for index in 0..seed_count {
+            text.push_str(&format!("seed {index}\r"));
+        }
+        let seed_end = text.encode_utf16().count() as u32;
+        for line_index in 0..line_count {
+            if line_index > 0 {
+                text.push('\u{b}');
+            }
+            text.push_str(&format!("cell line {line_index}"));
+        }
+        text.push('\u{7}');
+        let cell_end = text.encode_utf16().count() as u32;
+        text.push('\u{7}');
+        let row_end = text.encode_utf16().count() as u32;
+        for index in 0..after_count {
+            text.push_str(&format!("after {index}\r"));
+        }
+        let text_end = text.encode_utf16().count() as u32;
+
+        let mut cell_grpprl = vec![0x16, 0x24, 0x01];
+        for &(sprm, value) in cell_properties {
+            cell_grpprl.extend_from_slice(&sprm.to_le_bytes());
+            cell_grpprl.push(value);
+        }
+        let mut row_grpprl = vec![
+            0x16, 0x24, 0x01, // sprmPFInTable
+            0x17, 0x24, 0x01, // sprmPFTtp
+            0x08, 0xD6, 0x1A, 0x00, // sprmTDefTable, cb=26
+            0x01, // one cell
+            0x00, 0x00, 0xD0, 0x07, // cell boundaries 0..2000 twips
+        ];
+        row_grpprl.extend_from_slice(&[0u8; 20]);
+        let runs = [
+            SyntheticPapxRun {
+                cp_lim: seed_end,
+                grpprl: vec![0x31, 0x24, 0x00],
+            },
+            SyntheticPapxRun {
+                cp_lim: cell_end,
+                grpprl: cell_grpprl,
+            },
+            SyntheticPapxRun {
+                cp_lim: row_end,
+                grpprl: row_grpprl,
+            },
+            SyntheticPapxRun {
+                cp_lim: text_end,
+                grpprl: vec![0x31, 0x24, 0x00],
+            },
+        ];
+        synth_doc_with_ccp_and_tables(
+            &text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [text_end, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_layout_uses_direct_paragraph_pagination_hints() {
+        const SEED_COUNT: usize = 32;
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let split = Document::open(&legacy_paragraph_pagination_doc(
+            SEED_COUNT,
+            &[(12, &[(0x2405, 0), (0x2431, 0)])],
+            25,
+        ))
+        .unwrap();
+        let kept = Document::open(&legacy_paragraph_pagination_doc(
+            SEED_COUNT,
+            &[(12, &[(0x2405, 1), (0x2431, 0)])],
+            25,
+        ))
+        .unwrap();
+        let widow_off = Document::open(&legacy_paragraph_pagination_doc(
+            SEED_COUNT,
+            &[(3, &[(0x2431, 0)])],
+            25,
+        ))
+        .unwrap();
+        let widow_default = Document::open(&legacy_paragraph_pagination_doc(
+            SEED_COUNT,
+            &[(3, &[])],
+            25,
+        ))
+        .unwrap();
+        let follow_off = Document::open(&legacy_paragraph_pagination_doc(
+            SEED_COUNT,
+            &[
+                (1, &[(0x2406, 0), (0x2431, 0)]),
+                (12, &[(0x2405, 1), (0x2431, 0)]),
+            ],
+            25,
+        ))
+        .unwrap();
+        let follow_on = Document::open(&legacy_paragraph_pagination_doc(
+            SEED_COUNT,
+            &[
+                (1, &[(0x2406, 1), (0x2431, 0)]),
+                (12, &[(0x2405, 1), (0x2431, 0)]),
+            ],
+            25,
+        ))
+        .unwrap();
+        let page_break_off = Document::open(&legacy_paragraph_pagination_doc(
+            SEED_COUNT,
+            &[(1, &[(0x2407, 0), (0x2431, 0)])],
+            25,
+        ))
+        .unwrap();
+        let page_break_on = Document::open(&legacy_paragraph_pagination_doc(
+            SEED_COUNT,
+            &[(1, &[(0x2407, 1), (0x2431, 0)])],
+            25,
+        ))
+        .unwrap();
+
+        let layout = |document: &Document| document.layout_pages_with_fonts(&fonts).unwrap();
+        let split_layout = layout(&split);
+        let kept_layout = layout(&kept);
+        let widow_off_layout = layout(&widow_off);
+        let widow_default_layout = layout(&widow_default);
+        let follow_off_layout = layout(&follow_off);
+        let follow_on_layout = layout(&follow_on);
+        let page_break_off_layout = layout(&page_break_off);
+        let page_break_on_layout = layout(&page_break_on);
+
+        assert_eq!(
+            (
+                split_layout.pages,
+                split_layout.block_pages[SEED_COUNT],
+                kept_layout.pages,
+                kept_layout.block_pages[SEED_COUNT],
+            ),
+            (2, Some(1), 3, Some(2))
+        );
+        assert_eq!(
+            (
+                widow_off_layout.pages,
+                widow_off_layout.block_pages[SEED_COUNT],
+                widow_default_layout.pages,
+                widow_default_layout.block_pages[SEED_COUNT],
+            ),
+            (2, Some(1), 2, Some(2))
+        );
+        assert_eq!(
+            (
+                follow_off_layout.pages,
+                follow_off_layout.block_pages[SEED_COUNT],
+                follow_on_layout.pages,
+                follow_on_layout.block_pages[SEED_COUNT],
+            ),
+            (3, Some(1), 3, Some(2))
+        );
+        assert_eq!(
+            (
+                page_break_off_layout.block_pages[SEED_COUNT],
+                page_break_on_layout.block_pages[SEED_COUNT],
+            ),
+            (Some(1), Some(2))
+        );
+
+        let raw_kept_layout = layout_pages_with_fonts(&kept.model(), &fonts).unwrap();
+        let raw_widow_layout = layout_pages_with_fonts(&widow_default.model(), &fonts).unwrap();
+        let raw_follow_layout = layout_pages_with_fonts(&follow_on.model(), &fonts).unwrap();
+        assert_eq!(raw_kept_layout.block_pages[SEED_COUNT], Some(1));
+        assert_eq!(raw_widow_layout.block_pages[SEED_COUNT], Some(1));
+        assert_eq!(raw_follow_layout.block_pages[SEED_COUNT], Some(1));
+
+        let page_break_off_model = page_break_off.model();
+        let page_break_on_model = page_break_on.model();
+        let Block::Paragraph(off_paragraph) = &page_break_off_model.blocks[SEED_COUNT] else {
+            panic!("target must be a paragraph");
+        };
+        let Block::Paragraph(on_paragraph) = &page_break_on_model.blocks[SEED_COUNT] else {
+            panic!("target must be a paragraph");
+        };
+        assert!(!off_paragraph.props.page_break_before);
+        assert!(on_paragraph.props.page_break_before);
+        let raw_page_break_layout = layout_pages_with_fonts(&page_break_on_model, &fonts).unwrap();
+        assert_eq!(raw_page_break_layout.block_pages[SEED_COUNT], Some(2));
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_layout_uses_direct_table_cell_pagination_hints() {
+        const SEED_COUNT: usize = 32;
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let split = Document::open(&legacy_table_cell_pagination_doc(
+            SEED_COUNT,
+            12,
+            &[(0x2405, 0), (0x2431, 0)],
+            25,
+        ))
+        .unwrap();
+        let kept = Document::open(&legacy_table_cell_pagination_doc(
+            SEED_COUNT,
+            12,
+            &[(0x2405, 1), (0x2431, 0)],
+            25,
+        ))
+        .unwrap();
+        let over_tall = Document::open(&legacy_table_cell_pagination_doc(
+            0,
+            100,
+            &[(0x2405, 1), (0x2431, 0)],
+            0,
+        ))
+        .unwrap();
+
+        let first_cell_hint = |document: &Document| match &document.backend {
+            Backend::Doc(state) => legacy_build_output_from_doc_state(state)
+                .table_cell_pagination
+                .into_iter()
+                .find(|table| !table.is_empty())
+                .and_then(|table| {
+                    table
+                        .first()
+                        .and_then(|row| row.first())
+                        .and_then(|cell| cell.first())
+                        .copied()
+                        .flatten()
+                })
+                .expect("synthetic legacy table-cell hint"),
+            #[cfg(feature = "docx")]
+            Backend::Docx(_) => unreachable!("synthetic fixture is OLE"),
+        };
+        assert_eq!(
+            first_cell_hint(&split),
+            crate::model::PaginationHint {
+                widow_control: false,
+                ..crate::model::PaginationHint::default()
+            }
+        );
+        assert_eq!(
+            first_cell_hint(&kept),
+            crate::model::PaginationHint {
+                keep_lines: true,
+                widow_control: false,
+                ..crate::model::PaginationHint::default()
+            }
+        );
+
+        let model_pages = layout_pages_with_fonts(&split.model(), &fonts)
+            .unwrap()
+            .pages;
+        let split_pages = split.layout_pages_with_fonts(&fonts).unwrap().pages;
+        let kept_pages = kept.layout_pages_with_fonts(&fonts).unwrap().pages;
+        assert_eq!((model_pages, split_pages, kept_pages), (3, 2, 3));
+
+        let over_tall_layout = over_tall.layout_pages_with_fonts(&fonts).unwrap();
+        assert!(
+            over_tall_layout.pages > 1,
+            "an over-tall kept cell paragraph must split and make progress"
+        );
     }
 
     #[cfg(feature = "render")]
