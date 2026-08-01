@@ -7290,6 +7290,140 @@ mod tests {
         assert_rtl_paragraph_inside_ltr_table(&reopened.model());
     }
 
+    fn legacy_table_bidi_doc() -> Vec<u8> {
+        let rows = [
+            (
+                "A1",
+                "A2",
+                [(0x560Bu16, 1u16), (0x5664u16, 0u16)],
+                [0i16, 1000, 2000],
+            ),
+            (
+                "B1",
+                "B2",
+                [(0x5664u16, 1u16), (0x560Bu16, 0u16)],
+                [0i16, 1000, 2000],
+            ),
+            (
+                "C1",
+                "C2",
+                [(0x560Bu16, 0u16), (0x5664u16, 0u16)],
+                [0i16, 1000, 4000],
+            ),
+        ];
+        let mut text = String::new();
+        let mut runs = Vec::new();
+        for (first, second, direction, boundaries) in rows {
+            text.push_str(first);
+            text.push('\u{7}');
+            runs.push(SyntheticPapxRun {
+                cp_lim: text.encode_utf16().count() as u32,
+                grpprl: vec![0x16, 0x24, 0x01],
+            });
+            text.push_str(second);
+            text.push('\u{7}');
+            runs.push(SyntheticPapxRun {
+                cp_lim: text.encode_utf16().count() as u32,
+                grpprl: vec![0x16, 0x24, 0x01],
+            });
+            text.push('\u{7}');
+            let mut row_grpprl = vec![
+                0x16, 0x24, 0x01, // sprmPFInTable
+                0x17, 0x24, 0x01, // sprmPFTtp
+            ];
+            for (sprm, value) in direction {
+                row_grpprl.extend_from_slice(&sprm.to_le_bytes());
+                row_grpprl.extend_from_slice(&value.to_le_bytes());
+            }
+            row_grpprl.extend_from_slice(&[
+                0x08, 0xD6, 0x30, 0x00, // sprmTDefTable, cb=48
+                0x02, // two cells
+            ]);
+            for boundary in boundaries {
+                row_grpprl.extend_from_slice(&boundary.to_le_bytes());
+            }
+            row_grpprl.extend_from_slice(&[0u8; 40]);
+            runs.push(SyntheticPapxRun {
+                cp_lim: text.encode_utf16().count() as u32,
+                grpprl: row_grpprl,
+            });
+        }
+        let text_end = text.encode_utf16().count() as u32;
+        synth_doc_with_ccp_and_tables(
+            &text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [text_end, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    fn legacy_table_bidi_signature(model: &DocModel) -> Vec<(bool, Vec<Vec<String>>)> {
+        model
+            .blocks
+            .iter()
+            .map(|block| {
+                let Block::Table(table) = block else {
+                    panic!("synthetic legacy block must be a table");
+                };
+                (
+                    table.bidi_visual,
+                    table
+                        .rows
+                        .iter()
+                        .map(|row| row.cells.iter().map(Cell::text).collect())
+                        .collect(),
+                )
+            })
+            .collect()
+    }
+
+    fn expected_legacy_table_bidi_signature() -> Vec<(bool, Vec<Vec<String>>)> {
+        vec![
+            (
+                true,
+                vec![
+                    vec!["A1".to_string(), "A2".to_string()],
+                    vec!["B1".to_string(), "B2".to_string()],
+                ],
+            ),
+            (false, vec![vec!["C1".to_string(), "C2".to_string()]]),
+        ]
+    }
+
+    #[test]
+    fn opened_legacy_doc_preserves_direct_table_bidi_and_direction_boundaries() {
+        let document = Document::open(&legacy_table_bidi_doc()).unwrap();
+        let model = document.model();
+
+        assert_eq!(
+            legacy_table_bidi_signature(&model),
+            expected_legacy_table_bidi_signature()
+        );
+        let [Block::Table(rtl), Block::Table(ltr)] = model.blocks.as_slice() else {
+            panic!("direction change must split the synthetic tables");
+        };
+        assert_eq!(rtl.col_widths_pct, vec![0.5, 0.5]);
+        assert_eq!(ltr.col_widths_pct, vec![0.25, 0.75]);
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_doc_table_bidi_roundtrips_to_docx() {
+        let legacy = Document::open(&legacy_table_bidi_doc()).unwrap();
+        let reopened = Document::open(&legacy.to_docx()).unwrap();
+
+        assert_eq!(
+            legacy_table_bidi_signature(&reopened.model()),
+            expected_legacy_table_bidi_signature()
+        );
+    }
+
     #[test]
     fn opened_legacy_doc_preserves_tdef_table_column_proportions() {
         let text = "left\u{7}right\u{7}\u{7}";

@@ -323,11 +323,18 @@ conversion and PDF run isolation. Opened legacy paragraphs preserve valid
 direct `sprmPFBiDi` direction together with physical left/center/right and
 logical start/center/end alignment from `sprmPJc80` and `sprmPJc` through
 `.docx` conversion/reopen and existing PDF body/table-cell shaping; paragraph
-direction does not imply table mirroring. Distribution and language-specific
-justification collapse to generic justify. Character/paragraph-style or
-language-derived direction, indented logical justification, logical legacy
-indents, exact RTL list-level layout, table visual RTL, piece `Pcd.Prm`, and
-Markdown/HTML visual RTL remain outside these bounded bridges.
+styles additionally resolve this bounded direction/justification subset
+through cycle-guarded, depth-bounded STSH inheritance before final direct PAPX
+overrides. Paragraph direction does not imply table mirroring. Opened legacy
+tables preserve strict direct row-mark `sprmTFBiDi` and compatibility
+`sprmTFBiDi90` Bool16 values: either final property enables visual RTL,
+direction changes split adjacent rows into separate tables, and cells remain
+in source-logical order for `.docx` conversion and PDF column mirroring.
+Distribution and language-specific justification collapse to generic justify.
+Character-style or language-derived direction, table-style-derived direction,
+indented logical justification, logical legacy indents, exact RTL list-level
+layout, piece `Pcd.Prm`, and Markdown/HTML visual RTL remain outside these
+bounded bridges.
 
 > **Scope:** this is a fast, in-process **preview / report** renderer, not a Word
 > layout engine. It is faithful to the model and produces selectable text, but
@@ -341,12 +348,14 @@ Markdown/HTML visual RTL remain outside these bounded bridges.
 > do not yet contribute `cantSplit`. Nested-table paragraph controls retain the
 > renderer's 32-level flattening bound; nested grid/border geometry, nested-row
 > `cantSplit`, and Word-exact cell spacing/tab geometry remain outside this
-> slice. Legacy STSH properties beyond the four paragraph-pagination controls,
+> slice. Legacy STSH properties beyond the bounded paragraph-pagination and
+> direction/justification subsets,
 > table/list-style paragraph effects, piece `Pcd.Prm` modifiers, nested legacy
 > tables/rows, and controls attached only to discarded blank top-level
 > paragraphs remain unsupported. Legacy absolute table width, autofit,
 > indentation, preferred cell-width modifiers, row-specific outer-edge
-> geometry, and table RTL remain outside the bounded relative-width bridge.
+> geometry, table-style-derived RTL, and additional table-boundary properties
+> remain outside the bounded direct-property bridges.
 >
 > Opened-document renders draw bounded approximate overlay boxes for recovered
 > `.docx` floating-shape geometry on the recovered top-level body block page. A
