@@ -8644,6 +8644,54 @@ mod tests {
     }
 
     #[test]
+    fn tab_driven_wrapping_reaches_emitted_page_counts() {
+        // A lone two-line paragraph is never split, so page effects only show
+        // with enough paragraphs to fill pages. Twelve one-line paragraphs fill
+        // four pages; the same count wrapped to two lines by a tab reservation
+        // must fill eight.
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let pages_of = |text: &str| {
+            let model = DocModel {
+                setup: crate::model::DocSetup {
+                    page: PageSetup {
+                        width_pt: 220.0,
+                        height_pt: 100.0,
+                        margin_pt: 20.0,
+                        ..PageSetup::default()
+                    },
+                    ..crate::model::DocSetup::default()
+                },
+                blocks: (0..12)
+                    .map(|_| {
+                        Block::Paragraph(Paragraph {
+                            props: ParaProps::default(),
+                            runs: vec![Run {
+                                text: text.to_string(),
+                                ..Run::default()
+                            }],
+                        })
+                    })
+                    .collect(),
+                ..DocModel::default()
+            };
+            super::layout_pages_with_fonts(&model, &fonts)
+                .unwrap()
+                .pages
+        };
+
+        assert_eq!(
+            pages_of("\t가나"),
+            4,
+            "a fitting tab field stays on one line"
+        );
+        assert_eq!(
+            pages_of("\t\t\t\t가나다라"),
+            8,
+            "content moved down by a tab reservation must reach the page count"
+        );
+    }
+
+    #[test]
     fn tab_reflow_only_applies_to_left_and_start_aligned_ltr_text() {
         // Centered text keeps parley's own breaking: the reservation pass is
         // scoped to the alignments whose tab positions rwml resolves.
