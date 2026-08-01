@@ -6889,6 +6889,85 @@ mod tests {
         );
     }
 
+    fn legacy_chpx_capitalization_doc() -> Vec<u8> {
+        let text = "SmallPlainCapsBoth";
+        let runs = [
+            SyntheticChpxRun {
+                cp_lim: 5,
+                grpprl: vec![0x3A, 0x08, 1],
+            },
+            SyntheticChpxRun {
+                cp_lim: 10,
+                grpprl: vec![0x3A, 0x08, 0, 0x3B, 0x08, 0],
+            },
+            SyntheticChpxRun {
+                cp_lim: 14,
+                grpprl: vec![0x3B, 0x08, 1],
+            },
+            SyntheticChpxRun {
+                cp_lim: 18,
+                grpprl: vec![0x3A, 0x08, 1, 0x3B, 0x08, 1],
+            },
+        ];
+        synth_doc_with_ccp_and_tables(
+            text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [text.encode_utf16().count() as u32, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                chpx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    fn paragraph_run_capitalization(model: &DocModel) -> Vec<(&str, bool, bool)> {
+        let Block::Paragraph(paragraph) = &model.blocks[0] else {
+            panic!("synthetic legacy block must be a paragraph");
+        };
+        paragraph
+            .runs
+            .iter()
+            .map(|run| (run.text.as_str(), run.props.small_caps, run.props.caps))
+            .collect()
+    }
+
+    #[test]
+    fn opened_legacy_doc_preserves_chpx_capitalization() {
+        let document = Document::open(&legacy_chpx_capitalization_doc()).unwrap();
+        let model = document.model();
+
+        assert_eq!(
+            paragraph_run_capitalization(&model),
+            vec![
+                ("Small", true, false),
+                ("Plain", false, false),
+                ("Caps", false, true),
+                ("Both", true, true),
+            ]
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_doc_chpx_capitalization_roundtrips_to_docx() {
+        let legacy = Document::open(&legacy_chpx_capitalization_doc()).unwrap();
+        let reopened = Document::open(&legacy.to_docx()).unwrap();
+        let model = reopened.model();
+
+        assert_eq!(
+            paragraph_run_capitalization(&model),
+            vec![
+                ("Small", true, false),
+                ("Plain", false, false),
+                ("Caps", false, true),
+                ("Both", true, true),
+            ]
+        );
+    }
+
     #[test]
     fn opened_legacy_doc_preserves_tdef_table_column_proportions() {
         let text = "left\u{7}right\u{7}\u{7}";

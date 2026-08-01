@@ -891,6 +891,8 @@ impl<'a, 'l> Asm<'a, 'l> {
                 color: chp.color,
                 highlight: chp.highlight.and_then(highlight_name).map(str::to_owned),
                 vert_align: chp.vert_align.unwrap_or_default(),
+                small_caps: chp.small_caps.unwrap_or(false),
+                caps: chp.caps.unwrap_or(false),
                 font: chp.ftc.and_then(|ftc| crate::ffn::name_of(self.fonts, ftc)),
                 ..Default::default()
             };

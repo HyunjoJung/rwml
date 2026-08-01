@@ -475,12 +475,14 @@ Korean (`0x0412` → cp949), Japanese, Cyrillic, etc. decode correctly. The **ri
 model** is a lazy second pass: the CHPX character-property bins (bold/italic/
 underline/strike, **font name from `SttbfFfn`, half-point size, color, and
 CHPX-resident `sprmCHighlight` palette highlighting plus direct `sprmCIss`
-super/subscript**), the STSH style sheet + outline levels (headings),
+super/subscript plus literal direct `sprmCFSmallCaps`/`sprmCFCaps`
+capitalization**), the STSH style sheet + outline levels (headings),
 `sprmTDefTable` (merge-aware tables with bounded relative column proportions),
-list autonumbers, hyperlink field marks, and `PICF` inline images. Highlight and
-direct vertical-alignment values flow through `.docx` conversion and PDF
-rendering; piece `Pcd.Prm` character modifiers, character-style-derived vertical
-alignment, arbitrary `sprmCHpsPos` shifts, and visual highlight/super/subscript
+list autonumbers, hyperlink field marks, and `PICF` inline images. Highlight,
+direct vertical-alignment, and literal caps/small-caps values flow through
+`.docx` conversion and PDF rendering; piece `Pcd.Prm` character modifiers,
+character-style-derived vertical alignment/capitalization, arbitrary
+`sprmCHpsPos` shifts, and visual highlight/super/subscript/capitalization
 preservation in Markdown/HTML remain outside this path.
 
 The `.docx` **writer** is the inverse of the reader, part by part: `document.xml`
@@ -785,9 +787,9 @@ evidence.
 
 - [x] Codepage-aware `.doc` text; encryption / Word 6/95 detection gates
 - [x] Full read model: runs (CHPX incl. font/size/color and CHPX-resident
-      highlighting plus direct super/subscript), headings (STSH), tables
-      (`sprmTDefTable` merges and bounded relative column proportions), list
-      autonumbers, hyperlinks, inline images
+      highlighting plus direct super/subscript and literal caps/small-caps),
+      headings (STSH), tables (`sprmTDefTable` merges and bounded relative
+      column proportions), list autonumbers, hyperlinks, inline images
 - [x] Unified `.docx` reader into the same model (98.6% recall vs python-docx)
 - [x] **`.docx` writer** - styled authoring (named styles, rich tables with typed nested cell blocks, page setup,
       styled runs, leveled lists, paragraph page-break-before, simple fields, `PAGEREF` helper runs, dirty TOC heading-range fields,
