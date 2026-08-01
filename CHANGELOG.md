@@ -23,6 +23,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Opened legacy `.doc` CHPX runs now preserve direct `sprmCIss` normal,
+  superscript, and subscript values through the shared model, `.docx`
+  conversion, and PDF rendering. Complete character-style/reset modifiers
+  conservatively discard stale direct state and use the baseline fallback until
+  a later valid direct value; character-style-derived alignment, piece
+  `Pcd.Prm`, arbitrary `sprmCHpsPos` baseline shifts, and Markdown/HTML visual
+  super/subscript remain unsupported.
 - Opened legacy `.doc` CHPX runs now preserve `sprmCHighlight` Ico palette
   values through the shared model, `.docx` conversion, and PDF rendering,
   including explicit highlight clearing and deterministic rejection of invalid

@@ -6816,6 +6816,79 @@ mod tests {
         );
     }
 
+    fn legacy_chpx_vertical_align_doc() -> Vec<u8> {
+        let text = "SuperBaseSub";
+        let runs = [
+            SyntheticChpxRun {
+                cp_lim: 5,
+                grpprl: vec![0x48, 0x2A, 1],
+            },
+            SyntheticChpxRun {
+                cp_lim: 9,
+                grpprl: vec![0x48, 0x2A, 0],
+            },
+            SyntheticChpxRun {
+                cp_lim: 12,
+                grpprl: vec![0x48, 0x2A, 2],
+            },
+        ];
+        synth_doc_with_ccp_and_tables(
+            text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [text.encode_utf16().count() as u32, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                chpx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    fn paragraph_run_vertical_alignments(model: &DocModel) -> Vec<(&str, VertAlign)> {
+        let Block::Paragraph(paragraph) = &model.blocks[0] else {
+            panic!("synthetic legacy block must be a paragraph");
+        };
+        paragraph
+            .runs
+            .iter()
+            .map(|run| (run.text.as_str(), run.props.vert_align))
+            .collect()
+    }
+
+    #[test]
+    fn opened_legacy_doc_preserves_chpx_vertical_alignment() {
+        let document = Document::open(&legacy_chpx_vertical_align_doc()).unwrap();
+        let model = document.model();
+
+        assert_eq!(
+            paragraph_run_vertical_alignments(&model),
+            vec![
+                ("Super", VertAlign::Super),
+                ("Base", VertAlign::Baseline),
+                ("Sub", VertAlign::Sub),
+            ]
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_doc_chpx_vertical_alignment_roundtrips_to_docx() {
+        let legacy = Document::open(&legacy_chpx_vertical_align_doc()).unwrap();
+        let reopened = Document::open(&legacy.to_docx()).unwrap();
+        let model = reopened.model();
+
+        assert_eq!(
+            paragraph_run_vertical_alignments(&model),
+            vec![
+                ("Super", VertAlign::Super),
+                ("Base", VertAlign::Baseline),
+                ("Sub", VertAlign::Sub),
+            ]
+        );
+    }
+
     #[test]
     fn opened_legacy_doc_preserves_tdef_table_column_proportions() {
         let text = "left\u{7}right\u{7}\u{7}";
