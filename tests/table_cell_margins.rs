@@ -476,6 +476,44 @@ fn markup_compatibility_can_wrap_table_and_cell_property_containers() {
     assert_eq!(tables[1].rows[0].cells[0].margins, None);
 }
 
+#[test]
+fn cell_markup_compatibility_preserves_selected_content_control_metadata() {
+    let table = first_table(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+            xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+            <w:tbl><w:tr><w:tc>
+                <mc:AlternateContent>
+                    <mc:Choice Requires="w14">
+                        <w:sdt>
+                            <w:sdtPr>
+                                <w:alias w:val=" Selected cell control "/>
+                                <w:tag w:val=" selected-cell "/>
+                            </w:sdtPr>
+                            <w:sdtContent>
+                                <w:p><w:r><w:t>selected content</w:t></w:r></w:p>
+                            </w:sdtContent>
+                        </w:sdt>
+                    </mc:Choice>
+                    <mc:Fallback>
+                        <w:p><w:r><w:t>fallback content</w:t></w:r></w:p>
+                    </mc:Fallback>
+                </mc:AlternateContent>
+            </w:tc></w:tr></w:tbl>
+        </w:body></w:document>"#,
+    );
+
+    let Block::Paragraph(paragraph) = &table.rows[0].cells[0].blocks[0] else {
+        panic!("selected content is a paragraph");
+    };
+    assert_eq!(paragraph.text(), "selected content");
+    let control = paragraph.runs[0]
+        .content_control
+        .as_ref()
+        .expect("selected content-control metadata");
+    assert_eq!(control.alias.as_deref(), Some("Selected cell control"));
+    assert_eq!(control.tag.as_deref(), Some("selected-cell"));
+}
+
 fn nested_alternate_content(mut inner: String, depth: usize) -> String {
     for _ in 0..depth {
         inner = format!(

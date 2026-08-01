@@ -1242,15 +1242,6 @@ impl Ctx {
                     if rs > 1 {
                         row_xml.push_str(r#"<w:vMerge w:val="restart"/>"#);
                     }
-                    match c.valign {
-                        crate::model::VCell::Center => {
-                            row_xml.push_str(r#"<w:vAlign w:val="center"/>"#)
-                        }
-                        crate::model::VCell::Bottom => {
-                            row_xml.push_str(r#"<w:vAlign w:val="bottom"/>"#)
-                        }
-                        crate::model::VCell::Top => {}
-                    }
                     if let Some(col) = c.shading {
                         row_xml.push_str(&format!(
                             r#"<w:shd w:val="clear" w:color="auto" w:fill="{}"/>"#,
@@ -1259,6 +1250,15 @@ impl Ctx {
                     }
                     if let Some(margins) = c.margins {
                         Self::write_cell_margins(&mut row_xml, margins, t.bidi_visual);
+                    }
+                    match c.valign {
+                        crate::model::VCell::Center => {
+                            row_xml.push_str(r#"<w:vAlign w:val="center"/>"#)
+                        }
+                        crate::model::VCell::Bottom => {
+                            row_xml.push_str(r#"<w:vAlign w:val="bottom"/>"#)
+                        }
+                        crate::model::VCell::Top => {}
                     }
                     row_xml.push_str("</w:tcPr>");
                     self.write_cell_blocks(&mut row_xml, &c.blocks);

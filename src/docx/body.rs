@@ -5898,7 +5898,7 @@ fn apply_tblpr_child(props: &mut TableProps, e: &BytesStart<'_>) {
         b"jc" => {
             props.align = match attr_local_trimmed(e, b"val").as_deref() {
                 Some("center") => Some(Align::Center),
-                Some("right") => Some(Align::Right),
+                Some("right") | Some("end") => Some(Align::Right),
                 Some("both") => Some(Align::Justify),
                 Some("left") | Some("start") => Some(Align::Left),
                 _ => None,
@@ -6593,7 +6593,14 @@ fn read_cell_alternate_content_branch(
                         batch.push_table(table, pagination);
                     }
                 }
-                b"sdt" | b"sdtContent" | b"customXml" | b"smartTag" | b"ins" | b"moveTo" => {
+                b"sdt" => {
+                    batch.extend(read_content_control_blocks_with_pagination(
+                        r,
+                        ctx,
+                        depth + 1,
+                    ));
+                }
+                b"sdtContent" | b"customXml" | b"smartTag" | b"ins" | b"moveTo" => {
                     batch.extend(read_blocks_with_pagination(r, ctx, depth + 1));
                 }
                 b"AlternateContent" => {
