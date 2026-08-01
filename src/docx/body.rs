@@ -19,7 +19,9 @@ use super::fields::{
 };
 use super::numbering::Numbering;
 use super::parse_rgb_hex_color;
-use super::styles::{RunProps, Styles, TableRowStyleRegions};
+use super::styles::{
+    apply_paragraph_layout_child, ParagraphLayoutProps, RunProps, Styles, TableRowStyleRegions,
+};
 use super::xml_text::{inline_marker_text, read_i64_text, read_text, skip_subtree};
 use super::{
     attr_f32, attr_i32, attr_i64, attr_local, attr_local_trimmed, attr_u16, attr_u32, attr_u8,
@@ -34,7 +36,7 @@ use crate::model::{
     Align, AuthoredContentControl, Block, Cell, CellMargins, CharProps, Color, DocGrid,
     DocGridType, FieldRole, FieldUnsupportedReason, Image, Indent, ListInfo, PageNumberFormat,
     PageSetup, PaginationHint, ParaProps, Paragraph, Row, Run, SectionBreakKind, SectionSetup,
-    Spacing, TabAlignment, TabStop, Table, TableBorderColors, TableBorderSide, TableBorderSizes,
+    TabAlignment, TabStop, Table, TableBorderColors, TableBorderSide, TableBorderSizes,
     TableBorderStyle, TableBorderStyles, TableCellNestedPaginationHints, TableCellPaginationHints,
     TablePaginationHints, TableRowPaginationHint, TextDirection, VCell, MAX_TAB_STOPS,
 };
@@ -43,7 +45,11 @@ use crate::CoreProperties;
 
 /// Twips (1/20 pt) string → points.
 fn twips_to_pt(s: &str) -> Option<f32> {
-    s.trim().parse::<f32>().ok().map(|t| t / 20.0)
+    s.trim()
+        .parse::<f32>()
+        .ok()
+        .filter(|value| value.is_finite())
+        .map(|value| value / 20.0)
 }
 
 fn type_defaults_to_dxa(e: &BytesStart<'_>) -> bool {
@@ -2120,7 +2126,7 @@ fn read_paragraph(
         match r.read_event() {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
                 b"pPr" => {
-                    pp = read_ppr(r);
+                    pp = read_ppr(r, depth + 1);
                     apply_sequence_heading_scope(&pp, ctx, &mut sequence_heading_applied);
                 }
                 b"r" => {
@@ -2570,12 +2576,10 @@ struct PPr {
     num: Option<(String, u8)>,
     jc: Option<String>,
     outline: Option<u8>,
-    spacing: Spacing,
+    layout: ParagraphLayoutProps,
     indent: Indent,
     indent_start_pt: Option<f32>,
     indent_end_pt: Option<f32>,
-    shading: Option<Color>,
-    page_break_before: bool,
     bidi: Option<bool>,
     keep_next: Option<bool>,
     keep_lines: Option<bool>,
@@ -3063,31 +3067,21 @@ fn apply_content_control(runs: &mut [Run], control: Option<AuthoredContentContro
 }
 
 /// Read `<w:pPr>` properties (flattening `w:numPr`'s `w:ilvl`/`w:numId`).
-fn read_ppr(r: &mut Xml<'_>) -> PPr {
+fn read_ppr(r: &mut Xml<'_>, depth: u32) -> PPr {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return PPr::default();
+    }
     let mut pp = PPr::default();
     let mut num_id: Option<String> = None;
     let mut ilvl: u8 = 0;
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"pPrChange" => {
-                skip_subtree(r);
-            }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
-                read_ppr_alternate_content(r, &mut pp, &mut num_id, &mut ilvl);
-            }
             Ok(Event::Start(e)) => {
-                if local(e.name().as_ref()) == b"sectPr" {
-                    pp.section = Some(read_sect_pr(r));
-                } else {
-                    read_ppr_item(&mut pp, &e, &mut num_id, &mut ilvl);
-                }
+                read_ppr_child(r, &mut pp, &e, &mut num_id, &mut ilvl, depth, true)
             }
             Ok(Event::Empty(e)) => {
-                if local(e.name().as_ref()) == b"sectPr" {
-                    pp.section = Some(SectionSetup::default());
-                } else {
-                    read_ppr_item(&mut pp, &e, &mut num_id, &mut ilvl);
-                }
+                read_ppr_child(r, &mut pp, &e, &mut num_id, &mut ilvl, depth, false)
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"pPr" => break,
             Ok(Event::Eof) | Err(_) => break,
@@ -3100,12 +3094,111 @@ fn read_ppr(r: &mut Xml<'_>) -> PPr {
     pp
 }
 
-fn read_ppr_alternate_content(
+fn is_ppr_leaf(name: &[u8]) -> bool {
+    matches!(
+        name,
+        b"pStyle"
+            | b"jc"
+            | b"outlineLvl"
+            | b"pageBreakBefore"
+            | b"bidi"
+            | b"keepNext"
+            | b"keepLines"
+            | b"widowControl"
+            | b"spacing"
+            | b"ind"
+            | b"shd"
+    )
+}
+
+fn read_ppr_child(
     r: &mut Xml<'_>,
     pp: &mut PPr,
+    e: &BytesStart<'_>,
     num_id: &mut Option<String>,
     ilvl: &mut u8,
+    depth: u32,
+    is_start: bool,
 ) {
+    match local(e.name().as_ref()) {
+        b"pPrChange" if is_start => skip_subtree(r),
+        b"AlternateContent" if is_start => {
+            read_ppr_alternate_content(r, pp, num_id, ilvl, depth + 1);
+        }
+        b"sectPr" if is_start => pp.section = Some(read_sect_pr(r, depth + 1)),
+        b"sectPr" => pp.section = Some(SectionSetup::default()),
+        b"numPr" if is_start => read_num_pr(r, num_id, ilvl, depth + 1),
+        b"tabs" if is_start => read_ppr_tabs(r, pp, depth + 1),
+        name if is_ppr_leaf(name) => {
+            read_ppr_item(pp, e, num_id, ilvl);
+            if is_start {
+                skip_subtree(r);
+            }
+        }
+        _ if is_start => skip_subtree(r),
+        _ => {}
+    }
+}
+
+fn read_num_pr(r: &mut Xml<'_>, num_id: &mut Option<String>, ilvl: &mut u8, depth: u32) {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return;
+    }
+    read_num_pr_content(r, num_id, ilvl, b"numPr", depth);
+}
+
+fn read_num_pr_content(
+    r: &mut Xml<'_>,
+    num_id: &mut Option<String>,
+    ilvl: &mut u8,
+    end: &[u8],
+    depth: u32,
+) {
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
+                b"AlternateContent" => {
+                    read_num_pr_alternate_content(r, num_id, ilvl, depth + 1);
+                }
+                b"ilvl" | b"numId" => {
+                    apply_num_pr_child(&e, num_id, ilvl);
+                    skip_subtree(r);
+                }
+                _ => skip_subtree(r),
+            },
+            Ok(Event::Empty(e)) if matches!(local(e.name().as_ref()), b"ilvl" | b"numId") => {
+                apply_num_pr_child(&e, num_id, ilvl);
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == end => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+}
+
+fn apply_num_pr_child(e: &BytesStart<'_>, num_id: &mut Option<String>, ilvl: &mut u8) {
+    match local(e.name().as_ref()) {
+        b"ilvl" => {
+            if let Some(value) = attr_u8(e, b"val") {
+                *ilvl = value;
+            }
+        }
+        b"numId" => *num_id = attr_local_trimmed(e, b"val"),
+        _ => {}
+    }
+}
+
+fn read_num_pr_alternate_content(
+    r: &mut Xml<'_>,
+    num_id: &mut Option<String>,
+    ilvl: &mut u8,
+    depth: u32,
+) {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return;
+    }
     let mut took = false;
     loop {
         match r.read_event() {
@@ -3115,10 +3208,120 @@ fn read_ppr_alternate_content(
                 match name {
                     b"Choice" | b"Fallback" if !took => {
                         took = true;
-                        read_ppr_alternate_content_branch(r, pp, num_id, ilvl, name);
+                        read_num_pr_content(r, num_id, ilvl, name, depth);
                     }
                     _ => skip_subtree(r),
                 }
+            }
+            Ok(Event::Empty(e))
+                if !took && matches!(local(e.name().as_ref()), b"Choice" | b"Fallback") =>
+            {
+                took = true;
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+}
+
+fn read_ppr_tabs(r: &mut Xml<'_>, pp: &mut PPr, depth: u32) {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return;
+    }
+    read_ppr_tabs_content(r, pp, b"tabs", depth);
+}
+
+fn read_ppr_tabs_content(r: &mut Xml<'_>, pp: &mut PPr, end: &[u8], depth: u32) {
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => match local(e.name().as_ref()) {
+                b"AlternateContent" => read_ppr_tabs_alternate_content(r, pp, depth + 1),
+                b"tab" => {
+                    push_ppr_tab_stop(pp, &e);
+                    skip_subtree(r);
+                }
+                _ => skip_subtree(r),
+            },
+            Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"tab" => {
+                push_ppr_tab_stop(pp, &e);
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == end => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+}
+
+fn push_ppr_tab_stop(pp: &mut PPr, e: &BytesStart<'_>) {
+    if pp.tab_stops.len() < MAX_TAB_STOPS {
+        if let Some(tab) = super::styles::tab_stop(e) {
+            pp.tab_stops.push(tab);
+        }
+    }
+}
+
+fn read_ppr_tabs_alternate_content(r: &mut Xml<'_>, pp: &mut PPr, depth: u32) {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return;
+    }
+    let mut took = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                match name {
+                    b"Choice" | b"Fallback" if !took => {
+                        took = true;
+                        read_ppr_tabs_content(r, pp, name, depth);
+                    }
+                    _ => skip_subtree(r),
+                }
+            }
+            Ok(Event::Empty(e))
+                if !took && matches!(local(e.name().as_ref()), b"Choice" | b"Fallback") =>
+            {
+                took = true;
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+}
+
+fn read_ppr_alternate_content(
+    r: &mut Xml<'_>,
+    pp: &mut PPr,
+    num_id: &mut Option<String>,
+    ilvl: &mut u8,
+    depth: u32,
+) {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return;
+    }
+    let mut took = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                match name {
+                    b"Choice" | b"Fallback" if !took => {
+                        took = true;
+                        read_ppr_alternate_content_branch(r, pp, num_id, ilvl, name, depth);
+                    }
+                    _ => skip_subtree(r),
+                }
+            }
+            Ok(Event::Empty(e))
+                if !took && matches!(local(e.name().as_ref()), b"Choice" | b"Fallback") =>
+            {
+                took = true;
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
             Ok(Event::Eof) | Err(_) => break,
@@ -3133,29 +3336,12 @@ fn read_ppr_alternate_content_branch(
     num_id: &mut Option<String>,
     ilvl: &mut u8,
     branch: &[u8],
+    depth: u32,
 ) {
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"pPrChange" => {
-                skip_subtree(r);
-            }
-            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
-                read_ppr_alternate_content(r, pp, num_id, ilvl);
-            }
-            Ok(Event::Start(e)) => {
-                if local(e.name().as_ref()) == b"sectPr" {
-                    pp.section = Some(read_sect_pr(r));
-                } else {
-                    read_ppr_item(pp, &e, num_id, ilvl);
-                }
-            }
-            Ok(Event::Empty(e)) => {
-                if local(e.name().as_ref()) == b"sectPr" {
-                    pp.section = Some(SectionSetup::default());
-                } else {
-                    read_ppr_item(pp, &e, num_id, ilvl);
-                }
-            }
+            Ok(Event::Start(e)) => read_ppr_child(r, pp, &e, num_id, ilvl, depth, true),
+            Ok(Event::Empty(e)) => read_ppr_child(r, pp, &e, num_id, ilvl, depth, false),
             Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
@@ -3165,7 +3351,9 @@ fn read_ppr_alternate_content_branch(
 
 fn read_ppr_item(pp: &mut PPr, e: &BytesStart<'_>, num_id: &mut Option<String>, ilvl: &mut u8) {
     match local(e.name().as_ref()) {
-        b"pStyle" => pp.style_id = attr_local_trimmed(e, b"val"),
+        b"pStyle" => {
+            pp.style_id = attr_local(e, b"val").map(|value| value.trim().to_owned());
+        }
         b"ilvl" => {
             if let Some(v) = attr_u8(e, b"val") {
                 *ilvl = v;
@@ -3174,42 +3362,34 @@ fn read_ppr_item(pp: &mut PPr, e: &BytesStart<'_>, num_id: &mut Option<String>, 
         b"numId" => *num_id = attr_local_trimmed(e, b"val"),
         b"jc" => pp.jc = attr_local_trimmed(e, b"val"),
         b"outlineLvl" => pp.outline = attr_u8(e, b"val"),
-        b"pageBreakBefore" => pp.page_break_before = toggle_on(attr_local(e, b"val")),
         b"bidi" => pp.bidi = Some(toggle_on(attr_local(e, b"val"))),
         b"keepNext" => pp.keep_next = Some(toggle_on(attr_local(e, b"val"))),
         b"keepLines" => pp.keep_lines = Some(toggle_on(attr_local(e, b"val"))),
         b"widowControl" => pp.widow_control = Some(toggle_on(attr_local(e, b"val"))),
-        b"spacing" => {
-            pp.spacing.before_pt = attr_local(e, b"before").and_then(|v| twips_to_pt(&v));
-            pp.spacing.after_pt = attr_local(e, b"after").and_then(|v| twips_to_pt(&v));
-            // `w:line` is 240ths of a line when lineRule is auto/absent.
-            let exact = matches!(
-                attr_local_trimmed(e, b"lineRule").as_deref(),
-                Some("exact") | Some("atLeast")
-            );
-            if !exact {
-                pp.spacing.line_pct = attr_f32(e, b"line").map(|l| l / 240.0);
-            }
+        b"pageBreakBefore" | b"spacing" | b"shd" => {
+            apply_paragraph_layout_child(&mut pp.layout, e);
         }
         b"ind" => {
             pp.indent.left_pt = attr_local(e, b"left").and_then(|v| twips_to_pt(&v));
             pp.indent.right_pt = attr_local(e, b"right").and_then(|v| twips_to_pt(&v));
             pp.indent_start_pt = attr_local(e, b"start").and_then(|v| twips_to_pt(&v));
             pp.indent_end_pt = attr_local(e, b"end").and_then(|v| twips_to_pt(&v));
-            pp.indent.first_line_pt = attr_local(e, b"firstLine").and_then(|v| twips_to_pt(&v));
-            pp.indent.hanging_pt = attr_local(e, b"hanging").and_then(|v| twips_to_pt(&v));
+            apply_paragraph_layout_child(&mut pp.layout, e);
         }
         b"tab" if pp.tab_stops.len() < MAX_TAB_STOPS => {
             if let Some(tab) = super::styles::tab_stop(e) {
                 pp.tab_stops.push(tab);
             }
         }
-        b"shd" => pp.shading = attr_local(e, b"fill").and_then(|v| parse_rgb_hex_color(&v)),
         _ => {}
     }
 }
 
-fn read_sect_pr(r: &mut Xml<'_>) -> SectionSetup {
+fn read_sect_pr(r: &mut Xml<'_>, depth: u32) -> SectionSetup {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return SectionSetup::default();
+    }
     let mut section = SectionSetup::default();
     loop {
         match r.read_event() {
@@ -3217,9 +3397,16 @@ fn read_sect_pr(r: &mut Xml<'_>) -> SectionSetup {
                 skip_subtree(r);
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
-                read_sect_pr_alternate_content(r, &mut section);
+                read_sect_pr_alternate_content(r, &mut section, depth + 1);
             }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => apply_sect_pr_child(&mut section, &e),
+            Ok(Event::Start(e)) if is_sect_pr_leaf(local(e.name().as_ref())) => {
+                apply_sect_pr_child(&mut section, &e);
+                skip_subtree(r);
+            }
+            Ok(Event::Empty(e)) if is_sect_pr_leaf(local(e.name().as_ref())) => {
+                apply_sect_pr_child(&mut section, &e);
+            }
+            Ok(Event::Start(_)) => skip_subtree(r),
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"sectPr" => break,
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
@@ -3228,7 +3415,11 @@ fn read_sect_pr(r: &mut Xml<'_>) -> SectionSetup {
     section
 }
 
-fn read_sect_pr_alternate_content(r: &mut Xml<'_>, section: &mut SectionSetup) {
+fn read_sect_pr_alternate_content(r: &mut Xml<'_>, section: &mut SectionSetup, depth: u32) {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return;
+    }
     let mut took = false;
     loop {
         match r.read_event() {
@@ -3238,10 +3429,15 @@ fn read_sect_pr_alternate_content(r: &mut Xml<'_>, section: &mut SectionSetup) {
                 match name {
                     b"Choice" | b"Fallback" if !took => {
                         took = true;
-                        read_sect_pr_alternate_content_branch(r, section, name);
+                        read_sect_pr_alternate_content_branch(r, section, name, depth);
                     }
                     _ => skip_subtree(r),
                 }
+            }
+            Ok(Event::Empty(e))
+                if !took && matches!(local(e.name().as_ref()), b"Choice" | b"Fallback") =>
+            {
+                took = true;
             }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
             Ok(Event::Eof) | Err(_) => break,
@@ -3254,6 +3450,7 @@ fn read_sect_pr_alternate_content_branch(
     r: &mut Xml<'_>,
     section: &mut SectionSetup,
     branch: &[u8],
+    depth: u32,
 ) {
     loop {
         match r.read_event() {
@@ -3261,14 +3458,35 @@ fn read_sect_pr_alternate_content_branch(
                 skip_subtree(r);
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
-                read_sect_pr_alternate_content(r, section);
+                read_sect_pr_alternate_content(r, section, depth + 1);
             }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => apply_sect_pr_child(section, &e),
+            Ok(Event::Start(e)) if is_sect_pr_leaf(local(e.name().as_ref())) => {
+                apply_sect_pr_child(section, &e);
+                skip_subtree(r);
+            }
+            Ok(Event::Empty(e)) if is_sect_pr_leaf(local(e.name().as_ref())) => {
+                apply_sect_pr_child(section, &e);
+            }
+            Ok(Event::Start(_)) => skip_subtree(r),
             Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
     }
+}
+
+fn is_sect_pr_leaf(name: &[u8]) -> bool {
+    matches!(
+        name,
+        b"pgSz"
+            | b"type"
+            | b"pgMar"
+            | b"pgNumType"
+            | b"cols"
+            | b"textDirection"
+            | b"docGrid"
+            | b"titlePg"
+    )
 }
 
 fn apply_sect_pr_child(section: &mut SectionSetup, e: &BytesStart<'_>) {
@@ -5082,12 +5300,10 @@ fn finalize_paragraph(
         num,
         jc,
         outline,
-        spacing,
+        layout: direct_layout,
         mut indent,
         indent_start_pt,
         indent_end_pt,
-        shading,
-        page_break_before,
         bidi,
         keep_next,
         keep_lines,
@@ -5096,6 +5312,8 @@ fn finalize_paragraph(
         section: _,
     } = pp;
     let inherited = ctx.styles.paragraph_props(style_id.as_deref());
+    let mut resolved_layout = inherited.layout;
+    resolved_layout.overlay(direct_layout);
     let resolved_tab_stops =
         resolve_tab_stops(inherited.tab_stops.iter().copied().chain(tab_stops));
     let pagination = PaginationHint {
@@ -5127,6 +5345,7 @@ fn finalize_paragraph(
         .or(direct_logical_right)
         .or(inherited.indent_right_pt)
         .or(inherited_logical_right);
+    resolved_layout.apply_indent(&mut indent);
     let heading_level = match outline {
         Some(o) if o <= 8 => Some(o + 1),
         Some(_) => None, // outlineLvl 9 = body text
@@ -5138,6 +5357,7 @@ fn finalize_paragraph(
         .as_deref()
         .and_then(|s| ctx.styles.name(s))
         .map(str::to_string);
+    let style_id = style_id.filter(|style_id| !style_id.is_empty());
     let align = match jc.as_deref() {
         Some("center") => Align::Center,
         Some("left") => Align::Left,
@@ -5183,6 +5403,9 @@ fn finalize_paragraph(
             _ => None,
         }
     };
+    let spacing = resolved_layout.spacing();
+    let shading = resolved_layout.shading();
+    let page_break_before = resolved_layout.page_break_before();
     let paragraph = Paragraph {
         props: ParaProps {
             style_id,
@@ -9119,6 +9342,260 @@ mod tests {
             panic!("para")
         };
         assert_eq!(p.text(), "Property change");
+    }
+
+    #[test]
+    fn paragraph_layout_ignores_nested_property_containers() {
+        let xml = r#"<w:document><w:body><w:p>
+            <w:pPr>
+                <w:spacing w:before="120" w:after="240"/>
+                <w:ind w:firstLine="200"/>
+                <w:shd w:val="clear" w:fill="112233"/>
+                <w:pageBreakBefore w:val="0"/>
+                <w:rPr>
+                    <w:spacing w:before="480"/><w:ind w:hanging="500"/>
+                    <w:shd w:val="clear" w:fill="AABBCC"/><w:pageBreakBefore/>
+                </w:rPr>
+                <w:tcPr>
+                    <w:spacing w:after="600"/><w:ind w:hanging="700"/>
+                    <w:shd w:val="clear" w:fill="BBCCDD"/><w:pageBreakBefore/>
+                </w:tcPr>
+                <w:numPr>
+                    <w:ilvl w:val="0"/><w:numId w:val="0"/>
+                    <w:spacing w:before="720"/><w:ind w:hanging="800"/>
+                    <w:shd w:val="clear" w:fill="CCDDEE"/><w:pageBreakBefore/>
+                </w:numPr>
+            </w:pPr>
+            <w:r><w:t>Current layout</w:t></w:r>
+        </w:p></w:body></w:document>"#;
+        let Block::Paragraph(paragraph) = &parse(xml)[0] else {
+            panic!("paragraph")
+        };
+
+        assert_eq!(paragraph.props.spacing.before_pt, Some(6.0));
+        assert_eq!(paragraph.props.spacing.after_pt, Some(12.0));
+        assert_eq!(paragraph.props.indent.first_line_pt, Some(10.0));
+        assert_eq!(paragraph.props.indent.hanging_pt, None);
+        assert_eq!(paragraph.props.shading, Some(Color::rgb(0x11, 0x22, 0x33)));
+        assert!(!paragraph.props.page_break_before);
+    }
+
+    #[test]
+    fn deeply_nested_paragraph_alternate_content_is_bounded() {
+        let mut xml = String::from(
+            r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+                <w:p><w:pPr><w:spacing w:before="120" w:after="240"/>"#,
+        );
+        for _ in 0..(MAX_DEPTH + 8) {
+            xml.push_str("<mc:AlternateContent><mc:Choice Requires=\"w14\">");
+        }
+        xml.push_str("<w:spacing w:before=\"480\"/>");
+        for _ in 0..(MAX_DEPTH + 8) {
+            xml.push_str(
+                "</mc:Choice><mc:Fallback><w:spacing w:before=\"600\"/></mc:Fallback></mc:AlternateContent>",
+            );
+        }
+        xml.push_str(
+            r#"<w:ind w:firstLine="200"/></w:pPr>
+                <w:r><w:t>Bounded layout</w:t></w:r>
+            </w:p></w:body></w:document>"#,
+        );
+
+        let Block::Paragraph(paragraph) = &parse(&xml)[0] else {
+            panic!("paragraph")
+        };
+        assert_eq!(paragraph.props.spacing.before_pt, Some(6.0));
+        assert_eq!(paragraph.props.spacing.after_pt, Some(12.0));
+        assert_eq!(paragraph.props.indent.first_line_pt, Some(10.0));
+    }
+
+    #[test]
+    fn paragraph_numbering_and_tabs_use_one_alternate_content_branch() {
+        let xml = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+            <w:p><w:pPr>
+                <w:numPr><mc:AlternateContent>
+                    <mc:Choice Requires="w14">
+                        <w:ilvl w:val="2"/><w:numId w:val="7"/>
+                    </mc:Choice>
+                    <mc:Fallback>
+                        <w:ilvl w:val="4"/><w:numId w:val="9"/>
+                    </mc:Fallback>
+                </mc:AlternateContent></w:numPr>
+                <w:tabs><mc:AlternateContent>
+                    <mc:Choice Requires="w14">
+                        <w:tab w:val="right" w:pos="1440"/>
+                    </mc:Choice>
+                    <mc:Fallback>
+                        <w:tab w:val="center" w:pos="2880"/>
+                    </mc:Fallback>
+                </mc:AlternateContent></w:tabs>
+            </w:pPr><w:r><w:t>Selected branch</w:t></w:r></w:p>
+            <w:p><w:pPr>
+                <mc:AlternateContent>
+                    <mc:Choice Requires="w14"/>
+                    <mc:Fallback><w:spacing w:before="240"/></mc:Fallback>
+                </mc:AlternateContent>
+                <w:numPr><mc:AlternateContent>
+                    <mc:Choice Requires="w14"/>
+                    <mc:Fallback>
+                        <w:ilvl w:val="4"/><w:numId w:val="9"/>
+                    </mc:Fallback>
+                </mc:AlternateContent></w:numPr>
+                <w:tabs><mc:AlternateContent>
+                    <mc:Choice Requires="w14"/>
+                    <mc:Fallback>
+                        <w:tab w:val="center" w:pos="2880"/>
+                    </mc:Fallback>
+                </mc:AlternateContent></w:tabs>
+            </w:pPr><w:r><w:t>Empty selected branch</w:t></w:r></w:p>
+        </w:body></w:document>"#;
+        let (blocks, _, tab_stops, _, _, _) =
+            parse_with_media_styles_and_pagination(xml, HashMap::new(), Styles::default(), true);
+        let Block::Paragraph(paragraph) = &blocks[0] else {
+            panic!("paragraph")
+        };
+
+        assert_eq!(
+            paragraph.props.list.as_ref().map(|list| list.level),
+            Some(2)
+        );
+        assert_eq!(
+            tab_stops[0],
+            vec![TabStop {
+                position_pt: 72.0,
+                alignment: TabAlignment::Right,
+            }]
+        );
+        let Block::Paragraph(empty_choice) = &blocks[1] else {
+            panic!("second paragraph")
+        };
+        assert_eq!(empty_choice.props.list, None);
+        assert_eq!(empty_choice.props.spacing.before_pt, None);
+        assert!(tab_stops[1].is_empty());
+    }
+
+    #[test]
+    fn section_empty_alternate_content_choice_does_not_apply_fallback() {
+        let xml = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+            <w:p><w:pPr><w:sectPr>
+                <mc:AlternateContent>
+                    <mc:Choice Requires="w14"/>
+                    <mc:Fallback>
+                        <w:cols w:num="5"/>
+                        <w:docGrid w:type="lines" w:linePitch="360"/>
+                    </mc:Fallback>
+                </mc:AlternateContent>
+                <w:type w:val="nextPage"/>
+            </w:sectPr></w:pPr><w:r><w:t>Empty choice</w:t></w:r></w:p>
+        </w:body></w:document>"#;
+        let section = parse(xml)
+            .into_iter()
+            .find_map(|block| match block {
+                Block::SectionBreak(section) => Some(section),
+                _ => None,
+            })
+            .expect("section break");
+
+        assert_eq!(section.section_break, Some(SectionBreakKind::NextPage));
+        assert_eq!(section.columns, None);
+        assert_eq!(section.doc_grid, None);
+    }
+
+    #[test]
+    fn section_properties_ignore_unknown_nested_containers() {
+        let xml = r#"<w:document><w:body>
+            <w:p><w:pPr><w:sectPr>
+                <w:unknown>
+                    <w:cols w:num="5"/>
+                    <w:docGrid w:type="lines" w:linePitch="360"/>
+                    <w:titlePg/>
+                </w:unknown>
+                <w:type w:val="nextPage"/>
+                <w:cols w:num="2"/>
+            </w:sectPr></w:pPr><w:r><w:t>Scoped section</w:t></w:r></w:p>
+        </w:body></w:document>"#;
+        let section = parse(xml)
+            .into_iter()
+            .find_map(|block| match block {
+                Block::SectionBreak(section) => Some(section),
+                _ => None,
+            })
+            .expect("section break");
+
+        assert_eq!(section.section_break, Some(SectionBreakKind::NextPage));
+        assert_eq!(section.columns, Some(2));
+        assert_eq!(section.doc_grid, None);
+        assert!(!section.title_page);
+    }
+
+    #[test]
+    fn deeply_nested_section_alternate_content_is_bounded_and_recovers() {
+        let mut xml = String::from(
+            r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+                <w:p><w:pPr><w:sectPr><w:type w:val="nextPage"/>"#,
+        );
+        for _ in 0..(MAX_DEPTH + 8) {
+            xml.push_str("<mc:AlternateContent><mc:Choice Requires=\"w14\">");
+        }
+        xml.push_str(r#"<w:docGrid w:type="lines" w:linePitch="360"/>"#);
+        for _ in 0..(MAX_DEPTH + 8) {
+            xml.push_str(
+                "</mc:Choice><mc:Fallback><w:docGrid w:type=\"snapToChars\"/></mc:Fallback></mc:AlternateContent>",
+            );
+        }
+        xml.push_str(
+            r#"<w:cols w:num="3"/></w:sectPr></w:pPr>
+                <w:r><w:t>Bounded section</w:t></w:r>
+            </w:p></w:body></w:document>"#,
+        );
+
+        let section = parse(&xml)
+            .into_iter()
+            .find_map(|block| match block {
+                Block::SectionBreak(section) => Some(section),
+                _ => None,
+            })
+            .expect("section break");
+        assert_eq!(section.section_break, Some(SectionBreakKind::NextPage));
+        assert_eq!(section.doc_grid, None);
+        assert_eq!(section.columns, Some(3));
+    }
+
+    #[test]
+    fn non_finite_twips_do_not_enter_paragraph_or_section_models() {
+        let xml = r#"<w:document><w:body>
+            <w:p><w:pPr>
+                <w:ind w:left="NaN" w:right="inf" w:start="-inf" w:end="1e999"/>
+                <w:sectPr>
+                    <w:pgSz w:w="NaN" w:h="12240"/>
+                    <w:pgMar w:left="inf" w:right="-inf" w:top="1e999" w:bottom="NaN"/>
+                </w:sectPr>
+            </w:pPr><w:r><w:t>Finite model</w:t></w:r></w:p>
+        </w:body></w:document>"#;
+        let blocks = parse(xml);
+        let paragraph = blocks
+            .iter()
+            .find_map(|block| match block {
+                Block::Paragraph(paragraph) => Some(paragraph),
+                _ => None,
+            })
+            .expect("paragraph");
+        let section = blocks
+            .iter()
+            .find_map(|block| match block {
+                Block::SectionBreak(section) => Some(section),
+                _ => None,
+            })
+            .expect("section break");
+
+        assert_eq!(paragraph.props.indent.left_pt, None);
+        assert_eq!(paragraph.props.indent.right_pt, None);
+        assert!(section.page.width_pt.is_finite());
+        assert!(section.page.height_pt.is_finite());
+        assert_eq!(section.page.margin_left_pt, None);
+        assert_eq!(section.page.margin_right_pt, None);
+        assert_eq!(section.page.margin_top_pt, None);
+        assert_eq!(section.page.margin_bottom_pt, None);
     }
 
     #[test]

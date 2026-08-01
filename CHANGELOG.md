@@ -388,6 +388,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and decimal tab stops in top-level body paragraphs, including `clear`
   overrides, and preserve authored zero paragraph after-spacing instead of
   substituting the preview default gap.
+- Opened `.docx` paragraphs now resolve document defaults, the declared default
+  paragraph style for unstyled paragraphs, and bounded explicit paragraph-style
+  chains for before/after spacing, proportional automatic line spacing,
+  first-line/hanging indents, flat RGB shading, and
+  `pageBreakBefore`, with direct zero/off precedence. Unsupported nearer
+  exact/at-least line-rule, nonzero line-unit spacing, nonzero character-unit
+  indent, enabled automatic spacing, theme, pattern, nil, or malformed forms
+  suppress representable inherited values instead of leaking base formatting;
+  paragraph-style chain limits are evaluated independently of map iteration
+  order. Zero line- and character-unit attributes clear related inherited unit
+  overrides; nonzero unit values remain outside the represented subset.
 
 ## [0.1.1] - 2026-07-16
 

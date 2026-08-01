@@ -335,8 +335,11 @@ additionally honor resolved left/center/right/decimal tab stops in LTR
 left/start-aligned top-level body paragraphs, retaining their page-text-margin
 coordinates under supported left, positive first-line, and hanging indents.
 Default-tab fallback targets use the same margin-anchored grid and are clamped
-to the active paragraph box. Opened documents also honor authored zero
-after-spacing and source-aligned `keepNext`,
+to the active paragraph box. Opened documents also honor document-default,
+declared default paragraph-style, and bounded explicit paragraph-style
+before/after spacing, proportional automatic line spacing, first-line/hanging
+indents, flat RGB shading, and `pageBreakBefore`; authored zero/off direct
+overrides; and source-aligned `keepNext`,
 `keepLines`, and default-on `widowControl` pagination hints in top-level body
 paragraphs and direct or accepted-current wrapper-contained paragraphs in
 ordinary or recursively nested table cells, without adding those source-only
@@ -458,6 +461,10 @@ bridges.
 > semantics retain their cached display text with diagnostics.
 > Conditional table-style vertical bands, first/last-column and corner regions,
 > and `w:tblPrEx` row-group exceptions do not yet contribute `cantSplit`.
+> Exact/at-least line rules, nonzero line-unit before/after spacing,
+> enabled automatic/contextual paragraph spacing, nonzero character-unit indents,
+> theme/automatic/pattern paragraph shading, and table/list/conditional-style
+> paragraph properties remain outside the bounded style-derived layout subset.
 > Nested-table paragraph controls retain the
 > renderer's 32-level flattening bound; nested grid/border geometry, nested-row
 > `cantSplit`, and Word-exact cell spacing/tab geometry remain outside this
@@ -622,8 +629,10 @@ surface, with no JVM, no subprocess, and no second Word parser in the tree.
 A `.docx` is a ZIP of XML parts. `rwml` reads `word/document.xml` with `quick-xml`
 by recursive descent (paragraphs → runs with `w:rPr`; tables `w:tbl` with
 `gridSpan`/`vMerge` → real colspan/rowspan), resolves heading levels from
-`word/styles.xml` (`w:pStyle` / `Heading N` / `제목 N`), ordered-vs-bullet from
-`word/numbering.xml`, and hyperlink targets + image bytes from
+`word/styles.xml` (`w:pStyle` / `Heading N` / `제목 N`), supported
+document-default/paragraph/character run properties, and bounded paragraph
+style layout values; ordered-vs-bullet from `word/numbering.xml`; and hyperlink
+targets + image bytes from
 `word/_rels/document.xml.rels` + `word/media/*`. Running headers/footers are
 resolved from the `sectPr` references (`word/header*.xml` / `footer*.xml`, each
 with its own rels) into section-break setup plus the final `DocSetup`, including
@@ -942,9 +951,14 @@ code points.
   old-content wrappers. Comment anchors plus `fields()`/`floating_shapes()` follow
   that same accepted-current policy, and `fields()` also uses the single-branch
   `mc:AlternateContent` policy so redundant Choice/Fallback field serializations
-  do not duplicate side-table fields; style-*inherited* emphasis (only direct
-  `w:rPr` is read,
-  matching the `.doc` CHPX behavior).
+  do not duplicate side-table fields. Supported document-default, paragraph,
+  and character style run properties are resolved through bounded `basedOn`
+  chains, including the declared default paragraph style for unstyled
+  paragraphs, as are paragraph direction/alignment/pagination, physical/logical
+  side indents, tabs, spacing, first/hanging indents, flat RGB shading, and
+  page-break-before. Table/list/conditional paragraph style effects and broader
+  theme/automatic/pattern/nonzero line- or character-unit semantics remain
+  unmodeled.
   Headers/footers, text boxes, footnotes/endnotes, and per-level numbering labels
   **are** now extracted; complete positive direct table grids whose column count
   matches the reconstructed cell/span grid populate normalized model column
@@ -1018,6 +1032,9 @@ evidence.
       hyperlinks, model-backed clockwise image rotation, six-way solid
       model-backed table border color/width, paragraph
       page-break-before, header-row repeat, oversized-row split,
+      bounded DOCX document-default, declared-default-style, and explicit
+      paragraph-style spacing, line height, first/hanging indents, flat
+      shading, and page-break-before,
       direct plus bounded whole/first/last/horizontal-band table-style DOCX
       table-row `cantSplit`, direct DOCX and recursively nested table-cell
       keep/widow controls, direct and

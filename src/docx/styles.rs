@@ -8,14 +8,16 @@
 
 use std::collections::HashMap;
 
-use quick_xml::events::{BytesStart, Event};
+use quick_xml::events::{BytesDecl, BytesStart, Event};
 use quick_xml::Reader;
 
 use super::xml_text::{skip_alternate_content_branch, skip_subtree, AlternateContentBranchState};
 use super::{
     attr_local, attr_local_trimmed, attr_u16, attr_u8, local, parse_rgb_hex_color, toggle_on,
 };
-use crate::model::{CharProps, Color, TabAlignment, TabStop, VertAlign, MAX_TAB_STOPS};
+use crate::model::{
+    CharProps, Color, Indent, Spacing, TabAlignment, TabStop, VertAlign, MAX_TAB_STOPS,
+};
 use crate::stsh::heading_from_name;
 
 const STYLE_CHAIN_LIMIT: usize = 32;
@@ -27,6 +29,7 @@ pub(crate) struct Styles {
     name: HashMap<String, String>,
     doc_defaults_run: RunProps,
     doc_defaults_paragraph: ParagraphProps,
+    default_paragraph_style: Option<String>,
     paragraph_run: HashMap<String, RunProps>,
     paragraph: HashMap<String, ParagraphProps>,
     character_run: HashMap<String, RunProps>,
@@ -53,6 +56,7 @@ impl Styles {
         character_style_id: Option<&str>,
     ) -> RunProps {
         let mut props = self.doc_defaults_run.clone();
+        let paragraph_style_id = paragraph_style_id.or(self.default_paragraph_style.as_deref());
         if let Some(style_id) = paragraph_style_id {
             if let Some(style_props) = self.paragraph_run.get(style_id) {
                 props.overlay(style_props);
@@ -68,6 +72,7 @@ impl Styles {
 
     pub(crate) fn paragraph_props(&self, style_id: Option<&str>) -> ParagraphProps {
         let mut props = self.doc_defaults_paragraph.clone();
+        let style_id = style_id.or(self.default_paragraph_style.as_deref());
         if let Some(style_id) = style_id {
             if let Some(style_props) = self.paragraph.get(style_id) {
                 props.overlay(style_props);
@@ -123,6 +128,151 @@ pub(crate) struct TableRowStyleRegions {
     pub(crate) band2_horizontal: bool,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+enum CascadedValue<T> {
+    #[default]
+    Inherit,
+    Value(T),
+    Suppress,
+}
+
+impl<T: Copy> CascadedValue<T> {
+    fn overlay(&mut self, other: Self) {
+        if !matches!(other, Self::Inherit) {
+            *self = other;
+        }
+    }
+
+    fn value(self) -> Option<T> {
+        match self {
+            Self::Value(value) => Some(value),
+            Self::Inherit | Self::Suppress => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ParagraphLineRule {
+    Auto,
+    Unsupported,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RelativeUnitValue {
+    Zero,
+    NonZero,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub(crate) struct ParagraphLayoutProps {
+    before_pt: CascadedValue<f32>,
+    before_lines: CascadedValue<RelativeUnitValue>,
+    before_auto: CascadedValue<bool>,
+    after_pt: CascadedValue<f32>,
+    after_lines: CascadedValue<RelativeUnitValue>,
+    after_auto: CascadedValue<bool>,
+    line: CascadedValue<f32>,
+    line_rule: CascadedValue<ParagraphLineRule>,
+    first_line_pt: CascadedValue<f32>,
+    hanging_pt: CascadedValue<f32>,
+    first_line_chars: CascadedValue<RelativeUnitValue>,
+    hanging_chars: CascadedValue<RelativeUnitValue>,
+    shading: CascadedValue<Color>,
+    page_break_before: CascadedValue<bool>,
+}
+
+impl ParagraphLayoutProps {
+    pub(crate) fn overlay(&mut self, other: Self) {
+        self.before_pt.overlay(other.before_pt);
+        self.before_lines.overlay(other.before_lines);
+        self.before_auto.overlay(other.before_auto);
+        self.after_pt.overlay(other.after_pt);
+        self.after_lines.overlay(other.after_lines);
+        self.after_auto.overlay(other.after_auto);
+        self.line.overlay(other.line);
+        self.line_rule.overlay(other.line_rule);
+        self.first_line_pt.overlay(other.first_line_pt);
+        self.hanging_pt.overlay(other.hanging_pt);
+        self.first_line_chars.overlay(other.first_line_chars);
+        self.hanging_chars.overlay(other.hanging_chars);
+        self.shading.overlay(other.shading);
+        self.page_break_before.overlay(other.page_break_before);
+    }
+
+    pub(crate) fn spacing(self) -> Spacing {
+        Spacing {
+            before_pt: resolved_paragraph_spacing(
+                self.before_pt,
+                self.before_lines,
+                self.before_auto,
+            ),
+            after_pt: resolved_paragraph_spacing(self.after_pt, self.after_lines, self.after_auto),
+            line_pct: match (self.line, self.line_rule) {
+                (
+                    CascadedValue::Value(line),
+                    CascadedValue::Inherit | CascadedValue::Value(ParagraphLineRule::Auto),
+                ) => {
+                    let value = line / 240.0;
+                    value
+                        .is_finite()
+                        .then_some(value)
+                        .filter(|value| *value > 0.0)
+                }
+                _ => None,
+            },
+        }
+    }
+
+    pub(crate) fn apply_indent(self, indent: &mut Indent) {
+        if !relative_unit_allows_twips(self.first_line_chars)
+            || !relative_unit_allows_twips(self.hanging_chars)
+        {
+            indent.first_line_pt = None;
+            indent.hanging_pt = None;
+            return;
+        }
+        indent.first_line_pt = self.first_line_pt.value();
+        indent.hanging_pt = self.hanging_pt.value();
+    }
+
+    pub(crate) fn shading(self) -> Option<Color> {
+        self.shading.value()
+    }
+
+    pub(crate) fn page_break_before(self) -> bool {
+        self.page_break_before.value().unwrap_or(false)
+    }
+}
+
+fn resolved_paragraph_spacing(
+    twips: CascadedValue<f32>,
+    lines: CascadedValue<RelativeUnitValue>,
+    automatic: CascadedValue<bool>,
+) -> Option<f32> {
+    if !matches!(
+        automatic,
+        CascadedValue::Inherit | CascadedValue::Value(false)
+    ) {
+        return None;
+    }
+    match lines {
+        CascadedValue::Inherit => twips.value(),
+        CascadedValue::Value(RelativeUnitValue::Zero) => match twips {
+            CascadedValue::Inherit => Some(0.0),
+            CascadedValue::Value(value) => Some(value),
+            CascadedValue::Suppress => None,
+        },
+        CascadedValue::Value(RelativeUnitValue::NonZero) | CascadedValue::Suppress => None,
+    }
+}
+
+fn relative_unit_allows_twips(value: CascadedValue<RelativeUnitValue>) -> bool {
+    matches!(
+        value,
+        CascadedValue::Inherit | CascadedValue::Value(RelativeUnitValue::Zero)
+    )
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct ParagraphProps {
     pub(crate) bidi: Option<bool>,
@@ -135,6 +285,7 @@ pub(crate) struct ParagraphProps {
     pub(crate) indent_start_pt: Option<f32>,
     pub(crate) indent_end_pt: Option<f32>,
     pub(crate) tab_stops: Vec<TabStop>,
+    pub(crate) layout: ParagraphLayoutProps,
 }
 
 impl ParagraphProps {
@@ -169,6 +320,7 @@ impl ParagraphProps {
         let remaining = MAX_TAB_STOPS.saturating_sub(self.tab_stops.len());
         self.tab_stops
             .extend(other.tab_stops.iter().take(remaining).copied());
+        self.layout.overlay(other.layout);
     }
 }
 
@@ -177,6 +329,160 @@ fn twips_attr(e: &BytesStart<'_>, name: &[u8]) -> Option<f32> {
         .and_then(|value| value.trim().parse::<f32>().ok())
         .filter(|value| value.is_finite())
         .map(|value| value / 20.0)
+}
+
+fn nonnegative_twips(value: Option<String>) -> CascadedValue<f32> {
+    let Some(value) = value else {
+        return CascadedValue::Inherit;
+    };
+    value
+        .trim()
+        .parse::<u64>()
+        .ok()
+        .map(|value| value as f64 / 20.0)
+        .filter(|value| value.is_finite() && *value <= f64::from(f32::MAX))
+        .map(|value| CascadedValue::Value(value as f32))
+        .unwrap_or(CascadedValue::Suppress)
+}
+
+fn positive_integer(value: Option<String>) -> CascadedValue<f32> {
+    let Some(value) = value else {
+        return CascadedValue::Inherit;
+    };
+    value
+        .trim()
+        .parse::<u64>()
+        .ok()
+        .filter(|value| *value > 0)
+        .map(|value| value as f64)
+        .filter(|value| value.is_finite() && *value <= f64::from(f32::MAX))
+        .map(|value| CascadedValue::Value(value as f32))
+        .unwrap_or(CascadedValue::Suppress)
+}
+
+fn relative_unit(value: Option<String>) -> CascadedValue<RelativeUnitValue> {
+    let Some(value) = value else {
+        return CascadedValue::Inherit;
+    };
+    match value.trim().parse::<i32>() {
+        Ok(0) => CascadedValue::Value(RelativeUnitValue::Zero),
+        Ok(_) => CascadedValue::Value(RelativeUnitValue::NonZero),
+        Err(_) => CascadedValue::Suppress,
+    }
+}
+
+fn strict_on_off(value: &str) -> Option<bool> {
+    match value {
+        "1" | "true" | "on" => Some(true),
+        "0" | "false" | "off" => Some(false),
+        _ => None,
+    }
+}
+
+fn on_off_attribute(value: Option<String>) -> CascadedValue<bool> {
+    let Some(value) = value else {
+        return CascadedValue::Inherit;
+    };
+    strict_on_off(&value)
+        .map(CascadedValue::Value)
+        .unwrap_or(CascadedValue::Suppress)
+}
+
+fn on_off_element(e: &BytesStart<'_>) -> CascadedValue<bool> {
+    attr_local(e, b"val").map_or(CascadedValue::Value(true), |value| {
+        strict_on_off(&value)
+            .map(CascadedValue::Value)
+            .unwrap_or(CascadedValue::Suppress)
+    })
+}
+
+fn line_rule(value: Option<String>) -> CascadedValue<ParagraphLineRule> {
+    let Some(value) = value else {
+        return CascadedValue::Inherit;
+    };
+    match value.trim() {
+        "auto" => CascadedValue::Value(ParagraphLineRule::Auto),
+        "exact" | "atLeast" => CascadedValue::Value(ParagraphLineRule::Unsupported),
+        _ => CascadedValue::Suppress,
+    }
+}
+
+fn paragraph_spacing(props: &mut ParagraphLayoutProps, e: &BytesStart<'_>) {
+    props
+        .before_pt
+        .overlay(nonnegative_twips(attr_local(e, b"before")));
+    props
+        .before_lines
+        .overlay(relative_unit(attr_local(e, b"beforeLines")));
+    props
+        .before_auto
+        .overlay(on_off_attribute(attr_local(e, b"beforeAutospacing")));
+    props
+        .after_pt
+        .overlay(nonnegative_twips(attr_local(e, b"after")));
+    props
+        .after_lines
+        .overlay(relative_unit(attr_local(e, b"afterLines")));
+    props
+        .after_auto
+        .overlay(on_off_attribute(attr_local(e, b"afterAutospacing")));
+    let line = attr_local(e, b"line");
+    let line_rule_value = attr_local(e, b"lineRule");
+    props.line.overlay(positive_integer(line.clone()));
+    if line_rule_value.is_some() {
+        props.line_rule.overlay(line_rule(line_rule_value));
+    } else if line.is_some() {
+        props
+            .line_rule
+            .overlay(CascadedValue::Value(ParagraphLineRule::Auto));
+    }
+}
+
+fn paragraph_first_line_indent(props: &mut ParagraphLayoutProps, e: &BytesStart<'_>) {
+    let hanging_chars = attr_local(e, b"hangingChars");
+    let hanging = attr_local(e, b"hanging");
+    let first_line_chars = attr_local(e, b"firstLineChars");
+    let first_line = attr_local(e, b"firstLine");
+
+    props.hanging_chars.overlay(relative_unit(hanging_chars));
+    props
+        .first_line_chars
+        .overlay(relative_unit(first_line_chars));
+    if hanging.is_some() {
+        props.first_line_pt = CascadedValue::Suppress;
+        props.hanging_pt = nonnegative_twips(hanging);
+    } else if first_line.is_some() {
+        props.first_line_pt = nonnegative_twips(first_line);
+        props.hanging_pt = CascadedValue::Suppress;
+    }
+}
+
+fn paragraph_shading(e: &BytesStart<'_>) -> CascadedValue<Color> {
+    let unsupported_theme = [b"themeFill".as_slice(), b"themeFillTint", b"themeFillShade"]
+        .into_iter()
+        .any(|name| attr_local(e, name).is_some());
+    let supported_pattern = attr_local(e, b"val")
+        .as_deref()
+        .is_none_or(|value| value.trim() == "clear");
+    if unsupported_theme || !supported_pattern {
+        return CascadedValue::Suppress;
+    }
+    attr_local(e, b"fill")
+        .and_then(|value| parse_rgb_hex_color(&value))
+        .map(CascadedValue::Value)
+        .unwrap_or(CascadedValue::Suppress)
+}
+
+pub(crate) fn apply_paragraph_layout_child(props: &mut ParagraphLayoutProps, e: &BytesStart<'_>) {
+    match local(e.name().as_ref()) {
+        b"spacing" => paragraph_spacing(props, e),
+        b"ind" => paragraph_first_line_indent(props, e),
+        b"shd" => props.shading = paragraph_shading(e),
+        b"pageBreakBefore" => {
+            props.page_break_before.overlay(on_off_element(e));
+        }
+        _ => {}
+    }
 }
 
 pub(super) fn tab_stop(e: &BytesStart<'_>) -> Option<TabStop> {
@@ -196,6 +502,7 @@ pub(super) fn tab_stop(e: &BytesStart<'_>) -> Option<TabStop> {
 }
 
 fn apply_paragraph_props_child(props: &mut ParagraphProps, e: &BytesStart<'_>) {
+    apply_paragraph_layout_child(&mut props.layout, e);
     match local(e.name().as_ref()) {
         b"bidi" => props.bidi = Some(toggle_on(attr_local(e, b"val"))),
         b"keepNext" => props.keep_next = Some(toggle_on(attr_local(e, b"val"))),
@@ -364,9 +671,240 @@ pub(crate) fn apply_run_props_child(props: &mut RunProps, e: &BytesStart<'_>) {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ParagraphPropertyTarget {
+    DocumentDefaults,
+    Style,
+}
+
+fn well_formed_xml(xml: &str) -> bool {
+    let mut reader = Reader::from_str(xml);
+    reader.config_mut().check_comments = true;
+    let mut depth = 0usize;
+    let mut root_seen = false;
+    let mut root_closed = false;
+    let mut declaration_seen = false;
+    let mut doctype_seen = false;
+    let mut prolog_content_seen = false;
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(e)) => {
+                if !valid_xml_attributes(&e) || (depth == 0 && root_seen) {
+                    return false;
+                }
+                if depth == 0 {
+                    root_seen = true;
+                }
+                let Some(next) = depth.checked_add(1) else {
+                    return false;
+                };
+                depth = next;
+            }
+            Ok(Event::Empty(e)) => {
+                if !valid_xml_attributes(&e) || (depth == 0 && root_seen) {
+                    return false;
+                }
+                if depth == 0 {
+                    root_seen = true;
+                    root_closed = true;
+                }
+            }
+            Ok(Event::End(_)) => {
+                let Some(next) = depth.checked_sub(1) else {
+                    return false;
+                };
+                depth = next;
+                if depth == 0 {
+                    root_closed = true;
+                }
+            }
+            Ok(Event::Text(e)) => {
+                let Ok(value) = e.unescape() else {
+                    return false;
+                };
+                if !valid_xml_chars(&value) {
+                    return false;
+                }
+                if depth == 0 {
+                    if !e.as_ref().iter().all(u8::is_ascii_whitespace) {
+                        return false;
+                    }
+                    if !root_seen {
+                        prolog_content_seen = true;
+                    }
+                }
+            }
+            Ok(Event::CData(e)) => {
+                let Ok(value) = std::str::from_utf8(e.as_ref()) else {
+                    return false;
+                };
+                if depth == 0 || !valid_xml_chars(value) {
+                    return false;
+                }
+            }
+            Ok(Event::Decl(e)) => {
+                if declaration_seen
+                    || root_seen
+                    || depth != 0
+                    || doctype_seen
+                    || prolog_content_seen
+                    || !valid_xml_declaration(&e)
+                {
+                    return false;
+                }
+                declaration_seen = true;
+            }
+            Ok(Event::DocType(_)) => {
+                if doctype_seen || root_seen || depth != 0 {
+                    return false;
+                }
+                doctype_seen = true;
+                prolog_content_seen = true;
+            }
+            Ok(Event::Comment(_) | Event::PI(_)) if depth == 0 && !root_seen => {
+                prolog_content_seen = true;
+            }
+            Ok(Event::Eof) => return root_seen && root_closed && depth == 0,
+            Err(_) => return false,
+            _ => {}
+        }
+    }
+}
+
+fn valid_xml_attributes(e: &BytesStart<'_>) -> bool {
+    e.attributes().all(|attribute| {
+        let Ok(attribute) = attribute else {
+            return false;
+        };
+        attribute
+            .unescape_value()
+            .ok()
+            .is_some_and(|value| valid_xml_chars(&value))
+    })
+}
+
+fn valid_xml_chars(value: &str) -> bool {
+    value.chars().all(|character| {
+        matches!(character, '\u{9}' | '\u{A}' | '\u{D}')
+            || ('\u{20}'..='\u{D7FF}').contains(&character)
+            || ('\u{E000}'..='\u{FFFD}').contains(&character)
+            || ('\u{10000}'..='\u{10FFFF}').contains(&character)
+    })
+}
+
+fn valid_xml_declaration(declaration: &BytesDecl<'_>) -> bool {
+    let Ok(content) = std::str::from_utf8(declaration.as_ref()) else {
+        return false;
+    };
+    let start = BytesStart::from_content(content, 3);
+    let mut attributes = start.attributes();
+    let Some(Ok(version)) = attributes.next() else {
+        return false;
+    };
+    if version.key.as_ref() != b"version" {
+        return false;
+    }
+    if !matches!(version.value.as_ref(), b"1.0" | b"1.1") {
+        return false;
+    }
+
+    let mut encoding_seen = false;
+    let mut standalone_seen = false;
+    for attribute in attributes {
+        let Ok(attribute) = attribute else {
+            return false;
+        };
+        let value = attribute.value.as_ref();
+        match attribute.key.as_ref() {
+            b"encoding"
+                if !encoding_seen && !standalone_seen && value.eq_ignore_ascii_case(b"UTF-8") =>
+            {
+                encoding_seen = true;
+            }
+            b"standalone" if !standalone_seen && matches!(value, b"yes" | b"no") => {
+                standalone_seen = true;
+            }
+            _ => return false,
+        }
+    }
+    true
+}
+
+fn paragraph_property_scope_start(name: &[u8]) -> bool {
+    matches!(
+        name,
+        b"Choice"
+            | b"Fallback"
+            | b"bidi"
+            | b"keepNext"
+            | b"keepLines"
+            | b"widowControl"
+            | b"jc"
+            | b"ind"
+            | b"spacing"
+            | b"shd"
+            | b"pageBreakBefore"
+            | b"outlineLvl"
+    )
+}
+
+fn read_paragraph_tabs(r: &mut Reader<&[u8]>, props: &mut ParagraphProps) {
+    let mut alternate_content_stack = Vec::new();
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e))
+                if skip_alternate_content_branch(
+                    &mut alternate_content_stack,
+                    local(e.name().as_ref()),
+                ) =>
+            {
+                skip_subtree(r);
+            }
+            Ok(Event::Empty(e))
+                if skip_alternate_content_branch(
+                    &mut alternate_content_stack,
+                    local(e.name().as_ref()),
+                ) => {}
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                if alternate_content_stack.len() >= STYLE_CHAIN_LIMIT {
+                    skip_subtree(r);
+                } else {
+                    alternate_content_stack.push(AlternateContentBranchState::default());
+                }
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tab" => {
+                if props.tab_stops.len() < MAX_TAB_STOPS {
+                    if let Some(tab) = tab_stop(&e) {
+                        props.tab_stops.push(tab);
+                    }
+                }
+                skip_subtree(r);
+            }
+            Ok(Event::Empty(e))
+                if local(e.name().as_ref()) == b"tab" && props.tab_stops.len() < MAX_TAB_STOPS =>
+            {
+                if let Some(tab) = tab_stop(&e) {
+                    props.tab_stops.push(tab);
+                }
+            }
+            Ok(Event::Start(e)) if matches!(local(e.name().as_ref()), b"Choice" | b"Fallback") => {}
+            Ok(Event::Start(_)) => skip_subtree(r),
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                alternate_content_stack.pop();
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"tabs" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+}
+
 /// Parse `word/styles.xml`. Returns an empty sheet on absence/malformation —
 /// headings then simply aren't detected (lists/body text are unaffected).
 pub(crate) fn parse(xml: &str) -> Styles {
+    if !well_formed_xml(xml) {
+        return Styles::default();
+    }
     let mut r = Reader::from_str(xml);
     let mut styles = Styles::default();
     let mut raw_styles: HashMap<String, RawStyle> = HashMap::new();
@@ -375,6 +913,7 @@ pub(crate) fn parse(xml: &str) -> Styles {
     let mut in_doc_defaults = false;
     let mut in_rpr_default = false;
     let mut in_ppr_default = false;
+    let mut paragraph_property_target = None;
     let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
@@ -405,22 +944,80 @@ pub(crate) fn parse(xml: &str) -> Styles {
             }
             // A new <w:style> opens; capture its id and reset per-style state.
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"style" => {
-                cur_style = attr_local_trimmed(&e, b"styleId").map(|id| RawStyle {
-                    id,
-                    kind: StyleKind::from_attr(attr_local_trimmed(&e, b"type").as_deref()),
-                    ..RawStyle::default()
+                paragraph_property_target = None;
+                let kind = StyleKind::from_attr(attr_local_trimmed(&e, b"type").as_deref());
+                cur_style = attr_local_trimmed(&e, b"styleId").map(|id| {
+                    if kind == Some(StyleKind::Paragraph)
+                        && attr_local(&e, b"default")
+                            .as_deref()
+                            .and_then(strict_on_off)
+                            == Some(true)
+                    {
+                        styles.default_paragraph_style = Some(id.clone());
+                    }
+                    RawStyle {
+                        id,
+                        kind,
+                        ..RawStyle::default()
+                    }
                 });
             }
             Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"style" => {
                 if let Some(id) = attr_local_trimmed(&e, b"styleId") {
+                    let kind = StyleKind::from_attr(attr_local_trimmed(&e, b"type").as_deref());
+                    if kind == Some(StyleKind::Paragraph)
+                        && attr_local(&e, b"default")
+                            .as_deref()
+                            .and_then(strict_on_off)
+                            == Some(true)
+                    {
+                        styles.default_paragraph_style = Some(id.clone());
+                    }
                     raw_styles.insert(
                         id.clone(),
                         RawStyle {
                             id,
-                            kind: StyleKind::from_attr(attr_local_trimmed(&e, b"type").as_deref()),
+                            kind,
                             ..RawStyle::default()
                         },
                     );
+                }
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"pPrChange" => {
+                skip_subtree(&mut r);
+            }
+            Ok(Event::Start(e))
+                if local(e.name().as_ref()) == b"pPr" && paragraph_property_target.is_some() =>
+            {
+                skip_subtree(&mut r);
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"pPr" => {
+                paragraph_property_target = if in_doc_defaults && in_ppr_default {
+                    Some(ParagraphPropertyTarget::DocumentDefaults)
+                } else if cur_style
+                    .as_ref()
+                    .is_some_and(|style| style.kind == Some(StyleKind::Paragraph))
+                {
+                    Some(ParagraphPropertyTarget::Style)
+                } else {
+                    None
+                };
+            }
+            Ok(Event::Start(e))
+                if paragraph_property_target.is_some() && local(e.name().as_ref()) == b"tabs" =>
+            {
+                match paragraph_property_target {
+                    Some(ParagraphPropertyTarget::DocumentDefaults) => {
+                        read_paragraph_tabs(&mut r, &mut styles.doc_defaults_paragraph);
+                    }
+                    Some(ParagraphPropertyTarget::Style) => {
+                        if let Some(style) = &mut cur_style {
+                            read_paragraph_tabs(&mut r, &mut style.paragraph_props);
+                        } else {
+                            skip_subtree(&mut r);
+                        }
+                    }
+                    None => {}
                 }
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblStylePr" => {
@@ -451,59 +1048,99 @@ pub(crate) fn parse(xml: &str) -> Styles {
                     skip_subtree(&mut r);
                 }
             }
-            Ok(Event::Start(e)) | Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
-                // An empty `<w:rPr/>` carries no run properties, so both rPr targets
-                // (doc defaults, current style) only act on a non-empty element. Merging
-                // the two rPr arms behind one `!e.is_empty()` guard keeps the original
-                // arm priority (doc-defaults wins over an open style) while dropping the
-                // nested single-branch `if` clippy flagged.
-                b"rPr" if !e.is_empty() => {
-                    if in_doc_defaults && in_rpr_default {
-                        styles.doc_defaults_run = read_run_props(&mut r, b"rPr");
-                    } else if let Some(style) = &mut cur_style {
-                        style.run_props = read_run_props(&mut r, b"rPr");
+            Ok(Event::Start(e))
+                if paragraph_property_target.is_some()
+                    && !paragraph_property_scope_start(local(e.name().as_ref())) =>
+            {
+                skip_subtree(&mut r);
+            }
+            Ok(event @ (Event::Start(_) | Event::Empty(_))) => {
+                let (e, is_start) = match event {
+                    Event::Start(e) => (e, true),
+                    Event::Empty(e) => (e, false),
+                    _ => unreachable!(),
+                };
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                if paragraph_property_target.is_some() {
+                    match name {
+                        b"bidi" | b"keepNext" | b"keepLines" | b"widowControl" | b"jc" | b"ind"
+                        | b"spacing" | b"shd" | b"pageBreakBefore" => {
+                            if paragraph_property_target
+                                == Some(ParagraphPropertyTarget::DocumentDefaults)
+                            {
+                                apply_paragraph_props_child(&mut styles.doc_defaults_paragraph, &e);
+                            } else if paragraph_property_target
+                                == Some(ParagraphPropertyTarget::Style)
+                            {
+                                if let Some(style) = &mut cur_style {
+                                    apply_paragraph_props_child(&mut style.paragraph_props, &e);
+                                }
+                            }
+                            if is_start {
+                                skip_subtree(&mut r);
+                            }
+                        }
+                        b"outlineLvl"
+                            if paragraph_property_target
+                                == Some(ParagraphPropertyTarget::Style) =>
+                        {
+                            if let Some(style) = &mut cur_style {
+                                style.outline = attr_u8(&e, b"val");
+                            }
+                            if is_start {
+                                skip_subtree(&mut r);
+                            }
+                        }
+                        b"Choice" | b"Fallback" => {}
+                        _ => {}
                     }
+                    continue;
                 }
-                b"bidi" | b"keepNext" | b"keepLines" | b"widowControl" | b"jc" | b"ind"
-                | b"tab" => {
-                    if in_doc_defaults && in_ppr_default {
-                        apply_paragraph_props_child(&mut styles.doc_defaults_paragraph, &e);
-                    } else if let Some(style) = &mut cur_style {
-                        apply_paragraph_props_child(&mut style.paragraph_props, &e);
-                    }
-                }
-                b"name" => {
-                    if let Some(v) = attr_local_trimmed(&e, b"val") {
-                        if let Some(style) = &mut cur_style {
-                            style.name = v;
+
+                match name {
+                    // An empty `<w:rPr/>` carries no run properties, so both rPr targets
+                    // (doc defaults, current style) only act on a non-empty element.
+                    b"rPr" if is_start => {
+                        if in_doc_defaults && in_rpr_default {
+                            styles.doc_defaults_run = read_run_props(&mut r, b"rPr");
+                        } else if let Some(style) = &mut cur_style {
+                            style.run_props = read_run_props(&mut r, b"rPr");
+                        } else {
+                            skip_subtree(&mut r);
                         }
                     }
-                }
-                b"basedOn" => {
-                    if let Some(v) = attr_local_trimmed(&e, b"val") {
-                        if let Some(style) = &mut cur_style {
-                            style.based_on = Some(v);
-                        }
-                    }
-                }
-                // The style's own paragraph outline level (in its <w:pPr>).
-                b"outlineLvl" => {
-                    if let Some(style) = &mut cur_style {
-                        style.outline = attr_u8(&e, b"val");
-                    }
-                }
-                b"tblStyleRowBandSize" => {
-                    if let Some(style) = &mut cur_style {
-                        if style.kind == Some(StyleKind::Table) {
-                            if let Some(size) = attr_u8(&e, b"val").filter(|size| *size <= 3) {
-                                style.table_row_props.row_band_size = Some(size);
+                    b"name" => {
+                        if let Some(v) = attr_local_trimmed(&e, b"val") {
+                            if let Some(style) = &mut cur_style {
+                                style.name = v;
                             }
                         }
                     }
+                    b"basedOn" => {
+                        if let Some(v) = attr_local_trimmed(&e, b"val") {
+                            if let Some(style) = &mut cur_style {
+                                style.based_on = Some(v);
+                            }
+                        }
+                    }
+                    b"tblStyleRowBandSize" => {
+                        if let Some(style) = &mut cur_style {
+                            if style.kind == Some(StyleKind::Table) {
+                                if let Some(size) = attr_u8(&e, b"val").filter(|size| *size <= 3) {
+                                    style.table_row_props.row_band_size = Some(size);
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
                 }
-                _ => {}
-            },
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"pPr" => {
+                paragraph_property_target = None;
+            }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"style" => {
+                paragraph_property_target = None;
                 if let Some(style) = cur_style.take() {
                     raw_styles.insert(style.id.clone(), style);
                 }
@@ -546,7 +1183,6 @@ pub(crate) fn parse(xml: &str) -> Styles {
         .map(|(id, _)| id.clone())
         .collect::<Vec<_>>();
     let mut paragraph_cache = HashMap::new();
-    let mut paragraph_props_cache = HashMap::new();
     for id in paragraph_ids {
         let props = resolve_style_run_props(
             &id,
@@ -557,13 +1193,7 @@ pub(crate) fn parse(xml: &str) -> Styles {
             0,
         );
         styles.paragraph_run.insert(id.clone(), props);
-        let paragraph_props = resolve_style_paragraph_props(
-            &id,
-            &raw_styles,
-            &mut paragraph_props_cache,
-            &mut Vec::new(),
-            0,
-        );
+        let paragraph_props = resolve_style_paragraph_props(&id, &raw_styles, &mut Vec::new(), 0);
         styles.paragraph.insert(id, paragraph_props);
     }
     let mut character_cache = HashMap::new();
@@ -612,7 +1242,7 @@ enum StyleKind {
 impl StyleKind {
     fn from_attr(value: Option<&str>) -> Option<Self> {
         match value {
-            Some("paragraph") => Some(Self::Paragraph),
+            None | Some("paragraph") => Some(Self::Paragraph),
             Some("character") => Some(Self::Character),
             Some("table") => Some(Self::Table),
             _ => None,
@@ -739,13 +1369,9 @@ fn resolve_style_run_props(
 fn resolve_style_paragraph_props(
     id: &str,
     raw_styles: &HashMap<String, RawStyle>,
-    cache: &mut HashMap<String, ParagraphProps>,
     stack: &mut Vec<String>,
     depth: usize,
 ) -> ParagraphProps {
-    if let Some(props) = cache.get(id) {
-        return props.clone();
-    }
     if depth >= STYLE_CHAIN_LIMIT || stack.iter().any(|seen| seen == id) {
         return ParagraphProps::default();
     }
@@ -760,12 +1386,10 @@ fn resolve_style_paragraph_props(
     let mut props = style
         .based_on
         .as_deref()
-        .map(|base| resolve_style_paragraph_props(base, raw_styles, cache, stack, depth + 1))
+        .map(|base| resolve_style_paragraph_props(base, raw_styles, stack, depth + 1))
         .unwrap_or_default();
     props.overlay(&style.paragraph_props);
     stack.pop();
-
-    cache.insert(id.to_string(), props.clone());
     props
 }
 
@@ -1044,6 +1668,576 @@ mod tests {
         assert_eq!(derived.keep_next, Some(true));
         assert_eq!(derived.keep_lines, Some(false));
         assert_eq!(derived.widow_control, Some(true));
+    }
+
+    #[test]
+    fn default_paragraph_style_applies_only_without_an_explicit_style() {
+        let xml = r#"<w:styles>
+            <w:docDefaults>
+                <w:rPrDefault><w:rPr><w:i/></w:rPr></w:rPrDefault>
+                <w:pPrDefault><w:pPr><w:spacing w:before="60"/></w:pPr></w:pPrDefault>
+            </w:docDefaults>
+            <w:style w:type="paragraph" w:default="1" w:styleId="OldDefault">
+                <w:pPr><w:spacing w:before="120"/></w:pPr>
+            </w:style>
+            <w:style w:type="paragraph" w:default="off" w:styleId="DisabledDefault">
+                <w:pPr><w:spacing w:before="180"/></w:pPr>
+            </w:style>
+            <w:style w:default="true" w:styleId="CurrentDefault">
+                <w:pPr><w:spacing w:before="240"/><w:pageBreakBefore/></w:pPr>
+                <w:rPr><w:b/></w:rPr>
+            </w:style>
+            <w:style w:type="paragraph" w:styleId="Explicit">
+                <w:pPr><w:spacing w:before="360"/></w:pPr>
+            </w:style>
+        </w:styles>"#;
+        let styles = parse(xml);
+
+        let implicit = styles.paragraph_props(None);
+        assert_eq!(implicit.layout.spacing().before_pt, Some(12.0));
+        assert!(implicit.layout.page_break_before());
+
+        let explicit = styles.paragraph_props(Some("Explicit"));
+        assert_eq!(explicit.layout.spacing().before_pt, Some(18.0));
+        assert!(!explicit.layout.page_break_before());
+
+        let missing = styles.paragraph_props(Some("Missing"));
+        assert_eq!(missing.layout.spacing().before_pt, Some(3.0));
+        assert!(!missing.layout.page_break_before());
+
+        let implicit_run = styles.resolved_run_props(None, None);
+        assert!(implicit_run.bold.expect("default paragraph run property"));
+        assert!(implicit_run.italic.expect("document run default"));
+        let explicit_run = styles.resolved_run_props(Some("Explicit"), None);
+        assert_eq!(explicit_run.bold, None);
+        assert!(explicit_run.italic.expect("document run default"));
+    }
+
+    #[test]
+    fn resolves_paragraph_layout_only_from_paragraph_property_scope() {
+        let xml = r#"<w:styles xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+            <w:docDefaults>
+                <w:rPrDefault><w:rPr>
+                    <w:spacing w:before="120"/><w:ind w:firstLine="120"/>
+                    <w:shd w:val="clear" w:fill="112233"/><w:pageBreakBefore/>
+                </w:rPr></w:rPrDefault>
+                <w:pPrDefault><w:pPr><w:rPr>
+                    <w:spacing w:before="180"/><w:ind w:firstLine="180"/>
+                    <w:shd w:val="clear" w:fill="182838"/><w:pageBreakBefore/>
+                </w:rPr></w:pPr></w:pPrDefault>
+            </w:docDefaults>
+            <w:style w:type="character" w:styleId="Character">
+                <w:pPr><w:spacing w:before="240"/><w:ind w:firstLine="240"/>
+                    <w:shd w:val="clear" w:fill="223344"/><w:pageBreakBefore/>
+                </w:pPr>
+            </w:style>
+            <w:style w:type="table" w:styleId="Table">
+                <w:pPr><w:spacing w:before="360"/><w:ind w:firstLine="360"/>
+                    <w:shd w:val="clear" w:fill="334455"/><w:pageBreakBefore/>
+                </w:pPr>
+            </w:style>
+            <w:style w:type="paragraph" w:styleId="Paragraph">
+                <w:rPr><w:spacing w:before="480"/><w:ind w:firstLine="480"/>
+                    <w:shd w:val="clear" w:fill="445566"/><w:pageBreakBefore/>
+                </w:rPr>
+                <w:pPr>
+                    <w:tcPr><w:spacing w:before="540"/><w:ind w:firstLine="540"/>
+                        <w:shd w:val="clear" w:fill="556677"/><w:pageBreakBefore/>
+                    </w:tcPr>
+                    <w:numPr><w:spacing w:before="600"/><w:ind w:firstLine="600"/>
+                        <w:shd w:val="clear" w:fill="667788"/><w:pageBreakBefore/>
+                    </w:numPr>
+                    <w:tabs>
+                        <mc:AlternateContent>
+                            <mc:Choice Requires="w14">
+                                <w:tab w:val="right" w:pos="720"/>
+                                <w:spacing w:before="720"/><w:ind w:firstLine="720"/>
+                                <w:shd w:val="clear" w:fill="8899AA"/><w:pageBreakBefore/>
+                            </mc:Choice>
+                            <mc:Fallback><w:tab w:val="left" w:pos="1440"/></mc:Fallback>
+                        </mc:AlternateContent>
+                    </w:tabs>
+                </w:pPr>
+            </w:style>
+            <w:style w:type="table" w:styleId="ConditionalTable">
+                <w:tblStylePr w:type="firstRow"><w:pPr>
+                    <w:spacing w:before="660"/><w:ind w:firstLine="660"/>
+                    <w:shd w:val="clear" w:fill="778899"/><w:pageBreakBefore/>
+                </w:pPr></w:tblStylePr>
+            </w:style>
+        </w:styles>"#;
+        let styles = parse(xml);
+
+        for props in [
+            styles.paragraph_props(None),
+            styles.paragraph_props(Some("Character")),
+            styles.paragraph_props(Some("Table")),
+            styles.paragraph_props(Some("Paragraph")),
+            styles.paragraph_props(Some("ConditionalTable")),
+        ] {
+            let mut indent = Indent::default();
+            props.layout.apply_indent(&mut indent);
+            assert_eq!(props.layout.spacing(), Spacing::default());
+            assert_eq!(indent.first_line_pt, None);
+            assert_eq!(indent.hanging_pt, None);
+            assert_eq!(props.layout.shading(), None);
+            assert!(!props.layout.page_break_before());
+        }
+        assert_eq!(
+            styles.paragraph_props(Some("Paragraph")).tab_stops,
+            vec![TabStop {
+                position_pt: 36.0,
+                alignment: TabAlignment::Right,
+            }]
+        );
+    }
+
+    #[test]
+    fn paragraph_layout_suppresses_unsupported_nearer_values() {
+        let xml = r#"<w:styles>
+            <w:style w:type="paragraph" w:styleId="Base"><w:pPr>
+                <w:spacing w:before="120" w:after="240" w:line="360"/>
+                <w:ind w:firstLine="200"/>
+                <w:shd w:val="clear" w:fill="112233"/>
+                <w:pageBreakBefore/>
+            </w:pPr></w:style>
+            <w:style w:type="paragraph" w:styleId="Automatic"><w:basedOn w:val="Base"/><w:pPr>
+                <w:spacing w:beforeAutospacing="1" w:afterAutospacing="true"
+                           w:line="360" w:lineRule="atLeast"/>
+                <w:ind w:hangingChars="100"/>
+                <w:shd w:val="nil" w:fill="445566"/>
+                <w:pageBreakBefore w:val="false"/>
+            </w:pPr></w:style>
+            <w:style w:type="paragraph" w:styleId="Malformed"><w:basedOn w:val="Base"/><w:pPr>
+                <w:spacing w:before="-1" w:after="bad" w:line="NaN"/>
+                <w:ind w:firstLine="-20"/>
+                <w:shd w:val="clear" w:fill="auto"/>
+            </w:pPr></w:style>
+            <w:style w:type="paragraph" w:styleId="Both"><w:basedOn w:val="Base"/><w:pPr>
+                <w:ind w:firstLine="320" w:hanging="440"/>
+            </w:pPr></w:style>
+            <w:style w:type="paragraph" w:styleId="InvalidToggle"><w:basedOn w:val="Base"/><w:pPr>
+                <w:pageBreakBefore w:val="TRUE"/>
+            </w:pPr></w:style>
+        </w:styles>"#;
+        let styles = parse(xml);
+
+        for id in ["Automatic", "Malformed"] {
+            let props = styles.paragraph_props(Some(id));
+            let mut indent = Indent::default();
+            props.layout.apply_indent(&mut indent);
+            assert_eq!(props.layout.spacing(), Spacing::default(), "{id}");
+            assert_eq!(indent.first_line_pt, None, "{id}");
+            assert_eq!(indent.hanging_pt, None, "{id}");
+            assert_eq!(props.layout.shading(), None, "{id}");
+        }
+        assert!(!styles
+            .paragraph_props(Some("Automatic"))
+            .layout
+            .page_break_before());
+        assert!(styles
+            .paragraph_props(Some("Malformed"))
+            .layout
+            .page_break_before());
+
+        let both = styles.paragraph_props(Some("Both"));
+        let mut indent = Indent::default();
+        both.layout.apply_indent(&mut indent);
+        assert_eq!(indent.first_line_pt, None);
+        assert_eq!(indent.hanging_pt, Some(22.0));
+        assert!(!styles
+            .paragraph_props(Some("InvalidToggle"))
+            .layout
+            .page_break_before());
+    }
+
+    #[test]
+    fn paragraph_layout_cascades_dependent_attributes_before_evaluation() {
+        let xml = r#"<w:styles>
+            <w:style w:type="paragraph" w:styleId="Automatic"><w:pPr>
+                <w:spacing w:before="120" w:after="240"
+                    w:beforeAutospacing="1" w:afterAutospacing="true"/>
+            </w:pPr></w:style>
+            <w:style w:type="paragraph" w:styleId="AutomaticManual"><w:basedOn w:val="Automatic"/>
+                <w:pPr><w:spacing w:before="480" w:after="600"/></w:pPr>
+            </w:style>
+            <w:style w:type="paragraph" w:styleId="AutomaticOff"><w:basedOn w:val="Automatic"/>
+                <w:pPr><w:spacing w:beforeAutospacing="0" w:afterAutospacing="off"/></w:pPr>
+            </w:style>
+            <w:style w:type="paragraph" w:styleId="Exact"><w:pPr>
+                <w:spacing w:line="360" w:lineRule="exact"/>
+            </w:pPr></w:style>
+            <w:style w:type="paragraph" w:styleId="ExactLine"><w:basedOn w:val="Exact"/>
+                <w:pPr><w:spacing w:line="480"/></w:pPr>
+            </w:style>
+            <w:style w:type="paragraph" w:styleId="ExactAuto"><w:basedOn w:val="Exact"/>
+                <w:pPr><w:spacing w:lineRule="auto"/></w:pPr>
+            </w:style>
+            <w:style w:type="paragraph" w:styleId="CharacterIndent"><w:pPr>
+                <w:ind w:hangingChars="100"/>
+            </w:pPr></w:style>
+            <w:style w:type="paragraph" w:styleId="CharacterIndentTwips">
+                <w:basedOn w:val="CharacterIndent"/>
+                <w:pPr><w:ind w:firstLine="240"/></w:pPr>
+            </w:style>
+            <w:style w:type="paragraph" w:styleId="LineUnits"><w:pPr>
+                <w:spacing w:before="120" w:after="240"
+                    w:beforeLines="100" w:afterLines="100"/>
+            </w:pPr></w:style>
+            <w:style w:type="paragraph" w:styleId="LineUnitsZero">
+                <w:basedOn w:val="LineUnits"/>
+                <w:pPr><w:spacing w:beforeLines="-0" w:afterLines="+0"/></w:pPr>
+            </w:style>
+            <w:style w:type="paragraph" w:styleId="StandaloneLineUnitsZero"><w:pPr>
+                <w:spacing w:beforeLines="0" w:afterLines="0"/>
+            </w:pPr></w:style>
+            <w:style w:type="paragraph" w:styleId="FirstLineChars"><w:pPr>
+                <w:ind w:firstLineChars="100"/>
+            </w:pPr></w:style>
+            <w:style w:type="paragraph" w:styleId="FirstLineCharsZero">
+                <w:basedOn w:val="FirstLineChars"/>
+                <w:pPr><w:ind w:firstLineChars="-0" w:firstLine="240"/></w:pPr>
+            </w:style>
+            <w:style w:type="paragraph" w:styleId="HangingChars"><w:pPr>
+                <w:ind w:hangingChars="100"/>
+            </w:pPr></w:style>
+            <w:style w:type="paragraph" w:styleId="HangingCharsZero">
+                <w:basedOn w:val="HangingChars"/>
+                <w:pPr><w:ind w:hangingChars="+0" w:hanging="240"/></w:pPr>
+            </w:style>
+        </w:styles>"#;
+        let styles = parse(xml);
+
+        assert_eq!(
+            styles
+                .paragraph_props(Some("AutomaticManual"))
+                .layout
+                .spacing(),
+            Spacing::default()
+        );
+        assert_eq!(
+            styles
+                .paragraph_props(Some("AutomaticOff"))
+                .layout
+                .spacing(),
+            Spacing {
+                before_pt: Some(6.0),
+                after_pt: Some(12.0),
+                line_pct: None,
+            }
+        );
+        assert_eq!(
+            styles
+                .paragraph_props(Some("ExactLine"))
+                .layout
+                .spacing()
+                .line_pct,
+            Some(2.0)
+        );
+        assert_eq!(
+            styles
+                .paragraph_props(Some("ExactAuto"))
+                .layout
+                .spacing()
+                .line_pct,
+            Some(1.5)
+        );
+        assert_eq!(
+            styles
+                .paragraph_props(Some("LineUnitsZero"))
+                .layout
+                .spacing(),
+            Spacing {
+                before_pt: Some(6.0),
+                after_pt: Some(12.0),
+                line_pct: None,
+            }
+        );
+        assert_eq!(
+            styles
+                .paragraph_props(Some("StandaloneLineUnitsZero"))
+                .layout
+                .spacing(),
+            Spacing {
+                before_pt: Some(0.0),
+                after_pt: Some(0.0),
+                line_pct: None,
+            }
+        );
+
+        let mut indent = Indent::default();
+        styles
+            .paragraph_props(Some("CharacterIndentTwips"))
+            .layout
+            .apply_indent(&mut indent);
+        assert_eq!(indent.first_line_pt, None);
+        assert_eq!(indent.hanging_pt, None);
+
+        let mut indent = Indent::default();
+        styles
+            .paragraph_props(Some("FirstLineCharsZero"))
+            .layout
+            .apply_indent(&mut indent);
+        assert_eq!(indent.first_line_pt, Some(12.0));
+        assert_eq!(indent.hanging_pt, None);
+
+        let mut indent = Indent::default();
+        styles
+            .paragraph_props(Some("HangingCharsZero"))
+            .layout
+            .apply_indent(&mut indent);
+        assert_eq!(indent.first_line_pt, None);
+        assert_eq!(indent.hanging_pt, Some(12.0));
+    }
+
+    #[test]
+    fn paragraph_layout_on_off_lexical_forms_are_exact() {
+        for (value, expected) in [
+            ("1", true),
+            ("true", true),
+            ("on", true),
+            ("0", false),
+            ("false", false),
+            ("off", false),
+        ] {
+            assert_eq!(strict_on_off(value), Some(expected), "{value}");
+        }
+        for value in ["TRUE", "False", "ON", " true", "true ", "\t0"] {
+            assert_eq!(strict_on_off(value), None, "{value:?}");
+        }
+    }
+
+    #[test]
+    fn paragraph_layout_rejects_non_schema_numeric_forms() {
+        let xml = r#"<w:styles>
+            <w:style w:type="paragraph" w:styleId="Extreme"><w:pPr>
+                <w:spacing w:before="INF" w:after="3.4028235e38" w:line="1e-9999"/>
+                <w:ind w:firstLine="1e999" w:hanging="-INF"/>
+            </w:pPr></w:style>
+        </w:styles>"#;
+        let props = parse(xml).paragraph_props(Some("Extreme"));
+        let mut indent = Indent::default();
+        props.layout.apply_indent(&mut indent);
+
+        assert_eq!(props.layout.spacing(), Spacing::default());
+        assert_eq!(indent.first_line_pt, None);
+        assert_eq!(indent.hanging_pt, None);
+    }
+
+    #[test]
+    fn paragraph_layout_cycles_are_root_local_and_deterministic() {
+        let xml = r#"<w:styles>
+            <w:style w:type="paragraph" w:styleId="TwoA"><w:basedOn w:val="TwoB"/>
+                <w:pPr><w:spacing w:before="120"/></w:pPr>
+            </w:style>
+            <w:style w:type="paragraph" w:styleId="TwoB"><w:basedOn w:val="TwoA"/>
+                <w:pPr><w:spacing w:before="240"/></w:pPr>
+            </w:style>
+            <w:style w:type="paragraph" w:styleId="ThreeA"><w:basedOn w:val="ThreeB"/>
+                <w:pPr><w:ind w:firstLine="180"/></w:pPr>
+            </w:style>
+            <w:style w:type="paragraph" w:styleId="ThreeB"><w:basedOn w:val="ThreeC"/>
+                <w:pPr><w:ind w:firstLine="300"/></w:pPr>
+            </w:style>
+            <w:style w:type="paragraph" w:styleId="ThreeC"><w:basedOn w:val="ThreeA"/>
+                <w:pPr><w:ind w:firstLine="420"/></w:pPr>
+            </w:style>
+        </w:styles>"#;
+
+        for _ in 0..16 {
+            let styles = parse(xml);
+            assert_eq!(
+                styles
+                    .paragraph_props(Some("TwoA"))
+                    .layout
+                    .spacing()
+                    .before_pt,
+                Some(6.0)
+            );
+            assert_eq!(
+                styles
+                    .paragraph_props(Some("TwoB"))
+                    .layout
+                    .spacing()
+                    .before_pt,
+                Some(12.0)
+            );
+            for (id, expected) in [("ThreeA", 9.0), ("ThreeB", 15.0), ("ThreeC", 21.0)] {
+                let mut indent = Indent::default();
+                styles
+                    .paragraph_props(Some(id))
+                    .layout
+                    .apply_indent(&mut indent);
+                assert_eq!(indent.first_line_pt, Some(expected), "{id}");
+            }
+        }
+    }
+
+    #[test]
+    fn utf8_styles_xml_declarations_parse() {
+        let document = r#"<w:styles>
+            <w:style w:type="paragraph" w:styleId="Body">
+                <w:name w:val="Body"/>
+            </w:style>
+        </w:styles>"#;
+
+        for declaration in [
+            r#"<?xml version="1.0"?>"#,
+            r#"<?xml version="1.0" encoding="UTF-8"?>"#,
+            r#"<?xml version="1.0" encoding="utf-8" standalone="yes"?>"#,
+        ] {
+            assert_eq!(
+                parse(&format!("{declaration}{document}")).name("Body"),
+                Some("Body"),
+                "{declaration}"
+            );
+        }
+    }
+
+    #[test]
+    fn malformed_styles_xml_fails_empty() {
+        let prefix = r#"<w:styles>
+            <w:docDefaults><w:pPrDefault><w:pPr>
+                <w:spacing w:before="120"/><w:pageBreakBefore/>
+            </w:pPr></w:pPrDefault></w:docDefaults>
+            <w:style w:type="paragraph" w:styleId="Completed"><w:pPr>
+                <w:ind w:firstLine="240"/><w:shd w:val="clear" w:fill="112233"/>
+            </w:pPr></w:style>"#;
+        let assert_empty = |xml: &str, label: &str| {
+            let styles = parse(xml);
+            for props in [
+                styles.paragraph_props(None),
+                styles.paragraph_props(Some("Completed")),
+            ] {
+                let mut indent = Indent::default();
+                props.layout.apply_indent(&mut indent);
+                assert_eq!(props.layout.spacing(), Spacing::default(), "{label}");
+                assert_eq!(indent, Indent::default(), "{label}");
+                assert_eq!(props.layout.shading(), None, "{label}");
+                assert!(!props.layout.page_break_before(), "{label}");
+            }
+            assert_eq!(styles.name("Completed"), None, "{label}");
+        };
+        for suffix in [
+            "<w:broken></w:styles>",
+            "<w:broken w:value=bad/></w:styles>",
+            r#"<w:broken w:value="1" w:value="2"/></w:styles>"#,
+            "<w:broken>&bogus;</w:broken></w:styles>",
+            "<w:broken>&#1;</w:broken></w:styles>",
+            r#"<w:broken w:value="&#1;"/></w:styles>"#,
+            "</w:styles><w:styles/>",
+            "</w:styles>not-whitespace",
+        ] {
+            let xml = format!("{prefix}{suffix}");
+            assert_empty(&xml, suffix);
+        }
+
+        let complete = format!("{prefix}</w:styles>");
+        for declaration in [
+            r#"<!DOCTYPE w:styles><?xml version="1.0"?>"#,
+            r#"<?xml version="1.0" version="1.1"?>"#,
+            r#"<?xml version="1.2"?>"#,
+            r#"<?xml version="1&#46;0"?>"#,
+            r#"<?xml version="1.0" encoding="UT&#70;-8"?>"#,
+            r#"<?xml version="1.0" encoding="UTF-16"?>"#,
+            r#"<?xml version="1.0" standalone="maybe"?>"#,
+            r#"<?xml version="1.0" standalone="y&#101;s"?>"#,
+            r#" <?xml version="1.0"?>"#,
+        ] {
+            let xml = format!("{declaration}{complete}");
+            assert_empty(&xml, declaration);
+        }
+    }
+
+    #[test]
+    fn paragraph_layout_ignores_historical_property_changes() {
+        let xml = r#"<w:styles>
+            <w:style w:type="paragraph" w:styleId="Current"><w:pPr>
+                <w:spacing w:before="120"/>
+                <w:pPrChange><w:pPr>
+                    <w:spacing w:before="480"/>
+                    <w:ind w:hanging="600"/>
+                    <w:shd w:val="clear" w:fill="AABBCC"/>
+                    <w:pageBreakBefore/>
+                </w:pPr></w:pPrChange>
+                <w:ind w:firstLine="360"/>
+                <w:shd w:val="clear" w:fill="112233"/>
+                <w:pageBreakBefore w:val="0"/>
+            </w:pPr></w:style>
+        </w:styles>"#;
+        let props = parse(xml).paragraph_props(Some("Current"));
+        let mut indent = Indent::default();
+        props.layout.apply_indent(&mut indent);
+
+        assert_eq!(props.layout.spacing().before_pt, Some(6.0));
+        assert_eq!(props.layout.spacing().after_pt, None);
+        assert_eq!(indent.first_line_pt, Some(18.0));
+        assert_eq!(indent.hanging_pt, None);
+        assert_eq!(props.layout.shading(), Some(Color::rgb(0x11, 0x22, 0x33)));
+        assert!(!props.layout.page_break_before());
+    }
+
+    #[test]
+    fn paragraph_layout_uses_one_alternate_content_branch_and_chain_limit() {
+        let mut xml = String::from(
+            r#"<w:styles xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+                <w:style w:type="paragraph" w:styleId="Choice"><w:pPr>
+                    <mc:AlternateContent>
+                        <mc:Choice Requires="w14">
+                            <w:spacing w:before="120"/><w:ind w:firstLine="240"/>
+                            <w:shd w:val="clear" w:fill="112233"/><w:pageBreakBefore/>
+                        </mc:Choice>
+                        <mc:Fallback>
+                            <w:spacing w:before="360"/><w:ind w:hanging="480"/>
+                            <w:shd w:val="clear" w:fill="AABBCC"/>
+                            <w:pageBreakBefore w:val="0"/>
+                        </mc:Fallback>
+                    </mc:AlternateContent>
+                </w:pPr></w:style>"#,
+        );
+        for index in 0..=STYLE_CHAIN_LIMIT {
+            let base = if index == STYLE_CHAIN_LIMIT {
+                String::new()
+            } else {
+                format!(r#"<w:basedOn w:val="Depth{}"/>"#, index + 1)
+            };
+            let layout = if index == STYLE_CHAIN_LIMIT {
+                r#"<w:pPr><w:spacing w:after="240"/></w:pPr>"#
+            } else {
+                ""
+            };
+            xml.push_str(&format!(
+                r#"<w:style w:type="paragraph" w:styleId="Depth{index}">{base}{layout}</w:style>"#
+            ));
+        }
+        xml.push_str("</w:styles>");
+
+        let styles = parse(&xml);
+        let choice = styles.paragraph_props(Some("Choice"));
+        let mut indent = Indent::default();
+        choice.layout.apply_indent(&mut indent);
+        assert_eq!(choice.layout.spacing().before_pt, Some(6.0));
+        assert_eq!(indent.first_line_pt, Some(12.0));
+        assert_eq!(indent.hanging_pt, None);
+        assert_eq!(choice.layout.shading(), Some(Color::rgb(0x11, 0x22, 0x33)));
+        assert!(choice.layout.page_break_before());
+
+        assert_eq!(
+            styles
+                .paragraph_props(Some("Depth0"))
+                .layout
+                .spacing()
+                .after_pt,
+            None
+        );
+        assert_eq!(
+            styles
+                .paragraph_props(Some("Depth1"))
+                .layout
+                .spacing()
+                .after_pt,
+            Some(12.0)
+        );
     }
 
     #[test]
