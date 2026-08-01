@@ -7662,6 +7662,77 @@ mod tests {
         );
     }
 
+    /// Pins the parley contract the tab-aware breaking path depends on: a
+    /// caller-owned in-flow inline box contributes its width to line breaking,
+    /// and that width can be changed on an already-shaped layout and re-broken
+    /// deterministically without re-shaping.
+    #[test]
+    fn inline_box_width_participates_in_line_breaking() {
+        use parley::style::StyleProperty;
+        use parley::{InlineBox, InlineBoxKind};
+
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+
+        // The bundled test font is a Korean subset, so use covered glyphs.
+        let text = "가나 다라";
+        let width = 120.0_f32;
+
+        // One shaping pass; the box sits between the two words.
+        let mut builder = layout_cx.ranged_builder(&mut font_cx, text, 1.0, false);
+        builder.push_default(StyleProperty::FontFamily(super::font_stack()));
+        builder.push_default(StyleProperty::FontSize(16.0));
+        builder.push_inline_box(InlineBox {
+            id: 7,
+            kind: InlineBoxKind::InFlow,
+            index: 6,
+            width: 1.0,
+            height: 0.0,
+        });
+        let mut layout = builder.build(text);
+
+        layout.break_all_lines(Some(width));
+        let narrow_lines = layout.len();
+        assert!(
+            layout.width() > 1.0,
+            "the test font must actually shape glyphs (width={})",
+            layout.width()
+        );
+
+        // Mutate the box width on the already-shaped layout and re-break.
+        assert_eq!(layout.inline_boxes().len(), 1);
+        layout.inline_boxes_mut()[0].width = width * 0.95;
+        layout.break_all_lines(Some(width));
+        let wide_lines = layout.len();
+
+        assert_eq!(
+            narrow_lines, 1,
+            "a negligible box should leave the text on one line"
+        );
+        assert!(
+            wide_lines > narrow_lines,
+            "box width must push later content onto a new line \
+             (narrow={narrow_lines}, wide={wide_lines})"
+        );
+
+        // Re-breaking is repeatable: the same width yields the same result, and
+        // returning to the original width restores the original line count.
+        layout.break_all_lines(Some(width));
+        assert_eq!(
+            layout.len(),
+            wide_lines,
+            "re-breaking must be deterministic"
+        );
+        layout.inline_boxes_mut()[0].width = 1.0;
+        layout.break_all_lines(Some(width));
+        assert_eq!(
+            layout.len(),
+            narrow_lines,
+            "restoring the box width must restore the original breaking"
+        );
+    }
+
     #[test]
     fn image_layout_normalizes_rotation_and_uses_exact_quarter_turn_bounds() {
         let unrotated = image_layout(200, 100, None, 1_000.0, 1_000.0).unwrap();
