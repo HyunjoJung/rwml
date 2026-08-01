@@ -23,6 +23,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- PDF rendering now applies finite positive preferred-percentage table widths
+  within the active page or section column, maps logical leading/center/trailing
+  table placement through visual RTL, bounds non-negative leading indentation
+  to the remaining horizontal space, and mirrors logical cells inside the local
+  table box. Repeated headers and split-row fragments retain the same outer
+  coordinates; malformed table or column percentages keep finite deterministic
+  fallbacks. Absolute/auto widths, true fixed/autofit layout, style and row
+  exceptions, floating or nested-grid placement, negative outdents, table
+  `both` justification, and legacy `.doc` outer table geometry remain outside
+  this preview-grade bridge.
 - Opened legacy `.doc` paragraphs now preserve strict direct modern logical
   `sprmPDxaLeft`, `sprmPDxaRight`, additive `sprmPNest`, and
   `sprmPDxaLeft1` signed-twip indents. Logical leading/trailing edges resolve

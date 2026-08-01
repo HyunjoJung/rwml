@@ -5494,7 +5494,7 @@ fn read_tblpr(r: &mut Xml<'_>) -> TableProps {
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"jc" => {
                 props.align = match attr_local_trimmed(&e, b"val").as_deref() {
                     Some("center") => Some(Align::Center),
-                    Some("right") => Some(Align::Right),
+                    Some("right") | Some("end") => Some(Align::Right),
                     Some("both") => Some(Align::Justify),
                     Some("left") | Some("start") => Some(Align::Left),
                     _ => None,
@@ -5581,7 +5581,7 @@ fn read_tblpr_alternate_content_branch(r: &mut Xml<'_>, props: &mut TableProps, 
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"jc" => {
                 props.align = match attr_local_trimmed(&e, b"val").as_deref() {
                     Some("center") => Some(Align::Center),
-                    Some("right") => Some(Align::Right),
+                    Some("right") | Some("end") => Some(Align::Right),
                     Some("both") => Some(Align::Justify),
                     Some("left") | Some("start") => Some(Align::Left),
                     _ => None,
@@ -8732,6 +8732,42 @@ mod tests {
         assert_eq!(table.width_pct, Some(0.8));
         assert!(table.fixed_layout);
         assert_eq!(table.align, Some(Align::Center));
+    }
+
+    #[test]
+    fn table_logical_alignment_accepts_start_and_end_in_selected_paths() {
+        let xml = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+            <w:tbl>
+                <w:tblPr><w:jc w:val="start"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>Direct start</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr><w:jc w:val="end"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>Direct end</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr>
+                    <mc:AlternateContent>
+                        <mc:Choice Requires="w14"><w:jc w:val="end"/></mc:Choice>
+                        <mc:Fallback><w:jc w:val="start"/></mc:Fallback>
+                    </mc:AlternateContent>
+                </w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>Selected end</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+        </w:body></w:document>"#;
+        let blocks = parse(xml);
+        let alignments = blocks
+            .iter()
+            .map(|block| match block {
+                Block::Table(table) => table.align,
+                _ => panic!("table"),
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            alignments,
+            vec![Some(Align::Left), Some(Align::Right), Some(Align::Right)]
+        );
     }
 
     #[test]
