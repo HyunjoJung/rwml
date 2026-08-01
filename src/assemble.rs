@@ -689,7 +689,7 @@ struct FieldState {
 // Local alias to the model Run (avoid a name clash with the field below).
 use crate::model::Run as Run_;
 
-fn resolve_direct_paragraph_indent(source: ParagraphIndentOverrides, bidi: bool) -> Indent {
+fn resolve_paragraph_indent(source: ParagraphIndentOverrides, bidi: bool) -> Indent {
     let logical_left_twips = source
         .logical_left_twips
         .map(|left| i32::from(left) + i32::from(source.nest_twips.unwrap_or(0)));
@@ -974,8 +974,12 @@ impl<'a, 'l> Asm<'a, 'l> {
             .paragraph_layout(istd)
             .apply(self.papx.paragraph_layout_overrides_at(fc));
         let bidi = layout.bidi.unwrap_or(false);
-        let indent =
-            resolve_direct_paragraph_indent(self.papx.paragraph_indent_overrides_at(fc), bidi);
+        let indent = resolve_paragraph_indent(
+            self.stylesheet
+                .paragraph_indent(istd)
+                .apply(self.papx.paragraph_indent_overrides_at(fc)),
+            bidi,
+        );
         let source_pagination = self
             .stylesheet
             .paragraph_pagination(istd)
@@ -1332,7 +1336,7 @@ mod tests {
     }
 
     #[test]
-    fn direct_logical_indents_map_signed_edges_and_zero_by_direction() {
+    fn logical_indents_map_signed_edges_and_zero_by_direction() {
         let source = ParagraphIndentOverrides {
             logical_left_twips: Some(-720),
             logical_right_twips: Some(360),
@@ -1340,7 +1344,7 @@ mod tests {
             first_line_twips: Some(-360),
         };
         assert_eq!(
-            resolve_direct_paragraph_indent(source, false),
+            resolve_paragraph_indent(source, false),
             Indent {
                 left_pt: Some(-42.0),
                 right_pt: Some(18.0),
@@ -1349,7 +1353,7 @@ mod tests {
             }
         );
         assert_eq!(
-            resolve_direct_paragraph_indent(source, true),
+            resolve_paragraph_indent(source, true),
             Indent {
                 left_pt: Some(18.0),
                 right_pt: Some(-42.0),
@@ -1358,7 +1362,7 @@ mod tests {
             }
         );
         assert_eq!(
-            resolve_direct_paragraph_indent(
+            resolve_paragraph_indent(
                 ParagraphIndentOverrides {
                     logical_left_twips: Some(0),
                     logical_right_twips: Some(0),
@@ -1370,7 +1374,7 @@ mod tests {
             Indent::default()
         );
         assert_eq!(
-            resolve_direct_paragraph_indent(
+            resolve_paragraph_indent(
                 ParagraphIndentOverrides {
                     nest_twips: Some(120),
                     ..ParagraphIndentOverrides::default()
@@ -1378,6 +1382,27 @@ mod tests {
                 false,
             ),
             Indent::default()
+        );
+        let style = ParagraphIndentOverrides {
+            logical_left_twips: Some(720),
+            logical_right_twips: Some(1440),
+            first_line_twips: Some(-360),
+            ..ParagraphIndentOverrides::default()
+        };
+        let direct = ParagraphIndentOverrides {
+            logical_left_twips: Some(1000),
+            nest_twips: Some(120),
+            first_line_twips: Some(240),
+            ..ParagraphIndentOverrides::default()
+        };
+        assert_eq!(
+            resolve_paragraph_indent(style.apply(direct), true),
+            Indent {
+                left_pt: Some(72.0),
+                right_pt: Some(56.0),
+                first_line_pt: Some(12.0),
+                hanging_pt: None,
+            }
         );
     }
 
