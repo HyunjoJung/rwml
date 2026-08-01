@@ -1421,7 +1421,10 @@ impl Document {
     ///
     /// This is intentionally focused on plain-text template fields represented by
     /// content controls. It does not remove the controls, alter aliases/tags, or
-    /// evaluate data binding. For a record of tag/value pairs, use
+    /// evaluate data binding. Tabs and newlines become inline WordprocessingML
+    /// `w:tab` and text-wrapping `w:br` elements in the first existing run;
+    /// page/column breaks and other run objects are preserved. For a record of
+    /// tag/value pairs, use
     /// [`Document::fill_content_controls_by_tag`]. Read views remain stale until
     /// explicitly refreshed or reopened. Available with the default `docx` feature.
     #[cfg(feature = "docx")]
@@ -1441,8 +1444,10 @@ impl Document {
     ///
     /// Duplicate input tags are rejected so callers do not accidentally depend on
     /// ordering. Use repeated content controls with the same tag when one value
-    /// should populate several template locations. Available with the default
-    /// `docx` feature.
+    /// should populate several template locations. Tabs and newlines become inline
+    /// `w:tab` and text-wrapping `w:br` elements; later fills clear those generated
+    /// markers, and marker-only values retain an empty `w:t` refill anchor. Available
+    /// with the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn fill_content_controls_by_tag<I, K, V>(&mut self, values: I) -> Result<usize>
     where
@@ -1468,9 +1473,12 @@ impl Document {
     /// All fills are validated first and then committed as one
     /// package-preserving edit. Missing names are ignored, and the return value is
     /// the number of template locations filled. Duplicate input names are
-    /// rejected so callers do not accidentally depend on ordering. Read views remain
-    /// stale until explicitly refreshed or reopened. Available with the default
-    /// `docx` feature.
+    /// rejected so callers do not accidentally depend on ordering. Tabs and
+    /// newlines become inline `w:tab` and text-wrapping `w:br` elements in the
+    /// existing result run; repeated fills remove those generated markers while
+    /// preserving page/column breaks and other run objects. Read views remain stale
+    /// until explicitly refreshed or reopened. Available with the default `docx`
+    /// feature.
     #[cfg(feature = "docx")]
     pub fn fill_template_fields<I, K, V>(&mut self, values: I) -> Result<usize>
     where
@@ -1514,13 +1522,13 @@ impl Document {
         let probe_body = probe.wml_body_strict()?;
         let mut matched = Vec::new();
         for (entry_index, (tag, _)) in entries.iter().enumerate() {
-            for runs in probe.wml_content_control_text_runs_by_tag_under(probe_body, tag) {
-                if runs.is_empty() {
+            for group in probe.wml_content_control_text_groups_by_tag_under(probe_body, tag) {
+                if group.text_runs().is_empty() {
                     return Err(Error::Docx(format!(
                         "{caller}: content control tag {tag:?} has no visible text"
                     )));
                 }
-                matched.push((entry_index, runs));
+                matched.push((entry_index, group));
             }
         }
         if matched.is_empty() {
@@ -1528,8 +1536,8 @@ impl Document {
         }
 
         let mut seen_runs = std::collections::HashSet::new();
-        for (_, runs) in &matched {
-            for &id in runs {
+        for (_, group) in &matched {
+            for &id in group.text_runs().iter().chain(group.marker_nodes().iter()) {
                 if !seen_runs.insert(id) {
                     return Err(Error::Docx(format!(
                         "{caller}: requested tags overlap in nested content controls"
@@ -1540,9 +1548,14 @@ impl Document {
 
         let new_nodes = matched
             .iter()
-            .flat_map(|(_, runs)| runs)
-            .filter(|&&id| !probe.has_text_carrier(id))
-            .count();
+            .try_fold(0usize, |total, (entry_index, group)| {
+                wml_grouped_template_text_replacement_new_nodes(
+                    &probe,
+                    group,
+                    &entries[*entry_index].1,
+                )
+                .map(|count| total.saturating_add(count))
+            })?;
         let live_count = d
             .package
             .part_tree_ref("word/document.xml")
@@ -1555,8 +1568,9 @@ impl Document {
 
         if matched.iter().any(|(entry_index, runs)| {
             let text = &entries[*entry_index].1;
-            text != text.trim_matches([' ', '\t', '\n', '\r'])
+            wml_replacement_needs_space_attr_preflight(text)
                 && runs
+                    .text_runs()
                     .first()
                     .is_some_and(|&id| !probe.can_set_attr(id, b"xml:space"))
         }) {
@@ -1569,17 +1583,26 @@ impl Document {
         {
             let tree = pkg.part_tree_mut("word/document.xml")?;
             let body = tree.wml_body_strict()?;
-            for (tag, text) in &entries {
-                for runs in tree.wml_content_control_text_runs_by_tag_under(body, tag) {
-                    if runs.is_empty() {
+            let mut replacements = Vec::new();
+            for (entry_index, (tag, _)) in entries.iter().enumerate() {
+                for group in tree.wml_content_control_text_groups_by_tag_under(body, tag) {
+                    if group.text_runs().is_empty() {
                         return Err(Error::Docx(format!(
                             "{caller}: content control tag {tag:?} has no visible text"
                         )));
                     }
-                    for (i, id) in runs.into_iter().enumerate() {
-                        tree.set_element_text(id, if i == 0 { text } else { "" })?;
-                    }
+                    replacements.push((entry_index, group));
                 }
+            }
+            tree.prepare_wml_text_groups_for_replacement(
+                replacements.iter().map(|(_, group)| group),
+            )?;
+            for (entry_index, group) in replacements {
+                set_wml_template_text_runs(
+                    tree,
+                    group.into_replacement_text_runs(),
+                    &entries[entry_index].1,
+                )?;
             }
         }
         pkg.ensure_content_type("word/document.xml", CT_DOCUMENT_MAIN);
@@ -1623,13 +1646,13 @@ impl Document {
 
         let mut matched_runs = Vec::new();
         for (entry_index, (name, _)) in entries.iter().enumerate() {
-            for runs in probe.wml_content_control_text_runs_by_tag_under(probe_body, name) {
-                if runs.is_empty() {
+            for group in probe.wml_content_control_text_groups_by_tag_under(probe_body, name) {
+                if group.text_runs().is_empty() {
                     return Err(Error::Docx(format!(
                         "{caller}: template field {name:?} has no visible text"
                     )));
                 }
-                matched_runs.push((entry_index, runs));
+                matched_runs.push((entry_index, group));
             }
         }
 
@@ -1644,20 +1667,20 @@ impl Document {
             else {
                 continue;
             };
-            let runs = probe
-                .wml_field_result_runs_under(probe_body, field_index)
+            let group = probe
+                .wml_field_result_text_group_under(probe_body, field_index)
                 .ok_or_else(|| {
                     Error::Docx(format!(
                         "{caller}: merge field {name:?} has no cached result"
                     ))
                 })?;
-            if runs.is_empty() {
+            if group.text_runs().is_empty() {
                 return Err(Error::Docx(format!(
                     "{caller}: merge field {name:?} has no cached result text"
                 )));
             }
             matched_fields.push((field_index, entry_index));
-            matched_runs.push((entry_index, runs));
+            matched_runs.push((entry_index, group));
         }
 
         let story_targets = note_part_targets()
@@ -1693,8 +1716,8 @@ impl Document {
 
         if !matched_runs.is_empty() {
             let mut seen_runs = std::collections::HashSet::new();
-            for (_, runs) in &matched_runs {
-                for &id in runs {
+            for (_, group) in &matched_runs {
+                for &id in group.text_runs().iter().chain(group.marker_nodes().iter()) {
                     if !seen_runs.insert(id) {
                         return Err(Error::Docx(format!(
                             "{caller}: requested template fields overlap"
@@ -1703,11 +1726,17 @@ impl Document {
                 }
             }
 
-            let new_nodes = matched_runs
-                .iter()
-                .flat_map(|(_, runs)| runs)
-                .filter(|&&id| !probe.has_text_carrier(id))
-                .count();
+            let new_nodes =
+                matched_runs
+                    .iter()
+                    .try_fold(0usize, |total, (entry_index, group)| {
+                        wml_grouped_template_text_replacement_new_nodes(
+                            &probe,
+                            group,
+                            &entries[*entry_index].1,
+                        )
+                        .map(|count| total.saturating_add(count))
+                    })?;
             let live_count = d
                 .package
                 .part_tree_ref("word/document.xml")
@@ -1718,10 +1747,11 @@ impl Document {
                 )));
             }
 
-            if matched_runs.iter().any(|(entry_index, runs)| {
+            if matched_runs.iter().any(|(entry_index, group)| {
                 let text = &entries[*entry_index].1;
-                text != text.trim_matches([' ', '\t', '\n', '\r'])
-                    && runs
+                wml_replacement_needs_space_attr_preflight(text)
+                    && group
+                        .text_runs()
                         .first()
                         .is_some_and(|&id| !probe.can_set_attr(id, b"xml:space"))
             }) {
@@ -1736,36 +1766,42 @@ impl Document {
             {
                 let tree = pkg.part_tree_mut("word/document.xml")?;
                 let body = tree.wml_body_strict()?;
-                for (name, text) in &entries {
-                    for runs in tree.wml_content_control_text_runs_by_tag_under(body, name) {
-                        if runs.is_empty() {
+                let mut replacements = Vec::new();
+                for (entry_index, (name, _)) in entries.iter().enumerate() {
+                    for group in tree.wml_content_control_text_groups_by_tag_under(body, name) {
+                        if group.text_runs().is_empty() {
                             return Err(Error::Docx(format!(
                                 "{caller}: template field {name:?} has no visible text"
                             )));
                         }
-                        for (i, id) in runs.into_iter().enumerate() {
-                            tree.set_element_text(id, if i == 0 { text } else { "" })?;
-                        }
+                        replacements.push((entry_index, group));
                     }
                 }
                 for (field_index, entry_index) in &matched_fields {
                     let name = &entries[*entry_index].0;
-                    let text = &entries[*entry_index].1;
-                    let runs = tree
-                        .wml_field_result_runs_under(body, *field_index)
+                    let group = tree
+                        .wml_field_result_text_group_under(body, *field_index)
                         .ok_or_else(|| {
                             Error::Docx(format!(
                                 "{caller}: merge field {name:?} has no cached result"
                             ))
                         })?;
-                    if runs.is_empty() {
+                    if group.text_runs().is_empty() {
                         return Err(Error::Docx(format!(
                             "{caller}: merge field {name:?} has no cached result text"
                         )));
                     }
-                    for (i, id) in runs.into_iter().enumerate() {
-                        tree.set_element_text(id, if i == 0 { text } else { "" })?;
-                    }
+                    replacements.push((*entry_index, group));
+                }
+                tree.prepare_wml_text_groups_for_replacement(
+                    replacements.iter().map(|(_, group)| group),
+                )?;
+                for (entry_index, group) in replacements {
+                    set_wml_template_text_runs(
+                        tree,
+                        group.into_replacement_text_runs(),
+                        &entries[entry_index].1,
+                    )?;
                 }
             }
             pkg.ensure_content_type("word/document.xml", CT_DOCUMENT_MAIN);
@@ -1776,21 +1812,30 @@ impl Document {
                 let tree = pkg.part_tree_mut(&target.part)?;
                 let root = tree.wml_part_root_strict(&target.part, target.root_local)?;
                 let roots = story_template_roots(tree, target, root);
-                for (name, text) in &entries {
+                let mut replacements = Vec::new();
+                for (entry_index, (name, _)) in entries.iter().enumerate() {
                     for &story_root in &roots {
-                        for runs in
-                            tree.wml_content_control_text_runs_by_tag_under(story_root, name)
+                        for group in
+                            tree.wml_content_control_text_groups_by_tag_under(story_root, name)
                         {
-                            if runs.is_empty() {
+                            if group.text_runs().is_empty() {
                                 return Err(Error::Docx(format!(
                                     "{caller}: template field {name:?} has no visible text"
                                 )));
                             }
-                            for (i, id) in runs.into_iter().enumerate() {
-                                tree.set_element_text(id, if i == 0 { text } else { "" })?;
-                            }
+                            replacements.push((entry_index, group));
                         }
                     }
+                }
+                tree.prepare_wml_text_groups_for_replacement(
+                    replacements.iter().map(|(_, group)| group),
+                )?;
+                for (entry_index, group) in replacements {
+                    set_wml_template_text_runs(
+                        tree,
+                        group.into_replacement_text_runs(),
+                        &entries[entry_index].1,
+                    )?;
                 }
             }
             pkg.ensure_content_type(&target.part, target.content_type);
@@ -1803,20 +1848,19 @@ impl Document {
                 let roots = story_template_roots(tree, target, root);
                 let name = &entries[*entry_index].0;
                 let text = &entries[*entry_index].1;
-                let runs =
-                    story_field_result_runs(tree, &roots, *field_index).ok_or_else(|| {
+                let group =
+                    story_field_result_text_group(tree, &roots, *field_index).ok_or_else(|| {
                         Error::Docx(format!(
                             "{caller}: merge field {name:?} has no cached result"
                         ))
                     })?;
-                if runs.is_empty() {
+                if group.text_runs().is_empty() {
                     return Err(Error::Docx(format!(
                         "{caller}: merge field {name:?} has no cached result text"
                     )));
                 }
-                for (i, id) in runs.into_iter().enumerate() {
-                    tree.set_element_text(id, if i == 0 { text } else { "" })?;
-                }
+                tree.prepare_wml_text_groups_for_replacement(std::iter::once(&group))?;
+                set_wml_template_text_runs(tree, group.into_replacement_text_runs(), text)?;
             }
             pkg.ensure_content_type(&target.part, target.content_type);
         }
@@ -3813,6 +3857,30 @@ fn wml_grouped_text_run_replacement_new_nodes(
 }
 
 #[cfg(feature = "docx")]
+fn wml_grouped_template_text_replacement_new_nodes(
+    tree: &xmltree::XmlTree,
+    group: &xmltree::WmlTextRunGroup,
+    text: &str,
+) -> Result<usize> {
+    if wml_text_needs_run_markers(text) {
+        Ok(
+            xmltree::wml_anchored_text_run_content_node_count(text)?.saturating_add(
+                group
+                    .replacement_text_runs()
+                    .skip(1)
+                    .filter(|&id| !tree.has_text_carrier(id))
+                    .count(),
+            ),
+        )
+    } else {
+        Ok(group
+            .replacement_text_runs()
+            .filter(|&id| !tree.has_text_carrier(id))
+            .count())
+    }
+}
+
+#[cfg(feature = "docx")]
 #[derive(Clone, Copy)]
 enum RevisionEditMode {
     Accept,
@@ -3935,6 +4003,22 @@ where
 }
 
 #[cfg(feature = "docx")]
+fn set_wml_template_text_runs<I>(tree: &mut xmltree::XmlTree, runs: I, text: &str) -> Result<()>
+where
+    I: IntoIterator<Item = xmltree::NodeId>,
+{
+    let needs_markers = wml_text_needs_run_markers(text);
+    for (index, id) in runs.into_iter().enumerate() {
+        if index == 0 && needs_markers {
+            tree.replace_wml_text_element_with_anchored_run_content(id, text)?;
+        } else {
+            tree.set_element_text(id, if index == 0 { text } else { "" })?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(feature = "docx")]
 fn header_footer_targets(package: &opc::Package) -> Vec<HeaderFooterTarget> {
     let Some(document_xml) = package.part("word/document.xml") else {
         return Vec::new();
@@ -4033,12 +4117,22 @@ fn story_field_instructions(tree: &xmltree::XmlTree, roots: &[xmltree::NodeId]) 
 fn story_field_result_runs(
     tree: &xmltree::XmlTree,
     roots: &[xmltree::NodeId],
-    mut field_index: usize,
+    field_index: usize,
 ) -> Option<Vec<xmltree::NodeId>> {
+    story_field_result_text_group(tree, roots, field_index)
+        .map(xmltree::WmlTextRunGroup::into_text_runs)
+}
+
+#[cfg(feature = "docx")]
+fn story_field_result_text_group(
+    tree: &xmltree::XmlTree,
+    roots: &[xmltree::NodeId],
+    mut field_index: usize,
+) -> Option<xmltree::WmlTextRunGroup> {
     for &root in roots {
         let field_count = tree.wml_field_instructions_under(root).len();
         if field_index < field_count {
-            return tree.wml_field_result_runs_under(root, field_index);
+            return tree.wml_field_result_text_group_under(root, field_index);
         }
         field_index -= field_count;
     }
@@ -4252,14 +4346,14 @@ fn collect_story_template_match(
 
     for (entry_index, (name, _)) in entries.iter().enumerate() {
         for &story_root in &roots {
-            for runs in probe.wml_content_control_text_runs_by_tag_under(story_root, name) {
-                if runs.is_empty() {
+            for group in probe.wml_content_control_text_groups_by_tag_under(story_root, name) {
+                if group.text_runs().is_empty() {
                     return Err(Error::Docx(format!(
                         "{caller}: template field {name:?} has no visible text"
                     )));
                 }
                 part_content_count += 1;
-                part_matches.push((entry_index, runs));
+                part_matches.push((entry_index, group));
             }
         }
     }
@@ -4274,18 +4368,19 @@ fn collect_story_template_match(
         else {
             continue;
         };
-        let runs = story_field_result_runs(&probe, &roots, field_index).ok_or_else(|| {
-            Error::Docx(format!(
-                "{caller}: merge field {name:?} has no cached result"
-            ))
-        })?;
-        if runs.is_empty() {
+        let group =
+            story_field_result_text_group(&probe, &roots, field_index).ok_or_else(|| {
+                Error::Docx(format!(
+                    "{caller}: merge field {name:?} has no cached result"
+                ))
+            })?;
+        if group.text_runs().is_empty() {
             return Err(Error::Docx(format!(
                 "{caller}: merge field {name:?} has no cached result text"
             )));
         }
         part_fields.push((field_index, entry_index));
-        part_matches.push((entry_index, runs));
+        part_matches.push((entry_index, group));
     }
 
     if part_matches.is_empty() {
@@ -4293,8 +4388,8 @@ fn collect_story_template_match(
     }
 
     let mut seen_runs = std::collections::HashSet::new();
-    for (_, runs) in &part_matches {
-        for &id in runs {
+    for (_, group) in &part_matches {
+        for &id in group.text_runs().iter().chain(group.marker_nodes().iter()) {
             if !seen_runs.insert(id) {
                 return Err(Error::Docx(format!(
                     "{caller}: requested template fields overlap"
@@ -4305,9 +4400,10 @@ fn collect_story_template_match(
 
     let new_nodes = part_matches
         .iter()
-        .flat_map(|(_, runs)| runs)
-        .filter(|&&id| !probe.has_text_carrier(id))
-        .count();
+        .try_fold(0usize, |total, (entry_index, group)| {
+            wml_grouped_template_text_replacement_new_nodes(&probe, group, &entries[*entry_index].1)
+                .map(|count| total.saturating_add(count))
+        })?;
     let live_count = package
         .part_tree_ref(&target.part)
         .map_or(probe.node_count(), |t| t.node_count());
@@ -4317,10 +4413,11 @@ fn collect_story_template_match(
         )));
     }
 
-    if part_matches.iter().any(|(entry_index, runs)| {
+    if part_matches.iter().any(|(entry_index, group)| {
         let text = &entries[*entry_index].1;
-        text != text.trim_matches([' ', '\t', '\n', '\r'])
-            && runs
+        wml_replacement_needs_space_attr_preflight(text)
+            && group
+                .text_runs()
                 .first()
                 .is_some_and(|&id| !probe.can_set_attr(id, b"xml:space"))
     }) {
@@ -10533,6 +10630,235 @@ mod tests {
         assert!(
             String::from_utf8_lossy(&after["word/document.xml"]).contains("xmlns:w='"),
             "single-quoted attrs were rewritten despite the insert failing"
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn fill_content_control_markers_respect_exact_node_budget_atomically() {
+        let doc_xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:sdt><w:sdtPr><w:tag w:val="client-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Old</w:t></w:r></w:p></w:sdtContent></w:sdt></w:body></w:document>"#;
+        let bytes = minimal_docx(doc_xml);
+        let before = unzip_parts(&bytes);
+        let doc_nodes = xmltree::XmlTree::parse(doc_xml.as_bytes())
+            .unwrap()
+            .node_count();
+        let fragment_nodes = xmltree::wml_anchored_text_run_content_node_count("A\tB\nC").unwrap();
+
+        xmltree::set_test_node_budget(doc_nodes + fragment_nodes - 1);
+        let mut rejected = Document::open(&bytes).unwrap();
+        let over = rejected.fill_content_control_by_tag("client-name", "A\tB\nC");
+        xmltree::reset_test_node_budget();
+        assert!(over.is_err(), "over-budget marker fill should error");
+        assert_eq!(
+            unzip_parts(&rejected.save().unwrap()),
+            before,
+            "failed marker preflight changed the package"
+        );
+
+        xmltree::set_test_node_budget(doc_nodes + fragment_nodes);
+        let mut accepted = Document::open(&bytes).unwrap();
+        let exact = accepted.fill_content_control_by_tag("client-name", "A\tB\nC");
+        xmltree::reset_test_node_budget();
+        assert_eq!(exact.unwrap(), 1, "exact node-budget boundary rejected");
+        let body =
+            String::from_utf8(unzip_parts(&accepted.save().unwrap())["word/document.xml"].clone())
+                .unwrap();
+        assert!(
+            body.contains("<w:t>A</w:t><w:tab/><w:t>B</w:t><w:br/><w:t>C</w:t>"),
+            "exact-boundary marker fill missing: {body}"
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn fill_template_fields_respects_cumulative_body_marker_budget() {
+        let doc_xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:sdt><w:sdtPr><w:tag w:val="client-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Old client</w:t></w:r></w:p></w:sdtContent></w:sdt><w:p><w:fldSimple w:instr=" MERGEFIELD project-name "><w:r><w:t>Old project</w:t></w:r></w:fldSimple></w:p></w:body></w:document>"#;
+        let bytes = minimal_docx(doc_xml);
+        let before = unzip_parts(&bytes);
+        let doc_nodes = xmltree::XmlTree::parse(doc_xml.as_bytes())
+            .unwrap()
+            .node_count();
+        let values = [
+            ("client-name", "Client\tValue"),
+            ("project-name", "Project\nValue"),
+        ];
+        let fragment_nodes = values
+            .iter()
+            .map(|(_, value)| xmltree::wml_anchored_text_run_content_node_count(value).unwrap())
+            .sum::<usize>();
+
+        xmltree::set_test_node_budget(doc_nodes + fragment_nodes - 1);
+        let mut rejected = Document::open(&bytes).unwrap();
+        let over = rejected.fill_template_fields(values);
+        xmltree::reset_test_node_budget();
+        assert!(
+            over.is_err(),
+            "cumulative body marker overflow should error"
+        );
+        assert_eq!(
+            unzip_parts(&rejected.save().unwrap()),
+            before,
+            "failed cumulative body preflight changed the package"
+        );
+
+        xmltree::set_test_node_budget(doc_nodes + fragment_nodes);
+        let mut accepted = Document::open(&bytes).unwrap();
+        let exact = accepted.fill_template_fields(values);
+        xmltree::reset_test_node_budget();
+        assert_eq!(exact.unwrap(), 2, "exact cumulative body budget rejected");
+        let body =
+            String::from_utf8(unzip_parts(&accepted.save().unwrap())["word/document.xml"].clone())
+                .unwrap();
+        assert!(
+            body.contains("<w:tab/>") && body.contains("<w:br/>"),
+            "{body}"
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn fill_template_fields_respects_story_marker_budget_and_attribute_cap() {
+        use std::io::Write;
+        use zip::write::SimpleFileOptions;
+
+        let document_xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:sectPr><w:headerReference w:type="default" r:id="rIdHeader"/></w:sectPr></w:body></w:document>"#;
+        let header_xml = r#"<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:sdt><w:sdtPr><w:tag w:val="client-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t w:id="1" w:rsid="2">Old client</w:t></w:r></w:p></w:sdtContent></w:sdt><w:p><w:fldSimple w:instr=" MERGEFIELD project-name "><w:r><w:t w:id="3" w:rsid="4">Old project</w:t></w:r></w:fldSimple></w:p></w:hdr>"#;
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let options = SimpleFileOptions::default();
+        for (name, body) in [
+            (
+                "[Content_Types].xml",
+                r#"<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/></Types>"#,
+            ),
+            (
+                "_rels/.rels",
+                r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+            ),
+            (
+                "word/_rels/document.xml.rels",
+                r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdHeader" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>"#,
+            ),
+            ("word/document.xml", document_xml),
+            ("word/header1.xml", header_xml),
+        ] {
+            zip.start_file(name, options).unwrap();
+            zip.write_all(body.as_bytes()).unwrap();
+        }
+        let bytes = zip.finish().unwrap().into_inner();
+        let before = unzip_parts(&bytes);
+        let document_nodes = xmltree::XmlTree::parse(document_xml.as_bytes())
+            .unwrap()
+            .node_count();
+        let header_nodes = xmltree::XmlTree::parse(header_xml.as_bytes())
+            .unwrap()
+            .node_count();
+        let values = [
+            ("client-name", " Client\tValue "),
+            ("project-name", " Project\nValue "),
+        ];
+        let fragment_nodes = values
+            .iter()
+            .map(|(_, value)| xmltree::wml_anchored_text_run_content_node_count(value).unwrap())
+            .sum::<usize>();
+        let rejected_budget = header_nodes + fragment_nodes - 1;
+        assert!(rejected_budget >= document_nodes);
+
+        xmltree::set_test_max_attrs(2);
+        xmltree::set_test_node_budget(rejected_budget);
+        let mut rejected = Document::open(&bytes).unwrap();
+        let over = rejected.fill_template_fields(values);
+        xmltree::reset_test_node_budget();
+        xmltree::set_test_max_attrs(65_536);
+        assert!(over.is_err(), "story marker overflow should error");
+        assert_eq!(
+            unzip_parts(&rejected.save().unwrap()),
+            before,
+            "failed story preflight changed the package"
+        );
+
+        xmltree::set_test_max_attrs(2);
+        xmltree::set_test_node_budget(header_nodes + fragment_nodes);
+        let mut accepted = Document::open(&bytes).unwrap();
+        let exact = accepted.fill_template_fields(values);
+        xmltree::reset_test_node_budget();
+        xmltree::set_test_max_attrs(65_536);
+        assert_eq!(
+            exact.unwrap(),
+            2,
+            "exact story budget or marker attribute path rejected"
+        );
+        assert_eq!(accepted.edited_parts(), ["word/header1.xml"]);
+        let parts = unzip_parts(&accepted.save().unwrap());
+        assert_eq!(parts["word/document.xml"], before["word/document.xml"]);
+        let header = String::from_utf8(parts["word/header1.xml"].clone()).unwrap();
+        assert!(
+            header.contains("<w:tab/>") && header.contains("<w:br/>"),
+            "{header}"
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn fill_content_control_markers_bypass_original_text_attribute_cap() {
+        let doc_xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:sdt><w:sdtPr><w:tag w:val="client-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t w:id="1" w:rsid="2">Old</w:t></w:r></w:p></w:sdtContent></w:sdt></w:body></w:document>"#;
+        let bytes = minimal_docx(doc_xml);
+
+        xmltree::set_test_max_attrs(2);
+        let mut marked = Document::open(&bytes).unwrap();
+        let marker_result =
+            marked.fill_content_control_by_tag("client-name", " Leading\tTrailing ");
+        xmltree::set_test_max_attrs(65_536);
+        assert_eq!(
+            marker_result.unwrap(),
+            1,
+            "marker fragments should not add xml:space to the original w:t"
+        );
+        let body =
+            String::from_utf8(unzip_parts(&marked.save().unwrap())["word/document.xml"].clone())
+                .unwrap();
+        assert!(
+            body.contains(
+                r#"<w:t xml:space="preserve"> Leading</w:t><w:tab/><w:t xml:space="preserve">Trailing </w:t>"#
+            ),
+            "marker edge whitespace was not preserved: {body}"
+        );
+
+        let before = unzip_parts(&bytes);
+        xmltree::set_test_max_attrs(2);
+        let mut plain = Document::open(&bytes).unwrap();
+        let plain_result = plain.fill_content_control_by_tag("client-name", " Plain ");
+        xmltree::set_test_max_attrs(65_536);
+        assert!(
+            plain_result.is_err(),
+            "plain edge whitespace should still require original xml:space capacity"
+        );
+        assert_eq!(
+            unzip_parts(&plain.save().unwrap()),
+            before,
+            "failed attribute preflight changed the package"
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn fill_content_control_rolls_back_after_marker_cleanup_failure() {
+        let doc_xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:sdt><w:sdtPr><w:tag w:val="client-name"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Old</w:t><w:tab/></w:r></w:p></w:sdtContent></w:sdt></w:body></w:document>"#;
+        let bytes = minimal_docx(doc_xml);
+        let before = unzip_parts(&bytes);
+        let mut doc = Document::open(&bytes).unwrap();
+
+        xmltree::set_test_fail_commit_after(1);
+        let result = doc.fill_content_control_by_tag("client-name", "New\tValue");
+        xmltree::reset_test_fail_commit();
+
+        assert!(
+            result.is_err(),
+            "fragment insertion failure should surface after marker cleanup"
+        );
+        assert_eq!(
+            unzip_parts(&doc.save().unwrap()),
+            before,
+            "failed marker replacement leaked a partial cleanup"
         );
     }
 

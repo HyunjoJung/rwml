@@ -22,7 +22,7 @@
 //! is no aliasing/borrow tangle. Parsing is depth-bounded and panic-free on hostile
 //! input, matching the rest of the crate.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use quick_xml::events::Event;
 use quick_xml::Reader;
@@ -591,40 +591,78 @@ fn escaped_attr(s: &str) -> String {
     String::from_utf8(out).expect("XML attribute escaping preserves UTF-8")
 }
 
-fn wml_text_run_content_xml(text: &str) -> String {
-    fn flush(out: &mut String, buf: &mut String) {
+fn wml_text_run_content_xml_with_prefix(
+    text: &str,
+    prefix: &str,
+    declare_namespace: bool,
+    keep_text_anchor: bool,
+) -> String {
+    fn qualified_name(prefix: &str, local: &str) -> String {
+        if prefix.is_empty() {
+            local.to_string()
+        } else {
+            format!("{prefix}:{local}")
+        }
+    }
+
+    fn namespace_attr(prefix: &str, declare_namespace: bool) -> String {
+        if !declare_namespace {
+            String::new()
+        } else if prefix.is_empty() {
+            format!(r#" xmlns="{}""#, wml_ns_str())
+        } else {
+            format!(r#" xmlns:{prefix}="{}""#, wml_ns_str())
+        }
+    }
+
+    fn flush(out: &mut String, buf: &mut String, text_name: &str, namespace: &str) -> bool {
         if buf.is_empty() {
-            return;
+            return false;
         }
         let preserve = buf.as_str() != buf.trim_matches([' ', '\t', '\n', '\r']);
         let text = escaped_text(buf);
         if preserve {
-            out.push_str(&format!(r#"<w:t xml:space="preserve">{text}</w:t>"#));
+            out.push_str(&format!(
+                r#"<{text_name}{namespace} xml:space="preserve">{text}</{text_name}>"#
+            ));
         } else {
-            out.push_str(&format!(r#"<w:t>{text}</w:t>"#));
+            out.push_str(&format!(r#"<{text_name}{namespace}>{text}</{text_name}>"#));
         }
         buf.clear();
+        true
     }
 
+    let text_name = qualified_name(prefix, "t");
+    let tab_name = qualified_name(prefix, "tab");
+    let break_name = qualified_name(prefix, "br");
+    let namespace = namespace_attr(prefix, declare_namespace);
     let mut out = String::new();
     let mut buf = String::new();
+    let mut has_text = false;
     for ch in text.chars() {
         match ch {
             '\t' => {
-                flush(&mut out, &mut buf);
-                out.push_str("<w:tab/>");
+                has_text |= flush(&mut out, &mut buf, &text_name, &namespace);
+                out.push_str(&format!("<{tab_name}{namespace}/>"));
             }
             '\n' => {
-                flush(&mut out, &mut buf);
-                out.push_str("<w:br/>");
+                has_text |= flush(&mut out, &mut buf, &text_name, &namespace);
+                out.push_str(&format!("<{break_name}{namespace}/>"));
             }
             '\r' => {}
             c if (c as u32) < 0x20 => {}
             c => buf.push(c),
         }
     }
-    flush(&mut out, &mut buf);
+    has_text |= flush(&mut out, &mut buf, &text_name, &namespace);
+    if keep_text_anchor && !out.is_empty() && !has_text {
+        out.push_str(&format!("<{text_name}{namespace}></{text_name}>"));
+    }
     out
+}
+
+fn wml_text_run_content_xml(text: &str) -> String {
+    wml_text_run_content_xml_with_prefix(text, "w", false, false)
 }
 
 pub(crate) fn wml_text_run_content_node_count(text: &str) -> Result<usize> {
@@ -635,18 +673,93 @@ pub(crate) fn wml_text_run_content_node_count(text: &str) -> Result<usize> {
     XmlTree::parse(xml.as_bytes()).map(|tree| tree.node_count())
 }
 
+pub(crate) fn wml_anchored_text_run_content_node_count(text: &str) -> Result<usize> {
+    let xml = wml_text_run_content_xml_with_prefix(text, "w", false, true);
+    if xml.is_empty() {
+        return Ok(0);
+    }
+    XmlTree::parse(xml.as_bytes()).map(|tree| tree.node_count())
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct WmlTextRunGroup {
+    text_runs: Vec<NodeId>,
+    text_run_parents: Vec<Option<NodeId>>,
+    marker_nodes: Vec<NodeId>,
+}
+
+impl WmlTextRunGroup {
+    fn push_text_run(&mut self, id: NodeId, parent: Option<NodeId>) {
+        self.text_runs.push(id);
+        self.text_run_parents.push(parent);
+    }
+
+    pub(crate) fn text_runs(&self) -> &[NodeId] {
+        &self.text_runs
+    }
+
+    pub(crate) fn replacement_text_runs(&self) -> impl Iterator<Item = NodeId> + '_ {
+        let first_parent = self.text_run_parents.first().copied().flatten();
+        self.text_runs
+            .iter()
+            .copied()
+            .zip(self.text_run_parents.iter().copied())
+            .enumerate()
+            .filter_map(move |(index, (id, parent))| {
+                (index == 0 || first_parent.is_none() || parent != first_parent).then_some(id)
+            })
+    }
+
+    fn removable_text_runs(&self) -> impl Iterator<Item = NodeId> + '_ {
+        let first_parent = self.text_run_parents.first().copied().flatten();
+        self.text_runs
+            .iter()
+            .copied()
+            .zip(self.text_run_parents.iter().copied())
+            .enumerate()
+            .filter_map(move |(index, (id, parent))| {
+                (index > 0 && first_parent.is_some() && parent == first_parent).then_some(id)
+            })
+    }
+
+    pub(crate) fn marker_nodes(&self) -> &[NodeId] {
+        &self.marker_nodes
+    }
+
+    pub(crate) fn into_text_runs(self) -> Vec<NodeId> {
+        self.text_runs
+    }
+
+    pub(crate) fn into_replacement_text_runs(self) -> Vec<NodeId> {
+        let Self {
+            mut text_runs,
+            text_run_parents,
+            ..
+        } = self;
+        let first_parent = text_run_parents.first().copied().flatten();
+        let mut index = 0usize;
+        text_runs.retain(|_| {
+            let parent = text_run_parents.get(index).copied().flatten();
+            let keep = index == 0 || first_parent.is_none() || parent != first_parent;
+            index += 1;
+            keep
+        });
+        text_runs
+    }
+}
+
 #[derive(Debug)]
 struct FieldScan {
     wanted: usize,
     seen: usize,
-    target: Option<Vec<NodeId>>,
+    target: Option<WmlTextRunGroup>,
     complex: Vec<ComplexFieldScan>,
 }
 
 #[derive(Debug)]
 struct ComplexFieldScan {
     result_phase: bool,
-    result_runs: Vec<NodeId>,
+    result: WmlTextRunGroup,
 }
 
 #[derive(Debug, Default)]
@@ -755,6 +868,13 @@ fn trim_ascii_whitespace(mut value: &[u8]) -> &[u8] {
         value = &value[..value.len() - 1];
     }
     value
+}
+
+fn wml_break_is_text_wrapping(attrs: &[(Vec<u8>, Vec<u8>)], scope: &[(Vec<u8>, Vec<u8>)]) -> bool {
+    attr_value_ns_local(attrs, scope, WML_NS, b"type")
+        .or_else(|| attr_value_ns_local(attrs, scope, b"", b"type"))
+        .map(trim_ascii_whitespace)
+        .is_none_or(|value| value == b"textWrapping")
 }
 
 fn attr_value_ns_local<'a>(
@@ -890,14 +1010,92 @@ impl XmlTree {
         id: NodeId,
         text: &str,
     ) -> Result<()> {
+        self.replace_wml_text_element_with_run_content_impl(id, text, false)
+    }
+
+    /// Marker-aware replacement that retains an empty `w:t` carrier when the
+    /// replacement consists only of tabs and breaks, allowing later refills.
+    pub(crate) fn replace_wml_text_element_with_anchored_run_content(
+        &mut self,
+        id: NodeId,
+        text: &str,
+    ) -> Result<()> {
+        self.replace_wml_text_element_with_run_content_impl(id, text, true)
+    }
+
+    fn replace_wml_text_element_with_run_content_impl(
+        &mut self,
+        id: NodeId,
+        text: &str,
+        keep_text_anchor: bool,
+    ) -> Result<()> {
         let (parent, index) = self
             .parent_child_index(id)
             .ok_or_else(|| Error::Docx("wml text node has no parent".into()))?;
-        let xml = wml_text_run_content_xml(text);
+        let raw_prefix = match &self.nodes[id.0 as usize].node {
+            Node::Element { name, .. } => name
+                .iter()
+                .position(|&byte| byte == b':')
+                .map_or(&b""[..], |colon| &name[..colon]),
+            _ => return Err(Error::Docx("wml text node is not an element".into())),
+        };
+        let parsed_prefix = std::str::from_utf8(raw_prefix).ok();
+        let prefix = parsed_prefix.unwrap_or("w");
+        let parent_scope = self.ns_scope_at(parent);
+        let parent_binds_prefix = parsed_prefix.is_some()
+            && parent_scope
+                .iter()
+                .rev()
+                .find(|(candidate, _)| candidate.as_slice() == raw_prefix)
+                .is_some_and(|(_, uri)| uri.as_slice() == WML_NS);
+        let xml = wml_text_run_content_xml_with_prefix(
+            text,
+            prefix,
+            !parent_binds_prefix,
+            keep_text_anchor,
+        );
         self.nodes[parent.0 as usize].children.remove(index);
         if !xml.is_empty() {
             self.insert_fragment_at(parent, index, xml.as_bytes())?;
         }
+        Ok(())
+    }
+
+    /// Detach replaceable tab/break nodes and extra split text fragments from
+    /// each selected group's anchor run. Later run wrappers and their first text
+    /// carriers remain available for formatting-preserving cleanup.
+    pub(crate) fn prepare_wml_text_groups_for_replacement<'a>(
+        &mut self,
+        groups: impl IntoIterator<Item = &'a WmlTextRunGroup>,
+    ) -> Result<()> {
+        let mut removed = HashSet::new();
+        for group in groups {
+            removed
+                .try_reserve(
+                    group
+                        .marker_nodes()
+                        .len()
+                        .saturating_add(group.text_runs().len()),
+                )
+                .map_err(|_| Error::Docx("xml: out of memory collecting run content".into()))?;
+            removed.extend(group.marker_nodes().iter().copied());
+            removed.extend(group.removable_text_runs());
+        }
+        if removed.is_empty() {
+            return Ok(());
+        }
+
+        #[cfg(test)]
+        if commit_should_fail() {
+            return Err(Error::Docx(
+                "simulated commit-time allocation failure (test seam)".into(),
+            ));
+        }
+
+        for node in &mut self.nodes {
+            node.children.retain(|child| !removed.contains(child));
+        }
+        self.roots.retain(|root| !removed.contains(root));
         Ok(())
     }
 
@@ -1723,16 +1921,15 @@ impl XmlTree {
         out
     }
 
-    /// Cached result `w:t` nodes for the zero-based field in body order.
-    ///
-    /// The order matches the public `Document::fields()` extraction: simple fields
-    /// are counted at their `w:fldSimple` element, while complex fields are counted
+    /// Cached result text and tab/break marker nodes for the zero-based field in
+    /// body order. The order matches the public `Document::fields()` extraction:
+    /// simple fields are counted at `w:fldSimple`, while complex fields are counted
     /// when their `w:fldChar w:fldCharType="end"` marker closes the cached result.
-    pub(crate) fn wml_field_result_runs_under(
+    pub(crate) fn wml_field_result_text_group_under(
         &self,
         body: NodeId,
         field_index: usize,
-    ) -> Option<Vec<NodeId>> {
+    ) -> Option<WmlTextRunGroup> {
         let mut scan = FieldScan {
             wanted: field_index,
             seen: 0,
@@ -1745,13 +1942,13 @@ impl XmlTree {
                 break;
             }
             let c = self.nodes[body.0 as usize].children[i];
-            self.collect_wml_field_results(c, &mut scope, &mut scan);
+            self.collect_wml_field_results(c, Some(body), &mut scope, false, &mut scan);
         }
         scan.target
     }
 
     /// Raw instructions for fields in the exact namespace-aware order used by
-    /// [`Self::wml_field_result_runs_under`].
+    /// [`Self::wml_field_result_text_group_under`].
     pub(crate) fn wml_field_instructions_under(&self, body: NodeId) -> Vec<String> {
         let mut scan = FieldInstructionScan::default();
         let mut scope = self.ns_scope_at(body);
@@ -1775,13 +1972,13 @@ impl XmlTree {
         true
     }
 
-    /// Visible `w:t` nodes for body content controls whose `w:sdtPr/w:tag/@w:val`
-    /// exactly matches `tag`, in body order.
-    pub(crate) fn wml_content_control_text_runs_by_tag_under(
+    /// Visible text and tab/break marker nodes for body content controls whose
+    /// `w:sdtPr/w:tag/@w:val` exactly matches `tag`, in body order.
+    pub(crate) fn wml_content_control_text_groups_by_tag_under(
         &self,
         body: NodeId,
         tag: &str,
-    ) -> Vec<Vec<NodeId>> {
+    ) -> Vec<WmlTextRunGroup> {
         let mut out = Vec::new();
         let mut scope = self.ns_scope_at(body);
         for i in 0..self.nodes[body.0 as usize].children.len() {
@@ -2593,12 +2790,64 @@ impl XmlTree {
         scope.truncate(base);
     }
 
+    fn collect_wml_text_run_group(
+        &self,
+        id: NodeId,
+        parent: Option<NodeId>,
+        scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+        in_run_content: bool,
+        out: &mut WmlTextRunGroup,
+    ) {
+        let base = scope.len();
+        self.push_xmlns(id, scope);
+        if self.wml_revision_edit_action(id, scope, WmlRevisionEditPolicy::Accept)
+            == WmlRevisionEditAction::Remove
+        {
+            scope.truncate(base);
+            return;
+        }
+        match self.selected_alternate_content_branch(id, scope) {
+            AlternateContentBranch::Selected(branch) => {
+                self.collect_wml_text_run_group(branch, Some(id), scope, in_run_content, out);
+                scope.truncate(base);
+                return;
+            }
+            AlternateContentBranch::Missing => {
+                scope.truncate(base);
+                return;
+            }
+            AlternateContentBranch::NotAlternateContent => {}
+        }
+        let child_in_run_content = self.resolves_to(id, WML_NS, b"r", scope)
+            || (in_run_content
+                && (self.resolves_to(id, MC_NS, b"Choice", scope)
+                    || self.resolves_to(id, MC_NS, b"Fallback", scope)));
+        if in_run_content && self.resolves_to(id, WML_NS, b"t", scope) {
+            out.push_text_run(id, parent);
+        } else if in_run_content && self.resolves_to(id, WML_NS, b"tab", scope) {
+            out.marker_nodes.push(id);
+        } else if in_run_content && self.resolves_to(id, WML_NS, b"br", scope) {
+            let text_wrapping = match &self.nodes[id.0 as usize].node {
+                Node::Element { attrs, .. } => wml_break_is_text_wrapping(attrs, scope),
+                _ => false,
+            };
+            if text_wrapping {
+                out.marker_nodes.push(id);
+            }
+        }
+        for i in 0..self.nodes[id.0 as usize].children.len() {
+            let child = self.nodes[id.0 as usize].children[i];
+            self.collect_wml_text_run_group(child, Some(id), scope, child_in_run_content, out);
+        }
+        scope.truncate(base);
+    }
+
     fn collect_wml_content_control_text_by_tag(
         &self,
         id: NodeId,
         scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
         tag: &[u8],
-        out: &mut Vec<Vec<NodeId>>,
+        out: &mut Vec<WmlTextRunGroup>,
     ) {
         let base = scope.len();
         self.push_xmlns(id, scope);
@@ -2621,9 +2870,9 @@ impl XmlTree {
             AlternateContentBranch::NotAlternateContent => {}
         }
         if self.resolves_to(id, WML_NS, b"sdt", scope) && self.wml_sdt_tag_matches(id, scope, tag) {
-            let mut runs = Vec::new();
-            self.collect_wml_t(id, scope, &mut runs);
-            out.push(runs);
+            let mut group = WmlTextRunGroup::default();
+            self.collect_wml_text_run_group(id, None, scope, false, &mut group);
+            out.push(group);
             scope.truncate(base);
             return;
         }
@@ -3070,7 +3319,9 @@ impl XmlTree {
     fn collect_wml_field_results(
         &self,
         id: NodeId,
+        parent: Option<NodeId>,
         scope: &mut Vec<(Vec<u8>, Vec<u8>)>,
+        in_run_content: bool,
         scan: &mut FieldScan,
     ) {
         if scan.target.is_some() {
@@ -3087,7 +3338,7 @@ impl XmlTree {
         }
         match self.selected_alternate_content_branch(id, scope) {
             AlternateContentBranch::Selected(branch) => {
-                self.collect_wml_field_results(branch, scope, scan);
+                self.collect_wml_field_results(branch, Some(id), scope, in_run_content, scan);
                 scope.truncate(base);
                 return;
             }
@@ -3097,13 +3348,17 @@ impl XmlTree {
             }
             AlternateContentBranch::NotAlternateContent => {}
         }
+        let child_in_run_content = self.resolves_to(id, WML_NS, b"r", scope)
+            || (in_run_content
+                && (self.resolves_to(id, MC_NS, b"Choice", scope)
+                    || self.resolves_to(id, MC_NS, b"Fallback", scope)));
         if let Node::Element { attrs, .. } = &self.nodes[id.0 as usize].node {
             if self.resolves_to(id, WML_NS, b"fldSimple", scope) {
                 if scan.seen == scan.wanted {
-                    let mut result = Vec::new();
+                    let mut result = WmlTextRunGroup::default();
                     for i in 0..self.nodes[id.0 as usize].children.len() {
-                        let c = self.nodes[id.0 as usize].children[i];
-                        self.collect_wml_t(c, scope, &mut result);
+                        let child = self.nodes[id.0 as usize].children[i];
+                        self.collect_wml_text_run_group(child, Some(id), scope, false, &mut result);
                     }
                     scan.target = Some(result);
                 }
@@ -3115,10 +3370,20 @@ impl XmlTree {
                 fld_char_type = attr_value_local(attrs, b"fldCharType")
                     .map(trim_ascii_whitespace)
                     .map(Vec::from);
-            } else if self.resolves_to(id, WML_NS, b"t", scope) {
+            } else if in_run_content && self.resolves_to(id, WML_NS, b"t", scope) {
                 if let Some(complex) = scan.complex.last_mut() {
                     if complex.result_phase {
-                        complex.result_runs.push(id);
+                        complex.result.push_text_run(id, parent);
+                    }
+                }
+            } else if in_run_content
+                && (self.resolves_to(id, WML_NS, b"tab", scope)
+                    || (self.resolves_to(id, WML_NS, b"br", scope)
+                        && wml_break_is_text_wrapping(attrs, scope)))
+            {
+                if let Some(complex) = scan.complex.last_mut() {
+                    if complex.result_phase {
+                        complex.result.marker_nodes.push(id);
                     }
                 }
             }
@@ -3128,7 +3393,7 @@ impl XmlTree {
             Some(b"begin") => {
                 scan.complex.push(ComplexFieldScan {
                     result_phase: false,
-                    result_runs: Vec::new(),
+                    result: WmlTextRunGroup::default(),
                 });
             }
             Some(b"separate") => {
@@ -3141,12 +3406,21 @@ impl XmlTree {
                     if let Some(parent) = scan.complex.last_mut() {
                         if parent.result_phase {
                             parent
-                                .result_runs
-                                .extend(complex.result_runs.iter().copied());
+                                .result
+                                .text_runs
+                                .extend(complex.result.text_runs.iter().copied());
+                            parent
+                                .result
+                                .text_run_parents
+                                .extend(complex.result.text_run_parents.iter().copied());
+                            parent
+                                .result
+                                .marker_nodes
+                                .extend(complex.result.marker_nodes.iter().copied());
                         }
                     }
                     if scan.seen == scan.wanted {
-                        scan.target = Some(complex.result_runs);
+                        scan.target = Some(complex.result);
                     }
                     scan.seen += 1;
                 }
@@ -3161,7 +3435,7 @@ impl XmlTree {
                 break;
             }
             let c = self.nodes[id.0 as usize].children[i];
-            self.collect_wml_field_results(c, scope, scan);
+            self.collect_wml_field_results(c, Some(id), scope, child_in_run_content, scan);
         }
         scope.truncate(base);
     }
