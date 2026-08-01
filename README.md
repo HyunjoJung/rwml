@@ -273,19 +273,21 @@ and line-breaks (Korean/CJK [UAX #14] line-breaking + script font fallback),
 `krilla` emits the PDF with subsetted embedded fonts and **selectable text**. Rich
 runs (color/size/font, highlight, decorations, super/subscript, caps/small-caps),
 paragraph shading, line spacing, first/hanging indents, lists with real autonumber
-labels, bordered tables with shaded vertically-aligned cells, authored column
-widths, bounded preferred-percentage outer widths, logical leading/center/trailing
-placement, and non-negative leading indentation, images, and **clickable hyperlink
-annotations** are drawn. Narrow RTL tables reverse logical placement and mirror
-their cells inside the local table box. Page geometry, equal-width section
-columns, and per-side margins come from the document; multi-page tables repeat
-their header rows without losing outer placement. Opened `.docx` rows may split
-across pages by default, while effective `w:cantSplit` from direct row properties
-or an inherited table-style chain keeps a fitting row together and an over-tall
-row still splits at line boundaries. Table styles include direct non-conditional
-row properties and bounded `wholeTable`/`firstRow`/`lastRow` conditional
-regions selected by direct table `w:tblLook` or row `w:cnfStyle`; later regions
-and direct row formatting retain Word precedence. Model-only renders retain
+labels, bordered tables with uniform model-backed border colors and bounded
+eighth-point widths, shaded vertically-aligned cells, authored column widths,
+bounded preferred-percentage outer widths, logical leading/center/trailing
+placement, and non-negative leading indentation, images, and **clickable
+hyperlink annotations** are drawn. Narrow RTL tables reverse logical placement
+and mirror their cells inside the local table box. Page geometry, equal-width
+section columns, and per-side margins come from the document; multi-page tables
+repeat their header rows without losing outer placement or border paint. Opened
+`.docx` rows may split across pages by default, while effective `w:cantSplit`
+from direct row properties or an inherited table-style chain keeps a fitting
+row together and an over-tall row still splits at line boundaries. Table styles
+include direct non-conditional row properties and bounded
+`wholeTable`/`firstRow`/`lastRow` conditional regions selected by direct table
+`w:tblLook` or row `w:cnfStyle`; later regions and direct row formatting retain
+Word precedence. Model-only renders retain
 the established keep-together default. Opened legacy `.doc` rows follow direct
 `sprmTFCantSplit` and compatibility `sprmTFCantSplit90`: absent properties
 retain the MS-DOC splittable default, the modern property takes precedence when
@@ -385,7 +387,13 @@ Markdown/HTML visual RTL remain outside these bounded bridges.
 > space. Absolute/auto table widths, `tblGrid` and cell-width conflict resolution,
 > a Word-exact fixed/autofit algorithm split, table-style and `tblPrEx` placement,
 > floating or nested-grid placement, negative outdents, and table `both`
-> justification retain deterministic fallbacks.
+> justification retain deterministic fallbacks. PDF table-border paint uses only
+> the model's uniform color and width. Width is capped at 12 points, then
+> conservatively bounded across the table by its smallest laid-out cell;
+> per-side overrides, non-solid/none styles, cell borders, theme/style
+> inheritance, spacing/conflict resolution, merged-edge suppression,
+> nested-grid borders, and legacy `.doc` border recovery remain outside this
+> bounded renderer slice.
 >
 > Opened-document renders draw bounded approximate overlay boxes for recovered
 > `.docx` floating-shape geometry on the recovered top-level body block page. A
@@ -874,7 +882,8 @@ evidence.
       `ChartBuilder`, `DocModel`, and
       `write_docx`
 - [x] **PDF renderer** - `parley` + `krilla` with rich text/tables/images/lists/
-      hyperlinks, paragraph page-break-before, header-row repeat, oversized-row split,
+      hyperlinks, uniform model-backed table border color/width, paragraph
+      page-break-before, header-row repeat, oversized-row split,
       direct and non-conditional table-style DOCX table-row `cantSplit`, direct DOCX
       and recursively nested table-cell keep/widow controls, direct and
       paragraph-style-inherited legacy DOC

@@ -117,6 +117,7 @@ impl Geom {
 const PARA_GAP: f32 = 6.0;
 const CELL_PAD: f32 = 3.0;
 const BORDER: f32 = 0.4;
+const MAX_TABLE_BORDER_SIZE_EIGHTHS: u16 = 96;
 /// Left indent added per list nesting level, in points.
 const LIST_INDENT: f32 = 18.0;
 /// Max nesting depth for tables-in-cells flattened by `shape_cell` (panic-free
@@ -254,11 +255,13 @@ impl LineCharRange {
     }
 }
 
-/// A bordered table cell: its left edge + width (relative to the content origin),
-/// its wrapped rich text lines, the background fill, and the vertical alignment.
+/// A bordered table cell: its canonical horizontal edges and modeled width
+/// (relative to the content origin), its wrapped rich text lines, the background
+/// fill, and the vertical alignment.
 #[derive(Clone)]
 struct CellBox {
     x: f32,
+    right: f32,
     width: f32,
     lines: Vec<LineLayout>,
     insets: CellInsets,
@@ -292,6 +295,22 @@ struct RowLayout {
     height: f32,
     cells: Vec<CellBox>,
     cant_split: bool,
+    border: TableBorderPaint,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct TableBorderPaint {
+    color: rgb::Color,
+    width: f32,
+}
+
+impl Default for TableBorderPaint {
+    fn default() -> Self {
+        Self {
+            color: rgb::Color::black(),
+            width: BORDER,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -2618,6 +2637,40 @@ fn table_placement(t: &Table, available_width: f32) -> (f32, f32) {
     (x, width)
 }
 
+fn table_border_paint(t: &Table) -> TableBorderPaint {
+    let color = t
+        .border_color
+        .map(|color| rgb::Color::new(color.r, color.g, color.b))
+        .unwrap_or_else(rgb::Color::black);
+    // ECMA-376 Part 1 CT_Border.sz / 17.18.23: line widths are
+    // eighth-points and values above 96 may be reassigned. The public model
+    // permits 1, so preserve every positive model value below that ceiling.
+    let width = match t.border_size_eighths {
+        Some(size) if size > 0 => f32::from(size.min(MAX_TABLE_BORDER_SIZE_EIGHTHS)) / 8.0,
+        _ => BORDER,
+    };
+    TableBorderPaint { color, width }
+}
+
+fn bound_table_border_paint_to_rows(
+    paint: TableBorderPaint,
+    rows: &[RowLayout],
+) -> TableBorderPaint {
+    let width = rows
+        .iter()
+        .flat_map(|row| {
+            row.cells.iter().filter_map(move |cell| {
+                (row.height.is_finite()
+                    && row.height > 0.0
+                    && cell.width.is_finite()
+                    && cell.width > 0.0)
+                    .then_some(cell.width.min(row.height) * 0.5)
+            })
+        })
+        .fold(paint.width, f32::min);
+    TableBorderPaint { width, ..paint }
+}
+
 fn authored_table_column_edges(widths: &[f32], ncols: usize, content_w: f32) -> Option<Vec<f32>> {
     if widths.len() != ncols
         || widths
@@ -2656,6 +2709,7 @@ fn layout_table_with_row_pagination(
 ) {
     let (grid, ncols) = reconstruct_grid(t);
     let (table_x, content_w) = table_placement(t, geom.content_w());
+    let border = table_border_paint(t);
 
     // Column edges: honor authored percentages when they match the grid, else
     // size to content (min 20pt/col) and scale to fill the content width.
@@ -2702,12 +2756,13 @@ fn layout_table_with_row_pagination(
             let end = (pc.col + pc.span).min(ncols);
             let logical_x = col_x[pc.col];
             let width = col_x[end] - logical_x;
-            let x = table_x
-                + if t.bidi_visual {
-                    content_w - col_x[end]
-                } else {
-                    logical_x
-                };
+            let (visual_left, visual_right) = if t.bidi_visual {
+                (content_w - col_x[end], content_w - logical_x)
+            } else {
+                (logical_x, col_x[end])
+            };
+            let x = table_x + visual_left;
+            let right = table_x + visual_right;
             let (direct_pagination, direct_nested_pagination) = if pc.cell.is_some() {
                 let paragraph_hints = row_cell_pagination
                     .and_then(|cells| cells.get(source_cell_index))
@@ -2741,6 +2796,7 @@ fn layout_table_with_row_pagination(
             row_h = row_h.max(content_h + insets.top + insets.bottom);
             cells.push(CellBox {
                 x,
+                right,
                 width,
                 lines,
                 insets,
@@ -2758,7 +2814,12 @@ fn layout_table_with_row_pagination(
                 .and_then(|rows| rows.get(row_index))
                 .map(|row| row.cant_split)
                 .unwrap_or(true),
+            border,
         });
+    }
+    let border = bound_table_border_paint_to_rows(border, &rows);
+    for row in &mut rows {
+        row.border = border;
     }
     let header_rows = t.header_rows.min(rows.len());
     out.push(FlowItem::Table { rows, header_rows });
@@ -2822,12 +2883,14 @@ fn fitting_cell_split(lines: &[LineLayout], budget: f32) -> usize {
 
 fn split_row(row: RowLayout, avail: f32) -> (RowLayout, Option<RowLayout>) {
     let cant_split = row.cant_split;
+    let border = row.border;
     let mut frag_cells = Vec::with_capacity(row.cells.len());
     let mut rest_cells = Vec::with_capacity(row.cells.len());
     let mut any_rest = false;
     for cell in row.cells {
         let CellBox {
             x,
+            right,
             width,
             shading,
             valign,
@@ -2844,6 +2907,7 @@ fn split_row(row: RowLayout, avail: f32) -> (RowLayout, Option<RowLayout>) {
         let has_tail = !tail.is_empty();
         frag_cells.push(CellBox {
             x,
+            right,
             width,
             shading,
             valign,
@@ -2859,6 +2923,7 @@ fn split_row(row: RowLayout, avail: f32) -> (RowLayout, Option<RowLayout>) {
         });
         rest_cells.push(CellBox {
             x,
+            right,
             width,
             shading,
             valign,
@@ -2874,6 +2939,7 @@ fn split_row(row: RowLayout, avail: f32) -> (RowLayout, Option<RowLayout>) {
         height: avail,
         cells: frag_cells,
         cant_split,
+        border,
     };
     if any_rest {
         let rest_h = rest_cells
@@ -2884,6 +2950,7 @@ fn split_row(row: RowLayout, avail: f32) -> (RowLayout, Option<RowLayout>) {
             height: rest_h.max(14.0),
             cells: rest_cells,
             cant_split,
+            border,
         };
         (frag, Some(rest))
     } else {
@@ -3396,17 +3463,93 @@ fn fill_chart_column_shape(
     }
 }
 
-/// Fill an axis-aligned rectangle in solid black (used for thin table borders).
-fn fill_rect(surface: &mut Surface<'_>, x: f32, y: f32, w: f32, h: f32) {
-    fill_rect_color(surface, x, y, w, h, rgb::Color::new(0, 0, 0));
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct BorderRect {
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
 }
 
-/// Draw a cell border (four thin edges) around `(x, y, w, h)`.
-fn draw_border(surface: &mut Surface<'_>, x: f32, y: f32, w: f32, h: f32) {
-    fill_rect(surface, x, y, w, BORDER); // top
-    fill_rect(surface, x, y + h - BORDER, w, BORDER); // bottom
-    fill_rect(surface, x, y, BORDER, h); // left
-    fill_rect(surface, x + w - BORDER, y, BORDER, h); // right
+fn table_border_rects(
+    left: f32,
+    top: f32,
+    right: f32,
+    bottom: f32,
+    requested_width: f32,
+) -> Option<[BorderRect; 4]> {
+    if !left.is_finite()
+        || !top.is_finite()
+        || !right.is_finite()
+        || !bottom.is_finite()
+        || !requested_width.is_finite()
+        || right <= left
+        || bottom <= top
+        || requested_width <= 0.0
+    {
+        return None;
+    }
+    // Layout bounds one uniform width against every cell before pagination.
+    // Centered shared edges then overpaint exactly, while the extensions close
+    // both outer and grid-intersection corners.
+    let width = requested_width;
+    let half = width * 0.5;
+    let left_x = left - half;
+    let top_y = top - half;
+    let bottom_y = bottom - half;
+    let right_x = right - half;
+    let extended_w = right - left + width;
+    let extended_h = bottom - top + width;
+    if !left_x.is_finite()
+        || !top_y.is_finite()
+        || !bottom_y.is_finite()
+        || !right_x.is_finite()
+        || !extended_w.is_finite()
+        || !extended_h.is_finite()
+    {
+        return None;
+    }
+    Some([
+        BorderRect {
+            x: left_x,
+            y: top_y,
+            w: extended_w,
+            h: width,
+        },
+        BorderRect {
+            x: left_x,
+            y: bottom_y,
+            w: extended_w,
+            h: width,
+        },
+        BorderRect {
+            x: left_x,
+            y: top_y,
+            w: width,
+            h: extended_h,
+        },
+        BorderRect {
+            x: right_x,
+            y: top_y,
+            w: width,
+            h: extended_h,
+        },
+    ])
+}
+
+fn draw_table_border(
+    surface: &mut Surface<'_>,
+    left: f32,
+    top: f32,
+    right: f32,
+    bottom: f32,
+    paint: TableBorderPaint,
+) {
+    if let Some(rects) = table_border_rects(left, top, right, bottom, paint.width) {
+        for rect in rects {
+            fill_rect_color(surface, rect.x, rect.y, rect.w, rect.h, paint.color);
+        }
+    }
 }
 
 fn draw_border_color(surface: &mut Surface<'_>, x: f32, y: f32, w: f32, h: f32, color: rgb::Color) {
@@ -6843,12 +6986,14 @@ fn render_pdf(
                     }
                 }
                 FlowItem::Row(row) => {
+                    let border = row.border;
                     for cell in row.cells {
                         let cx = geom.left + column_x + cell.x;
+                        let right = geom.left + column_x + cell.right;
                         if let Some(fill) = cell.shading {
                             fill_rect_color(&mut surface, cx, top, cell.width, row.height, fill);
                         }
-                        draw_border(&mut surface, cx, top, cell.width, row.height);
+                        draw_table_border(&mut surface, cx, top, right, top + row.height, border);
                         // Vertical alignment within the cell band.
                         let content_h: f32 = cell.lines.iter().map(|l| l.height).sum();
                         let avail = row.height - cell.insets.top - cell.insets.bottom;
@@ -7656,7 +7801,7 @@ mod tests {
         assert_eq!(count_missing_image_bytes(&visible), 1);
     }
 
-    fn laid_out_table_boxes(table: &Table, geom: Geom) -> Vec<(f32, f32)> {
+    fn laid_out_table_rows(table: &Table, geom: Geom) -> Vec<super::RowLayout> {
         let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
         let mut font_cx = strict_font_context(&fonts);
         let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
@@ -7669,9 +7814,14 @@ mod tests {
         let mut flow = Vec::new();
         let mut capture = LayoutCapture::default();
         layout_table(table, &mut flow, geom, &mut tcx, &mut capture);
-        let FlowItem::Table { mut rows, .. } = flow.remove(0) else {
+        let FlowItem::Table { rows, .. } = flow.remove(0) else {
             panic!("table flow")
         };
+        rows
+    }
+
+    fn laid_out_table_boxes(table: &Table, geom: Geom) -> Vec<(f32, f32)> {
+        let mut rows = laid_out_table_rows(table, geom);
         rows.remove(0)
             .cells
             .into_iter()
@@ -7698,6 +7848,187 @@ mod tests {
                 (actual_width - expected_width).abs() < 0.1,
                 "width mismatch: actual={actual:?}, expected={expected:?}"
             );
+        }
+    }
+
+    #[test]
+    fn uniform_table_border_paint_resolves_color_and_bounded_eighth_point_width() {
+        let default = super::table_border_paint(&Table::default());
+        assert_eq!(default, super::TableBorderPaint::default());
+
+        let color = Color::rgb(0x12, 0x67, 0xAB);
+        let colored = super::table_border_paint(&Table {
+            border_color: Some(color),
+            ..Table::default()
+        });
+        assert_eq!(colored.color, rgb::Color::new(color.r, color.g, color.b));
+        assert_eq!(colored.width, super::BORDER);
+
+        for (size, expected_width) in [
+            (0, super::BORDER),
+            (1, 0.125),
+            (24, 3.0),
+            (96, 12.0),
+            (u16::MAX, 12.0),
+        ] {
+            let paint = super::table_border_paint(&Table {
+                border_size_eighths: Some(size),
+                ..Table::default()
+            });
+            assert_eq!(paint.width, expected_width, "size={size}");
+        }
+    }
+
+    #[test]
+    fn table_border_rectangles_center_shared_edges_and_join_corners() {
+        let rect = |x, y, w, h| super::BorderRect { x, y, w, h };
+        let rects =
+            super::table_border_rects(10.0, 20.0, 16.0, 24.0, 2.0).expect("positive finite cell");
+        assert_eq!(
+            rects,
+            [
+                rect(9.0, 19.0, 8.0, 2.0),
+                rect(9.0, 23.0, 8.0, 2.0),
+                rect(9.0, 19.0, 2.0, 6.0),
+                rect(15.0, 19.0, 2.0, 6.0),
+            ]
+        );
+
+        let left =
+            super::table_border_rects(0.0, 0.0, 20.0, 12.0, 3.0).expect("left adjacent cell");
+        let right =
+            super::table_border_rects(20.0, 0.0, 40.0, 12.0, 3.0).expect("right adjacent cell");
+        assert_eq!(
+            left,
+            [
+                rect(-1.5, -1.5, 23.0, 3.0),
+                rect(-1.5, 10.5, 23.0, 3.0),
+                rect(-1.5, -1.5, 3.0, 15.0),
+                rect(18.5, -1.5, 3.0, 15.0),
+            ]
+        );
+        assert_eq!(left[3], right[2], "shared edge must overpaint once");
+        assert!(super::table_border_rects(0.0, 0.0, 0.0, 4.0, 1.0).is_none());
+        assert!(super::table_border_rects(0.0, 0.0, 4.0, 4.0, f32::NAN).is_none());
+    }
+
+    #[test]
+    fn table_border_width_is_uniformly_bounded_across_asymmetric_cells_and_rows() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let rows = laid_out_table_rows(
+            &Table {
+                rows: vec![
+                    Row {
+                        cells: vec![cell("A"), cell("B")],
+                    },
+                    Row {
+                        cells: vec![cell("C"), cell("one\ntwo\nthree\nfour")],
+                    },
+                ],
+                col_widths_pct: vec![0.04, 0.96],
+                border_size_eighths: Some(96),
+                ..Table::default()
+            },
+            geom,
+        );
+        assert!(rows[1].height > rows[0].height);
+        let bounded_width = rows
+            .iter()
+            .flat_map(|row| {
+                row.cells
+                    .iter()
+                    .map(move |cell| cell.width.min(row.height) * 0.5)
+            })
+            .fold(12.0_f32, f32::min);
+        assert!(bounded_width < 12.0);
+        assert!(rows
+            .iter()
+            .all(|row| (row.border.width - bounded_width).abs() < f32::EPSILON));
+
+        let upper_left = &rows[0].cells[0];
+        let upper_right = &rows[0].cells[1];
+        let left_rects = super::table_border_rects(
+            upper_left.x,
+            0.0,
+            upper_left.right,
+            rows[0].height,
+            rows[0].border.width,
+        )
+        .expect("upper-left cell");
+        let right_rects = super::table_border_rects(
+            upper_right.x,
+            0.0,
+            upper_right.right,
+            rows[0].height,
+            rows[0].border.width,
+        )
+        .expect("upper-right cell");
+        assert_eq!(left_rects[3], right_rects[2]);
+
+        let lower_right = &rows[1].cells[1];
+        let lower_rects = super::table_border_rects(
+            lower_right.x,
+            rows[0].height,
+            lower_right.right,
+            rows[0].height + rows[1].height,
+            rows[1].border.width,
+        )
+        .expect("lower-right cell");
+        assert_eq!(right_rects[1], lower_rects[0]);
+    }
+
+    #[test]
+    fn table_border_shared_edges_use_canonical_coordinates_in_offset_tables() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        for bidi_visual in [false, true] {
+            let mut rows = laid_out_table_rows(
+                &Table {
+                    rows: vec![Row {
+                        cells: vec![cell("A"), cell("B"), cell("C"), cell("D")],
+                    }],
+                    col_widths_pct: vec![0.1, 0.2, 0.3, 0.4],
+                    width_pct: Some(0.73),
+                    align: Some(Align::Center),
+                    bidi_visual,
+                    border_size_eighths: Some(24),
+                    ..Table::default()
+                },
+                geom,
+            );
+            let row = rows.remove(0);
+            let mut cells = row.cells.iter().collect::<Vec<_>>();
+            cells.sort_by(|left, right| left.x.total_cmp(&right.x));
+            for pair in cells.windows(2) {
+                let [left, right] = pair else { unreachable!() };
+                assert_eq!(left.right, right.x, "bidi_visual={bidi_visual}");
+                let left_rects = super::table_border_rects(
+                    left.x,
+                    0.0,
+                    left.right,
+                    row.height,
+                    row.border.width,
+                )
+                .expect("left offset cell");
+                let right_rects = super::table_border_rects(
+                    right.x,
+                    0.0,
+                    right.right,
+                    row.height,
+                    row.border.width,
+                )
+                .expect("right offset cell");
+                assert_eq!(left_rects[3], right_rects[2], "bidi_visual={bidi_visual}");
+            }
         }
     }
 
@@ -8229,6 +8560,8 @@ mod tests {
                     ..Cell::default()
                 }],
             }],
+            border_color: Some(Color::rgb(0x31, 0x75, 0x9B)),
+            border_size_eighths: Some(24),
             ..Table::default()
         };
         let mut flow = Vec::new();
@@ -8245,6 +8578,9 @@ mod tests {
         assert_eq!(head.cells[0].insets.bottom, 0.0);
         assert_eq!(tail.cells[0].insets.top, 0.0);
         assert_eq!(tail.cells[0].insets.bottom, 30.0);
+        let expected_border = super::table_border_paint(&table);
+        assert_eq!(head.border, expected_border);
+        assert_eq!(tail.border, expected_border);
     }
 
     fn cell_row_with_pagination(paragraphs: &[(&str, PaginationHint)]) -> super::RowLayout {
@@ -8695,6 +9031,7 @@ mod tests {
             height: protected.height.max(plain.height),
             cells: vec![protected.cells.remove(0), plain.cells.remove(0)],
             cant_split: false,
+            border: super::TableBorderPaint::default(),
         };
 
         let (head, tail) = split_row(row, avail);
@@ -9664,6 +10001,7 @@ mod tests {
             height: line_count as f32 * 10.0,
             cells: vec![super::CellBox {
                 x: 0.0,
+                right: 100.0,
                 width: 100.0,
                 lines,
                 insets: super::CellInsets::zero(),
@@ -9671,6 +10009,7 @@ mod tests {
                 valign: crate::model::VCell::Top,
             }],
             cant_split,
+            border: super::TableBorderPaint::default(),
         }
     }
 
@@ -9802,14 +10141,17 @@ mod tests {
             margin_pt: 20.0,
             ..PageSetup::default()
         });
+        let header_paint = super::TableBorderPaint {
+            color: rgb::Color::new(0xA6, 0x1B, 0x29),
+            width: 3.0,
+        };
+        let mut header = pagination_table_row(true, 1);
+        header.border = header_paint;
         let pagination = paginate(
             vec![
                 pagination_line(30.0),
                 FlowItem::Table {
-                    rows: vec![
-                        pagination_table_row(true, 1),
-                        pagination_table_row(false, 4),
-                    ],
+                    rows: vec![header, pagination_table_row(false, 4)],
                     header_rows: 1,
                 },
             ],
@@ -9818,6 +10160,14 @@ mod tests {
         );
 
         assert_eq!(page_row_counts(&pagination), vec![2, 2]);
+        let repeated_header = pagination.pages[1]
+            .iter()
+            .find_map(|placed| match &placed.item {
+                FlowItem::Row(row) => Some(row),
+                _ => None,
+            })
+            .expect("second page starts with repeated header");
+        assert_eq!(repeated_header.border, header_paint);
     }
 
     fn page_line_counts(pagination: &super::Pagination) -> Vec<usize> {
@@ -10694,6 +11044,77 @@ mod tests {
         let pdf = super::to_pdf(&model);
         assert!(pdf.starts_with(b"%PDF"));
         assert!(pdf.len() > 800);
+    }
+
+    #[test]
+    fn modeled_table_border_paint_changes_deterministic_pdf_output() {
+        let table = Table {
+            rows: vec![Row {
+                cells: vec![cell("border paint")],
+            }],
+            ..Table::default()
+        };
+        let default_model = DocModel {
+            blocks: vec![Block::Table(table.clone())],
+            ..DocModel::default()
+        };
+        let border_color = Color::rgb(0xC4, 0x21, 0x32);
+        let color_model = DocModel {
+            blocks: vec![Block::Table(Table {
+                border_color: Some(border_color),
+                ..table.clone()
+            })],
+            ..DocModel::default()
+        };
+        let width_model = DocModel {
+            blocks: vec![Block::Table(Table {
+                border_size_eighths: Some(24),
+                ..table.clone()
+            })],
+            ..DocModel::default()
+        };
+        let styled_model = DocModel {
+            blocks: vec![Block::Table(Table {
+                border_color: Some(border_color),
+                border_size_eighths: Some(24),
+                ..table
+            })],
+            ..DocModel::default()
+        };
+
+        let default_pdf = super::to_pdf(&default_model);
+        let color_pdf = super::to_pdf(&color_model);
+        let width_pdf = super::to_pdf(&width_model);
+        let styled_pdf = super::to_pdf(&styled_model);
+
+        assert!(
+            color_pdf != default_pdf,
+            "border color must affect PDF bytes"
+        );
+        assert!(
+            width_pdf != default_pdf,
+            "border width must affect PDF bytes"
+        );
+        assert!(
+            styled_pdf != default_pdf,
+            "modeled table border paint must affect PDF bytes"
+        );
+        assert_eq!(styled_pdf, super::to_pdf(&styled_model));
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        assert_eq!(
+            super::layout_pages_with_fonts(&styled_model, &fonts).expect("styled layout pages"),
+            super::layout_pages_with_fonts(&default_model, &fonts).expect("default layout pages")
+        );
+
+        let mut hostile_model = styled_model;
+        let Block::Table(table) = &mut hostile_model.blocks[0] else {
+            panic!("table block")
+        };
+        table.border_size_eighths = Some(u16::MAX);
+        let hostile_pdf = super::try_to_pdf(&hostile_model).expect("hostile width stays bounded");
+        assert!(hostile_pdf.starts_with(b"%PDF"));
+        assert!(hostile_pdf.len() < 5_000_000);
+        assert_eq!(hostile_pdf, super::to_pdf(&hostile_model));
     }
 
     #[test]
