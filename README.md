@@ -351,9 +351,13 @@ ordinary or recursively nested table cells, without adding those source-only
 render hints to the public `DocModel`. Table-cell and RTL tab semantics,
 center/right/justified paragraph alignment, leaders/bar tabs, settings-defined
 default-tab intervals, and implicit hanging-indent/list-marker tabs remain
-outside this bounded tab support. Line breaking still precedes custom-tab
-advance correction, so post-tab field containment, Word-exact custom-tab-aware
-reflow, and pagination remain outside the claim. Nested table content remains
+outside this bounded tab support. Within that support, resolved tab advances
+now reserve line width before breaking, so content that no longer fits after a
+tab moves to the next line instead of running past the paragraph box; the
+reservation only ever tightens and is bounded to three passes, keeping the
+result deterministic. Emitted page counts follow the resulting line count.
+Post-tab field containment, Word-exact custom-tab-aware reflow, and Word-exact
+tab-driven pagination remain outside the claim. Nested table content remains
 a flattened text preview rather than a nested grid layout.
 One per-story fallback-counter state follows source-logical order across body,
 direct-cell, nested-cell, and later body paragraphs. `w:bidiVisual` changes

@@ -63,6 +63,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Opened `.docx` PDF previews now reserve line width for resolved custom and
+  default tab advances before breaking, so top-level LTR left/start-aligned body
+  content that no longer fits after a tab moves to the next line instead of
+  running past the paragraph box. The reservation only tightens and is bounded
+  to three passes, so line composition stays deterministic; emitted page counts
+  follow the resulting line count. Alignments and directions outside the
+  resolved-tab support keep parley's own breaking unchanged. Post-tab field
+  containment, Word-exact custom-tab-aware reflow, and Word-exact tab-driven
+  pagination remain unsupported.
 - Opened `.docx` PDF previews now keep resolved left, center, right, and
   decimal custom tab stops in page-text-margin coordinates under supported
   left, positive first-line, and hanging indents in left/start-aligned LTR
