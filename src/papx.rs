@@ -74,6 +74,41 @@ impl Default for ParagraphPagination {
     }
 }
 
+/// Sparse paragraph pagination modifiers. `None` means the source did not
+/// specify that property; this distinction is required when direct PAPX
+/// formatting overrides an inherited paragraph style.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct ParagraphPaginationOverrides {
+    pub(crate) keep_next: Option<bool>,
+    pub(crate) keep_lines: Option<bool>,
+    pub(crate) page_break_before: Option<bool>,
+    pub(crate) widow_control: Option<bool>,
+}
+
+impl ParagraphPagination {
+    pub(crate) fn apply(self, overrides: ParagraphPaginationOverrides) -> Self {
+        Self {
+            keep_next: overrides.keep_next.unwrap_or(self.keep_next),
+            keep_lines: overrides.keep_lines.unwrap_or(self.keep_lines),
+            page_break_before: overrides
+                .page_break_before
+                .unwrap_or(self.page_break_before),
+            widow_control: overrides.widow_control.unwrap_or(self.widow_control),
+        }
+    }
+}
+
+impl From<ParagraphPagination> for ParagraphPaginationOverrides {
+    fn from(value: ParagraphPagination) -> Self {
+        Self {
+            keep_next: Some(value.keep_next),
+            keep_lines: Some(value.keep_lines),
+            page_break_before: Some(value.page_break_before),
+            widow_control: Some(value.widow_control),
+        }
+    }
+}
+
 /// Per-paragraph properties over an FC range `[fc_start, fc_lim)`.
 #[derive(Debug, Clone, Default)]
 struct PapEntry {
@@ -90,8 +125,8 @@ struct PapEntry {
     outlvl: Option<u8>,
     /// `sprmPJc` — justification (0 left, 1 center, 2 right, 3/4 justify).
     jc: u8,
-    /// Direct paragraph pagination resolved against format defaults.
-    pagination: ParagraphPagination,
+    /// Sparse direct paragraph pagination modifiers.
+    pagination: ParagraphPaginationOverrides,
     /// Row repeats as a table header (`sprmTTableHeader`).
     table_header: bool,
     /// Resolved `sprmTFCantSplit` / `sprmTFCantSplit90` row property.
@@ -110,7 +145,7 @@ struct Pap {
     istd: u16,
     outlvl: Option<u8>,
     jc: u8,
-    pagination: ParagraphPagination,
+    pagination: ParagraphPaginationOverrides,
     table_header: bool,
     table_cant_split_90: Option<bool>,
     table_cant_split: Option<bool>,
@@ -161,7 +196,16 @@ impl PapxTable {
     }
 
     /// Direct paragraph pagination controls at `fc`, with MS-DOC defaults.
+    #[cfg(test)]
     pub(crate) fn paragraph_pagination_at(&self, fc: u32) -> ParagraphPagination {
+        ParagraphPagination::default().apply(self.paragraph_pagination_overrides_at(fc))
+    }
+
+    /// Sparse direct paragraph pagination controls at `fc`.
+    pub(crate) fn paragraph_pagination_overrides_at(
+        &self,
+        fc: u32,
+    ) -> ParagraphPaginationOverrides {
         self.entry_at(fc).map(|e| e.pagination).unwrap_or_default()
     }
 
@@ -215,6 +259,28 @@ impl PapxTable {
                         in_table,
                         ttp,
                         table_cant_split,
+                        pagination: pagination.into(),
+                        ..PapEntry::default()
+                    },
+                )
+                .collect(),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_test_entries_with_style_pagination(
+        entries: &[(u32, bool, bool, bool, u16, ParagraphPaginationOverrides)],
+    ) -> Self {
+        Self {
+            entries: entries
+                .iter()
+                .map(
+                    |&(fc_lim, in_table, ttp, table_cant_split, istd, pagination)| PapEntry {
+                        fc_lim,
+                        in_table,
+                        ttp,
+                        table_cant_split,
+                        istd,
                         pagination,
                         ..PapEntry::default()
                     },
@@ -350,23 +416,15 @@ fn scan_grpprl(gp: &[u8], istd: u16) -> (Pap, Option<TableDef>) {
         if gp.get(op..operand_end).is_none() {
             break;
         }
+        if apply_pagination_sprm(&mut pap.pagination, sprm, &gp[op..operand_end]) {
+            pos = operand_end;
+            continue;
+        }
         match sprm {
             SPRM_P_ISTD => pap.istd = u16le(gp, op).unwrap_or(istd),
             SPRM_P_JC => pap.jc = gp.get(op).copied().unwrap_or(0),
-            SPRM_P_FKEEP => {
-                pap.pagination.keep_lines = gp.get(op).copied().unwrap_or(0) != 0;
-            }
-            SPRM_P_FKEEP_FOLLOW => {
-                pap.pagination.keep_next = gp.get(op).copied().unwrap_or(0) != 0;
-            }
-            SPRM_P_FPAGE_BREAK_BEFORE => {
-                pap.pagination.page_break_before = gp.get(op).copied().unwrap_or(0) != 0;
-            }
             SPRM_P_FIN_TABLE => pap.in_table = gp.get(op).copied().unwrap_or(0) != 0,
             SPRM_P_FTTP => pap.ttp = gp.get(op).copied().unwrap_or(0) != 0,
-            SPRM_P_FWIDOW_CONTROL => {
-                pap.pagination.widow_control = gp.get(op).copied().unwrap_or(0) != 0;
-            }
             SPRM_P_OUT_LVL => pap.outlvl = Some(gp.get(op).copied().unwrap_or(9)),
             SPRM_T_FCANT_SPLIT_90 => {
                 pap.table_cant_split_90 = Some(gp.get(op).copied().unwrap_or(0) != 0);
@@ -387,6 +445,44 @@ fn scan_grpprl(gp: &[u8], istd: u16) -> (Pap, Option<TableDef>) {
         pos = operand_end;
     }
     (pap, table_def)
+}
+
+fn apply_pagination_sprm(
+    pagination: &mut ParagraphPaginationOverrides,
+    sprm: u16,
+    operand: &[u8],
+) -> bool {
+    let Some(value) = operand.first().map(|value| *value != 0) else {
+        return false;
+    };
+    match sprm {
+        SPRM_P_FKEEP => pagination.keep_lines = Some(value),
+        SPRM_P_FKEEP_FOLLOW => pagination.keep_next = Some(value),
+        SPRM_P_FPAGE_BREAK_BEFORE => pagination.page_break_before = Some(value),
+        SPRM_P_FWIDOW_CONTROL => pagination.widow_control = Some(value),
+        _ => return false,
+    }
+    true
+}
+
+/// Strictly scan a style `grpprlPapx` for the pagination subset modeled by
+/// the legacy renderer. A malformed modifier invalidates the local style
+/// payload instead of applying a partial prefix.
+pub(crate) fn scan_paragraph_pagination_overrides(
+    gp: &[u8],
+) -> Option<ParagraphPaginationOverrides> {
+    let mut pagination = ParagraphPaginationOverrides::default();
+    let mut pos = 0;
+    while pos < gp.len() {
+        let sprm = u16le(gp, pos)?;
+        let op = pos.checked_add(2)?;
+        let len = operand_len(sprm, gp, op)?;
+        let operand_end = op.checked_add(len)?;
+        let operand = gp.get(op..operand_end)?;
+        apply_pagination_sprm(&mut pagination, sprm, operand);
+        pos = operand_end;
+    }
+    Some(pagination)
 }
 
 /// Operand length for a sprm, from its `spra` field ([MS-DOC] 2.2.5).
@@ -455,15 +551,7 @@ mod tests {
     #[test]
     fn resolves_direct_paragraph_pagination_properties_and_defaults() {
         let (default, _) = scan_grpprl(&[], 0);
-        assert_eq!(
-            default.pagination,
-            ParagraphPagination {
-                keep_next: false,
-                keep_lines: false,
-                page_break_before: false,
-                widow_control: true,
-            }
-        );
+        assert_eq!(default.pagination, ParagraphPaginationOverrides::default());
 
         let (enabled, _) = scan_grpprl(
             &[
@@ -476,11 +564,11 @@ mod tests {
         );
         assert_eq!(
             enabled.pagination,
-            ParagraphPagination {
-                keep_next: true,
-                keep_lines: true,
-                page_break_before: true,
-                widow_control: false,
+            ParagraphPaginationOverrides {
+                keep_next: Some(true),
+                keep_lines: Some(true),
+                page_break_before: Some(true),
+                widow_control: Some(false),
             }
         );
 
@@ -493,11 +581,11 @@ mod tests {
         );
         assert_eq!(
             last_value_wins.pagination,
-            ParagraphPagination {
-                keep_next: true,
-                keep_lines: false,
-                page_break_before: false,
-                widow_control: true,
+            ParagraphPaginationOverrides {
+                keep_next: Some(true),
+                keep_lines: Some(false),
+                page_break_before: Some(false),
+                widow_control: Some(true),
             }
         );
 
@@ -510,12 +598,23 @@ mod tests {
         );
         assert_eq!(
             truncated.pagination,
-            ParagraphPagination {
-                keep_next: false,
-                keep_lines: true,
-                page_break_before: false,
-                widow_control: true,
+            ParagraphPaginationOverrides {
+                keep_lines: Some(true),
+                ..ParagraphPaginationOverrides::default()
             }
+        );
+
+        assert!(scan_paragraph_pagination_overrides(&[0x05, 0x24, 0x01, 0x31, 0x24]).is_none());
+        assert_eq!(
+            scan_paragraph_pagination_overrides(&[
+                0x5E, 0x84, 0x34, 0x12, // unrelated two-byte indent operand
+                0x0D, 0xC6, 0x02, 0x00, 0x00, // unrelated variable tab operand
+                0x07, 0x24, 0x01,
+            ]),
+            Some(ParagraphPaginationOverrides {
+                page_break_before: Some(true),
+                ..ParagraphPaginationOverrides::default()
+            })
         );
     }
 
@@ -525,19 +624,19 @@ mod tests {
             entries: vec![
                 PapEntry {
                     fc_lim: 100,
-                    pagination: ParagraphPagination {
-                        keep_lines: true,
-                        ..ParagraphPagination::default()
+                    pagination: ParagraphPaginationOverrides {
+                        keep_lines: Some(true),
+                        ..ParagraphPaginationOverrides::default()
                     },
                     ..PapEntry::default()
                 },
                 PapEntry {
                     fc_lim: 200,
-                    pagination: ParagraphPagination {
-                        keep_next: true,
-                        page_break_before: true,
-                        widow_control: false,
-                        ..ParagraphPagination::default()
+                    pagination: ParagraphPaginationOverrides {
+                        keep_next: Some(true),
+                        page_break_before: Some(true),
+                        widow_control: Some(false),
+                        ..ParagraphPaginationOverrides::default()
                     },
                     ..PapEntry::default()
                 },
@@ -602,7 +701,7 @@ mod tests {
             istd: 0,
             outlvl: None,
             jc: 0,
-            pagination: ParagraphPagination::default(),
+            pagination: ParagraphPaginationOverrides::default(),
             table_header: false,
             table_cant_split: false,
             table_def: None,

@@ -922,7 +922,6 @@ impl<'a, 'l> Asm<'a, 'l> {
     fn take_paragraph(&mut self, fc: u32) -> (Paragraph, PaginationHint) {
         self.flush_run();
         let runs = std::mem::take(&mut self.para_runs);
-        let source_pagination = self.papx.paragraph_pagination_at(fc);
         let (ilfo, ilvl) = self.papx.list_at(fc);
         let list = if ilfo > 0 {
             self.numberer.label(ilfo, ilvl).map(|label| ListInfo {
@@ -936,6 +935,10 @@ impl<'a, 'l> Asm<'a, 'l> {
         // Heading level: an explicit outline level on the paragraph wins
         // (0..8 → h1..h9, 9 → body); otherwise the paragraph style decides.
         let (istd, outlvl, jc) = self.papx.style_at(fc);
+        let source_pagination = self
+            .stylesheet
+            .paragraph_pagination(istd)
+            .apply(self.papx.paragraph_pagination_overrides_at(fc));
         let heading_level = match outlvl {
             Some(o) if o <= 8 => Some(o + 1),
             Some(_) => None,
@@ -1307,6 +1310,71 @@ mod tests {
             panic!("first cell block must be a paragraph");
         };
         assert!(first_paragraph.props.page_break_before);
+    }
+
+    #[test]
+    fn legacy_assembly_resolves_table_cell_style_pagination_before_direct_overrides() {
+        let units = [b'A' as u16, PARA_MARK, b'B' as u16, CELL_MARK, CELL_MARK];
+        let fcs: Vec<u32> = (0..units.len() as u32).collect();
+        let papx = PapxTable::from_test_entries_with_style_pagination(&[
+            (
+                2,
+                true,
+                false,
+                false,
+                1,
+                crate::papx::ParagraphPaginationOverrides {
+                    keep_next: Some(false),
+                    page_break_before: Some(false),
+                    ..Default::default()
+                },
+            ),
+            (4, true, false, false, 1, Default::default()),
+            (5, true, true, false, 0, Default::default()),
+        ]);
+        let chpx = ChpxTable::default();
+        let stsh = StyleSheet::from_test_pagination(vec![
+            crate::papx::ParagraphPagination::default(),
+            crate::papx::ParagraphPagination {
+                keep_next: true,
+                keep_lines: true,
+                page_break_before: true,
+                widow_control: false,
+            },
+        ]);
+        let lists = Lists::default();
+        let mut numberer = Numberer::new(&lists);
+        let mut asm = Asm::new(&papx, &chpx, &stsh, &[], &[], &mut numberer);
+
+        asm.run(&units, &fcs);
+        let assembled = asm.finish_with_render_hints();
+
+        assert_eq!(
+            assembled.table_cell_pagination,
+            vec![vec![vec![vec![
+                Some(PaginationHint {
+                    keep_next: false,
+                    keep_lines: true,
+                    widow_control: false,
+                }),
+                Some(PaginationHint {
+                    keep_next: true,
+                    keep_lines: true,
+                    widow_control: false,
+                }),
+            ]]]]
+        );
+        let Block::Table(table) = &assembled.blocks[0] else {
+            panic!("assembled block must be a table");
+        };
+        let Block::Paragraph(first) = &table.rows[0].cells[0].blocks[0] else {
+            panic!("first cell block must be a paragraph");
+        };
+        let Block::Paragraph(second) = &table.rows[0].cells[0].blocks[1] else {
+            panic!("second cell block must be a paragraph");
+        };
+        assert!(!first.props.page_break_before);
+        assert!(second.props.page_break_before);
     }
 
     #[test]

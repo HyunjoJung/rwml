@@ -5059,6 +5059,7 @@ mod tests {
 
     #[derive(Default)]
     struct SyntheticDocTables<'a> {
+        stylesheet: Option<&'a [u8]>,
         plcf_hdd_cps: Option<&'a [u32]>,
         plcf_sed_cps: Option<&'a [u32]>,
         plcf_sed_lcb_override: Option<u32>,
@@ -5145,6 +5146,12 @@ mod tests {
         clx.extend_from_slice(&(plc.len() as u32).to_le_bytes());
         clx.extend_from_slice(&plc);
 
+        if let Some(stylesheet) = tables.stylesheet {
+            let offset = clx.len() as u32;
+            clx.extend_from_slice(stylesheet);
+            word[fclcb + 8..fclcb + 12].copy_from_slice(&offset.to_le_bytes());
+            word[fclcb + 12..fclcb + 16].copy_from_slice(&(stylesheet.len() as u32).to_le_bytes());
+        }
         let plcf_hdd_offset = clx.len() as u32;
         if let Some(cps) = tables.plcf_hdd_cps {
             for cp in cps {
@@ -6706,6 +6713,117 @@ mod tests {
     }
 
     #[cfg(feature = "render")]
+    fn synthetic_paragraph_stylesheet(properties: &[(u16, u8)]) -> Vec<u8> {
+        fn push_style(
+            stylesheet: &mut Vec<u8>,
+            istd: u16,
+            sti: u16,
+            base: u16,
+            name: &str,
+            properties: &[(u16, u8)],
+        ) {
+            let mut std = vec![0u8; 10];
+            std[0..2].copy_from_slice(&(sti & 0x0FFF).to_le_bytes());
+            std[2..4].copy_from_slice(&(1 | ((base & 0x0FFF) << 4)).to_le_bytes());
+            std[4..6].copy_from_slice(&2u16.to_le_bytes());
+
+            let name_units: Vec<u16> = name.encode_utf16().collect();
+            std.extend_from_slice(&(name_units.len() as u16).to_le_bytes());
+            for unit in name_units {
+                std.extend_from_slice(&unit.to_le_bytes());
+            }
+            std.extend_from_slice(&0u16.to_le_bytes());
+
+            let mut papx = Vec::with_capacity(2 + properties.len() * 3);
+            papx.extend_from_slice(&istd.to_le_bytes());
+            for &(sprm, value) in properties {
+                papx.extend_from_slice(&sprm.to_le_bytes());
+                papx.push(value);
+            }
+            std.extend_from_slice(&(papx.len() as u16).to_le_bytes());
+            std.extend_from_slice(&papx);
+            if papx.len() % 2 == 1 {
+                std.push(0);
+            }
+            std.extend_from_slice(&0u16.to_le_bytes());
+
+            let cb_std = std.len() as u16;
+            std[6..8].copy_from_slice(&cb_std.to_le_bytes());
+            stylesheet.extend_from_slice(&cb_std.to_le_bytes());
+            stylesheet.extend_from_slice(&std);
+        }
+
+        let mut stylesheet = vec![0u8; 20];
+        stylesheet[0..2].copy_from_slice(&18u16.to_le_bytes());
+        stylesheet[2..4].copy_from_slice(&2u16.to_le_bytes());
+        stylesheet[4..6].copy_from_slice(&10u16.to_le_bytes());
+        stylesheet[6..8].copy_from_slice(&1u16.to_le_bytes());
+        push_style(&mut stylesheet, 0, 0, 0x0FFF, "Normal", &[]);
+        push_style(&mut stylesheet, 1, 0x0FFE, 0, "Pagination", properties);
+        stylesheet
+    }
+
+    #[cfg(feature = "render")]
+    fn legacy_paragraph_style_pagination_doc(
+        line_count: usize,
+        style_properties: &[(u16, u8)],
+        direct_properties: &[(u16, u8)],
+    ) -> Vec<u8> {
+        const SEED_COUNT: usize = 32;
+        let mut text = String::new();
+        for index in 0..SEED_COUNT {
+            text.push_str(&format!("seed {index}\r"));
+        }
+        let seed_end = text.encode_utf16().count() as u32;
+        for line_index in 0..line_count {
+            if line_index > 0 {
+                text.push('\u{b}');
+            }
+            text.push_str(&format!("target line {line_index}"));
+        }
+        text.push('\r');
+        let target_end = text.encode_utf16().count() as u32;
+        for index in 0..25 {
+            text.push_str(&format!("after {index}\r"));
+        }
+        let text_end = text.encode_utf16().count() as u32;
+
+        let mut target_grpprl = vec![0x00, 0x46, 0x01, 0x00];
+        for &(sprm, value) in direct_properties {
+            target_grpprl.extend_from_slice(&sprm.to_le_bytes());
+            target_grpprl.push(value);
+        }
+        let runs = [
+            SyntheticPapxRun {
+                cp_lim: seed_end,
+                grpprl: vec![0x31, 0x24, 0x00],
+            },
+            SyntheticPapxRun {
+                cp_lim: target_end,
+                grpprl: target_grpprl,
+            },
+            SyntheticPapxRun {
+                cp_lim: text_end,
+                grpprl: vec![0x31, 0x24, 0x00],
+            },
+        ];
+        let stylesheet = synthetic_paragraph_stylesheet(style_properties);
+        synth_doc_with_ccp_and_tables(
+            &text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [text_end, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                stylesheet: Some(&stylesheet),
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    #[cfg(feature = "render")]
     fn legacy_row_pagination_doc(row_properties: &[(u16, u8)]) -> Vec<u8> {
         let mut text = String::new();
         for index in 0..32 {
@@ -6896,6 +7014,59 @@ mod tests {
                 ..SyntheticDocTables::default()
             },
         )
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_layout_uses_inherited_style_pagination_with_direct_off() {
+        const TARGET_INDEX: usize = 32;
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let inherited_break = Document::open(&legacy_paragraph_style_pagination_doc(
+            1,
+            &[(0x2407, 1), (0x2431, 0)],
+            &[],
+        ))
+        .unwrap();
+        let direct_break_off = Document::open(&legacy_paragraph_style_pagination_doc(
+            1,
+            &[(0x2407, 1), (0x2431, 0)],
+            &[(0x2407, 0)],
+        ))
+        .unwrap();
+        let inherited_keep = Document::open(&legacy_paragraph_style_pagination_doc(
+            12,
+            &[(0x2405, 1), (0x2431, 0)],
+            &[],
+        ))
+        .unwrap();
+        let direct_keep_off = Document::open(&legacy_paragraph_style_pagination_doc(
+            12,
+            &[(0x2405, 1), (0x2431, 0)],
+            &[(0x2405, 0), (0x2431, 0)],
+        ))
+        .unwrap();
+
+        let break_on_model = inherited_break.model();
+        let break_off_model = direct_break_off.model();
+        let Block::Paragraph(break_on) = &break_on_model.blocks[TARGET_INDEX] else {
+            panic!("target must be a paragraph");
+        };
+        let Block::Paragraph(break_off) = &break_off_model.blocks[TARGET_INDEX] else {
+            panic!("target must be a paragraph");
+        };
+        assert!(break_on.props.page_break_before);
+        assert!(!break_off.props.page_break_before);
+
+        let layout = |document: &Document| document.layout_pages_with_fonts(&fonts).unwrap();
+        assert_eq!(
+            (
+                layout(&inherited_break).block_pages[TARGET_INDEX],
+                layout(&direct_break_off).block_pages[TARGET_INDEX],
+                layout(&inherited_keep).block_pages[TARGET_INDEX],
+                layout(&direct_keep_off).block_pages[TARGET_INDEX],
+            ),
+            (Some(2), Some(1), Some(2), Some(1))
+        );
     }
 
     #[cfg(feature = "render")]

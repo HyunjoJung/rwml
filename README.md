@@ -288,11 +288,13 @@ the established keep-together default. Opened legacy `.doc` rows follow direct
 retain the MS-DOC splittable default, the modern property takes precedence when
 both are present, and fitting protected rows move whole while over-tall rows
 still make deterministic progress. Emitted nonblank top-level and ordinary
-table-cell paragraphs from opened legacy `.doc` files additionally honor direct
-PAPX `sprmPFKeep`, `sprmPFKeepFollow`, and default-on `sprmPFWidowControl`
-through private source-aligned hints; direct `sprmPFPageBreakBefore` maps to the
-existing model property. Fitting protected content moves whole and over-tall
-content still splits for deterministic progress. Opened `.docx` `Document` renders
+table-cell paragraphs from opened legacy `.doc` files additionally resolve
+paragraph-style STSH inheritance followed by direct PAPX for `sprmPFKeep`,
+`sprmPFKeepFollow`, and default-on `sprmPFWidowControl` through private
+source-aligned hints; resolved `sprmPFPageBreakBefore` maps to the existing
+model property. Explicit direct-off values override inherited-on values.
+Fitting protected content moves whole and over-tall content still splits for
+deterministic progress. Opened `.docx` `Document` renders
 additionally honor resolved left/center/right/decimal tab stops in top-level
 body paragraphs, authored zero after-spacing, and source-aligned `keepNext`,
 `keepLines`, and default-on `widowControl` pagination hints in top-level body
@@ -324,9 +326,10 @@ Word-exact list-level alignment, punctuation, or table typography.
 > do not yet contribute `cantSplit`. Nested-table paragraph controls retain the
 > renderer's 32-level flattening bound; nested grid/border geometry, nested-row
 > `cantSplit`, and Word-exact cell spacing/tab geometry remain outside this
-> slice. Legacy STSH/table-style/list paragraph inheritance, piece `Pcd.Prm`
-> paragraph modifiers, nested legacy tables/rows, and controls attached only to
-> discarded blank top-level paragraphs remain unsupported.
+> slice. Legacy STSH properties beyond the four paragraph-pagination controls,
+> table/list-style paragraph effects, piece `Pcd.Prm` modifiers, nested legacy
+> tables/rows, and controls attached only to discarded blank top-level
+> paragraphs remain unsupported.
 >
 > Opened-document renders draw bounded approximate overlay boxes for recovered
 > `.docx` floating-shape geometry on the recovered top-level body block page. A
@@ -786,9 +789,10 @@ evidence.
 - [x] **PDF renderer** - `parley` + `krilla` with rich text/tables/images/lists/
       hyperlinks, paragraph page-break-before, header-row repeat, oversized-row split,
       direct and non-conditional table-style DOCX table-row `cantSplit`, direct DOCX
-      and recursively nested table-cell keep/widow controls, direct legacy DOC paragraph
+      and recursively nested table-cell keep/widow controls, direct and
+      paragraph-style-inherited legacy DOC
       `sprmPFKeep`/`sprmPFKeepFollow`/`sprmPFWidowControl`/`sprmPFPageBreakBefore`
-      plus row `sprmTFCantSplit`/`sprmTFCantSplit90`, font registration
+      plus direct row `sprmTFCantSplit`/`sprmTFCantSplit90`, font registration
 - [x] Reader: `.docx` headers/footers, text boxes (`w:txbxContent` incl. run-level
       `mc:AlternateContent`) including `text_boxes()` records, footnotes/endnotes
       including `notes()` records, per-level numbering labels, caps
@@ -924,8 +928,9 @@ evidence.
       `report().edit` expose read-only reasons; `opc` + `xmltree` internals;
       fallible `try_write_docx`
 - [ ] Renderer: Word-exact pagination beyond bounded section columns, opened-DOCX
-      top-level/direct-and-nested-cell keep/widow controls, and direct legacy-DOC
-      top-level/ordinary-cell paragraph plus row controls; floating-shape wrap/reflow
+      top-level/direct-and-nested-cell keep/widow controls, and direct or
+      paragraph-style-inherited legacy-DOC top-level/ordinary-cell paragraph
+      plus direct row controls; floating-shape wrap/reflow
       beyond bounded forward page-wide `wrapTopAndBottom`,
       full layout-derived `PAGE`/`PAGEREF` values beyond trusted source markers,
       remaining render-time TOC/REF/NOTEREF policy where layout context is
