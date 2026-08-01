@@ -320,13 +320,22 @@ source-aligned hints; resolved `sprmPFPageBreakBefore` maps to the existing
 model property. Explicit direct-off values override inherited-on values.
 Fitting protected content moves whole and over-tall content still splits for
 deterministic progress. Opened `.docx` `Document` renders
-additionally honor resolved left/center/right/decimal tab stops in top-level
-body paragraphs, authored zero after-spacing, and source-aligned `keepNext`,
+additionally honor resolved left/center/right/decimal tab stops in LTR
+left/start-aligned top-level body paragraphs, retaining their page-text-margin
+coordinates under supported left, positive first-line, and hanging indents.
+Default-tab fallback targets use the same margin-anchored grid and are clamped
+to the active paragraph box. Opened documents also honor authored zero
+after-spacing and source-aligned `keepNext`,
 `keepLines`, and default-on `widowControl` pagination hints in top-level body
 paragraphs and direct or accepted-current wrapper-contained paragraphs in
 ordinary or recursively nested table cells, without adding those source-only
-render hints to the public `DocModel`. Nested table content remains a flattened
-text preview rather than a nested grid layout.
+render hints to the public `DocModel`. Table-cell and RTL tab semantics,
+center/right/justified paragraph alignment, leaders/bar tabs, settings-defined
+default-tab intervals, and implicit hanging-indent/list-marker tabs remain
+outside this bounded tab support. Line breaking still precedes custom-tab
+advance correction, so post-tab field containment, Word-exact custom-tab-aware
+reflow, and pagination remain outside the claim. Nested table content remains
+a flattened text preview rather than a nested grid layout.
 One per-story fallback-counter state follows source-logical order across body,
 direct-cell, nested-cell, and later body paragraphs. `w:bidiVisual` changes
 physical cell placement without reversing numbering, and split rows or repeated

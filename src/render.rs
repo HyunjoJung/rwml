@@ -1816,6 +1816,7 @@ struct ShapeOptions<'a> {
     line_height: Option<f32>,
     text_indent: f32,
     hanging_indent: bool,
+    tab_origin: f32,
     tab_stops: &'a [TabStop],
 }
 
@@ -2123,7 +2124,7 @@ fn shape_with_options(
         });
     }
     if adjust_default_tabs {
-        apply_tab_stops(text, &mut out, options.tab_stops, width);
+        apply_tab_stops(text, &mut out, options.tab_stops, width, options.tab_origin);
     }
     out
 }
@@ -2187,7 +2188,13 @@ fn explicit_tab_field_start(
     cursor: f32,
     field: TabFieldMetrics,
     width: f32,
+    origin: f32,
 ) -> Option<f32> {
+    let absolute_cursor = origin + cursor;
+    let absolute_end = origin + width;
+    if !absolute_cursor.is_finite() || !absolute_end.is_finite() {
+        return None;
+    }
     tab_stops
         .iter()
         .filter_map(|stop| {
@@ -2198,28 +2205,41 @@ fn explicit_tab_field_start(
                 TabAlignment::Decimal => field.decimal_offset.unwrap_or(field.advance),
                 TabAlignment::Clear => return None,
             };
-            let field_start = stop.position_pt - alignment_offset;
-            let field_end = field_start + field.advance;
+            let absolute_field_start = stop.position_pt - alignment_offset;
+            let absolute_field_end = absolute_field_start + field.advance;
             (stop.position_pt.is_finite()
-                && stop.position_pt > cursor + f32::EPSILON
-                && field_start >= cursor
-                && field_end <= width)
-                .then_some((stop.position_pt, field_start))
+                && stop.position_pt > absolute_cursor + f32::EPSILON
+                && absolute_field_start >= absolute_cursor
+                && absolute_field_end <= absolute_end)
+                .then_some((stop.position_pt, absolute_field_start - origin))
         })
         .min_by(|left, right| left.0.total_cmp(&right.0))
         .map(|(_, field_start)| field_start)
 }
 
-fn default_tab_field_start(cursor: f32, width: f32) -> f32 {
-    if cursor >= width {
+fn default_tab_field_start(cursor: f32, width: f32, origin: f32) -> f32 {
+    let absolute_cursor = origin + cursor;
+    let absolute_end = origin + width;
+    if !absolute_cursor.is_finite() || !absolute_end.is_finite() {
+        return cursor.max(0.0).min(width);
+    }
+    if absolute_cursor >= absolute_end {
         return width;
     }
-    (((cursor / DEFAULT_TAB_STOP_PT).floor() + 1.0) * DEFAULT_TAB_STOP_PT)
-        .min(width)
-        .max(cursor)
+    let absolute_stop = (((absolute_cursor / DEFAULT_TAB_STOP_PT).floor() + 1.0)
+        * DEFAULT_TAB_STOP_PT)
+        .min(absolute_end)
+        .max(absolute_cursor);
+    (absolute_stop - origin).max(cursor).min(width)
 }
 
-fn apply_tab_stops(text: &str, lines: &mut [LineLayout], tab_stops: &[TabStop], width: f32) {
+fn apply_tab_stops(
+    text: &str,
+    lines: &mut [LineLayout],
+    tab_stops: &[TabStop],
+    width: f32,
+    origin: f32,
+) {
     for line in lines {
         let mut accumulated_shift = 0.0;
         for run_index in 0..line.runs.len() {
@@ -2231,8 +2251,9 @@ fn apply_tab_stops(text: &str, lines: &mut [LineLayout], tab_stops: &[TabStop], 
                 let original_advance = glyph.x_advance * run_size;
                 if glyph_text(text, glyph) == Some("\t") && run_size > 0.0 {
                     let field = tab_field_metrics(text, line, run_index, glyph_index);
-                    let field_start = explicit_tab_field_start(tab_stops, cursor, field, width)
-                        .unwrap_or_else(|| default_tab_field_start(cursor, width));
+                    let field_start =
+                        explicit_tab_field_start(tab_stops, cursor, field, width, origin)
+                            .unwrap_or_else(|| default_tab_field_start(cursor, width, origin));
                     let advance = (field_start - cursor)
                         .max(0.0)
                         .min((width - cursor).max(0.0));
@@ -2435,6 +2456,7 @@ fn shape_paragraph_content<'a>(
                 line_height: p.props.spacing.line_pct,
                 text_indent: indent.text_indent,
                 hanging_indent: indent.hanging_indent,
+                tab_origin: indent.x_indent,
                 tab_stops,
             },
             cx,
@@ -7608,7 +7630,7 @@ mod tests {
         layout_page_number_line, layout_paragraph, layout_table, layout_table_with_row_pagination,
         page_field_text, paginate, rgb, running_header_footer_blocks_for_page, shape, shape_cell,
         split_row, unsupported_placeholder_texts, FlowItem, Geom, LayoutCapture, LineLayout,
-        StyledText, TablePaginationView, TextCx,
+        StyledText, TablePaginationView, TextCx, DEFAULT_TAB_STOP_PT,
     };
     use crate::model::{
         Align, Block, Cell, CellMargins, CharProps, Color, DocModel, FieldRole, Image, Indent,
@@ -7898,6 +7920,21 @@ mod tests {
             }
         }
         left.is_finite().then_some((left, right))
+    }
+
+    fn tab_aligned_position(
+        line: &LineLayout,
+        byte_range: std::ops::Range<usize>,
+        alignment: TabAlignment,
+    ) -> f32 {
+        let bounds = text_bounds(line, byte_range).expect("measured tab field glyphs");
+        line.x_indent
+            + match alignment {
+                TabAlignment::Left | TabAlignment::Decimal => bounds.0,
+                TabAlignment::Center => (bounds.0 + bounds.1) / 2.0,
+                TabAlignment::Right => bounds.1,
+                TabAlignment::Clear => unreachable!(),
+            }
     }
 
     type ParagraphLineMetric = (f32, f32, Option<(usize, usize)>);
@@ -8274,30 +8311,32 @@ mod tests {
             ("A\t1,234.56", 7..8, TabAlignment::Decimal, 110.0),
         ];
 
-        for (text, measured, alignment, position_pt) in cases {
-            let lines = paragraph_lines_with_marker_and_tabs(
-                ParaProps::default(),
-                vec![Run {
-                    text: text.to_string(),
-                    ..Run::default()
-                }],
-                None,
-                &[TabStop {
-                    position_pt,
-                    alignment,
-                }],
-            );
-            let bounds = text_bounds(&lines[0], measured).expect("measured field glyphs");
-            let actual = match alignment {
-                TabAlignment::Left | TabAlignment::Decimal => bounds.0,
-                TabAlignment::Center => (bounds.0 + bounds.1) / 2.0,
-                TabAlignment::Right => bounds.1,
-                TabAlignment::Clear => unreachable!(),
-            };
-            assert!(
-                (actual - position_pt).abs() <= 1.5,
-                "alignment={alignment:?} actual={actual} expected={position_pt} bounds={bounds:?}"
-            );
+        for left_pt in [None, Some(20.0)] {
+            for (text, measured, alignment, position_pt) in cases.clone() {
+                let lines = paragraph_lines_with_marker_and_tabs(
+                    ParaProps {
+                        indent: Indent {
+                            left_pt,
+                            ..Indent::default()
+                        },
+                        ..ParaProps::default()
+                    },
+                    vec![Run {
+                        text: text.to_string(),
+                        ..Run::default()
+                    }],
+                    None,
+                    &[TabStop {
+                        position_pt,
+                        alignment,
+                    }],
+                );
+                let actual = tab_aligned_position(&lines[0], measured, alignment);
+                assert!(
+                    (actual - position_pt).abs() <= 1.5,
+                    "left={left_pt:?} alignment={alignment:?} actual={actual} expected={position_pt}"
+                );
+            }
         }
     }
 
@@ -8336,7 +8375,11 @@ mod tests {
         let b_bounds = text_bounds(&lines[0], 2..3).expect("B glyph");
 
         assert!((lines[0].x_indent - 20.0).abs() < 0.1);
-        assert!((b_bounds.0 - 100.0).abs() <= 1.5, "B bounds={b_bounds:?}");
+        assert!(
+            (lines[0].x_indent + b_bounds.0 - 100.0).abs() <= 1.5,
+            "x_indent={} B bounds={b_bounds:?}",
+            lines[0].x_indent
+        );
         assert_eq!(
             lines[0].char_range.map(|range| (range.start, range.end)),
             Some((0, 3))
@@ -8348,9 +8391,198 @@ mod tests {
     }
 
     #[test]
+    fn explicit_tabs_keep_page_margin_coordinates_under_first_and_hanging_indents() {
+        let indents = [
+            Indent {
+                left_pt: Some(20.0),
+                first_line_pt: Some(10.0),
+                ..Indent::default()
+            },
+            Indent {
+                left_pt: Some(40.0),
+                hanging_pt: Some(20.0),
+                ..Indent::default()
+            },
+        ];
+        let fields = [
+            ("A\tLEFT", 2..6, TabAlignment::Left),
+            ("A\tCENTER", 2..8, TabAlignment::Center),
+            ("A\tRIGHT", 2..7, TabAlignment::Right),
+            ("A\t12.34", 4..5, TabAlignment::Decimal),
+        ];
+
+        for indent in indents {
+            for (text, measured, alignment) in fields.clone() {
+                let lines = paragraph_lines_with_marker_and_tabs(
+                    ParaProps {
+                        indent,
+                        ..ParaProps::default()
+                    },
+                    vec![Run {
+                        text: text.to_string(),
+                        ..Run::default()
+                    }],
+                    None,
+                    &[TabStop {
+                        position_pt: 100.0,
+                        alignment,
+                    }],
+                );
+                let actual = tab_aligned_position(&lines[0], measured, alignment);
+
+                assert!(
+                    (actual - 100.0).abs() <= 1.5,
+                    "indent={indent:?} alignment={alignment:?} actual={actual}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn hanging_indent_continuation_lines_keep_page_margin_tab_coordinates() {
+        let text = "first line\nA\tB";
+        let lines = paragraph_lines_with_marker_and_tabs(
+            ParaProps {
+                indent: Indent {
+                    left_pt: Some(40.0),
+                    hanging_pt: Some(20.0),
+                    ..Indent::default()
+                },
+                ..ParaProps::default()
+            },
+            vec![Run {
+                text: text.to_string(),
+                ..Run::default()
+            }],
+            None,
+            &[TabStop {
+                position_pt: 100.0,
+                alignment: TabAlignment::Left,
+            }],
+        );
+        let b_start = text.find('B').unwrap();
+        let continuation = lines.last().expect("continuation line");
+        let actual = tab_aligned_position(continuation, b_start..b_start + 1, TabAlignment::Left);
+
+        assert!(
+            (actual - 100.0).abs() <= 1.5,
+            "actual={actual} lines={}",
+            lines.len()
+        );
+    }
+
+    #[test]
+    fn explicit_tabs_fall_back_when_aligned_fields_cross_the_paragraph_box() {
+        let cases = [
+            ("A\tFIELD", TabAlignment::Left, 160.0),
+            ("A\tCENTERED", TabAlignment::Center, 150.0),
+            ("A\t12.3456789", TabAlignment::Decimal, 150.0),
+            ("A\tFIELD", TabAlignment::Right, 170.0),
+        ];
+
+        for (text, alignment, position_pt) in cases {
+            let lines = paragraph_lines_with_marker_and_tabs(
+                ParaProps {
+                    indent: Indent {
+                        left_pt: Some(20.0),
+                        right_pt: Some(20.0),
+                        ..Indent::default()
+                    },
+                    ..ParaProps::default()
+                },
+                vec![Run {
+                    text: text.to_string(),
+                    ..Run::default()
+                }],
+                None,
+                &[TabStop {
+                    position_pt,
+                    alignment,
+                }],
+            );
+            let field_start = text.find('\t').unwrap() + 1;
+            let bounds = text_bounds(&lines[0], field_start..text.len()).expect("field glyphs");
+            let actual = lines[0].x_indent + bounds.0;
+
+            assert!(
+                (actual - DEFAULT_TAB_STOP_PT).abs() <= 1.5,
+                "alignment={alignment:?} stop={position_pt} actual={actual}"
+            );
+        }
+    }
+
+    #[test]
+    fn default_tabs_use_the_page_margin_grid_under_paragraph_indents() {
+        let lines = paragraph_lines_with_marker_and_tabs(
+            ParaProps {
+                indent: Indent {
+                    left_pt: Some(20.0),
+                    ..Indent::default()
+                },
+                ..ParaProps::default()
+            },
+            vec![Run {
+                text: "A\tB".to_string(),
+                ..Run::default()
+            }],
+            None,
+            &[],
+        );
+        let b_bounds = text_bounds(&lines[0], 2..3).expect("B glyph");
+        let actual = lines[0].x_indent + b_bounds.0;
+
+        assert!(
+            (actual - DEFAULT_TAB_STOP_PT).abs() <= 1.5,
+            "actual={actual}"
+        );
+    }
+
+    #[test]
+    fn default_tab_targets_are_margin_anchored_and_clamped_to_the_paragraph_box() {
+        assert_eq!(super::default_tab_field_start(110.0, 140.0, 20.0), 124.0);
+        assert_eq!(super::default_tab_field_start(135.0, 140.0, 20.0), 140.0);
+    }
+
+    #[test]
+    fn explicit_tab_before_the_indented_cursor_falls_back_to_the_page_margin_grid() {
+        let lines = paragraph_lines_with_marker_and_tabs(
+            ParaProps {
+                indent: Indent {
+                    left_pt: Some(50.0),
+                    ..Indent::default()
+                },
+                ..ParaProps::default()
+            },
+            vec![Run {
+                text: "A\tB".to_string(),
+                ..Run::default()
+            }],
+            None,
+            &[TabStop {
+                position_pt: DEFAULT_TAB_STOP_PT,
+                alignment: TabAlignment::Left,
+            }],
+        );
+        let b_bounds = text_bounds(&lines[0], 2..3).expect("B glyph");
+        let actual = lines[0].x_indent + b_bounds.0;
+
+        assert!(
+            (actual - DEFAULT_TAB_STOP_PT * 2.0).abs() <= 1.5,
+            "actual={actual}"
+        );
+    }
+
+    #[test]
     fn explicit_tab_past_the_paragraph_box_falls_back_without_overflow() {
         let lines = paragraph_lines_with_marker_and_tabs(
-            ParaProps::default(),
+            ParaProps {
+                indent: Indent {
+                    left_pt: Some(20.0),
+                    right_pt: Some(20.0),
+                    ..Indent::default()
+                },
+                ..ParaProps::default()
+            },
             vec![Run {
                 text: "A\tB".to_string(),
                 ..Run::default()
@@ -8362,9 +8594,46 @@ mod tests {
             }],
         );
         let b_bounds = text_bounds(&lines[0], 2..3).expect("B glyph");
+        let absolute_right = lines[0].x_indent + b_bounds.1;
+        let absolute_left = lines[0].x_indent + b_bounds.0;
 
-        assert!(b_bounds.0 >= 35.0);
-        assert!(b_bounds.1 <= 180.0, "B bounds={b_bounds:?}");
+        assert!(
+            (absolute_left - DEFAULT_TAB_STOP_PT).abs() <= 1.5,
+            "absolute_left={absolute_left}"
+        );
+        assert!(
+            absolute_right <= 160.0,
+            "x_indent={} B bounds={b_bounds:?}",
+            lines[0].x_indent
+        );
+    }
+
+    #[test]
+    fn right_tab_accepts_a_field_ending_at_the_paragraph_box_edge() {
+        let text = "A\tEDGE";
+        let lines = paragraph_lines_with_marker_and_tabs(
+            ParaProps {
+                indent: Indent {
+                    left_pt: Some(20.0),
+                    right_pt: Some(20.0),
+                    ..Indent::default()
+                },
+                ..ParaProps::default()
+            },
+            vec![Run {
+                text: text.to_string(),
+                ..Run::default()
+            }],
+            None,
+            &[TabStop {
+                position_pt: 160.0,
+                alignment: TabAlignment::Right,
+            }],
+        );
+        let field_start = text.find('\t').unwrap() + 1;
+        let actual = tab_aligned_position(&lines[0], field_start..text.len(), TabAlignment::Right);
+
+        assert!((actual - 160.0).abs() <= 1.5, "actual={actual}");
     }
 
     #[test]
