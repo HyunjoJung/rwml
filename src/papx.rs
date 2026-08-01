@@ -65,7 +65,34 @@ const SPRM_T_FCANT_SPLIT: u16 = 0x3466;
 const SPRM_P_ILFO: u16 = 0x460B;
 const SPRM_T_F_BIDI: u16 = 0x560B;
 const SPRM_T_F_BIDI_90: u16 = 0x5664;
+const SPRM_T_TABLE_BORDERS_80: u16 = 0xD605;
 const SPRM_T_DEF_TABLE: u16 = 0xD608;
+const SPRM_T_TLP: u16 = 0x740A;
+const SPRM_T_TABLE_BORDERS: u16 = 0xD613;
+const SPRM_T_BRC_TOP_CV: u16 = 0xD61A;
+const SPRM_T_BRC_LEFT_CV: u16 = 0xD61B;
+const SPRM_T_BRC_BOTTOM_CV: u16 = 0xD61C;
+const SPRM_T_BRC_RIGHT_CV: u16 = 0xD61D;
+const SPRM_T_SET_BRC_80: u16 = 0xD620;
+const SPRM_T_INSERT: u16 = 0x7621;
+const SPRM_T_DELETE: u16 = 0x5622;
+const SPRM_T_MERGE: u16 = 0x5624;
+const SPRM_T_SPLIT: u16 = 0x5625;
+const SPRM_T_VERT_MERGE: u16 = 0xD62B;
+const SPRM_T_SET_BRC: u16 = 0xD62F;
+const SPRM_T_CELL_SPACING_DEFAULT: u16 = 0xD633;
+const SPRM_T_ISTD: u16 = 0x563A;
+const SPRM_T_CELL_BRC_TYPE: u16 = 0xD662;
+const SPRM_T_WALL: u16 = 0x3668;
+const SPRM_T_CNF: u16 = 0xD66A;
+const SPRM_T_CELL_BRC_TOP_STYLE: u16 = 0xD47F;
+const SPRM_T_CELL_BRC_BOTTOM_STYLE: u16 = 0xD680;
+const SPRM_T_CELL_BRC_LEFT_STYLE: u16 = 0xD681;
+const SPRM_T_CELL_BRC_RIGHT_STYLE: u16 = 0xD682;
+const SPRM_T_CELL_BRC_INSIDE_H_STYLE: u16 = 0xD683;
+const SPRM_T_CELL_BRC_INSIDE_V_STYLE: u16 = 0xD684;
+const SPRM_T_CELL_BRC_TL2BR_STYLE: u16 = 0xD685;
+const SPRM_T_CELL_BRC_TR2BL_STYLE: u16 = 0xD686;
 
 /// Direct paragraph pagination resolved against the MS-DOC format defaults.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -546,6 +573,54 @@ fn parse_papx(page: &[u8], off: usize) -> (Pap, Option<TableDef>) {
     }
 }
 
+fn blocks_coherent_table_border_projection(sprm: u16) -> bool {
+    matches!(
+        sprm,
+        SPRM_T_TLP
+            | SPRM_T_BRC_TOP_CV
+            | SPRM_T_BRC_LEFT_CV
+            | SPRM_T_BRC_BOTTOM_CV
+            | SPRM_T_BRC_RIGHT_CV
+            | SPRM_T_SET_BRC_80
+            | SPRM_T_INSERT
+            | SPRM_T_DELETE
+            | SPRM_T_MERGE
+            | SPRM_T_SPLIT
+            | SPRM_T_VERT_MERGE
+            | SPRM_T_SET_BRC
+            | SPRM_T_CELL_SPACING_DEFAULT
+            | SPRM_T_ISTD
+            | SPRM_T_CELL_BRC_TYPE
+            | SPRM_T_WALL
+            | SPRM_T_CNF
+            | SPRM_T_CELL_BRC_TOP_STYLE
+            | SPRM_T_CELL_BRC_BOTTOM_STYLE
+            | SPRM_T_CELL_BRC_LEFT_STYLE
+            | SPRM_T_CELL_BRC_RIGHT_STYLE
+            | SPRM_T_CELL_BRC_INSIDE_H_STYLE
+            | SPRM_T_CELL_BRC_INSIDE_V_STYLE
+            | SPRM_T_CELL_BRC_TL2BR_STYLE
+            | SPRM_T_CELL_BRC_TR2BL_STYLE
+    )
+}
+
+fn touches_coherent_table_border_projection(sprm: u16) -> bool {
+    matches!(
+        sprm,
+        SPRM_T_DEF_TABLE | SPRM_T_TABLE_BORDERS_80 | SPRM_T_TABLE_BORDERS
+    ) || blocks_coherent_table_border_projection(sprm)
+}
+
+fn block_table_border_projection(
+    table_def: &mut Option<TableDef>,
+    blocked_without_definition: &mut bool,
+) {
+    *blocked_without_definition = true;
+    if let Some(definition) = table_def.as_mut() {
+        definition.block_border_projection();
+    }
+}
+
 /// Walk a grpprl, extracting table flags, list (`ilfo`/`ilvl`), style index,
 /// outline level, layout, indent, spacing, and direct pagination. Stops on an
 /// unsizeable or truncated sprm.
@@ -555,17 +630,27 @@ fn scan_grpprl(gp: &[u8], istd: u16) -> (Pap, Option<TableDef>) {
         ..Pap::default()
     };
     let mut table_def = None;
+    let mut border_projection_blocked = false;
     let mut pos = 0;
     while pos + 2 <= gp.len() {
         let Some(sprm) = u16le(gp, pos) else { break };
         let op = pos + 2;
         let Some(len) = operand_len(sprm, gp, op) else {
+            if touches_coherent_table_border_projection(sprm) {
+                block_table_border_projection(&mut table_def, &mut border_projection_blocked);
+            }
             break;
         };
         let Some(operand_end) = op.checked_add(len) else {
+            if touches_coherent_table_border_projection(sprm) {
+                block_table_border_projection(&mut table_def, &mut border_projection_blocked);
+            }
             break;
         };
         if gp.get(op..operand_end).is_none() {
+            if touches_coherent_table_border_projection(sprm) {
+                block_table_border_projection(&mut table_def, &mut border_projection_blocked);
+            }
             break;
         }
         if apply_pagination_sprm(&mut pap.pagination, sprm, &gp[op..operand_end]) {
@@ -619,8 +704,41 @@ fn scan_grpprl(gp: &[u8], istd: u16) -> (Pap, Option<TableDef>) {
             SPRM_P_ILFO => pap.ilfo = u16le(gp, op).unwrap_or(0),
             SPRM_T_DEF_TABLE => {
                 if let Some(operand) = gp.get(op..op + len) {
-                    table_def = TableDef::parse(operand);
+                    if let Some(mut definition) = TableDef::parse(operand) {
+                        if border_projection_blocked {
+                            definition.block_border_projection();
+                        }
+                        table_def = Some(definition);
+                    } else {
+                        block_table_border_projection(
+                            &mut table_def,
+                            &mut border_projection_blocked,
+                        );
+                    }
                 }
+            }
+            SPRM_T_TABLE_BORDERS_80 => {
+                let operand = &gp[op..operand_end];
+                let valid = TableDef::table_borders80_operand_is_valid(operand);
+                let applied = table_def
+                    .as_mut()
+                    .is_some_and(|definition| definition.apply_table_borders80(operand));
+                if !valid || !applied {
+                    block_table_border_projection(&mut table_def, &mut border_projection_blocked);
+                }
+            }
+            SPRM_T_TABLE_BORDERS => {
+                let operand = &gp[op..operand_end];
+                let valid = TableDef::table_borders_operand_is_valid(operand);
+                let applied = table_def
+                    .as_mut()
+                    .is_some_and(|definition| definition.apply_table_borders(operand));
+                if !valid || !applied {
+                    block_table_border_projection(&mut table_def, &mut border_projection_blocked);
+                }
+            }
+            _ if blocks_coherent_table_border_projection(sprm) => {
+                block_table_border_projection(&mut table_def, &mut border_projection_blocked);
             }
             _ => {}
         }
@@ -860,6 +978,79 @@ fn operand_len(sprm: u16, data: &[u8], op: usize) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::{Color, Table, TableBorderSide, TableBorderStyle};
+    use crate::table::{self, CellBuild, RowBuild};
+
+    fn table_def_sprm() -> Vec<u8> {
+        table_def_sprm_with_tc80([0; 4])
+    }
+
+    fn table_def_sprm_with_tc80(border: [u8; 4]) -> Vec<u8> {
+        let mut sprm = vec![
+            0x08, 0xD6, 0x30, 0x00, // sprmTDefTable, cb=48
+            0x02, // two cells
+            0x00, 0x00, 0xE8, 0x03, 0xD0, 0x07, // boundaries 0..1000..2000
+        ];
+        for _ in 0..2 {
+            sprm.extend_from_slice(&[0u8; 4]);
+            for _ in 0..4 {
+                sprm.extend_from_slice(&border);
+            }
+        }
+        sprm
+    }
+
+    fn table_borders80_sprm(size: u8, style: u8, ico: u8) -> Vec<u8> {
+        let mut sprm = vec![0x05, 0xD6, 0x18];
+        for _ in 0..6 {
+            sprm.extend_from_slice(&[size, style, ico, 0]);
+        }
+        sprm
+    }
+
+    fn table_borders_sprm(size: u8, style: u8, color: Color) -> Vec<u8> {
+        let mut sprm = vec![0x13, 0xD6, 0x30];
+        for _ in 0..6 {
+            sprm.extend_from_slice(&[color.r, color.g, color.b, 0, size, style, 0, 0]);
+        }
+        sprm
+    }
+
+    fn table_from_grpprl(grpprl: &[u8]) -> Table {
+        let (_, definition) = scan_grpprl(grpprl, 0);
+        let definition = definition.expect("test grpprl must retain a table definition");
+        table::build(vec![
+            RowBuild {
+                cells: vec![CellBuild::default(), CellBuild::default()],
+                def: Some(definition.clone()),
+                header: false,
+            },
+            RowBuild {
+                cells: vec![CellBuild::default(), CellBuild::default()],
+                def: Some(definition),
+                header: false,
+            },
+        ])
+        .table
+    }
+
+    fn assert_no_projected_table_borders(table: &Table) {
+        for side in [
+            TableBorderSide::Top,
+            TableBorderSide::Left,
+            TableBorderSide::Bottom,
+            TableBorderSide::Right,
+            TableBorderSide::InsideHorizontal,
+            TableBorderSide::InsideVertical,
+        ] {
+            assert_eq!(table.border_colors.get(side).or(table.border_color), None);
+            assert_eq!(
+                table.border_sizes.get(side).or(table.border_size_eighths),
+                None
+            );
+            assert_eq!(table.border_styles.get(side).or(table.border_style), None);
+        }
+    }
 
     #[test]
     fn scans_table_flags() {
@@ -933,6 +1124,121 @@ mod tests {
         assert!(invalid_after_valid.resolved_table_bidi_visual());
         assert!(!only_invalid.resolved_table_bidi_visual());
         assert!(truncated_after_valid.resolved_table_bidi_visual());
+    }
+
+    #[test]
+    fn direct_table_border_formats_apply_in_source_order() {
+        let compatibility = table_borders80_sprm(4, 0x03, 2);
+        let modern_color = Color::rgb(0x31, 0x72, 0xB4);
+        let modern = table_borders_sprm(10, 0x06, modern_color);
+
+        let mut modern_last = table_def_sprm();
+        modern_last.extend_from_slice(&compatibility);
+        modern_last.extend_from_slice(&modern);
+        let modern_table = table_from_grpprl(&modern_last);
+        assert_eq!(
+            modern_table
+                .border_sizes
+                .get(TableBorderSide::Top)
+                .or(modern_table.border_size_eighths),
+            Some(10)
+        );
+        assert_eq!(
+            modern_table
+                .border_colors
+                .get(TableBorderSide::Top)
+                .or(modern_table.border_color),
+            Some(modern_color)
+        );
+        assert_eq!(
+            modern_table
+                .border_styles
+                .get(TableBorderSide::Top)
+                .or(modern_table.border_style),
+            Some(TableBorderStyle::Dotted)
+        );
+
+        let mut compatibility_last = table_def_sprm();
+        compatibility_last.extend_from_slice(&modern);
+        compatibility_last.extend_from_slice(&compatibility);
+        let compatibility_table = table_from_grpprl(&compatibility_last);
+        assert_eq!(
+            compatibility_table
+                .border_sizes
+                .get(TableBorderSide::Top)
+                .or(compatibility_table.border_size_eighths),
+            Some(4)
+        );
+        assert_eq!(
+            compatibility_table
+                .border_colors
+                .get(TableBorderSide::Top)
+                .or(compatibility_table.border_color),
+            Some(Color::rgb(0, 0, 0xFF))
+        );
+        assert_eq!(
+            compatibility_table
+                .border_styles
+                .get(TableBorderSide::Top)
+                .or(compatibility_table.border_style),
+            Some(TableBorderStyle::Double)
+        );
+    }
+
+    #[test]
+    fn pre_definition_row_borders_do_not_project_over_default_tc80() {
+        let mut grpprl = table_borders80_sprm(8, 0x01, 6);
+        grpprl.extend_from_slice(&table_def_sprm());
+
+        assert_no_projected_table_borders(&table_from_grpprl(&grpprl));
+    }
+
+    #[test]
+    fn pre_definition_row_borders_do_not_bypass_later_tc80_cell_properties() {
+        let mut grpprl = table_borders80_sprm(8, 0x01, 6);
+        grpprl.extend_from_slice(&table_def_sprm_with_tc80([8, 0x01, 6, 0]));
+
+        assert_no_projected_table_borders(&table_from_grpprl(&grpprl));
+    }
+
+    #[test]
+    fn nil_unsupported_override_and_malformed_border_values_suppress_projection() {
+        let positive = table_borders80_sprm(8, 0x01, 6);
+        let mut nil = positive.clone();
+        nil[4] = 0;
+        let mut unsupported = positive.clone();
+        unsupported[4] = 0x14;
+
+        let mut cases = Vec::new();
+        for later in [nil, unsupported] {
+            let mut grpprl = table_def_sprm();
+            grpprl.extend_from_slice(&positive);
+            grpprl.extend_from_slice(&later);
+            cases.push(grpprl);
+        }
+
+        let mut cell_override = table_def_sprm();
+        cell_override.extend_from_slice(&positive);
+        cell_override.extend_from_slice(&[
+            0x20, 0xD6, 0x07, // sprmTSetBrc80, cb=7
+            0, 2, 0x0F, 8, 0x01, 6, 0,
+        ]);
+        cases.push(cell_override);
+
+        let mut wrong_size = table_def_sprm();
+        wrong_size.extend_from_slice(&positive);
+        wrong_size.extend_from_slice(&[0x05, 0xD6, 0x17]);
+        wrong_size.extend_from_slice(&[0u8; 23]);
+        cases.push(wrong_size);
+
+        let mut truncated = table_def_sprm();
+        truncated.extend_from_slice(&positive);
+        truncated.extend_from_slice(&[0x13, 0xD6, 0x30, 0, 0, 0, 0]);
+        cases.push(truncated);
+
+        for grpprl in cases {
+            assert_no_projected_table_borders(&table_from_grpprl(&grpprl));
+        }
     }
 
     #[test]

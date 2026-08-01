@@ -1405,8 +1405,8 @@ impl<'a, 'l> Asm<'a, 'l> {
         self.cell_pagination.clear();
         let bidi_visual = self.cur_table_bidi_visual.take().unwrap_or(false);
         if !self.cur_rows.is_empty() {
-            let mut built = table::build(std::mem::take(&mut self.cur_rows));
-            built.table.bidi_visual = bidi_visual;
+            let built =
+                table::build_with_direction(std::mem::take(&mut self.cur_rows), bidi_visual);
             let row_pagination = std::mem::take(&mut self.cur_row_pagination);
             if !built.table.rows.is_empty() {
                 debug_assert_eq!(row_pagination.len(), built.table.rows.len());
