@@ -939,7 +939,10 @@ impl<'a, 'l> Asm<'a, 'l> {
         // Heading level: an explicit outline level on the paragraph wins
         // (0..8 → h1..h9, 9 → body); otherwise the paragraph style decides.
         let (istd, outlvl) = self.papx.style_at(fc);
-        let layout = self.papx.paragraph_layout_overrides_at(fc);
+        let layout = self
+            .stylesheet
+            .paragraph_layout(istd)
+            .apply(self.papx.paragraph_layout_overrides_at(fc));
         let bidi = layout.bidi.unwrap_or(false);
         let source_pagination = self
             .stylesheet

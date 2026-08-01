@@ -134,6 +134,15 @@ pub(crate) struct ParagraphLayoutOverrides {
     pub(crate) justification: Option<ParagraphJustification>,
 }
 
+impl ParagraphLayoutOverrides {
+    pub(crate) fn apply(self, overrides: Self) -> Self {
+        Self {
+            bidi: overrides.bidi.or(self.bidi),
+            justification: overrides.justification.or(self.justification),
+        }
+    }
+}
+
 /// Per-paragraph properties over an FC range `[fc_start, fc_lim)`.
 #[derive(Debug, Clone, Default)]
 struct PapEntry {
@@ -497,7 +506,8 @@ fn apply_paragraph_style_to_modeled_properties(pap: &mut Pap, istd: u16) {
     pap.layout = ParagraphLayoutOverrides::default();
     pap.pagination = ParagraphPaginationOverrides::default();
     // Table membership and row properties are intentionally preserved by a
-    // paragraph-style change. Style-derived list/layout values remain unknown.
+    // paragraph-style change. Style-derived layout and pagination are resolved
+    // during assembly; style-derived list values remain outside this scanner.
 }
 
 fn permuted_istd(operand: &[u8], current_istd: u16) -> Option<u16> {
@@ -583,12 +593,13 @@ fn logical_justification(value: u8) -> Option<ParagraphJustification> {
     }
 }
 
-/// Strictly scan a style `grpprlPapx` for the pagination subset modeled by
-/// the legacy renderer. A malformed modifier invalidates the local style
-/// payload instead of applying a partial prefix.
-pub(crate) fn scan_paragraph_pagination_overrides(
+/// Strictly scan a style `grpprlPapx` for the layout and pagination subsets
+/// modeled by the legacy reader. A malformed modifier invalidates the local
+/// style payload instead of applying a partial prefix.
+pub(crate) fn scan_paragraph_style_overrides(
     gp: &[u8],
-) -> Option<ParagraphPaginationOverrides> {
+) -> Option<(ParagraphLayoutOverrides, ParagraphPaginationOverrides)> {
+    let mut layout = ParagraphLayoutOverrides::default();
     let mut pagination = ParagraphPaginationOverrides::default();
     let mut pos = 0;
     while pos < gp.len() {
@@ -597,10 +608,11 @@ pub(crate) fn scan_paragraph_pagination_overrides(
         let len = operand_len(sprm, gp, op)?;
         let operand_end = op.checked_add(len)?;
         let operand = gp.get(op..operand_end)?;
+        apply_layout_sprm(&mut layout, sprm, operand);
         apply_pagination_sprm(&mut pagination, sprm, operand);
         pos = operand_end;
     }
-    Some(pagination)
+    Some((layout, pagination))
 }
 
 /// Operand length for a sprm, from its `spra` field ([MS-DOC] 2.2.5).
@@ -722,17 +734,20 @@ mod tests {
             }
         );
 
-        assert!(scan_paragraph_pagination_overrides(&[0x05, 0x24, 0x01, 0x31, 0x24]).is_none());
+        assert!(scan_paragraph_style_overrides(&[0x05, 0x24, 0x01, 0x31, 0x24]).is_none());
         assert_eq!(
-            scan_paragraph_pagination_overrides(&[
+            scan_paragraph_style_overrides(&[
                 0x5E, 0x84, 0x34, 0x12, // unrelated two-byte indent operand
                 0x0D, 0xC6, 0x02, 0x00, 0x00, // unrelated variable tab operand
                 0x07, 0x24, 0x01,
             ]),
-            Some(ParagraphPaginationOverrides {
-                page_break_before: Some(true),
-                ..ParagraphPaginationOverrides::default()
-            })
+            Some((
+                ParagraphLayoutOverrides::default(),
+                ParagraphPaginationOverrides {
+                    page_break_before: Some(true),
+                    ..ParagraphPaginationOverrides::default()
+                },
+            ))
         );
     }
 

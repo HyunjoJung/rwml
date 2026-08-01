@@ -7121,6 +7121,94 @@ mod tests {
         );
     }
 
+    fn legacy_paragraph_style_bidi_doc(style_properties: &[(u16, u8)]) -> Vec<u8> {
+        let paragraphs = [
+            ("StyleOnly", vec![0x00, 0x46, 0x01, 0x00]),
+            ("DirectLtr", vec![0x00, 0x46, 0x01, 0x00, 0x41, 0x24, 0x00]),
+            (
+                "DirectPhysicalLeft",
+                vec![0x00, 0x46, 0x01, 0x00, 0x03, 0x24, 0x00],
+            ),
+        ];
+        let mut text = String::new();
+        let mut runs = Vec::new();
+        for (label, grpprl) in paragraphs {
+            text.push_str(label);
+            text.push('\r');
+            runs.push(SyntheticPapxRun {
+                cp_lim: text.encode_utf16().count() as u32,
+                grpprl,
+            });
+        }
+        let text_end = text.encode_utf16().count() as u32;
+        let stylesheet = synthetic_paragraph_stylesheet(style_properties);
+        synth_doc_with_ccp_and_tables(
+            &text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [text_end, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                stylesheet: Some(&stylesheet),
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    fn expected_legacy_paragraph_style_layouts() -> Vec<(String, bool, Align)> {
+        vec![
+            ("StyleOnly".to_string(), true, Align::Right),
+            ("DirectLtr".to_string(), false, Align::Left),
+            ("DirectPhysicalLeft".to_string(), true, Align::Left),
+        ]
+    }
+
+    #[test]
+    fn opened_legacy_doc_resolves_paragraph_style_bidi_before_direct_overrides() {
+        let document = Document::open(&legacy_paragraph_style_bidi_doc(&[
+            (0x2441, 1),
+            (0x2461, 0),
+        ]))
+        .unwrap();
+
+        assert_eq!(
+            paragraph_layouts(&document.model()),
+            expected_legacy_paragraph_style_layouts()
+        );
+    }
+
+    #[test]
+    fn opened_legacy_doc_resolves_physical_justification_from_paragraph_style() {
+        let document = Document::open(&legacy_paragraph_style_bidi_doc(&[
+            (0x2441, 1),
+            (0x2403, 0),
+        ]))
+        .unwrap();
+
+        assert_eq!(
+            paragraph_layouts(&document.model())[0],
+            ("StyleOnly".to_string(), true, Align::Left)
+        );
+    }
+
+    #[cfg(feature = "docx")]
+    #[test]
+    fn legacy_doc_paragraph_style_bidi_roundtrips_to_docx() {
+        let legacy = Document::open(&legacy_paragraph_style_bidi_doc(&[
+            (0x2441, 1),
+            (0x2461, 0),
+        ]))
+        .unwrap();
+        let reopened = Document::open(&legacy.to_docx()).unwrap();
+
+        assert_eq!(
+            paragraph_layouts(&reopened.model()),
+            expected_legacy_paragraph_style_layouts()
+        );
+    }
+
     fn legacy_table_cell_paragraph_bidi_doc() -> Vec<u8> {
         let text = "First\u{7}Second\u{7}\u{7}";
         let first_cell_end = "First\u{7}".encode_utf16().count() as u32;
@@ -7279,7 +7367,6 @@ mod tests {
         assert_eq!(opened_document_layout.pages, 2);
     }
 
-    #[cfg(feature = "render")]
     fn synthetic_paragraph_stylesheet(properties: &[(u16, u8)]) -> Vec<u8> {
         fn push_style(
             stylesheet: &mut Vec<u8>,
