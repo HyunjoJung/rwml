@@ -231,8 +231,21 @@ struct LineLayout {
     x_indent: f32,
     char_range: Option<LineCharRange>,
     background: Option<LineBackground>,
+    cell_spacing: CellLineSpacing,
     cell_paragraph: Option<CellParagraphLine>,
     runs: Vec<RunDraw>,
+}
+
+impl LineLayout {
+    fn cell_extent(&self) -> f32 {
+        self.cell_spacing.before + self.height + self.cell_spacing.after
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+struct CellLineSpacing {
+    before: f32,
+    after: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -2104,6 +2117,7 @@ fn shape_with_options(
             x_indent: 0.0,
             char_range,
             background: None,
+            cell_spacing: CellLineSpacing::default(),
             cell_paragraph: None,
             runs,
         });
@@ -2674,6 +2688,25 @@ struct CellShapeState {
     next_paragraph_id: usize,
 }
 
+fn explicit_cell_spacing(value: Option<f32>) -> f32 {
+    value
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .unwrap_or(0.0)
+}
+
+fn truncate_cell_paragraph_lines(lines: &mut Vec<LineLayout>, remaining: usize, spacing: Spacing) {
+    let retained_all = lines.len() <= remaining;
+    lines.truncate(remaining);
+    if let Some(first) = lines.first_mut() {
+        first.cell_spacing.before = explicit_cell_spacing(spacing.before_pt);
+    }
+    if retained_all {
+        if let Some(last) = lines.last_mut() {
+            last.cell_spacing.after = explicit_cell_spacing(spacing.after_pt);
+        }
+    }
+}
+
 impl CellShapeState {
     fn allocate_scope(&mut self) -> usize {
         let value = self.next_scope_id;
@@ -2720,7 +2753,8 @@ fn shape_cell_in_scope(
                 if paragraph_lines.is_empty() {
                     continue;
                 }
-                paragraph_lines.truncate(MAX_CELL_LINES.saturating_sub(lines.len()));
+                let remaining = MAX_CELL_LINES.saturating_sub(lines.len());
+                truncate_cell_paragraph_lines(&mut paragraph_lines, remaining, p.props.spacing);
                 if let Some(hint) = pagination
                     .and_then(|hints| hints.get(block_index))
                     .copied()
@@ -3055,7 +3089,7 @@ fn layout_table_with_row_pagination_and_lists(
                 }
                 None => (Vec::new(), cell_insets(None, width), None, VCell::Top),
             };
-            let content_h: f32 = lines.iter().map(|l| l.height).sum();
+            let content_h = cell_lines_extent(&lines);
             row_h = row_h.max(content_h + insets.top + insets.bottom);
             cells.push(CellBox {
                 x,
@@ -3125,8 +3159,9 @@ fn greedy_cell_split(lines: &[LineLayout], budget: f32) -> usize {
     let mut used = 0.0_f32;
     let mut count = 0usize;
     for line in lines {
-        if count == 0 || used + line.height <= budget {
-            used += line.height;
+        let extent = line.cell_extent();
+        if count == 0 || used + extent <= budget {
+            used += extent;
             count += 1;
         } else {
             break;
@@ -3222,7 +3257,7 @@ fn split_row(row: RowLayout, avail: f32) -> (RowLayout, Option<RowLayout>) {
     if any_rest {
         let rest_h = rest_cells
             .iter()
-            .map(|c| c.lines.iter().map(|l| l.height).sum::<f32>() + c.insets.top + c.insets.bottom)
+            .map(|c| cell_lines_extent(&c.lines) + c.insets.top + c.insets.bottom)
             .fold(0.0_f32, f32::max);
         let rest = RowLayout {
             height: rest_h.max(14.0),
@@ -3966,6 +4001,20 @@ struct CellContentPlacement {
     row_height: f32,
 }
 
+fn cell_lines_extent(lines: &[LineLayout]) -> f32 {
+    lines.iter().map(LineLayout::cell_extent).sum()
+}
+
+fn cell_vertical_offset(cell: &CellBox, row_height: f32) -> f32 {
+    let available = row_height - cell.insets.top - cell.insets.bottom;
+    let slack = (available - cell_lines_extent(&cell.lines)).max(0.0);
+    match cell.valign {
+        VCell::Top => 0.0,
+        VCell::Center => slack * 0.5,
+        VCell::Bottom => slack,
+    }
+}
+
 fn draw_table_cell_content(
     surface: &mut Surface<'_>,
     cell: CellBox,
@@ -3974,17 +4023,13 @@ fn draw_table_cell_content(
     cx: &mut TextCx<'_>,
     page_links: &mut Vec<(f32, f32, f32, f32, Rc<str>)>,
 ) {
-    let content_h: f32 = cell.lines.iter().map(|line| line.height).sum();
-    let available = placement.row_height - cell.insets.top - cell.insets.bottom;
-    let offset = match cell.valign {
-        VCell::Top => 0.0,
-        VCell::Center => ((available - content_h) * 0.5).max(0.0),
-        VCell::Bottom => (available - content_h).max(0.0),
-    };
+    let offset = cell_vertical_offset(&cell, placement.row_height);
     let mut line_top = placement.top + cell.insets.top + offset;
     for line in cell.lines {
+        line_top += line.cell_spacing.before;
         let baseline = line_top + line.baseline;
         let line_height = line.height;
+        let after = line.cell_spacing.after;
         let line_x = cell_line_origin(placement.x, cell.insets, &line);
         draw_line_background(surface, &line, line_x, line_top);
         for run in line.runs {
@@ -4000,7 +4045,7 @@ fn draw_table_cell_content(
             }
             draw_run_with_page_context(surface, run, line_x, baseline, page_number, cx);
         }
-        line_top += line_height;
+        line_top += line_height + after;
     }
 }
 
@@ -6285,7 +6330,7 @@ fn first_row_fragment_height(row: &RowLayout) -> f32 {
                     .lines
                     .iter()
                     .take(cut)
-                    .map(|line| line.height)
+                    .map(LineLayout::cell_extent)
                     .sum::<f32>()
                 + if cut == cell.lines.len() {
                     cell.insets.bottom
@@ -6309,14 +6354,16 @@ fn place_row(
     headers: &[RowLayout],
     is_header: bool,
     geom: Geom,
-) {
+) -> usize {
     let mut on_fresh = !cursor.column_nonempty;
+    let mut first_page = None;
     loop {
         let avail = geom.bottom() - cursor.y;
         if row.height <= avail {
             let h = row.height;
             place_item(pages, cursor, FlowItem::Row(row), h);
-            return;
+            let page = pages.len().saturating_sub(1);
+            return *first_page.get_or_insert(page);
         }
         let remaining_can_hold_fragment = avail >= first_row_fragment_height(&row);
         if !on_fresh && (row.cant_split || !remaining_can_hold_fragment) {
@@ -6333,6 +6380,8 @@ fn place_row(
         let (frag, rest) = split_row(row, geom.bottom() - cursor.y);
         let fh = frag.height;
         place_item(pages, cursor, FlowItem::Row(frag), fh);
+        let page = pages.len().saturating_sub(1);
+        let table_first_page = *first_page.get_or_insert(page);
         match rest {
             Some(r) => {
                 cursor.advance(pages, geom);
@@ -6342,7 +6391,7 @@ fn place_row(
                 row = r;
                 on_fresh = true;
             }
-            None => return,
+            None => return table_first_page,
         }
     }
 }
@@ -6354,7 +6403,7 @@ fn place_table(
     rows: Vec<RowLayout>,
     header_rows: usize,
     geom: Geom,
-) {
+) -> Option<usize> {
     let mut headers: Vec<RowLayout> = rows.iter().take(header_rows).cloned().collect();
     // Only repeat headers that fit a page. A header taller than the content box would overflow
     // on every page (place_item does not split it), forcing each following body row to break to
@@ -6364,9 +6413,12 @@ fn place_table(
     if headers.iter().map(|h| h.height).sum::<f32>() > page_h {
         headers.clear();
     }
+    let mut first_page = None;
     for (i, row) in rows.into_iter().enumerate() {
-        place_row(pages, cursor, row, &headers, i < header_rows, geom);
+        let page = place_row(pages, cursor, row, &headers, i < header_rows, geom);
+        first_page.get_or_insert(page);
     }
+    first_page
 }
 
 fn record_pending_block_page(
@@ -6804,12 +6856,10 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
                 place_item(&mut pages, &mut cursor, FlowItem::Chart { chart, w, h }, h);
             }
             FlowItem::Table { rows, header_rows } => {
-                record_pending_block_page(
-                    &mut block_pages,
-                    &mut pending_block,
-                    pages.len().saturating_sub(1),
-                );
-                place_table(&mut pages, &mut cursor, rows, header_rows, geom);
+                let fallback_page = pages.len().saturating_sub(1);
+                let first_page = place_table(&mut pages, &mut cursor, rows, header_rows, geom)
+                    .unwrap_or(fallback_page);
+                record_pending_block_page(&mut block_pages, &mut pending_block, first_page);
             }
             FlowItem::PageBreak => {
                 cursor.force_page(&mut pages, geom);
@@ -7564,7 +7614,7 @@ mod tests {
         Align, Block, Cell, CellMargins, CharProps, Color, DocModel, FieldRole, Image, Indent,
         ListInfo, PageSetup, PaginationHint, ParaProps, Paragraph, Row, Run, SectionBreakKind,
         SectionSetup, Spacing, TabAlignment, TabStop, Table, TableBorderSide, TablePaginationHints,
-        TableRowPaginationHint, VertAlign,
+        TableRowPaginationHint, VCell, VertAlign,
     };
     use crate::report::FeatureInventory;
     use crate::{FloatingShape, ShapeEffectExtent, ShapeExtent, ShapePoint, ShapePosition};
@@ -9553,6 +9603,319 @@ mod tests {
     }
 
     #[test]
+    fn table_cell_explicit_paragraph_spacing_expands_row_not_line_box() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let mut row_for = |before_pt, after_pt| {
+            let table = Table {
+                rows: vec![Row {
+                    cells: vec![Cell {
+                        blocks: vec![Block::Paragraph(Paragraph {
+                            props: ParaProps {
+                                spacing: Spacing {
+                                    before_pt,
+                                    after_pt,
+                                    ..Spacing::default()
+                                },
+                                shading: Some(Color::rgb(0xEE, 0xF1, 0xF4)),
+                                ..ParaProps::default()
+                            },
+                            runs: vec![Run {
+                                text: "cell text".to_string(),
+                                ..Run::default()
+                            }],
+                        })],
+                        ..Cell::default()
+                    }],
+                }],
+                ..Table::default()
+            };
+            let mut flow = Vec::new();
+            let mut capture = LayoutCapture::default();
+            layout_table(&table, &mut flow, geom, &mut tcx, &mut capture);
+            let FlowItem::Table { mut rows, .. } = flow.remove(0) else {
+                panic!("table flow item")
+            };
+            rows.remove(0)
+        };
+
+        let compact = row_for(None, None);
+        let spaced = row_for(Some(11.0), Some(7.0));
+        let compact_line = &compact.cells[0].lines[0];
+        let spaced_line = &spaced.cells[0].lines[0];
+
+        assert_close(spaced_line.height, compact_line.height);
+        assert_close(spaced_line.baseline, compact_line.baseline);
+        assert_eq!(spaced_line.background, compact_line.background);
+        assert_close(spaced_line.cell_spacing.before, 11.0);
+        assert_close(spaced_line.cell_spacing.after, 7.0);
+        assert_close(spaced_line.cell_extent() - spaced_line.height, 18.0);
+        assert_close(spaced.height - compact.height, 18.0);
+    }
+
+    #[test]
+    fn table_cell_spacing_attaches_to_true_paragraph_edges_and_rejects_invalid_values() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let paragraph = |text: &str, spacing: Spacing| Paragraph {
+            props: ParaProps {
+                spacing,
+                ..ParaProps::default()
+            },
+            runs: vec![Run {
+                text: text.to_string(),
+                ..Run::default()
+            }],
+        };
+        let mut capture = LayoutCapture::default();
+        let lines = shape_cell(
+            &Cell {
+                blocks: vec![Block::Paragraph(paragraph(
+                    "one\ntwo\nthree",
+                    Spacing {
+                        before_pt: Some(9.0),
+                        after_pt: Some(4.0),
+                        ..Spacing::default()
+                    },
+                ))],
+                ..Cell::default()
+            },
+            160.0,
+            0,
+            &mut tcx,
+            &mut capture,
+        );
+
+        assert_eq!(lines.len(), 3);
+        assert_eq!(
+            lines
+                .iter()
+                .map(|line| (line.cell_spacing.before, line.cell_spacing.after))
+                .collect::<Vec<_>>(),
+            [(9.0, 0.0), (0.0, 0.0), (0.0, 4.0)]
+        );
+
+        for spacing in [
+            Spacing::default(),
+            Spacing {
+                before_pt: Some(0.0),
+                after_pt: Some(-1.0),
+                ..Spacing::default()
+            },
+            Spacing {
+                before_pt: Some(f32::NAN),
+                after_pt: Some(f32::INFINITY),
+                ..Spacing::default()
+            },
+        ] {
+            let mut capture = LayoutCapture::default();
+            let invalid = shape_cell(
+                &Cell {
+                    blocks: vec![Block::Paragraph(paragraph("bounded", spacing))],
+                    ..Cell::default()
+                },
+                160.0,
+                0,
+                &mut tcx,
+                &mut capture,
+            );
+            assert_eq!(invalid.len(), 1);
+            assert_eq!(invalid[0].cell_spacing, super::CellLineSpacing::default());
+        }
+
+        let mut truncated = lines;
+        super::truncate_cell_paragraph_lines(
+            &mut truncated,
+            2,
+            Spacing {
+                before_pt: Some(9.0),
+                after_pt: Some(4.0),
+                ..Spacing::default()
+            },
+        );
+        assert_eq!(truncated.len(), 2);
+        assert_close(truncated[0].cell_spacing.before, 9.0);
+        assert_close(truncated[1].cell_spacing.after, 0.0);
+    }
+
+    #[test]
+    fn max_cell_line_truncation_omits_nonfinal_trailing_spacing() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let text = std::iter::repeat_n("line", super::MAX_CELL_LINES + 1)
+            .collect::<Vec<_>>()
+            .join("\n");
+        let mut capture = LayoutCapture::default();
+        let lines = shape_cell(
+            &Cell {
+                blocks: vec![Block::Paragraph(Paragraph {
+                    props: ParaProps {
+                        spacing: Spacing {
+                            before_pt: Some(3.0),
+                            after_pt: Some(5.0),
+                            ..Spacing::default()
+                        },
+                        ..ParaProps::default()
+                    },
+                    runs: vec![Run {
+                        text,
+                        ..Run::default()
+                    }],
+                })],
+                ..Cell::default()
+            },
+            160.0,
+            0,
+            &mut tcx,
+            &mut capture,
+        );
+
+        assert_eq!(lines.len(), super::MAX_CELL_LINES);
+        assert_close(lines[0].cell_spacing.before, 3.0);
+        assert_close(lines.last().unwrap().cell_spacing.after, 0.0);
+    }
+
+    #[test]
+    fn table_cell_spacing_follows_direct_and_nested_source_order_without_default_gap() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let paragraph = |text: &str, before_pt, after_pt| {
+            Block::Paragraph(Paragraph {
+                props: ParaProps {
+                    spacing: Spacing {
+                        before_pt,
+                        after_pt,
+                        ..Spacing::default()
+                    },
+                    ..ParaProps::default()
+                },
+                runs: vec![Run {
+                    text: text.to_string(),
+                    ..Run::default()
+                }],
+            })
+        };
+        let cell = Cell {
+            blocks: vec![
+                paragraph("direct", Some(2.0), Some(3.0)),
+                Block::Table(Table {
+                    rows: vec![Row {
+                        cells: vec![Cell {
+                            blocks: vec![paragraph("nested", Some(5.0), Some(7.0))],
+                            ..Cell::default()
+                        }],
+                    }],
+                    ..Table::default()
+                }),
+                paragraph("tail", None, None),
+            ],
+            ..Cell::default()
+        };
+        let mut capture = LayoutCapture::default();
+        let lines = shape_cell(&cell, 160.0, 0, &mut tcx, &mut capture);
+
+        assert_eq!(
+            lines.iter().map(shaped_line_text).collect::<Vec<_>>(),
+            ["direct", "nested", "tail"]
+        );
+        assert_eq!(
+            lines
+                .iter()
+                .map(|line| (line.cell_spacing.before, line.cell_spacing.after))
+                .collect::<Vec<_>>(),
+            [(2.0, 3.0), (5.0, 7.0), (0.0, 0.0)]
+        );
+        assert_close(
+            super::cell_lines_extent(&lines) - lines.iter().map(|line| line.height).sum::<f32>(),
+            17.0,
+        );
+    }
+
+    #[test]
+    fn table_cell_vertical_alignment_uses_full_spacing_extent() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let mut rows = laid_out_table_rows(
+            &Table {
+                rows: vec![Row {
+                    cells: vec![Cell {
+                        blocks: vec![Block::Paragraph(Paragraph {
+                            props: ParaProps {
+                                spacing: Spacing {
+                                    before_pt: Some(6.0),
+                                    after_pt: Some(4.0),
+                                    ..Spacing::default()
+                                },
+                                ..ParaProps::default()
+                            },
+                            runs: vec![Run {
+                                text: "aligned".to_string(),
+                                ..Run::default()
+                            }],
+                        })],
+                        ..Cell::default()
+                    }],
+                }],
+                ..Table::default()
+            },
+            geom,
+        );
+        let mut cell = rows.remove(0).cells.remove(0);
+        let row_height =
+            cell.insets.top + super::cell_lines_extent(&cell.lines) + cell.insets.bottom + 40.0;
+        let before = cell.lines[0].cell_spacing.before;
+
+        cell.valign = VCell::Top;
+        assert_close(super::cell_vertical_offset(&cell, row_height), 0.0);
+        cell.valign = VCell::Center;
+        assert_close(super::cell_vertical_offset(&cell, row_height), 20.0);
+        assert_close(
+            100.0 + cell.insets.top + super::cell_vertical_offset(&cell, row_height) + before,
+            100.0 + cell.insets.top + 20.0 + 6.0,
+        );
+        cell.valign = VCell::Bottom;
+        assert_close(super::cell_vertical_offset(&cell, row_height), 40.0);
+    }
+
+    #[test]
     fn bidi_visual_table_mirrors_logical_cell_positions() {
         let fonts = vec![
             rwml_fonts::noto_sans_kr_subset_with_hanja().to_vec(),
@@ -9806,6 +10169,81 @@ mod tests {
         );
     }
 
+    #[test]
+    fn split_table_cell_spacing_stays_on_true_outer_lines() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let table = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: vec![Block::Paragraph(Paragraph {
+                        props: ParaProps {
+                            spacing: Spacing {
+                                before_pt: Some(8.0),
+                                after_pt: Some(6.0),
+                                ..Spacing::default()
+                            },
+                            ..ParaProps::default()
+                        },
+                        runs: vec![Run {
+                            text: "first\nmiddle\nlast".to_string(),
+                            ..Run::default()
+                        }],
+                    })],
+                    ..Cell::default()
+                }],
+            }],
+            ..Table::default()
+        };
+        let mut rows = laid_out_table_rows(&table, geom);
+        let row = rows.remove(0);
+        let original_extent = super::cell_lines_extent(&row.cells[0].lines);
+        assert_eq!(row.cells[0].lines.len(), 3);
+        let first_budget = row.cells[0].insets.top
+            + row.cells[0].insets.bottom
+            + row.cells[0].lines[0].cell_extent();
+
+        let (first, rest) = split_row(row, first_budget);
+        let rest = rest.expect("two lines remain");
+        let middle_budget = rest.cells[0].insets.top
+            + rest.cells[0].insets.bottom
+            + rest.cells[0].lines[0].cell_extent();
+        let (middle, last) = split_row(rest, middle_budget);
+        let last = last.expect("final line remains");
+
+        assert_eq!(first.cells[0].lines.len(), 1);
+        assert_eq!(middle.cells[0].lines.len(), 1);
+        assert_eq!(last.cells[0].lines.len(), 1);
+        assert_eq!(
+            first.cells[0].lines[0].cell_spacing,
+            super::CellLineSpacing {
+                before: 8.0,
+                after: 0.0
+            }
+        );
+        assert_eq!(
+            middle.cells[0].lines[0].cell_spacing,
+            super::CellLineSpacing::default()
+        );
+        assert_eq!(
+            last.cells[0].lines[0].cell_spacing,
+            super::CellLineSpacing {
+                before: 0.0,
+                after: 6.0
+            }
+        );
+        assert_close(
+            super::cell_lines_extent(&first.cells[0].lines)
+                + super::cell_lines_extent(&middle.cells[0].lines)
+                + super::cell_lines_extent(&last.cells[0].lines),
+            original_extent,
+        );
+    }
+
     fn cell_row_with_pagination(paragraphs: &[(&str, PaginationHint)]) -> super::RowLayout {
         let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
         let mut font_cx = strict_font_context(&fonts);
@@ -10033,7 +10471,7 @@ mod tests {
                 .lines
                 .iter()
                 .take(count)
-                .map(|line| line.height)
+                .map(LineLayout::cell_extent)
                 .sum::<f32>()
     }
 
@@ -11182,6 +11620,7 @@ mod tests {
                 x_indent: 0.0,
                 char_range: None,
                 background: None,
+                cell_spacing: Default::default(),
                 cell_paragraph: None,
                 runs: Vec::new(),
             })
@@ -11210,6 +11649,7 @@ mod tests {
             x_indent: 0.0,
             char_range: None,
             background: None,
+            cell_spacing: Default::default(),
             cell_paragraph: None,
             runs: Vec::new(),
         })
@@ -11235,6 +11675,7 @@ mod tests {
                 x_indent: 0.0,
                 char_range: None,
                 background: None,
+                cell_spacing: Default::default(),
                 cell_paragraph: None,
                 runs: Vec::new(),
             })
@@ -11302,6 +11743,99 @@ mod tests {
 
         assert_eq!(page_row_counts(&splittable), vec![1, 1]);
         assert_eq!(page_row_counts(&kept), vec![0, 1]);
+    }
+
+    #[test]
+    fn table_block_page_tracks_the_first_placed_row() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let pagination = paginate(
+            vec![
+                pagination_block(0, PaginationHint::default()),
+                pagination_line(45.0),
+                pagination_block(1, PaginationHint::default()),
+                FlowItem::Table {
+                    rows: vec![pagination_table_row(true, 2)],
+                    header_rows: 0,
+                },
+            ],
+            geom,
+            &SectionSetup::default(),
+        );
+
+        assert_eq!(page_row_counts(&pagination), vec![0, 1]);
+        assert_eq!(pagination.block_pages.get(&1), Some(&1));
+    }
+
+    #[test]
+    fn table_cell_spacing_alone_can_move_the_first_row_and_its_block_page() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let compact_row = pagination_table_row(true, 1);
+        let mut spaced_row = compact_row.clone();
+        spaced_row.cells[0].lines[0].cell_spacing = super::CellLineSpacing {
+            before: 8.0,
+            after: 6.0,
+        };
+        spaced_row.height += 14.0;
+        let paginate_row = |row| {
+            paginate(
+                vec![
+                    pagination_block(0, PaginationHint::default()),
+                    pagination_line(45.0),
+                    pagination_block(1, PaginationHint::default()),
+                    FlowItem::Table {
+                        rows: vec![row],
+                        header_rows: 0,
+                    },
+                ],
+                geom,
+                &SectionSetup::default(),
+            )
+        };
+
+        let compact = paginate_row(compact_row);
+        let spaced = paginate_row(spaced_row);
+
+        assert_eq!(page_row_counts(&compact), vec![1]);
+        assert_eq!(compact.block_pages.get(&1), Some(&0));
+        assert_eq!(page_row_counts(&spaced), vec![0, 1]);
+        assert_eq!(spaced.block_pages.get(&1), Some(&1));
+    }
+
+    #[test]
+    fn spanning_table_block_page_stays_on_its_first_row_fragment() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let pagination = paginate(
+            vec![
+                pagination_block(0, PaginationHint::default()),
+                FlowItem::Table {
+                    rows: vec![
+                        pagination_table_row(false, 8),
+                        pagination_table_row(true, 1),
+                    ],
+                    header_rows: 0,
+                },
+            ],
+            geom,
+            &SectionSetup::default(),
+        );
+
+        assert!(pagination.pages.len() > 1);
+        assert_eq!(pagination.block_pages.get(&0), Some(&0));
     }
 
     #[test]
@@ -11434,11 +11968,17 @@ mod tests {
             margin_pt: 20.0,
             ..PageSetup::default()
         });
+        let mut marker_only = list_paragraph("", 0, true, "");
+        marker_only.props.spacing = Spacing {
+            before_pt: Some(4.0),
+            after_pt: Some(6.0),
+            ..Spacing::default()
+        };
         let mut header_rows = laid_out_table_rows(
             &Table {
                 rows: vec![Row {
                     cells: vec![Cell {
-                        blocks: vec![Block::Paragraph(list_paragraph("list header", 0, true, ""))],
+                        blocks: vec![Block::Paragraph(marker_only)],
                         ..Cell::default()
                     }],
                 }],
@@ -11468,14 +12008,23 @@ mod tests {
                     .cells
                     .first()
                     .and_then(|cell| cell.lines.first())
-                    .map(shaped_line_text),
+                    .map(|line| (shaped_line_text(line), line.cell_spacing, row.height)),
                 _ => None,
             })
-            .filter(|text| text.contains("list header"))
+            .filter(|(text, _, _)| text == "1. ")
             .collect();
         assert!(rendered_headers.len() > 1, "{rendered_headers:?}");
+        let expected_height = rendered_headers[0].2;
         assert!(
-            rendered_headers.iter().all(|text| text == "1. list header"),
+            rendered_headers.iter().all(|(text, spacing, height)| {
+                text == "1. "
+                    && *spacing
+                        == super::CellLineSpacing {
+                            before: 4.0,
+                            after: 6.0,
+                        }
+                    && (*height - expected_height).abs() < 0.001
+            }),
             "{rendered_headers:?}"
         );
     }
@@ -12149,6 +12698,7 @@ mod tests {
                 x_indent: 0.0,
                 char_range: None,
                 background: None,
+                cell_spacing: Default::default(),
                 cell_paragraph: None,
                 runs: Vec::new(),
             })

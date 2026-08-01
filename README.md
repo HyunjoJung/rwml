@@ -285,7 +285,8 @@ Lay any model out to a paginated **PDF** with native typesetting — `parley` sh
 and line-breaks (Korean/CJK [UAX #14] line-breaking + script font fallback),
 `krilla` emits the PDF with subsetted embedded fonts and **selectable text**. Rich
 runs (color/size/font, highlight, decorations, super/subscript, caps/small-caps),
-paragraph shading, line spacing, first/hanging indents, lists with
+paragraph shading, line spacing, explicit before/after spacing, first/hanging
+indents, lists with
 reader-captured autonumber labels or deterministic empty-label fallbacks in
 top-level body and ordinary or recursively flattened table cells, bordered
 tables with six-way model-backed solid colors and bounded
@@ -330,6 +331,13 @@ One per-story fallback-counter state follows source-logical order across body,
 direct-cell, nested-cell, and later body paragraphs. `w:bidiVisual` changes
 physical cell placement without reversing numbering, and split rows or repeated
 headers reuse the already-shaped marker.
+Finite positive explicit paragraph before/after spacing on emitted paragraphs in
+ordinary and recursively flattened table cells participates in row measurement,
+row splitting, vertical alignment, repeated-header placement, and layout-page
+reporting. Spacing is attached once to the retained paragraph edges, so bounded
+line truncation does not invent a trailing edge; unset, zero, negative, or
+non-finite values add no space. Spacing-only empty or hidden-only paragraphs
+remain omitted when they produce no shaped line.
 Opened legacy `.doc` tables with strictly increasing `sprmTDefTable` row
 boundaries and common logical outer edges also retain normalized relative
 column proportions, including mixed internal row grids represented by column
@@ -387,8 +395,7 @@ paragraph spacing plus positive proportional `sprmPDyaLine` LSPD values resolve
 through the same style inheritance and final direct-PAPX precedence. Omitted
 values materialize the MS-DOC defaults of zero points before/after and single
 line spacing; supported values survive shared-model use, `.docx`
-conversion/reopen, and top-level PDF preview layout. Table-cell PDF preview
-applies the resolved line multiplier but still ignores before/after spacing.
+conversion/reopen, and top-level or table-cell PDF preview layout.
 Direct and paragraph-style `sprmPShd80` and `sprmPShd` paragraph shading also
 reaches the shared model, `.docx` conversion/reopen, and PDF preview when the
 source result collapses exactly to one explicit RGB fill: clear uses its
@@ -985,7 +992,7 @@ evidence.
       `sprmPFKeep`/`sprmPFKeepFollow`/`sprmPFWidowControl`/`sprmPFPageBreakBefore`
       plus bounded direct/style top-level
       `sprmPDyaBefore`/`sprmPDyaAfter`/proportional `sprmPDyaLine` spacing
-      (table cells apply the line multiplier only) and direct row
+      (explicit before/after spacing also reaches table cells) and direct row
       `sprmTFCantSplit`/`sprmTFCantSplit90`, font registration
 - [x] Reader: `.docx` headers/footers, text boxes (`w:txbxContent` incl. run-level
       `mc:AlternateContent`) including `text_boxes()` records, footnotes/endnotes

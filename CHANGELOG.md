@@ -32,6 +32,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- PDF table cells now apply finite positive model-backed paragraph before/after
+  spacing on emitted paragraphs to row measurement, row splitting, vertical
+  alignment, repeated headers, and `LayoutPages` block and modeled `PAGE`-field
+  records. Paragraph edges remain source-ordered across direct and recursively
+  flattened nested cells, split rows attach before spacing only to the first
+  fragment and after spacing only to the final fragment, and bounded line
+  truncation does not invent a trailing edge. Unset, zero, negative, and
+  non-finite values add no space. Table blocks now report the page of their first
+  actually placed row instead of the pre-placement page. Synthetic direct-DOCX
+  and style-inherited legacy-DOC
+  fixtures cover deterministic layout and PDF output. Word-exact adjacent
+  spacing collapse, line-unit/automatic/contextual spacing, spacing-only empty or
+  hidden-only paragraphs, nested-grid geometry, table-cell images, and exact
+  split-row vertical alignment remain outside this bounded preview behavior.
 - PDF previews now paint reader-captured or deterministic fallback list markers
   in ordinary and recursively flattened table cells. One per-story fallback
   state spans surrounding body, direct-cell, nested-cell, and later body
@@ -150,8 +164,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   style values resolve through the cycle/depth-bounded STSH base chain before
   final direct overrides; omitted values materialize the MS-DOC zero-before,
   zero-after, and single-spacing defaults through the shared model, `.docx`
-  conversion/reopen, and top-level PDF preview layout. Table-cell PDF preview
-  applies the resolved line multiplier but still ignores before/after spacing.
+  conversion/reopen, and top-level or table-cell PDF preview layout.
   Repeated values apply in source order, invalid values do not replace the last
   valid value, `sprmPIstd` discards earlier direct spacing, structurally
   malformed styles fall back atomically, and truncated direct modifiers retain

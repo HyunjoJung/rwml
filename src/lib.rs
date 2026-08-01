@@ -9643,6 +9643,120 @@ mod tests {
         assert_rtl_paragraph_inside_ltr_table(&reopened.model());
     }
 
+    #[cfg(feature = "render")]
+    fn legacy_inherited_table_cell_spacing_doc(paragraph_count: usize) -> Vec<u8> {
+        const SPRM_P_DYA_BEFORE: u16 = 0xA413;
+        const SPRM_P_DYA_AFTER: u16 = 0xA414;
+
+        let mut style_spacing = Vec::new();
+        push_paragraph_spacing_twips(&mut style_spacing, SPRM_P_DYA_BEFORE, 220);
+        push_paragraph_spacing_twips(&mut style_spacing, SPRM_P_DYA_AFTER, 140);
+        let stylesheet = synthetic_paragraph_stylesheet_from_styles(&[
+            (0, 0, 0x0FFF, "Normal", &[]),
+            (1, 0x0FFE, 0, "CellSpacing", &style_spacing),
+            (2, 0x0FFD, 1, "CellSpacingChild", &[]),
+        ]);
+
+        let mut text = String::new();
+        for index in 0..paragraph_count {
+            text.push_str(&format!("cell paragraph {index}"));
+            text.push(if index + 1 == paragraph_count {
+                '\u{7}'
+            } else {
+                '\r'
+            });
+        }
+        let cell_end = text.encode_utf16().count() as u32;
+        let mut runs = vec![SyntheticPapxRun {
+            cp_lim: cell_end,
+            grpprl: vec![
+                0x16, 0x24, 0x01, // sprmPFInTable
+                0x00, 0x46, 0x02, 0x00, // sprmPIstd = child style 2
+            ],
+        }];
+        text.push('\u{7}');
+        let row_end = text.encode_utf16().count() as u32;
+        let mut row_grpprl = vec![
+            0x16, 0x24, 0x01, // sprmPFInTable
+            0x17, 0x24, 0x01, // sprmPFTtp
+            0x08, 0xD6, 0x1A, 0x00, // sprmTDefTable, cb=26
+            0x01, // one cell
+            0x00, 0x00, 0xD0, 0x07, // cell boundaries 0..2000 twips
+        ];
+        row_grpprl.extend_from_slice(&[0u8; 20]);
+        runs.push(SyntheticPapxRun {
+            cp_lim: row_end,
+            grpprl: row_grpprl,
+        });
+
+        synth_doc_with_ccp_and_tables(
+            &text,
+            "",
+            0x00C1,
+            0,
+            0,
+            [row_end, 0, 0, 0, 0, 0],
+            SyntheticDocTables {
+                stylesheet: Some(&stylesheet),
+                papx_runs: Some(&runs),
+                ..SyntheticDocTables::default()
+            },
+        )
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_inherited_cell_spacing_changes_preview_deterministically() {
+        const PARAGRAPH_COUNT: usize = 40;
+        let recovered = Document::open(&legacy_inherited_table_cell_spacing_doc(PARAGRAPH_COUNT))
+            .unwrap()
+            .model();
+        let Block::Table(table) = &recovered.blocks[0] else {
+            panic!("synthetic legacy block must be a table");
+        };
+        let paragraphs = table.rows[0].cells[0]
+            .blocks
+            .iter()
+            .map(|block| {
+                let Block::Paragraph(paragraph) = block else {
+                    panic!("synthetic legacy cell block must be a paragraph");
+                };
+                paragraph
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(paragraphs.len(), PARAGRAPH_COUNT);
+        assert!(paragraphs.iter().all(|paragraph| {
+            paragraph.props.spacing.before_pt == Some(11.0)
+                && paragraph.props.spacing.after_pt == Some(7.0)
+        }));
+
+        let mut compact = recovered.clone();
+        let Block::Table(compact_table) = &mut compact.blocks[0] else {
+            panic!("synthetic legacy block must remain a table");
+        };
+        for block in &mut compact_table.rows[0].cells[0].blocks {
+            let Block::Paragraph(paragraph) = block else {
+                panic!("synthetic legacy cell block must remain a paragraph");
+            };
+            paragraph.props.spacing.before_pt = Some(0.0);
+            paragraph.props.spacing.after_pt = Some(0.0);
+        }
+
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let compact_layout = layout_pages_with_fonts(&compact, &fonts).unwrap();
+        let recovered_layout = layout_pages_with_fonts(&recovered, &fonts).unwrap();
+        assert_eq!(
+            recovered_layout,
+            layout_pages_with_fonts(&recovered, &fonts).unwrap()
+        );
+        assert!(recovered_layout.pages > compact_layout.pages);
+
+        let compact_pdf = render_pdf_with_fonts(&compact, &fonts);
+        let recovered_pdf = render_pdf_with_fonts(&recovered, &fonts);
+        assert_ne!(recovered_pdf, compact_pdf);
+        assert_eq!(recovered_pdf, render_pdf_with_fonts(&recovered, &fonts));
+    }
+
     fn legacy_table_bidi_doc() -> Vec<u8> {
         let rows = [
             (
@@ -10426,7 +10540,7 @@ mod tests {
         let mut seed_grpprl = Vec::new();
         push_legacy_pagination_fixture_spacing(&mut seed_grpprl);
         let mut cell_grpprl = vec![0x16, 0x24, 0x01];
-        push_legacy_pagination_fixture_spacing(&mut cell_grpprl);
+        push_paragraph_line_spacing(&mut cell_grpprl, 324, 1);
         let mut after_grpprl = Vec::new();
         push_legacy_pagination_fixture_spacing(&mut after_grpprl);
         let runs = [
@@ -10553,7 +10667,7 @@ mod tests {
         let mut seed_grpprl = vec![0x31, 0x24, 0x00];
         push_legacy_pagination_fixture_spacing(&mut seed_grpprl);
         let mut cell_grpprl = vec![0x16, 0x24, 0x01];
-        push_legacy_pagination_fixture_spacing(&mut cell_grpprl);
+        push_paragraph_line_spacing(&mut cell_grpprl, 324, 1);
         for &(sprm, value) in cell_properties {
             cell_grpprl.extend_from_slice(&sprm.to_le_bytes());
             cell_grpprl.push(value);
@@ -10971,6 +11085,83 @@ mod tests {
             (model_pages, splittable_pages, kept_pages),
             (3, 2, 3),
             "model-only and kept rows stay together; explicit keepLines off permits splitting"
+        );
+    }
+
+    #[cfg(all(feature = "docx", feature = "render"))]
+    #[test]
+    fn opened_docx_cell_spacing_moves_table_and_modeled_page_field_deterministically() {
+        let make_document = |spacing: &str| {
+            let xml = format!(
+                r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                    <w:p><w:r><w:t>seed one</w:t></w:r></w:p>
+                    <w:p><w:r><w:t>seed two</w:t></w:r></w:p>
+                    <w:tbl><w:tr><w:tc><w:p><w:pPr>{spacing}</w:pPr>
+                        <w:r><w:t>cell</w:t></w:r>
+                    </w:p></w:tc></w:tr></w:tbl>
+                    <w:sectPr><w:pgSz w:w="4400" w:h="2200"/><w:pgMar w:top="400" w:right="400" w:bottom="400" w:left="400"/></w:sectPr>
+                </w:body></w:document>"#
+            );
+            Document::open(&minimal_docx(&xml)).unwrap()
+        };
+        let compact = make_document("");
+        let spaced = make_document(r#"<w:spacing w:before="220" w:after="140"/>"#);
+        let Block::Table(spaced_table) = &spaced.model().blocks[2] else {
+            panic!("third block must be the synthetic DOCX table");
+        };
+        let Block::Paragraph(spaced_cell_paragraph) = &spaced_table.rows[0].cells[0].blocks[0]
+        else {
+            panic!("synthetic DOCX cell must contain a paragraph");
+        };
+        assert_eq!(spaced_cell_paragraph.props.spacing.before_pt, Some(11.0));
+        assert_eq!(spaced_cell_paragraph.props.spacing.after_pt, Some(7.0));
+
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let compact_layout = compact.layout_pages_with_fonts(&fonts).unwrap();
+        let spaced_layout = spaced.layout_pages_with_fonts(&fonts).unwrap();
+        assert_eq!(
+            spaced_layout,
+            spaced.layout_pages_with_fonts(&fonts).unwrap()
+        );
+        assert_eq!(compact_layout.block_pages[2], Some(1));
+        assert_eq!(spaced_layout.block_pages[2], Some(2));
+
+        let compact_pdf = compact
+            .try_to_pdf_with_fonts_and_report(&fonts)
+            .unwrap()
+            .pdf;
+        let spaced_pdf = spaced.try_to_pdf_with_fonts_and_report(&fonts).unwrap().pdf;
+        assert_ne!(spaced_pdf, compact_pdf);
+        assert_eq!(
+            spaced_pdf,
+            spaced.try_to_pdf_with_fonts_and_report(&fonts).unwrap().pdf
+        );
+
+        let mut compact_page_model = compact.model();
+        let mut spaced_page_model = spaced.model();
+        for model in [&mut compact_page_model, &mut spaced_page_model] {
+            let Block::Table(table) = &mut model.blocks[2] else {
+                panic!("third block must remain the synthetic DOCX table");
+            };
+            let Block::Paragraph(paragraph) = &mut table.rows[0].cells[0].blocks[0] else {
+                panic!("synthetic DOCX cell must remain a paragraph");
+            };
+            paragraph.runs[0].field = FieldRole::Simple {
+                instruction: "PAGE".to_string(),
+            };
+            paragraph.runs[0].text = "stale".to_string();
+        }
+        assert_eq!(
+            layout_pages_with_fonts(&compact_page_model, &fonts)
+                .unwrap()
+                .page_fields,
+            [Some(1)]
+        );
+        assert_eq!(
+            layout_pages_with_fonts(&spaced_page_model, &fonts)
+                .unwrap()
+                .page_fields,
+            [Some(2)]
         );
     }
 
