@@ -42,16 +42,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   indirection remain unsupported.
 - Opened legacy `.doc` sections now preserve valid SED/SEPX page width, height,
   portrait/landscape orientation, nonnegative left/right/top/bottom margins,
-  and new/even/odd `sprmSBkc` break kinds through the shared model and `.docx`
+  equal-width `sprmSCcolumns` counts from 1 through 44, and new/even/odd
+  `sprmSBkc` break kinds through the shared model and `.docx`
   conversion/reopen. Valid `PlcfSed` boundaries create sections independently
-  of header stories, and single-section geometry reaches the final `DocSetup`.
-  Strict signed `fcSepx`/`cb` bounds and complete SPRM walking isolate malformed
-  local payloads to the deterministic default while valid neighboring sections
-  survive. PDF and `LayoutPages` pagination now start modeled even/odd sections
-  on the requested 1-based physical parity, inserting one body-empty filler
-  when needed; section display-number restarts/formats do not affect that
-  preview calculation. Continuous/new-column section marks normalize to the
-  next-page fallback. Columns, gutters/facing pages, header/footer distances,
+  of header stories, and single-section properties reach the final `DocSetup`.
+  Equal spacing follows the MS-DOC default and strict Bool8 overrides; an
+  explicit unequal selector suppresses the modeled count, a later valid equal
+  selector restores the last valid count, and invalid values leave prior state
+  intact. Strict signed `fcSepx`/`cb` bounds and complete SPRM walking isolate
+  malformed local payloads to the deterministic default while valid neighboring
+  sections survive. Recovered equal-width columns reach the existing bounded PDF
+  and `LayoutPages` flow. Preview pagination also starts modeled even/odd
+  sections on the requested 1-based physical parity, inserting one body-empty
+  filler when needed; section display-number restarts/formats do not affect that
+  calculation. Continuous/new-column section marks normalize to the next-page
+  fallback. Custom or unequal column widths/gaps, separator lines, manual column
+  breaks, RTL column ordering, gutters/facing pages, header/footer distances,
   page borders/grids, vertical justification, negative fixed-position
   top/bottom semantics, mixed section-local render geometry, section-relative
   odd/even running-surface selection, and Word-exact filler surfaces remain

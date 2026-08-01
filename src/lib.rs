@@ -5502,6 +5502,16 @@ mod tests {
         grpprl.push(kind);
     }
 
+    fn push_section_column_count(grpprl: &mut Vec<u8>, columns_minus_one: u16) {
+        grpprl.extend_from_slice(&0x500Bu16.to_le_bytes());
+        grpprl.extend_from_slice(&columns_minus_one.to_le_bytes());
+    }
+
+    fn push_section_evenly_spaced(grpprl: &mut Vec<u8>, evenly_spaced: u8) {
+        grpprl.extend_from_slice(&0x3005u16.to_le_bytes());
+        grpprl.push(evenly_spaced);
+    }
+
     fn legacy_doc_with_section_page_grpprls(
         text: &str,
         section_cps: &[u32],
@@ -6430,6 +6440,185 @@ mod tests {
         assert_eq!(final_page.margin_top_pt, Some(72.0));
         assert_eq!(final_page.margin_bottom_pt, Some(36.0));
         assert!(final_page.landscape);
+    }
+
+    #[test]
+    fn legacy_doc_sepx_preserves_equal_width_section_columns() {
+        let section_cps = [0, 5, 10, 15];
+        let mut first = section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        let mut unequal = section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        let mut final_section =
+            section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_column_count(&mut first, 1);
+        push_section_column_count(&mut unequal, 2);
+        push_section_evenly_spaced(&mut unequal, 0);
+        push_section_column_count(&mut final_section, 43);
+        let sepx_grpprls = [
+            first.as_slice(),
+            unequal.as_slice(),
+            final_section.as_slice(),
+        ];
+        let bytes =
+            legacy_doc_with_section_page_grpprls("AAAAABBBBBCCCCC", &section_cps, &sepx_grpprls);
+
+        let doc = Document::open(&bytes).unwrap();
+        let model = doc.model();
+        let section_columns = model
+            .blocks
+            .iter()
+            .filter_map(|block| match block {
+                Block::SectionBreak(setup) => Some(setup.columns),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(section_columns, vec![Some(2), None]);
+        assert_eq!(model.setup.columns, Some(44));
+
+        #[cfg(feature = "docx")]
+        {
+            let docx = doc.to_docx();
+            let document_xml = docx_part(&docx, "word/document.xml");
+            assert_eq!(document_xml.matches("<w:cols").count(), 2);
+            let first_columns = document_xml
+                .find(r#"<w:cols w:num="2"/>"#)
+                .expect("first section columns");
+            let final_columns = document_xml
+                .find(r#"<w:cols w:num="44"/>"#)
+                .expect("final section columns");
+            assert!(
+                first_columns < final_columns,
+                "column counts must preserve section order: {document_xml}"
+            );
+
+            let reopened = Document::open(&docx).unwrap();
+            let reopened_model = reopened.model();
+            let reopened_section_columns = reopened_model
+                .blocks
+                .iter()
+                .filter_map(|block| match block {
+                    Block::SectionBreak(setup) => Some(setup.columns),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(reopened_section_columns, section_columns);
+            assert_eq!(reopened_model.setup.columns, Some(44));
+        }
+    }
+
+    #[test]
+    fn legacy_doc_sepx_preserves_single_section_columns() {
+        let section_cps = [0, 4];
+        let mut only = section_page_grpprl(11_520, 16_560, 1_200, 1_600, 800, 1_000, false);
+        push_section_column_count(&mut only, 2);
+        let sepx_grpprls = [only.as_slice()];
+        let bytes = legacy_doc_with_section_page_grpprls("ONLY", &section_cps, &sepx_grpprls);
+
+        let model = Document::open(&bytes).unwrap().model();
+
+        assert!(model
+            .blocks
+            .iter()
+            .all(|block| !matches!(block, Block::SectionBreak(_))));
+        assert_eq!(model.setup.columns, Some(3));
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_section_columns_change_preview_flow() {
+        let text = (0..8)
+            .map(|index| format!("line {index}\r"))
+            .collect::<String>();
+        let section_cps = [0, text.encode_utf16().count() as u32];
+        let single = section_page_grpprl(4_400, 2_000, 400, 400, 400, 400, false);
+        let mut double = single.clone();
+        push_section_column_count(&mut double, 1);
+        let single_grpprls = [single.as_slice()];
+        let double_grpprls = [double.as_slice()];
+        let single_bytes =
+            legacy_doc_with_section_page_grpprls(&text, &section_cps, &single_grpprls);
+        let double_bytes =
+            legacy_doc_with_section_page_grpprls(&text, &section_cps, &double_grpprls);
+        let single_model = Document::open(&single_bytes).unwrap().model();
+        let double_model = Document::open(&double_bytes).unwrap().model();
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+        let single_layout = layout_pages_with_fonts(&single_model, &fonts).unwrap();
+        let double_layout = layout_pages_with_fonts(&double_model, &fonts).unwrap();
+
+        assert_eq!(single_model.blocks.len(), 8);
+        assert_eq!(double_model.blocks.len(), 8);
+        assert_eq!(single_model.setup.columns, None);
+        assert_eq!(double_model.setup.columns, Some(2));
+        assert!(
+            double_layout.pages < single_layout.pages,
+            "recovered equal-width columns must alter page flow: single={single_layout:?}, double={double_layout:?}"
+        );
+        assert_eq!(single_layout.block_pages.last(), Some(&Some(2)));
+        assert_eq!(double_layout.block_pages.last(), Some(&Some(1)));
+    }
+
+    #[cfg(feature = "render")]
+    #[test]
+    fn opened_legacy_doc_section_columns_switch_at_section_boundary() {
+        let first_text = (0..8)
+            .map(|index| format!("first {index}\r"))
+            .collect::<String>();
+        let final_text = (0..8)
+            .map(|index| format!("final {index}\r"))
+            .collect::<String>();
+        let text = format!("{first_text}{final_text}");
+        let section_cps = [
+            0,
+            first_text.encode_utf16().count() as u32,
+            text.encode_utf16().count() as u32,
+        ];
+        let mut first = section_page_grpprl(4_400, 2_000, 400, 400, 400, 400, false);
+        push_section_column_count(&mut first, 1);
+        let final_section = section_page_grpprl(4_400, 2_000, 400, 400, 400, 400, false);
+        let sepx_grpprls = [first.as_slice(), final_section.as_slice()];
+        let bytes = legacy_doc_with_section_page_grpprls(&text, &section_cps, &sepx_grpprls);
+        let model = Document::open(&bytes).unwrap().model();
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+        let layout = layout_pages_with_fonts(&model, &fonts).unwrap();
+
+        assert_eq!(model.blocks.len(), 17);
+        let Block::SectionBreak(first_setup) = &model.blocks[8] else {
+            panic!("expected section boundary");
+        };
+        assert_eq!(first_setup.columns, Some(2));
+        assert_eq!(model.setup.columns, None);
+        assert_eq!(layout.pages, 3);
+        assert_eq!(layout.block_pages[7], Some(1));
+        assert_eq!(layout.block_pages[8], Some(2));
+        assert_eq!(layout.block_pages[9], Some(2));
+        assert_eq!(layout.block_pages[16], Some(3));
+    }
+
+    #[test]
+    fn legacy_doc_malformed_column_sepx_does_not_harm_neighbor() {
+        let section_cps = [0, 5, 10];
+        let mut malformed = section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_column_count(&mut malformed, 1);
+        malformed.push(0xFF);
+        let mut valid = section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_column_count(&mut valid, 3);
+        let sepx_grpprls = [malformed.as_slice(), valid.as_slice()];
+        let bytes = legacy_doc_with_section_page_grpprls("FIRSTFINAL", &section_cps, &sepx_grpprls);
+
+        let model = Document::open(&bytes).unwrap().model();
+        let first_columns = model
+            .blocks
+            .iter()
+            .find_map(|block| match block {
+                Block::SectionBreak(setup) => Some(setup.columns),
+                _ => None,
+            })
+            .expect("section boundary");
+
+        assert_eq!(first_columns, None);
+        assert_eq!(model.setup.columns, Some(4));
     }
 
     #[test]
