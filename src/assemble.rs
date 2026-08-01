@@ -17,10 +17,10 @@ use crate::fib::{self, Fib};
 use crate::list::Numberer;
 use crate::model::{
     normalize_field_instruction, Align, Block, CharProps, DocMeta, DocModel, DocSetup, FieldRole,
-    Image, ListInfo, PaginationHint, ParaProps, Paragraph, SectionBreakKind, SectionSetup,
+    Image, Indent, ListInfo, PaginationHint, ParaProps, Paragraph, SectionBreakKind, SectionSetup,
     SourceRegion, SourceRegionKind, Stats, TableCellPaginationHints, TableRowPaginationHint,
 };
-use crate::papx::{PapxTable, ParagraphJustification};
+use crate::papx::{PapxTable, ParagraphIndentOverrides, ParagraphJustification};
 use crate::stsh::StyleSheet;
 use crate::table::{self, CellBuild, RowBuild};
 use crate::util::u32le;
@@ -689,6 +689,34 @@ struct FieldState {
 // Local alias to the model Run (avoid a name clash with the field below).
 use crate::model::Run as Run_;
 
+fn resolve_direct_paragraph_indent(source: ParagraphIndentOverrides, bidi: bool) -> Indent {
+    let logical_left_twips = source
+        .logical_left_twips
+        .map(|left| i32::from(left) + i32::from(source.nest_twips.unwrap_or(0)));
+    let logical_right_twips = source.logical_right_twips.map(i32::from);
+    let (left_twips, right_twips) = if bidi {
+        (logical_right_twips, logical_left_twips)
+    } else {
+        (logical_left_twips, logical_right_twips)
+    };
+    let points = |twips: Option<i32>| {
+        twips
+            .filter(|value| *value != 0)
+            .map(|value| value as f32 / 20.0)
+    };
+    let (first_line_pt, hanging_pt) = match source.first_line_twips.map(i32::from) {
+        Some(value) if value > 0 => (Some(value as f32 / 20.0), None),
+        Some(value) if value < 0 => (None, Some((-value) as f32 / 20.0)),
+        _ => (None, None),
+    };
+    Indent {
+        left_pt: points(left_twips),
+        right_pt: points(right_twips),
+        first_line_pt,
+        hanging_pt,
+    }
+}
+
 impl<'a, 'l> Asm<'a, 'l> {
     fn new(
         papx: &'a PapxTable,
@@ -946,6 +974,8 @@ impl<'a, 'l> Asm<'a, 'l> {
             .paragraph_layout(istd)
             .apply(self.papx.paragraph_layout_overrides_at(fc));
         let bidi = layout.bidi.unwrap_or(false);
+        let indent =
+            resolve_direct_paragraph_indent(self.papx.paragraph_indent_overrides_at(fc), bidi);
         let source_pagination = self
             .stylesheet
             .paragraph_pagination(istd)
@@ -994,6 +1024,7 @@ impl<'a, 'l> Asm<'a, 'l> {
                 align,
                 outline_level: outlvl,
                 list,
+                indent,
                 page_break_before: source_pagination.page_break_before,
                 bidi,
                 ..Default::default()
@@ -1298,6 +1329,56 @@ mod tests {
             panic!("second block must be a paragraph");
         };
         assert!(!second_paragraph.props.page_break_before);
+    }
+
+    #[test]
+    fn direct_logical_indents_map_signed_edges_and_zero_by_direction() {
+        let source = ParagraphIndentOverrides {
+            logical_left_twips: Some(-720),
+            logical_right_twips: Some(360),
+            nest_twips: Some(-120),
+            first_line_twips: Some(-360),
+        };
+        assert_eq!(
+            resolve_direct_paragraph_indent(source, false),
+            Indent {
+                left_pt: Some(-42.0),
+                right_pt: Some(18.0),
+                first_line_pt: None,
+                hanging_pt: Some(18.0),
+            }
+        );
+        assert_eq!(
+            resolve_direct_paragraph_indent(source, true),
+            Indent {
+                left_pt: Some(18.0),
+                right_pt: Some(-42.0),
+                first_line_pt: None,
+                hanging_pt: Some(18.0),
+            }
+        );
+        assert_eq!(
+            resolve_direct_paragraph_indent(
+                ParagraphIndentOverrides {
+                    logical_left_twips: Some(0),
+                    logical_right_twips: Some(0),
+                    nest_twips: Some(0),
+                    first_line_twips: Some(0),
+                },
+                false,
+            ),
+            Indent::default()
+        );
+        assert_eq!(
+            resolve_direct_paragraph_indent(
+                ParagraphIndentOverrides {
+                    nest_twips: Some(120),
+                    ..ParagraphIndentOverrides::default()
+                },
+                false,
+            ),
+            Indent::default()
+        );
     }
 
     #[test]

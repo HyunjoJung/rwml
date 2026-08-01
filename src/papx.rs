@@ -50,6 +50,10 @@ const SPRM_P_FTTP: u16 = 0x2417;
 const SPRM_P_FWIDOW_CONTROL: u16 = 0x2431;
 const SPRM_P_F_BIDI: u16 = 0x2441;
 const SPRM_P_JC: u16 = 0x2461; // logical paragraph justification (1-byte)
+const SPRM_P_DXA_RIGHT: u16 = 0x845D; // logical right indent (signed twips)
+const SPRM_P_DXA_LEFT: u16 = 0x845E; // logical left indent (signed twips)
+const SPRM_P_NEST: u16 = 0x465F; // additive logical left indent (signed twips)
+const SPRM_P_DXA_LEFT_1: u16 = 0x8460; // logical first-line offset (signed twips)
 const SPRM_P_OUT_LVL: u16 = 0x2640; // outline level 0..8, 9 = body (1-byte)
 const SPRM_P_ILVL: u16 = 0x260A;
 const SPRM_T_FCANT_SPLIT_90: u16 = 0x3403;
@@ -145,6 +149,15 @@ impl ParagraphLayoutOverrides {
     }
 }
 
+/// Sparse modern logical twip indents from direct paragraph formatting.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct ParagraphIndentOverrides {
+    pub(crate) logical_left_twips: Option<i16>,
+    pub(crate) logical_right_twips: Option<i16>,
+    pub(crate) nest_twips: Option<i16>,
+    pub(crate) first_line_twips: Option<i16>,
+}
+
 /// Per-paragraph properties over an FC range `[fc_start, fc_lim)`.
 #[derive(Debug, Clone, Default)]
 struct PapEntry {
@@ -161,6 +174,8 @@ struct PapEntry {
     outlvl: Option<u8>,
     /// Sparse direct paragraph direction and justification modifiers.
     layout: ParagraphLayoutOverrides,
+    /// Sparse direct modern logical paragraph indents.
+    indent: ParagraphIndentOverrides,
     /// Sparse direct paragraph pagination modifiers.
     pagination: ParagraphPaginationOverrides,
     /// Row repeats as a table header (`sprmTTableHeader`).
@@ -183,6 +198,7 @@ struct Pap {
     istd: u16,
     outlvl: Option<u8>,
     layout: ParagraphLayoutOverrides,
+    indent: ParagraphIndentOverrides,
     pagination: ParagraphPaginationOverrides,
     table_header: bool,
     table_cant_split_90: Option<bool>,
@@ -242,6 +258,11 @@ impl PapxTable {
     /// Sparse direct paragraph direction and justification modifiers at `fc`.
     pub(crate) fn paragraph_layout_overrides_at(&self, fc: u32) -> ParagraphLayoutOverrides {
         self.entry_at(fc).map(|e| e.layout).unwrap_or_default()
+    }
+
+    /// Sparse direct modern logical paragraph indents at `fc`.
+    pub(crate) fn paragraph_indent_overrides_at(&self, fc: u32) -> ParagraphIndentOverrides {
+        self.entry_at(fc).map(|e| e.indent).unwrap_or_default()
     }
 
     /// Direct paragraph pagination controls at `fc`, with MS-DOC defaults.
@@ -432,6 +453,7 @@ fn parse_fkp(word: &[u8], page_off: usize, out: &mut Vec<PapEntry>) {
             istd: pap.istd,
             outlvl: pap.outlvl,
             layout: pap.layout,
+            indent: pap.indent,
             pagination: pap.pagination,
             table_header: pap.table_header,
             table_cant_split: pap.resolved_cant_split(),
@@ -502,6 +524,10 @@ fn scan_grpprl(gp: &[u8], istd: u16) -> (Pap, Option<TableDef>) {
             pos = operand_end;
             continue;
         }
+        if apply_indent_sprm(&mut pap.indent, sprm, &gp[op..operand_end]) {
+            pos = operand_end;
+            continue;
+        }
         match sprm {
             SPRM_P_ISTD => {
                 if let Some(new_istd) = u16le(gp, op) {
@@ -553,6 +579,7 @@ fn apply_paragraph_style_to_modeled_properties(pap: &mut Pap, istd: u16) {
     pap.ilvl = 0;
     pap.outlvl = (1..=9).contains(&istd).then_some((istd - 1) as u8);
     pap.layout = ParagraphLayoutOverrides::default();
+    pap.indent = ParagraphIndentOverrides::default();
     pap.pagination = ParagraphPaginationOverrides::default();
     // Table membership and row properties are intentionally preserved by a
     // paragraph-style change. Style-derived layout and pagination are resolved
@@ -621,6 +648,20 @@ fn apply_layout_sprm(layout: &mut ParagraphLayoutOverrides, sprm: u16, operand: 
     true
 }
 
+fn apply_indent_sprm(indent: &mut ParagraphIndentOverrides, sprm: u16, operand: &[u8]) -> bool {
+    let target = match sprm {
+        SPRM_P_DXA_RIGHT => &mut indent.logical_right_twips,
+        SPRM_P_DXA_LEFT => &mut indent.logical_left_twips,
+        SPRM_P_NEST => &mut indent.nest_twips,
+        SPRM_P_DXA_LEFT_1 => &mut indent.first_line_twips,
+        _ => return false,
+    };
+    if let Some(value) = strict_xas(operand) {
+        *target = Some(value);
+    }
+    true
+}
+
 fn physical_justification(value: u8) -> Option<ParagraphJustification> {
     match value {
         0 => Some(ParagraphJustification::PhysicalLeft),
@@ -648,6 +689,11 @@ fn strict_bool16(operand: &[u8]) -> Option<bool> {
         1 => Some(true),
         _ => None,
     }
+}
+
+fn strict_xas(operand: &[u8]) -> Option<i16> {
+    let value = u16le(operand, 0)? as i16;
+    (-31_680..=31_680).contains(&value).then_some(value)
 }
 
 /// Strictly scan a style `grpprlPapx` for the layout and pagination subsets
@@ -1005,6 +1051,56 @@ mod tests {
     }
 
     #[test]
+    fn direct_paragraph_indents_are_strict_source_ordered_and_prefix_safe() {
+        let (default, _) = scan_grpprl(&[], 0);
+        assert_eq!(default.indent, ParagraphIndentOverrides::default());
+
+        let (values, _) = scan_grpprl(
+            &[
+                0x5D, 0x84, 0x60, 0x09, // logical right = 2400
+                0x5E, 0x84, 0xD0, 0x07, // logical left = 2000
+                0x5F, 0x46, 0x88, 0xFF, // nest = -120
+                0x60, 0x84, 0x98, 0xFE, // first line = -360
+            ],
+            0,
+        );
+        assert_eq!(
+            values.indent,
+            ParagraphIndentOverrides {
+                logical_left_twips: Some(2000),
+                logical_right_twips: Some(2400),
+                nest_twips: Some(-120),
+                first_line_twips: Some(-360),
+            }
+        );
+
+        let (last_valid, _) = scan_grpprl(
+            &[
+                0x5E, 0x84, 0x90, 0x01, // logical left = 400
+                0x5E, 0x84, 0x00, 0x7D, // invalid XAS = 32000
+                0x5E, 0x84, 0xF4, 0x01, // logical left = 500
+                0x5D, 0x84, 0x40, 0x84, // valid lower XAS bound = -31680
+                0x5D, 0x84, 0x3F, 0x84, // invalid XAS = -31681
+                0x60, 0x84, 0xC0, 0x7B, // valid upper XAS bound = 31680
+            ],
+            0,
+        );
+        assert_eq!(last_valid.indent.logical_left_twips, Some(500));
+        assert_eq!(last_valid.indent.logical_right_twips, Some(-31_680));
+        assert_eq!(last_valid.indent.first_line_twips, Some(31_680));
+
+        let (truncated, _) = scan_grpprl(
+            &[
+                0x5E, 0x84, 0xD0, 0x07, // valid logical-left prefix
+                0x5D, 0x84, 0x20, // truncated logical-right operand
+            ],
+            0,
+        );
+        assert_eq!(truncated.indent.logical_left_twips, Some(2000));
+        assert_eq!(truncated.indent.logical_right_twips, None);
+    }
+
+    #[test]
     fn paragraph_style_changes_discard_earlier_non_preserved_properties() {
         let (style_last, _) = scan_grpprl(
             &[
@@ -1017,6 +1113,8 @@ mod tests {
                 0x40, 0x26, 0x02, // direct outline level
                 0x0A, 0x26, 0x03, // direct list level
                 0x0B, 0x46, 0x05, 0x00, // direct list format override
+                0x5E, 0x84, 0xD0, 0x07, // direct logical-left indent
+                0x60, 0x84, 0x98, 0xFE, // direct hanging indent
                 0x16, 0x24, 0x01, // paragraph is in a table
                 0x17, 0x24, 0x01, // paragraph terminates a table row
                 0x04, 0x34, 0x01, // table header row
@@ -1033,6 +1131,7 @@ mod tests {
         );
         assert_eq!(style_last.outlvl, Some(4));
         assert_eq!((style_last.ilfo, style_last.ilvl), (0, 0));
+        assert_eq!(style_last.indent, ParagraphIndentOverrides::default());
         assert!(style_last.in_table);
         assert!(style_last.ttp);
         assert!(style_last.table_header);
@@ -1047,6 +1146,8 @@ mod tests {
                 0x40, 0x26, 0x02, // later direct outline level
                 0x0A, 0x26, 0x03, // later direct list level
                 0x0B, 0x46, 0x05, 0x00, // later direct list format override
+                0x5E, 0x84, 0xD0, 0x07, // later direct logical-left indent
+                0x60, 0x84, 0x98, 0xFE, // later direct hanging indent
             ],
             2,
         );
@@ -1061,6 +1162,14 @@ mod tests {
         assert_eq!(direct_last.pagination.keep_lines, Some(true));
         assert_eq!(direct_last.outlvl, Some(2));
         assert_eq!((direct_last.ilfo, direct_last.ilvl), (5, 3));
+        assert_eq!(
+            direct_last.indent,
+            ParagraphIndentOverrides {
+                logical_left_twips: Some(2000),
+                first_line_twips: Some(-360),
+                ..ParagraphIndentOverrides::default()
+            }
+        );
     }
 
     #[test]
@@ -1178,6 +1287,7 @@ mod tests {
             istd: 0,
             outlvl: None,
             layout: ParagraphLayoutOverrides::default(),
+            indent: ParagraphIndentOverrides::default(),
             pagination: ParagraphPaginationOverrides::default(),
             table_header: false,
             table_cant_split: false,

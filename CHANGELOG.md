@@ -23,6 +23,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Opened legacy `.doc` paragraphs now preserve strict direct modern logical
+  `sprmPDxaLeft`, `sprmPDxaRight`, additive `sprmPNest`, and
+  `sprmPDxaLeft1` signed-twip indents. Logical leading/trailing edges resolve
+  against final resolved paragraph direction, positive first-line offsets remain
+  first-line indents, and negative offsets become hanging indents through the
+  shared model and `.docx` conversion/reopen. Invalid XAS values do not replace
+  the last valid value, and truncated modifiers retain the valid prefix.
+  `sprmPNest` is materialized only when the same direct PAPX supplies its
+  logical-left base; nest-only values remain unresolved rather than being
+  incorrectly added to zero when an unmodeled style indent could apply.
+  Paragraph-style/list-level, compatibility-era, character-unit, and
+  mirrored indents, plus negative-indent PDF outdenting, remain unsupported.
 - Opened legacy `.doc` tables now preserve strict direct `sprmTFBiDi` and
   compatibility `sprmTFBiDi90` Bool16 direction from row-terminating PAPX.
   Repeated values of each property apply in source order, either final
@@ -45,8 +57,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   alignment when present. The same bounded direction/justification subset now
   resolves through cycle/depth-bounded paragraph-style STSH inheritance before
   final direct PAPX overrides. Character-style/language-derived direction,
-  logical legacy indents, exact RTL list-level layout, table-style-derived
-  visual RTL, piece `Pcd.Prm`, and Markdown/HTML visual RTL remain unsupported.
+  paragraph-style/list-level and compatibility-era/character-unit/mirrored legacy
+  indents, exact RTL list-level layout, table-style-derived visual RTL, piece
+  `Pcd.Prm`, and Markdown/HTML visual RTL remain unsupported.
 - Opened legacy `.doc` CHPX runs now preserve literal direct `sprmCFBiDi`
   on/off values through the shared model, `.docx` conversion, and PDF run
   isolation. Style-relative operands use the conservative unknown fallback,
