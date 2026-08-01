@@ -436,6 +436,28 @@ fn expected_render_unsupported(mut features: rwml::FeatureInventory) -> rwml::Fe
 }
 
 #[cfg(feature = "render")]
+fn replace_cell_list_labels(blocks: &mut [Block], next: &mut usize) {
+    for block in blocks {
+        match block {
+            Block::Paragraph(paragraph) => {
+                if let Some(list) = &mut paragraph.props.list {
+                    *next += 1;
+                    list.label = format!("changed-cell-marker-{next}");
+                }
+            }
+            Block::Table(table) => {
+                for row in &mut table.rows {
+                    for cell in &mut row.cells {
+                        replace_cell_list_labels(&mut cell.blocks, next);
+                    }
+                }
+            }
+            Block::Image(_) | Block::Chart(_) | Block::PageBreak | Block::SectionBreak(_) => {}
+        }
+    }
+}
+
+#[cfg(feature = "render")]
 #[test]
 fn public_corpus_render_report_matches_manifest() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("corpus/public");
@@ -616,6 +638,84 @@ fn render_activation_fixtures_preserve_opened_document_semantics() {
         rtl_pdf,
         rtl.try_to_pdf_with_fonts(&fonts)
             .expect("repeat fixed-font RTL render")
+    );
+
+    let lists = open("table-cell-lists.docx");
+    let list_model = lists.model();
+    let Block::Paragraph(before) = &list_model.blocks[0] else {
+        panic!("list fixture leading body paragraph");
+    };
+    let Block::Table(table) = &list_model.blocks[1] else {
+        panic!("list fixture table");
+    };
+    let Block::Paragraph(after) = &list_model.blocks[2] else {
+        panic!("list fixture trailing body paragraph");
+    };
+    let Block::Paragraph(direct) = &table.rows[0].cells[0].blocks[0] else {
+        panic!("direct cell list paragraph");
+    };
+    let Block::Paragraph(bullet) = &table.rows[0].cells[0].blocks[1] else {
+        panic!("cell bullet paragraph");
+    };
+    let Block::Table(nested) = &table.rows[0].cells[1].blocks[0] else {
+        panic!("nested list table");
+    };
+    let Block::Paragraph(nested_item) = &nested.rows[0].cells[0].blocks[0] else {
+        panic!("nested cell list paragraph");
+    };
+    assert!(table.bidi_visual);
+    assert_eq!(
+        before.props.list.as_ref().map(|list| list.label.as_str()),
+        Some("4.")
+    );
+    assert_eq!(
+        direct.props.list.as_ref().map(|list| list.label.as_str()),
+        Some("5.")
+    );
+    assert_eq!(
+        bullet
+            .props
+            .list
+            .as_ref()
+            .map(|list| (list.ordered, list.level, list.label.as_str())),
+        Some((false, 1, ""))
+    );
+    assert_eq!(
+        nested_item
+            .props
+            .list
+            .as_ref()
+            .map(|list| list.label.as_str()),
+        Some("6.")
+    );
+    assert_eq!(
+        after.props.list.as_ref().map(|list| list.label.as_str()),
+        Some("7.")
+    );
+
+    let list_pdf =
+        rwml::try_render_pdf_with_fonts(&list_model, &fonts).expect("table-cell list render");
+    assert_eq!(
+        list_pdf,
+        rwml::try_render_pdf_with_fonts(&list_model, &fonts)
+            .expect("repeat table-cell list render")
+    );
+    let mut changed_labels = list_model.clone();
+    let mut changed = 0;
+    let Block::Table(changed_table) = &mut changed_labels.blocks[1] else {
+        panic!("changed list fixture table");
+    };
+    for row in &mut changed_table.rows {
+        for cell in &mut row.cells {
+            replace_cell_list_labels(&mut cell.blocks, &mut changed);
+        }
+    }
+    assert_eq!(changed, 3);
+    assert_ne!(
+        list_pdf,
+        rwml::try_render_pdf_with_fonts(&changed_labels, &fonts)
+            .expect("changed table-cell marker render"),
+        "changing only table-cell labels must change PDF output"
     );
 
     let wrap = open("wrap-top-bottom.docx");

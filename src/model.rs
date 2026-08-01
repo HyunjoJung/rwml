@@ -457,8 +457,10 @@ pub struct ListInfo {
     pub level: u8,
     /// `true` = numbered list, `false` = bullet list.
     pub ordered: bool,
-    /// The rendered autonumber label (e.g. `1.`, `가.`) — used by the flat text
-    /// path; the Markdown/HTML exporters use native list syntax instead.
+    /// The reader-captured rendered autonumber label (e.g. `1.`, `가.`). PDF
+    /// preview prefers a nonempty label and synthesizes a deterministic fallback
+    /// when empty. Markdown/HTML emit native list syntax; the DOCX writer
+    /// reconstructs numbering from [`Self::level`] and [`Self::ordered`].
     pub label: String,
 }
 

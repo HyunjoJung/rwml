@@ -23,13 +23,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   while retaining the authoritative package and touched-part evidence.
 - Adds a deterministic public render-activation corpus for run paint/hidden
   text, explicit tabs and RTL tables, keep/widow pagination, equal-width
-  columns, and bounded `wrapTopAndBottom` flow, with per-file provenance.
+  columns, bounded `wrapTopAndBottom` flow, and
+  `table-cell-lists.docx` body/direct-cell/nested-cell numbering, bullet, and
+  RTL cases, with per-file provenance.
 - Extends renderer validation with fixed-font all-page aHash, foreground ink
   IoU, explicit unmatched/capped page counts, configurable gates, and bounded
   page-pair raster streaming while retaining the historical page-1 aHash.
 
 ### Fixed
 
+- PDF previews now paint reader-captured or deterministic fallback list markers
+  in ordinary and recursively flattened table cells. One per-story fallback
+  state spans surrounding body, direct-cell, nested-cell, and later body
+  paragraphs; visual RTL table placement does not reverse it. Empty or
+  hidden-only items retain their marker, and split rows or repeated headers
+  reuse already-shaped markers without recounting. List-instance identity,
+  source restart metadata, marker fonts/glyphs/tabs/alignment, nested-grid
+  layout, and Word-exact RTL list typography remain outside this bounded
+  support.
 - Opened legacy `.doc` paragraphs now preserve direct `sprmPShd80` palette and
   `sprmPShd` COLORREF shading when the source result collapses exactly to one
   explicit RGB fill. Clear shading uses its explicit background, solid shading

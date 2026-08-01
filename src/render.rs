@@ -2269,32 +2269,44 @@ impl ListState {
     }
 }
 
+fn paragraph_list_marker(p: &Paragraph, lists: &mut ListState) -> Option<String> {
+    match (&p.props.list, p.props.heading_level) {
+        (Some(list), None) => Some(lists.marker(list)),
+        _ => None,
+    }
+}
+
 /// Lay out one paragraph into flow items, with an optional list `marker` and the
 /// paragraph's left/right indent (list level adds a per-level indent).
-fn layout_paragraph(
-    p: &Paragraph,
-    out: &mut Vec<FlowItem>,
+struct ShapedParagraph<'a> {
+    lines: Vec<LineLayout>,
+    images: Vec<&'a Image>,
+}
+
+fn shape_paragraph_content<'a>(
+    p: &'a Paragraph,
     marker: Option<&str>,
     tab_stops: &[TabStop],
-    geom: Geom,
+    available_width: f32,
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
-) {
+    track_source_ranges: bool,
+) -> ShapedParagraph<'a> {
     let list_level = p.props.list.as_ref().map(|l| l.level).unwrap_or(0) as f32;
-    let indent = paragraph_indent_layout(&p.props, geom.content_w(), list_level * LIST_INDENT);
+    let indent = paragraph_indent_layout(&p.props, available_width, list_level * LIST_INDENT);
 
     let mut text = String::new();
     let mut ranges: Vec<(usize, usize, CharProps)> = Vec::new();
     let mut links: Vec<(usize, usize, Rc<str>)> = Vec::new();
     let mut dynamic_ranges: Vec<(usize, usize, DynamicTextRun)> = Vec::new();
     let mut images: Vec<&Image> = Vec::new();
-    let mut source_char_ranges = Vec::new();
+    let mut source_char_ranges = track_source_ranges.then(Vec::new);
     let mut source_chars = 0usize;
     if p.props.bidi {
         append_directional_control(
             &mut text,
             &mut ranges,
-            Some(&mut source_char_ranges),
+            source_char_ranges.as_mut(),
             CharProps {
                 rtl: true,
                 ..CharProps::default()
@@ -2309,14 +2321,18 @@ fn layout_paragraph(
             text.push_str(m);
             text.push(' ');
             ranges.push((marker_start, text.len(), CharProps::default()));
-            source_char_ranges.extend(std::iter::repeat_n(
-                (source_chars, source_chars),
-                m.chars().count() + 1,
-            ));
+            if let Some(source_char_ranges) = source_char_ranges.as_mut() {
+                source_char_ranges.extend(std::iter::repeat_n(
+                    (source_chars, source_chars),
+                    m.chars().count() + 1,
+                ));
+            }
         }
     }
     for r in &p.runs {
-        let run_source_chars = r.text.chars().count();
+        let run_source_chars = source_char_ranges
+            .as_ref()
+            .map_or(0, |_| r.text.chars().count());
         if r.props.hidden {
             source_chars = source_chars.saturating_add(run_source_chars);
             continue;
@@ -2334,7 +2350,7 @@ fn layout_paragraph(
             append_directional_control(
                 &mut text,
                 &mut ranges,
-                Some(&mut source_char_ranges),
+                source_char_ranges.as_mut(),
                 r.props.clone(),
                 RIGHT_TO_LEFT_ISOLATE,
                 source_chars,
@@ -2345,22 +2361,24 @@ fn layout_paragraph(
             let segment_start = text.len();
             text.push_str(&segment.text);
             ranges.push((segment_start, text.len(), segment.props));
-            let rendered_chars = segment.text.chars().count();
-            let segment_source_chars = segment.source_end.saturating_sub(segment.source_start);
-            for index in 0..rendered_chars {
-                let source_start = index.saturating_mul(segment_source_chars) / rendered_chars;
-                let source_end = (index + 1)
-                    .saturating_mul(segment_source_chars)
-                    .saturating_add(rendered_chars - 1)
-                    / rendered_chars;
-                source_char_ranges.push((
-                    source_chars
-                        .saturating_add(segment.source_start)
-                        .saturating_add(source_start),
-                    source_chars
-                        .saturating_add(segment.source_start)
-                        .saturating_add(source_end.min(segment_source_chars)),
-                ));
+            if let Some(source_char_ranges) = source_char_ranges.as_mut() {
+                let rendered_chars = segment.text.chars().count();
+                let segment_source_chars = segment.source_end.saturating_sub(segment.source_start);
+                for index in 0..rendered_chars {
+                    let source_start = index.saturating_mul(segment_source_chars) / rendered_chars;
+                    let source_end = (index + 1)
+                        .saturating_mul(segment_source_chars)
+                        .saturating_add(rendered_chars - 1)
+                        / rendered_chars;
+                    source_char_ranges.push((
+                        source_chars
+                            .saturating_add(segment.source_start)
+                            .saturating_add(source_start),
+                        source_chars
+                            .saturating_add(segment.source_start)
+                            .saturating_add(source_end.min(segment_source_chars)),
+                    ));
+                }
             }
         }
         source_chars = source_chars.saturating_add(run_source_chars);
@@ -2374,13 +2392,14 @@ fn layout_paragraph(
             append_directional_control(
                 &mut text,
                 &mut ranges,
-                Some(&mut source_char_ranges),
+                source_char_ranges.as_mut(),
                 r.props.clone(),
                 POP_DIRECTIONAL_ISOLATE,
                 source_chars,
             );
         }
     }
+    let mut lines = Vec::new();
     if has_visible_text(&text) {
         let align = match p.props.align {
             Align::Left => Alignment::Left,
@@ -2411,24 +2430,42 @@ fn layout_paragraph(
                 color: model_color(color),
                 width: indent.wrap_width,
             });
-            if let Some(range) = line.char_range {
-                line.char_range = (range.start < range.end)
-                    .then(|| source_char_ranges.get(range.start..range.end))
-                    .flatten()
-                    .and_then(|mapped| {
-                        mapped
-                            .first()
-                            .zip(mapped.last())
-                            .map(|(first, last)| LineCharRange {
-                                start: first.0,
-                                end: last.1,
-                            })
-                    });
+            if let Some(source_char_ranges) = source_char_ranges.as_ref() {
+                if let Some(range) = line.char_range {
+                    line.char_range = (range.start < range.end)
+                        .then(|| source_char_ranges.get(range.start..range.end))
+                        .flatten()
+                        .and_then(|mapped| {
+                            mapped
+                                .first()
+                                .zip(mapped.last())
+                                .map(|(first, last)| LineCharRange {
+                                    start: first.0,
+                                    end: last.1,
+                                })
+                        });
+                }
+            } else {
+                line.char_range = None;
             }
-            out.push(FlowItem::Line(line));
+            lines.push(line);
         }
     }
-    for img in images {
+    ShapedParagraph { lines, images }
+}
+
+fn layout_paragraph(
+    p: &Paragraph,
+    out: &mut Vec<FlowItem>,
+    marker: Option<&str>,
+    tab_stops: &[TabStop],
+    geom: Geom,
+    cx: &mut TextCx<'_>,
+    capture: &mut LayoutCapture,
+) {
+    let shaped = shape_paragraph_content(p, marker, tab_stops, geom.content_w(), cx, capture, true);
+    out.extend(shaped.lines.into_iter().map(FlowItem::Line));
+    for img in shaped.images {
         if let Some(item) = image_flow_item(img, geom) {
             out.push(FlowItem::Gap(PARA_GAP));
             out.push(item);
@@ -2580,6 +2617,7 @@ fn shape_cell(
     shape_cell_with_pagination(cell, None, None, inner_w, depth, cx, capture)
 }
 
+#[cfg(test)]
 fn shape_cell_with_pagination(
     cell: &Cell,
     pagination: Option<&[Option<PaginationHint>]>,
@@ -2588,6 +2626,30 @@ fn shape_cell_with_pagination(
     depth: u32,
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
+) -> Vec<LineLayout> {
+    let mut lists = ListState::default();
+    shape_cell_with_pagination_and_lists(
+        cell,
+        pagination,
+        nested_pagination,
+        inner_w,
+        depth,
+        cx,
+        capture,
+        &mut lists,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn shape_cell_with_pagination_and_lists(
+    cell: &Cell,
+    pagination: Option<&[Option<PaginationHint>]>,
+    nested_pagination: Option<&[Option<TablePaginationHints>]>,
+    inner_w: f32,
+    depth: u32,
+    cx: &mut TextCx<'_>,
+    capture: &mut LayoutCapture,
+    lists: &mut ListState,
 ) -> Vec<LineLayout> {
     let mut state = CellShapeState {
         next_scope_id: 1,
@@ -2603,6 +2665,7 @@ fn shape_cell_with_pagination(
         capture,
         0,
         &mut state,
+        lists,
     )
 }
 
@@ -2636,6 +2699,7 @@ fn shape_cell_in_scope(
     capture: &mut LayoutCapture,
     scope_id: usize,
     state: &mut CellShapeState,
+    lists: &mut ListState,
 ) -> Vec<LineLayout> {
     let mut lines = Vec::new();
     if depth > MAX_CELL_DEPTH {
@@ -2648,101 +2712,13 @@ fn shape_cell_in_scope(
         }
         match b {
             Block::Paragraph(p) => {
-                let list_level = p.props.list.as_ref().map(|list| list.level).unwrap_or(0) as f32;
-                let indent = paragraph_indent_layout(&p.props, inner_w, list_level * LIST_INDENT);
-                let mut text = String::new();
-                let mut ranges: Vec<(usize, usize, CharProps)> = Vec::new();
-                let mut links: Vec<(usize, usize, Rc<str>)> = Vec::new();
-                let mut dynamic_ranges: Vec<(usize, usize, DynamicTextRun)> = Vec::new();
-                if p.props.bidi {
-                    append_directional_control(
-                        &mut text,
-                        &mut ranges,
-                        None,
-                        CharProps {
-                            rtl: true,
-                            ..CharProps::default()
-                        },
-                        RIGHT_TO_LEFT_MARK,
-                        0,
-                    );
-                }
-                for r in &p.runs {
-                    if r.props.hidden {
-                        continue;
-                    }
-                    let page_field_index = page_field_index_for_field(&r.field, capture);
-                    if r.text.is_empty() {
-                        continue;
-                    }
-                    if r.props.rtl {
-                        append_directional_control(
-                            &mut text,
-                            &mut ranges,
-                            None,
-                            r.props.clone(),
-                            RIGHT_TO_LEFT_ISOLATE,
-                            0,
-                        );
-                    }
-                    let s = text.len();
-                    for segment in styled_display_segments(&r.props, &r.text) {
-                        let segment_start = text.len();
-                        text.push_str(&segment.text);
-                        ranges.push((segment_start, text.len(), segment.props));
-                    }
-                    if let FieldRole::Hyperlink { url } = &r.field {
-                        links.push((s, text.len(), Rc::from(url.as_str())));
-                    }
-                    if let Some(dynamic) =
-                        dynamic_text_for_field(&r.field, &r.props, page_field_index)
-                    {
-                        dynamic_ranges.push((s, text.len(), dynamic));
-                    }
-                    if r.props.rtl {
-                        append_directional_control(
-                            &mut text,
-                            &mut ranges,
-                            None,
-                            r.props.clone(),
-                            POP_DIRECTIONAL_ISOLATE,
-                            0,
-                        );
-                    }
-                }
-                if !has_visible_text(&text) {
+                let marker = paragraph_list_marker(p, lists);
+                let ShapedParagraph {
+                    lines: mut paragraph_lines,
+                    ..
+                } = shape_paragraph_content(p, marker.as_deref(), &[], inner_w, cx, capture, false);
+                if paragraph_lines.is_empty() {
                     continue;
-                }
-                let align = match p.props.align {
-                    Align::Left => Alignment::Left,
-                    Align::Center => Alignment::Center,
-                    Align::Right => Alignment::Right,
-                    Align::Justify => Alignment::Justify,
-                };
-                let mut paragraph_lines = shape_with_options(
-                    &text,
-                    StyledText {
-                        ranges: &ranges,
-                        links: &links,
-                        dynamic_ranges: &dynamic_ranges,
-                    },
-                    p.props.heading_level,
-                    align,
-                    indent.wrap_width,
-                    ShapeOptions {
-                        line_height: p.props.spacing.line_pct,
-                        text_indent: indent.text_indent,
-                        hanging_indent: indent.hanging_indent,
-                        ..ShapeOptions::default()
-                    },
-                    cx,
-                );
-                for line in &mut paragraph_lines {
-                    line.x_indent = indent.x_indent;
-                    line.background = p.props.shading.map(|color| LineBackground {
-                        color: model_color(color),
-                        width: indent.wrap_width,
-                    });
                 }
                 paragraph_lines.truncate(MAX_CELL_LINES.saturating_sub(lines.len()));
                 if let Some(hint) = pagination
@@ -2789,6 +2765,7 @@ fn shape_cell_in_scope(
                             capture,
                             nested_scope_id,
                             state,
+                            lists,
                         ));
                     }
                 }
@@ -2932,6 +2909,7 @@ fn authored_table_column_edges(widths: &[f32], ncols: usize, content_w: f32) -> 
     Some(edges)
 }
 
+#[cfg(test)]
 fn layout_table_with_row_pagination(
     t: &Table,
     out: &mut Vec<FlowItem>,
@@ -2939,6 +2917,20 @@ fn layout_table_with_row_pagination(
     cx: &mut TextCx<'_>,
     capture: &mut LayoutCapture,
     pagination: TablePaginationView<'_>,
+) {
+    let mut lists = ListState::default();
+    layout_table_with_row_pagination_and_lists(t, out, geom, cx, capture, pagination, &mut lists);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn layout_table_with_row_pagination_and_lists(
+    t: &Table,
+    out: &mut Vec<FlowItem>,
+    geom: Geom,
+    cx: &mut TextCx<'_>,
+    capture: &mut LayoutCapture,
+    pagination: TablePaginationView<'_>,
+    lists: &mut ListState,
 ) {
     let table_id = capture.allocate_table_id();
     let (grid, ncols) = reconstruct_grid(t);
@@ -3048,7 +3040,7 @@ fn layout_table_with_row_pagination(
             let (lines, insets, shading, valign) = match pc.cell {
                 Some(c) => {
                     let insets = cell_insets(c.margins, width);
-                    let lines = shape_cell_with_pagination(
+                    let lines = shape_cell_with_pagination_and_lists(
                         c,
                         direct_pagination,
                         direct_nested_pagination,
@@ -3056,6 +3048,7 @@ fn layout_table_with_row_pagination(
                         0,
                         cx,
                         capture,
+                        lists,
                     );
                     let shading = c.shading.map(|s| rgb::Color::new(s.r, s.g, s.b));
                     (lines, insets, shading, c.valign)
@@ -3507,11 +3500,7 @@ fn collect_blocks_inner(
                         anchor_offset: band.anchor_offset,
                     }));
                 }
-                // A heading suppresses list marking, mirroring the writer.
-                let marker = match (&p.props.list, p.props.heading_level) {
-                    (Some(list), None) => Some(lists.marker(list)),
-                    _ => None,
-                };
+                let marker = paragraph_list_marker(p, &mut lists);
                 if let Some(before) = p.props.spacing.before_pt.filter(|b| *b > 0.0) {
                     out.push(FlowItem::Gap(before));
                 }
@@ -3551,7 +3540,7 @@ fn collect_blocks_inner(
                 let nested_pagination = options
                     .table_nested_pagination
                     .and_then(|tables| tables.get(block_index));
-                layout_table_with_row_pagination(
+                layout_table_with_row_pagination_and_lists(
                     t,
                     out,
                     block_geom,
@@ -3562,6 +3551,7 @@ fn collect_blocks_inner(
                         cells: cell_pagination,
                         nested: nested_pagination,
                     },
+                    &mut lists,
                 );
                 out.push(FlowItem::Gap(PARA_GAP));
             }
@@ -7572,8 +7562,8 @@ mod tests {
     };
     use crate::model::{
         Align, Block, Cell, CellMargins, CharProps, Color, DocModel, FieldRole, Image, Indent,
-        PageSetup, PaginationHint, ParaProps, Paragraph, Row, Run, SectionBreakKind, SectionSetup,
-        Spacing, TabAlignment, TabStop, Table, TableBorderSide, TablePaginationHints,
+        ListInfo, PageSetup, PaginationHint, ParaProps, Paragraph, Row, Run, SectionBreakKind,
+        SectionSetup, Spacing, TabAlignment, TabStop, Table, TableBorderSide, TablePaginationHints,
         TableRowPaginationHint, VertAlign,
     };
     use crate::report::FeatureInventory;
@@ -8024,6 +8014,23 @@ mod tests {
                 },
                 ..Run::default()
             }],
+        );
+
+        assert_eq!(
+            lines[0].char_range.map(|range| (range.start, range.end)),
+            Some((0, 3))
+        );
+    }
+
+    #[test]
+    fn list_marker_does_not_shift_source_character_ranges() {
+        let lines = paragraph_lines_with_marker(
+            ParaProps::default(),
+            vec![Run {
+                text: "ABC".to_string(),
+                ..Run::default()
+            }],
+            Some("1."),
         );
 
         assert_eq!(
@@ -11419,6 +11426,60 @@ mod tests {
         );
     }
 
+    #[test]
+    fn repeated_table_header_reuses_its_shaped_list_marker() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let mut header_rows = laid_out_table_rows(
+            &Table {
+                rows: vec![Row {
+                    cells: vec![Cell {
+                        blocks: vec![Block::Paragraph(list_paragraph("list header", 0, true, ""))],
+                        ..Cell::default()
+                    }],
+                }],
+                header_rows: 1,
+                ..Table::default()
+            },
+            geom,
+        );
+        let pagination = paginate(
+            vec![
+                pagination_line(30.0),
+                FlowItem::Table {
+                    rows: vec![header_rows.remove(0), pagination_table_row(false, 4)],
+                    header_rows: 1,
+                },
+            ],
+            geom,
+            &SectionSetup::default(),
+        );
+
+        let rendered_headers: Vec<_> = pagination
+            .pages
+            .iter()
+            .flat_map(|page| page.iter())
+            .filter_map(|placed| match &placed.item {
+                FlowItem::Row(row) => row
+                    .cells
+                    .first()
+                    .and_then(|cell| cell.lines.first())
+                    .map(shaped_line_text),
+                _ => None,
+            })
+            .filter(|text| text.contains("list header"))
+            .collect();
+        assert!(rendered_headers.len() > 1, "{rendered_headers:?}");
+        assert!(
+            rendered_headers.iter().all(|text| text == "1. list header"),
+            "{rendered_headers:?}"
+        );
+    }
+
     fn page_line_counts(pagination: &super::Pagination) -> Vec<usize> {
         pagination
             .pages
@@ -12222,6 +12283,26 @@ mod tests {
         })
     }
 
+    fn list_paragraph(text: &str, level: u8, ordered: bool, label: &str) -> Paragraph {
+        Paragraph {
+            props: ParaProps {
+                list: Some(ListInfo {
+                    level,
+                    ordered,
+                    label: label.to_string(),
+                }),
+                ..ParaProps::default()
+            },
+            runs: (!text.is_empty())
+                .then(|| Run {
+                    text: text.to_string(),
+                    ..Run::default()
+                })
+                .into_iter()
+                .collect(),
+        }
+    }
+
     fn cell(text: &str) -> Cell {
         Cell {
             blocks: vec![para(text, None)],
@@ -12585,6 +12666,283 @@ mod tests {
             }),
             "가."
         );
+    }
+
+    fn shaped_line_text(line: &LineLayout) -> String {
+        line.runs
+            .first()
+            .map(|run| run.text.to_string())
+            .unwrap_or_default()
+    }
+
+    fn collected_block_line_texts(blocks: &[Block]) -> Vec<String> {
+        let fonts = vec![
+            rwml_fonts::noto_sans_kr_subset_with_hanja().to_vec(),
+            rwml_fonts::noto_sans_arabic_subset().to_vec(),
+            rwml_fonts::noto_sans_hebrew_subset().to_vec(),
+        ];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 300.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let mut flow = Vec::new();
+        let mut capture = LayoutCapture::default();
+        super::collect_blocks(blocks, &mut flow, geom, &mut tcx, &mut capture);
+
+        let mut texts = Vec::new();
+        for item in flow {
+            match item {
+                FlowItem::Line(line) => texts.push(shaped_line_text(&line)),
+                FlowItem::Table { rows, .. } => {
+                    for row in rows {
+                        for cell in row.cells {
+                            texts.extend(cell.lines.iter().map(shaped_line_text));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        texts
+    }
+
+    #[test]
+    fn table_cell_list_markers_follow_story_order_through_nested_tables() {
+        let nested = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: vec![Block::Paragraph(list_paragraph("nested", 0, true, ""))],
+                    ..Cell::default()
+                }],
+            }],
+            ..Table::default()
+        };
+        let table = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: vec![
+                        Block::Paragraph(list_paragraph("direct", 0, true, "")),
+                        Block::Table(nested),
+                    ],
+                    ..Cell::default()
+                }],
+            }],
+            ..Table::default()
+        };
+        let blocks = vec![
+            Block::Paragraph(list_paragraph("body", 0, true, "")),
+            Block::Table(table),
+            Block::Paragraph(list_paragraph("tail", 0, true, "")),
+        ];
+
+        assert_eq!(
+            collected_block_line_texts(&blocks),
+            ["1. body", "2. direct", "3. nested", "4. tail"]
+        );
+    }
+
+    #[test]
+    fn table_cell_shaping_omits_unused_source_character_ranges() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let rows = laid_out_table_rows(
+            &Table {
+                rows: vec![Row {
+                    cells: vec![Cell {
+                        blocks: vec![Block::Paragraph(list_paragraph(
+                            "source range sidecar",
+                            0,
+                            true,
+                            "",
+                        ))],
+                        ..Cell::default()
+                    }],
+                }],
+                ..Table::default()
+            },
+            geom,
+        );
+        let lines = &rows[0].cells[0].lines;
+
+        assert!(!lines.is_empty());
+        assert!(lines.iter().all(|line| line.char_range.is_none()));
+    }
+
+    #[test]
+    fn list_item_beyond_cell_depth_limit_does_not_consume_story_counter() {
+        let mut cell = Cell {
+            blocks: vec![Block::Paragraph(list_paragraph(
+                "beyond depth",
+                0,
+                true,
+                "",
+            ))],
+            ..Cell::default()
+        };
+        for _ in 0..=super::MAX_CELL_DEPTH {
+            cell = Cell {
+                blocks: vec![Block::Table(Table {
+                    rows: vec![Row { cells: vec![cell] }],
+                    ..Table::default()
+                })],
+                ..Cell::default()
+            };
+        }
+        let blocks = vec![
+            Block::Paragraph(list_paragraph("body", 0, true, "")),
+            Block::Table(Table {
+                rows: vec![Row { cells: vec![cell] }],
+                ..Table::default()
+            }),
+            Block::Paragraph(list_paragraph("tail", 0, true, "")),
+        ];
+
+        assert_eq!(collected_block_line_texts(&blocks), ["1. body", "2. tail"]);
+    }
+
+    #[test]
+    fn table_cell_lists_prefer_labels_and_render_marker_only_items() {
+        let mut heading = list_paragraph("heading", 0, true, "");
+        heading.props.heading_level = Some(2);
+        let hidden = Paragraph {
+            props: ParaProps {
+                list: Some(ListInfo {
+                    level: 1,
+                    ordered: false,
+                    label: String::new(),
+                }),
+                ..ParaProps::default()
+            },
+            runs: vec![Run {
+                text: "SECRET".to_string(),
+                props: CharProps {
+                    hidden: true,
+                    ..CharProps::default()
+                },
+                ..Run::default()
+            }],
+        };
+        let table = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: vec![
+                        Block::Paragraph(list_paragraph("captured", 0, true, " iv) ")),
+                        Block::Paragraph(heading),
+                        Block::Paragraph(list_paragraph("fallback", 0, true, "")),
+                        Block::Paragraph(hidden),
+                        Block::Paragraph(list_paragraph("", 0, true, "")),
+                    ],
+                    ..Cell::default()
+                }],
+            }],
+            ..Table::default()
+        };
+
+        assert_eq!(
+            collected_block_line_texts(&[Block::Table(table)]),
+            ["iv) captured", "heading", "2. fallback", "◦ ", "3. "]
+        );
+    }
+
+    #[test]
+    fn bidi_visual_cell_list_markers_keep_logical_numbering_order() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let cell = |text: &str| {
+            let mut paragraph = list_paragraph(text, 0, true, "");
+            paragraph.props.align = Align::Right;
+            paragraph.props.bidi = true;
+            Cell {
+                blocks: vec![Block::Paragraph(paragraph)],
+                ..Cell::default()
+            }
+        };
+        let rows = laid_out_table_rows(
+            &Table {
+                rows: vec![Row {
+                    cells: vec![cell("أول"), cell("שני")],
+                }],
+                col_widths_pct: vec![0.5, 0.5],
+                bidi_visual: true,
+                ..Table::default()
+            },
+            geom,
+        );
+        let cells = &rows[0].cells;
+
+        assert!(cells[0].x > cells[1].x);
+        assert!(shaped_line_text(&cells[0].lines[0]).starts_with("\u{200f}1. "));
+        assert!(shaped_line_text(&cells[1].lines[0]).starts_with("\u{200f}2. "));
+        assert!(cells[0].lines[0].runs[0].x > 10.0);
+        assert!(cells[1].lines[0].runs[0].x > 10.0);
+    }
+
+    fn drawn_line_text(line: &LineLayout) -> String {
+        line.runs
+            .iter()
+            .flat_map(|run| {
+                run.glyphs
+                    .iter()
+                    .filter_map(|glyph| super::glyph_text(&run.text, glyph))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn split_table_cell_list_item_injects_one_marker() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 170.0,
+            height_pt: 180.0,
+            margin_pt: 10.0,
+            ..PageSetup::default()
+        });
+        let table = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: vec![Block::Paragraph(list_paragraph(
+                        &"wrapped list content ".repeat(24),
+                        0,
+                        true,
+                        "",
+                    ))],
+                    ..Cell::default()
+                }],
+            }],
+            ..Table::default()
+        };
+        let mut rows = laid_out_table_rows(&table, geom);
+        let row = rows.remove(0);
+        assert!(row.cells[0].lines.len() >= 3);
+        let budget = row.cells[0].insets.top + row.cells[0].lines[0].height + f32::EPSILON;
+        let (head, tail) = split_row(row, budget);
+        let tail = tail.expect("wrapped row should split");
+        let drawn = head
+            .cells
+            .iter()
+            .chain(&tail.cells)
+            .flat_map(|cell| &cell.lines)
+            .map(drawn_line_text)
+            .collect::<String>();
+
+        assert_eq!(drawn.matches("1.").count(), 1, "{drawn:?}");
     }
 
     #[test]
