@@ -473,10 +473,13 @@ piece table and sub-document char counts, decodes each piece as UTF-16LE or 8-bi
 text in the document's ANSI codepage derived from the FIB language id (`lid`) — so
 Korean (`0x0412` → cp949), Japanese, Cyrillic, etc. decode correctly. The **rich
 model** is a lazy second pass: the CHPX character-property bins (bold/italic/
-underline/strike, **font name from `SttbfFfn`, half-point size, color**), the STSH
-style sheet + outline levels (headings), `sprmTDefTable` (merge-aware tables with
-bounded relative column proportions), list autonumbers, hyperlink field marks,
-and `PICF` inline images.
+underline/strike, **font name from `SttbfFfn`, half-point size, color, and
+CHPX-resident `sprmCHighlight` palette highlighting**), the STSH style sheet +
+outline levels (headings), `sprmTDefTable` (merge-aware tables with bounded
+relative column proportions), list autonumbers, hyperlink field marks, and
+`PICF` inline images. Highlight values use the shared Word color names through
+`.docx` conversion and PDF rendering; piece `Pcd.Prm` character modifiers and
+visual highlight preservation in Markdown/HTML remain outside this path.
 
 The `.docx` **writer** is the inverse of the reader, part by part: `document.xml`
 (`w:rPr`/`w:pPr` with the full property set), a synthesized `styles.xml`
@@ -779,9 +782,9 @@ slices should move only with focused parser, renderer, report, or public-corpus
 evidence.
 
 - [x] Codepage-aware `.doc` text; encryption / Word 6/95 detection gates
-- [x] Full read model: runs (CHPX incl. font/size/color), headings (STSH), tables
-      (`sprmTDefTable` merges and bounded relative column proportions), list
-      autonumbers, hyperlinks, inline images
+- [x] Full read model: runs (CHPX incl. font/size/color and CHPX-resident
+      highlighting), headings (STSH), tables (`sprmTDefTable` merges and bounded
+      relative column proportions), list autonumbers, hyperlinks, inline images
 - [x] Unified `.docx` reader into the same model (98.6% recall vs python-docx)
 - [x] **`.docx` writer** - styled authoring (named styles, rich tables with typed nested cell blocks, page setup,
       styled runs, leveled lists, paragraph page-break-before, simple fields, `PAGEREF` helper runs, dirty TOC heading-range fields,
