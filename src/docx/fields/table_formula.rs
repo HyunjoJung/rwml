@@ -558,6 +558,10 @@ fn read_table_formula_cell(
                             took_branch: false,
                         });
                     }
+                    b"pPr" => {
+                        skip_subtree(r);
+                        consumed_element = true;
+                    }
                     b"tcPr" => {
                         cell.has_span |= read_table_formula_cell_props(r);
                         consumed_element = true;
