@@ -64,18 +64,37 @@ class PublishCrateTests(unittest.TestCase):
         self.assertEqual(status, "already-published")
         run.assert_not_called()
 
-    def test_published_checksum_mismatch_is_fatal(self):
+    def test_preexisting_publication_is_idempotent_despite_repackaging(self):
+        # `cargo package` is not byte-reproducible, so a re-run rebuilds an
+        # artifact whose checksum differs from the immutable published one.
+        # That must not fail the release: the version is already there.
         with tempfile.TemporaryDirectory() as root:
             artifact, _ = self.artifact(root)
             with mock.patch.object(
                 publish_crate.request, "urlopen", return_value=self.response("0" * 64)
             ), mock.patch.object(publish_crate.subprocess, "run") as run:
-                with self.assertRaisesRegex(publish_crate.PublishError, "checksum"):
-                    self.ensure_published(
+                status = self.ensure_published(
+                    "rwml", "0.1.1", artifact, None, poll_attempts=2, poll_interval=0
+                )
+
+        self.assertEqual(status, "already-published")
+        run.assert_not_called()
+
+    def test_preexisting_publication_reports_a_repackaged_checksum(self):
+        with tempfile.TemporaryDirectory() as root:
+            artifact, checksum = self.artifact(root)
+            output = io.StringIO()
+            with mock.patch.object(
+                publish_crate.request, "urlopen", return_value=self.response("0" * 64)
+            ), mock.patch.object(publish_crate.subprocess, "run"):
+                with redirect_stdout(output):
+                    publish_crate.ensure_published(
                         "rwml", "0.1.1", artifact, None, poll_attempts=2, poll_interval=0
                     )
 
-        run.assert_not_called()
+        printed = output.getvalue()
+        self.assertIn("0" * 64, printed)
+        self.assertIn(checksum, printed)
 
     def test_failed_publish_recovers_when_matching_version_appears(self):
         with tempfile.TemporaryDirectory() as root:
