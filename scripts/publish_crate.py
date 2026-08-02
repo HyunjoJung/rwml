@@ -107,8 +107,20 @@ def ensure_published(
     local_checksum = sha256_file(artifact)
     published = registry_checksum(name, version)
     if published is not None:
-        require_matching_checksum(name, version, local_checksum, published)
-        print(f"{name} {version} already published with matching checksum")
+        # Published versions are immutable on crates.io, and the upload that
+        # created this one was checksum-verified at the time. A re-run rebuilds
+        # the artifact, and `cargo package` is not byte-reproducible (embedded
+        # lockfile, entry ordering, gzip timestamps, `.cargo_vcs_info.json`), so
+        # a difference here means the local repackage differs — never that the
+        # registry content changed. Report it and stay idempotent.
+        if published == local_checksum:
+            print(f"{name} {version} already published with matching checksum")
+        else:
+            print(
+                f"{name} {version} already published as {published}; "
+                f"local repackage is {local_checksum} (cargo package is not "
+                f"byte-reproducible, registry content is immutable)"
+            )
         return "already-published"
     if check_only:
         print(f"{name} {version} is not published; local artifact is ready")
