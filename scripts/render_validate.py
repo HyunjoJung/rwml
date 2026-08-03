@@ -39,6 +39,7 @@ to Docker.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import re
@@ -350,11 +351,41 @@ def validation_gate(summary: dict, thresholds: dict | None = None) -> dict:
     return {"passed": all(check["passed"] for check in checks), "checks": checks}
 
 
+def reference_page_digests(pdf: Path, *, dpi: int, page_cap: int) -> list[str] | None:
+    """Per-page raster digests of a rendered reference, for a stability probe."""
+    try:
+        images, _ = rasterize_pdf_pages(pdf, dpi=dpi, page_cap=page_cap)
+    except Exception:
+        return None
+    digests = []
+    for image in images:
+        try:
+            digests.append(hashlib.sha256(image.tobytes()).hexdigest())
+        except Exception:
+            return None
+    return digests
+
+
+def oracle_stability_verdict(
+    first: list[str] | None, second: list[str] | None
+) -> bool | None:
+    """Whether two renders of the same reference document match.
+
+    `None` when there is nothing to compare, so an unavailable probe is never
+    read as a failure.
+    """
+    if not first or not second:
+        return None
+    return list(first) == list(second)
+
+
 def validation_report(
     rows: list[ValidationRow],
     recall_min: float,
     thresholds: dict | None = None,
     visual_settings: dict | None = None,
+    reference_stable: bool | None = None,
+    unstable_references: list[str] | None = None,
 ) -> dict:
     for row in rows:
         if not isinstance(row.document, str):
@@ -462,6 +493,11 @@ def validation_report(
             1 for r in measured if r.recall is not None and r.recall < recall_min
         ),
         "recall_min": recall_min,
+        # Whether the reference renderer reproduced itself. When false, the
+        # visual metrics below are not comparable across runs; text recall and
+        # the page-count ratio still are.
+        "reference_stable": reference_stable,
+        "unstable_references": sorted(unstable_references or []),
         "mean_recall": mean([r.recall for r in measured if r.recall is not None]),
         "mean_page_ratio": mean(
             [r.page_ratio for r in measured if r.page_ratio is not None]
@@ -1524,6 +1560,15 @@ def main() -> int:
         help=f"Side length for all-page aHash (default: {DEFAULT_AHASH_SIZE}).",
     )
     ap.add_argument(
+        "--verify-oracle",
+        action="store_true",
+        help=(
+            "Render every reference document twice and report whether the "
+            "reference renderer reproduced itself. Doubles the reference render "
+            "cost, so it is off by default."
+        ),
+    )
+    ap.add_argument(
         "--system-fonts",
         action="store_true",
         help="Use host system fonts instead of the deterministic Noto subset set.",
@@ -1560,6 +1605,8 @@ def main() -> int:
         )
         print("-" * 108)
     rows = []
+    reference_stable: bool | None = None
+    unstable_references: list[str] = []
     try:
         soffice_mode = resolve_soffice_mode(args.soffice)
     except RenderDependencyError as exc:
@@ -1573,6 +1620,33 @@ def main() -> int:
                 ref = render_libreoffice(src, tmp, soffice_mode)
             except RenderDependencyError as exc:
                 sys.exit(str(exc))
+            if args.verify_oracle and ref is not None:
+                # Render the same document a second time. A reference renderer
+                # that does not reproduce itself makes the visual metrics
+                # incomparable across runs, so every document is checked rather
+                # than a sample, which would only give false confidence.
+                probe_dir = tmp / "oracle-probe" / src.stem
+                probe_dir.mkdir(parents=True, exist_ok=True)
+                try:
+                    again = render_libreoffice(src, probe_dir, soffice_mode)
+                except RenderDependencyError:
+                    again = None
+                verdict = (
+                    oracle_stability_verdict(
+                        reference_page_digests(
+                            ref, dpi=args.raster_dpi, page_cap=args.page_cap
+                        ),
+                        reference_page_digests(
+                            again, dpi=args.raster_dpi, page_cap=args.page_cap
+                        ),
+                    )
+                    if again is not None
+                    else None
+                )
+                if verdict is False:
+                    unstable_references.append(src.name)
+                if verdict is not None:
+                    reference_stable = (reference_stable is not False) and verdict
             got = tmp / (src.stem + ".rwml.pdf")
             render_report = render_rwml(
                 src,
@@ -1686,6 +1760,8 @@ def main() -> int:
         args.recall_min,
         thresholds=thresholds,
         visual_settings=visual_settings,
+        reference_stable=reference_stable,
+        unstable_references=unstable_references,
     )
     if args.json:
         print(json_report_payload(report))
