@@ -315,7 +315,8 @@ conditional regions and `w:tblPrEx` margin inheritance remain outside this
 bounded subset. A table style's `w:tblBorders`, from its own `w:tblPr` or its
 `wholeTable` region and resolved through the same chain, applies when the table
 declares no borders of its own. A style's `w:tblW`, `w:tblInd`, and table
-`w:jc` fill in only what the table itself leaves unset.
+`w:jc` fill in only what the table itself leaves unset. Its `wholeTable` `w:tcPr` supplies cell
+shading, vertical alignment, and preferred width for cells that declare none.
 Rotated raster bounds drive proportional
 content-box/page-height fitting and pagination. Narrow RTL tables reverse logical
 placement and mirror their cells inside the local table box. Page geometry,

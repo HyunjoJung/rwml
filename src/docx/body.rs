@@ -5552,6 +5552,7 @@ struct CellRaw {
     vmerge: VMerge,
     shading: Option<Color>,
     valign: VCell,
+    valign_declared: bool,
     width_pct: Option<f32>,
     margins: CellMarginSpec,
 }
@@ -5662,6 +5663,7 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Table, TablePagina
         })
         .collect();
     let style_cell_margins = ctx.styles.table_cell_margins(props.style_id.as_deref());
+    let style_cell_defaults = ctx.styles.table_cell_defaults(props.style_id.as_deref());
     // A table style's geometry fills in only what the table left unset.
     let style_geometry = ctx.styles.table_geometry(props.style_id.as_deref());
     props.width_pct = props.width_pct.or(style_geometry.width_pct);
@@ -5678,8 +5680,13 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Table, TablePagina
             props.border_styles = borders.5;
         }
     }
-    let (table, cell_pagination, nested_pagination) =
-        build_table(rows, props, grid_widths, style_cell_margins);
+    let (table, cell_pagination, nested_pagination) = build_table(
+        rows,
+        props,
+        grid_widths,
+        style_cell_margins,
+        style_cell_defaults,
+    );
     (
         table,
         TablePaginationHints {
@@ -6041,6 +6048,53 @@ fn read_tblpr_alternate_content_branch(
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
+    }
+}
+
+/// Cell defaults a table style can declare for the whole table. Only values
+/// the model already carries participate, and `valign` is optional so an
+/// explicit `top` stays distinguishable from an unset one.
+#[derive(Clone, Copy, Default, Debug, PartialEq)]
+pub(crate) struct TableStyleCellDefaults {
+    pub(crate) shading: Option<Color>,
+    pub(crate) valign: Option<VCell>,
+    pub(crate) width_pct: Option<f32>,
+}
+
+impl TableStyleCellDefaults {
+    pub(crate) fn overlay(&mut self, other: Self) {
+        if other.shading.is_some() {
+            self.shading = other.shading;
+        }
+        if other.valign.is_some() {
+            self.valign = other.valign;
+        }
+        if other.width_pct.is_some() {
+            self.width_pct = other.width_pct;
+        }
+    }
+
+    pub(crate) fn is_empty(self) -> bool {
+        self.shading.is_none() && self.valign.is_none() && self.width_pct.is_none()
+    }
+
+    /// Record a `w:tcPr` child, reusing the direct cell reader's semantics.
+    pub(crate) fn record(&mut self, e: &BytesStart<'_>) {
+        let mut t = TcPr {
+            gs: 1,
+            vm: VMerge::None,
+            shading: None,
+            valign: VCell::Top,
+            valign_declared: false,
+            width_pct: None,
+            margins: CellMarginSpec::default(),
+        };
+        apply_tcpr_child(&mut t, e);
+        self.overlay(Self {
+            shading: t.shading,
+            valign: t.valign_declared.then_some(t.valign),
+            width_pct: t.width_pct,
+        });
     }
 }
 
@@ -6535,6 +6589,7 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
             vmerge: VMerge::None,
             shading: None,
             valign: VCell::Top,
+            valign_declared: false,
             width_pct: None,
             margins: CellMarginSpec::default(),
         };
@@ -6581,6 +6636,7 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
         vm: VMerge::None,
         shading: None,
         valign: VCell::Top,
+        valign_declared: false,
         width_pct: None,
         margins: CellMarginSpec::default(),
     });
@@ -6592,6 +6648,7 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
         vmerge: tc.vm,
         shading: tc.shading,
         valign: tc.valign,
+        valign_declared: tc.valign_declared,
         width_pct: tc.width_pct,
         margins: tc.margins,
     }
@@ -6692,6 +6749,7 @@ struct TcPr {
     vm: VMerge,
     shading: Option<Color>,
     valign: VCell,
+    valign_declared: bool,
     width_pct: Option<f32>,
     margins: CellMarginSpec,
 }
@@ -6703,6 +6761,7 @@ fn read_tcpr(r: &mut Xml<'_>) -> TcPr {
         vm: VMerge::None,
         shading: None,
         valign: VCell::Top,
+        valign_declared: false,
         width_pct: None,
         margins: CellMarginSpec::default(),
     };
@@ -6804,6 +6863,7 @@ fn apply_tcpr_child(t: &mut TcPr, e: &BytesStart<'_>) {
         }
         b"shd" => t.shading = attr_local(e, b"fill").and_then(|v| parse_rgb_hex_color(&v)),
         b"vAlign" => {
+            t.valign_declared = true;
             t.valign = match attr_local_trimmed(e, b"val").as_deref() {
                 Some("center") => VCell::Center,
                 Some("bottom") => VCell::Bottom,
@@ -6943,6 +7003,7 @@ fn build_table(
     props: TableProps,
     grid_widths: Vec<u32>,
     style_cell_margins: CellMarginSpec,
+    style_cell_defaults: TableStyleCellDefaults,
 ) -> (
     Table,
     TableCellPaginationHints,
@@ -6965,6 +7026,7 @@ fn build_table(
         dropped: bool,
         shading: Option<Color>,
         valign: VCell,
+        valign_declared: bool,
         width_pct: Option<f32>,
         margins: CellMarginSpec,
     }
@@ -6989,6 +7051,7 @@ fn build_table(
                 dropped: false,
                 shading: c.shading,
                 valign: c.valign,
+                valign_declared: c.valign_declared,
                 width_pct: c.width_pct,
                 margins: c.margins,
             });
@@ -7044,9 +7107,15 @@ fn build_table(
                 col_span: p.col_span,
                 row_span: p.row_span,
                 is_header: p.is_header,
-                shading: p.shading,
-                valign: p.valign,
-                width_pct: p.width_pct,
+                // A table style's whole-table cell defaults fill in only what
+                // the cell itself left undeclared.
+                shading: p.shading.or(style_cell_defaults.shading),
+                valign: if p.valign_declared {
+                    p.valign
+                } else {
+                    style_cell_defaults.valign.unwrap_or(p.valign)
+                },
+                width_pct: p.width_pct.or(style_cell_defaults.width_pct),
                 margins: resolve_cell_margins(
                     style_cell_margins,
                     props.cell_margins,
@@ -8313,6 +8382,7 @@ mod tests {
             vmerge,
             shading: None,
             valign: VCell::Top,
+            valign_declared: false,
             width_pct: None,
             margins: CellMarginSpec::default(),
         }
@@ -9418,6 +9488,7 @@ mod tests {
             TableProps::default(),
             Vec::new(),
             CellMarginSpec::default(),
+            TableStyleCellDefaults::default(),
         )
         .0;
 

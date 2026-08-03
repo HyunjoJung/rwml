@@ -19,6 +19,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Fills a table's width, indentation, and alignment from its table style —
   `w:tblW`, `w:tblInd`, and table `w:jc`, resolved through `w:basedOn` and the
   `wholeTable` region — for values the table itself leaves unset.
+- Applies a table style's `wholeTable` `w:tcPr` cell shading, vertical alignment,
+  and preferred width to cells that declare none of their own.
 
 ## [0.1.2] - 2026-08-02
 

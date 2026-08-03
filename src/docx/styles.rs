@@ -37,6 +37,7 @@ pub(crate) struct Styles {
     table_cell_margins: HashMap<String, super::body::CellMarginSpec>,
     table_borders: HashMap<String, super::body::TableBorderTuple>,
     table_geometry: HashMap<String, super::body::TableStyleGeometry>,
+    table_cell_defaults: HashMap<String, super::body::TableStyleCellDefaults>,
 }
 
 impl Styles {
@@ -142,6 +143,17 @@ impl Styles {
     pub(crate) fn table_geometry(&self, style_id: Option<&str>) -> super::body::TableStyleGeometry {
         style_id
             .and_then(|style_id| self.table_geometry.get(style_id))
+            .copied()
+            .unwrap_or_default()
+    }
+
+    /// A table style's whole-table cell defaults, resolved through `basedOn`.
+    pub(crate) fn table_cell_defaults(
+        &self,
+        style_id: Option<&str>,
+    ) -> super::body::TableStyleCellDefaults {
+        style_id
+            .and_then(|style_id| self.table_cell_defaults.get(style_id))
             .copied()
             .unwrap_or_default()
     }
@@ -1079,7 +1091,7 @@ pub(crate) fn parse(xml: &str) -> Styles {
                     TableRowStyleRegion::from_attr(attr_local_trimmed(&e, b"type").as_deref());
                 if let (Some(style), Some(region)) = (&mut cur_style, region) {
                     if style.kind == Some(StyleKind::Table) {
-                        let (props, margins, borders, geometry) =
+                        let (props, margins, borders, geometry, cell_defaults) =
                             read_conditional_table_region(&mut r, b"tblStylePr");
                         style.table_row_props.region_mut(region).overlay(props);
                         // Only the whole-table region joins the table-wide
@@ -1091,6 +1103,7 @@ pub(crate) fn parse(xml: &str) -> Styles {
                                 style.whole_table_borders = borders;
                             }
                             style.whole_table_geometry.overlay(geometry);
+                            style.whole_table_cell_defaults.overlay(cell_defaults);
                         }
                     } else {
                         skip_subtree(&mut r);
@@ -1299,6 +1312,10 @@ pub(crate) fn parse(xml: &str) -> Styles {
         if !geometry.is_empty() {
             styles.table_geometry.insert(id.clone(), geometry);
         }
+        let cell_defaults = resolve_style_table_cell_defaults(id, &raw_styles, &mut Vec::new(), 0);
+        if !cell_defaults.is_empty() {
+            styles.table_cell_defaults.insert(id.clone(), cell_defaults);
+        }
     }
     styles
 }
@@ -1315,6 +1332,7 @@ struct RawStyle {
     whole_table_borders: Option<super::body::TableBorderTuple>,
     table_geometry: super::body::TableStyleGeometry,
     whole_table_geometry: super::body::TableStyleGeometry,
+    whole_table_cell_defaults: super::body::TableStyleCellDefaults,
     outline: Option<u8>,
     run_props: RunProps,
     paragraph_props: ParagraphProps,
@@ -1590,6 +1608,51 @@ fn resolve_style_table_geometry(
     geometry
 }
 
+fn read_conditional_cell_defaults(
+    r: &mut Reader<&[u8]>,
+    defaults: &mut super::body::TableStyleCellDefaults,
+) {
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if matches!(local(e.name().as_ref()), b"shd" | b"vAlign" | b"tcW") =>
+            {
+                defaults.record(&e);
+            }
+            Ok(Event::Start(_)) => skip_subtree(r),
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"tcPr" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+}
+
+fn resolve_style_table_cell_defaults(
+    id: &str,
+    raw_styles: &HashMap<String, RawStyle>,
+    stack: &mut Vec<String>,
+    depth: usize,
+) -> super::body::TableStyleCellDefaults {
+    if depth >= STYLE_CHAIN_LIMIT || stack.iter().any(|seen| seen == id) {
+        return super::body::TableStyleCellDefaults::default();
+    }
+    let Some(style) = raw_styles
+        .get(id)
+        .filter(|style| style.kind == Some(StyleKind::Table))
+    else {
+        return super::body::TableStyleCellDefaults::default();
+    };
+    stack.push(id.to_string());
+    let mut defaults = style
+        .based_on
+        .as_deref()
+        .map(|base| resolve_style_table_cell_defaults(base, raw_styles, stack, depth + 1))
+        .unwrap_or_default();
+    defaults.overlay(style.whole_table_cell_defaults);
+    stack.pop();
+    defaults
+}
+
 fn read_conditional_table_region(
     r: &mut Reader<&[u8]>,
     end: &[u8],
@@ -1598,11 +1661,13 @@ fn read_conditional_table_region(
     super::body::CellMarginSpec,
     Option<super::body::TableBorderTuple>,
     super::body::TableStyleGeometry,
+    super::body::TableStyleCellDefaults,
 ) {
     let mut props = TableRowProps::default();
     let mut margins = super::body::CellMarginSpec::default();
     let mut borders = None;
     let mut geometry = super::body::TableStyleGeometry::default();
+    let mut cell_defaults = super::body::TableStyleCellDefaults::default();
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"trPr" => {
@@ -1619,6 +1684,9 @@ fn read_conditional_table_region(
             {
                 geometry.record(&e);
             }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tcPr" => {
+                read_conditional_cell_defaults(r, &mut cell_defaults);
+            }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
                 if let Some(value) = read_conditional_table_row_props_alternate_content(r) {
                     props.overlay(value);
@@ -1626,7 +1694,7 @@ fn read_conditional_table_region(
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblPr" => {
                 // Recurse so a region's `tblPr` contributes its margins too.
-                let (nested, nested_margins, nested_borders, nested_geometry) =
+                let (nested, nested_margins, nested_borders, nested_geometry, nested_cells) =
                     read_conditional_table_region(r, b"tblPr");
                 props.overlay(nested);
                 margins.overlay(nested_margins);
@@ -1634,6 +1702,7 @@ fn read_conditional_table_region(
                     borders = nested_borders;
                 }
                 geometry.overlay(nested_geometry);
+                cell_defaults.overlay(nested_cells);
             }
             Ok(Event::Start(_)) => skip_subtree(r),
             Ok(Event::End(e)) if local(e.name().as_ref()) == end => break,
@@ -1641,7 +1710,7 @@ fn read_conditional_table_region(
             _ => {}
         }
     }
-    (props, margins, borders, geometry)
+    (props, margins, borders, geometry, cell_defaults)
 }
 
 fn read_conditional_table_row_props(r: &mut Reader<&[u8]>, end: &[u8]) -> TableRowProps {
