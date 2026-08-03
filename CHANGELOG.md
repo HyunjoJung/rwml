@@ -55,6 +55,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Replaces the stale `~0.93 mean text recall` figure with the measured public-corpus
+  result — 0.99 mean text recall and a 1.00 mean page-count ratio, with 23 of 24
+  documents at exactly 1.00 — and documents why the remaining right-to-left fixture
+  scores lower: complex-script clusters can only be mapped to text through PDF
+  `ActualText`, which Acrobat and Chrome honor but MuPDF/PyMuPDF, pdfminer.six, and
+  pypdf ignore. Rendering is unaffected.
+
 - States the roadmap's two conventions explicitly: documented behavior is
   implemented and covered by tests, and the named limits of each bounded slice
   describe the current build rather than scope that has been declined.

@@ -524,8 +524,9 @@ bridges.
 > backend-incompatible raster images, and floating shapes without recoverable
 > geometry. Exact single-DIB WMF/EMF raster streams are decoded separately.
 >
-> Measured against LibreOffice on a real corpus it reaches ~0.93 text recall with
-> close page counts; for archival or Word-exact PDF, render via LibreOffice.
+> Measured against LibreOffice on the public corpus it reaches 0.99 mean text
+> recall with matching page counts; for archival or Word-exact PDF, render via
+> LibreOffice.
 > (See *Scope & parity*.)
 
 ```toml
@@ -784,9 +785,12 @@ document plus identical context always yields identical results.
 
 Authored charts render as native vector preview charts (see
 [chart families](#chart-families)). On a real
-`.docx` corpus it reaches **~0.93 mean text recall** (extracting headers/footers,
+`.docx` corpus it reaches **0.99 mean text recall** with a **1.00 mean page-count
+ratio** (extracting headers/footers,
 text boxes, nested tables, real list labels, caps; model-driven page geometry makes
-`.doc` page counts line up — mean `.doc` render recall ~0.96). It still trails
+`.doc` page counts line up). 23 of the 24 public-corpus documents score exactly
+1.00; the exception is a right-to-left list fixture, for the reason given under
+[Scope & parity](#scope--parity). It still trails
 LibreOffice on exact pagination, exact floating-object layout, remaining
 layout-derived `PAGEREF` page-reference computation beyond trusted source markers,
 advanced TOC/REF/NOTEREF computed fields, and
@@ -1002,6 +1006,15 @@ code points.
   typography beyond bounded paragraph/run/list/table behavior; the core crate
   embeds no CJK font, so use a system font, `render_pdf_with_fonts`, or the
   optional `bundled-fonts` companion subsets.
+- *Extracting text back out of rendered RTL PDFs:* complex scripts shape several
+  glyphs from one cluster, which PDF can only map to text through the
+  `ActualText` marked-content feature. rwml emits those spans, but support for
+  them is not universal — Acrobat and Chrome honor them, while MuPDF/PyMuPDF,
+  pdfminer.six, and pypdf do not and split Arabic words apart when copying or
+  extracting. Rendering itself is unaffected, and Hebrew (one glyph per cluster)
+  extracts intact. This is why the public corpus's right-to-left list fixture
+  scores below the per-document text-recall floor while every other document
+  reaches 1.00.
 
 ## Roadmap
 
