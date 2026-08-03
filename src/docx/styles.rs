@@ -1047,8 +1047,14 @@ pub(crate) fn parse(xml: &str) -> Styles {
                     TableRowStyleRegion::from_attr(attr_local_trimmed(&e, b"type").as_deref());
                 if let (Some(style), Some(region)) = (&mut cur_style, region) {
                     if style.kind == Some(StyleKind::Table) {
-                        let props = read_conditional_table_row_props(&mut r, b"tblStylePr");
+                        let (props, margins) = read_conditional_table_region(&mut r, b"tblStylePr");
                         style.table_row_props.region_mut(region).overlay(props);
+                        // Only the whole-table region joins the table-wide
+                        // margin cascade; row- and column-scoped regions need
+                        // per-cell resolution and stay unsupported.
+                        if matches!(region, TableRowStyleRegion::WholeTable) {
+                            style.whole_table_cell_margins.overlay(margins);
+                        }
                     } else {
                         skip_subtree(&mut r);
                     }
@@ -1253,6 +1259,7 @@ struct RawStyle {
     name: String,
     based_on: Option<String>,
     table_cell_margins: super::body::CellMarginSpec,
+    whole_table_cell_margins: super::body::CellMarginSpec,
     outline: Option<u8>,
     run_props: RunProps,
     paragraph_props: ParagraphProps,
@@ -1469,8 +1476,43 @@ fn resolve_style_table_cell_margins(
         .map(|base| resolve_style_table_cell_margins(base, raw_styles, stack, depth + 1))
         .unwrap_or_default();
     margins.overlay(style.table_cell_margins);
+    margins.overlay(style.whole_table_cell_margins);
     stack.pop();
     margins
+}
+
+fn read_conditional_table_region(
+    r: &mut Reader<&[u8]>,
+    end: &[u8],
+) -> (TableRowProps, super::body::CellMarginSpec) {
+    let mut props = TableRowProps::default();
+    let mut margins = super::body::CellMarginSpec::default();
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"trPr" => {
+                props.overlay(read_table_row_props(r, b"trPr"));
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblCellMar" => {
+                margins.overlay(super::body::read_cell_margins(r, b"tblCellMar", 0));
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                if let Some(value) = read_conditional_table_row_props_alternate_content(r) {
+                    props.overlay(value);
+                }
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblPr" => {
+                // Recurse so a region's `tblPr` contributes its margins too.
+                let (nested, nested_margins) = read_conditional_table_region(r, b"tblPr");
+                props.overlay(nested);
+                margins.overlay(nested_margins);
+            }
+            Ok(Event::Start(_)) => skip_subtree(r),
+            Ok(Event::End(e)) if local(e.name().as_ref()) == end => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    (props, margins)
 }
 
 fn read_conditional_table_row_props(r: &mut Reader<&[u8]>, end: &[u8]) -> TableRowProps {

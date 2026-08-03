@@ -10,8 +10,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Inherits a table style's own `w:tblCellMar` through its `w:basedOn` chain as
   the table's cell-margin default, beneath direct `w:tblPr`/`w:tcMar`
-  declarations and above the schema defaults. Conditional-region (`w:tblStylePr`)
-  and `w:tblPrEx` margins remain unsupported.
+  declarations and above the schema defaults, including the style's `wholeTable`
+  conditional region. Row- and column-scoped conditional regions and
+  `w:tblPrEx` margins remain unsupported.
 
 ## [0.1.2] - 2026-08-02
 

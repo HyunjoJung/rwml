@@ -861,3 +861,61 @@ fn table_styles_supply_cell_margin_defaults() {
         })
     );
 }
+
+/// `tblStylePr type="wholeTable"` carries a table style's whole-table cell
+/// margins and applies on top of the style's own `tblPr`.
+#[test]
+fn whole_table_style_regions_supply_cell_margins() {
+    let content_types = content_types(true);
+    let bytes = docx_fixture(&[
+        ("[Content_Types].xml", &content_types),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        ("word/_rels/document.xml.rels", document_rels(true)),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                <w:style w:type="table" w:styleId="Grid">
+                    <w:tblPr><w:tblCellMar>
+                        <w:top w:w="100" w:type="dxa"/><w:start w:w="200" w:type="dxa"/>
+                    </w:tblCellMar></w:tblPr>
+                    <w:tblStylePr w:type="wholeTable">
+                        <w:tblPr><w:tblCellMar>
+                            <w:top w:w="700" w:type="dxa"/><w:bottom w:w="800" w:type="dxa"/>
+                        </w:tblCellMar></w:tblPr>
+                    </w:tblStylePr>
+                    <w:tblStylePr w:type="firstRow">
+                        <w:tblPr><w:tblCellMar><w:top w:w="999" w:type="dxa"/></w:tblCellMar></w:tblPr>
+                    </w:tblStylePr>
+                </w:style>
+            </w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:tbl>
+                    <w:tblPr><w:tblStyle w:val="Grid"/></w:tblPr>
+                    <w:tr><w:tc><w:p><w:r><w:t>whole</w:t></w:r></w:p></w:tc></w:tr>
+                </w:tbl>
+            </w:body></w:document>"#,
+        ),
+    ]);
+    let doc = Document::open(&bytes).expect("whole-table margin .docx opens");
+    let Block::Table(table) = &doc.model().blocks[0] else {
+        panic!("table");
+    };
+    // wholeTable overrides the style's own tblPr top and adds bottom; the
+    // leading value it does not touch survives, and the row-scoped region is
+    // not applied.
+    assert_eq!(
+        table.rows[0].cells[0].margins,
+        Some(CellMargins {
+            top: 700,
+            right: 115,
+            bottom: 800,
+            left: 200,
+        })
+    );
+}

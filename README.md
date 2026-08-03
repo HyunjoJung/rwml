@@ -309,8 +309,9 @@ whole-degree clockwise rotation, and **clickable hyperlink annotations** are
 drawn. Opened `.docx` tables materialize direct `dxa`/`nil` `w:tblCellMar`
 defaults and per-side direct `w:tcMar` exceptions, including logical
 `start`/`end` mapping under `w:bidiVisual`, and inherit a table style's own
-`w:tblCellMar` through its `w:basedOn` chain beneath those direct declarations;
-conditional-style and `w:tblPrEx` margin inheritance remain outside this
+`w:tblCellMar` through its `w:basedOn` chain, plus its `wholeTable`
+conditional region, beneath those direct declarations; row- and column-scoped
+conditional regions and `w:tblPrEx` margin inheritance remain outside this
 bounded subset.
 Rotated raster bounds drive proportional
 content-box/page-height fitting and pagination. Narrow RTL tables reverse logical
