@@ -24,6 +24,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Inherits a table style's `w:tblLayout` and `w:bidiVisual` for tables that
   declare neither, tracking whether the table declared them so an explicit off
   value still wins.
+- Honors a paragraph style's `w:numPr`, so paragraphs whose style declares list
+  membership become list items even without their own `w:numPr`; a direct
+  declaration still wins.
 
 ## [0.1.2] - 2026-08-02
 
