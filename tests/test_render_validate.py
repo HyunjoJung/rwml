@@ -833,3 +833,43 @@ class TextObjectBoundaryTests(unittest.TestCase):
         cmaps = {"f0": {"width": 2, "map": {1: "a", 2: "b"}}}
         content = b"BT /f0 11 Tf (\x00\x01) Tj (\x00\x02) Tj ET"
         self.assertEqual(render_validate.content_stream_text(content, cmaps), "ab")
+
+
+class OracleStabilityTests(unittest.TestCase):
+    """The reference renderer must be reproducible, or say so."""
+
+    def test_stability_verdict_reports_matching_digests(self):
+        self.assertEqual(
+            render_validate.oracle_stability_verdict(["a", "b"], ["a", "b"]), True
+        )
+
+    def test_stability_verdict_reports_a_mismatch(self):
+        self.assertEqual(
+            render_validate.oracle_stability_verdict(["a", "b"], ["a", "c"]), False
+        )
+
+    def test_stability_verdict_is_unknown_without_two_samples(self):
+        self.assertIsNone(render_validate.oracle_stability_verdict(["a"], []))
+        self.assertIsNone(render_validate.oracle_stability_verdict([], ["a"]))
+
+    def test_stability_verdict_reports_a_page_count_change(self):
+        self.assertEqual(
+            render_validate.oracle_stability_verdict(["a"], ["a", "b"]), False
+        )
+
+    def test_summary_records_the_reference_stability(self):
+        rows = [
+            render_validate.ValidationRow(
+                document="d.docx",
+                status="pass",
+                recall=1.0,
+                rwml_pages=1,
+                reference_pages=1,
+                page_ratio=1.0,
+                ahash_similarity=1.0,
+                render_warnings=0,
+                render_warning_kinds=[],
+            )
+        ]
+        report = render_validate.validation_report(rows, 0.97, reference_stable=False)
+        self.assertIs(report["summary"]["reference_stable"], False)
