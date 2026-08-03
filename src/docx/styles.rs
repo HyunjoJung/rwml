@@ -36,6 +36,7 @@ pub(crate) struct Styles {
     table_row: HashMap<String, TableRowStyleProps>,
     table_cell_margins: HashMap<String, super::body::CellMarginSpec>,
     table_borders: HashMap<String, super::body::TableBorderTuple>,
+    table_geometry: HashMap<String, super::body::TableStyleGeometry>,
 }
 
 impl Styles {
@@ -134,6 +135,15 @@ impl Styles {
         style_id
             .and_then(|style_id| self.table_borders.get(style_id))
             .copied()
+    }
+
+    /// A table style's own width, indent, and alignment, resolved through
+    /// `basedOn` with its `wholeTable` region applied last.
+    pub(crate) fn table_geometry(&self, style_id: Option<&str>) -> super::body::TableStyleGeometry {
+        style_id
+            .and_then(|style_id| self.table_geometry.get(style_id))
+            .copied()
+            .unwrap_or_default()
     }
 
     pub(crate) fn table_row_band_size(&self, style_id: Option<&str>) -> Option<u8> {
@@ -1069,7 +1079,7 @@ pub(crate) fn parse(xml: &str) -> Styles {
                     TableRowStyleRegion::from_attr(attr_local_trimmed(&e, b"type").as_deref());
                 if let (Some(style), Some(region)) = (&mut cur_style, region) {
                     if style.kind == Some(StyleKind::Table) {
-                        let (props, margins, borders) =
+                        let (props, margins, borders, geometry) =
                             read_conditional_table_region(&mut r, b"tblStylePr");
                         style.table_row_props.region_mut(region).overlay(props);
                         // Only the whole-table region joins the table-wide
@@ -1080,6 +1090,7 @@ pub(crate) fn parse(xml: &str) -> Styles {
                             if borders.is_some() {
                                 style.whole_table_borders = borders;
                             }
+                            style.whole_table_geometry.overlay(geometry);
                         }
                     } else {
                         skip_subtree(&mut r);
@@ -1175,6 +1186,13 @@ pub(crate) fn parse(xml: &str) -> Styles {
                         if let Some(v) = attr_local_trimmed(&e, b"val") {
                             if let Some(style) = &mut cur_style {
                                 style.based_on = Some(v);
+                            }
+                        }
+                    }
+                    b"tblW" | b"tblInd" | b"jc" => {
+                        if let Some(style) = &mut cur_style {
+                            if style.kind == Some(StyleKind::Table) {
+                                style.table_geometry.record(&e);
                             }
                         }
                     }
@@ -1277,6 +1295,10 @@ pub(crate) fn parse(xml: &str) -> Styles {
         if let Some(borders) = resolve_style_table_borders(id, &raw_styles, &mut Vec::new(), 0) {
             styles.table_borders.insert(id.clone(), borders);
         }
+        let geometry = resolve_style_table_geometry(id, &raw_styles, &mut Vec::new(), 0);
+        if !geometry.is_empty() {
+            styles.table_geometry.insert(id.clone(), geometry);
+        }
     }
     styles
 }
@@ -1291,6 +1313,8 @@ struct RawStyle {
     whole_table_cell_margins: super::body::CellMarginSpec,
     table_borders: Option<super::body::TableBorderTuple>,
     whole_table_borders: Option<super::body::TableBorderTuple>,
+    table_geometry: super::body::TableStyleGeometry,
+    whole_table_geometry: super::body::TableStyleGeometry,
     outline: Option<u8>,
     run_props: RunProps,
     paragraph_props: ParagraphProps,
@@ -1539,6 +1563,33 @@ fn resolve_style_table_borders(
     borders
 }
 
+fn resolve_style_table_geometry(
+    id: &str,
+    raw_styles: &HashMap<String, RawStyle>,
+    stack: &mut Vec<String>,
+    depth: usize,
+) -> super::body::TableStyleGeometry {
+    if depth >= STYLE_CHAIN_LIMIT || stack.iter().any(|seen| seen == id) {
+        return super::body::TableStyleGeometry::default();
+    }
+    let Some(style) = raw_styles
+        .get(id)
+        .filter(|style| style.kind == Some(StyleKind::Table))
+    else {
+        return super::body::TableStyleGeometry::default();
+    };
+    stack.push(id.to_string());
+    let mut geometry = style
+        .based_on
+        .as_deref()
+        .map(|base| resolve_style_table_geometry(base, raw_styles, stack, depth + 1))
+        .unwrap_or_default();
+    geometry.overlay(style.table_geometry);
+    geometry.overlay(style.whole_table_geometry);
+    stack.pop();
+    geometry
+}
+
 fn read_conditional_table_region(
     r: &mut Reader<&[u8]>,
     end: &[u8],
@@ -1546,10 +1597,12 @@ fn read_conditional_table_region(
     TableRowProps,
     super::body::CellMarginSpec,
     Option<super::body::TableBorderTuple>,
+    super::body::TableStyleGeometry,
 ) {
     let mut props = TableRowProps::default();
     let mut margins = super::body::CellMarginSpec::default();
     let mut borders = None;
+    let mut geometry = super::body::TableStyleGeometry::default();
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"trPr" => {
@@ -1561,6 +1614,11 @@ fn read_conditional_table_region(
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblBorders" => {
                 borders = Some(super::body::read_tbl_borders(r));
             }
+            Ok(Event::Start(e)) | Ok(Event::Empty(e))
+                if matches!(local(e.name().as_ref()), b"tblW" | b"tblInd" | b"jc") =>
+            {
+                geometry.record(&e);
+            }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
                 if let Some(value) = read_conditional_table_row_props_alternate_content(r) {
                     props.overlay(value);
@@ -1568,13 +1626,14 @@ fn read_conditional_table_region(
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblPr" => {
                 // Recurse so a region's `tblPr` contributes its margins too.
-                let (nested, nested_margins, nested_borders) =
+                let (nested, nested_margins, nested_borders, nested_geometry) =
                     read_conditional_table_region(r, b"tblPr");
                 props.overlay(nested);
                 margins.overlay(nested_margins);
                 if nested_borders.is_some() {
                     borders = nested_borders;
                 }
+                geometry.overlay(nested_geometry);
             }
             Ok(Event::Start(_)) => skip_subtree(r),
             Ok(Event::End(e)) if local(e.name().as_ref()) == end => break,
@@ -1582,7 +1641,7 @@ fn read_conditional_table_region(
             _ => {}
         }
     }
-    (props, margins, borders)
+    (props, margins, borders, geometry)
 }
 
 fn read_conditional_table_row_props(r: &mut Reader<&[u8]>, end: &[u8]) -> TableRowProps {

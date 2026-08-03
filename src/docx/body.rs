@@ -5662,6 +5662,11 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Table, TablePagina
         })
         .collect();
     let style_cell_margins = ctx.styles.table_cell_margins(props.style_id.as_deref());
+    // A table style's geometry fills in only what the table left unset.
+    let style_geometry = ctx.styles.table_geometry(props.style_id.as_deref());
+    props.width_pct = props.width_pct.or(style_geometry.width_pct);
+    props.indent_twips = props.indent_twips.or(style_geometry.indent_twips);
+    props.align = props.align.or(style_geometry.align);
     // A table style's borders apply unless the table declares its own.
     if !props.borders_declared {
         if let Some(borders) = ctx.styles.table_borders(props.style_id.as_deref()) {
@@ -6036,6 +6041,44 @@ fn read_tblpr_alternate_content_branch(
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
         }
+    }
+}
+
+/// Table-level geometry a table style can declare. Only values the model
+/// already carries and whose absence is unambiguous participate.
+#[derive(Clone, Copy, Default, Debug, PartialEq)]
+pub(crate) struct TableStyleGeometry {
+    pub(crate) width_pct: Option<f32>,
+    pub(crate) indent_twips: Option<i32>,
+    pub(crate) align: Option<Align>,
+}
+
+impl TableStyleGeometry {
+    pub(crate) fn overlay(&mut self, other: Self) {
+        if other.width_pct.is_some() {
+            self.width_pct = other.width_pct;
+        }
+        if other.indent_twips.is_some() {
+            self.indent_twips = other.indent_twips;
+        }
+        if other.align.is_some() {
+            self.align = other.align;
+        }
+    }
+
+    pub(crate) fn is_empty(self) -> bool {
+        self.width_pct.is_none() && self.indent_twips.is_none() && self.align.is_none()
+    }
+
+    /// Record a `w:tblPr` child, reusing the direct-table reader's semantics.
+    pub(crate) fn record(&mut self, e: &BytesStart<'_>) {
+        let mut props = TableProps::default();
+        apply_tblpr_child(&mut props, e);
+        self.overlay(Self {
+            width_pct: props.width_pct,
+            indent_twips: props.indent_twips,
+            align: props.align,
+        });
     }
 }
 
