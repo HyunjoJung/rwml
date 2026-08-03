@@ -331,10 +331,15 @@ pub(crate) struct ParagraphProps {
     pub(crate) indent_end_pt: Option<f32>,
     pub(crate) tab_stops: Vec<TabStop>,
     pub(crate) layout: ParagraphLayoutProps,
+    /// List membership a paragraph style declares (`w:numPr`).
+    pub(crate) num: Option<(String, u8)>,
 }
 
 impl ParagraphProps {
     fn overlay(&mut self, other: &ParagraphProps) {
+        if other.num.is_some() {
+            self.num = other.num.clone();
+        }
         if other.bidi.is_some() {
             self.bidi = other.bidi;
         }
@@ -1047,6 +1052,25 @@ pub(crate) fn parse(xml: &str) -> Styles {
                 } else {
                     None
                 };
+            }
+            Ok(Event::Start(e))
+                if paragraph_property_target.is_some() && local(e.name().as_ref()) == b"numPr" =>
+            {
+                let mut num_id = None;
+                let mut ilvl = 0u8;
+                super::body::read_num_pr_content(&mut r, &mut num_id, &mut ilvl, b"numPr", 0);
+                let value = num_id.map(|id| (id, ilvl));
+                match paragraph_property_target {
+                    Some(ParagraphPropertyTarget::DocumentDefaults) => {
+                        styles.doc_defaults_paragraph.num = value;
+                    }
+                    Some(ParagraphPropertyTarget::Style) => {
+                        if let Some(style) = &mut cur_style {
+                            style.paragraph_props.num = value;
+                        }
+                    }
+                    None => {}
+                }
             }
             Ok(Event::Start(e))
                 if paragraph_property_target.is_some() && local(e.name().as_ref()) == b"tabs" =>

@@ -3148,7 +3148,7 @@ fn read_num_pr(r: &mut Xml<'_>, num_id: &mut Option<String>, ilvl: &mut u8, dept
     read_num_pr_content(r, num_id, ilvl, b"numPr", depth);
 }
 
-fn read_num_pr_content(
+pub(crate) fn read_num_pr_content(
     r: &mut Xml<'_>,
     num_id: &mut Option<String>,
     ilvl: &mut u8,
@@ -5321,6 +5321,9 @@ fn finalize_paragraph(
         keep_lines: keep_lines.or(inherited.keep_lines).unwrap_or(false),
         widow_control: widow_control.or(inherited.widow_control).unwrap_or(true),
     };
+    // A paragraph style may declare list membership; the paragraph's own
+    // `w:numPr` wins when it has one.
+    let num = num.or_else(|| inherited.num.clone());
     let bidi = bidi.or(inherited.bidi).unwrap_or(false);
     let jc = jc.or(inherited.jc);
     let direct_logical_left = if bidi { indent_end_pt } else { indent_start_pt };

@@ -1168,3 +1168,70 @@ fn table_styles_supply_layout_and_direction() {
     assert!(!tables[1].fixed_layout);
     assert!(!tables[1].bidi_visual);
 }
+
+/// A paragraph style may declare list membership; paragraphs using it are list
+/// items even when they carry no `w:numPr` of their own.
+#[test]
+fn paragraph_styles_supply_list_membership() {
+    let content_types = content_types(true).replace(
+        "</Types>",
+        r#"<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/></Types>"#,
+    );
+    let bytes = docx_fixture(&[
+        ("[Content_Types].xml", &content_types),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        (
+            "word/_rels/document.xml.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rIdNum" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/></Relationships>"#,
+        ),
+        (
+            "word/numbering.xml",
+            r#"<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                <w:abstractNum w:abstractNumId="0">
+                    <w:lvl w:ilvl="0"><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl>
+                    <w:lvl w:ilvl="1"><w:numFmt w:val="bullet"/><w:lvlText w:val="•"/></w:lvl>
+                </w:abstractNum>
+                <w:num w:numId="3"><w:abstractNumId w:val="0"/></w:num>
+            </w:numbering>"#,
+        ),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                <w:style w:type="paragraph" w:styleId="ListItem">
+                    <w:pPr><w:numPr><w:ilvl w:val="1"/><w:numId w:val="3"/></w:numPr></w:pPr>
+                </w:style>
+            </w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:p><w:pPr><w:pStyle w:val="ListItem"/></w:pPr><w:r><w:t>from style</w:t></w:r></w:p>
+                <w:p><w:pPr><w:pStyle w:val="ListItem"/>
+                    <w:numPr><w:ilvl w:val="0"/><w:numId w:val="3"/></w:numPr>
+                </w:pPr><w:r><w:t>direct wins</w:t></w:r></w:p>
+                <w:p><w:r><w:t>plain</w:t></w:r></w:p>
+            </w:body></w:document>"#,
+        ),
+    ]);
+    let doc = Document::open(&bytes).expect("styled list .docx opens");
+    let paragraphs: Vec<_> = doc
+        .model()
+        .blocks
+        .iter()
+        .filter_map(|block| match block {
+            Block::Paragraph(p) => Some(p.clone()),
+            _ => None,
+        })
+        .collect();
+
+    let styled = paragraphs[0].props.list.as_ref().expect("style list info");
+    assert_eq!(styled.level, 1);
+    assert!(!styled.ordered);
+    let direct = paragraphs[1].props.list.as_ref().expect("direct list info");
+    assert_eq!(direct.level, 0);
+    assert!(direct.ordered);
+    assert!(paragraphs[2].props.list.is_none());
+}
