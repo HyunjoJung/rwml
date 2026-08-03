@@ -32,6 +32,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ordinary body paragraphs; such paragraphs are no longer reported as headings.
 - Writes a paragraph's own `outline_level`, so an outline position set without a
   heading survives a write and reopen instead of being dropped.
+- Honors `w:lvlOverride` on a `.docx` list instance — both `w:startOverride` and
+  a replacement `w:lvl` definition — so a list that restarts or redefines a
+  level numbers correctly. Levels an override does not mention keep the abstract
+  definition. Legacy `.doc` already honored the equivalent `LFOLVL` overrides.
 
 ## [0.1.2] - 2026-08-02
 

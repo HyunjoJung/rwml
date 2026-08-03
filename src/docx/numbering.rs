@@ -209,6 +209,9 @@ pub(crate) fn parse(xml: &str) -> Numbering {
     let mut cur_abstract: Option<String> = None;
     let mut cur_ilvl: Option<u8> = None;
     let mut cur_num: Option<String> = None;
+    let mut cur_override_ilvl: Option<u8> = None;
+    let mut in_override_level = false;
+    let mut overrides: HashMap<String, HashMap<u8, LevelOverride>> = HashMap::new();
     let mut alternate_content_stack = Vec::new();
     loop {
         match r.read_event() {
@@ -229,31 +232,98 @@ pub(crate) fn parse(xml: &str) -> Numbering {
                 alternate_content_stack.push(AlternateContentBranchState::default());
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e)) => match local(e.name().as_ref()) {
+                b"lvlOverride" => {
+                    cur_override_ilvl = attr_u8(&e, b"ilvl");
+                    if let (Some(num), Some(ilvl)) = (cur_num.as_ref(), cur_override_ilvl) {
+                        overrides
+                            .entry(num.clone())
+                            .or_default()
+                            .entry(ilvl)
+                            .or_default();
+                    }
+                }
+                b"startOverride" => {
+                    if let (Some(num), Some(ilvl), Some(v)) =
+                        (cur_num.as_ref(), cur_override_ilvl, attr_u32(&e, b"val"))
+                    {
+                        overrides
+                            .entry(num.clone())
+                            .or_default()
+                            .entry(ilvl)
+                            .or_default()
+                            .start = Some(v);
+                    }
+                }
                 b"abstractNum" => {
                     cur_abstract = attr_local_trimmed(&e, b"abstractNumId");
                     cur_ilvl = None;
                 }
                 b"lvl" => {
                     cur_ilvl = attr_u8(&e, b"ilvl");
-                    set_level(&mut nb, &cur_abstract, cur_ilvl, &e, |_, _| {});
+                    if let (Some(num), Some(ilvl)) = (cur_num.as_ref(), cur_override_ilvl) {
+                        // A replacement level definition inside `w:lvlOverride`.
+                        in_override_level = true;
+                        overrides
+                            .entry(num.clone())
+                            .or_default()
+                            .entry(ilvl)
+                            .or_default()
+                            .level
+                            .get_or_insert_with(Level::default);
+                    } else {
+                        set_level(&mut nb, &cur_abstract, cur_ilvl, &e, |_, _| {});
+                    }
                 }
-                b"numFmt" => set_level(&mut nb, &cur_abstract, cur_ilvl, &e, |l, e| {
-                    if let Some(v) = attr_local(e, b"val") {
-                        let value = v.trim();
-                        l.ordered = value != "bullet" && value != "none";
-                        l.num_fmt = value.to_string();
+                b"numFmt" => {
+                    let apply = |l: &mut Level, e: &BytesStart<'_>| {
+                        if let Some(v) = attr_local(e, b"val") {
+                            let value = v.trim();
+                            l.ordered = value != "bullet" && value != "none";
+                            l.num_fmt = value.to_string();
+                        }
+                    };
+                    if in_override_level {
+                        if let Some(l) =
+                            override_level_mut(&mut overrides, &cur_num, cur_override_ilvl)
+                        {
+                            apply(l, &e);
+                        }
+                    } else {
+                        set_level(&mut nb, &cur_abstract, cur_ilvl, &e, apply);
                     }
-                }),
-                b"lvlText" => set_level(&mut nb, &cur_abstract, cur_ilvl, &e, |l, e| {
-                    if let Some(v) = attr_local_trimmed(e, b"val") {
-                        l.lvl_text = v;
+                }
+                b"lvlText" => {
+                    let apply = |l: &mut Level, e: &BytesStart<'_>| {
+                        if let Some(v) = attr_local_trimmed(e, b"val") {
+                            l.lvl_text = v;
+                        }
+                    };
+                    if in_override_level {
+                        if let Some(l) =
+                            override_level_mut(&mut overrides, &cur_num, cur_override_ilvl)
+                        {
+                            apply(l, &e);
+                        }
+                    } else {
+                        set_level(&mut nb, &cur_abstract, cur_ilvl, &e, apply);
                     }
-                }),
-                b"start" => set_level(&mut nb, &cur_abstract, cur_ilvl, &e, |l, e| {
-                    if let Some(v) = attr_u32(e, b"val") {
-                        l.start = v;
+                }
+                b"start" => {
+                    let apply = |l: &mut Level, e: &BytesStart<'_>| {
+                        if let Some(v) = attr_u32(e, b"val") {
+                            l.start = v;
+                        }
+                    };
+                    if in_override_level {
+                        if let Some(l) =
+                            override_level_mut(&mut overrides, &cur_num, cur_override_ilvl)
+                        {
+                            apply(l, &e);
+                        }
+                    } else {
+                        set_level(&mut nb, &cur_abstract, cur_ilvl, &e, apply);
                     }
-                }),
+                }
                 b"num" => cur_num = attr_local_trimmed(&e, b"numId"),
                 b"abstractNumId" => {
                     if let (Some(num), Some(val)) =
@@ -266,8 +336,15 @@ pub(crate) fn parse(xml: &str) -> Numbering {
             },
             Ok(Event::End(e)) => match local(e.name().as_ref()) {
                 b"abstractNum" => cur_abstract = None,
-                b"num" => cur_num = None,
-                b"lvl" => cur_ilvl = None,
+                b"num" => {
+                    cur_num = None;
+                    cur_override_ilvl = None;
+                }
+                b"lvl" => {
+                    cur_ilvl = None;
+                    in_override_level = false;
+                }
+                b"lvlOverride" => cur_override_ilvl = None,
                 b"AlternateContent" => {
                     alternate_content_stack.pop();
                 }
@@ -277,7 +354,48 @@ pub(crate) fn parse(xml: &str) -> Numbering {
             _ => {}
         }
     }
+    // Materialize each overridden instance as its own level set, so lookups
+    // stay a plain `numId -> levels` map.
+    for (num_id, per_level) in overrides {
+        let Some(abstract_id) = nb.num_to_abstract.get(&num_id).cloned() else {
+            continue;
+        };
+        let mut levels = nb
+            .abstract_levels
+            .get(&abstract_id)
+            .cloned()
+            .unwrap_or_default();
+        for (ilvl, over) in per_level {
+            let entry = levels.entry(ilvl).or_default();
+            if let Some(level) = over.level {
+                *entry = level;
+            }
+            if let Some(start) = over.start {
+                entry.start = start;
+            }
+        }
+        let key = format!("\u{0}override:{num_id}");
+        nb.abstract_levels.insert(key.clone(), levels);
+        nb.num_to_abstract.insert(num_id, key);
+    }
     nb
+}
+
+/// A `w:num`'s per-level override: a restart value, a replacement definition,
+/// or both.
+#[derive(Debug, Default, Clone)]
+struct LevelOverride {
+    start: Option<u32>,
+    level: Option<Level>,
+}
+
+fn override_level_mut<'a>(
+    overrides: &'a mut HashMap<String, HashMap<u8, LevelOverride>>,
+    num: &Option<String>,
+    ilvl: Option<u8>,
+) -> Option<&'a mut Level> {
+    let num = num.as_ref()?;
+    overrides.get_mut(num)?.get_mut(&ilvl?)?.level.as_mut()
 }
 
 /// Apply a mutation to the current `(abstract, ilvl)` level, creating it if new.
@@ -346,6 +464,45 @@ mod tests {
         assert_eq!(nb.label("1", 1, &mut c), None);
         // A placeholder pattern is not a literal glyph, so it stays a fallback.
         assert_eq!(nb.label("1", 2, &mut c), None);
+    }
+
+    #[test]
+    fn list_instances_honor_their_level_overrides() {
+        // A `w:num` may override its abstract numbering per level: a restart
+        // value, or a full replacement level definition.
+        let xml = r#"<w:numbering>
+            <w:abstractNum w:abstractNumId="0">
+                <w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl>
+                <w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%2."/></w:lvl>
+            </w:abstractNum>
+            <w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>
+            <w:num w:numId="2">
+                <w:abstractNumId w:val="0"/>
+                <w:lvlOverride w:ilvl="0"><w:startOverride w:val="5"/></w:lvlOverride>
+            </w:num>
+            <w:num w:numId="3">
+                <w:abstractNumId w:val="0"/>
+                <w:lvlOverride w:ilvl="0">
+                    <w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="lowerLetter"/><w:lvlText w:val="%1)"/></w:lvl>
+                </w:lvlOverride>
+            </w:num>
+        </w:numbering>"#;
+        let nb = parse(xml);
+
+        // The unoverridden instance is unaffected.
+        let mut c = [0u32; 9];
+        assert_eq!(nb.label("1", 0, &mut c).as_deref(), Some("1."));
+
+        // A start override seeds the counter on first use.
+        let mut c = [0u32; 9];
+        assert_eq!(nb.label("2", 0, &mut c).as_deref(), Some("5."));
+        assert_eq!(nb.label("2", 0, &mut c).as_deref(), Some("6."));
+
+        // A replacement level definition changes format and text.
+        let mut c = [0u32; 9];
+        assert_eq!(nb.label("3", 0, &mut c).as_deref(), Some("a)"));
+        // Levels the override does not mention keep the abstract definition.
+        assert_eq!(nb.label("3", 1, &mut c).as_deref(), Some("1."));
     }
 
     #[test]
