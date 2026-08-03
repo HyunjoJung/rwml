@@ -13,6 +13,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   declarations and above the schema defaults, including the style's `wholeTable`
   conditional region. Row- and column-scoped conditional regions and
   `w:tblPrEx` margins remain unsupported.
+- Applies a table style's `w:tblBorders` — from its own `w:tblPr` or its
+  `wholeTable` region, resolved through `w:basedOn` — when the table declares no
+  borders of its own, so grid-style tables no longer lose their borders.
 
 ## [0.1.2] - 2026-08-02
 

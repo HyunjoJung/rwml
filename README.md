@@ -312,7 +312,9 @@ defaults and per-side direct `w:tcMar` exceptions, including logical
 `w:tblCellMar` through its `w:basedOn` chain, plus its `wholeTable`
 conditional region, beneath those direct declarations; row- and column-scoped
 conditional regions and `w:tblPrEx` margin inheritance remain outside this
-bounded subset.
+bounded subset. A table style's `w:tblBorders`, from its own `w:tblPr` or its
+`wholeTable` region and resolved through the same chain, applies when the table
+declares no borders of its own.
 Rotated raster bounds drive proportional
 content-box/page-height fitting and pagination. Narrow RTL tables reverse logical
 placement and mirror their cells inside the local table box. Page geometry,
