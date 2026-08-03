@@ -9714,3 +9714,44 @@ fn render_pdf_report_exposes_pages_and_warnings() {
     assert_eq!(try_rendered_doc_fonts.report.pages, 2);
     assert_eq!(try_rendered_doc_fonts.report.unsupported.fields, 1);
 }
+
+/// A paragraph's own outline level survives a write/reopen round trip even
+/// when it is not a heading.
+#[test]
+fn non_heading_outline_level_round_trips() {
+    let model = DocModel {
+        blocks: vec![Block::Paragraph(rwml::Paragraph {
+            props: rwml::ParaProps {
+                outline_level: Some(3),
+                ..rwml::ParaProps::default()
+            },
+            runs: vec![rwml::Run {
+                text: "outlined body text".to_string(),
+                ..rwml::Run::default()
+            }],
+        })],
+        ..DocModel::default()
+    };
+
+    let bytes = rwml::write_docx(&model);
+    let document_xml = {
+        let mut zip = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
+        let mut xml = String::new();
+        zip.by_name("word/document.xml")
+            .unwrap()
+            .read_to_string(&mut xml)
+            .unwrap();
+        xml
+    };
+    assert!(
+        document_xml.contains(r#"<w:outlineLvl w:val="3"/>"#),
+        "outline level missing from written XML: {document_xml}"
+    );
+
+    let reopened = rwml::Document::open(&bytes).expect("reopen");
+    let Block::Paragraph(p) = &reopened.model().blocks[0] else {
+        panic!("paragraph");
+    };
+    assert_eq!(p.props.outline_level, Some(3));
+    assert_eq!(p.props.heading_level, None);
+}

@@ -5349,13 +5349,12 @@ fn finalize_paragraph(
         .or(inherited.indent_right_pt)
         .or(inherited_logical_right);
     resolved_layout.apply_indent(&mut indent);
-    let heading_level = match outline {
-        Some(o) if o <= 8 => Some(o + 1),
-        Some(_) => None, // outlineLvl 9 = body text
-        None => style_id
-            .as_deref()
-            .and_then(|s| ctx.styles.heading_level(s)),
-    };
+    // A heading is determined by its style. `w:outlineLvl` records an outline
+    // position only, which Word also sets on ordinary body paragraphs, so it no
+    // longer promotes a paragraph to a heading on its own.
+    let heading_level = style_id
+        .as_deref()
+        .and_then(|s| ctx.styles.heading_level(s));
     let style_name = style_id
         .as_deref()
         .and_then(|s| ctx.styles.name(s))
