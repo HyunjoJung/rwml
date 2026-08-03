@@ -21,6 +21,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `wholeTable` region — for values the table itself leaves unset.
 - Applies a table style's `wholeTable` `w:tcPr` cell shading, vertical alignment,
   and preferred width to cells that declare none of their own.
+- Inherits a table style's `w:tblLayout` and `w:bidiVisual` for tables that
+  declare neither, tracking whether the table declared them so an explicit off
+  value still wins.
 
 ## [0.1.2] - 2026-08-02
 

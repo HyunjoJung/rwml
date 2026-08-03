@@ -1109,3 +1109,62 @@ fn table_styles_supply_cell_defaults() {
     );
     assert_eq!(table.rows[0].cells[1].valign, rwml::VCell::Bottom);
 }
+
+/// A table style's layout algorithm and visual direction reach the model when
+/// the table declares neither.
+#[test]
+fn table_styles_supply_layout_and_direction() {
+    let content_types = content_types(true);
+    let bytes = docx_fixture(&[
+        ("[Content_Types].xml", &content_types),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        ("word/_rels/document.xml.rels", document_rels(true)),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                <w:style w:type="table" w:styleId="Rtl">
+                    <w:tblPr>
+                        <w:tblLayout w:type="fixed"/>
+                        <w:bidiVisual/>
+                    </w:tblPr>
+                </w:style>
+            </w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:tbl>
+                    <w:tblPr><w:tblStyle w:val="Rtl"/></w:tblPr>
+                    <w:tr><w:tc><w:p><w:r><w:t>inherits</w:t></w:r></w:p></w:tc></w:tr>
+                </w:tbl>
+                <w:tbl>
+                    <w:tblPr>
+                        <w:tblStyle w:val="Rtl"/>
+                        <w:tblLayout w:type="autofit"/>
+                        <w:bidiVisual w:val="false"/>
+                    </w:tblPr>
+                    <w:tr><w:tc><w:p><w:r><w:t>overrides</w:t></w:r></w:p></w:tc></w:tr>
+                </w:tbl>
+            </w:body></w:document>"#,
+        ),
+    ]);
+    let doc = Document::open(&bytes).expect("styled layout .docx opens");
+    let tables: Vec<_> = doc
+        .model()
+        .blocks
+        .iter()
+        .filter_map(|block| match block {
+            Block::Table(table) => Some(table.clone()),
+            _ => None,
+        })
+        .collect();
+
+    assert!(tables[0].fixed_layout);
+    assert!(tables[0].bidi_visual);
+    // Explicit off values still win over the style.
+    assert!(!tables[1].fixed_layout);
+    assert!(!tables[1].bidi_visual);
+}
