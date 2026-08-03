@@ -696,7 +696,9 @@ fn render_activation_fixtures_preserve_opened_document_semantics() {
             .list
             .as_ref()
             .map(|list| (list.ordered, list.level, list.label.as_str())),
-        Some((false, 1, ""))
+        // The fixture's numbering declares this bullet glyph, so it is captured
+        // rather than left for the renderer's depth-based fallback.
+        Some((false, 1, "\u{25CB}"))
     );
     assert_eq!(
         nested_item

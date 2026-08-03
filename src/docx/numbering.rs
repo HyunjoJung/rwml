@@ -57,8 +57,9 @@ impl Numbering {
     }
 
     /// Advance `counters` for this list item and format its autonumber label
-    /// (e.g. `1.`, `a)`, `1.1`). Returns `None` for a bullet level (the caller
-    /// supplies the bullet glyph) or an unknown list.
+    /// (e.g. `1.`, `a)`, `1.1`), or a bullet level's declared literal glyph.
+    /// Returns `None` when a bullet level declares none (the caller supplies its
+    /// own) or for an unknown list.
     pub(crate) fn label(&self, num_id: &str, ilvl: u8, counters: &mut [u32; 9]) -> Option<String> {
         let levels = self.levels(num_id)?;
         let i = ilvl.min(8) as usize;
@@ -73,7 +74,14 @@ impl Numbering {
             *c = 0;
         }
         if !lvl.ordered {
-            return None;
+            // A bullet level's `lvlText` is the glyph the document asks for.
+            // Only a literal one counts: a `%N` pattern is autonumber syntax,
+            // and an absent one leaves the caller its synthesized bullet.
+            let glyph = lvl.lvl_text.trim();
+            if glyph.is_empty() || glyph.contains('%') {
+                return None;
+            }
+            return Some(glyph.to_string());
         }
         let pattern = if lvl.lvl_text.is_empty() {
             format!("%{}.", i + 1)
@@ -321,6 +329,26 @@ mod tests {
     }
 
     #[test]
+    fn bullet_levels_keep_their_declared_glyph() {
+        // A bullet level's `lvlText` is the character the document asks for;
+        // only a level that declares none falls back to a synthesized bullet.
+        let xml = r#"<w:numbering>
+            <w:abstractNum w:abstractNumId="0">
+                <w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/><w:lvlText w:val="○"/></w:lvl>
+                <w:lvl w:ilvl="1"><w:numFmt w:val="bullet"/></w:lvl>
+                <w:lvl w:ilvl="2"><w:numFmt w:val="bullet"/><w:lvlText w:val="%3."/></w:lvl>
+            </w:abstractNum>
+            <w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>
+        </w:numbering>"#;
+        let nb = parse(xml);
+        let mut c = [0u32; 9];
+        assert_eq!(nb.label("1", 0, &mut c).as_deref(), Some("\u{25CB}"));
+        assert_eq!(nb.label("1", 1, &mut c), None);
+        // A placeholder pattern is not a literal glyph, so it stays a fallback.
+        assert_eq!(nb.label("1", 2, &mut c), None);
+    }
+
+    #[test]
     fn formats_multi_level_labels() {
         let xml = r#"<w:numbering>
             <w:abstractNum w:abstractNumId="0">
@@ -340,7 +368,8 @@ mod tests {
         assert_eq!(nb.label("1", 1, &mut c).as_deref(), Some("b)"));
         assert_eq!(nb.label("1", 2, &mut c).as_deref(), Some("2.b.i"));
         assert_eq!(nb.label("1", 0, &mut c).as_deref(), Some("3."));
-        assert_eq!(nb.label("2", 0, &mut c), None);
+        // A declared bullet glyph is the label; the caller no longer guesses.
+        assert_eq!(nb.label("2", 0, &mut c).as_deref(), Some("•"));
     }
 
     #[test]
