@@ -16,6 +16,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Applies a table style's `w:tblBorders` — from its own `w:tblPr` or its
   `wholeTable` region, resolved through `w:basedOn` — when the table declares no
   borders of its own, so grid-style tables no longer lose their borders.
+- Fills a table's width, indentation, and alignment from its table style —
+  `w:tblW`, `w:tblInd`, and table `w:jc`, resolved through `w:basedOn` and the
+  `wholeTable` region — for values the table itself leaves unset.
 
 ## [0.1.2] - 2026-08-02
 

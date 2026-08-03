@@ -986,3 +986,66 @@ fn table_styles_supply_table_borders() {
     assert_eq!(tables[1].border_color, Some(Color::rgb(0x44, 0x55, 0x66)));
     assert_eq!(tables[1].border_size_eighths, Some(24));
 }
+
+/// A table style's own table-level geometry reaches the model when the table
+/// declares none of its own.
+#[test]
+fn table_styles_supply_table_geometry() {
+    let content_types = content_types(true);
+    let bytes = docx_fixture(&[
+        ("[Content_Types].xml", &content_types),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        ("word/_rels/document.xml.rels", document_rels(true)),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                <w:style w:type="table" w:styleId="Wide">
+                    <w:tblPr>
+                        <w:tblW w:w="2500" w:type="pct"/>
+                        <w:tblInd w:w="360" w:type="dxa"/>
+                        <w:jc w:val="center"/>
+                    </w:tblPr>
+                </w:style>
+            </w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:tbl>
+                    <w:tblPr><w:tblStyle w:val="Wide"/></w:tblPr>
+                    <w:tr><w:tc><w:p><w:r><w:t>styled</w:t></w:r></w:p></w:tc></w:tr>
+                </w:tbl>
+                <w:tbl>
+                    <w:tblPr>
+                        <w:tblStyle w:val="Wide"/>
+                        <w:tblW w:w="5000" w:type="pct"/>
+                        <w:tblInd w:w="720" w:type="dxa"/>
+                        <w:jc w:val="right"/>
+                    </w:tblPr>
+                    <w:tr><w:tc><w:p><w:r><w:t>direct</w:t></w:r></w:p></w:tc></w:tr>
+                </w:tbl>
+            </w:body></w:document>"#,
+        ),
+    ]);
+    let doc = Document::open(&bytes).expect("styled geometry .docx opens");
+    let tables: Vec<_> = doc
+        .model()
+        .blocks
+        .iter()
+        .filter_map(|block| match block {
+            Block::Table(table) => Some(table.clone()),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(tables[0].width_pct, Some(0.5));
+    assert_eq!(tables[0].indent_twips, Some(360));
+    assert_eq!(tables[0].align, Some(rwml::Align::Center));
+    // Direct declarations still win.
+    assert_eq!(tables[1].width_pct, Some(1.0));
+    assert_eq!(tables[1].indent_twips, Some(720));
+    assert_eq!(tables[1].align, Some(rwml::Align::Right));
+}
