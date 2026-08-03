@@ -34,6 +34,7 @@ pub(crate) struct Styles {
     paragraph: HashMap<String, ParagraphProps>,
     character_run: HashMap<String, RunProps>,
     table_row: HashMap<String, TableRowStyleProps>,
+    table_cell_margins: HashMap<String, super::body::CellMarginSpec>,
 }
 
 impl Styles {
@@ -111,6 +112,15 @@ impl Styles {
             overlay_cant_split(&mut value, props.last_row);
         }
         value
+    }
+
+    /// A table style's own default cell margins, resolved through `basedOn`.
+    /// Conditional-region and `w:tblPrEx` margins stay out of this cascade.
+    pub(crate) fn table_cell_margins(&self, style_id: Option<&str>) -> super::body::CellMarginSpec {
+        style_id
+            .and_then(|style_id| self.table_cell_margins.get(style_id))
+            .copied()
+            .unwrap_or_default()
     }
 
     pub(crate) fn table_row_band_size(&self, style_id: Option<&str>) -> Option<u8> {
@@ -1020,6 +1030,18 @@ pub(crate) fn parse(xml: &str) -> Styles {
                     None => {}
                 }
             }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblCellMar" => {
+                // A table style's own default cell margins. Conditional regions
+                // are consumed by the `tblStylePr` arm, so only the style's
+                // non-conditional declaration reaches here.
+                let margins = super::body::read_cell_margins(&mut r, b"tblCellMar", 0);
+                match &mut cur_style {
+                    Some(style) if style.kind == Some(StyleKind::Table) => {
+                        style.table_cell_margins.overlay(margins);
+                    }
+                    _ => {}
+                }
+            }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblStylePr" => {
                 let region =
                     TableRowStyleRegion::from_attr(attr_local_trimmed(&e, b"type").as_deref());
@@ -1216,6 +1238,10 @@ pub(crate) fn parse(xml: &str) -> Styles {
         if props.has_any() {
             styles.table_row.insert(id.clone(), props);
         }
+        let margins = resolve_style_table_cell_margins(id, &raw_styles, &mut Vec::new(), 0);
+        if !margins.is_empty() {
+            styles.table_cell_margins.insert(id.clone(), margins);
+        }
     }
     styles
 }
@@ -1226,6 +1252,7 @@ struct RawStyle {
     kind: Option<StyleKind>,
     name: String,
     based_on: Option<String>,
+    table_cell_margins: super::body::CellMarginSpec,
     outline: Option<u8>,
     run_props: RunProps,
     paragraph_props: ParagraphProps,
@@ -1418,6 +1445,32 @@ fn resolve_style_table_row_props(
     props.overlay(style.table_row_props);
     stack.pop();
     props
+}
+
+fn resolve_style_table_cell_margins(
+    id: &str,
+    raw_styles: &HashMap<String, RawStyle>,
+    stack: &mut Vec<String>,
+    depth: usize,
+) -> super::body::CellMarginSpec {
+    if depth >= STYLE_CHAIN_LIMIT || stack.iter().any(|seen| seen == id) {
+        return super::body::CellMarginSpec::default();
+    }
+    let Some(style) = raw_styles
+        .get(id)
+        .filter(|style| style.kind == Some(StyleKind::Table))
+    else {
+        return super::body::CellMarginSpec::default();
+    };
+    stack.push(id.to_string());
+    let mut margins = style
+        .based_on
+        .as_deref()
+        .map(|base| resolve_style_table_cell_margins(base, raw_styles, stack, depth + 1))
+        .unwrap_or_default();
+    margins.overlay(style.table_cell_margins);
+    stack.pop();
+    margins
 }
 
 fn read_conditional_table_row_props(r: &mut Reader<&[u8]>, end: &[u8]) -> TableRowProps {
