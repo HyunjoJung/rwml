@@ -1049,3 +1049,63 @@ fn table_styles_supply_table_geometry() {
     assert_eq!(tables[1].indent_twips, Some(720));
     assert_eq!(tables[1].align, Some(rwml::Align::Right));
 }
+
+/// A table style's whole-table `w:tcPr` supplies cell defaults.
+#[test]
+fn table_styles_supply_cell_defaults() {
+    let content_types = content_types(true);
+    let bytes = docx_fixture(&[
+        ("[Content_Types].xml", &content_types),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        ("word/_rels/document.xml.rels", document_rels(true)),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                <w:style w:type="table" w:styleId="Shaded">
+                    <w:tblStylePr w:type="wholeTable">
+                        <w:tcPr>
+                            <w:shd w:val="clear" w:color="auto" w:fill="AABBCC"/>
+                            <w:vAlign w:val="center"/>
+                        </w:tcPr>
+                    </w:tblStylePr>
+                </w:style>
+            </w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:tbl>
+                    <w:tblPr><w:tblStyle w:val="Shaded"/></w:tblPr>
+                    <w:tr>
+                        <w:tc><w:p><w:r><w:t>inherits</w:t></w:r></w:p></w:tc>
+                        <w:tc>
+                            <w:tcPr>
+                                <w:shd w:val="clear" w:color="auto" w:fill="DDEEFF"/>
+                                <w:vAlign w:val="bottom"/>
+                            </w:tcPr>
+                            <w:p><w:r><w:t>overrides</w:t></w:r></w:p>
+                        </w:tc>
+                    </w:tr>
+                </w:tbl>
+            </w:body></w:document>"#,
+        ),
+    ]);
+    let doc = Document::open(&bytes).expect("styled cell defaults .docx opens");
+    let Block::Table(table) = &doc.model().blocks[0] else {
+        panic!("table");
+    };
+    assert_eq!(
+        table.rows[0].cells[0].shading,
+        Some(Color::rgb(0xAA, 0xBB, 0xCC))
+    );
+    assert_eq!(table.rows[0].cells[0].valign, rwml::VCell::Center);
+    // A cell's own declarations still win.
+    assert_eq!(
+        table.rows[0].cells[1].shading,
+        Some(Color::rgb(0xDD, 0xEE, 0xFF))
+    );
+    assert_eq!(table.rows[0].cells[1].valign, rwml::VCell::Bottom);
+}
