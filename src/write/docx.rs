@@ -794,7 +794,11 @@ impl Ctx {
             Align::Right => Some("right"),
             Align::Justify => Some("both"),
         };
-        let outline = heading.map(|h| h.saturating_sub(1));
+        // A heading implies its outline level; otherwise the paragraph's own
+        // `outline_level` is written so it survives a round trip.
+        let outline = heading
+            .map(|h| h.saturating_sub(1))
+            .or_else(|| pr.outline_level.map(|level| level.min(9)));
         let generated_heading_style = pr.style_id.is_none() && heading.is_some();
         let style_id = pr
             .style_id

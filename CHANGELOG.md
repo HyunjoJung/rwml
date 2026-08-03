@@ -27,6 +27,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Honors a paragraph style's `w:numPr`, so paragraphs whose style declares list
   membership become list items even without their own `w:numPr`; a direct
   declaration still wins.
+- Determines a paragraph's heading level from its style rather than from
+  `w:outlineLvl`, which records an outline position that Word also sets on
+  ordinary body paragraphs; such paragraphs are no longer reported as headings.
+- Writes a paragraph's own `outline_level`, so an outline position set without a
+  heading survives a write and reopen instead of being dropped.
 
 ## [0.1.2] - 2026-08-02
 
