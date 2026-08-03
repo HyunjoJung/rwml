@@ -678,11 +678,308 @@ def unsafe_manifest_document_path(document_path: str) -> bool:
     )
 
 
+_HEX_STRING = re.compile(rb"<([0-9A-Fa-f\s]*)>")
+_CODESPACE = re.compile(
+    rb"begincodespacerange(.*?)endcodespacerange", re.S
+)
+_BFCHAR = re.compile(rb"beginbfchar(.*?)endbfchar", re.S)
+_BFRANGE = re.compile(rb"beginbfrange(.*?)endbfrange", re.S)
+_ACTUAL_TEXT = re.compile(rb"/ActualText\s*<([0-9A-Fa-f\s]*)>")
+
+
+def _hex_to_text(raw: bytes) -> str:
+    """Decode a CMap destination (UTF-16BE, optionally BOM-prefixed)."""
+    digits = b"".join(raw.split())
+    if len(digits) % 2:
+        return ""
+    try:
+        data = bytes.fromhex(digits.decode("ascii"))
+    except ValueError:
+        return ""
+    if data[:2] == b"\xfe\xff":
+        data = data[2:]
+    if len(data) % 2:
+        return ""
+    try:
+        return data.decode("utf-16-be")
+    except UnicodeDecodeError:
+        return ""
+
+
+def _hex_to_int(raw: bytes) -> int | None:
+    digits = b"".join(raw.split())
+    try:
+        return int(digits, 16)
+    except ValueError:
+        return None
+
+
+def parse_tounicode_cmap(data: bytes) -> dict[str, object]:
+    """Read a `ToUnicode` CMap into a code width and a code-to-text map.
+
+    Returns an empty map rather than raising on anything unrecognized: this
+    feeds a measurement, so failing to decode must never invent text.
+    """
+    width = 2
+    codespace = _CODESPACE.search(data)
+    if codespace:
+        first = _HEX_STRING.search(codespace.group(1))
+        if first:
+            digits = b"".join(first.group(1).split())
+            if digits:
+                width = max(1, len(digits) // 2)
+    mapping: dict[int, str] = {}
+    for block in _BFCHAR.findall(data):
+        entries = _HEX_STRING.findall(block)
+        for index in range(0, len(entries) - 1, 2):
+            code = _hex_to_int(entries[index])
+            text = _hex_to_text(entries[index + 1])
+            if code is not None and text:
+                mapping[code] = text
+    for block in _BFRANGE.findall(data):
+        for low_raw, high_raw, dest in _bfrange_entries(block):
+            low = _hex_to_int(low_raw)
+            high = _hex_to_int(high_raw)
+            if low is None or high is None or high < low or high - low > 0xFFFF:
+                continue
+            if isinstance(dest, list):
+                for offset, item in enumerate(dest):
+                    text = _hex_to_text(item)
+                    if text:
+                        mapping[low + offset] = text
+                continue
+            base = _hex_to_text(dest)
+            if not base:
+                continue
+            for offset in range(high - low + 1):
+                mapping[low + offset] = base[:-1] + chr(ord(base[-1]) + offset)
+    return {"width": width, "map": mapping}
+
+
+def _bfrange_entries(block: bytes):
+    """Yield `(low, high, destination)` triples from a `bfrange` block."""
+    position = 0
+    while True:
+        low = _HEX_STRING.search(block, position)
+        if not low:
+            return
+        high = _HEX_STRING.search(block, low.end())
+        if not high:
+            return
+        rest = block[high.end() :]
+        array = re.match(rb"\s*\[(.*?)\]", rest, re.S)
+        if array:
+            yield low.group(1), high.group(1), _HEX_STRING.findall(array.group(1))
+            position = high.end() + array.end()
+            continue
+        dest = _HEX_STRING.search(block, high.end())
+        if not dest:
+            return
+        yield low.group(1), high.group(1), dest.group(1)
+        position = dest.end()
+
+
+_STRING_OPERAND = re.compile(rb"\((?:\\.|[^\\()])*\)|<[0-9A-Fa-f\s]*>", re.S)
+_TOKEN = re.compile(
+    rb"/[^\s/<>\[\]()]+|<<|>>|\[|\]|\((?:\\.|[^\\()])*\)|<[0-9A-Fa-f\s]*>|[^\s/<>\[\]()]+",
+    re.S,
+)
+
+
+def _decode_pdf_string(raw: bytes) -> bytes:
+    if raw.startswith(b"<"):
+        digits = b"".join(raw[1:-1].split())
+        if len(digits) % 2:
+            digits += b"0"
+        try:
+            return bytes.fromhex(digits.decode("ascii"))
+        except ValueError:
+            return b""
+    body = raw[1:-1]
+    out = bytearray()
+    index = 0
+    escapes = {b"n": 10, b"r": 13, b"t": 9, b"b": 8, b"f": 12}
+    while index < len(body):
+        byte = body[index : index + 1]
+        if byte != b"\\":
+            out += byte
+            index += 1
+            continue
+        index += 1
+        if index >= len(body):
+            break
+        nxt = body[index : index + 1]
+        if nxt in escapes:
+            out.append(escapes[nxt])
+            index += 1
+        elif nxt.isdigit():
+            digits = b""
+            while index < len(body) and len(digits) < 3 and body[index : index + 1].isdigit():
+                digits += body[index : index + 1]
+                index += 1
+            out.append(int(digits, 8) & 0xFF)
+        else:
+            out += nxt
+            index += 1
+    return bytes(out)
+
+
+def content_stream_text(content: bytes, cmaps: dict) -> str:
+    """Reconstruct a page's text the way a conforming reader would.
+
+    Glyph codes are mapped through each font's `ToUnicode`, and any
+    `/Span <</ActualText ...>>` marked-content section contributes its declared
+    text instead of its glyphs. No separator is invented: word spacing comes
+    only from space glyphs the page actually draws.
+    """
+    pieces: list[str] = []
+    font: str | None = None
+    span_depth = 0
+    pending_actual: str | None = None
+    operands: list[bytes] = []
+    for match in _TOKEN.finditer(content):
+        token = match.group(0)
+        if token in (b"Tf",):
+            names = [item for item in operands if item.startswith(b"/")]
+            font = names[-1][1:].decode("latin-1") if names else font
+            operands = []
+            continue
+        if token == b"BDC":
+            joined = b" ".join(operands)
+            actual = _ACTUAL_TEXT.search(joined)
+            if actual is not None:
+                span_depth += 1
+                pending_actual = _hex_to_text(actual.group(1))
+            operands = []
+            continue
+        if token in (b"BT", b"ET"):
+            # Each text object is a separately positioned run, so it cannot
+            # continue a word; shaped clusters always stay inside one object.
+            pieces.append(" ")
+            operands = []
+            continue
+        if token == b"EMC":
+            if span_depth:
+                span_depth -= 1
+                if pending_actual:
+                    pieces.append(pending_actual)
+                pending_actual = None
+            operands = []
+            continue
+        if token in (b"Tj", b"TJ", b"'", b'"'):
+            if span_depth == 0:
+                entry = cmaps.get(font or "")
+                if entry:
+                    width = int(entry.get("width", 2)) or 2
+                    mapping = entry.get("map", {})
+                    for operand in operands:
+                        if not _STRING_OPERAND.fullmatch(operand):
+                            continue
+                        raw = _decode_pdf_string(operand)
+                        for index in range(0, len(raw) - width + 1, width):
+                            code = int.from_bytes(raw[index : index + width], "big")
+                            pieces.append(mapping.get(code, ""))
+            operands = []
+            continue
+        if re.fullmatch(rb"[A-Za-z*'\"]+[01]?", token) and not token.startswith(b"/"):
+            operands = []
+            continue
+        operands.append(token)
+    return " ".join("".join(pieces).split())
+
+
+def _is_rtl_char(ch: str) -> bool:
+    code = ord(ch)
+    # Hebrew, Arabic, Syriac, Thaana, N'Ko and the Arabic supplements.
+    return 0x0590 <= code <= 0x08FF or 0xFB1D <= code <= 0xFDFF or 0xFE70 <= code <= 0xFEFF
+
+
+def reverse_rtl_runs(text: str) -> str:
+    """Put right-to-left runs back into logical order.
+
+    Content streams draw glyphs in visual order. Reversing each maximal
+    right-to-left run recovers logical order for runs that carry no embedded
+    left-to-right text or digits, which is the case this measurement needs;
+    it is a deliberate simplification of the Unicode bidirectional algorithm.
+    """
+    out: list[str] = []
+    run: list[str] = []
+    for ch in text:
+        if _is_rtl_char(ch):
+            run.append(ch)
+            continue
+        if run:
+            out.extend(reversed(run))
+            run = []
+        out.append(ch)
+    out.extend(reversed(run))
+    return "".join(out)
+
+
+def page_tounicode_cmaps(doc, page) -> dict:
+    """Map each of a page's font resource names to its decoded `ToUnicode`."""
+    cmaps: dict[str, dict] = {}
+    try:
+        fonts = page.get_fonts(full=True)
+    except Exception:
+        return cmaps
+    for font in fonts:
+        try:
+            xref = int(font[0])
+            resource = str(font[4])
+            key = doc.xref_get_key(xref, "ToUnicode")
+        except Exception:
+            continue
+        if not key or key[0] != "xref":
+            continue
+        try:
+            stream = doc.xref_stream(int(str(key[1]).split()[0]))
+        except Exception:
+            continue
+        if stream:
+            cmaps[resource] = parse_tounicode_cmap(stream)
+    return cmaps
+
+
+def conforming_tokens(doc) -> list[str]:
+    """Tokens a reader that honors `ActualText` recovers from the page text.
+
+    PyMuPDF, like pdfminer.six and pypdf, ignores `ActualText` marked content
+    and splits complex-script words apart at every span boundary. Rebuilding the
+    text from the content stream recovers what Acrobat or Chrome would copy.
+    """
+    out: list[str] = []
+    for page in doc:
+        try:
+            content = page.read_contents()
+        except Exception:
+            continue
+        if not content:
+            continue
+        text = content_stream_text(content, page_tounicode_cmaps(doc, page))
+        out.extend(reverse_rtl_runs(text).split())
+    return out
+
+
 def tokens(pdf: Path) -> list[str]:
     require_pdf_deps()
     doc = fitz.open(pdf)
     text = " ".join(p.get_text() for p in doc)
     return text.split()
+
+
+def candidate_tokens(pdf: Path) -> list[str]:
+    """What rwml's PDF yields to any legitimate reader.
+
+    The reference stays whatever a plain reader reports, because it is the
+    oracle. For the candidate a token also counts when only an `ActualText`
+    aware reader recovers it — that text is genuinely in the PDF, and both
+    paths read the file rather than inventing anything.
+    """
+    require_pdf_deps()
+    doc = fitz.open(pdf)
+    text = " ".join(p.get_text() for p in doc)
+    return text.split() + conforming_tokens(doc)
 
 
 def reference_recall_tokens(
@@ -868,7 +1165,7 @@ def text_recall(
     render_report: dict | None = None,
 ) -> float:
     ref_tokens = reference_recall_tokens(tokens(ref), render_warning_kinds)
-    return token_recall(ref_tokens, tokens(got), render_report)
+    return token_recall(ref_tokens, candidate_tokens(got), render_report)
 
 
 def page_count(pdf: Path) -> int:

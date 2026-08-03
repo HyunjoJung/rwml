@@ -727,3 +727,109 @@ class RenderValidateImageMetricTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ConformingTextExtractionTests(unittest.TestCase):
+    """Text recovered the way a conforming PDF reader recovers it."""
+
+    def cmap(self, body: str) -> bytes:
+        return (
+            "/CIDInit /ProcSet findresource begin\nbegincmap\n"
+            "1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange\n"
+            f"{body}\nendcmap\nend\n"
+        ).encode("latin-1")
+
+    def test_parse_tounicode_cmap_reads_bfchar_entries(self):
+        data = self.cmap("2 beginbfchar\n<0001> <0631>\n<0002> <0635>\nendbfchar")
+        self.assertEqual(
+            render_validate.parse_tounicode_cmap(data),
+            {"width": 2, "map": {1: "ر", 2: "ص"}},
+        )
+
+    def test_parse_tounicode_cmap_reads_both_bfrange_forms(self):
+        data = self.cmap(
+            "2 beginbfrange\n<0010> <0012> <0041>\n"
+            "<0020> <0021> [<0058> <0059>]\nendbfrange"
+        )
+        parsed = render_validate.parse_tounicode_cmap(data)["map"]
+        self.assertEqual(parsed[0x10], "A")
+        self.assertEqual(parsed[0x12], "C")
+        self.assertEqual(parsed[0x20], "X")
+        self.assertEqual(parsed[0x21], "Y")
+
+    def test_parse_tounicode_cmap_reads_single_byte_codespace(self):
+        data = (
+            "begincmap\n1 begincodespacerange\n<00> <FF>\nendcodespacerange\n"
+            "1 beginbfchar\n<41> <0041>\nendbfchar\nendcmap\n"
+        ).encode("latin-1")
+        self.assertEqual(
+            render_validate.parse_tounicode_cmap(data), {"width": 1, "map": {0x41: "A"}}
+        )
+
+    def test_content_stream_text_maps_glyph_codes_without_inserting_gaps(self):
+        cmaps = {"f0": {"width": 2, "map": {1: "ر", 2: "ص"}}}
+        content = b"BT /f0 11 Tf 1 0 0 -1 20 30 Tm [(\x00\x01\x00\x02)] TJ ET"
+        self.assertEqual(render_validate.content_stream_text(content, cmaps), "رص")
+
+    def test_content_stream_text_prefers_actual_text_over_cluster_glyphs(self):
+        cmaps = {"f0": {"width": 2, "map": {3: "X", 5: "ع"}}}
+        content = (
+            b"BT /f0 11 Tf /Span<</ActualText<FEFF0646>>>BDC "
+            b"[(\x00\x03)] TJ (\x00\x04) Tj EMC (\x00\x05) Tj ET"
+        )
+        self.assertEqual(
+            render_validate.content_stream_text(content, cmaps), "نع"
+        )
+
+    def test_content_stream_text_keeps_real_space_glyphs(self):
+        cmaps = {
+            "f0": {"width": 2, "map": {1: "a", 2: "b"}},
+            "f1": {"width": 2, "map": {1: " "}},
+        }
+        content = (
+            b"BT /f0 11 Tf (\x00\x01) Tj ET BT /f1 11 Tf (\x00\x01) Tj ET "
+            b"BT /f0 11 Tf (\x00\x02) Tj ET"
+        )
+        self.assertEqual(render_validate.content_stream_text(content, cmaps), "a b")
+
+    def test_content_stream_text_ignores_unmapped_codes_and_unknown_fonts(self):
+        cmaps = {"f0": {"width": 2, "map": {1: "a"}}}
+        content = b"BT /f0 11 Tf (\x00\x01\x00\x09) Tj ET BT /zz 11 Tf (\x00\x01) Tj ET"
+        self.assertEqual(render_validate.content_stream_text(content, cmaps), "a")
+
+    def test_content_stream_text_never_invents_text_from_malformed_input(self):
+        self.assertEqual(render_validate.content_stream_text(b"", {}), "")
+        self.assertEqual(
+            render_validate.content_stream_text(b"BT /f0 11 Tf (unbalanced", {}), ""
+        )
+
+
+class RightToLeftReadingOrderTests(unittest.TestCase):
+    def test_reverse_rtl_runs_restores_logical_order(self):
+        self.assertEqual(render_validate.reverse_rtl_runs("رصنع"), "عنصر")
+        self.assertEqual(render_validate.reverse_rtl_runs("ןנוקמ"), "מקונן")
+
+    def test_reverse_rtl_runs_leaves_latin_untouched(self):
+        self.assertEqual(render_validate.reverse_rtl_runs("Body item 4."), "Body item 4.")
+
+    def test_reverse_rtl_runs_only_reverses_the_rtl_run(self):
+        self.assertEqual(render_validate.reverse_rtl_runs("ab رصنع cd"), "ab عنصر cd")
+
+    def test_candidate_tokens_never_add_text_absent_from_the_pdf(self):
+        # Negative control: the conforming path reads only the content stream,
+        # so a page that draws nothing contributes nothing.
+        doc = mock.Mock()
+        doc.__iter__ = lambda self: iter([])
+        self.assertEqual(render_validate.conforming_tokens(doc), [])
+
+
+class TextObjectBoundaryTests(unittest.TestCase):
+    def test_content_stream_text_separates_text_objects(self):
+        cmaps = {"f0": {"width": 2, "map": {1: "a", 2: "b"}}}
+        content = b"BT /f0 11 Tf (\x00\x01) Tj ET BT /f0 11 Tf (\x00\x02) Tj ET"
+        self.assertEqual(render_validate.content_stream_text(content, cmaps), "a b")
+
+    def test_content_stream_text_keeps_one_text_object_intact(self):
+        cmaps = {"f0": {"width": 2, "map": {1: "a", 2: "b"}}}
+        content = b"BT /f0 11 Tf (\x00\x01) Tj (\x00\x02) Tj ET"
+        self.assertEqual(render_validate.content_stream_text(content, cmaps), "ab")
