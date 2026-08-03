@@ -56,7 +56,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - Replaces the stale `~0.93 mean text recall` figure with the measured public-corpus
-  result — 0.99 mean text recall and a 1.00 mean page-count ratio, with 23 of 24
+  result — 0.996 mean text recall and a 1.00 mean page-count ratio, with 23 of 24
   documents at exactly 1.00 — and documents why the remaining right-to-left fixture
   scores lower: complex-script clusters can only be mapped to text through PDF
   `ActualText`, which Acrobat and Chrome honor but MuPDF/PyMuPDF, pdfminer.six, and
@@ -71,6 +71,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   gaps as inherent to the design. No behavior change.
 
 ### Fixed
+
+- Honors a bullet level's declared `w:lvlText` glyph instead of discarding it and
+  letting the renderer guess by depth, so a document that asks for a specific
+  bullet gets it; levels that declare none keep the existing fallback and a
+  `%N` pattern is still treated as autonumber syntax.
 
 - Opened `.docx` PDF previews now reserve line width for resolved custom and
   default tab advances before breaking, so top-level LTR left/start-aligned body
