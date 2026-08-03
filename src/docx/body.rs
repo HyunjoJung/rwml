@@ -5427,8 +5427,8 @@ fn finalize_paragraph(
 
 const DEFAULT_HORIZONTAL_CELL_MARGIN_TWIPS: u32 = 115;
 
-#[derive(Clone, Copy, Default)]
-struct CellMarginSpec {
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct CellMarginSpec {
     top: Option<u32>,
     trailing: Option<u32>,
     bottom: Option<u32>,
@@ -5480,7 +5480,7 @@ impl ParsedCellMargins {
 }
 
 impl CellMarginSpec {
-    fn overlay(&mut self, other: Self) {
+    pub(crate) fn overlay(&mut self, other: Self) {
         if other.top.is_some() {
             self.top = other.top;
         }
@@ -5495,7 +5495,7 @@ impl CellMarginSpec {
         }
     }
 
-    fn is_empty(self) -> bool {
+    pub(crate) fn is_empty(self) -> bool {
         self.top.is_none()
             && self.trailing.is_none()
             && self.bottom.is_none()
@@ -5504,6 +5504,7 @@ impl CellMarginSpec {
 }
 
 fn resolve_cell_margins(
+    style: CellMarginSpec,
     table: CellMarginSpec,
     cell: CellMarginSpec,
     bidi_visual: bool,
@@ -5518,6 +5519,7 @@ fn resolve_cell_margins(
         bottom: Some(0),
         leading: Some(DEFAULT_HORIZONTAL_CELL_MARGIN_TWIPS),
     };
+    effective.overlay(style);
     effective.overlay(table);
     effective.overlay(cell);
     let top = effective.top.unwrap_or(0);
@@ -5659,7 +5661,9 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Table, TablePagina
             row.props.pagination(style_cant_split)
         })
         .collect();
-    let (table, cell_pagination, nested_pagination) = build_table(rows, props, grid_widths);
+    let style_cell_margins = ctx.styles.table_cell_margins(props.style_id.as_deref());
+    let (table, cell_pagination, nested_pagination) =
+        build_table(rows, props, grid_widths, style_cell_margins);
     (
         table,
         TablePaginationHints {
@@ -6749,7 +6753,7 @@ fn apply_tcpr_child(t: &mut TcPr, e: &BytesStart<'_>) {
     }
 }
 
-fn read_cell_margins(r: &mut Xml<'_>, end: &[u8], depth: u32) -> CellMarginSpec {
+pub(crate) fn read_cell_margins(r: &mut Xml<'_>, end: &[u8], depth: u32) -> CellMarginSpec {
     if depth > MAX_DEPTH {
         skip_subtree(r);
         return CellMarginSpec::default();
@@ -6872,6 +6876,7 @@ fn build_table(
     raw_rows: Vec<RowRaw>,
     props: TableProps,
     grid_widths: Vec<u32>,
+    style_cell_margins: CellMarginSpec,
 ) -> (
     Table,
     TableCellPaginationHints,
@@ -6952,7 +6957,8 @@ fn build_table(
         }
     }
 
-    let cell_margin_defaults_active = !props.cell_margins.is_empty()
+    let cell_margin_defaults_active = !style_cell_margins.is_empty()
+        || !props.cell_margins.is_empty()
         || grid
             .iter()
             .flatten()
@@ -6976,6 +6982,7 @@ fn build_table(
                 valign: p.valign,
                 width_pct: p.width_pct,
                 margins: resolve_cell_margins(
+                    style_cell_margins,
                     props.cell_margins,
                     p.margins,
                     props.bidi_visual,
@@ -9340,7 +9347,13 @@ mod tests {
             props: RowProps::default(),
         }));
 
-        let table = build_table(rows, TableProps::default(), Vec::new()).0;
+        let table = build_table(
+            rows,
+            TableProps::default(),
+            Vec::new(),
+            CellMarginSpec::default(),
+        )
+        .0;
 
         assert_eq!(table.rows[0].cells[0].row_span, u16::MAX);
     }

@@ -308,8 +308,10 @@ indentation, top-level and run-attached body images with model-backed
 whole-degree clockwise rotation, and **clickable hyperlink annotations** are
 drawn. Opened `.docx` tables materialize direct `dxa`/`nil` `w:tblCellMar`
 defaults and per-side direct `w:tcMar` exceptions, including logical
-`start`/`end` mapping under `w:bidiVisual`; table-style, conditional-style,
-and `w:tblPrEx` margin inheritance remain outside this bounded subset.
+`start`/`end` mapping under `w:bidiVisual`, and inherit a table style's own
+`w:tblCellMar` through its `w:basedOn` chain beneath those direct declarations;
+conditional-style and `w:tblPrEx` margin inheritance remain outside this
+bounded subset.
 Rotated raster bounds drive proportional
 content-box/page-height fitting and pagination. Narrow RTL tables reverse logical
 placement and mirror their cells inside the local table box. Page geometry,

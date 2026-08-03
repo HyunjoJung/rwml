@@ -2,7 +2,7 @@
 
 use std::io::Write;
 
-use rwml::{Block, Color, Document};
+use rwml::{Block, CellMargins, Color, Document};
 
 fn docx_fixture(parts: &[(&str, &str)]) -> Vec<u8> {
     let mut out = Vec::new();
@@ -779,5 +779,85 @@ fn opened_docx_render_honors_horizontal_table_style_band_cant_split() {
         (banded_pages, direct_off_pages),
         (3, 2),
         "the selected horizontal band keeps the row together while direct off restores splitting"
+    );
+}
+
+/// A table style's own `tblCellMar` is the table's cell-margin default, ahead
+/// of the schema defaults and behind any direct `tblPr`/`tcMar` declaration.
+#[test]
+fn table_styles_supply_cell_margin_defaults() {
+    let content_types = content_types(true);
+    let bytes = docx_fixture(&[
+        ("[Content_Types].xml", &content_types),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        ("word/_rels/document.xml.rels", document_rels(true)),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                <w:style w:type="table" w:styleId="Base">
+                    <w:tblPr><w:tblCellMar>
+                        <w:top w:w="200" w:type="dxa"/><w:start w:w="300" w:type="dxa"/>
+                    </w:tblCellMar></w:tblPr>
+                </w:style>
+                <w:style w:type="table" w:styleId="Derived">
+                    <w:basedOn w:val="Base"/>
+                    <w:tblPr><w:tblCellMar><w:bottom w:w="400" w:type="dxa"/></w:tblCellMar></w:tblPr>
+                </w:style>
+            </w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:tbl>
+                    <w:tblPr><w:tblStyle w:val="Derived"/></w:tblPr>
+                    <w:tr><w:tc><w:p><w:r><w:t>inherited</w:t></w:r></w:p></w:tc></w:tr>
+                </w:tbl>
+                <w:tbl>
+                    <w:tblPr>
+                        <w:tblStyle w:val="Derived"/>
+                        <w:tblCellMar><w:top w:w="500" w:type="dxa"/></w:tblCellMar>
+                    </w:tblPr>
+                    <w:tr><w:tc>
+                        <w:tcPr><w:tcMar><w:bottom w:w="600" w:type="dxa"/></w:tcMar></w:tcPr>
+                        <w:p><w:r><w:t>overridden</w:t></w:r></w:p>
+                    </w:tc></w:tr>
+                </w:tbl>
+            </w:body></w:document>"#,
+        ),
+    ]);
+    let doc = Document::open(&bytes).expect("styled table margins .docx opens");
+    let tables: Vec<_> = doc
+        .model()
+        .blocks
+        .iter()
+        .filter_map(|block| match block {
+            Block::Table(table) => Some(table.clone()),
+            _ => None,
+        })
+        .collect();
+
+    // The base chain supplies top/leading, the derived style adds bottom, and
+    // the untouched side keeps the schema default.
+    assert_eq!(
+        tables[0].rows[0].cells[0].margins,
+        Some(CellMargins {
+            top: 200,
+            right: 115,
+            bottom: 400,
+            left: 300,
+        })
+    );
+    // Direct table and cell declarations still win over the style.
+    assert_eq!(
+        tables[1].rows[0].cells[0].margins,
+        Some(CellMargins {
+            top: 500,
+            right: 115,
+            bottom: 600,
+            left: 300,
+        })
     );
 }
