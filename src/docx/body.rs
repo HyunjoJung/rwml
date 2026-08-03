@@ -5669,6 +5669,12 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Table, TablePagina
     props.width_pct = props.width_pct.or(style_geometry.width_pct);
     props.indent_twips = props.indent_twips.or(style_geometry.indent_twips);
     props.align = props.align.or(style_geometry.align);
+    if !props.fixed_layout_declared {
+        props.fixed_layout = style_geometry.fixed_layout.unwrap_or(props.fixed_layout);
+    }
+    if !props.bidi_visual_declared {
+        props.bidi_visual = style_geometry.bidi_visual.unwrap_or(props.bidi_visual);
+    }
     // A table style's borders apply unless the table declares its own.
     if !props.borders_declared {
         if let Some(borders) = ctx.styles.table_borders(props.style_id.as_deref()) {
@@ -5822,6 +5828,8 @@ fn read_table_alternate_content_branch_rows(
 struct TableProps {
     style_id: Option<String>,
     borders_declared: bool,
+    fixed_layout_declared: bool,
+    bidi_visual_declared: bool,
     look: Option<TableLook>,
     row_band_size: Option<u8>,
     cell_margins: CellMarginSpec,
@@ -5912,11 +5920,15 @@ fn apply_tblpr_child(props: &mut TableProps, e: &BytesStart<'_>) {
                 props.row_band_size = Some(size);
             }
         }
-        b"bidiVisual" => props.bidi_visual = toggle_on(attr_local(e, b"val")),
+        b"bidiVisual" => {
+            props.bidi_visual_declared = true;
+            props.bidi_visual = toggle_on(attr_local(e, b"val"));
+        }
         b"tblW" if attr_local_trimmed(e, b"type").is_some_and(|value| value == "pct") => {
             props.width_pct = attr_f32(e, b"w").map(|percentage| percentage / 5000.0);
         }
         b"tblLayout" => {
+            props.fixed_layout_declared = true;
             props.fixed_layout =
                 attr_local_trimmed(e, b"type").is_some_and(|value| value == "fixed");
         }
@@ -6105,6 +6117,8 @@ pub(crate) struct TableStyleGeometry {
     pub(crate) width_pct: Option<f32>,
     pub(crate) indent_twips: Option<i32>,
     pub(crate) align: Option<Align>,
+    pub(crate) fixed_layout: Option<bool>,
+    pub(crate) bidi_visual: Option<bool>,
 }
 
 impl TableStyleGeometry {
@@ -6118,10 +6132,20 @@ impl TableStyleGeometry {
         if other.align.is_some() {
             self.align = other.align;
         }
+        if other.fixed_layout.is_some() {
+            self.fixed_layout = other.fixed_layout;
+        }
+        if other.bidi_visual.is_some() {
+            self.bidi_visual = other.bidi_visual;
+        }
     }
 
     pub(crate) fn is_empty(self) -> bool {
-        self.width_pct.is_none() && self.indent_twips.is_none() && self.align.is_none()
+        self.width_pct.is_none()
+            && self.indent_twips.is_none()
+            && self.align.is_none()
+            && self.fixed_layout.is_none()
+            && self.bidi_visual.is_none()
     }
 
     /// Record a `w:tblPr` child, reusing the direct-table reader's semantics.
@@ -6132,6 +6156,8 @@ impl TableStyleGeometry {
             width_pct: props.width_pct,
             indent_twips: props.indent_twips,
             align: props.align,
+            fixed_layout: props.fixed_layout_declared.then_some(props.fixed_layout),
+            bidi_visual: props.bidi_visual_declared.then_some(props.bidi_visual),
         });
     }
 }

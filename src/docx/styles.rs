@@ -1202,7 +1202,7 @@ pub(crate) fn parse(xml: &str) -> Styles {
                             }
                         }
                     }
-                    b"tblW" | b"tblInd" | b"jc" => {
+                    b"tblW" | b"tblInd" | b"jc" | b"tblLayout" | b"bidiVisual" => {
                         if let Some(style) = &mut cur_style {
                             if style.kind == Some(StyleKind::Table) {
                                 style.table_geometry.record(&e);
@@ -1680,7 +1680,10 @@ fn read_conditional_table_region(
                 borders = Some(super::body::read_tbl_borders(r));
             }
             Ok(Event::Start(e)) | Ok(Event::Empty(e))
-                if matches!(local(e.name().as_ref()), b"tblW" | b"tblInd" | b"jc") =>
+                if matches!(
+                    local(e.name().as_ref()),
+                    b"tblW" | b"tblInd" | b"jc" | b"tblLayout" | b"bidiVisual"
+                ) =>
             {
                 geometry.record(&e);
             }
