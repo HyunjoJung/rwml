@@ -524,7 +524,7 @@ bridges.
 > backend-incompatible raster images, and floating shapes without recoverable
 > geometry. Exact single-DIB WMF/EMF raster streams are decoded separately.
 >
-> Measured against LibreOffice on the public corpus it reaches 0.99 mean text
+> Measured against LibreOffice on the public corpus it reaches 0.996 mean text
 > recall with matching page counts; for archival or Word-exact PDF, render via
 > LibreOffice.
 > (See *Scope & parity*.)
@@ -785,7 +785,7 @@ document plus identical context always yields identical results.
 
 Authored charts render as native vector preview charts (see
 [chart families](#chart-families)). On a real
-`.docx` corpus it reaches **0.99 mean text recall** with a **1.00 mean page-count
+`.docx` corpus it reaches **0.996 mean text recall** with a **1.00 mean page-count
 ratio** (extracting headers/footers,
 text boxes, nested tables, real list labels, caps; model-driven page geometry makes
 `.doc` page counts line up). 23 of the 24 public-corpus documents score exactly
@@ -1012,9 +1012,12 @@ code points.
   them is not universal — Acrobat and Chrome honor them, while MuPDF/PyMuPDF,
   pdfminer.six, and pypdf do not and split Arabic words apart when copying or
   extracting. Rendering itself is unaffected, and Hebrew (one glyph per cluster)
-  extracts intact. This is why the public corpus's right-to-left list fixture
-  scores below the per-document text-recall floor while every other document
-  reaches 1.00.
+  extracts intact. `scripts/render_validate.py` reads `ActualText` itself, so its
+  own measurement is not affected. The public corpus's right-to-left list fixture
+  still scores below the per-document floor for a narrower reason: its list
+  marker is a separate text object, so an extractor's bidirectional pass leaves
+  the marker's period beside the number rather than beside the following
+  right-to-left word. Both renderers draw that period in the same place.
 
 ## Roadmap
 
