@@ -35,6 +35,7 @@ pub(crate) struct Styles {
     character_run: HashMap<String, RunProps>,
     table_row: HashMap<String, TableRowStyleProps>,
     table_cell_margins: HashMap<String, super::body::CellMarginSpec>,
+    table_borders: HashMap<String, super::body::TableBorderTuple>,
 }
 
 impl Styles {
@@ -121,6 +122,18 @@ impl Styles {
             .and_then(|style_id| self.table_cell_margins.get(style_id))
             .copied()
             .unwrap_or_default()
+    }
+
+    /// A table style's borders, resolved through `basedOn` with its
+    /// `wholeTable` region applied last. Row- and column-scoped regions stay
+    /// unsupported.
+    pub(crate) fn table_borders(
+        &self,
+        style_id: Option<&str>,
+    ) -> Option<super::body::TableBorderTuple> {
+        style_id
+            .and_then(|style_id| self.table_borders.get(style_id))
+            .copied()
     }
 
     pub(crate) fn table_row_band_size(&self, style_id: Option<&str>) -> Option<u8> {
@@ -1030,6 +1043,15 @@ pub(crate) fn parse(xml: &str) -> Styles {
                     None => {}
                 }
             }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblBorders" => {
+                let borders = super::body::read_tbl_borders(&mut r);
+                match &mut cur_style {
+                    Some(style) if style.kind == Some(StyleKind::Table) => {
+                        style.table_borders = Some(borders);
+                    }
+                    _ => {}
+                }
+            }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblCellMar" => {
                 // A table style's own default cell margins. Conditional regions
                 // are consumed by the `tblStylePr` arm, so only the style's
@@ -1047,13 +1069,17 @@ pub(crate) fn parse(xml: &str) -> Styles {
                     TableRowStyleRegion::from_attr(attr_local_trimmed(&e, b"type").as_deref());
                 if let (Some(style), Some(region)) = (&mut cur_style, region) {
                     if style.kind == Some(StyleKind::Table) {
-                        let (props, margins) = read_conditional_table_region(&mut r, b"tblStylePr");
+                        let (props, margins, borders) =
+                            read_conditional_table_region(&mut r, b"tblStylePr");
                         style.table_row_props.region_mut(region).overlay(props);
                         // Only the whole-table region joins the table-wide
                         // margin cascade; row- and column-scoped regions need
                         // per-cell resolution and stay unsupported.
                         if matches!(region, TableRowStyleRegion::WholeTable) {
                             style.whole_table_cell_margins.overlay(margins);
+                            if borders.is_some() {
+                                style.whole_table_borders = borders;
+                            }
                         }
                     } else {
                         skip_subtree(&mut r);
@@ -1248,6 +1274,9 @@ pub(crate) fn parse(xml: &str) -> Styles {
         if !margins.is_empty() {
             styles.table_cell_margins.insert(id.clone(), margins);
         }
+        if let Some(borders) = resolve_style_table_borders(id, &raw_styles, &mut Vec::new(), 0) {
+            styles.table_borders.insert(id.clone(), borders);
+        }
     }
     styles
 }
@@ -1260,6 +1289,8 @@ struct RawStyle {
     based_on: Option<String>,
     table_cell_margins: super::body::CellMarginSpec,
     whole_table_cell_margins: super::body::CellMarginSpec,
+    table_borders: Option<super::body::TableBorderTuple>,
+    whole_table_borders: Option<super::body::TableBorderTuple>,
     outline: Option<u8>,
     run_props: RunProps,
     paragraph_props: ParagraphProps,
@@ -1481,12 +1512,44 @@ fn resolve_style_table_cell_margins(
     margins
 }
 
+fn resolve_style_table_borders(
+    id: &str,
+    raw_styles: &HashMap<String, RawStyle>,
+    stack: &mut Vec<String>,
+    depth: usize,
+) -> Option<super::body::TableBorderTuple> {
+    if depth >= STYLE_CHAIN_LIMIT || stack.iter().any(|seen| seen == id) {
+        return None;
+    }
+    let style = raw_styles
+        .get(id)
+        .filter(|style| style.kind == Some(StyleKind::Table))?;
+    stack.push(id.to_string());
+    let mut borders = style
+        .based_on
+        .as_deref()
+        .and_then(|base| resolve_style_table_borders(base, raw_styles, stack, depth + 1));
+    if style.table_borders.is_some() {
+        borders = style.table_borders;
+    }
+    if style.whole_table_borders.is_some() {
+        borders = style.whole_table_borders;
+    }
+    stack.pop();
+    borders
+}
+
 fn read_conditional_table_region(
     r: &mut Reader<&[u8]>,
     end: &[u8],
-) -> (TableRowProps, super::body::CellMarginSpec) {
+) -> (
+    TableRowProps,
+    super::body::CellMarginSpec,
+    Option<super::body::TableBorderTuple>,
+) {
     let mut props = TableRowProps::default();
     let mut margins = super::body::CellMarginSpec::default();
+    let mut borders = None;
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"trPr" => {
@@ -1495,6 +1558,9 @@ fn read_conditional_table_region(
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblCellMar" => {
                 margins.overlay(super::body::read_cell_margins(r, b"tblCellMar", 0));
             }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblBorders" => {
+                borders = Some(super::body::read_tbl_borders(r));
+            }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
                 if let Some(value) = read_conditional_table_row_props_alternate_content(r) {
                     props.overlay(value);
@@ -1502,9 +1568,13 @@ fn read_conditional_table_region(
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblPr" => {
                 // Recurse so a region's `tblPr` contributes its margins too.
-                let (nested, nested_margins) = read_conditional_table_region(r, b"tblPr");
+                let (nested, nested_margins, nested_borders) =
+                    read_conditional_table_region(r, b"tblPr");
                 props.overlay(nested);
                 margins.overlay(nested_margins);
+                if nested_borders.is_some() {
+                    borders = nested_borders;
+                }
             }
             Ok(Event::Start(_)) => skip_subtree(r),
             Ok(Event::End(e)) if local(e.name().as_ref()) == end => break,
@@ -1512,7 +1582,7 @@ fn read_conditional_table_region(
             _ => {}
         }
     }
-    (props, margins)
+    (props, margins, borders)
 }
 
 fn read_conditional_table_row_props(r: &mut Reader<&[u8]>, end: &[u8]) -> TableRowProps {

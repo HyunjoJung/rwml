@@ -5662,6 +5662,17 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Table, TablePagina
         })
         .collect();
     let style_cell_margins = ctx.styles.table_cell_margins(props.style_id.as_deref());
+    // A table style's borders apply unless the table declares its own.
+    if !props.borders_declared {
+        if let Some(borders) = ctx.styles.table_borders(props.style_id.as_deref()) {
+            props.border_color = borders.0;
+            props.border_colors = borders.1;
+            props.border_size_eighths = borders.2;
+            props.border_sizes = borders.3;
+            props.border_style = borders.4;
+            props.border_styles = borders.5;
+        }
+    }
     let (table, cell_pagination, nested_pagination) =
         build_table(rows, props, grid_widths, style_cell_margins);
     (
@@ -5798,6 +5809,7 @@ fn read_table_alternate_content_branch_rows(
 #[derive(Default)]
 struct TableProps {
     style_id: Option<String>,
+    borders_declared: bool,
     look: Option<TableLook>,
     row_band_size: Option<u8>,
     cell_margins: CellMarginSpec,
@@ -5930,6 +5942,7 @@ fn read_tblpr(r: &mut Xml<'_>) -> TableProps {
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblBorders" => {
                 let borders = read_tbl_borders(r);
+                props.borders_declared = true;
                 props.border_color = borders.0;
                 props.border_colors = borders.1;
                 props.border_size_eighths = borders.2;
@@ -6006,6 +6019,7 @@ fn read_tblpr_alternate_content_branch(
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblBorders" => {
                 let borders = read_tbl_borders(r);
+                props.borders_declared = true;
                 props.border_color = borders.0;
                 props.border_colors = borders.1;
                 props.border_size_eighths = borders.2;
@@ -6025,7 +6039,16 @@ fn read_tblpr_alternate_content_branch(
     }
 }
 
-fn read_tbl_borders(
+pub(crate) type TableBorderTuple = (
+    Option<Color>,
+    TableBorderColors,
+    Option<u16>,
+    TableBorderSizes,
+    Option<TableBorderStyle>,
+    TableBorderStyles,
+);
+
+pub(crate) fn read_tbl_borders(
     r: &mut Xml<'_>,
 ) -> (
     Option<Color>,
