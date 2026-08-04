@@ -600,7 +600,10 @@ cargo run --features render --example to_pdf -- file.docx out.pdf
 cargo run --features render --example to_pdf -- file.docx out.pdf --report-json render.json
 python scripts/render_validate.py --json --page-cap 32 --min-mean-recall 0.90 --max-skipped 0 corpus/public/**/*.docx > render.json
 # `--verify-oracle` re-renders every reference to check the oracle reproduces
-# itself; visual metrics are only comparable across runs when it reports true
+# itself. Visual metrics are only comparable across runs when it reports true,
+# which needs a host with no duplicate font families: two builds sharing one
+# family name but differing in vertical metrics make LibreOffice pick between
+# them per run, shifting every baseline.
 VERSION=0.1.2
 REV="$(git rev-parse HEAD)"
 python scripts/bench_vs_mature.py --corpus corpus/public/benchmark --json \
