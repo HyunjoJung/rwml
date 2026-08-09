@@ -5569,6 +5569,7 @@ struct RowProps {
     header: Option<bool>,
     cant_split: Option<bool>,
     style_regions: Option<TableRowStyleRegions>,
+    cell_margins: Option<CellMarginSpec>,
 }
 
 impl RowProps {
@@ -5581,6 +5582,18 @@ impl RowProps {
         }
         if other.style_regions.is_some() {
             self.style_regions = other.style_regions;
+        }
+        self.overlay_cell_margins(other.cell_margins);
+    }
+
+    fn overlay_cell_margins(&mut self, other: Option<CellMarginSpec>) {
+        let Some(other) = other else {
+            return;
+        };
+        if let Some(current) = &mut self.cell_margins {
+            current.overlay(other);
+        } else {
+            self.cell_margins = Some(other);
         }
     }
 
@@ -6366,6 +6379,10 @@ fn read_row(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> RowRaw {
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
+                b"tblPrEx" => {
+                    let margins = read_tblprex_cell_margins(r, depth);
+                    props.overlay_cell_margins(margins);
+                }
                 b"trPr" => props.merge(read_trpr(r)),
                 b"tc" => cells.push(read_cell(r, ctx, depth + 1)),
                 b"AlternateContent" => {
@@ -6417,6 +6434,11 @@ fn read_row_alternate_content_cells(
                     _ => skip_subtree(r),
                 }
             }
+            Ok(Event::Empty(e))
+                if matches!(local(e.name().as_ref()), b"Choice" | b"Fallback") && !took =>
+            {
+                took = true;
+            }
             Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
             Ok(Event::Eof) | Err(_) => break,
             _ => {}
@@ -6436,6 +6458,12 @@ fn read_row_alternate_content_branch_cells(
     loop {
         match r.read_event() {
             Ok(Event::Start(e)) => match local(e.name().as_ref()) {
+                b"tblPrEx" => {
+                    let mut merged = props.unwrap_or_default();
+                    let margins = read_tblprex_cell_margins(r, depth);
+                    merged.overlay_cell_margins(margins);
+                    props = Some(merged);
+                }
                 b"trPr" => {
                     let mut merged = props.unwrap_or_default();
                     merged.merge(read_trpr(r));
@@ -6461,6 +6489,119 @@ fn read_row_alternate_content_branch_cells(
         }
     }
     (cells, props)
+}
+
+fn read_tblprex_cell_margins(r: &mut Xml<'_>, depth: u32) -> Option<CellMarginSpec> {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return None;
+    }
+    let mut margins = None;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblPrExChange" => {
+                skip_subtree(r);
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                read_tblprex_alternate_content(r, &mut margins, depth + 1);
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblCellMar" => {
+                overlay_declared_cell_margins(
+                    &mut margins,
+                    read_cell_margins(r, b"tblCellMar", depth + 1),
+                );
+            }
+            Ok(Event::Start(_)) => skip_subtree(r),
+            Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"tblCellMar" => {
+                overlay_declared_cell_margins(&mut margins, CellMarginSpec::default());
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"tblPrEx" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    margins
+}
+
+fn overlay_declared_cell_margins(
+    margins: &mut Option<CellMarginSpec>,
+    declaration: CellMarginSpec,
+) {
+    if let Some(current) = margins {
+        current.overlay(declaration);
+    } else {
+        *margins = Some(declaration);
+    }
+}
+
+fn read_tblprex_alternate_content(
+    r: &mut Xml<'_>,
+    margins: &mut Option<CellMarginSpec>,
+    depth: u32,
+) {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return;
+    }
+    let mut took = false;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) => {
+                let qname = e.name();
+                let name = local(qname.as_ref());
+                match name {
+                    b"Choice" | b"Fallback" if !took => {
+                        took = true;
+                        read_tblprex_alternate_content_branch(r, margins, name, depth + 1);
+                    }
+                    _ => skip_subtree(r),
+                }
+            }
+            Ok(Event::Empty(e))
+                if matches!(local(e.name().as_ref()), b"Choice" | b"Fallback") && !took =>
+            {
+                took = true;
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == b"AlternateContent" => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+}
+
+fn read_tblprex_alternate_content_branch(
+    r: &mut Xml<'_>,
+    margins: &mut Option<CellMarginSpec>,
+    branch: &[u8],
+    depth: u32,
+) {
+    if depth > MAX_DEPTH {
+        skip_subtree(r);
+        return;
+    }
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblPrExChange" => {
+                skip_subtree(r);
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"AlternateContent" => {
+                read_tblprex_alternate_content(r, margins, depth + 1);
+            }
+            Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblCellMar" => {
+                overlay_declared_cell_margins(
+                    margins,
+                    read_cell_margins(r, b"tblCellMar", depth + 1),
+                );
+            }
+            Ok(Event::Start(_)) => skip_subtree(r),
+            Ok(Event::Empty(e)) if local(e.name().as_ref()) == b"tblCellMar" => {
+                overlay_declared_cell_margins(margins, CellMarginSpec::default());
+            }
+            Ok(Event::End(e)) if local(e.name().as_ref()) == branch => break,
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
 }
 
 fn read_row_style_regions(e: &BytesStart<'_>) -> Option<TableRowStyleRegions> {
@@ -7056,6 +7197,7 @@ fn build_table(
         valign: VCell,
         valign_declared: bool,
         width_pct: Option<f32>,
+        row_cell_margins: Option<CellMarginSpec>,
         margins: CellMarginSpec,
     }
 
@@ -7063,6 +7205,7 @@ fn build_table(
     let mut model_grid_cols = 0usize;
     for raw_row in raw_rows {
         let header = raw_row.props.header.unwrap_or(false);
+        let row_cell_margins = raw_row.props.cell_margins;
         let mut col = 0usize;
         let mut row = Vec::with_capacity(raw_row.cells.len());
         for c in raw_row.cells {
@@ -7081,6 +7224,7 @@ fn build_table(
                 valign: c.valign,
                 valign_declared: c.valign_declared,
                 width_pct: c.width_pct,
+                row_cell_margins,
                 margins: c.margins,
             });
             col += cs as usize;
@@ -7116,10 +7260,9 @@ fn build_table(
 
     let cell_margin_defaults_active = !style_cell_margins.is_empty()
         || !props.cell_margins.is_empty()
-        || grid
-            .iter()
-            .flatten()
-            .any(|cell| !cell.dropped && !cell.margins.is_empty());
+        || grid.iter().flatten().any(|cell| {
+            !cell.dropped && (cell.row_cell_margins.is_some() || !cell.margins.is_empty())
+        });
     let mut rows = Vec::with_capacity(grid.len());
     let mut table_cell_pagination = Vec::with_capacity(grid.len());
     let mut table_nested_pagination = Vec::with_capacity(grid.len());
@@ -7146,7 +7289,7 @@ fn build_table(
                 width_pct: p.width_pct.or(style_cell_defaults.width_pct),
                 margins: resolve_cell_margins(
                     style_cell_margins,
-                    props.cell_margins,
+                    p.row_cell_margins.unwrap_or(props.cell_margins),
                     p.margins,
                     props.bidi_visual,
                     cell_margin_defaults_active,

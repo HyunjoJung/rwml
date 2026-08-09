@@ -310,12 +310,15 @@ drawn. Opened `.docx` tables materialize direct `dxa`/`nil` `w:tblCellMar`
 defaults and per-side direct `w:tcMar` exceptions, including logical
 `start`/`end` mapping under `w:bidiVisual`, and inherit a table style's own
 `w:tblCellMar` through its `w:basedOn` chain, plus its `wholeTable`
-conditional region, beneath those direct declarations; row- and column-scoped
-conditional regions and `w:tblPrEx` margin inheritance remain outside this
-bounded subset. A table style's `w:tblBorders`, from its own `w:tblPr` or its
-`wholeTable` region and resolved through the same chain, applies when the table
-declares no borders of its own. A style's `w:tblW`, `w:tblInd`, and table
-`w:jc` fill in only what the table itself leaves unset. Its `wholeTable` `w:tcPr` supplies cell
+conditional region, beneath those direct declarations. A row-local
+`w:tblPrEx/w:tblCellMar` replaces the direct table margin property for that row,
+inherits omitted sides from the style or schema defaults, and remains beneath a
+direct cell declaration; row- and column-scoped conditional regions remain
+outside this bounded subset. A table style's `w:tblBorders`, from its own
+`w:tblPr` or its `wholeTable` region and resolved through the same chain, applies
+when the table declares no borders of its own. A style's `w:tblW`, `w:tblInd`,
+and table `w:jc` fill in only what the table itself leaves unset. Its
+`wholeTable` `w:tcPr` supplies cell
 shading, vertical alignment, and preferred width for cells that declare none. A style's `w:tblLayout` and `w:bidiVisual` apply
 when the table declares neither.
 Rotated raster bounds drive proportional
@@ -1083,8 +1086,8 @@ current limit never counts as finishing it.
       bounded DOCX document-default, declared-default-style, and explicit
       paragraph-style spacing, line height, first/hanging indents, flat
       shading, and page-break-before,
-      direct DOCX table-cell margin defaults with per-side direct cell
-      exceptions,
+      direct DOCX table-cell margin defaults with row-local `w:tblPrEx`
+      exceptions and per-side direct cell exceptions,
       direct plus bounded whole/first/last/horizontal-band table-style DOCX
       table-row `cantSplit`, direct DOCX and recursively nested table-cell
       keep/widow controls, direct and

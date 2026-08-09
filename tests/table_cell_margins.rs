@@ -108,6 +108,209 @@ fn direct_table_cell_margins_cascade_per_side() {
 }
 
 #[test]
+fn row_table_cell_margin_exceptions_replace_direct_table_defaults_per_side() {
+    let table = first_table(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+            <w:tbl>
+                <w:tblPr><w:tblCellMar>
+                    <w:top w:w="100"/><w:start w:w="200"/>
+                    <w:bottom w:w="300"/><w:end w:w="400"/>
+                </w:tblCellMar></w:tblPr>
+                <w:tr>
+                    <w:tblPrEx><w:tblCellMar>
+                        <w:top w:w="500"/><w:end w:w="600"/>
+                    </w:tblCellMar></w:tblPrEx>
+                    <w:tc><w:p><w:r><w:t>row defaults</w:t></w:r></w:p></w:tc>
+                    <w:tc><w:tcPr><w:tcMar>
+                        <w:start w:w="800"/><w:bottom w:w="700"/>
+                    </w:tcMar></w:tcPr><w:p><w:r><w:t>cell override</w:t></w:r></w:p></w:tc>
+                </w:tr>
+                <w:tr>
+                    <w:tc><w:p><w:r><w:t>table defaults</w:t></w:r></w:p></w:tc>
+                </w:tr>
+                <w:tr>
+                    <w:tblPrEx><w:tblCellMar/></w:tblPrEx>
+                    <w:tc><w:p><w:r><w:t>empty row defaults</w:t></w:r></w:p></w:tc>
+                </w:tr>
+            </w:tbl>
+        </w:body></w:document>"#,
+    );
+
+    assert_eq!(
+        table.rows[0].cells[0].margins,
+        Some(CellMargins {
+            top: 500,
+            right: 600,
+            bottom: 0,
+            left: 115,
+        })
+    );
+    assert_eq!(
+        table.rows[0].cells[1].margins,
+        Some(CellMargins {
+            top: 500,
+            right: 600,
+            bottom: 700,
+            left: 800,
+        })
+    );
+    assert_eq!(
+        table.rows[1].cells[0].margins,
+        Some(CellMargins {
+            top: 100,
+            right: 400,
+            bottom: 300,
+            left: 200,
+        })
+    );
+    assert_eq!(
+        table.rows[2].cells[0].margins,
+        Some(CellMargins {
+            top: 0,
+            right: 115,
+            bottom: 0,
+            left: 115,
+        })
+    );
+}
+
+#[test]
+fn row_margin_exceptions_follow_current_mce_scope_and_rtl_defaults() {
+    let tables = tables(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+            xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+            <w:tbl>
+                <w:tblPr><w:tblCellMar>
+                    <w:top w:w="10"/><w:start w:w="20"/>
+                    <w:bottom w:w="30"/><w:end w:w="40"/>
+                </w:tblCellMar></w:tblPr>
+                <w:tr>
+                    <w:tblPrEx>
+                        <w:tblPrExChange><w:tblPrEx><w:tblCellMar>
+                            <w:top w:w="800"/><w:start w:w="800"/>
+                        </w:tblCellMar></w:tblPrEx></w:tblPrExChange>
+                        <w:unknown><w:tblCellMar><w:top w:w="900"/></w:tblCellMar></w:unknown>
+                        <mc:AlternateContent>
+                            <mc:Choice Requires="w14"><w:tblCellMar>
+                                <w:top w:w="120"/><w:start w:w="140"/>
+                            </w:tblCellMar></mc:Choice>
+                            <mc:Fallback><w:tblCellMar>
+                                <w:top w:w="900"/><w:start w:w="900"/>
+                            </w:tblCellMar></mc:Fallback>
+                        </mc:AlternateContent>
+                        <w:tblCellMar><w:bottom w:w="160"/></w:tblCellMar>
+                    </w:tblPrEx>
+                    <w:tc><w:tcPr><w:tcMar><w:end w:w="180"/></w:tcMar></w:tcPr>
+                        <w:p><w:r><w:t>current row</w:t></w:r></w:p>
+                    </w:tc>
+                </w:tr>
+                <w:tr><mc:AlternateContent>
+                    <mc:Choice Requires="w14">
+                        <w:tblPrEx><w:tblCellMar><w:top w:w="220"/></w:tblCellMar></w:tblPrEx>
+                        <w:tc><w:p><w:r><w:t>selected row</w:t></w:r></w:p></w:tc>
+                    </mc:Choice>
+                    <mc:Fallback>
+                        <w:tblPrEx><w:tblCellMar><w:top w:w="900"/></w:tblCellMar></w:tblPrEx>
+                        <w:tc><w:p><w:r><w:t>fallback row</w:t></w:r></w:p></w:tc>
+                    </mc:Fallback>
+                </mc:AlternateContent></w:tr>
+                <w:tr>
+                    <w:tblPrEx><mc:AlternateContent>
+                        <mc:Choice Requires="w14"/>
+                        <mc:Fallback><w:tblCellMar><w:top w:w="900"/></w:tblCellMar></mc:Fallback>
+                    </mc:AlternateContent></w:tblPrEx>
+                    <w:tc><w:p><w:r><w:t>empty selected row properties</w:t></w:r></w:p></w:tc>
+                </w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr><w:bidiVisual/></w:tblPr>
+                <w:tr>
+                    <w:tblPrEx><w:tblCellMar><w:start w:w="210"/></w:tblCellMar></w:tblPrEx>
+                    <w:tc><w:tcPr><w:tcMar><w:end w:w="220"/></w:tcMar></w:tcPr>
+                        <w:p><w:r><w:t>RTL row</w:t></w:r></w:p>
+                    </w:tc>
+                </w:tr>
+            </w:tbl>
+        </w:body></w:document>"#,
+    );
+
+    assert_eq!(
+        tables[0].rows[0].cells[0].margins,
+        Some(CellMargins {
+            top: 120,
+            right: 180,
+            bottom: 160,
+            left: 140,
+        })
+    );
+    assert_eq!(tables[0].rows[1].cells[0].text(), "selected row");
+    assert_eq!(
+        tables[0].rows[1].cells[0].margins,
+        Some(CellMargins {
+            top: 220,
+            right: 115,
+            bottom: 0,
+            left: 115,
+        })
+    );
+    assert_eq!(
+        tables[0].rows[2].cells[0].margins,
+        Some(CellMargins {
+            top: 10,
+            right: 40,
+            bottom: 30,
+            left: 20,
+        })
+    );
+    assert_eq!(
+        tables[1].rows[0].cells[0].margins,
+        Some(CellMargins {
+            top: 0,
+            right: 210,
+            bottom: 0,
+            left: 220,
+        })
+    );
+}
+
+#[test]
+fn row_markup_compatibility_empty_choice_does_not_leak_fallback_content() {
+    let table = first_table(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+            xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+            <w:tbl>
+                <w:tblPr><w:tblCellMar>
+                    <w:top w:w="10"/><w:start w:w="20"/>
+                    <w:bottom w:w="30"/><w:end w:w="40"/>
+                </w:tblCellMar></w:tblPr>
+                <w:tr>
+                    <mc:AlternateContent>
+                        <mc:Choice Requires="w14"/>
+                        <mc:Fallback>
+                            <w:tblPrEx><w:tblCellMar><w:top w:w="900"/></w:tblCellMar></w:tblPrEx>
+                            <w:tc><w:p><w:r><w:t>fallback cell</w:t></w:r></w:p></w:tc>
+                        </mc:Fallback>
+                    </mc:AlternateContent>
+                    <w:tc><w:p><w:r><w:t>current cell</w:t></w:r></w:p></w:tc>
+                </w:tr>
+            </w:tbl>
+        </w:body></w:document>"#,
+    );
+
+    assert_eq!(table.rows[0].cells.len(), 1);
+    assert_eq!(table.rows[0].cells[0].text(), "current cell");
+    assert_eq!(
+        table.rows[0].cells[0].margins,
+        Some(CellMargins {
+            top: 10,
+            right: 40,
+            bottom: 30,
+            left: 20,
+        })
+    );
+}
+
+#[test]
 fn one_cell_margin_activates_schema_defaults_for_untouched_siblings() {
     let table = first_table(
         r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
@@ -532,6 +735,18 @@ fn deeply_nested_margin_markup_compatibility_is_bounded_and_recovers() {
     );
     let nested_cell_props =
         nested_alternate_content(r#"<w:tcMar><w:top w:w="999"/></w:tcMar>"#.to_string(), 140);
+    let nested_row_properties = nested_alternate_content(
+        r#"<w:tblCellMar><w:top w:w="999"/></w:tblCellMar>"#.to_string(),
+        140,
+    );
+    let over_budget_row_property = nested_alternate_content(
+        r#"<w:tblCellMar><w:top w:w="999"/></w:tblCellMar>"#.to_string(),
+        4,
+    );
+    let nested_row_scope = nested_alternate_content(
+        format!(r#"<w:tblPrEx>{over_budget_row_property}</w:tblPrEx>"#),
+        63,
+    );
     let xml = format!(
         r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
@@ -548,11 +763,22 @@ fn deeply_nested_margin_markup_compatibility_is_bounded_and_recovers() {
                     <w:p><w:r><w:t>cell depth</w:t></w:r></w:p>
                 </w:tc></w:tr>
             </w:tbl>
+            <w:tbl>
+                <w:tr><w:tblPrEx>{nested_row_properties}<w:tblCellMar><w:bottom w:w="324"/></w:tblCellMar></w:tblPrEx>
+                    <w:tc><w:p><w:r><w:t>row depth</w:t></w:r></w:p></w:tc>
+                </w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tr>{nested_row_scope}
+                    <w:tblPrEx><w:tblCellMar><w:bottom w:w="325"/></w:tblCellMar></w:tblPrEx>
+                    <w:tc><w:p><w:r><w:t>shared depth recovery</w:t></w:r></w:p></w:tc>
+                </w:tr>
+            </w:tbl>
         </w:body></w:document>"#
     );
     let tables = tables(&xml);
 
-    for (table, bottom) in tables.iter().zip([321, 322, 323]) {
+    for (table, bottom) in tables.iter().zip([321, 322, 323, 324, 325]) {
         assert_eq!(
             table.rows[0].cells[0].margins,
             Some(CellMargins {
@@ -574,19 +800,31 @@ fn table_margin_resolution_uses_restart_cell_and_reaches_nested_tables() {
                     <w:top w:w="100"/><w:start w:w="200"/>
                     <w:bottom w:w="300"/><w:end w:w="400"/>
                 </w:tblCellMar></w:tblPr>
-                <w:tr><w:tc>
-                    <w:tcPr><w:vMerge w:val="restart"/><w:tcMar><w:top w:w="500"/></w:tcMar></w:tcPr>
+                <w:tr>
+                    <w:tblPrEx><w:tblCellMar><w:top w:w="500"/></w:tblCellMar></w:tblPrEx>
+                    <w:tc>
+                    <w:tcPr>
+                        <w:vMerge w:val="restart"/>
+                        <w:tcMar><w:start w:w="550"/></w:tcMar>
+                    </w:tcPr>
                     <w:tbl>
-                        <w:tblPr><w:tblCellMar>
-                            <w:top w:w="50"/><w:start w:w="60"/>
-                            <w:bottom w:w="70"/><w:end w:w="80"/>
-                        </w:tblCellMar></w:tblPr>
-                        <w:tr><w:tc><w:p><w:r><w:t>nested</w:t></w:r></w:p></w:tc></w:tr>
+                        <w:tr>
+                            <w:tblPrEx><w:tblCellMar>
+                                <w:top w:w="50"/><w:start w:w="60"/>
+                                <w:bottom w:w="70"/><w:end w:w="80"/>
+                            </w:tblCellMar></w:tblPrEx>
+                            <w:tc><w:p><w:r><w:t>nested</w:t></w:r></w:p></w:tc>
+                        </w:tr>
                     </w:tbl>
                     <w:p/>
                 </w:tc></w:tr>
-                <w:tr><w:tc>
-                    <w:tcPr><w:vMerge/><w:tcMar><w:top w:w="900"/></w:tcMar></w:tcPr>
+                <w:tr>
+                    <w:tblPrEx><w:tblCellMar><w:top w:w="900"/></w:tblCellMar></w:tblPrEx>
+                    <w:tc>
+                    <w:tcPr>
+                        <w:vMerge/>
+                        <w:tcMar><w:start w:w="950"/><w:end w:w="960"/></w:tcMar>
+                    </w:tcPr>
                     <w:p/>
                 </w:tc></w:tr>
             </w:tbl>
@@ -599,9 +837,9 @@ fn table_margin_resolution_uses_restart_cell_and_reaches_nested_tables() {
         cell.margins,
         Some(CellMargins {
             top: 500,
-            right: 400,
-            bottom: 300,
-            left: 200,
+            right: 115,
+            bottom: 0,
+            left: 550,
         })
     );
     let Block::Table(nested) = &cell.blocks[0] else {
@@ -665,15 +903,62 @@ fn fresh_conversion_preserves_physical_rtl_margins_and_save_preserves_source_par
     assert_eq!(reopened_table.rows[0].cells[0].margins, Some(expected));
 }
 
+#[test]
+fn fresh_conversion_canonicalizes_row_margin_exceptions_per_cell() {
+    let document_xml = r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+            <w:tbl>
+                <w:tblPr><w:tblCellMar><w:bottom w:w="30"/><w:end w:w="40"/></w:tblCellMar></w:tblPr>
+                <w:tr>
+                    <w:tblPrEx><w:tblCellMar><w:top w:w="10"/><w:start w:w="20"/></w:tblCellMar></w:tblPrEx>
+                    <w:tc><w:p><w:r><w:t>row margins</w:t></w:r></w:p></w:tc>
+                </w:tr>
+            </w:tbl>
+        </w:body></w:document>"#;
+    let source = docx_fixture(document_xml);
+    let document = Document::open(&source).expect("fixture opens");
+    let expected = CellMargins {
+        top: 10,
+        right: 115,
+        bottom: 0,
+        left: 20,
+    };
+    let Block::Table(table) = &document.model().blocks[0] else {
+        panic!("first block is a table");
+    };
+    assert_eq!(table.rows[0].cells[0].margins, Some(expected));
+
+    let saved = document.save().expect("package-preserving save succeeds");
+    assert_eq!(
+        zip_part(&saved, "word/document.xml"),
+        document_xml.as_bytes()
+    );
+
+    let converted = document.to_docx();
+    let converted_xml = String::from_utf8(zip_part(&converted, "word/document.xml"))
+        .expect("document XML is UTF-8");
+    assert!(converted_xml.contains(concat!(
+        r#"<w:tcMar><w:top w:w="10" w:type="dxa"/>"#,
+        r#"<w:left w:w="20" w:type="dxa"/>"#,
+        r#"<w:bottom w:w="0" w:type="dxa"/>"#,
+        r#"<w:right w:w="115" w:type="dxa"/></w:tcMar>"#,
+    )));
+    assert!(!converted_xml.contains("<w:tblPrEx>"));
+    let reopened = Document::open(&converted).expect("fresh conversion reopens");
+    let Block::Table(reopened_table) = &reopened.model().blocks[0] else {
+        panic!("reopened first block is a table");
+    };
+    assert_eq!(reopened_table.rows[0].cells[0].margins, Some(expected));
+}
+
 #[cfg(feature = "render")]
 #[test]
 fn opened_table_margin_defaults_change_preview_layout_deterministically() {
-    let source = |table_properties: &str| {
+    let source = |table_properties: &str, row_properties: &str| {
         docx_fixture(&format!(
             r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
                 <w:tbl>
                     <w:tblPr>{table_properties}</w:tblPr>
-                    <w:tr><w:tc><w:p><w:r>
+                    <w:tr>{row_properties}<w:tc><w:p><w:r>
                         <w:t>line one</w:t><w:br/>
                         <w:t>line two</w:t><w:br/>
                         <w:t>line three</w:t>
@@ -686,14 +971,23 @@ fn opened_table_margin_defaults_change_preview_layout_deterministically() {
             </w:body></w:document>"#
         ))
     };
-    let baseline = Document::open(&source("")).expect("baseline opens");
+    let baseline = Document::open(&source("", "")).expect("baseline opens");
     let padded = Document::open(&source(
         r#"<w:tblCellMar>
             <w:top w:w="400"/><w:start w:w="100"/>
             <w:bottom w:w="400"/><w:end w:w="100"/>
         </w:tblCellMar>"#,
+        "",
     ))
     .expect("padded fixture opens");
+    let row_padded = Document::open(&source(
+        "",
+        r#"<w:tblPrEx><w:tblCellMar>
+            <w:top w:w="400"/><w:start w:w="100"/>
+            <w:bottom w:w="400"/><w:end w:w="100"/>
+        </w:tblCellMar></w:tblPrEx>"#,
+    ))
+    .expect("row-padded fixture opens");
     let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
 
     let baseline_layout = baseline
@@ -702,7 +996,11 @@ fn opened_table_margin_defaults_change_preview_layout_deterministically() {
     let padded_layout = padded
         .layout_pages_with_fonts(&fonts)
         .expect("padded layout");
+    let row_padded_layout = row_padded
+        .layout_pages_with_fonts(&fonts)
+        .expect("row-padded layout");
     assert_eq!((baseline_layout.pages, padded_layout.pages), (1, 2));
+    assert_eq!(row_padded_layout, padded_layout);
     assert_eq!(
         padded_layout,
         padded
@@ -712,7 +1010,9 @@ fn opened_table_margin_defaults_change_preview_layout_deterministically() {
 
     let baseline_pdf = baseline.to_pdf_with_fonts(&fonts);
     let padded_pdf = padded.to_pdf_with_fonts(&fonts);
+    let row_padded_pdf = row_padded.to_pdf_with_fonts(&fonts);
     assert!(padded_pdf.starts_with(b"%PDF-"));
     assert_ne!(padded_pdf, baseline_pdf);
+    assert_eq!(row_padded_pdf, padded_pdf);
     assert_eq!(padded_pdf, padded.to_pdf_with_fonts(&fonts));
 }
