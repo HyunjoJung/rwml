@@ -8,11 +8,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Applies row-local `w:tblPrEx/w:tblCellMar` margin exceptions in place of the
+  direct table margin property and before direct cell `w:tcMar`. Sparse or empty
+  exceptions inherit omitted sides from the table style or schema defaults,
+  including logical `start`/`end` mapping under `w:bidiVisual`, accepted-current
+  Markup Compatibility selection, vertical-merge ownership, nested tables, and
+  fresh conversion/reopen. Other `w:tblPrEx` properties and row- or column-scoped
+  conditional table-style regions remain unsupported.
 - Inherits a table style's own `w:tblCellMar` through its `w:basedOn` chain as
   the table's cell-margin default, beneath direct `w:tblPr`/`w:tcMar`
   declarations and above the schema defaults, including the style's `wholeTable`
-  conditional region. Row- and column-scoped conditional regions and
-  `w:tblPrEx` margins remain unsupported.
+  conditional region. Row- and column-scoped conditional regions remain
+  unsupported.
 - Applies a table style's `w:tblBorders` — from its own `w:tblPr` or its
   `wholeTable` region, resolved through `w:basedOn` — when the table declares no
   borders of its own, so grid-style tables no longer lose their borders.

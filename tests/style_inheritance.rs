@@ -825,6 +825,24 @@ fn table_styles_supply_cell_margin_defaults() {
                         <w:p><w:r><w:t>overridden</w:t></w:r></w:p>
                     </w:tc></w:tr>
                 </w:tbl>
+                <w:tbl>
+                    <w:tblPr>
+                        <w:tblStyle w:val="Derived"/>
+                        <w:tblCellMar>
+                            <w:top w:w="500" w:type="dxa"/><w:end w:w="550" w:type="dxa"/>
+                        </w:tblCellMar>
+                    </w:tblPr>
+                    <w:tr>
+                        <w:tblPrEx><w:tblCellMar><w:top w:w="700" w:type="dxa"/></w:tblCellMar></w:tblPrEx>
+                        <w:tc><w:tcPr><w:tcMar><w:bottom w:w="800" w:type="dxa"/></w:tcMar></w:tcPr>
+                            <w:p><w:r><w:t>row exception</w:t></w:r></w:p>
+                        </w:tc>
+                    </w:tr>
+                    <w:tr>
+                        <w:tblPrEx><w:tblCellMar/></w:tblPrEx>
+                        <w:tc><w:p><w:r><w:t>empty row exception</w:t></w:r></w:p></w:tc>
+                    </w:tr>
+                </w:tbl>
             </w:body></w:document>"#,
         ),
     ]);
@@ -857,6 +875,27 @@ fn table_styles_supply_cell_margin_defaults() {
             top: 500,
             right: 115,
             bottom: 600,
+            left: 300,
+        })
+    );
+    // A present row exception replaces the direct table margin property. Its
+    // omitted sides therefore inherit the style/schema layer, while tcMar is
+    // still the final override.
+    assert_eq!(
+        tables[2].rows[0].cells[0].margins,
+        Some(CellMargins {
+            top: 700,
+            right: 115,
+            bottom: 800,
+            left: 300,
+        })
+    );
+    assert_eq!(
+        tables[2].rows[1].cells[0].margins,
+        Some(CellMargins {
+            top: 200,
+            right: 115,
+            bottom: 400,
             left: 300,
         })
     );
