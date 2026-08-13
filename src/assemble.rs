@@ -19,7 +19,7 @@ use crate::model::{
     normalize_field_instruction, Align, Block, CharProps, DocGrid, DocGridType, DocMeta, DocModel,
     DocSetup, FieldRole, Image, Indent, ListInfo, PageNumberFormat, PageSetup, PaginationHint,
     ParaProps, Paragraph, SectionBreakKind, SectionSetup, SourceRegion, SourceRegionKind, Spacing,
-    Stats, TableCellPaginationHints, TableRowPaginationHint,
+    Stats, TableCellPaginationHints, TableRowPaginationHint, TextDirection,
 };
 use crate::papx::{
     PapxTable, ParagraphIndentOverrides, ParagraphJustification, ParagraphLineSpacing,
@@ -162,6 +162,7 @@ fn legacy_doc_setup_from_regions(
         setup.title_page = span.title_page;
         setup.page_number_start = span.page_number_start;
         setup.page_number_format = span.page_number_format;
+        setup.text_direction = span.text_direction;
         setup.doc_grid = span.doc_grid;
     }
     setup
@@ -197,6 +198,7 @@ fn legacy_doc_section_setups_from_regions(
         setup.title_page = span.title_page;
         setup.page_number_start = span.page_number_start;
         setup.page_number_format = span.page_number_format;
+        setup.text_direction = span.text_direction;
         setup.doc_grid = span.doc_grid;
         setup.section_break = Some(span.section_break);
     }
@@ -264,6 +266,7 @@ fn apply_legacy_section_setup_to_doc_setup(section: &SectionSetup, setup: &mut D
     setup.title_page = section.title_page;
     setup.page_number_start = section.page_number_start;
     setup.page_number_format = section.page_number_format;
+    setup.text_direction = section.text_direction;
     setup.doc_grid = section.doc_grid;
 }
 
@@ -483,6 +486,7 @@ const SPRM_S_DYA_BOTTOM: u16 = 0x9024;
 const SPRM_S_DXT_CHAR_SPACE: u16 = 0x7030;
 const SPRM_S_DYA_LINE_PITCH: u16 = 0x9031;
 const SPRM_S_CLM: u16 = 0x5032;
+const SPRM_S_TEXT_FLOW: u16 = 0x5033;
 const SPRM_S_PGN_START: u16 = 0x7044;
 
 fn legacy_header_footer_setup_slot(
@@ -568,6 +572,7 @@ struct LegacySectionSpan {
     title_page: bool,
     page_number_start: Option<u32>,
     page_number_format: Option<PageNumberFormat>,
+    text_direction: Option<TextDirection>,
     doc_grid: Option<DocGrid>,
     section_break: SectionBreakKind,
 }
@@ -579,6 +584,7 @@ struct LegacySectionProperties {
     title_page: bool,
     page_number_start: Option<u32>,
     page_number_format: Option<PageNumberFormat>,
+    text_direction: Option<TextDirection>,
     doc_grid: Option<DocGrid>,
     section_break: SectionBreakKind,
 }
@@ -645,6 +651,7 @@ fn parse_legacy_section_spans(
             title_page: properties.title_page,
             page_number_start: properties.page_number_start,
             page_number_format: properties.page_number_format,
+            text_direction: properties.text_direction,
             doc_grid: properties.doc_grid,
             section_break: properties.section_break,
         });
@@ -790,6 +797,11 @@ fn scan_legacy_section_grpprl(grpprl: &[u8]) -> Option<LegacySectionProperties> 
                     }
                 }
             }
+            SPRM_S_TEXT_FLOW => {
+                if let Some(direction) = u16le(operand, 0).and_then(legacy_text_direction) {
+                    properties.text_direction = Some(direction);
+                }
+            }
             SPRM_S_PGN_START => {
                 if let Some(value @ 0..=2_147_483_646) = u32le(operand, 0) {
                     page_number_start = Some(value);
@@ -810,6 +822,22 @@ fn scan_legacy_section_grpprl(grpprl: &[u8]) -> Option<LegacySectionProperties> 
             character_space: doc_grid_character_space,
         });
     Some(properties)
+}
+
+fn legacy_text_direction(text_flow: u16) -> Option<TextDirection> {
+    // [MS-DOC] 2.6.4 uses [MS-ODRAW] 2.4.5 MSOTXFL. The `A`/`N`
+    // distinction carries the glyph rotation represented by ECMA-376 Part 4
+    // 14.11.7's transitional `V` directions; Word's value-5 behavior advances
+    // subsequent lines to the right, matching `tbLrV`.
+    match text_flow {
+        0 => Some(TextDirection::LeftToRightTopToBottom),
+        1 => Some(TextDirection::TopToBottomRightToLeft),
+        2 => Some(TextDirection::BottomToTopLeftToRight),
+        3 => Some(TextDirection::TopToBottomRightToLeftVertical),
+        4 => Some(TextDirection::LeftToRightTopToBottomVertical),
+        5 => Some(TextDirection::TopToBottomLeftToRightVertical),
+        _ => None,
+    }
 }
 
 fn legacy_page_number_format(nfc: u8) -> Option<PageNumberFormat> {
@@ -850,6 +878,7 @@ fn legacy_section_properties_default() -> LegacySectionProperties {
         title_page: false,
         page_number_start: None,
         page_number_format: None,
+        text_direction: None,
         doc_grid: None,
         section_break: SectionBreakKind::NextPage,
     }
@@ -2333,9 +2362,56 @@ mod tests {
     }
 
     #[test]
+    fn legacy_sepx_scanner_preserves_bounded_text_direction_state() {
+        use crate::model::TextDirection;
+
+        let push_text_flow = |grpprl: &mut Vec<u8>, value: u16| {
+            grpprl.extend_from_slice(&0x5033u16.to_le_bytes());
+            grpprl.extend_from_slice(&value.to_le_bytes());
+        };
+        let expected = [
+            TextDirection::LeftToRightTopToBottom,
+            TextDirection::TopToBottomRightToLeft,
+            TextDirection::BottomToTopLeftToRight,
+            TextDirection::TopToBottomRightToLeftVertical,
+            TextDirection::LeftToRightTopToBottomVertical,
+            TextDirection::TopToBottomLeftToRightVertical,
+        ];
+
+        assert_eq!(
+            scan_legacy_section_grpprl(&[]).unwrap().text_direction,
+            None
+        );
+        for (value, expected) in expected.into_iter().enumerate() {
+            let mut grpprl = Vec::new();
+            push_text_flow(&mut grpprl, value as u16);
+            assert_eq!(
+                scan_legacy_section_grpprl(&grpprl).unwrap().text_direction,
+                Some(expected)
+            );
+        }
+
+        let mut grpprl = Vec::new();
+        push_text_flow(&mut grpprl, 1);
+        push_text_flow(&mut grpprl, 6);
+        push_text_flow(&mut grpprl, u16::MAX);
+        assert_eq!(
+            scan_legacy_section_grpprl(&grpprl).unwrap().text_direction,
+            Some(TextDirection::TopToBottomRightToLeft)
+        );
+        push_text_flow(&mut grpprl, 5);
+        assert_eq!(
+            scan_legacy_section_grpprl(&grpprl).unwrap().text_direction,
+            Some(TextDirection::TopToBottomLeftToRightVertical)
+        );
+    }
+
+    #[test]
     fn legacy_sepx_parser_rejects_malformed_payloads() {
         assert!(scan_legacy_section_grpprl(&[0x1D]).is_none());
         assert!(scan_legacy_section_grpprl(&[0x00, 0xC0, 0x02, 0xAA]).is_none());
+        let [text_flow_lo, text_flow_hi] = SPRM_S_TEXT_FLOW.to_le_bytes();
+        assert!(scan_legacy_section_grpprl(&[text_flow_lo, text_flow_hi, 0x01]).is_none());
         assert!(parse_legacy_sepx_section_properties(&(-1i16).to_le_bytes(), 0).is_none());
 
         let truncated = [4, 0, 0x1D, 0x30, 0x01];
@@ -2346,6 +2422,7 @@ mod tests {
             assert_eq!(properties.page.height_pt, 792.0);
             assert!(!properties.page.landscape);
             assert_eq!(properties.columns, None);
+            assert_eq!(properties.text_direction, None);
             assert_eq!(properties.section_break, SectionBreakKind::NextPage);
         }
     }
@@ -2387,6 +2464,7 @@ mod tests {
                     title_page: false,
                     page_number_start: None,
                     page_number_format: None,
+                    text_direction: None,
                     doc_grid: None,
                     section_break: SectionBreakKind::NextPage,
                 },
@@ -2398,6 +2476,7 @@ mod tests {
                     title_page: false,
                     page_number_start: None,
                     page_number_format: None,
+                    text_direction: None,
                     doc_grid: None,
                     section_break: SectionBreakKind::NextPage,
                 },
