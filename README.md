@@ -380,8 +380,8 @@ render hints to the public `DocModel`. Resolved LTR tab stops in ordinary and
 recursively nested table-cell paragraphs use the same bounded path as supported
 top-level paragraphs. Explicit left-aligned LTR stops in center-, right-, and
 justified-aligned paragraphs use that path when the resolved stop is reachable.
-Table-cell
-RTL center/end/decimal tab stops, default-tab fallback in non-left alignments,
+The same bounded path reaches ordinary RTL table-cell paragraphs for
+center/end/decimal stops. Default-tab fallback in non-left alignments,
 leaders/bar tabs, settings-defined default-tab intervals for unsupported
 contexts, and implicit hanging-indent/list-marker tabs remain outside this
 bounded tab support. Within

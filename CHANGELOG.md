@@ -160,8 +160,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   retain their margin coordinates under resolved physical or logical left/right
   indents; deterministic fixed-font geometry covers default and explicit stops,
   multiple fields, segmented paint and source ranges, bounded line reflow, and
-  the opened-DOCX path. RTL table-cell center/end/decimal stops remain outside
-  this bounded path.
+  the opened-DOCX path. The same source-aligned sidecar now reaches ordinary
+  RTL table-cell paragraphs for center/end/decimal stops; nested-grid layout
+  remains outside this bounded path.
 - Opened `.docx` PDF previews now reserve line width for resolved custom and
   default tab advances before breaking, so supported top-level LTR left/start
   and RTL right/start body content that no longer fits after a tab moves to the
@@ -183,7 +184,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   first-line/hanging values, private tab-sidecar activation, deterministic
   layout/PDF output, and unchanged page counts for the bounded fixtures.
   Resolved LTR tab stops in ordinary and recursively nested table-cell
-  paragraphs now use the same bounded path through source-aligned sidecars.
+  paragraphs now use the same bounded path through source-aligned sidecars,
+  including the ordinary RTL table-cell path for center/end/decimal stops.
   Explicit left-aligned LTR stops in center-, right-, and justified-aligned
   paragraphs now use that path when the resolved stop is reachable. Table-cell
   RTL center/end/decimal stops, default-tab fallback in non-left alignments,

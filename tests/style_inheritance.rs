@@ -602,6 +602,36 @@ fn rtl_tab_render_docx(tab_val: &str, text: &str, stop_twips: Option<u32>) -> Ve
     ])
 }
 
+#[cfg(feature = "render")]
+fn rtl_table_cell_tab_render_docx(tab_val: &str, text: &str, stop_twips: Option<u32>) -> Vec<u8> {
+    let content_types = content_types(false);
+    let tabs = stop_twips.map_or_else(String::new, |twips| {
+        format!(r#"<w:tabs><w:tab w:val="{tab_val}" w:pos="{twips}"/></w:tabs>"#)
+    });
+    let document_xml = format!(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+            <w:tbl><w:tblPr><w:tblW w:w="3600" w:type="dxa"/></w:tblPr>
+                <w:tblGrid><w:gridCol w:w="3600"/></w:tblGrid>
+                <w:tr><w:tc><w:p><w:pPr><w:bidi/><w:jc w:val="right"/>{tabs}</w:pPr>
+                    <w:r><w:rPr><w:rtl/></w:rPr><w:t>א</w:t><w:tab/><w:t>{text}</w:t></w:r>
+                </w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:sectPr><w:pgSz w:w="4400" w:h="2600"/>
+                <w:pgMar w:top="200" w:right="200" w:bottom="200" w:left="200"/>
+            </w:sectPr>
+        </w:body></w:document>"#
+    );
+    docx_fixture(&[
+        ("[Content_Types].xml", &content_types),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        ("word/_rels/document.xml.rels", document_rels(false)),
+        ("word/document.xml", &document_xml),
+    ])
+}
+
 #[test]
 fn docx_run_props_resolve_docdefaults_paragraph_and_character_styles() {
     let doc = Document::open(&style_inheritance_docx()).expect("fixture opens");
@@ -1138,6 +1168,38 @@ fn opened_docx_render_uses_explicit_rtl_center_end_and_decimal_tabs() {
             explicit_pdf,
             explicit.to_pdf_with_fonts(&fonts),
             "explicit RTL {tab_val} tab rendering must remain deterministic"
+        );
+    }
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn opened_docx_render_uses_explicit_rtl_tabs_inside_table_cells() {
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+    for (tab_val, text) in [("center", "ב"), ("right", "אב"), ("decimal", "12.34")] {
+        let default = Document::open(&rtl_table_cell_tab_render_docx(tab_val, text, None))
+            .expect("default RTL table-cell tab fixture opens");
+        let explicit = Document::open(&rtl_table_cell_tab_render_docx(tab_val, text, Some(2000)))
+            .expect("explicit RTL table-cell tab fixture opens");
+
+        let default_pdf = default.to_pdf_with_fonts(&fonts);
+        let explicit_pdf = explicit.to_pdf_with_fonts(&fonts);
+        let model_pdf = rwml::try_render_pdf_with_fonts(&explicit.model(), &fonts)
+            .expect("model-only RTL table-cell tab fixture renders");
+        assert!(default_pdf.starts_with(b"%PDF-"));
+        assert!(explicit_pdf.starts_with(b"%PDF-"));
+        assert_ne!(
+            default_pdf, explicit_pdf,
+            "explicit RTL table-cell {tab_val} tab stop must affect PDF output"
+        );
+        assert_ne!(
+            explicit_pdf, model_pdf,
+            "opened-document RTL table-cell {tab_val} sidecar must affect rendering"
+        );
+        assert_eq!(
+            explicit_pdf,
+            explicit.to_pdf_with_fonts(&fonts),
+            "explicit RTL table-cell {tab_val} rendering must remain deterministic"
         );
     }
 }
