@@ -123,7 +123,7 @@ impl Styles {
         regions: TableRowStyleRegions,
     ) -> TableStyleCellPresentation {
         self.table_cell_props(style_id)
-            .presentation_for_regions(regions)
+            .presentation_for_regions(regions.into())
     }
 
     pub(crate) fn table_cell_props(&self, style_id: Option<&str>) -> TableStyleCellProps {
@@ -159,6 +159,12 @@ impl Styles {
             .and_then(|style_id| self.table_row.get(style_id))
             .and_then(|props| props.row_band_size)
     }
+
+    pub(crate) fn table_col_band_size(&self, style_id: Option<&str>) -> Option<u8> {
+        style_id
+            .and_then(|style_id| self.table_cell.get(style_id))
+            .and_then(|props| props.col_band_size)
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -167,6 +173,34 @@ pub(crate) struct TableRowStyleRegions {
     pub(crate) last_row: bool,
     pub(crate) band1_horizontal: bool,
     pub(crate) band2_horizontal: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct TableCellStyleRegions {
+    pub(crate) first_row: bool,
+    pub(crate) last_row: bool,
+    pub(crate) first_column: bool,
+    pub(crate) last_column: bool,
+    pub(crate) band1_vertical: bool,
+    pub(crate) band2_vertical: bool,
+    pub(crate) band1_horizontal: bool,
+    pub(crate) band2_horizontal: bool,
+    pub(crate) north_east: bool,
+    pub(crate) north_west: bool,
+    pub(crate) south_east: bool,
+    pub(crate) south_west: bool,
+}
+
+impl From<TableRowStyleRegions> for TableCellStyleRegions {
+    fn from(regions: TableRowStyleRegions) -> Self {
+        Self {
+            first_row: regions.first_row,
+            last_row: regions.last_row,
+            band1_horizontal: regions.band1_horizontal,
+            band2_horizontal: regions.band2_horizontal,
+            ..Self::default()
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -1118,6 +1152,9 @@ pub(crate) fn parse(xml: &str) -> Styles {
                         if values.row_band_size.is_some() {
                             style.table_row_props.row_band_size = values.row_band_size;
                         }
+                        if values.col_band_size.is_some() {
+                            style.table_cell_props.col_band_size = values.col_band_size;
+                        }
                     } else {
                         skip_subtree(&mut r);
                     }
@@ -1127,16 +1164,18 @@ pub(crate) fn parse(xml: &str) -> Styles {
             }
             Ok(Event::Start(e)) if local(e.name().as_ref()) == b"tblStylePr" => {
                 let region =
-                    TableRowStyleRegion::from_attr(attr_local_trimmed(&e, b"type").as_deref());
+                    TableStyleRegion::from_attr(attr_local_trimmed(&e, b"type").as_deref());
                 if let (Some(style), Some(region)) = (&mut cur_style, region) {
                     if style.kind == Some(StyleKind::Table) {
                         let values = read_conditional_table_region(&mut r, b"tblStylePr", 0);
-                        style.table_row_props.region_mut(region).overlay(values.row);
+                        if let Some(row) = style.table_row_props.region_mut(region) {
+                            row.overlay(values.row);
+                        }
                         style
                             .table_cell_props
                             .region_mut(region)
                             .overlay(values.presentation);
-                        if matches!(region, TableRowStyleRegion::WholeTable) {
+                        if matches!(region, TableStyleRegion::WholeTable) {
                             if values.borders.is_some() {
                                 style.whole_table_borders = values.borders;
                             }
@@ -1410,8 +1449,17 @@ pub(crate) struct TableStyleCellProps {
     whole_table: TableStyleCellPresentation,
     band1_horizontal: TableStyleCellPresentation,
     band2_horizontal: TableStyleCellPresentation,
+    band1_vertical: TableStyleCellPresentation,
+    band2_vertical: TableStyleCellPresentation,
+    first_column: TableStyleCellPresentation,
+    last_column: TableStyleCellPresentation,
     first_row: TableStyleCellPresentation,
     last_row: TableStyleCellPresentation,
+    north_west: TableStyleCellPresentation,
+    north_east: TableStyleCellPresentation,
+    south_west: TableStyleCellPresentation,
+    south_east: TableStyleCellPresentation,
+    col_band_size: Option<u8>,
 }
 
 impl TableStyleCellProps {
@@ -1420,38 +1468,82 @@ impl TableStyleCellProps {
         self.whole_table.overlay(other.whole_table);
         self.band1_horizontal.overlay(other.band1_horizontal);
         self.band2_horizontal.overlay(other.band2_horizontal);
+        self.band1_vertical.overlay(other.band1_vertical);
+        self.band2_vertical.overlay(other.band2_vertical);
+        self.first_column.overlay(other.first_column);
+        self.last_column.overlay(other.last_column);
         self.first_row.overlay(other.first_row);
         self.last_row.overlay(other.last_row);
+        self.north_west.overlay(other.north_west);
+        self.north_east.overlay(other.north_east);
+        self.south_west.overlay(other.south_west);
+        self.south_east.overlay(other.south_east);
+        if other.col_band_size.is_some() {
+            self.col_band_size = other.col_band_size;
+        }
     }
 
-    fn region_mut(&mut self, region: TableRowStyleRegion) -> &mut TableStyleCellPresentation {
+    fn region_mut(&mut self, region: TableStyleRegion) -> &mut TableStyleCellPresentation {
         match region {
-            TableRowStyleRegion::WholeTable => &mut self.whole_table,
-            TableRowStyleRegion::Band1Horizontal => &mut self.band1_horizontal,
-            TableRowStyleRegion::Band2Horizontal => &mut self.band2_horizontal,
-            TableRowStyleRegion::FirstRow => &mut self.first_row,
-            TableRowStyleRegion::LastRow => &mut self.last_row,
+            TableStyleRegion::WholeTable => &mut self.whole_table,
+            TableStyleRegion::Band1Horizontal => &mut self.band1_horizontal,
+            TableStyleRegion::Band2Horizontal => &mut self.band2_horizontal,
+            TableStyleRegion::Band1Vertical => &mut self.band1_vertical,
+            TableStyleRegion::Band2Vertical => &mut self.band2_vertical,
+            TableStyleRegion::FirstColumn => &mut self.first_column,
+            TableStyleRegion::LastColumn => &mut self.last_column,
+            TableStyleRegion::FirstRow => &mut self.first_row,
+            TableStyleRegion::LastRow => &mut self.last_row,
+            TableStyleRegion::NorthWest => &mut self.north_west,
+            TableStyleRegion::NorthEast => &mut self.north_east,
+            TableStyleRegion::SouthWest => &mut self.south_west,
+            TableStyleRegion::SouthEast => &mut self.south_east,
         }
     }
 
     pub(crate) fn presentation_for_regions(
         self,
-        regions: TableRowStyleRegions,
+        regions: TableCellStyleRegions,
     ) -> TableStyleCellPresentation {
         let mut presentation = TableStyleCellPresentation::default();
         presentation.overlay(self.direct);
         presentation.overlay(self.whole_table);
+        // MS-OI29500 2.1.252: later matching regions override earlier ones.
         if regions.band1_horizontal {
             presentation.overlay(self.band1_horizontal);
         }
         if regions.band2_horizontal {
             presentation.overlay(self.band2_horizontal);
         }
+        if regions.band1_vertical {
+            presentation.overlay(self.band1_vertical);
+        }
+        if regions.band2_vertical {
+            presentation.overlay(self.band2_vertical);
+        }
+        if regions.first_column {
+            presentation.overlay(self.first_column);
+        }
+        if regions.last_column {
+            presentation.overlay(self.last_column);
+        }
         if regions.first_row {
             presentation.overlay(self.first_row);
         }
         if regions.last_row {
             presentation.overlay(self.last_row);
+        }
+        if regions.north_west {
+            presentation.overlay(self.north_west);
+        }
+        if regions.north_east {
+            presentation.overlay(self.north_east);
+        }
+        if regions.south_west {
+            presentation.overlay(self.south_west);
+        }
+        if regions.south_east {
+            presentation.overlay(self.south_east);
         }
         presentation
     }
@@ -1461,8 +1553,17 @@ impl TableStyleCellProps {
             && self.whole_table.is_empty()
             && self.band1_horizontal.is_empty()
             && self.band2_horizontal.is_empty()
+            && self.band1_vertical.is_empty()
+            && self.band2_vertical.is_empty()
+            && self.first_column.is_empty()
+            && self.last_column.is_empty()
             && self.first_row.is_empty()
             && self.last_row.is_empty()
+            && self.north_west.is_empty()
+            && self.north_east.is_empty()
+            && self.south_west.is_empty()
+            && self.south_east.is_empty()
+            && self.col_band_size.is_none()
     }
 }
 
@@ -1489,34 +1590,51 @@ impl TableRowStyleProps {
         }
     }
 
-    fn region_mut(&mut self, region: TableRowStyleRegion) -> &mut TableRowProps {
+    fn region_mut(&mut self, region: TableStyleRegion) -> Option<&mut TableRowProps> {
         match region {
-            TableRowStyleRegion::WholeTable => &mut self.whole_table,
-            TableRowStyleRegion::Band1Horizontal => &mut self.band1_horizontal,
-            TableRowStyleRegion::Band2Horizontal => &mut self.band2_horizontal,
-            TableRowStyleRegion::FirstRow => &mut self.first_row,
-            TableRowStyleRegion::LastRow => &mut self.last_row,
+            TableStyleRegion::WholeTable => Some(&mut self.whole_table),
+            TableStyleRegion::Band1Horizontal => Some(&mut self.band1_horizontal),
+            TableStyleRegion::Band2Horizontal => Some(&mut self.band2_horizontal),
+            TableStyleRegion::FirstRow => Some(&mut self.first_row),
+            TableStyleRegion::LastRow => Some(&mut self.last_row),
+            _ => None,
         }
     }
 }
 
 #[derive(Debug, Clone, Copy)]
-enum TableRowStyleRegion {
+enum TableStyleRegion {
     WholeTable,
     Band1Horizontal,
     Band2Horizontal,
+    Band1Vertical,
+    Band2Vertical,
+    FirstColumn,
+    LastColumn,
     FirstRow,
     LastRow,
+    NorthWest,
+    NorthEast,
+    SouthWest,
+    SouthEast,
 }
 
-impl TableRowStyleRegion {
+impl TableStyleRegion {
     fn from_attr(value: Option<&str>) -> Option<Self> {
         match value {
             Some("wholeTable") => Some(Self::WholeTable),
             Some("band1Horz") => Some(Self::Band1Horizontal),
             Some("band2Horz") => Some(Self::Band2Horizontal),
+            Some("band1Vert") => Some(Self::Band1Vertical),
+            Some("band2Vert") => Some(Self::Band2Vertical),
+            Some("firstCol") => Some(Self::FirstColumn),
+            Some("lastCol") => Some(Self::LastColumn),
             Some("firstRow") => Some(Self::FirstRow),
             Some("lastRow") => Some(Self::LastRow),
+            Some("nwCell") => Some(Self::NorthWest),
+            Some("neCell") => Some(Self::NorthEast),
+            Some("swCell") => Some(Self::SouthWest),
+            Some("seCell") => Some(Self::SouthEast),
             _ => None,
         }
     }
@@ -1699,6 +1817,7 @@ struct StyleTableProperties {
     borders: Option<super::body::TableBorderTuple>,
     geometry: super::body::TableStyleGeometry,
     row_band_size: Option<u8>,
+    col_band_size: Option<u8>,
 }
 
 impl StyleTableProperties {
@@ -1711,6 +1830,9 @@ impl StyleTableProperties {
         if other.row_band_size.is_some() {
             self.row_band_size = other.row_band_size;
         }
+        if other.col_band_size.is_some() {
+            self.col_band_size = other.col_band_size;
+        }
     }
 
     fn record_leaf(&mut self, e: &BytesStart<'_>) {
@@ -1721,6 +1843,11 @@ impl StyleTableProperties {
             b"tblStyleRowBandSize" => {
                 if let Some(size) = attr_u8(e, b"val").filter(|size| *size <= 3) {
                     self.row_band_size = Some(size);
+                }
+            }
+            b"tblStyleColBandSize" => {
+                if let Some(size) = attr_u8(e, b"val").filter(|size| *size <= 3) {
+                    self.col_band_size = Some(size);
                 }
             }
             _ => {}
@@ -1767,6 +1894,7 @@ fn read_style_table_properties(
                         | b"tblLayout"
                         | b"bidiVisual"
                         | b"tblStyleRowBandSize"
+                        | b"tblStyleColBandSize"
                 ) =>
             {
                 values.record_leaf(&e);
@@ -1781,6 +1909,7 @@ fn read_style_table_properties(
                         | b"tblLayout"
                         | b"bidiVisual"
                         | b"tblStyleRowBandSize"
+                        | b"tblStyleColBandSize"
                 ) =>
             {
                 values.record_leaf(&e);
@@ -3452,5 +3581,199 @@ mod tests {
             styles.table_row_cant_split_for_regions(Some("BandDerived"), band2),
             Some(true)
         );
+    }
+
+    #[test]
+    fn resolves_complete_conditional_cell_regions_and_column_band_sizes() {
+        let xml = r#"<w:styles xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+            <w:style w:type="table" w:styleId="AllRegions">
+                <w:tblPr><w:tblStyleColBandSize w:val="2"/></w:tblPr>
+                <w:tblStylePr w:type="wholeTable"><w:tcPr><w:shd w:fill="010101"/></w:tcPr></w:tblStylePr>
+                <w:tblStylePr w:type="band1Horz"><w:tcPr><w:shd w:fill="110001"/></w:tcPr></w:tblStylePr>
+                <w:tblStylePr w:type="band2Horz"><w:tcPr><w:shd w:fill="120002"/></w:tcPr></w:tblStylePr>
+                <w:tblStylePr w:type="band1Vert"><w:tcPr><w:shd w:fill="210001"/></w:tcPr></w:tblStylePr>
+                <w:tblStylePr w:type="band2Vert"><w:tcPr><w:shd w:fill="220002"/></w:tcPr></w:tblStylePr>
+                <w:tblStylePr w:type="firstCol"><w:tcPr><w:shd w:fill="310001"/></w:tcPr></w:tblStylePr>
+                <w:tblStylePr w:type="lastCol"><w:tcPr><w:shd w:fill="320002"/></w:tcPr></w:tblStylePr>
+                <w:tblStylePr w:type="firstRow"><w:tcPr><w:shd w:fill="410001"/></w:tcPr></w:tblStylePr>
+                <w:tblStylePr w:type="lastRow"><w:tcPr><w:shd w:fill="420002"/></w:tcPr></w:tblStylePr>
+                <w:tblStylePr w:type="nwCell"><w:tcPr><w:shd w:fill="510001"/></w:tcPr></w:tblStylePr>
+                <w:tblStylePr w:type="neCell"><w:tcPr><w:shd w:fill="520002"/></w:tcPr></w:tblStylePr>
+                <w:tblStylePr w:type="swCell"><w:tcPr><w:shd w:fill="530003"/></w:tcPr></w:tblStylePr>
+                <w:tblStylePr w:type="seCell"><w:tcPr><w:shd w:fill="540004"/></w:tcPr></w:tblStylePr>
+            </w:style>
+            <w:style w:type="table" w:styleId="Derived">
+                <w:basedOn w:val="AllRegions"/>
+                <w:tblPr><w:tblStyleColBandSize w:val="3"/></w:tblPr>
+                <w:tblStylePr w:type="neCell"><w:tcPr><w:shd w:fill="AABBCC"/></w:tcPr></w:tblStylePr>
+            </w:style>
+            <w:style w:type="table" w:styleId="InvalidKeepsBase">
+                <w:basedOn w:val="AllRegions"/>
+                <w:tblPr><w:tblStyleColBandSize w:val="4"/></w:tblPr>
+            </w:style>
+            <w:style w:type="table" w:styleId="ZeroDisables">
+                <w:basedOn w:val="AllRegions"/>
+                <w:tblPr><w:tblStyleColBandSize w:val="0"/></w:tblPr>
+            </w:style>
+            <w:style w:type="table" w:styleId="LastValidWins">
+                <w:tblPr>
+                    <w:tblStyleColBandSize w:val="1"/>
+                    <w:tblStyleColBandSize w:val="invalid"/>
+                    <w:tblStyleColBandSize w:val="3"/>
+                    <w:tblStyleColBandSize w:val="9"/>
+                </w:tblPr>
+            </w:style>
+            <w:style w:type="table" w:styleId="SelectedChoice">
+                <w:tblPr><mc:AlternateContent>
+                    <mc:Choice Requires="w14"><w:tblStyleColBandSize w:val="1"/></mc:Choice>
+                    <mc:Fallback><w:tblStyleColBandSize w:val="3"/></mc:Fallback>
+                </mc:AlternateContent></w:tblPr>
+            </w:style>
+        </w:styles>"#;
+        let styles = parse(xml);
+        let shade = |regions| {
+            styles
+                .table_cell_props(Some("AllRegions"))
+                .presentation_for_regions(regions)
+                .defaults
+                .shading()
+        };
+        let color = |value: u32| {
+            Some(Color::rgb(
+                ((value >> 16) & 0xff) as u8,
+                ((value >> 8) & 0xff) as u8,
+                (value & 0xff) as u8,
+            ))
+        };
+
+        assert_eq!(shade(TableCellStyleRegions::default()), color(0x010101));
+        for (regions, expected) in [
+            (
+                TableCellStyleRegions {
+                    band1_horizontal: true,
+                    ..Default::default()
+                },
+                0x110001,
+            ),
+            (
+                TableCellStyleRegions {
+                    band2_horizontal: true,
+                    ..Default::default()
+                },
+                0x120002,
+            ),
+            (
+                TableCellStyleRegions {
+                    band1_vertical: true,
+                    ..Default::default()
+                },
+                0x210001,
+            ),
+            (
+                TableCellStyleRegions {
+                    band2_vertical: true,
+                    ..Default::default()
+                },
+                0x220002,
+            ),
+            (
+                TableCellStyleRegions {
+                    first_column: true,
+                    ..Default::default()
+                },
+                0x310001,
+            ),
+            (
+                TableCellStyleRegions {
+                    last_column: true,
+                    ..Default::default()
+                },
+                0x320002,
+            ),
+            (
+                TableCellStyleRegions {
+                    first_row: true,
+                    ..Default::default()
+                },
+                0x410001,
+            ),
+            (
+                TableCellStyleRegions {
+                    last_row: true,
+                    ..Default::default()
+                },
+                0x420002,
+            ),
+            (
+                TableCellStyleRegions {
+                    north_west: true,
+                    ..Default::default()
+                },
+                0x510001,
+            ),
+            (
+                TableCellStyleRegions {
+                    north_east: true,
+                    ..Default::default()
+                },
+                0x520002,
+            ),
+            (
+                TableCellStyleRegions {
+                    south_west: true,
+                    ..Default::default()
+                },
+                0x530003,
+            ),
+            (
+                TableCellStyleRegions {
+                    south_east: true,
+                    ..Default::default()
+                },
+                0x540004,
+            ),
+        ] {
+            assert_eq!(shade(regions), color(expected), "{regions:?}");
+        }
+
+        assert_eq!(
+            shade(TableCellStyleRegions {
+                band2_horizontal: true,
+                band1_vertical: true,
+                first_column: true,
+                last_column: true,
+                first_row: true,
+                last_row: true,
+                north_west: true,
+                north_east: true,
+                south_west: true,
+                south_east: true,
+                ..Default::default()
+            }),
+            color(0x540004)
+        );
+        assert_eq!(
+            styles
+                .table_cell_props(Some("Derived"))
+                .presentation_for_regions(TableCellStyleRegions {
+                    north_east: true,
+                    ..Default::default()
+                })
+                .defaults
+                .shading(),
+            color(0xAABBCC)
+        );
+
+        assert_eq!(styles.table_col_band_size(Some("AllRegions")), Some(2));
+        assert_eq!(styles.table_col_band_size(Some("Derived")), Some(3));
+        assert_eq!(
+            styles.table_col_band_size(Some("InvalidKeepsBase")),
+            Some(2)
+        );
+        assert_eq!(styles.table_col_band_size(Some("ZeroDisables")), Some(0));
+        assert_eq!(styles.table_col_band_size(Some("LastValidWins")), Some(3));
+        assert_eq!(styles.table_col_band_size(Some("SelectedChoice")), Some(1));
+        assert_eq!(styles.table_col_band_size(Some("missing")), None);
+        assert_eq!(styles.table_col_band_size(None), None);
     }
 }

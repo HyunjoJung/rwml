@@ -431,7 +431,7 @@ fn conditional_cell_presentation_render_docx(presentation: &str) -> Vec<u8> {
     let styles_xml = format!(
         r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
             <w:style w:type="table" w:styleId="ConditionalVisual">
-                <w:tblStylePr w:type="firstRow">{presentation}</w:tblStylePr>
+                <w:tblStylePr w:type="firstCol">{presentation}</w:tblStylePr>
             </w:style>
         </w:styles>"#
     );
@@ -447,7 +447,7 @@ fn conditional_cell_presentation_render_docx(presentation: &str) -> Vec<u8> {
             "word/document.xml",
             r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
                 <w:tbl><w:tblPr>
-                    <w:tblStyle w:val="ConditionalVisual"/><w:tblLook w:firstRow="1"/>
+                    <w:tblStyle w:val="ConditionalVisual"/><w:tblLook w:firstColumn="1" w:noHBand="1" w:noVBand="1"/>
                 </w:tblPr><w:tr><w:tc><w:p><w:r>
                     <w:t>line one</w:t><w:br/><w:t>line two</w:t><w:br/><w:t>line three</w:t>
                 </w:r></w:p></w:tc></w:tr></w:tbl>
@@ -1370,6 +1370,77 @@ fn row_conditional_table_styles_supply_cell_presentation() {
         assert_eq!(reopened.valign, source.valign);
         assert_eq!(reopened.width_pct, source.width_pct);
     }
+}
+
+#[test]
+fn first_column_conditional_table_style_supplies_cell_presentation() {
+    let content_types = content_types(true);
+    let bytes = docx_fixture(&[
+        ("[Content_Types].xml", &content_types),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        ("word/_rels/document.xml.rels", document_rels(true)),
+        (
+            "word/styles.xml",
+            r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+                <w:style w:type="table" w:styleId="ColumnCells">
+                    <w:tblStylePr w:type="firstCol"><w:tcPr>
+                        <w:tcMar><w:top w:w="123" w:type="dxa"/><w:start w:w="222" w:type="dxa"/></w:tcMar>
+                        <w:shd w:val="clear" w:fill="123456"/>
+                        <w:vAlign w:val="bottom"/>
+                        <w:tcW w:w="1250" w:type="pct"/>
+                    </w:tcPr></w:tblStylePr>
+                </w:style>
+            </w:styles>"#,
+        ),
+        (
+            "word/document.xml",
+            r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+                <w:tbl><w:tblPr>
+                    <w:tblStyle w:val="ColumnCells"/>
+                    <w:tblLook w:firstColumn="1" w:noHBand="1" w:noVBand="1"/>
+                </w:tblPr><w:tr>
+                    <w:tc><w:p><w:r><w:t>first</w:t></w:r></w:p></w:tc>
+                    <w:tc><w:p><w:r><w:t>last</w:t></w:r></w:p></w:tc>
+                </w:tr></w:tbl>
+            </w:body></w:document>"#,
+        ),
+    ]);
+    let doc = Document::open(&bytes).expect("first-column conditional style opens");
+    let Block::Table(table) = &doc.model().blocks[0] else {
+        panic!("table");
+    };
+
+    assert_eq!(
+        table.rows[0].cells[0].shading,
+        Some(Color::rgb(0x12, 0x34, 0x56))
+    );
+    assert_eq!(
+        table.rows[0].cells[0].margins,
+        Some(CellMargins {
+            top: 123,
+            right: 115,
+            bottom: 0,
+            left: 222,
+        })
+    );
+    assert_eq!(table.rows[0].cells[0].valign, rwml::VCell::Bottom);
+    assert_eq!(table.rows[0].cells[0].width_pct, Some(0.25));
+    assert_eq!(table.rows[0].cells[1].shading, None);
+
+    let reopened = Document::open(&doc.to_docx()).expect("first-column conversion reopens");
+    let Block::Table(reopened_table) = &reopened.model().blocks[0] else {
+        panic!("reopened table");
+    };
+    let source = &table.rows[0].cells[0];
+    let reopened = &reopened_table.rows[0].cells[0];
+    assert_eq!(reopened.shading, source.shading);
+    assert_eq!(reopened.margins, source.margins);
+    assert_eq!(reopened.valign, source.valign);
+    assert_eq!(reopened.width_pct, source.width_pct);
+    assert_eq!(reopened_table.rows[0].cells[1].shading, None);
 }
 
 #[test]

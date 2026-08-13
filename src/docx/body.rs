@@ -20,8 +20,8 @@ use super::fields::{
 use super::numbering::Numbering;
 use super::parse_rgb_hex_color;
 use super::styles::{
-    apply_paragraph_layout_child, ParagraphLayoutProps, RunProps, Styles, TableRowStyleRegions,
-    TableStyleCellProps,
+    apply_paragraph_layout_child, ParagraphLayoutProps, RunProps, Styles, TableCellStyleRegions,
+    TableRowStyleRegions, TableStyleCellProps,
 };
 use super::xml_text::{inline_marker_text, read_i64_text, read_text, skip_subtree};
 use super::{
@@ -5551,6 +5551,48 @@ fn resolve_cell_margins(
     })
 }
 
+#[derive(Clone, Copy)]
+enum CellStyleRegionSpec {
+    Named(NamedCellStyleRegions),
+    Transitional(TableCellStyleRegions),
+}
+
+impl CellStyleRegionSpec {
+    fn resolve(self, bidi_visual: bool) -> TableCellStyleRegions {
+        match self {
+            Self::Transitional(regions) => regions,
+            Self::Named(named) => named.resolve(bidi_visual),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Default)]
+struct NamedCellStyleRegions {
+    regions: TableCellStyleRegions,
+    first_row_last_column: bool,
+    first_row_first_column: bool,
+    last_row_last_column: bool,
+    last_row_first_column: bool,
+}
+
+impl NamedCellStyleRegions {
+    fn resolve(self, bidi_visual: bool) -> TableCellStyleRegions {
+        let mut regions = self.regions;
+        if bidi_visual {
+            regions.north_west = self.first_row_last_column;
+            regions.north_east = self.first_row_first_column;
+            regions.south_west = self.last_row_last_column;
+            regions.south_east = self.last_row_first_column;
+        } else {
+            regions.north_west = self.first_row_first_column;
+            regions.north_east = self.first_row_last_column;
+            regions.south_west = self.last_row_first_column;
+            regions.south_east = self.last_row_last_column;
+        }
+        regions
+    }
+}
+
 /// A streamed cell before vertical-merge resolution.
 struct CellRaw {
     blocks: Vec<Block>,
@@ -5565,6 +5607,7 @@ struct CellRaw {
     width_pct: Option<f32>,
     width_pct_declared: bool,
     margins: CellMarginSpec,
+    style_regions: Option<CellStyleRegionSpec>,
 }
 
 struct RowRaw {
@@ -5671,13 +5714,23 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Table, TablePagina
         .or_else(|| ctx.styles.table_row_band_size(props.style_id.as_deref()))
         // Word uses zero, rather than ECMA-376's one, when the property is omitted.
         .unwrap_or(0);
+    let col_band_size = props
+        .col_band_size
+        .or_else(|| ctx.styles.table_col_band_size(props.style_id.as_deref()))
+        // Word also uses zero for an omitted column-band size.
+        .unwrap_or(0);
     let row_regions: Vec<_> = rows
         .iter()
         .enumerate()
         .map(|(index, row)| {
-            row.props
-                .style_regions
-                .unwrap_or_else(|| table_look.row_regions(index, row_count, row_band_size))
+            row.props.style_regions.unwrap_or_else(|| {
+                table_look.row_regions(
+                    index,
+                    row_count,
+                    row_band_size,
+                    row.props.header.unwrap_or(false),
+                )
+            })
         })
         .collect();
     let row_pagination = rows
@@ -5713,8 +5766,15 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Table, TablePagina
             props.border_styles = borders.5;
         }
     }
-    let (table, cell_pagination, nested_pagination) =
-        build_table(rows, props, grid_widths, style_cell_props, row_regions);
+    let (table, cell_pagination, nested_pagination) = build_table(
+        rows,
+        props,
+        grid_widths,
+        style_cell_props,
+        row_regions,
+        table_look,
+        col_band_size,
+    );
     (
         table,
         TablePaginationHints {
@@ -5854,6 +5914,7 @@ struct TableProps {
     bidi_visual_declared: bool,
     look: Option<TableLook>,
     row_band_size: Option<u8>,
+    col_band_size: Option<u8>,
     cell_margins: CellMarginSpec,
     bidi_visual: bool,
     fixed_layout: bool,
@@ -5872,7 +5933,10 @@ struct TableProps {
 struct TableLook {
     first_row: bool,
     last_row: bool,
+    first_column: bool,
+    last_column: bool,
     horizontal_banding: bool,
+    vertical_banding: bool,
 }
 
 impl TableLook {
@@ -5882,7 +5946,10 @@ impl TableLook {
         Self {
             first_row: true,
             last_row: false,
+            first_column: true,
+            last_column: false,
             horizontal_banding: true,
+            vertical_banding: false,
         }
     }
 
@@ -5891,6 +5958,7 @@ impl TableLook {
         index: usize,
         row_count: usize,
         row_band_size: u8,
+        is_header: bool,
     ) -> TableRowStyleRegions {
         let band = self
             .horizontal_banding
@@ -5898,11 +5966,50 @@ impl TableLook {
             .filter(|size| *size != 0)
             .map(|size| (index / size as usize) % 2);
         TableRowStyleRegions {
-            first_row: self.first_row && index == 0,
+            first_row: self.first_row && (index == 0 || is_header),
             last_row: self.last_row && index.checked_add(1) == Some(row_count),
             band1_horizontal: band == Some(0),
             band2_horizontal: band == Some(1),
         }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn cell_regions(
+        self,
+        row_regions: TableRowStyleRegions,
+        row_index: usize,
+        row_count: usize,
+        col: usize,
+        col_span: u16,
+        col_count: usize,
+        col_band_size: u8,
+        bidi_visual: bool,
+    ) -> TableCellStyleRegions {
+        let end_col = col.saturating_add(col_span as usize);
+        let first_column = self.first_column && col == 0;
+        let last_column = self.last_column && end_col == col_count;
+        let band = self
+            .vertical_banding
+            .then_some(col_band_size)
+            .filter(|size| *size != 0)
+            .map(|size| (col / size as usize) % 2);
+        let north = self.first_row && row_index == 0;
+        let south = self.last_row && row_index.checked_add(1) == Some(row_count);
+        let (west, east) = if bidi_visual {
+            (last_column, first_column)
+        } else {
+            (first_column, last_column)
+        };
+        let mut regions: TableCellStyleRegions = row_regions.into();
+        regions.first_column = first_column;
+        regions.last_column = last_column;
+        regions.band1_vertical = band == Some(0);
+        regions.band2_vertical = band == Some(1);
+        regions.north_west = north && west;
+        regions.north_east = north && east;
+        regions.south_west = south && west;
+        regions.south_east = south && east;
+        regions
     }
 }
 
@@ -5917,19 +6024,26 @@ fn read_table_look(e: &BytesStart<'_>) -> TableLook {
         return TableLook {
             first_row: attr_local(e, b"firstRow").is_some_and(|value| toggle_on(Some(value))),
             last_row: attr_local(e, b"lastRow").is_some_and(|value| toggle_on(Some(value))),
+            first_column: attr_local(e, b"firstColumn").is_some_and(|value| toggle_on(Some(value))),
+            last_column: attr_local(e, b"lastColumn").is_some_and(|value| toggle_on(Some(value))),
             horizontal_banding: !attr_local(e, b"noHBand")
+                .is_some_and(|value| toggle_on(Some(value))),
+            vertical_banding: !attr_local(e, b"noVBand")
                 .is_some_and(|value| toggle_on(Some(value))),
         };
     }
 
-    // ISO/IEC 29500-4 14.4.11 serializes first/last row as 0x20/0x40.
+    // ISO/IEC 29500-4 14.4.11 assigns the six selectors to bits 5 through 10.
     let mask = attr_local_trimmed(e, b"val")
         .and_then(|value| u16::from_str_radix(&value, 16).ok())
         .unwrap_or(0);
     TableLook {
         first_row: mask & 0x0020 != 0,
         last_row: mask & 0x0040 != 0,
+        first_column: mask & 0x0080 != 0,
+        last_column: mask & 0x0100 != 0,
         horizontal_banding: mask & 0x0200 == 0,
+        vertical_banding: mask & 0x0400 == 0,
     }
 }
 
@@ -5940,6 +6054,11 @@ fn apply_tblpr_child(props: &mut TableProps, e: &BytesStart<'_>) {
         b"tblStyleRowBandSize" => {
             if let Some(size) = attr_u8(e, b"val").filter(|size| *size <= 3) {
                 props.row_band_size = Some(size);
+            }
+        }
+        b"tblStyleColBandSize" => {
+            if let Some(size) = attr_u8(e, b"val").filter(|size| *size <= 3) {
+                props.col_band_size = Some(size);
             }
         }
         b"bidiVisual" => {
@@ -6141,6 +6260,7 @@ impl TableStyleCellDefaults {
             width_pct: None,
             width_pct_declared: false,
             margins: CellMarginSpec::default(),
+            style_regions: None,
         };
         apply_tcpr_child(&mut t, e);
         self.overlay(Self {
@@ -6676,6 +6796,68 @@ fn read_row_style_regions(e: &BytesStart<'_>) -> Option<TableRowStyleRegions> {
     })
 }
 
+fn read_cell_style_regions(e: &BytesStart<'_>) -> Option<CellStyleRegionSpec> {
+    let has_named_attributes = e.attributes().flatten().any(|attribute| {
+        matches!(
+            local(attribute.key.as_ref()),
+            b"firstRow"
+                | b"lastRow"
+                | b"firstColumn"
+                | b"lastColumn"
+                | b"oddVBand"
+                | b"evenVBand"
+                | b"oddHBand"
+                | b"evenHBand"
+                | b"firstRowLastColumn"
+                | b"firstRowFirstColumn"
+                | b"lastRowLastColumn"
+                | b"lastRowFirstColumn"
+        )
+    });
+    if has_named_attributes {
+        let enabled = |name: &[u8]| attr_local(e, name).is_some_and(|value| toggle_on(Some(value)));
+        return Some(CellStyleRegionSpec::Named(NamedCellStyleRegions {
+            regions: TableCellStyleRegions {
+                first_row: enabled(b"firstRow"),
+                last_row: enabled(b"lastRow"),
+                first_column: enabled(b"firstColumn"),
+                last_column: enabled(b"lastColumn"),
+                band1_vertical: enabled(b"oddVBand"),
+                band2_vertical: enabled(b"evenVBand"),
+                band1_horizontal: enabled(b"oddHBand"),
+                band2_horizontal: enabled(b"evenHBand"),
+                ..TableCellStyleRegions::default()
+            },
+            first_row_last_column: enabled(b"firstRowLastColumn"),
+            first_row_first_column: enabled(b"firstRowFirstColumn"),
+            last_row_last_column: enabled(b"lastRowLastColumn"),
+            last_row_first_column: enabled(b"lastRowFirstColumn"),
+        }));
+    }
+
+    // ISO/IEC 29500-4 14.4.10 stores the four corner flags as physical
+    // NE/NW/SE/SW bits after the eight row, column, and band flags.
+    let value = attr_local_trimmed(e, b"val")?;
+    let mask = value.as_bytes();
+    if mask.len() != 12 || mask.iter().any(|bit| !matches!(bit, b'0' | b'1')) {
+        return None;
+    }
+    Some(CellStyleRegionSpec::Transitional(TableCellStyleRegions {
+        first_row: mask[0] == b'1',
+        last_row: mask[1] == b'1',
+        first_column: mask[2] == b'1',
+        last_column: mask[3] == b'1',
+        band1_vertical: mask[4] == b'1',
+        band2_vertical: mask[5] == b'1',
+        band1_horizontal: mask[6] == b'1',
+        band2_horizontal: mask[7] == b'1',
+        north_east: mask[8] == b'1',
+        north_west: mask[9] == b'1',
+        south_east: mask[10] == b'1',
+        south_west: mask[11] == b'1',
+    }))
+}
+
 /// Read direct `<w:trPr>` pagination properties.
 fn read_trpr(r: &mut Xml<'_>) -> RowProps {
     let mut props = RowProps::default();
@@ -6792,6 +6974,7 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
             width_pct: None,
             width_pct_declared: false,
             margins: CellMarginSpec::default(),
+            style_regions: None,
         };
     }
     let mut blocks = Vec::new();
@@ -6841,6 +7024,7 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
         width_pct: None,
         width_pct_declared: false,
         margins: CellMarginSpec::default(),
+        style_regions: None,
     });
     CellRaw {
         blocks,
@@ -6855,6 +7039,7 @@ fn read_cell(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> CellRaw {
         width_pct: tc.width_pct,
         width_pct_declared: tc.width_pct_declared,
         margins: tc.margins,
+        style_regions: tc.style_regions,
     }
 }
 
@@ -6958,6 +7143,7 @@ struct TcPr {
     width_pct: Option<f32>,
     width_pct_declared: bool,
     margins: CellMarginSpec,
+    style_regions: Option<CellStyleRegionSpec>,
 }
 
 /// Read `<w:tcPr>` → gridSpan / vMerge / shading / vAlign / width.
@@ -6972,6 +7158,7 @@ fn read_tcpr(r: &mut Xml<'_>) -> TcPr {
         width_pct: None,
         width_pct_declared: false,
         margins: CellMarginSpec::default(),
+        style_regions: None,
     };
     loop {
         match r.read_event() {
@@ -7098,6 +7285,11 @@ fn apply_tcpr_child(t: &mut TcPr, e: &BytesStart<'_>) {
                 None
             };
         }
+        b"cnfStyle" => {
+            if let Some(regions) = read_cell_style_regions(e) {
+                t.style_regions = Some(regions);
+            }
+        }
         _ => {}
     }
 }
@@ -7217,6 +7409,36 @@ fn apply_cell_margin_side(margins: &mut ParsedCellMargins, e: &BytesStart<'_>) {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn effective_cell_style_regions(
+    explicit: Option<CellStyleRegionSpec>,
+    table_look: TableLook,
+    row_regions: TableRowStyleRegions,
+    row_index: usize,
+    row_count: usize,
+    col: usize,
+    col_span: u16,
+    col_count: usize,
+    col_band_size: u8,
+    bidi_visual: bool,
+) -> TableCellStyleRegions {
+    explicit.map_or_else(
+        || {
+            table_look.cell_regions(
+                row_regions,
+                row_index,
+                row_count,
+                col,
+                col_span,
+                col_count,
+                col_band_size,
+                bidi_visual,
+            )
+        },
+        |regions| regions.resolve(bidi_visual),
+    )
+}
+
 /// Place cells over a running column index and resolve vertical merges
 /// (`vMerge="restart"` opens a span, a later `vMerge` continuation at the same
 /// starting column grows the owner's `row_span` and is dropped) — the OOXML
@@ -7227,6 +7449,8 @@ fn build_table(
     grid_widths: Vec<u32>,
     style_cell_props: TableStyleCellProps,
     row_regions: Vec<TableRowStyleRegions>,
+    table_look: TableLook,
+    col_band_size: u8,
 ) -> (
     Table,
     TableCellPaginationHints,
@@ -7255,6 +7479,7 @@ fn build_table(
         width_pct_declared: bool,
         row_cell_margins: Option<CellMarginSpec>,
         margins: CellMarginSpec,
+        style_regions: Option<CellStyleRegionSpec>,
     }
 
     let mut grid: Vec<Vec<Placed>> = Vec::with_capacity(raw_rows.len());
@@ -7284,6 +7509,7 @@ fn build_table(
                 width_pct_declared: c.width_pct_declared,
                 row_cell_margins,
                 margins: c.margins,
+                style_regions: c.style_regions,
             });
             col += cs as usize;
         }
@@ -7316,11 +7542,24 @@ fn build_table(
         }
     }
 
+    let row_count = grid.len();
     let cell_margin_defaults_active = !props.cell_margins.is_empty()
         || grid.iter().enumerate().any(|(row_index, row)| {
-            let regions = row_regions.get(row_index).copied().unwrap_or_default();
-            let style_margins = style_cell_props.presentation_for_regions(regions).margins;
+            let row_regions = row_regions.get(row_index).copied().unwrap_or_default();
             row.iter().any(|cell| {
+                let regions = effective_cell_style_regions(
+                    cell.style_regions,
+                    table_look,
+                    row_regions,
+                    row_index,
+                    row_count,
+                    cell.col,
+                    cell.col_span,
+                    model_grid_cols,
+                    col_band_size,
+                    props.bidi_visual,
+                );
+                let style_margins = style_cell_props.presentation_for_regions(regions).margins;
                 !cell.dropped
                     && (!style_margins.is_empty()
                         || cell.row_cell_margins.is_some()
@@ -7331,12 +7570,24 @@ fn build_table(
     let mut table_cell_pagination = Vec::with_capacity(grid.len());
     let mut table_nested_pagination = Vec::with_capacity(grid.len());
     for (row_index, row) in grid.into_iter().enumerate() {
-        let regions = row_regions.get(row_index).copied().unwrap_or_default();
-        let style_presentation = style_cell_props.presentation_for_regions(regions);
+        let row_regions = row_regions.get(row_index).copied().unwrap_or_default();
         let mut cells = Vec::with_capacity(row.len());
         let mut cell_pagination = Vec::with_capacity(row.len());
         let mut cell_nested_pagination = Vec::with_capacity(row.len());
         for p in row.into_iter().filter(|p| !p.dropped) {
+            let regions = effective_cell_style_regions(
+                p.style_regions,
+                table_look,
+                row_regions,
+                row_index,
+                row_count,
+                p.col,
+                p.col_span,
+                model_grid_cols,
+                col_band_size,
+                props.bidi_visual,
+            );
+            let style_presentation = style_cell_props.presentation_for_regions(regions);
             cell_pagination.push(p.pagination);
             cell_nested_pagination.push(p.nested_tables);
             cells.push(Cell {
@@ -8027,6 +8278,308 @@ mod tests {
     }
 
     #[test]
+    fn conditional_cell_regions_follow_table_look_bands_and_precedence() {
+        let styles = super::super::styles::parse(
+            r#"<w:styles>
+                <w:style w:type="table" w:styleId="Regions">
+                    <w:tblPr><w:tblStyleColBandSize w:val="2"/></w:tblPr>
+                    <w:tblStylePr w:type="wholeTable"><w:tcPr><w:shd w:fill="010101"/></w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="band1Vert"><w:tcPr><w:shd w:fill="210001"/></w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="band2Vert"><w:tcPr><w:shd w:fill="220002"/></w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="firstCol"><w:tcPr><w:shd w:fill="410001"/></w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="lastCol"><w:tcPr><w:shd w:fill="420002"/></w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="firstRow"><w:tcPr><w:shd w:fill="510001"/></w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="lastRow"><w:tcPr><w:shd w:fill="520002"/></w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="nwCell"><w:tcPr><w:shd w:fill="710001"/></w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="neCell"><w:tcPr><w:shd w:fill="720002"/></w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="swCell"><w:tcPr><w:shd w:fill="730003"/></w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="seCell"><w:tcPr><w:shd w:fill="740004"/></w:tcPr></w:tblStylePr>
+                </w:style>
+                <w:style w:type="table" w:styleId="OmittedSize">
+                    <w:tblStylePr w:type="wholeTable"><w:tcPr><w:shd w:fill="010101"/></w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="band1Vert"><w:tcPr><w:shd w:fill="210001"/></w:tcPr></w:tblStylePr>
+                </w:style>
+            </w:styles>"#,
+        );
+        let cells = |count: usize| {
+            (0..count)
+                .map(|index| format!(r#"<w:tc><w:p><w:r><w:t>{index}</w:t></w:r></w:p></w:tc>"#))
+                .collect::<String>()
+        };
+        let xml = format!(
+            r#"<w:document><w:body>
+                <w:tbl>
+                    <w:tblPr><w:tblStyle w:val="Regions"/><w:tblLook w:val="01E0"/></w:tblPr>
+                    <w:tr>{}</w:tr><w:tr>{}</w:tr><w:tr>{}</w:tr>
+                </w:tbl>
+                <w:tbl>
+                    <w:tblPr>
+                        <w:tblStyle w:val="Regions"/>
+                        <w:tblStyleColBandSize w:val="1"/>
+                        <w:tblStyleColBandSize w:val="9"/>
+                        <w:tblLook w:val="0000"/>
+                    </w:tblPr>
+                    <w:tr>{}</w:tr>
+                </w:tbl>
+                <w:tbl>
+                    <w:tblPr><w:tblStyle w:val="OmittedSize"/><w:tblLook w:val="0000"/></w:tblPr>
+                    <w:tr>{}</w:tr>
+                </w:tbl>
+            </w:body></w:document>"#,
+            cells(4),
+            cells(4),
+            cells(4),
+            cells(4),
+            cells(1),
+        );
+        let blocks = parse_with_media_and_styles(&xml, HashMap::new(), styles);
+
+        let tables = blocks
+            .iter()
+            .map(|block| match block {
+                Block::Table(table) => table,
+                _ => panic!("table"),
+            })
+            .collect::<Vec<_>>();
+        let shades = |table: &Table| {
+            table
+                .rows
+                .iter()
+                .map(|row| {
+                    row.cells
+                        .iter()
+                        .map(|cell| cell.shading)
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        };
+        let color = |value: u32| {
+            Some(Color::rgb(
+                ((value >> 16) & 0xff) as u8,
+                ((value >> 8) & 0xff) as u8,
+                (value & 0xff) as u8,
+            ))
+        };
+
+        assert_eq!(
+            shades(tables[0]),
+            vec![
+                vec![
+                    color(0x710001),
+                    color(0x510001),
+                    color(0x510001),
+                    color(0x720002)
+                ],
+                vec![
+                    color(0x410001),
+                    color(0x210001),
+                    color(0x220002),
+                    color(0x420002)
+                ],
+                vec![
+                    color(0x730003),
+                    color(0x520002),
+                    color(0x520002),
+                    color(0x740004)
+                ],
+            ]
+        );
+        assert_eq!(
+            shades(tables[1]),
+            vec![vec![
+                color(0x210001),
+                color(0x220002),
+                color(0x210001),
+                color(0x220002),
+            ]]
+        );
+        assert_eq!(shades(tables[2]), vec![vec![color(0x010101)]]);
+    }
+
+    #[test]
+    fn explicit_cell_masks_and_rtl_corners_keep_distinct_semantics() {
+        let styles = super::super::styles::parse(
+            r#"<w:styles>
+                <w:style w:type="table" w:styleId="Corners">
+                    <w:tblStylePr w:type="wholeTable"><w:tcPr><w:shd w:fill="010101"/></w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="firstCol"><w:tcPr><w:shd w:fill="110001"/></w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="lastCol"><w:tcPr><w:shd w:fill="120002"/></w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="nwCell"><w:tcPr><w:shd w:fill="210001"/></w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="neCell"><w:tcPr><w:shd w:fill="220002"/></w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="swCell"><w:tcPr><w:shd w:fill="230003"/></w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="seCell"><w:tcPr><w:shd w:fill="240004"/></w:tcPr></w:tblStylePr>
+                </w:style>
+            </w:styles>"#,
+        );
+        let xml = r#"<w:document xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><w:body>
+            <w:tbl>
+                <w:tblPr><w:tblStyle w:val="Corners"/><w:tblLook w:firstColumn="1" w:lastColumn="1" w:noHBand="1" w:noVBand="1"/></w:tblPr>
+                <w:tr>
+                    <w:tc><w:tcPr><w:cnfStyle w:firstColumn="0" w:val="001000000000"/></w:tcPr><w:p/></w:tc>
+                    <w:tc><w:tcPr><mc:AlternateContent>
+                        <mc:Choice Requires="w14"><w:cnfStyle w:lastColumn="1"/></mc:Choice>
+                        <mc:Fallback><w:cnfStyle w:firstColumn="1"/></mc:Fallback>
+                    </mc:AlternateContent></w:tcPr><w:p/></w:tc>
+                    <w:tc><w:tcPr><w:cnfStyle w:firstRowFirstColumn="1"/></w:tcPr><w:p/></w:tc>
+                    <w:tc><w:tcPr><w:cnfStyle w:val="000000001000"/></w:tcPr><w:p/></w:tc>
+                    <w:tc><w:tcPr><w:tcPrChange><w:tcPr><w:cnfStyle w:firstColumn="1"/></w:tcPr></w:tcPrChange></w:tcPr><w:p/></w:tc>
+                    <w:tc><w:tcPr><w:cnfStyle w:val="malformed"/></w:tcPr><w:p/></w:tc>
+                </w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr><w:tblStyle w:val="Corners"/><w:bidiVisual/><w:tblLook w:firstRow="1" w:lastRow="1" w:firstColumn="1" w:lastColumn="1" w:noHBand="1" w:noVBand="1"/></w:tblPr>
+                <w:tr><w:tc><w:p/></w:tc><w:tc><w:p/></w:tc></w:tr>
+                <w:tr><w:tc><w:p/></w:tc><w:tc><w:p/></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl>
+                <w:tblPr><w:tblStyle w:val="Corners"/><w:bidiVisual/><w:tblLook w:firstRow="0" w:lastRow="0" w:firstColumn="0" w:lastColumn="0" w:noHBand="1" w:noVBand="1"/></w:tblPr>
+                <w:tr>
+                    <w:tc><w:tcPr><w:cnfStyle w:firstRowFirstColumn="1"/></w:tcPr><w:p/></w:tc>
+                    <w:tc><w:tcPr><w:cnfStyle w:val="000000000100"/></w:tcPr><w:p/></w:tc>
+                </w:tr>
+            </w:tbl>
+        </w:body></w:document>"#;
+        let blocks = parse_with_media_and_styles(xml, HashMap::new(), styles);
+        let tables = blocks
+            .iter()
+            .map(|block| match block {
+                Block::Table(table) => table,
+                _ => panic!("table"),
+            })
+            .collect::<Vec<_>>();
+        let color = |value: u32| {
+            Some(Color::rgb(
+                ((value >> 16) & 0xff) as u8,
+                ((value >> 8) & 0xff) as u8,
+                (value & 0xff) as u8,
+            ))
+        };
+        let row_shades = |table: &Table, row: usize| {
+            table.rows[row]
+                .cells
+                .iter()
+                .map(|cell| cell.shading)
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(
+            row_shades(tables[0], 0),
+            vec![
+                color(0x010101),
+                color(0x120002),
+                color(0x210001),
+                color(0x220002),
+                color(0x010101),
+                color(0x120002),
+            ]
+        );
+        assert!(tables[1].bidi_visual);
+        assert_eq!(
+            row_shades(tables[1], 0),
+            vec![color(0x220002), color(0x210001)]
+        );
+        assert_eq!(
+            row_shades(tables[1], 1),
+            vec![color(0x240004), color(0x230003)]
+        );
+        assert_eq!(
+            row_shades(tables[2], 0),
+            vec![color(0x220002), color(0x210001)]
+        );
+    }
+
+    #[test]
+    fn conditional_cell_regions_respect_headers_spans_and_merge_owners() {
+        let styles = super::super::styles::parse(
+            r#"<w:styles>
+                <w:style w:type="table" w:styleId="Lifecycle">
+                    <w:tblStylePr w:type="wholeTable"><w:tcPr><w:shd w:fill="010101"/></w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="firstRow"><w:tcPr><w:shd w:fill="110001"/></w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="firstCol"><w:tcPr><w:shd w:fill="120002"/></w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="lastCol"><w:tcPr><w:shd w:fill="130003"/></w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="nwCell"><w:tcPr><w:shd w:fill="210001"/></w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="neCell"><w:tcPr><w:shd w:fill="220002"/></w:tcPr></w:tblStylePr>
+                    <w:tblStylePr w:type="seCell"><w:tcPr><w:shd w:fill="240004"/></w:tcPr></w:tblStylePr>
+                </w:style>
+            </w:styles>"#,
+        );
+        let two_cells = r#"<w:tc><w:p/></w:tc><w:tc><w:p/></w:tc>"#;
+        let xml = format!(
+            r#"<w:document><w:body>
+                <w:tbl>
+                    <w:tblPr><w:tblStyle w:val="Lifecycle"/><w:tblLook w:firstRow="1" w:firstColumn="1" w:lastColumn="1" w:noHBand="1" w:noVBand="1"/></w:tblPr>
+                    <w:tr><w:trPr><w:tblHeader/></w:trPr>{two_cells}</w:tr>
+                    <w:tr><w:trPr><w:tblHeader/></w:trPr>{two_cells}</w:tr>
+                    <w:tr><w:trPr><w:tblHeader/><w:cnfStyle w:firstRow="0"/></w:trPr>{two_cells}</w:tr>
+                    <w:tr>{two_cells}</w:tr>
+                </w:tbl>
+                <w:tbl>
+                    <w:tblPr><w:tblStyle w:val="Lifecycle"/><w:tblLook w:firstRow="1" w:firstColumn="1" w:lastColumn="1" w:noHBand="1" w:noVBand="1"/></w:tblPr>
+                    <w:tr><w:tc><w:tcPr><w:gridSpan w:val="3"/></w:tcPr><w:p/></w:tc></w:tr>
+                    <w:tr><w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr><w:p/></w:tc><w:tc><w:p/></w:tc></w:tr>
+                    <w:tr><w:tc><w:p/></w:tc></w:tr>
+                </w:tbl>
+                <w:tbl>
+                    <w:tblPr><w:tblStyle w:val="Lifecycle"/><w:tblLook w:firstRow="1" w:lastRow="1" w:firstColumn="1" w:lastColumn="1" w:noHBand="1" w:noVBand="1"/></w:tblPr>
+                    <w:tr><w:tc><w:tcPr><w:vMerge w:val="restart"/></w:tcPr><w:p/></w:tc></w:tr>
+                    <w:tr><w:tc><w:tcPr><w:vMerge/><w:cnfStyle w:lastRowLastColumn="1"/></w:tcPr><w:p/></w:tc></w:tr>
+                </w:tbl>
+            </w:body></w:document>"#,
+        );
+        let blocks = parse_with_media_and_styles(&xml, HashMap::new(), styles);
+        let tables = blocks
+            .iter()
+            .map(|block| match block {
+                Block::Table(table) => table,
+                _ => panic!("table"),
+            })
+            .collect::<Vec<_>>();
+        let color = |value: u32| {
+            Some(Color::rgb(
+                ((value >> 16) & 0xff) as u8,
+                ((value >> 8) & 0xff) as u8,
+                (value & 0xff) as u8,
+            ))
+        };
+        let row_shades = |table: &Table, row: usize| {
+            table.rows[row]
+                .cells
+                .iter()
+                .map(|cell| cell.shading)
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(tables[0].header_rows, 3);
+        assert_eq!(
+            row_shades(tables[0], 0),
+            vec![color(0x210001), color(0x220002)]
+        );
+        assert_eq!(
+            row_shades(tables[0], 1),
+            vec![color(0x110001), color(0x110001)]
+        );
+        assert_eq!(
+            row_shades(tables[0], 2),
+            vec![color(0x120002), color(0x130003)]
+        );
+        assert_eq!(
+            row_shades(tables[0], 3),
+            vec![color(0x120002), color(0x130003)]
+        );
+
+        assert_eq!(row_shades(tables[1], 0), vec![color(0x220002)]);
+        assert_eq!(
+            row_shades(tables[1], 1),
+            vec![color(0x120002), color(0x130003)]
+        );
+        assert_eq!(row_shades(tables[1], 2), vec![color(0x120002)]);
+
+        assert_eq!(tables[2].rows[0].cells[0].row_span, 2);
+        assert_eq!(tables[2].rows[0].cells[0].shading, color(0x220002));
+        assert!(tables[2].rows[1].cells.is_empty());
+    }
+
+    #[test]
     fn conditional_table_row_style_selection_and_precedence_are_bounded() {
         let styles = super::super::styles::parse(
             r#"<w:styles xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
@@ -8632,6 +9185,7 @@ mod tests {
             width_pct: None,
             width_pct_declared: false,
             margins: CellMarginSpec::default(),
+            style_regions: None,
         }
     }
 
@@ -9737,6 +10291,8 @@ mod tests {
             Vec::new(),
             TableStyleCellProps::default(),
             row_regions,
+            TableLook::word_default(),
+            0,
         )
         .0;
 

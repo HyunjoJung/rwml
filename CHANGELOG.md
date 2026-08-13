@@ -18,27 +18,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   including logical `start`/`end` mapping under `w:bidiVisual`, accepted-current
   Markup Compatibility selection, vertical-merge ownership, nested tables, and
   fresh conversion/reopen. Other `w:tblPrEx` properties remain unsupported.
-- Applies a table style's bounded `band1Horz`, `band2Horz`, `firstRow`, and
-  `lastRow` cell margins, flat shading, and vertical alignment after
-  `wholeTable`, and models their percentage preferred width, with inherited
-  region precedence, `w:tblLook`/row `w:cnfStyle` selection, margin overrides
-  at the table, row, and cell layers, direct-cell presentation overrides, RTL
-  side mapping, and vertical-merge restart ownership. Column, vertical-band,
-  corner, border, and paragraph/run conditional formatting remain outside this
+- Applies a table style's bounded horizontal/vertical bands, first/last rows and
+  columns, and four corner regions after `wholeTable` for cell margins, flat
+  shading, vertical alignment, and percentage preferred width. Selection honors
+  inherited Office region precedence, named or hexadecimal `w:tblLook`, row and
+  cell `w:cnfStyle`, Word's 0-3 row/column band sizes, repeated header rows,
+  spans, RTL corner mapping, and vertical-merge restart ownership; table, row,
+  and direct-cell declarations still override the style at their established
+  layers. Conditional borders and paragraph/run formatting remain outside this
   subset.
 - Inherits a table style's own `w:tblCellMar` through its `w:basedOn` chain as
   the table's cell-margin default, beneath direct `w:tblPr`/`w:tcMar`
   declarations and above the schema defaults, including the style's `wholeTable`
-  and bounded row-scoped conditional regions.
+  and bounded conditional cell-presentation regions.
 - Applies a table style's `w:tblBorders` — from its own `w:tblPr` or its
   `wholeTable` region, resolved through `w:basedOn` — when the table declares no
   borders of its own, so grid-style tables no longer lose their borders.
 - Fills a table's width, indentation, and alignment from its table style —
   `w:tblW`, `w:tblInd`, and table `w:jc`, resolved through `w:basedOn` and the
   `wholeTable` region — for values the table itself leaves unset.
-- Applies a table style's `wholeTable` and bounded row-region `w:tcPr` cell
-  shading, vertical alignment, and preferred width to cells that declare none
-  of their own.
+- Applies a table style's `wholeTable` and bounded conditional `w:tcPr` cell
+  margins, shading, vertical alignment, and preferred width to cells that
+  declare none of their own.
 - Inherits a table style's `w:tblLayout` and `w:bidiVisual` for tables that
   declare neither, tracking whether the table declared them so an explicit off
   value still wins.
