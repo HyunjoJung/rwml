@@ -63,7 +63,7 @@ const MARGIN: f32 = 56.0;
 /// Per-document page geometry in PDF points, derived from the model's `PageSetup`
 /// (so Letter, A3, custom margins, and landscape all render at the right size
 /// instead of a fixed A4). Replaces the former page-size constants.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 struct Geom {
     page_w: f32,
     page_h: f32,
@@ -112,6 +112,19 @@ impl Geom {
         let width = width.clamp(MIN_COLUMN_WIDTH_PT, self.content_w());
         Self {
             right: (self.page_w - self.left - width).max(0.0),
+            ..self
+        }
+    }
+
+    /// Apply a section's vertical page geometry while retaining the current
+    /// horizontal geometry. Unequal widths and orientation remain a separate
+    /// renderer ceiling because shaped line widths are already section-wide.
+    fn with_section_vertical(self, setup: &SectionSetup) -> Self {
+        let section = Self::from_setup(&setup.page);
+        Self {
+            page_h: section.page_h,
+            top_m: section.top_m,
+            bottom_m: section.bottom_m,
             ..self
         }
     }
@@ -3946,6 +3959,7 @@ fn collect_blocks(
 struct BlockCollectionOptions<'a> {
     include_block_anchors: bool,
     section_columns: Option<&'a [Option<u16>]>,
+    section_geometries: Option<&'a [Geom]>,
     pagination_hints: Option<&'a [PaginationHint]>,
     tab_stops: Option<&'a [Vec<TabStop>]>,
     default_tab_stop_pt: Option<f32>,
@@ -3958,6 +3972,7 @@ struct BlockCollectionOptions<'a> {
 
 struct BodyCollectionSidecars<'a> {
     section_columns: &'a [Option<u16>],
+    section_geometries: &'a [Geom],
     pagination_hints: &'a [PaginationHint],
     tab_stops: &'a [Vec<TabStop>],
     default_tab_stop_pt: Option<f32>,
@@ -3985,6 +4000,7 @@ fn collect_blocks_with_block_anchors(
         BlockCollectionOptions {
             include_block_anchors: true,
             section_columns: Some(sidecars.section_columns),
+            section_geometries: Some(sidecars.section_geometries),
             pagination_hints: Some(sidecars.pagination_hints),
             tab_stops: Some(sidecars.tab_stops),
             default_tab_stop_pt: sidecars.default_tab_stop_pt,
@@ -4007,11 +4023,17 @@ fn collect_blocks_inner(
 ) {
     let mut lists = ListState::default();
     for (block_index, b) in blocks.iter().enumerate() {
+        let section_geom = options
+            .section_geometries
+            .and_then(|geometries| geometries.get(block_index).copied())
+            .unwrap_or(geom);
         let block_geom = options
             .section_columns
             .and_then(|columns| columns.get(block_index).copied())
-            .map(|columns| geom.with_content_width(ColumnLayout::new(geom, columns).width))
-            .unwrap_or(geom);
+            .map(|columns| {
+                section_geom.with_content_width(ColumnLayout::new(section_geom, columns).width)
+            })
+            .unwrap_or(section_geom);
         if options.include_block_anchors {
             out.push(FlowItem::BlockStart {
                 index: block_index,
@@ -7181,15 +7203,17 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
     // Paginate: flow items top-to-bottom through equal-width columns and then
     // across pages. Tables repeat headers after each break and split oversized rows.
     let columns_by_item = section_columns_by_item(&items, final_section_setup.columns);
+    let geometries_by_item = section_geometries_by_item(&items, geom);
     let block_metrics = block_pagination_metrics(&items);
     let mut pages: Pages = vec![Vec::new()];
     let mut page_sections: Vec<Option<RenderPageSection>> = vec![None];
     let mut section_start_page_index = 0usize;
+    let mut active_geom = geometries_by_item.first().copied().unwrap_or(geom);
     let mut active_columns = columns_by_item
         .first()
         .copied()
         .unwrap_or(final_section_setup.columns);
-    let mut cursor = FlowCursor::new(geom, active_columns);
+    let mut cursor = FlowCursor::new(active_geom, active_columns);
     let mut block_pages = HashMap::new();
     let mut block_line_pages: HashMap<usize, Vec<BlockLinePage>> = HashMap::new();
     let mut pending_block = None;
@@ -7203,9 +7227,15 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
     let mut previous_keep_next = false;
     let mut defer_current_top_bottom_bands = false;
     for (item_index, item) in items.into_iter().enumerate() {
+        let item_geom = geometries_by_item[item_index];
+        if item_geom != active_geom {
+            active_geom = item_geom;
+            cursor.set_columns(active_geom, columns_by_item[item_index]);
+            active_columns = columns_by_item[item_index];
+        }
         let item_columns = columns_by_item[item_index];
         if item_columns != active_columns {
-            cursor.set_columns(geom, item_columns);
+            cursor.set_columns(active_geom, item_columns);
             active_columns = item_columns;
         }
         match item {
@@ -7237,7 +7267,7 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
                                 &mut pages,
                                 &mut cursor,
                                 height,
-                                geom,
+                                active_geom,
                                 &active_top_bottom_bands,
                             );
                         }
@@ -7245,13 +7275,13 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
                     let keep_whole_paragraph = pagination.keep_lines
                         || (pagination.widow_control
                             && metric.line_heights.len() <= 3
-                            && metric.last_line_extent <= geom.bottom() - geom.top());
+                            && metric.last_line_extent <= active_geom.bottom() - active_geom.top());
                     if keep_whole_paragraph {
                         move_to_fresh_column_for_required_height(
                             &mut pages,
                             &mut cursor,
                             metric.last_line_extent,
-                            geom,
+                            active_geom,
                             &active_top_bottom_bands,
                         );
                     }
@@ -7287,8 +7317,8 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
                     pending_top_bottom_bands.push(PendingTopBottomBand {
                         owner_block: current_block,
                         anchor_offset,
-                        top: top.max(geom.top()),
-                        bottom: bottom.min(geom.bottom()),
+                        top: top.max(active_geom.top()),
+                        bottom: bottom.min(active_geom.bottom()),
                     });
                 }
             }
@@ -7299,7 +7329,7 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
                     &mut pages,
                     &mut cursor,
                     h,
-                    geom,
+                    active_geom,
                     &active_top_bottom_bands,
                     None,
                 );
@@ -7310,7 +7340,7 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
                 {
                     loop {
                         if widow_break_before == Some(current_line_index) {
-                            cursor.advance(&mut pages, geom);
+                            cursor.advance(&mut pages, active_geom);
                             widow_break_before = None;
                             continue;
                         }
@@ -7322,12 +7352,12 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
                                 &metric.line_heights[current_line_index..],
                                 cursor.y,
                                 pages.len().saturating_sub(1),
-                                geom,
+                                active_geom,
                                 &active_top_bottom_bands,
                             );
                             if fits < remaining {
                                 if fits < 2 && cursor.column_nonempty {
-                                    cursor.advance(&mut pages, geom);
+                                    cursor.advance(&mut pages, active_geom);
                                     continue;
                                 }
                                 if remaining - fits == 1 {
@@ -7341,9 +7371,10 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
                                             .iter()
                                             .sum::<f32>();
                                         if cursor.column_nonempty
-                                            && remaining_height <= geom.bottom() - geom.top()
+                                            && remaining_height
+                                                <= active_geom.bottom() - active_geom.top()
                                         {
-                                            cursor.advance(&mut pages, geom);
+                                            cursor.advance(&mut pages, active_geom);
                                             continue;
                                         }
                                     }
@@ -7357,7 +7388,7 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
                     &mut pages,
                     &mut cursor,
                     h,
-                    geom,
+                    active_geom,
                     &active_top_bottom_bands,
                     None,
                 );
@@ -7382,7 +7413,7 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
                     &mut pages,
                     &mut cursor,
                     layout.bounds_h,
-                    geom,
+                    active_geom,
                     &active_top_bottom_bands,
                     current_block,
                 );
@@ -7403,7 +7434,7 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
                     &mut pages,
                     &mut cursor,
                     h,
-                    geom,
+                    active_geom,
                     &active_top_bottom_bands,
                     None,
                 );
@@ -7416,12 +7447,13 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
             }
             FlowItem::Table { rows, header_rows } => {
                 let fallback_page = pages.len().saturating_sub(1);
-                let first_page = place_table(&mut pages, &mut cursor, rows, header_rows, geom)
-                    .unwrap_or(fallback_page);
+                let first_page =
+                    place_table(&mut pages, &mut cursor, rows, header_rows, active_geom)
+                        .unwrap_or(fallback_page);
                 record_pending_block_page(&mut block_pages, &mut pending_block, first_page);
             }
             FlowItem::PageBreak => {
-                cursor.force_page(&mut pages, geom);
+                cursor.force_page(&mut pages, active_geom);
                 record_pending_block_page(
                     &mut block_pages,
                     &mut pending_block,
@@ -7432,7 +7464,7 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
                 let next_section_page =
                     page_after_section_break(pages.len(), section.section_break);
                 while pages.len() < next_section_page {
-                    cursor.force_page(&mut pages, geom);
+                    cursor.force_page(&mut pages, active_geom);
                 }
                 page_sections.resize(pages.len(), None);
                 assign_section_to_render_pages(
@@ -7455,7 +7487,7 @@ fn paginate(items: Vec<FlowItem>, geom: Geom, final_section_setup: &SectionSetup
                     &mut pages,
                     &mut cursor,
                     h,
-                    geom,
+                    active_geom,
                     &active_top_bottom_bands,
                     None,
                 );
@@ -7501,6 +7533,7 @@ fn collect_pdf_flow_items(
     let mut items: Vec<FlowItem> = Vec::new();
     let final_section_setup = SectionSetup::from(&model.setup);
     let body_columns = section_columns_by_block(&model.blocks, final_section_setup.columns);
+    let body_geometries = section_geometries_by_block(&model.blocks, geom);
     let top_bottom_bands = top_bottom_bands_by_block(model, floating_shapes, geom);
     collect_blocks_with_block_anchors(
         &model.blocks,
@@ -7510,6 +7543,7 @@ fn collect_pdf_flow_items(
         capture,
         BodyCollectionSidecars {
             section_columns: &body_columns,
+            section_geometries: &body_geometries,
             pagination_hints: source_hints.pagination,
             tab_stops: source_hints.tab_stops,
             default_tab_stop_pt: source_hints.default_tab_stop_pt,
@@ -7576,6 +7610,54 @@ fn section_columns_by_block(blocks: &[Block], final_columns: Option<u16>) -> Vec
         }
     }
     columns
+}
+
+fn section_geometries_by_item(items: &[FlowItem], base: Geom) -> Vec<Geom> {
+    let mut current = items
+        .iter()
+        .find_map(|item| match item {
+            FlowItem::SectionBreak(setup) => Some(base.with_section_vertical(setup)),
+            _ => None,
+        })
+        .unwrap_or(base);
+    let mut geometries = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        geometries.push(current);
+        if matches!(item, FlowItem::SectionBreak(_)) {
+            current = items[index + 1..]
+                .iter()
+                .find_map(|next| match next {
+                    FlowItem::SectionBreak(setup) => Some(base.with_section_vertical(setup)),
+                    _ => None,
+                })
+                .unwrap_or(base);
+        }
+    }
+    geometries
+}
+
+fn section_geometries_by_block(blocks: &[Block], base: Geom) -> Vec<Geom> {
+    let mut current = blocks
+        .iter()
+        .find_map(|block| match block {
+            Block::SectionBreak(setup) => Some(base.with_section_vertical(setup)),
+            _ => None,
+        })
+        .unwrap_or(base);
+    let mut geometries = Vec::with_capacity(blocks.len());
+    for (index, block) in blocks.iter().enumerate() {
+        geometries.push(current);
+        if matches!(block, Block::SectionBreak(_)) {
+            current = blocks[index + 1..]
+                .iter()
+                .find_map(|next| match next {
+                    Block::SectionBreak(setup) => Some(base.with_section_vertical(setup)),
+                    _ => None,
+                })
+                .unwrap_or(base);
+        }
+    }
+    geometries
 }
 
 fn strict_font_context(fonts: &[Vec<u8>]) -> Result<FontContext> {
@@ -7903,13 +7985,6 @@ fn render_pdf(
     let mut document = PdfDoc::new();
     let page_count = pages.len();
     for (page_index, page_items) in pages.into_iter().enumerate() {
-        let Some(settings) = PageSettings::from_wh(geom.page_w, geom.page_h) else {
-            continue;
-        };
-        let mut page = document.start_page_with(settings);
-        // Link rects collected while drawing (top-down coords); added as annotations
-        // after the surface is finished (which releases its borrow on the page).
-        let mut page_links: Vec<(f32, f32, f32, f32, Rc<str>)> = Vec::new();
         let page_number = page_index + 1;
         let fallback_page_section;
         let page_section = match page_sections.get(page_index).and_then(Option::as_ref) {
@@ -7922,6 +7997,14 @@ fn render_pdf(
                 &fallback_page_section
             }
         };
+        let page_geom = geom.with_section_vertical(&page_section.setup);
+        let Some(settings) = PageSettings::from_wh(page_geom.page_w, page_geom.page_h) else {
+            continue;
+        };
+        let mut page = document.start_page_with(settings);
+        // Link rects collected while drawing (top-down coords); added as annotations
+        // after the surface is finished (which releases its borrow on the page).
+        let mut page_links: Vec<(f32, f32, f32, f32, Rc<str>)> = Vec::new();
         let (header_blocks, footer_blocks) = running_header_footer_blocks_for_page(
             &page_section.setup,
             page_number,
@@ -7942,7 +8025,7 @@ fn render_pdf(
         for line in &header_lines {
             // Clamp to the top margin so a tall/multi-line header can't bleed into
             // the body content area.
-            if hy + line.height > geom.top() {
+            if hy + line.height > page_geom.top() {
                 break;
             }
             let baseline = hy + line.baseline;
@@ -7961,10 +8044,10 @@ fn render_pdf(
             }
             hy += line.height;
         }
-        let mut fy = geom.bottom() + FOOTER_GAP;
+        let mut fy = page_geom.bottom() + FOOTER_GAP;
         for line in &footer_lines {
             // Clamp to the page so a tall footer doesn't run off the bottom edge.
-            if fy + line.height > geom.page_h {
+            if fy + line.height > page_geom.page_h {
                 break;
             }
             let baseline = fy + line.baseline;
@@ -7985,7 +8068,7 @@ fn render_pdf(
         }
         if page_section.setup.page_numbers {
             if let Some(line) = layout_page_number_line(page_index + 1, geom, &mut tcx) {
-                if fy + line.height <= geom.page_h {
+                if fy + line.height <= page_geom.page_h {
                     let baseline = fy + line.baseline;
                     let x0 = geom.left + line.x_indent;
                     draw_line_background(&mut surface, &line, x0, fy);
@@ -13203,6 +13286,12 @@ mod tests {
         });
         let ending = SectionSetup {
             section_break: Some(SectionBreakKind::EvenPage),
+            page: PageSetup {
+                width_pt: 220.0,
+                height_pt: 100.0,
+                margin_pt: 20.0,
+                ..PageSetup::default()
+            },
             header: vec![para("ending section", None)],
             ..SectionSetup::default()
         };
@@ -14341,6 +14430,12 @@ mod tests {
             })
         };
         let first = SectionSetup {
+            page: PageSetup {
+                width_pt: 220.0,
+                height_pt: 100.0,
+                margin_pt: 20.0,
+                ..PageSetup::default()
+            },
             header: vec![para("first section", None)],
             ..SectionSetup::default()
         };
@@ -14366,6 +14461,48 @@ mod tests {
             block_text(&pagination.page_sections[2].as_ref().unwrap().setup.header),
             "final section"
         );
+    }
+
+    #[test]
+    fn section_break_uses_ending_section_vertical_geometry() {
+        let first = SectionSetup {
+            page: PageSetup {
+                width_pt: 220.0,
+                height_pt: 100.0,
+                margin_pt: 20.0,
+                ..PageSetup::default()
+            },
+            ..SectionSetup::default()
+        };
+        let final_setup = SectionSetup {
+            page: PageSetup {
+                width_pt: 220.0,
+                height_pt: 220.0,
+                margin_pt: 20.0,
+                ..PageSetup::default()
+            },
+            ..SectionSetup::default()
+        };
+        let line = || {
+            FlowItem::Line(LineLayout {
+                height: 20.0,
+                baseline: 15.0,
+                x_indent: 0.0,
+                char_range: None,
+                background: None,
+                cell_spacing: Default::default(),
+                cell_paragraph: None,
+                cell_cant_split_group: None,
+                leaders: Vec::new(),
+                runs: Vec::new(),
+            })
+        };
+        let mut items = (0..5).map(|_| line()).collect::<Vec<_>>();
+        items.push(FlowItem::SectionBreak(first));
+
+        let pagination = paginate(items, Geom::from_setup(&final_setup.page), &final_setup);
+
+        assert_eq!(pagination.pages.len(), 3);
     }
 
     #[test]

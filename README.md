@@ -512,7 +512,10 @@ bridges.
 > layout engine. It is faithful to the model and produces selectable text, but
 > does **not** claim Word- or LibreOffice-exact pagination, floating-object
 > layout, end-to-end RTL typography, page-bottom footnote composition, unequal
-> section columns, or section-local page geometry. Unknown fields, remaining
+> section columns, or Word-exact section-local horizontal geometry. Supported
+> section breaks now apply each section's modeled page height and top/bottom
+> margins to native pagination and emitted PDF pages; unequal widths/orientation
+> remain outside this bounded bridge. Unknown fields, remaining
 > layout-dependent TOC/REF/NOTEREF cases, and unsupported value-changing field
 > semantics retain their cached display text with diagnostics.
 > `w:tblPrEx` remains a table-property exception path for the supported
