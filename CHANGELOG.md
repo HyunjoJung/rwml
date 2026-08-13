@@ -83,6 +83,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   invalid values preserve prior source-order state, and disabled restarts
   ignore their stored start.
 
+### Changed
+
+- Replaces the public implementation checklist with a concise capability
+  roadmap and explicit renderer, RTL, metafile, and editing ceilings. The
+  detailed release roadmap remains outside the public crate.
+
 ## [0.1.2] - 2026-08-02
 
 ### Added
