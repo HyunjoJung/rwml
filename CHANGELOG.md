@@ -8,6 +8,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Makes strict render validation account for ActualText-aware RTL list-marker
+  punctuation boundaries; the current 21-fixture public render corpus now
+  reports 1.000 mean text recall with no fixture below the 0.97 floor.
 - Allows `set_table_cell_text` to update direct text in a parent cell that
   contains a nested table while preserving the nested table's text and XML
   structure. Nested-grid layout remains a renderer ceiling.

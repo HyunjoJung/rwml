@@ -834,12 +834,12 @@ document plus identical context always yields identical results.
 
 Authored charts render as native vector preview charts (see
 [chart families](#chart-families)). On a real
-`.docx` corpus it reaches **0.996 mean text recall** with a **1.00 mean page-count
+`.docx` corpus it reaches **1.000 mean text recall** with a **1.00 mean page-count
 ratio** (extracting headers/footers,
 text boxes, nested tables, real list labels, caps; model-driven page geometry makes
-`.doc` page counts line up). 23 of the 24 public-corpus documents score exactly
-1.00; the exception is a right-to-left list fixture, for the reason given under
-[Scope & parity](#scope--parity). It still trails
+`.doc` page counts line up). All 21 public render fixtures score at least the
+0.97 per-document floor on the strict revision-bound report, with stable
+LibreOffice references. It still trails
 LibreOffice on exact pagination, exact floating-object layout, remaining
 layout-derived `PAGEREF` page-reference computation beyond trusted source markers,
 advanced TOC/REF/NOTEREF computed fields, and
@@ -1074,12 +1074,10 @@ code points.
   them is not universal — Acrobat and Chrome honor them, while MuPDF/PyMuPDF,
   pdfminer.six, and pypdf do not and split Arabic words apart when copying or
   extracting. Rendering itself is unaffected, and Hebrew (one glyph per cluster)
-  extracts intact. `scripts/render_validate.py` reads `ActualText` itself, so its
-  own measurement is not affected. The public corpus's right-to-left list fixture
-  still scores below the per-document floor for a narrower reason: its list
-  marker is a separate text object, so an extractor's bidirectional pass leaves
-  the marker's period beside the number rather than beside the following
-  right-to-left word. Both renderers draw that period in the same place.
+  extracts intact. `scripts/render_validate.py` reads `ActualText` itself and
+  conservatively normalizes a standalone period beside an RTL list label, so
+  its strict public-corpus measurement does not treat that PDF text-object
+  boundary as lost content.
 
 ## Roadmap
 

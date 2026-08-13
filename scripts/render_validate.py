@@ -1130,6 +1130,8 @@ def reference_token_recalled(
         token, got_set
     ):
         return True
+    if split_rtl_list_marker_recalled(token, got_set):
+        return True
     return False
 
 
@@ -1192,6 +1194,21 @@ def joined_note_marker_recalled(token: str, got_set: set[str]) -> bool:
     if value[-1].isdigit() and value[:-1] in got_set:
         return True
     return value[0].isdigit() and value[1:] in got_set
+
+
+def split_rtl_list_marker_recalled(token: str, got_set: set[str]) -> bool:
+    """Accept a list period split from an adjacent RTL label word.
+
+    LibreOffice can expose a right-to-left list label as ``.word`` while the
+    candidate's ActualText-aware content stream exposes ``word`` and ``.`` as
+    separate tokens. Both are the same visible marker/text pair; only accept
+    this normalization for RTL words and an explicitly present period.
+    """
+    value = token.strip(" \t\r\n\"'`(),;:[]{}<>")
+    if not value.startswith(".") or len(value) == 1:
+        return False
+    word = value[1:]
+    return "." in got_set and word in got_set and any(_is_rtl_char(ch) for ch in word)
 
 
 def text_recall(
