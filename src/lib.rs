@@ -5935,6 +5935,26 @@ mod tests {
         grpprl.push(title_page);
     }
 
+    fn push_section_page_number_format(grpprl: &mut Vec<u8>, format: u8) {
+        grpprl.extend_from_slice(&0x300Eu16.to_le_bytes());
+        grpprl.push(format);
+    }
+
+    fn push_section_page_number_restart(grpprl: &mut Vec<u8>, restart: u8) {
+        grpprl.extend_from_slice(&0x3011u16.to_le_bytes());
+        grpprl.push(restart);
+    }
+
+    fn push_section_page_number_start97(grpprl: &mut Vec<u8>, start: u16) {
+        grpprl.extend_from_slice(&0x501Cu16.to_le_bytes());
+        grpprl.extend_from_slice(&start.to_le_bytes());
+    }
+
+    fn push_section_page_number_start(grpprl: &mut Vec<u8>, start: u32) {
+        grpprl.extend_from_slice(&0x7044u16.to_le_bytes());
+        grpprl.extend_from_slice(&start.to_le_bytes());
+    }
+
     fn legacy_doc_with_section_page_grpprls(
         text: &str,
         section_cps: &[u32],
@@ -6945,6 +6965,132 @@ mod tests {
                 1
             );
             assert!(Document::open(&docx).unwrap().model().setup.title_page);
+        }
+    }
+
+    #[test]
+    fn legacy_doc_sepx_preserves_page_number_state_in_source_order() {
+        let section_cps = [0, 5, 10, 15];
+        let mut first = section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        let mut second = first.clone();
+        let mut final_section = first.clone();
+
+        push_section_page_number_format(&mut first, 0x01);
+        push_section_page_number_format(&mut first, 0x3C);
+        push_section_page_number_restart(&mut first, 1);
+        push_section_page_number_start97(&mut first, 4);
+        push_section_page_number_start(&mut first, 70_000);
+        push_section_page_number_start(&mut first, u32::MAX);
+        push_section_page_number_restart(&mut first, 2);
+
+        push_section_page_number_format(&mut second, 0x39);
+        push_section_page_number_restart(&mut second, 1);
+        push_section_page_number_start97(&mut second, 9);
+        push_section_page_number_restart(&mut second, 0);
+
+        push_section_page_number_format(&mut final_section, 0x17);
+        push_section_page_number_restart(&mut final_section, 1);
+
+        let sepx_grpprls = [
+            first.as_slice(),
+            second.as_slice(),
+            final_section.as_slice(),
+        ];
+        let bytes =
+            legacy_doc_with_section_page_grpprls("AAAAABBBBBCCCCC", &section_cps, &sepx_grpprls);
+
+        let doc = Document::open(&bytes).unwrap();
+        let model = doc.model();
+        let section_page_numbers = model
+            .blocks
+            .iter()
+            .filter_map(|block| match block {
+                Block::SectionBreak(setup) => {
+                    Some((setup.page_number_start, setup.page_number_format))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            section_page_numbers,
+            vec![
+                (Some(70_000), Some(PageNumberFormat::UpperRoman)),
+                (None, Some(PageNumberFormat::NumberInDash)),
+            ]
+        );
+        assert_eq!(model.setup.page_number_start, Some(1));
+        assert_eq!(
+            model.setup.page_number_format,
+            Some(PageNumberFormat::Decimal)
+        );
+
+        #[cfg(feature = "docx")]
+        {
+            let docx = doc.to_docx();
+            let document_xml = docx_part(&docx, "word/document.xml");
+            assert!(document_xml.contains(r#"<w:pgNumType w:start="70000" w:fmt="upperRoman"/>"#));
+            assert!(document_xml.contains(r#"<w:pgNumType w:fmt="numberInDash"/>"#));
+            assert!(document_xml.contains(r#"<w:pgNumType w:start="1" w:fmt="decimal"/>"#));
+
+            let reopened = Document::open(&docx).unwrap();
+            let reopened_model = reopened.model();
+            let reopened_page_numbers = reopened_model
+                .blocks
+                .iter()
+                .filter_map(|block| match block {
+                    Block::SectionBreak(setup) => {
+                        Some((setup.page_number_start, setup.page_number_format))
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(reopened_page_numbers, section_page_numbers);
+            assert_eq!(
+                reopened_model.setup.page_number_start,
+                model.setup.page_number_start
+            );
+            assert_eq!(
+                reopened_model.setup.page_number_format,
+                model.setup.page_number_format
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_doc_sepx_preserves_single_section_page_number_state() {
+        let section_cps = [0, 4];
+        let mut only = section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_page_number_format(&mut only, 0x16);
+        push_section_page_number_restart(&mut only, 1);
+        push_section_page_number_start97(&mut only, 0);
+        let sepx_grpprls = [only.as_slice()];
+        let bytes = legacy_doc_with_section_page_grpprls("ONLY", &section_cps, &sepx_grpprls);
+
+        let doc = Document::open(&bytes).unwrap();
+        let model = doc.model();
+
+        assert!(model
+            .blocks
+            .iter()
+            .all(|block| !matches!(block, Block::SectionBreak(_))));
+        assert_eq!(model.setup.page_number_start, Some(1));
+        assert_eq!(
+            model.setup.page_number_format,
+            Some(PageNumberFormat::DecimalZero)
+        );
+
+        #[cfg(feature = "docx")]
+        {
+            let docx = doc.to_docx();
+            assert!(docx_part(&docx, "word/document.xml")
+                .contains(r#"<w:pgNumType w:start="1" w:fmt="decimalZero"/>"#));
+            let reopened = Document::open(&docx).unwrap();
+            assert_eq!(reopened.model().setup.page_number_start, Some(1));
+            assert_eq!(
+                reopened.model().setup.page_number_format,
+                Some(PageNumberFormat::DecimalZero)
+            );
         }
     }
 

@@ -60,6 +60,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Preserves strict legacy `.doc` `sprmSFTitlePage` section state through the
   shared model and fresh `.docx` conversion/reopen for both single- and
   multi-section documents.
+- Preserves legacy `.doc` section page-number formats and restart values from
+  `sprmSNfcPgn`, `sprmSFPgnRestart`, `sprmSPgnStart97`, and `sprmSPgnStart`
+  through the shared model and fresh `.docx` conversion/reopen. Supported
+  MSONFC values map exactly, valid unrepresented values use a bounded decimal
+  fallback, non-counting values use the spec-permitted decimal fallback,
+  invalid values preserve prior source-order state, and disabled restarts
+  ignore their stored start.
 
 ## [0.1.2] - 2026-08-02
 
