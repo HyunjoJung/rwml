@@ -18,6 +18,37 @@ def step_body(text, name):
 
 
 class ReleaseWorkflowTests(unittest.TestCase):
+    def test_release_workflow_is_tag_only(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+
+        self.assertNotIn("workflow_dispatch", text)
+        self.assertIn("tags: ['v*']", text)
+
+    def test_local_release_preflight_is_non_publishing_and_complete(self):
+        preflight = WORKFLOW.parents[2] / "scripts" / "release_preflight.py"
+        text = preflight.read_text(encoding="utf-8")
+
+        self.assertNotIn("cargo publish", text)
+        self.assertNotIn("gh release", text)
+        for command in [
+            "public_hygiene_audit.py",
+            "gen_public_corpus.py",
+            "render_validate.py",
+            "bench_vs_mature.py",
+            "release_manifest.py",
+            "cargo package",
+        ]:
+            self.assertIn(command, text)
+        for artifact in [
+            "rwml-{version}.crate",
+            "rwml-fonts-{version}.crate",
+            "public-hygiene.json",
+            "render-validation.json",
+            "extract-benchmark.json",
+            "rwml-release-manifest.json",
+        ]:
+            self.assertIn(artifact, text)
+
     def test_release_workflow_publishes_manifest_artifact(self):
         text = WORKFLOW.read_text(encoding="utf-8")
 
@@ -80,6 +111,15 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("target/package/rwml-${RWML_VERSION}.crate", text)
         self.assertIn("target/package/rwml-${{ env.RWML_VERSION }}.crate", text)
         self.assertIn("actions/upload-artifact@v7", text)
+        for artifact in [
+            "rwml-${RWML_VERSION}.crate",
+            "rwml-fonts-${RWML_VERSION}.crate",
+            "public-hygiene.json",
+            "render-validation.json",
+            "extract-benchmark.json",
+            "rwml-release-manifest.json",
+        ]:
+            self.assertIn(artifact, text)
 
     def test_release_workflow_checks_patch_compatible_public_api(self):
         text = WORKFLOW.read_text(encoding="utf-8")
