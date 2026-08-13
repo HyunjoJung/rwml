@@ -31,8 +31,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev pkg-config
       - name: Check patch-compatible public API
         run: |
-          cargo semver-checks check-release --baseline-rev v0.1.0 --release-type patch --default-features
-          cargo semver-checks check-release --baseline-rev v0.1.0 --release-type patch --all-features
+          cargo semver-checks check-release --baseline-rev v0.1.1 --release-type patch --default-features
+          cargo semver-checks check-release --baseline-rev v0.1.1 --release-type patch --all-features
       - name: Public hygiene audit
         run: python3 scripts/public_hygiene_audit.py
       - name: Python release and evidence tooling tests

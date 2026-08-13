@@ -39,7 +39,10 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn(
             'crate_version=$(cargo metadata --no-deps --format-version 1', text
         )
-        self.assertIn('if [[ "$GITHUB_REF" == refs/tags/* ]]', text)
+        self.assertIn(
+            'if [[ "$GITHUB_REF_TYPE" != "tag" ]] || [[ "$GITHUB_REF_NAME" != v* ]]; then',
+            text,
+        )
         self.assertIn('"$GITHUB_REF_NAME" != "v${crate_version}"', text)
         self.assertIn(
             'echo "RWML_VERSION=${crate_version}" >> "$GITHUB_ENV"', text
@@ -47,7 +50,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn('--version "$RWML_VERSION"', text)
         self.assertNotIn('VERSION="${GITHUB_REF_NAME#v}"', text)
         self.assertIn("--release-policy public-release", text)
-        self.assertNotIn("--enforce-policy-inputs", text)
+        self.assertIn("--enforce-policy-inputs", text)
         self.assertIn("--hygiene-report dist/public-hygiene.json", text)
         self.assertIn("--corpus-manifest corpus/public/MANIFEST.tsv", text)
         self.assertIn("--corpus-manifest corpus/public/RENDER_MANIFEST.tsv", text)
@@ -86,7 +89,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
             "cargo install cargo-semver-checks --version 0.48.0 --locked", text
         )
         self.assertIn(
-            "cargo semver-checks check-release --baseline-rev v0.1.0 "
+            "cargo semver-checks check-release --baseline-rev v0.1.1 "
             "--release-type patch --default-features",
             text,
         )
@@ -158,7 +161,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         positions = [text.index(step) for step in ordered_steps]
         self.assertEqual(positions, sorted(positions))
         self.assertIn(
-            "cargo semver-checks check-release --baseline-rev v0.1.0 "
+            "cargo semver-checks check-release --baseline-rev v0.1.1 "
             "--release-type patch --all-features",
             text,
         )

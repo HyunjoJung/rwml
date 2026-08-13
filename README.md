@@ -912,10 +912,10 @@ benchmark, and exactly the public `MANIFEST.tsv` plus `RENDER_MANIFEST.tsv`
 corpus manifests with matching document paths whose listed documents exist, and
 rejects hygiene, validation, or benchmark reports whose compact gates failed or
 were generated with weaker thresholds than the named `public-release` policy.
-The release workflow intentionally emits the non-strict policy manifest from the
-packaged `.crate` artifact, public hygiene report, and public corpus manifests,
-then uploads the manifest and crate package as workflow artifacts before
-publishing.
+The tag-bound release workflow generates the strict render and extraction
+reports on the tagged revision, passes them with the hygiene and public-corpus
+manifests to `release_manifest.py --enforce-policy-inputs`, and uploads the
+exact crates plus evidence to both workflow artifacts and the GitHub Release.
 The renderer also maps a small common Symbol/Wingdings display subset to Unicode,
 including the Symbol `0xB7` bullet, before PDF shaping; text extraction and exporters still preserve the source
 code points.

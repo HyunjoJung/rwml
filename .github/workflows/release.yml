@@ -1,6 +1,6 @@
 name: Release
 
-# Publishes to crates.io when a `v*` tag is pushed. Requires the
+# Publishes to crates.io only from an exact `v*` tag. Requires the
 # CARGO_REGISTRY_TOKEN repository secret.
 on:
   push:
@@ -12,7 +12,7 @@ jobs:
     name: Publish to crates.io
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -21,8 +21,8 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      - name: Install system libraries (fontconfig for the render feature)
-        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev pkg-config
+      - name: Install system libraries (fontconfig and LibreOffice validation)
+        run: sudo apt-get update && sudo apt-get install -y libfontconfig1-dev libreoffice pkg-config python3-venv
       - name: Install matching wasm-bindgen CLI
         run: cargo install wasm-bindgen-cli --version 0.2.126 --locked
       - name: Install semantic-version compatibility checker
@@ -30,10 +30,22 @@ jobs:
 
       - name: Verify release identity
         run: |
+          if [[ "$GITHUB_REF_TYPE" != "tag" ]] || [[ "$GITHUB_REF_NAME" != v* ]]; then
+            echo "release workflow must run from a v* tag (got $GITHUB_REF)" >&2
+            exit 1
+          fi
+          tag_commit=$(git rev-list -n 1 "$GITHUB_REF_NAME")
+          if [[ "$tag_commit" != "$GITHUB_SHA" ]]; then
+            echo "tag $GITHUB_REF_NAME does not point at workflow revision $GITHUB_SHA" >&2
+            exit 1
+          fi
+          if [[ -n "$(git status --porcelain)" ]]; then
+            echo "release checkout is dirty" >&2
+            exit 1
+          fi
           crate_version=$(cargo metadata --no-deps --format-version 1 \
             | python3 -c "import sys,json;print(json.load(sys.stdin)['packages'][0]['version'])")
-          if [[ "$GITHUB_REF" == refs/tags/* ]] && \
-             [[ "$GITHUB_REF_NAME" != "v${crate_version}" ]]; then
+          if [[ "$GITHUB_REF_NAME" != "v${crate_version}" ]]; then
             echo "tag $GITHUB_REF_NAME does not match Cargo version ${crate_version}" >&2
             exit 1
           fi
@@ -44,8 +56,8 @@ jobs:
           python3 scripts/public_hygiene_audit.py
           PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_*.py'
           python3 scripts/gen_public_corpus.py --check
-          cargo semver-checks check-release --baseline-rev v0.1.0 --release-type patch --default-features
-          cargo semver-checks check-release --baseline-rev v0.1.0 --release-type patch --all-features
+          cargo semver-checks check-release --baseline-rev v0.1.1 --release-type patch --default-features
+          cargo semver-checks check-release --baseline-rev v0.1.1 --release-type patch --all-features
           cargo fmt --all -- --check
           cargo clippy --all-targets -- -D warnings
           cargo clippy --all-targets --all-features -- -D warnings
@@ -64,6 +76,22 @@ jobs:
           wasm-bindgen --target nodejs --out-dir target/wasm-node target/wasm32-unknown-unknown/debug/rwml.wasm
           node tests/wasm_node_smoke.cjs target/wasm-node corpus/public/synthetic/comments.docx
           node tests/wasm_demo_report_format.mjs
+
+      - name: Generate strict revision-bound evidence
+        run: |
+          python3 -m venv "$RUNNER_TEMP/rwml-release-tools"
+          "$RUNNER_TEMP/rwml-release-tools/bin/pip" install --disable-pip-version-check --no-cache-dir PyMuPDF Pillow
+          mkdir -p dist
+          "$RUNNER_TEMP/rwml-release-tools/bin/python" scripts/render_validate.py \
+            --json --soffice local --manifest corpus/public/RENDER_MANIFEST.tsv \
+            --recall-min 0.97 --min-mean-recall 0.90 --max-skipped 0 --verify-oracle \
+            > dist/render-validation.json
+          cargo build --release --example extract --locked
+          "$RUNNER_TEMP/rwml-release-tools/bin/python" scripts/bench_vs_mature.py \
+            --corpus corpus/public/benchmark --json \
+            --version "$RWML_VERSION" --git-rev "$GITHUB_SHA" \
+            --min-poi-recall-mean 0.95 --min-poi-f1-mean 0.95 --max-errors 0 --min-scored 1 \
+            --output dist/extract-benchmark.json
 
       - name: Publish bundled font crate dependency
         env:
@@ -114,7 +142,10 @@ jobs:
             --version "$RWML_VERSION" \
             --git-rev "$GITHUB_SHA" \
             --release-policy public-release \
+            --enforce-policy-inputs \
             --hygiene-report dist/public-hygiene.json \
+            --validation-report dist/render-validation.json \
+            --benchmark-report dist/extract-benchmark.json \
             --corpus-manifest corpus/public/MANIFEST.tsv \
             --corpus-manifest corpus/public/RENDER_MANIFEST.tsv \
             --output dist/rwml-release-manifest.json \
@@ -128,6 +159,8 @@ jobs:
           path: |
             dist/public-hygiene.json
             dist/rwml-release-manifest.json
+            dist/render-validation.json
+            dist/extract-benchmark.json
             target/package/rwml-${{ env.RWML_VERSION }}.crate
             rwml-fonts/target/package/rwml-fonts-${{ env.RWML_VERSION }}.crate
 
@@ -141,3 +174,25 @@ jobs:
             --name rwml \
             --version "$RWML_VERSION" \
             --artifact "target/package/rwml-${RWML_VERSION}.crate"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          assets=(
+            "target/package/rwml-${RWML_VERSION}.crate"
+            "rwml-fonts/target/package/rwml-fonts-${RWML_VERSION}.crate"
+            "dist/public-hygiene.json"
+            "dist/render-validation.json"
+            "dist/extract-benchmark.json"
+            "dist/rwml-release-manifest.json"
+          )
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "${assets[@]}" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --verify-tag \
+              --title "rwml ${RWML_VERSION}" \
+              --generate-notes \
+              "${assets[@]}"
+          fi
