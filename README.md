@@ -689,8 +689,9 @@ CHPX-resident `sprmCHighlight` palette highlighting plus direct `sprmCIss`
 super/subscript plus literal direct `sprmCFSmallCaps`/`sprmCFCaps`
 capitalization**), the STSH style sheet + outline levels (headings),
 `sprmTDefTable` (merge-aware tables with bounded relative column proportions),
-`PlcfSed`/SED section boundaries with SEPX page size, orientation, and
-nonnegative per-side margins, `PlfLst` list autonumbers with bounded
+`PlcfSed`/SED section boundaries with SEPX page size, orientation, nonnegative
+per-side margins, title-page state, and page-number restart/format state,
+`PlfLst` list autonumbers with bounded
 `PlfLfo`/`LFOLVL` per-instance overrides and shared-list continuation,
 hyperlink field marks, and
 `PICF` inline images. The rich pass also retains each piece's PCD `Prm` and
@@ -965,21 +966,29 @@ code points.
   legacy header/footer variants when story indexes are available, and falls back
   to a default running header for unsplit recovered header/footer text.
   Valid `PlcfSed` SED records also preserve each section's SEPX page size,
-  orientation, nonnegative left/right/top/bottom margins, and equal-width
-  `sprmSCcolumns` counts from 1 through 44, plus strict `sprmSFTitlePage`
-  first-page state, through `SectionSetup` and the final `DocSetup`, including
-  headerless and single-section documents. Boundary SEPX records preserve
-  new/even/odd `sprmSBkc` break kinds and title-page state through the shared
-  model and fresh `.docx` conversion/reopen. An explicit unequal-spacing
-  selector leaves the column count unmodeled; a later valid equal-spacing
-  selector restores the last valid count. Malformed local SEPX data keeps that
-  section's deterministic default without discarding valid neighboring
-  sections.
+  orientation, nonnegative left/right/top/bottom margins, equal-width
+  `sprmSCcolumns` counts from 1 through 44, strict `sprmSFTitlePage` first-page
+  state, and source-order page-number format/restart state through
+  `SectionSetup` and the final `DocSetup`, including headerless and
+  single-section documents. Boundary SEPX records preserve new/even/odd
+  `sprmSBkc` break kinds, title-page state, and bounded `sprmSNfcPgn` plus
+  `sprmSFPgnRestart`/`sprmSPgnStart97`/`sprmSPgnStart` values through the shared
+  model and fresh `.docx` conversion/reopen. Supported MSONFC values map to the
+  existing model formats; valid unrepresentable values use a bounded decimal
+  fallback, non-counting values use the spec-permitted decimal fallback, and
+  invalid values leave prior state intact. A
+  disabled restart ignores its stored start, while an enabled zero/default
+  start normalizes to the model's one-based contract. An explicit unequal-
+  spacing selector leaves the column count unmodeled; a later valid equal-
+  spacing selector restores the last valid count. Malformed local SEPX data
+  keeps that section's deterministic default without discarding valid
+  neighboring sections.
   Continuous/new-column section marks normalize to the shared model's
   next-page fallback. Custom column widths/gaps, separator lines, manual column
   breaks, RTL column ordering, gutters/facing pages, header/footer distances,
-  page borders/grids, vertical justification, and negative fixed-position
-  top/bottom semantics remain outside this bounded reader path.
+  page borders/grids, vertical justification, negative fixed-position
+  top/bottom semantics, display-number effects on physical pagination, and
+  page-number footer inference remain outside this bounded reader path.
   Exact multi-note/endnote reference markers and exact text-box shape anchors
   are not yet fully promoted, so non-body regions still remain in the flat
   block stream;
@@ -1225,7 +1234,8 @@ current limit never counts as finishing it.
       `PlcffndRef`/`PlcfendRef`, count-aligned text-box anchors from `PlcSpaMom`,
       annotation author metadata, and per-section `PlcfHdd` header/footer story
       application through `PlcfSed`, plus SED/SEPX-backed page size,
-      orientation, and nonnegative per-side margins for single, headerless, and
+      orientation, nonnegative per-side margins, title-page state, equal-width
+      columns, and page-number restart/format state for single, headerless, and
       multi-section documents. Missing annotation bookmark tables,
       count-mismatched shape/text-box tables, malformed local SEPX data, and
       unsupported section properties retain bounded fallbacks by design

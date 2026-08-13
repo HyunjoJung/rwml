@@ -17,9 +17,9 @@ use crate::fib::{self, Fib};
 use crate::list::Numberer;
 use crate::model::{
     normalize_field_instruction, Align, Block, CharProps, DocMeta, DocModel, DocSetup, FieldRole,
-    Image, Indent, ListInfo, PageSetup, PaginationHint, ParaProps, Paragraph, SectionBreakKind,
-    SectionSetup, SourceRegion, SourceRegionKind, Spacing, Stats, TableCellPaginationHints,
-    TableRowPaginationHint,
+    Image, Indent, ListInfo, PageNumberFormat, PageSetup, PaginationHint, ParaProps, Paragraph,
+    SectionBreakKind, SectionSetup, SourceRegion, SourceRegionKind, Spacing, Stats,
+    TableCellPaginationHints, TableRowPaginationHint,
 };
 use crate::papx::{
     PapxTable, ParagraphIndentOverrides, ParagraphJustification, ParagraphLineSpacing,
@@ -160,6 +160,8 @@ fn legacy_doc_setup_from_regions(
         setup.page = span.page;
         setup.columns = span.columns;
         setup.title_page = span.title_page;
+        setup.page_number_start = span.page_number_start;
+        setup.page_number_format = span.page_number_format;
     }
     setup
 }
@@ -192,6 +194,8 @@ fn legacy_doc_section_setups_from_regions(
         setup.page = span.page;
         setup.columns = span.columns;
         setup.title_page = span.title_page;
+        setup.page_number_start = span.page_number_start;
+        setup.page_number_format = span.page_number_format;
         setup.section_break = Some(span.section_break);
     }
     for region in regions.iter().filter(|region| {
@@ -256,6 +260,8 @@ fn apply_legacy_section_setup_to_doc_setup(section: &SectionSetup, setup: &mut D
     setup.first_footer = section.first_footer.clone();
     setup.even_footer = section.even_footer.clone();
     setup.title_page = section.title_page;
+    setup.page_number_start = section.page_number_start;
+    setup.page_number_format = section.page_number_format;
 }
 
 fn build_legacy_region_blocks(
@@ -461,6 +467,9 @@ const SPRM_S_F_EVENLY_SPACED: u16 = 0x3005;
 const SPRM_S_BKC: u16 = 0x3009;
 const SPRM_S_F_TITLE_PAGE: u16 = 0x300A;
 const SPRM_S_C_COLUMNS: u16 = 0x500B;
+const SPRM_S_NFC_PGN: u16 = 0x300E;
+const SPRM_S_F_PGN_RESTART: u16 = 0x3011;
+const SPRM_S_PGN_START_97: u16 = 0x501C;
 const SPRM_S_B_ORIENTATION: u16 = 0x301D;
 const SPRM_S_XA_PAGE: u16 = 0xB01F;
 const SPRM_S_YA_PAGE: u16 = 0xB020;
@@ -468,6 +477,7 @@ const SPRM_S_DXA_LEFT: u16 = 0xB021;
 const SPRM_S_DXA_RIGHT: u16 = 0xB022;
 const SPRM_S_DYA_TOP: u16 = 0x9023;
 const SPRM_S_DYA_BOTTOM: u16 = 0x9024;
+const SPRM_S_PGN_START: u16 = 0x7044;
 
 fn legacy_header_footer_setup_slot(
     setup: &mut DocSetup,
@@ -550,6 +560,8 @@ struct LegacySectionSpan {
     page: PageSetup,
     columns: Option<u16>,
     title_page: bool,
+    page_number_start: Option<u32>,
+    page_number_format: Option<PageNumberFormat>,
     section_break: SectionBreakKind,
 }
 
@@ -558,6 +570,8 @@ struct LegacySectionProperties {
     page: PageSetup,
     columns: Option<u16>,
     title_page: bool,
+    page_number_start: Option<u32>,
+    page_number_format: Option<PageNumberFormat>,
     section_break: SectionBreakKind,
 }
 
@@ -621,6 +635,8 @@ fn parse_legacy_section_spans(
             page: properties.page,
             columns: properties.columns,
             title_page: properties.title_page,
+            page_number_start: properties.page_number_start,
+            page_number_format: properties.page_number_format,
             section_break: properties.section_break,
         });
     }
@@ -651,6 +667,8 @@ fn scan_legacy_section_grpprl(grpprl: &[u8]) -> Option<LegacySectionProperties> 
     // [MS-DOC] 2.6.4 defaults to equal spacing and stores the count minus one.
     let mut column_count = None;
     let mut columns_evenly_spaced = true;
+    let mut page_number_restart = false;
+    let mut page_number_start = None;
     let mut pos = 0usize;
     while pos < grpprl.len() {
         let sprm = u16le(grpprl, pos)?;
@@ -680,6 +698,21 @@ fn scan_legacy_section_grpprl(grpprl: &[u8]) -> Option<LegacySectionProperties> 
             SPRM_S_C_COLUMNS => {
                 if let Some(value @ 0..=43) = u16le(operand, 0) {
                     column_count = value.checked_add(1);
+                }
+            }
+            SPRM_S_NFC_PGN => {
+                if let Some(format) = operand.first().copied().and_then(legacy_page_number_format) {
+                    properties.page_number_format = Some(format);
+                }
+            }
+            SPRM_S_F_PGN_RESTART => match operand.first().copied() {
+                Some(0) => page_number_restart = false,
+                Some(1) => page_number_restart = true,
+                _ => {}
+            },
+            SPRM_S_PGN_START_97 => {
+                if let Some(value) = u16le(operand, 0) {
+                    page_number_start = Some(u32::from(value));
                 }
             }
             SPRM_S_B_ORIENTATION => match operand.first().copied() {
@@ -720,12 +753,50 @@ fn scan_legacy_section_grpprl(grpprl: &[u8]) -> Option<LegacySectionProperties> 
                     properties.page.margin_bottom_pt = Some(f32::from(value) / 20.0);
                 }
             }
+            SPRM_S_PGN_START => {
+                if let Some(value @ 0..=2_147_483_646) = u32le(operand, 0) {
+                    page_number_start = Some(value);
+                }
+            }
             _ => {}
         }
         pos = operand_end;
     }
     properties.columns = columns_evenly_spaced.then_some(column_count).flatten();
+    properties.page_number_start =
+        page_number_restart.then_some(page_number_start.unwrap_or(0).max(1));
     Some(properties)
+}
+
+fn legacy_page_number_format(nfc: u8) -> Option<PageNumberFormat> {
+    match nfc {
+        0x00 | 0x28 => Some(PageNumberFormat::Decimal),
+        0x01 => Some(PageNumberFormat::UpperRoman),
+        0x02 => Some(PageNumberFormat::LowerRoman),
+        0x03 => Some(PageNumberFormat::UpperLetter),
+        0x04 => Some(PageNumberFormat::LowerLetter),
+        0x05 => Some(PageNumberFormat::Ordinal),
+        0x06 => Some(PageNumberFormat::CardinalText),
+        0x07 => Some(PageNumberFormat::OrdinalText),
+        0x0E => Some(PageNumberFormat::DecimalFullWidth),
+        0x0F => Some(PageNumberFormat::DecimalHalfWidth),
+        0x12 => Some(PageNumberFormat::DecimalEnclosedCircle),
+        0x13 => Some(PageNumberFormat::DecimalFullWidth2),
+        0x16 => Some(PageNumberFormat::DecimalZero),
+        0x18 => Some(PageNumberFormat::Ganada),
+        0x19 => Some(PageNumberFormat::Chosung),
+        0x1A => Some(PageNumberFormat::DecimalEnclosedFullstop),
+        0x1B => Some(PageNumberFormat::DecimalEnclosedParen),
+        0x29 => Some(PageNumberFormat::KoreanDigital),
+        0x2A => Some(PageNumberFormat::KoreanCounting),
+        0x2B => Some(PageNumberFormat::KoreanLegal),
+        0x2C => Some(PageNumberFormat::KoreanDigital2),
+        0x39 => Some(PageNumberFormat::NumberInDash),
+        // [MS-DOC] permits fallback for non-counting formats; other formats absent
+        // from the shared enum use the same deterministic decimal ceiling.
+        0x08..=0x3B | 0xFF => Some(PageNumberFormat::Decimal),
+        _ => None,
+    }
 }
 
 fn legacy_section_properties_default() -> LegacySectionProperties {
@@ -733,6 +804,8 @@ fn legacy_section_properties_default() -> LegacySectionProperties {
         page: legacy_section_page_setup_default(),
         columns: None,
         title_page: false,
+        page_number_start: None,
+        page_number_format: None,
         section_break: SectionBreakKind::NextPage,
     }
 }
@@ -1973,6 +2046,48 @@ mod tests {
     }
 
     #[test]
+    fn legacy_page_number_format_maps_bounded_msonfc_subset() {
+        let exact = [
+            (0x00, PageNumberFormat::Decimal),
+            (0x01, PageNumberFormat::UpperRoman),
+            (0x02, PageNumberFormat::LowerRoman),
+            (0x03, PageNumberFormat::UpperLetter),
+            (0x04, PageNumberFormat::LowerLetter),
+            (0x05, PageNumberFormat::Ordinal),
+            (0x06, PageNumberFormat::CardinalText),
+            (0x07, PageNumberFormat::OrdinalText),
+            (0x0E, PageNumberFormat::DecimalFullWidth),
+            (0x0F, PageNumberFormat::DecimalHalfWidth),
+            (0x12, PageNumberFormat::DecimalEnclosedCircle),
+            (0x13, PageNumberFormat::DecimalFullWidth2),
+            (0x16, PageNumberFormat::DecimalZero),
+            (0x18, PageNumberFormat::Ganada),
+            (0x19, PageNumberFormat::Chosung),
+            (0x1A, PageNumberFormat::DecimalEnclosedFullstop),
+            (0x1B, PageNumberFormat::DecimalEnclosedParen),
+            (0x28, PageNumberFormat::Decimal),
+            (0x29, PageNumberFormat::KoreanDigital),
+            (0x2A, PageNumberFormat::KoreanCounting),
+            (0x2B, PageNumberFormat::KoreanLegal),
+            (0x2C, PageNumberFormat::KoreanDigital2),
+            (0x39, PageNumberFormat::NumberInDash),
+        ];
+
+        for (nfc, expected) in exact {
+            assert_eq!(legacy_page_number_format(nfc), Some(expected));
+        }
+        for fallback in [0x08, 0x0A, 0x17, 0x2D, 0x3A, 0x3B, 0xFF] {
+            assert_eq!(
+                legacy_page_number_format(fallback),
+                Some(PageNumberFormat::Decimal)
+            );
+        }
+        for invalid in [0x3C, 0x7F, 0xFE] {
+            assert_eq!(legacy_page_number_format(invalid), None);
+        }
+    }
+
+    #[test]
     fn legacy_sepx_scanner_keeps_last_valid_values() {
         let mut grpprl = vec![
             0x00, 0xC0, 0x02, 0xAA, 0xBB, // unknown variable-length sprm
@@ -2153,6 +2268,8 @@ mod tests {
                     page: PageSetup::default(),
                     columns: Some(2),
                     title_page: false,
+                    page_number_start: None,
+                    page_number_format: None,
                     section_break: SectionBreakKind::NextPage,
                 },
                 LegacySectionSpan {
@@ -2161,6 +2278,8 @@ mod tests {
                     page: PageSetup::default(),
                     columns: Some(3),
                     title_page: false,
+                    page_number_start: None,
+                    page_number_format: None,
                     section_break: SectionBreakKind::NextPage,
                 },
             ],
