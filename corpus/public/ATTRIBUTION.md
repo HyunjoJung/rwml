@@ -38,6 +38,7 @@ LibreOffice's `Text` filter.
 
 Real-producer files copied verbatim from permissively-licensed upstreams. Only **MIT** /
 **CC0** sources are vendored; each file's origin and license is listed below.
+The expected report baselines for these files are included in `MANIFEST.tsv`.
 
 ### `vendored/python-docx/` — MIT
 

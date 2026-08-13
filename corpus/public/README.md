@@ -15,7 +15,9 @@ of every legacy binary and blocks oversized files.
 Every file here is safe to redistribute:
 
 - `MANIFEST.tsv` — expected `Document::report()` feature counts and warning
-  classes for the synthetic fixtures. It is checked by `tests/public_corpus.rs`.
+  classes for every committed public `.docx` fixture, including the generated
+  synthetic set and permissively licensed vendored files. It is checked by
+  `tests/public_corpus.rs`.
 - `RENDER_MANIFEST.tsv` — expected native-render page counts and render warning
   classes for the synthetic fixtures. It is checked when tests run with
   `--features render`.

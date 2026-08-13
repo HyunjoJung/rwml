@@ -16,3 +16,7 @@ synthetic/two-columns.docx	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	-
 synthetic/rtl-table.docx	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	-
 synthetic/table-cell-lists.docx	0	0	0	0	0	0	0	0	0	0	0	1	0	0	0	0	-
 synthetic/wrap-top-bottom.docx	0	0	0	1	0	0	0	0	0	0	0	0	1	0	0	0	FloatingShapePlaceholderOnly
+vendored/python-docx/blk-inner-content.docx	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	-
+vendored/python-docx/having-images.docx	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	-
+vendored/python-docx/sct-inner-content.docx	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	-
+vendored/python-docx/test.docx	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	-
