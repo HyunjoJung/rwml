@@ -4245,25 +4245,29 @@ fn set_table_cell_text_uses_vmerge_logical_rows() {
 }
 
 #[test]
-fn set_table_cell_text_rejects_nested_table_cell_without_mutation() {
-    let before = nested_table_docx();
-    let before_parts = unzip_parts(&before);
-    let mut doc = Document::open(&before).expect("fixture opens");
+fn set_table_cell_text_edits_parent_text_without_touching_nested_table() {
+    let mut doc = Document::open(&nested_table_docx()).expect("fixture opens");
 
-    let err = doc
-        .set_table_cell_text(0, 0, 0, "Updated")
-        .expect_err("nested table parent cell should be rejected");
+    doc.set_table_cell_text(0, 0, 0, "Updated")
+        .expect("direct parent text should remain editable");
+
+    let saved = doc.save().expect("save edited nested-table document");
+    let body = String::from_utf8(unzip_parts(&saved)["word/document.xml"].clone()).unwrap();
     assert!(
-        err.to_string().contains("nested table"),
-        "unexpected error: {err}"
+        body.contains("<w:t>Updated</w:t>"),
+        "parent cell text was not updated: {body}"
+    );
+    assert!(
+        !body.contains("<w:t>Outer</w:t>"),
+        "old parent cell text remains: {body}"
+    );
+    assert!(
+        body.contains("<w:t>Inner</w:t>"),
+        "nested table text was changed or dropped: {body}"
     );
 
-    let saved = doc.save().expect("save after rejected edit");
-    let after_parts = unzip_parts(&saved);
-    assert_eq!(
-        after_parts["word/document.xml"], before_parts["word/document.xml"],
-        "rejected nested table edit mutated document.xml"
-    );
+    let reopened = Document::open(&saved).expect("reopen edited nested-table document");
+    assert_eq!(reopened.main_text(), "Updated Inner");
 }
 
 #[test]

@@ -2017,9 +2017,10 @@ impl Document {
     /// restart/origin cell. The target cell's visible `w:t` content is replaced by
     /// `text`; surrounding table structure and other cells are preserved.
     ///
-    /// This is intentionally a focused body-table edit surface. Parent cells
-    /// containing nested tables are rejected before mutation. Read views remain stale
-    /// until explicitly refreshed or reopened.
+    /// This is intentionally a focused body-table edit surface. When a parent cell
+    /// contains a nested table, only the parent's direct text is replaced; nested
+    /// table content and structure remain untouched. Read views remain stale until
+    /// explicitly refreshed or reopened.
     /// Available with the default `docx` feature.
     #[cfg(feature = "docx")]
     pub fn set_table_cell_text(
@@ -2039,14 +2040,6 @@ impl Document {
                     "table cell index out of range: table={table_index} row={row_index} cell={cell_index}"
                 ))
             };
-            if tree
-                .wml_table_cell_has_nested_table_under(body, table_index, row_index, cell_index)
-                .ok_or_else(&index_error)?
-            {
-                return Err(Error::Docx(format!(
-                    "set_table_cell_text: table={table_index} row={row_index} cell={cell_index} contains a nested table"
-                )));
-            }
             let runs = tree
                 .wml_table_cell_text_runs_under(body, table_index, row_index, cell_index)
                 .ok_or_else(index_error)?;

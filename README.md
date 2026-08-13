@@ -234,6 +234,11 @@ Newlines remain inline breaks rather than new paragraphs, while existing
 page/column breaks, other run objects, data bindings, and rich-run structure
 remain preserved rather than interpreted or redistributed.
 
+`set_table_cell_text` replaces direct text in a selected top-level table cell,
+including a parent cell that contains a nested table; the nested table's text
+and XML structure are excluded from the replacement and preserved. Nested-grid
+layout remains a renderer ceiling.
+
 Several existing edit methods can share one package rollback boundary:
 
 ```rust

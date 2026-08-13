@@ -8,6 +8,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Allows `set_table_cell_text` to update direct text in a parent cell that
+  contains a nested table while preserving the nested table's text and XML
+  structure. Nested-grid layout remains a renderer ceiling.
 - Honors effective `w:cantSplit` on recursively flattened nested DOCX table
   rows: fitting protected rows start on a fresh page when needed, while rows
   taller than a fresh page still split for deterministic progress. Nested grid

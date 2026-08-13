@@ -370,6 +370,7 @@ pub(crate) enum TabLeader {
     Underscore,
     Heavy,
     MiddleDot,
+    #[cfg(feature = "render")]
     Bar,
 }
 

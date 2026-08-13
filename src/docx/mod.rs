@@ -3786,6 +3786,7 @@ fn parse_document_id(xml: &str) -> Option<String> {
     None
 }
 
+#[cfg(any(feature = "render", test))]
 fn parse_default_tab_stop_pt(xml: &str) -> Option<f32> {
     let mut r = Reader::from_str(xml);
     loop {
