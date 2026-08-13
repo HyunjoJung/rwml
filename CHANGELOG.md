@@ -54,6 +54,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   a replacement `w:lvl` definition — so a list that restarts or redefines a
   level numbers correctly. Levels an override does not mention keep the abstract
   definition. Legacy `.doc` already honored the equivalent `LFOLVL` overrides.
+- Honors legacy `.doc` `LVLF.fNoRestart` restart thresholds, including levels
+  supplied by an `LFOLVL` formatting override, so a deeper sequence continues
+  across the configured levels but restarts after a more significant one.
 
 ## [0.1.2] - 2026-08-02
 

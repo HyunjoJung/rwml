@@ -21,8 +21,8 @@ const MAX_XST_LEN: usize = 256;
 struct Level {
     nfc: u8,
     start: i32,
-    /// `fNoRestart` — this level does not restart when a shallower level advances.
-    no_restart: bool,
+    /// `ilvlRestartLim` when `fNoRestart` is set.
+    restart_limit: Option<u8>,
     /// 1-based positions in `xst` of each level's number placeholder (0-term).
     rgbxch_nums: [u8; 9],
     /// Character after the number: 0 = tab, 1 = space, 2 = nothing.
@@ -140,8 +140,8 @@ fn parse_lvl(table: &[u8], cur: &mut usize) -> Option<Level> {
     let lvlf = table.get(*cur..lvlf_end)?;
     let start = i32::from_le_bytes(lvlf[0..4].try_into().ok()?);
     let nfc = lvlf[4];
-    // Flags byte @5: bit3 = fNoRestart.
-    let no_restart = (lvlf[5] >> 3) & 1 != 0;
+    // [MS-DOC] 2.9.150: flags byte bit 3 gates ilvlRestartLim at byte 26.
+    let restart_limit = ((lvlf[5] >> 3) & 1 != 0).then_some(lvlf[26]);
     let mut rgbxch_nums = [0u8; 9];
     rgbxch_nums.copy_from_slice(&lvlf[6..15]);
     let ixch_follow = lvlf[15];
@@ -172,7 +172,7 @@ fn parse_lvl(table: &[u8], cur: &mut usize) -> Option<Level> {
     Some(Level {
         nfc,
         start,
-        no_restart,
+        restart_limit,
         rgbxch_nums,
         ixch_follow,
         xst,
@@ -363,11 +363,15 @@ impl<'a> Numberer<'a> {
         } else {
             cnt[ilvl] = cnt[ilvl].saturating_add(1);
         }
-        // Deeper levels restart on the next occurrence — unless they opt out
-        // (`fNoRestart`).
+        // [MS-DOC] 2.4.6.4: a deeper sequence restarts only after a level more
+        // significant than its effective ilvlRestartLim. Invalid limits use the
+        // ordinary rule rather than suppressing restarts indefinitely.
         for (k, seen_k) in seen.iter_mut().enumerate().skip(ilvl + 1) {
-            let nr = level_for(k).is_some_and(|level| level.no_restart);
-            if !nr {
+            let restart_limit = level_for(k)
+                .and_then(|level| level.restart_limit)
+                .filter(|limit| usize::from(*limit) <= k)
+                .map_or(k, usize::from);
+            if ilvl < restart_limit {
                 *seen_k = false;
             }
         }
@@ -418,7 +422,7 @@ mod tests {
         Level {
             nfc: 0,
             start,
-            no_restart: false,
+            restart_limit: None,
             rgbxch_nums,
             ixch_follow,
             xst,
@@ -499,6 +503,58 @@ mod tests {
         }
 
         parsed_simple_decimal_lists_with_lfo(lfo)
+    }
+
+    fn parsed_multilevel_decimal_lists(mut levels: Vec<Vec<u8>>, overrides: Vec<Vec<u8>>) -> Lists {
+        while levels.len() < 9 {
+            levels.push(serialized_lvl(1, 0, [0; 9], 2, &[]));
+        }
+
+        let mut table = Vec::new();
+        table.extend_from_slice(&1i16.to_le_bytes());
+        let mut lstf = [0u8; 28];
+        lstf[0..4].copy_from_slice(&7i32.to_le_bytes());
+        table.extend_from_slice(&lstf);
+        let lcb_lst = table.len();
+        for level in levels {
+            table.extend(level);
+        }
+
+        let fc_lfo = table.len();
+        let mut lfo = Vec::new();
+        lfo.extend_from_slice(&1u32.to_le_bytes());
+        let mut header = [0u8; 16];
+        header[0..4].copy_from_slice(&7i32.to_le_bytes());
+        header[12] = overrides.len() as u8;
+        lfo.extend_from_slice(&header);
+        lfo.extend_from_slice(&0u32.to_le_bytes());
+        for record in overrides {
+            lfo.extend(record);
+        }
+        let lcb_lfo = lfo.len();
+        table.extend(lfo);
+
+        parse(&table, 0, lcb_lst, fc_lfo, lcb_lfo)
+    }
+
+    fn three_level_decimal_lvls() -> Vec<Vec<u8>> {
+        vec![
+            serialized_lvl(1, 0, [1, 0, 0, 0, 0, 0, 0, 0, 0], 2, &[0, '.' as u16]),
+            serialized_lvl(1, 0, [1, 3, 0, 0, 0, 0, 0, 0, 0], 2, &[0, '.' as u16, 1]),
+            serialized_lvl(
+                1,
+                0,
+                [1, 3, 5, 0, 0, 0, 0, 0, 0],
+                2,
+                &[0, '.' as u16, 1, '.' as u16, 2],
+            ),
+        ]
+    }
+
+    fn with_restart_limit(mut level: Vec<u8>, limit: u8) -> Vec<u8> {
+        level[5] |= 1 << 3;
+        level[26] = limit;
+        level
     }
 
     /// Build a Lists with one simple decimal list ("1." template) for ilfo 1.
@@ -772,6 +828,49 @@ mod tests {
         assert_eq!(n.label(1, 1).as_deref(), Some("1.2")); // → 1.2
         assert_eq!(n.label(1, 0).as_deref(), Some("2.")); // level 0 → 2 (resets L1)
         assert_eq!(n.label(1, 1).as_deref(), Some("2.1")); // L1 restarted
+    }
+
+    #[test]
+    fn lvlf_restart_limit_restarts_only_after_more_significant_level() {
+        let mut levels = three_level_decimal_lvls();
+        levels[2] = with_restart_limit(levels[2].clone(), 1);
+        let lists = parsed_multilevel_decimal_lists(levels, Vec::new());
+        let mut numberer = Numberer::new(&lists);
+
+        assert_eq!(numberer.label(1, 0).as_deref(), Some("1."));
+        assert_eq!(numberer.label(1, 1).as_deref(), Some("1.1"));
+        assert_eq!(numberer.label(1, 2).as_deref(), Some("1.1.1"));
+        assert_eq!(numberer.label(1, 1).as_deref(), Some("1.2"));
+        assert_eq!(numberer.label(1, 2).as_deref(), Some("1.2.2"));
+        assert_eq!(numberer.label(1, 0).as_deref(), Some("2."));
+        assert_eq!(numberer.label(1, 2).as_deref(), Some("2.1.1"));
+    }
+
+    #[test]
+    fn replacement_lvlf_restart_limit_controls_counter_reset() {
+        let levels = three_level_decimal_lvls();
+        let replacement = with_restart_limit(levels[2].clone(), 1);
+        let lists =
+            parsed_multilevel_decimal_lists(levels, vec![formatting_override(2, 99, replacement)]);
+        let mut numberer = Numberer::new(&lists);
+
+        assert_eq!(numberer.label(1, 2).as_deref(), Some("1.1.1"));
+        assert_eq!(numberer.label(1, 1).as_deref(), Some("1.2"));
+        assert_eq!(numberer.label(1, 2).as_deref(), Some("1.2.2"));
+        assert_eq!(numberer.label(1, 0).as_deref(), Some("2."));
+        assert_eq!(numberer.label(1, 2).as_deref(), Some("2.1.1"));
+    }
+
+    #[test]
+    fn invalid_lvlf_restart_limit_uses_ordinary_restart_rule() {
+        let mut levels = three_level_decimal_lvls();
+        levels[2] = with_restart_limit(levels[2].clone(), 8);
+        let lists = parsed_multilevel_decimal_lists(levels, Vec::new());
+        let mut numberer = Numberer::new(&lists);
+
+        assert_eq!(numberer.label(1, 2).as_deref(), Some("1.1.1"));
+        assert_eq!(numberer.label(1, 1).as_deref(), Some("1.2"));
+        assert_eq!(numberer.label(1, 2).as_deref(), Some("1.2.1"));
     }
 
     #[test]
