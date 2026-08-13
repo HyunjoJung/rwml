@@ -6,9 +6,10 @@
 //! table rows — which are flowed top-to-bottom onto fixed A4 pages, then each
 //! page's glyph runs and table borders are drawn with krilla. A table that spans
 //! pages repeats its header rows after each break. Opened DOCX rows may split at
-//! legal direct-cell paragraph boundaries unless effective `w:cantSplit` from
-//! direct row properties or a non-conditional table-style chain keeps a fitting
-//! row together; an over-tall row still splits to guarantee progress.
+//! legal cell line boundaries unless effective `w:cantSplit` from direct row
+//! properties or a resolved table-style chain keeps a fitting row together.
+//! Recursively flattened nested rows retain the same protected boundary, while
+//! an over-tall row still splits to guarantee progress.
 //! Tables are rendered as a
 //! real grid: columns are reconstructed
 //! (including `col_span`/`row_span` placement), sized to authored `col_widths_pct`
@@ -25,6 +26,7 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::rc::Rc;
 
 use krilla::action::LinkAction;
@@ -233,6 +235,7 @@ struct LineLayout {
     background: Option<LineBackground>,
     cell_spacing: CellLineSpacing,
     cell_paragraph: Option<CellParagraphLine>,
+    cell_cant_split_group: Option<NonZeroUsize>,
     runs: Vec<RunDraw>,
 }
 
@@ -2158,6 +2161,7 @@ fn shape_extract_lines(
             background: None,
             cell_spacing: CellLineSpacing::default(),
             cell_paragraph: None,
+            cell_cant_split_group: None,
             runs,
         });
     }
@@ -2783,6 +2787,7 @@ fn shape_cell_with_pagination_and_lists(
     let mut state = CellShapeState {
         next_scope_id: 1,
         next_paragraph_id: 0,
+        next_cant_split_group_id: 1,
     };
     shape_cell_in_scope(
         cell,
@@ -2801,6 +2806,7 @@ fn shape_cell_with_pagination_and_lists(
 struct CellShapeState {
     next_scope_id: usize,
     next_paragraph_id: usize,
+    next_cant_split_group_id: usize,
 }
 
 fn explicit_cell_spacing(value: Option<f32>) -> f32 {
@@ -2832,6 +2838,12 @@ impl CellShapeState {
     fn allocate_paragraph(&mut self) -> usize {
         let value = self.next_paragraph_id;
         self.next_paragraph_id = self.next_paragraph_id.saturating_add(1);
+        value
+    }
+
+    fn allocate_cant_split_group(&mut self) -> Option<NonZeroUsize> {
+        let value = NonZeroUsize::new(self.next_cant_split_group_id);
+        self.next_cant_split_group_id = self.next_cant_split_group_id.checked_add(1).unwrap_or(0);
         value
     }
 }
@@ -2894,6 +2906,7 @@ fn shape_cell_in_scope(
                     .and_then(|tables| tables.get(block_index))
                     .and_then(Option::as_ref);
                 for (row_index, row) in t.rows.iter().enumerate() {
+                    let row_start = lines.len();
                     for (cell_index, c) in row.cells.iter().enumerate() {
                         let nested_cell_pagination = table_pagination
                             .and_then(|table| table.cells.get(row_index))
@@ -2916,6 +2929,17 @@ fn shape_cell_in_scope(
                             state,
                             lists,
                         ));
+                    }
+                    let cant_split = table_pagination
+                        .and_then(|table| table.rows.get(row_index))
+                        .map(|row| row.cant_split)
+                        .unwrap_or(false);
+                    if cant_split && row_start < lines.len() {
+                        if let Some(group_id) = state.allocate_cant_split_group() {
+                            for line in &mut lines[row_start..] {
+                                line.cell_cant_split_group = Some(group_id);
+                            }
+                        }
                     }
                 }
             }
@@ -3248,6 +3272,14 @@ fn legal_cell_split(lines: &[LineLayout], cut: usize) -> bool {
     }
     if cut >= lines.len() {
         return true;
+    }
+    if let (Some(before), Some(after)) = (
+        lines[cut - 1].cell_cant_split_group,
+        lines[cut].cell_cant_split_group,
+    ) {
+        if before == after {
+            return false;
+        }
     }
     let (Some(before), Some(after)) = (lines[cut - 1].cell_paragraph, lines[cut].cell_paragraph)
     else {
@@ -10994,6 +11026,13 @@ mod tests {
     fn nested_cell_row_with_pagination(
         nested_cells: &[Vec<(&str, PaginationHint)>],
     ) -> super::RowLayout {
+        nested_cell_row_with_pagination_and_row_policy(nested_cells, false)
+    }
+
+    fn nested_cell_row_with_pagination_and_row_policy(
+        nested_cells: &[Vec<(&str, PaginationHint)>],
+        cant_split: bool,
+    ) -> super::RowLayout {
         let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
         let mut font_cx = strict_font_context(&fonts);
         let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
@@ -11043,7 +11082,7 @@ mod tests {
         };
         let cell_pagination = vec![vec![vec![None]]];
         let nested_pagination = vec![vec![vec![Some(TablePaginationHints {
-            rows: vec![TableRowPaginationHint::default()],
+            rows: vec![TableRowPaginationHint { cant_split }],
             cells: vec![nested_cells
                 .iter()
                 .map(|paragraphs| {
@@ -11316,6 +11355,29 @@ mod tests {
 
         assert_eq!(head.cells[0].lines.len(), 2);
         assert_eq!(tail.cells[0].lines.len(), 2);
+    }
+
+    #[test]
+    fn nested_table_cant_split_requires_a_whole_first_fragment_but_allows_progress() {
+        let row = nested_cell_row_with_pagination_and_row_policy(
+            &[
+                vec![("one\ntwo", PaginationHint::default())],
+                vec![("three", PaginationHint::default())],
+            ],
+            true,
+        );
+        let cell = &row.cells[0];
+        assert_eq!(cell.lines.len(), 3);
+        let whole_row =
+            cell.insets.top + super::cell_lines_extent(&cell.lines) + cell.insets.bottom;
+        assert!((first_row_fragment_height(&row) - whole_row).abs() < 0.01);
+        let avail = row_avail_for_lines(&row, 2);
+
+        let (head, tail) = split_row(row, avail);
+        let tail = tail.expect("over-tall nested row content remains");
+
+        assert_eq!(head.cells[0].lines.len(), 2);
+        assert_eq!(tail.cells[0].lines.len(), 1);
     }
 
     #[test]
@@ -12310,6 +12372,7 @@ mod tests {
                 background: None,
                 cell_spacing: Default::default(),
                 cell_paragraph: None,
+                cell_cant_split_group: None,
                 runs: Vec::new(),
             })
         };
@@ -12339,6 +12402,7 @@ mod tests {
             background: None,
             cell_spacing: Default::default(),
             cell_paragraph: None,
+            cell_cant_split_group: None,
             runs: Vec::new(),
         })
     }
@@ -12365,6 +12429,7 @@ mod tests {
                 background: None,
                 cell_spacing: Default::default(),
                 cell_paragraph: None,
+                cell_cant_split_group: None,
                 runs: Vec::new(),
             })
             .collect::<Vec<_>>();
@@ -13388,6 +13453,7 @@ mod tests {
                 background: None,
                 cell_spacing: Default::default(),
                 cell_paragraph: None,
+                cell_cant_split_group: None,
                 runs: Vec::new(),
             })
         };

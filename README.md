@@ -331,9 +331,10 @@ placement and mirror their cells inside the local table box. Page geometry,
 equal-width section columns, and per-side margins come from the document;
 multi-page tables repeat their header rows without losing outer placement or
 border paint. Opened
-`.docx` rows may split across pages by default, while effective `w:cantSplit`
-from direct row properties or an inherited table-style chain keeps a fitting
-row together and an over-tall row still splits at line boundaries. Table styles
+`.docx` rows, including recursively flattened nested rows, may split across
+pages by default, while effective `w:cantSplit` from direct row properties or
+an inherited table-style chain keeps a fitting row together and an over-tall
+row still splits at line boundaries. Table styles
 include direct non-conditional row properties and bounded
 `wholeTable`/`band1Horz`/`band2Horz`/`firstRow`/`lastRow` conditional regions
 selected by direct table `w:tblLook` or row `w:cnfStyle`. Inherited style and
@@ -489,10 +490,10 @@ bridges.
 > enabled automatic/contextual paragraph spacing, nonzero character-unit indents,
 > theme/automatic/pattern paragraph shading, and table/list/conditional-style
 > paragraph properties remain outside the bounded style-derived layout subset.
-> Nested-table paragraph controls retain the
-> renderer's 32-level flattening bound; nested grid/border geometry, nested-row
-> `cantSplit`, and Word-exact cell spacing/tab geometry remain outside this
-> slice. Legacy STSH properties beyond the bounded paragraph-pagination,
+> Nested-table paragraph and row controls retain the renderer's 32-level
+> flattening bound; nested grid/border geometry and Word-exact cell spacing/tab
+> geometry remain outside this slice. Legacy STSH properties beyond the bounded
+> paragraph-pagination,
 > direction/justification, modern logical-indent, and paragraph-spacing
 > subsets,
 > table/list-style paragraph effects, piece `Pcd.Prm` paragraph properties and
@@ -1093,8 +1094,8 @@ current limit never counts as finishing it.
       direct DOCX table-cell margin defaults with row-local `w:tblPrEx`
       exceptions and per-side direct cell exceptions,
       direct plus bounded whole/first/last/horizontal-band table-style DOCX
-      table-row `cantSplit`, direct DOCX and recursively nested table-cell
-      keep/widow controls, direct and
+      table-row `cantSplit`, including recursively flattened nested rows,
+      direct DOCX and recursively nested table-cell keep/widow controls, direct and
       paragraph-style-inherited legacy DOC
       `sprmPFKeep`/`sprmPFKeepFollow`/`sprmPFWidowControl`/`sprmPFPageBreakBefore`
       plus bounded direct/style top-level

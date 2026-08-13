@@ -8,6 +8,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Honors effective `w:cantSplit` on recursively flattened nested DOCX table
+  rows: fitting protected rows start on a fresh page when needed, while rows
+  taller than a fresh page still split for deterministic progress. Nested grid
+  geometry and Word-exact pagination remain outside the preview renderer.
 - Applies row-local `w:tblPrEx/w:tblCellMar` margin exceptions in place of the
   direct table margin property and before direct cell `w:tcMar`. Sparse or empty
   exceptions inherit omitted sides from the table style or schema defaults,
