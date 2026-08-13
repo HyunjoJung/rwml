@@ -335,11 +335,15 @@ pub(crate) struct TableRowPaginationHint {
 pub(crate) type TableCellPaginationHints = Vec<Vec<Vec<Option<PaginationHint>>>>;
 
 #[cfg(any(feature = "docx", feature = "render"))]
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) type TableCellTabStopHints = Vec<Vec<Vec<Vec<TabStop>>>>;
+
+#[cfg(any(feature = "docx", feature = "render"))]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct TablePaginationHints {
     pub(crate) rows: Vec<TableRowPaginationHint>,
     pub(crate) cells: TableCellPaginationHints,
     pub(crate) nested: TableCellNestedPaginationHints,
+    pub(crate) cell_tabs: TableCellTabStopHints,
 }
 
 #[cfg(any(feature = "docx", feature = "render"))]

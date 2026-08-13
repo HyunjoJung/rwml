@@ -180,11 +180,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   exact-edge/out-of-box fallback. Separate opened-DOCX evidence covers parsed
   first-line/hanging values, private tab-sidecar activation, deterministic
   layout/PDF output, and unchanged page counts for the bounded fixtures.
-  Table-cell tab semantics, RTL center/end/decimal stops,
-  center/right/justified LTR paragraph alignment, leaders and bar tabs,
-  settings-defined default-tab intervals, implicit hanging-indent/list-marker
-  tabs, post-tab field containment, custom-tab-aware line reflow, and Word-exact
-  text-ruler behavior remain outside this bounded correction.
+  Resolved LTR tab stops in ordinary and recursively nested table-cell
+  paragraphs now use the same bounded path through source-aligned sidecars.
+  Table-cell RTL center/end/decimal stops, center/right/justified LTR paragraph
+  alignment, leaders and bar tabs, settings-defined default-tab intervals,
+  implicit hanging-indent/list-marker tabs, post-tab field containment,
+  custom-tab-aware line reflow, and Word-exact text-ruler behavior remain
+  outside this bounded correction.
 - PDF table cells now apply finite positive model-backed paragraph before/after
   spacing on emitted paragraphs to row measurement, row splitting, vertical
   alignment, repeated headers, and `LayoutPages` block and modeled `PAGE`-field

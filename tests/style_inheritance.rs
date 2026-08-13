@@ -459,6 +459,47 @@ fn conditional_cell_presentation_render_docx(presentation: &str) -> Vec<u8> {
     ])
 }
 
+#[cfg(feature = "render")]
+fn table_cell_tab_render_docx(cell_tabs: &str, nested: bool) -> Vec<u8> {
+    let content_types = content_types(false);
+    let cell_body = if nested {
+        format!(
+            r#"<w:p><w:r><w:t>outer</w:t></w:r></w:p>
+            <w:tbl><w:tblGrid><w:gridCol w:w="3600"/></w:tblGrid>
+                <w:tr><w:tc><w:p><w:pPr>{cell_tabs}</w:pPr>
+                    <w:r><w:t>lead</w:t><w:tab/><w:t>tail</w:t></w:r>
+                </w:p></w:tc></w:tr>
+            </w:tbl>"#
+        )
+    } else {
+        format!(
+            r#"<w:p><w:pPr>{cell_tabs}</w:pPr>
+                <w:r><w:t>lead</w:t><w:tab/><w:t>tail</w:t></w:r>
+            </w:p>"#
+        )
+    };
+    let document_xml = format!(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+            <w:tbl><w:tblPr><w:tblW w:w="3600" w:type="dxa"/></w:tblPr>
+                <w:tblGrid><w:gridCol w:w="3600"/></w:tblGrid>
+                <w:tr><w:tc>{cell_body}</w:tc></w:tr>
+            </w:tbl>
+            <w:sectPr><w:pgSz w:w="4400" w:h="2600"/>
+                <w:pgMar w:top="200" w:right="200" w:bottom="200" w:left="200"/>
+            </w:sectPr>
+        </w:body></w:document>"#
+    );
+    docx_fixture(&[
+        ("[Content_Types].xml", &content_types),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        ("word/_rels/document.xml.rels", document_rels(false)),
+        ("word/document.xml", &document_xml),
+    ])
+}
+
 #[test]
 fn docx_run_props_resolve_docdefaults_paragraph_and_character_styles() {
     let doc = Document::open(&style_inheritance_docx()).expect("fixture opens");
@@ -851,6 +892,58 @@ fn opened_docx_render_consumes_conditional_cell_presentation_deterministically()
     assert!(styled_pdf.starts_with(b"%PDF-"));
     assert_ne!(styled_pdf, baseline_pdf);
     assert_eq!(styled_pdf, styled.to_pdf_with_fonts(&fonts));
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn opened_docx_render_uses_explicit_tabs_inside_table_cells() {
+    let default = Document::open(&table_cell_tab_render_docx("", false))
+        .expect("default table-cell tab fixture opens");
+    let explicit = Document::open(&table_cell_tab_render_docx(
+        r#"<w:tabs><w:tab w:val="left" w:pos="1440"/></w:tabs>"#,
+        false,
+    ))
+    .expect("explicit table-cell tab fixture opens");
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+    let default_pdf = default.to_pdf_with_fonts(&fonts);
+    let explicit_pdf = explicit.to_pdf_with_fonts(&fonts);
+    let model_pdf = rwml::try_render_pdf_with_fonts(&explicit.model(), &fonts)
+        .expect("model-only table-cell tab fixture renders");
+    assert!(default_pdf.starts_with(b"%PDF-"));
+    assert!(explicit_pdf.starts_with(b"%PDF-"));
+    assert_ne!(
+        default_pdf, explicit_pdf,
+        "an explicit tab stop in a table cell must affect deterministic PDF output"
+    );
+    assert_ne!(
+        explicit_pdf, model_pdf,
+        "opened-document cell tab sidecar must affect rendering beyond the model"
+    );
+    assert_eq!(
+        explicit_pdf,
+        explicit.to_pdf_with_fonts(&fonts),
+        "table-cell tab rendering must remain deterministic"
+    );
+
+    let nested_default = Document::open(&table_cell_tab_render_docx("", true))
+        .expect("default nested table-cell tab fixture opens");
+    let nested_explicit = Document::open(&table_cell_tab_render_docx(
+        r#"<w:tabs><w:tab w:val="left" w:pos="1440"/></w:tabs>"#,
+        true,
+    ))
+    .expect("explicit nested table-cell tab fixture opens");
+    let nested_default_pdf = nested_default.to_pdf_with_fonts(&fonts);
+    let nested_explicit_pdf = nested_explicit.to_pdf_with_fonts(&fonts);
+    assert_ne!(
+        nested_default_pdf, nested_explicit_pdf,
+        "explicit tab stops must reach recursively nested table cells"
+    );
+    assert_eq!(
+        nested_explicit_pdf,
+        nested_explicit.to_pdf_with_fonts(&fonts),
+        "nested table-cell tab rendering must remain deterministic"
+    );
 }
 
 /// A table style's own `tblCellMar` is the table's cell-margin default, ahead

@@ -372,9 +372,11 @@ overrides; and source-aligned `keepNext`,
 `keepLines`, and default-on `widowControl` pagination hints in top-level body
 paragraphs and direct or accepted-current wrapper-contained paragraphs in
 ordinary or recursively nested table cells, without adding those source-only
-render hints to the public `DocModel`. Table-cell tab semantics, RTL
-center/end/decimal tab stops, center/right/justified LTR paragraph alignment,
-leaders/bar tabs, settings-defined default-tab intervals, and implicit
+render hints to the public `DocModel`. Resolved LTR tab stops in ordinary and
+recursively nested table-cell paragraphs use the same bounded path as supported
+top-level paragraphs. Table-cell RTL center/end/decimal tab stops,
+center/right/justified LTR paragraph alignment, leaders/bar tabs, settings-defined
+default-tab intervals, and implicit
 hanging-indent/list-marker tabs remain outside this bounded tab support. Within
 the supported LTR and RTL paths, resolved tab advances now reserve line width
 before breaking, so content that no longer fits after a tab moves to the next
