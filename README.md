@@ -359,8 +359,8 @@ deterministic progress. Opened `.docx` `Document` renders
 additionally honor resolved left/center/right/decimal tab stops in LTR
 left/start-aligned top-level body paragraphs, plus explicit left-aligned stops
 in center/right/justified-aligned LTR top-level body paragraphs when reachable,
-and default and resolved
-logical-start tab stops in RTL right/start-aligned top-level body paragraphs.
+and default, logical-start, center/end, and decimal tab stops in RTL
+right/start-aligned top-level body paragraphs.
 LTR stops retain their page-text-margin coordinates under supported left,
 positive first-line, and hanging indents; RTL logical-start stops retain
 leading-edge coordinates from the right page-text margin under resolved
@@ -378,9 +378,9 @@ paragraphs and direct or accepted-current wrapper-contained paragraphs in
 ordinary or recursively nested table cells, without adding those source-only
 render hints to the public `DocModel`. Resolved LTR tab stops in ordinary and
 recursively nested table-cell paragraphs use the same bounded path as supported
-top-level paragraphs. Table-cell RTL center/end/decimal tab stops,
-Explicit left-aligned LTR stops in center-, right-, and justified-aligned
-paragraphs use that path when the resolved stop is reachable. Table-cell
+top-level paragraphs. Explicit left-aligned LTR stops in center-, right-, and
+justified-aligned paragraphs use that path when the resolved stop is reachable.
+Table-cell
 RTL center/end/decimal tab stops, default-tab fallback in non-left alignments,
 leaders/bar tabs, settings-defined default-tab intervals for unsupported
 contexts, and implicit hanging-indent/list-marker tabs remain outside this

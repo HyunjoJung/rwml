@@ -1977,10 +1977,11 @@ fn shape_with_options(
     let adjust_tabs = text.contains('\t')
         && if rtl_tabs {
             matches!(align, Alignment::Right | Alignment::Start)
-                && options
-                    .tab_stops
-                    .iter()
-                    .all(|stop| stop.alignment == TabAlignment::Left)
+                && (options.tab_stops.is_empty()
+                    || options
+                        .tab_stops
+                        .iter()
+                        .any(|stop| stop.alignment != TabAlignment::Clear))
         } else {
             !layout_rtl
                 && (matches!(align, Alignment::Left | Alignment::Start)
@@ -2429,13 +2430,14 @@ fn apply_tab_stops(
     reservations
 }
 
-fn rtl_tab_field_advance(
+fn rtl_tab_field_metrics(
     text: &str,
     line: &LineLayout,
     tab_run_index: usize,
     tab_glyph_index: usize,
-) -> f32 {
-    let mut advance = 0.0;
+) -> TabFieldMetrics {
+    let mut metrics = TabFieldMetrics::default();
+    let mut found_preferred_decimal = false;
     for run_index in (0..=tab_run_index).rev() {
         let glyph_end = if run_index == tab_run_index {
             tab_glyph_index
@@ -2443,22 +2445,40 @@ fn rtl_tab_field_advance(
             line.runs[run_index].glyphs.len()
         };
         for glyph in line.runs[run_index].glyphs[..glyph_end].iter().rev() {
-            if glyph_text(text, glyph) == Some("\t") {
-                return advance;
+            let Some(glyph_text) = glyph_text(text, glyph) else {
+                continue;
+            };
+            if glyph_text == "\t" {
+                return metrics;
             }
-            let glyph_advance = glyph.x_advance * line.runs[run_index].size;
+            let run_size = line.runs[run_index].size;
+            let contains_preferred_decimal =
+                glyph_text.chars().any(|ch| matches!(ch, '.' | '\u{066B}'));
+            let contains_fallback_decimal = glyph_text.contains(',');
+            if contains_preferred_decimal && !found_preferred_decimal {
+                metrics.decimal_offset =
+                    Some((metrics.advance + glyph.x_offset * run_size).max(metrics.advance));
+                found_preferred_decimal = true;
+            } else if contains_fallback_decimal
+                && !found_preferred_decimal
+                && metrics.decimal_offset.is_none()
+            {
+                metrics.decimal_offset =
+                    Some((metrics.advance + glyph.x_offset * run_size).max(metrics.advance));
+            }
+            let glyph_advance = glyph.x_advance * run_size;
             if glyph_advance.is_finite() {
-                advance += glyph_advance.max(0.0);
+                metrics.advance += glyph_advance.max(0.0);
             }
         }
     }
-    advance
+    metrics
 }
 
-fn explicit_rtl_start_tab_field_start(
+fn explicit_rtl_tab_field_start(
     tab_stops: &[TabStop],
     cursor: f32,
-    field_advance: f32,
+    field: TabFieldMetrics,
     width: f32,
     origin: f32,
 ) -> Option<f32> {
@@ -2469,12 +2489,19 @@ fn explicit_rtl_start_tab_field_start(
     }
     tab_stops
         .iter()
-        .filter(|stop| stop.alignment == TabAlignment::Left)
         .filter_map(|stop| {
-            let absolute_field_start = stop.position_pt;
-            let absolute_field_end = absolute_field_start + field_advance;
+            let alignment_offset = match stop.alignment {
+                TabAlignment::Left => 0.0,
+                TabAlignment::Center => field.advance / 2.0,
+                TabAlignment::Right => field.advance,
+                TabAlignment::Decimal => field.decimal_offset.unwrap_or(field.advance),
+                TabAlignment::Clear => return None,
+            };
+            let absolute_field_start = stop.position_pt - alignment_offset;
+            let absolute_field_end = absolute_field_start + field.advance;
             (stop.position_pt.is_finite()
                 && stop.position_pt > absolute_cursor + f32::EPSILON
+                && absolute_field_start >= absolute_cursor
                 && absolute_field_end <= absolute_end)
                 .then_some((stop.position_pt, absolute_field_start - origin))
         })
@@ -2490,6 +2517,10 @@ fn apply_rtl_tab_stops(
     origin: f32,
     default_tab_stop_pt: Option<f32>,
 ) -> Vec<TabReservation> {
+    let use_default_fallback = tab_stops.is_empty()
+        || tab_stops
+            .iter()
+            .all(|stop| matches!(stop.alignment, TabAlignment::Left | TabAlignment::Clear));
     let mut reservations = Vec::with_capacity(lines.len());
     for line in lines {
         let mut run_deltas = vec![0.0_f32; line.runs.len()];
@@ -2514,24 +2545,25 @@ fn apply_rtl_tab_stops(
                     continue;
                 }
                 let cursor = width - tab_end + shift_from_right;
-                let field_advance = rtl_tab_field_advance(text, line, run_index, glyph_index);
                 // ISO/IEC 29500-1 17.3.1.37 measures w:pos from the paragraph's
                 // leading edge, which is the right edge for an RTL paragraph.
-                let field_start = explicit_rtl_start_tab_field_start(
-                    tab_stops,
-                    cursor,
-                    field_advance,
-                    width,
-                    origin,
+                let field = rtl_tab_field_metrics(text, line, run_index, glyph_index);
+                let field_start = explicit_rtl_tab_field_start(
+                    tab_stops, cursor, field, width, origin,
                 )
-                .unwrap_or_else(|| {
-                    default_tab_field_start_with_interval(
-                        cursor,
-                        width,
-                        origin,
-                        default_tab_stop_pt,
-                    )
+                .or_else(|| {
+                    use_default_fallback.then(|| {
+                        default_tab_field_start_with_interval(
+                            cursor,
+                            width,
+                            origin,
+                            default_tab_stop_pt,
+                        )
+                    })
                 });
+                let Some(field_start) = field_start else {
+                    continue;
+                };
                 let original_advance =
                     line.runs[run_index].glyphs[glyph_index].x_advance * run_size;
                 let advance = (field_start - cursor)
@@ -8971,7 +9003,57 @@ mod tests {
     }
 
     #[test]
-    fn rtl_non_start_custom_tabs_remain_outside_the_bounded_path() {
+    fn rtl_explicit_center_end_and_decimal_tabs_use_their_stops() {
+        let cases = [
+            ("א\tב", TabAlignment::Center, TabAlignment::Center),
+            ("א\tאב", TabAlignment::Right, TabAlignment::Left),
+            ("א\t12.34", TabAlignment::Decimal, TabAlignment::Right),
+        ];
+        for (text, alignment, measured_alignment) in cases {
+            let lines = paragraph_lines_with_marker_and_tabs(
+                ParaProps {
+                    align: Align::Right,
+                    bidi: true,
+                    ..ParaProps::default()
+                },
+                vec![Run {
+                    text: text.to_string(),
+                    ..Run::default()
+                }],
+                None,
+                &[TabStop {
+                    position_pt: 100.0,
+                    alignment,
+                }],
+            );
+            let rendered = &lines[0].runs[0].text;
+            let field_start = if alignment == TabAlignment::Decimal {
+                rendered.find('.').expect("decimal field")
+            } else {
+                rendered.find('\t').expect("tab marker") + '\t'.len_utf8()
+            };
+            let field_end = if alignment == TabAlignment::Decimal {
+                field_start + '.'.len_utf8()
+            } else {
+                rendered.len()
+            };
+            let bounds = text_bounds(&lines[0], field_start..field_end).expect("field glyph");
+            let actual = lines[0].x_indent
+                + match measured_alignment {
+                    TabAlignment::Left | TabAlignment::Decimal => bounds.0,
+                    TabAlignment::Center => (bounds.0 + bounds.1) / 2.0,
+                    TabAlignment::Right => bounds.1,
+                    TabAlignment::Clear => unreachable!(),
+                };
+            assert!(
+                (actual - 80.0).abs() <= 1.5,
+                "alignment={alignment:?} actual={actual}"
+            );
+        }
+    }
+
+    #[test]
+    fn rtl_unreachable_non_start_custom_tabs_keep_the_baseline() {
         let field_bounds = |position_pt| {
             let lines = paragraph_lines_with_marker_and_tabs(
                 ParaProps {
@@ -8994,7 +9076,7 @@ mod tests {
             text_bounds(&lines[0], field_start..field_start + 'ב'.len_utf8()).expect("field glyph")
         };
 
-        assert_eq!(field_bounds(60.0), field_bounds(120.0));
+        assert_eq!(field_bounds(1.0), field_bounds(2.0));
     }
 
     #[test]

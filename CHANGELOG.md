@@ -154,13 +154,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   bullet gets it; levels that declare none keep the existing fallback and a
   `%N` pattern is still treated as autonumber syntax.
 
-- Opened `.docx` PDF previews now resolve default and explicit logical-start tab
-  stops in right/start-aligned RTL top-level body paragraphs from the right page
-  text margin's leading edge. The stops retain their margin coordinates under
-  resolved physical or logical left/right indents; deterministic fixed-font
-  geometry covers default and explicit stops, multiple fields, segmented paint
-  and source ranges, bounded line reflow, and the opened-DOCX path. RTL
-  center/end/decimal stops remain outside this bounded path.
+- Opened `.docx` PDF previews now resolve default and explicit logical-start,
+  center, end/right, and decimal tab stops in right/start-aligned RTL top-level
+  body paragraphs from the right page text margin's leading edge. The stops
+  retain their margin coordinates under resolved physical or logical left/right
+  indents; deterministic fixed-font geometry covers default and explicit stops,
+  multiple fields, segmented paint and source ranges, bounded line reflow, and
+  the opened-DOCX path. RTL table-cell center/end/decimal stops remain outside
+  this bounded path.
 - Opened `.docx` PDF previews now reserve line width for resolved custom and
   default tab advances before breaking, so supported top-level LTR left/start
   and RTL right/start body content that no longer fits after a tab moves to the
