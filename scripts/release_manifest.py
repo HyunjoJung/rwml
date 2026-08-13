@@ -58,6 +58,7 @@ KNOWN_WARNING_TOKENS = {
     "MissingImageBytes",
     "UndecodableRasterImages",
 }
+BOOLEAN_SUMMARY_KEYS = {"reference_stable"}
 RELEASE_POLICIES: dict[str, dict[str, Any]] = {
     "public-release": {
         "name": "public-release",
@@ -152,7 +153,12 @@ def report_summary(path: Path) -> dict[str, Any]:
     except ValueError as error:
         raise ValueError(f"{path} summary contains non-finite value") from error
     for key, value in summary.items():
-        if value is not None and not is_number(value):
+        if value is None:
+            continue
+        if key in BOOLEAN_SUMMARY_KEYS:
+            if not isinstance(value, bool):
+                raise ValueError(f"{path} summary value is invalid: {key}")
+        elif not is_number(value):
             raise ValueError(f"{path} summary value is invalid: {key}")
     report = {"path": path.as_posix(), "summary": summary}
     gate = data.get("gate")
