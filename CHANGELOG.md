@@ -183,11 +183,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   layout/PDF output, and unchanged page counts for the bounded fixtures.
   Resolved LTR tab stops in ordinary and recursively nested table-cell
   paragraphs now use the same bounded path through source-aligned sidecars.
-  Table-cell RTL center/end/decimal stops, center/right/justified LTR paragraph
-  alignment, leaders and bar tabs, settings-defined default-tab intervals in
-  unsupported contexts, implicit hanging-indent/list-marker tabs, post-tab field containment,
-  custom-tab-aware line reflow, and Word-exact text-ruler behavior remain
-  outside this bounded correction.
+  Explicit left-aligned LTR stops in center-, right-, and justified-aligned
+  paragraphs now use that path when the resolved stop is reachable. Table-cell
+  RTL center/end/decimal stops, default-tab fallback in non-left alignments,
+  leaders and bar tabs, settings-defined default-tab intervals in unsupported
+  contexts, implicit hanging-indent/list-marker tabs, post-tab field containment,
+  custom-tab-aware line reflow, and Word-exact text-ruler behavior remain outside
+  this bounded correction.
 - PDF table cells now apply finite positive model-backed paragraph before/after
   spacing on emitted paragraphs to row measurement, row splitting, vertical
   alignment, repeated headers, and `LayoutPages` block and modeled `PAGE`-field

@@ -1982,7 +1982,12 @@ fn shape_with_options(
                     .iter()
                     .all(|stop| stop.alignment == TabAlignment::Left)
         } else {
-            !layout_rtl && matches!(align, Alignment::Left | Alignment::Start)
+            !layout_rtl
+                && (matches!(align, Alignment::Left | Alignment::Start)
+                    || options
+                        .tab_stops
+                        .iter()
+                        .any(|stop| stop.alignment != TabAlignment::Clear))
         };
 
     let text_rc: Rc<str> = Rc::from(text);
@@ -2021,6 +2026,7 @@ fn shape_with_options(
                 width,
                 options.tab_origin,
                 options.default_tab_stop_pt,
+                matches!(align, Alignment::Left | Alignment::Start),
             )
         };
         pass += 1;
@@ -2371,6 +2377,7 @@ fn apply_tab_stops(
     width: f32,
     origin: f32,
     default_tab_stop_pt: Option<f32>,
+    use_default_fallback: bool,
 ) -> Vec<TabReservation> {
     let mut reservations = Vec::with_capacity(lines.len());
     for line in lines {
@@ -2385,22 +2392,29 @@ fn apply_tab_stops(
                 let original_advance = glyph.x_advance * run_size;
                 if glyph_text(text, glyph) == Some("\t") && run_size > 0.0 {
                     let field = tab_field_metrics(text, line, run_index, glyph_index);
-                    let field_start =
-                        explicit_tab_field_start(tab_stops, cursor, field, width, origin)
-                            .unwrap_or_else(|| {
-                                default_tab_field_start_with_interval(
-                                    cursor,
-                                    width,
-                                    origin,
-                                    default_tab_stop_pt,
-                                )
-                            });
-                    let advance = (field_start - cursor)
-                        .max(0.0)
-                        .min((width - cursor).max(0.0));
-                    line.runs[run_index].glyphs[glyph_index].x_advance = advance / run_size;
-                    accumulated_shift += advance - original_advance;
-                    cursor += advance;
+                    let field_start = explicit_tab_field_start(
+                        tab_stops, cursor, field, width, origin,
+                    )
+                    .or_else(|| {
+                        use_default_fallback.then(|| {
+                            default_tab_field_start_with_interval(
+                                cursor,
+                                width,
+                                origin,
+                                default_tab_stop_pt,
+                            )
+                        })
+                    });
+                    if let Some(field_start) = field_start {
+                        let advance = (field_start - cursor)
+                            .max(0.0)
+                            .min((width - cursor).max(0.0));
+                        line.runs[run_index].glyphs[glyph_index].x_advance = advance / run_size;
+                        accumulated_shift += advance - original_advance;
+                        cursor += advance;
+                    } else {
+                        cursor += original_advance;
+                    }
                 } else {
                     cursor += original_advance;
                 }
@@ -9208,9 +9222,10 @@ mod tests {
     }
 
     #[test]
-    fn tab_reflow_only_applies_to_left_and_start_aligned_ltr_text() {
-        // Centered text keeps parley's own breaking: the reservation pass is
-        // scoped to the alignments whose tab positions rwml resolves.
+    fn default_tab_reflow_only_applies_to_left_and_start_aligned_ltr_text() {
+        // Default-tab reflow stays scoped to left/start alignment. Explicit
+        // custom stops use the same bounded reservation path for other LTR
+        // paragraph alignments.
         let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
         let mut font_cx = strict_font_context(&fonts);
         let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
@@ -9272,6 +9287,80 @@ mod tests {
                     "left={left_pt:?} alignment={alignment:?} actual={actual} expected={position_pt}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn explicit_left_tabs_in_non_left_paragraph_alignments_use_their_stops() {
+        for (align, position_pt) in [
+            (Align::Center, 100.0),
+            (Align::Right, 170.0),
+            (Align::Justify, 100.0),
+        ] {
+            let lines = paragraph_lines_with_marker_and_tabs(
+                ParaProps {
+                    align,
+                    ..ParaProps::default()
+                },
+                vec![Run {
+                    text: "A\tB".to_string(),
+                    ..Run::default()
+                }],
+                None,
+                &[TabStop {
+                    position_pt,
+                    alignment: TabAlignment::Left,
+                }],
+            );
+            let field_start = "A\t".len();
+            let actual =
+                tab_aligned_position(&lines[0], field_start..field_start + 1, TabAlignment::Left);
+            assert!(
+                (actual - position_pt).abs() <= 1.5,
+                "align={align:?} actual={actual} expected={position_pt}"
+            );
+
+            let baseline = paragraph_lines_with_marker_and_tabs(
+                ParaProps {
+                    align,
+                    ..ParaProps::default()
+                },
+                vec![Run {
+                    text: "A\tB".to_string(),
+                    ..Run::default()
+                }],
+                None,
+                &[],
+            );
+            let unreachable = paragraph_lines_with_marker_and_tabs(
+                ParaProps {
+                    align,
+                    ..ParaProps::default()
+                },
+                vec![Run {
+                    text: "A\tB".to_string(),
+                    ..Run::default()
+                }],
+                None,
+                &[TabStop {
+                    position_pt: 1.0,
+                    alignment: TabAlignment::Left,
+                }],
+            );
+            let baseline_position = tab_aligned_position(
+                &baseline[0],
+                field_start..field_start + 1,
+                TabAlignment::Left,
+            );
+            let unreachable_position = tab_aligned_position(
+                &unreachable[0],
+                field_start..field_start + 1,
+                TabAlignment::Left,
+            );
+            assert!(
+                (baseline_position - unreachable_position).abs() <= 1.5,
+                "unreachable custom stop changed default behavior for {align:?}"
+            );
         }
     }
 
