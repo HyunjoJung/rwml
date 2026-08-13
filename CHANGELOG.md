@@ -189,11 +189,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Explicit left-aligned LTR stops in center-, right-, and justified-aligned
   paragraphs now use that path when the resolved stop is reachable. Ordinary
   RTL table-cell center/end/decimal stops and default-tab fallback in supported
-  non-left LTR alignments now use the same bounded path. Supported LTR dot,
-  hyphen, underscore, heavy, and middle-dot leaders plus bar tabs now paint
-  through that sidecar path in top-level and table-cell paragraphs. RTL
-  leaders and bar tabs, settings-defined default-tab intervals in unsupported
-  contexts, implicit hanging-indent/list-marker tabs, post-tab field containment,
+  non-left LTR alignments now use the same bounded path. Supported LTR and RTL
+  dot, hyphen, underscore, heavy, and middle-dot leaders plus bar tabs now
+  paint through that sidecar path in top-level and table-cell paragraphs.
+  Settings-defined default-tab intervals in unsupported contexts,
+  implicit hanging-indent/list-marker tabs, post-tab field containment,
   custom-tab-aware line reflow, and Word-exact text-ruler behavior remain outside
   this bounded correction.
 - PDF table cells now apply finite positive model-backed paragraph before/after

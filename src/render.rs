@@ -2530,7 +2530,7 @@ fn explicit_rtl_tab_field_start(
     field: TabFieldMetrics,
     width: f32,
     origin: f32,
-) -> Option<f32> {
+) -> Option<(TabStop, f32)> {
     let absolute_cursor = origin + cursor;
     let absolute_end = origin + width;
     if !absolute_cursor.is_finite() || !absolute_end.is_finite() {
@@ -2553,10 +2553,10 @@ fn explicit_rtl_tab_field_start(
                 && stop.position_pt > absolute_cursor + f32::EPSILON
                 && absolute_field_start >= absolute_cursor
                 && absolute_field_end <= absolute_end)
-                .then_some((stop.position_pt, absolute_field_start - origin))
+                .then_some((stop.position_pt, *stop, absolute_field_start - origin))
         })
         .min_by(|left, right| left.0.total_cmp(&right.0))
-        .map(|(_, field_start)| field_start)
+        .map(|(_, stop, field_start)| (stop, field_start))
 }
 
 fn apply_rtl_tab_stops(
@@ -2568,11 +2568,15 @@ fn apply_rtl_tab_stops(
     default_tab_stop_pt: Option<f32>,
 ) -> Vec<TabReservation> {
     let use_default_fallback = tab_stops.is_empty()
-        || tab_stops
-            .iter()
-            .all(|stop| matches!(stop.alignment, TabAlignment::Left | TabAlignment::Clear));
+        || tab_stops.iter().all(|stop| {
+            matches!(
+                stop.alignment,
+                TabAlignment::Left | TabAlignment::Bar | TabAlignment::Clear
+            )
+        });
     let mut reservations = Vec::with_capacity(lines.len());
     for line in lines {
+        line.leaders.clear();
         let mut run_deltas = vec![0.0_f32; line.runs.len()];
         let mut shift_from_right = 0.0_f32;
         for run_index in (0..line.runs.len()).rev() {
@@ -2598,10 +2602,9 @@ fn apply_rtl_tab_stops(
                 // ISO/IEC 29500-1 17.3.1.37 measures w:pos from the paragraph's
                 // leading edge, which is the right edge for an RTL paragraph.
                 let field = rtl_tab_field_metrics(text, line, run_index, glyph_index);
-                let field_start = explicit_rtl_tab_field_start(
-                    tab_stops, cursor, field, width, origin,
-                )
-                .or_else(|| {
+                let explicit =
+                    explicit_rtl_tab_field_start(tab_stops, cursor, field, width, origin);
+                let field_start = explicit.map(|(_, field_start)| field_start).or_else(|| {
                     use_default_fallback.then(|| {
                         default_tab_field_start_with_interval(
                             cursor,
@@ -2614,6 +2617,23 @@ fn apply_rtl_tab_stops(
                 let Some(field_start) = field_start else {
                     continue;
                 };
+                if let Some((stop, _)) = explicit {
+                    if stop.leader != TabLeader::None && field_start > cursor {
+                        line.leaders.push(TabLeaderSpan {
+                            start: cursor,
+                            end: field_start,
+                            style: stop.leader,
+                            color: line.runs[run_index].color,
+                        });
+                    }
+                } else if let Some(bar) = next_bar_tab_position(tab_stops, cursor, width, origin) {
+                    line.leaders.push(TabLeaderSpan {
+                        start: bar,
+                        end: bar,
+                        style: TabLeader::Bar,
+                        color: line.runs[run_index].color,
+                    });
+                }
                 let original_advance =
                     line.runs[run_index].glyphs[glyph_index].x_advance * run_size;
                 let advance = (field_start - cursor)
@@ -9506,6 +9526,56 @@ mod tests {
         assert_eq!(leaders[1].start, leaders[1].end);
         assert!((leaders[1].start - 140.0).abs() <= 0.01);
         assert!(leaders.iter().all(|leader| {
+            [leader.start, leader.end]
+                .into_iter()
+                .all(|value| value.is_finite() && (0.0..=220.0).contains(&value))
+        }));
+    }
+
+    #[test]
+    fn rtl_tab_leaders_and_bar_tabs_create_bounded_line_decorations() {
+        let leader_lines = paragraph_lines_with_marker_and_tabs(
+            ParaProps {
+                align: Align::Right,
+                bidi: true,
+                ..ParaProps::default()
+            },
+            vec![Run {
+                text: "א\tב".to_string(),
+                ..Run::default()
+            }],
+            None,
+            &[TabStop {
+                position_pt: 100.0,
+                alignment: TabAlignment::Left,
+                leader: TabLeader::Dot,
+            }],
+        );
+        assert_eq!(leader_lines[0].leaders.len(), 1);
+        assert_eq!(leader_lines[0].leaders[0].style, TabLeader::Dot);
+        assert!(leader_lines[0].leaders[0].start < leader_lines[0].leaders[0].end);
+
+        let bar_lines = paragraph_lines_with_marker_and_tabs(
+            ParaProps {
+                align: Align::Right,
+                bidi: true,
+                ..ParaProps::default()
+            },
+            vec![Run {
+                text: "א\tב".to_string(),
+                ..Run::default()
+            }],
+            None,
+            &[TabStop {
+                position_pt: 140.0,
+                alignment: TabAlignment::Bar,
+                leader: TabLeader::None,
+            }],
+        );
+        assert_eq!(bar_lines[0].leaders.len(), 1);
+        assert_eq!(bar_lines[0].leaders[0].style, TabLeader::Bar);
+        assert_eq!(bar_lines[0].leaders[0].start, bar_lines[0].leaders[0].end);
+        assert!(bar_lines[0].leaders.iter().all(|leader| {
             [leader.start, leader.end]
                 .into_iter()
                 .all(|value| value.is_finite() && (0.0..=220.0).contains(&value))
