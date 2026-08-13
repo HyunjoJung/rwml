@@ -5930,6 +5930,11 @@ mod tests {
         grpprl.push(evenly_spaced);
     }
 
+    fn push_section_title_page(grpprl: &mut Vec<u8>, title_page: u8) {
+        grpprl.extend_from_slice(&0x300Au16.to_le_bytes());
+        grpprl.push(title_page);
+    }
+
     fn legacy_doc_with_section_page_grpprls(
         text: &str,
         section_cps: &[u32],
@@ -6858,6 +6863,89 @@ mod tests {
         assert_eq!(final_page.margin_top_pt, Some(72.0));
         assert_eq!(final_page.margin_bottom_pt, Some(36.0));
         assert!(final_page.landscape);
+    }
+
+    #[test]
+    fn legacy_doc_sepx_preserves_title_page_state_in_source_order() {
+        let section_cps = [0, 5, 10, 15];
+        let mut first = section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        let mut second = first.clone();
+        let mut final_section = first.clone();
+        push_section_title_page(&mut first, 1);
+        push_section_title_page(&mut first, 2);
+        push_section_title_page(&mut second, 1);
+        push_section_title_page(&mut second, 0);
+        push_section_title_page(&mut final_section, 1);
+        let sepx_grpprls = [
+            first.as_slice(),
+            second.as_slice(),
+            final_section.as_slice(),
+        ];
+        let bytes =
+            legacy_doc_with_section_page_grpprls("AAAAABBBBBCCCCC", &section_cps, &sepx_grpprls);
+
+        let doc = Document::open(&bytes).unwrap();
+        let model = doc.model();
+        let section_title_pages = model
+            .blocks
+            .iter()
+            .filter_map(|block| match block {
+                Block::SectionBreak(setup) => Some(setup.title_page),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(section_title_pages, vec![true, false]);
+        assert!(model.setup.title_page);
+
+        #[cfg(feature = "docx")]
+        {
+            let docx = doc.to_docx();
+            let document_xml = docx_part(&docx, "word/document.xml");
+            assert_eq!(document_xml.matches("<w:titlePg/>").count(), 2);
+
+            let reopened = Document::open(&docx).unwrap().model();
+            let reopened_title_pages = reopened
+                .blocks
+                .iter()
+                .filter_map(|block| match block {
+                    Block::SectionBreak(setup) => Some(setup.title_page),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(reopened_title_pages, section_title_pages);
+            assert!(reopened.setup.title_page);
+        }
+    }
+
+    #[test]
+    fn legacy_doc_sepx_preserves_single_section_title_page_state() {
+        let section_cps = [0, 4];
+        let mut only = section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_title_page(&mut only, 1);
+        let sepx_grpprls = [only.as_slice()];
+        let bytes = legacy_doc_with_section_page_grpprls("ONLY", &section_cps, &sepx_grpprls);
+
+        let doc = Document::open(&bytes).unwrap();
+        let model = doc.model();
+
+        assert!(model
+            .blocks
+            .iter()
+            .all(|block| !matches!(block, Block::SectionBreak(_))));
+        assert!(model.setup.title_page);
+
+        #[cfg(feature = "docx")]
+        {
+            let docx = doc.to_docx();
+            assert_eq!(
+                docx_part(&docx, "word/document.xml")
+                    .matches("<w:titlePg/>")
+                    .count(),
+                1
+            );
+            assert!(Document::open(&docx).unwrap().model().setup.title_page);
+        }
     }
 
     #[test]

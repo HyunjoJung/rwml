@@ -945,9 +945,8 @@ code points.
   deterministic mapped subset; encrypted files
   (detected and rejected).
 - *`.doc` read only:* exact Valid Selection/story boundaries for shared-`lsid`
-  list continuation, full `ilvlRestartLim`/legal-numbering behavior, list-level
-  PAPX/CHPX/style application, Word-exact list indentation/typography, and Word
-  6/95.
+  list continuation, legal-numbering behavior, list-level PAPX/CHPX/style
+  application, Word-exact list indentation/typography, and Word 6/95.
   Header, footnote/endnote, annotation, and text-box text appears in `text()` and
   dedicated region text APIs backed by `DocModel::regions`, with
   `DocModel::source_region_kind_text()` available for model-level region text.
@@ -967,13 +966,15 @@ code points.
   to a default running header for unsplit recovered header/footer text.
   Valid `PlcfSed` SED records also preserve each section's SEPX page size,
   orientation, nonnegative left/right/top/bottom margins, and equal-width
-  `sprmSCcolumns` counts from 1 through 44 through `SectionSetup` plus the final
-  `DocSetup`, including headerless and single-section documents. Boundary SEPX
-  records preserve new/even/odd `sprmSBkc` break kinds through the shared model
-  and fresh `.docx` conversion/reopen. An explicit unequal-spacing selector
-  leaves the column count unmodeled; a later valid equal-spacing selector
-  restores the last valid count. Malformed local SEPX data keeps that section's
-  deterministic default without discarding valid neighboring sections.
+  `sprmSCcolumns` counts from 1 through 44, plus strict `sprmSFTitlePage`
+  first-page state, through `SectionSetup` and the final `DocSetup`, including
+  headerless and single-section documents. Boundary SEPX records preserve
+  new/even/odd `sprmSBkc` break kinds and title-page state through the shared
+  model and fresh `.docx` conversion/reopen. An explicit unequal-spacing
+  selector leaves the column count unmodeled; a later valid equal-spacing
+  selector restores the last valid count. Malformed local SEPX data keeps that
+  section's deterministic default without discarding valid neighboring
+  sections.
   Continuous/new-column section marks normalize to the shared model's
   next-page fallback. Custom column widths/gaps, separator lines, manual column
   breaks, RTL column ordering, gutters/facing pages, header/footer distances,

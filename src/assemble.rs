@@ -159,6 +159,7 @@ fn legacy_doc_setup_from_regions(
     if let [span] = section_spans {
         setup.page = span.page;
         setup.columns = span.columns;
+        setup.title_page = span.title_page;
     }
     setup
 }
@@ -190,6 +191,7 @@ fn legacy_doc_section_setups_from_regions(
     for (setup, span) in section_setups.iter_mut().zip(section_spans) {
         setup.page = span.page;
         setup.columns = span.columns;
+        setup.title_page = span.title_page;
         setup.section_break = Some(span.section_break);
     }
     for region in regions.iter().filter(|region| {
@@ -253,6 +255,7 @@ fn apply_legacy_section_setup_to_doc_setup(section: &SectionSetup, setup: &mut D
     setup.footer = section.footer.clone();
     setup.first_footer = section.first_footer.clone();
     setup.even_footer = section.even_footer.clone();
+    setup.title_page = section.title_page;
 }
 
 fn build_legacy_region_blocks(
@@ -456,6 +459,7 @@ const FIB_FCLCB_PLCF_SED: usize = 6;
 const SED_RECORD_LEN: usize = 12;
 const SPRM_S_F_EVENLY_SPACED: u16 = 0x3005;
 const SPRM_S_BKC: u16 = 0x3009;
+const SPRM_S_F_TITLE_PAGE: u16 = 0x300A;
 const SPRM_S_C_COLUMNS: u16 = 0x500B;
 const SPRM_S_B_ORIENTATION: u16 = 0x301D;
 const SPRM_S_XA_PAGE: u16 = 0xB01F;
@@ -545,6 +549,7 @@ struct LegacySectionSpan {
     end_cp: usize,
     page: PageSetup,
     columns: Option<u16>,
+    title_page: bool,
     section_break: SectionBreakKind,
 }
 
@@ -552,6 +557,7 @@ struct LegacySectionSpan {
 struct LegacySectionProperties {
     page: PageSetup,
     columns: Option<u16>,
+    title_page: bool,
     section_break: SectionBreakKind,
 }
 
@@ -614,6 +620,7 @@ fn parse_legacy_section_spans(
             end_cp: bounded_end_cp,
             page: properties.page,
             columns: properties.columns,
+            title_page: properties.title_page,
             section_break: properties.section_break,
         });
     }
@@ -663,6 +670,11 @@ fn scan_legacy_section_grpprl(grpprl: &[u8]) -> Option<LegacySectionProperties> 
                 Some(0..=2) => properties.section_break = SectionBreakKind::NextPage,
                 Some(3) => properties.section_break = SectionBreakKind::EvenPage,
                 Some(4) => properties.section_break = SectionBreakKind::OddPage,
+                _ => {}
+            },
+            SPRM_S_F_TITLE_PAGE => match operand.first().copied() {
+                Some(0) => properties.title_page = false,
+                Some(1) => properties.title_page = true,
                 _ => {}
             },
             SPRM_S_C_COLUMNS => {
@@ -720,6 +732,7 @@ fn legacy_section_properties_default() -> LegacySectionProperties {
     LegacySectionProperties {
         page: legacy_section_page_setup_default(),
         columns: None,
+        title_page: false,
         section_break: SectionBreakKind::NextPage,
     }
 }
@@ -2139,6 +2152,7 @@ mod tests {
                     end_cp: 2,
                     page: PageSetup::default(),
                     columns: Some(2),
+                    title_page: false,
                     section_break: SectionBreakKind::NextPage,
                 },
                 LegacySectionSpan {
@@ -2146,6 +2160,7 @@ mod tests {
                     end_cp: 4,
                     page: PageSetup::default(),
                     columns: Some(3),
+                    title_page: false,
                     section_break: SectionBreakKind::NextPage,
                 },
             ],
