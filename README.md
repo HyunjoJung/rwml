@@ -310,19 +310,23 @@ drawn. Opened `.docx` tables materialize direct `dxa`/`nil` `w:tblCellMar`
 defaults and per-side direct `w:tcMar` exceptions, including logical
 `start`/`end` mapping under `w:bidiVisual`, and inherit a table style's own
 `w:tblCellMar` through its `w:basedOn` chain, plus its `wholeTable`
-and bounded `band1Horz`/`band2Horz`/`firstRow`/`lastRow` conditional regions,
-beneath those direct declarations. A row-local
+and bounded horizontal/vertical bands, first/last rows and columns, and four
+corner conditional regions beneath those direct declarations. Selection honors
+named or hexadecimal `w:tblLook`, explicit row/cell `w:cnfStyle`, Word's 0-3
+row/column band sizes, repeated header rows, merged-cell ownership, and RTL
+corner mapping. A row-local
 `w:tblPrEx/w:tblCellMar` replaces the direct table margin property for that row,
 inherits omitted sides from the style or schema defaults, and remains beneath a
 direct cell declaration. Vertical-band, column, and corner conditional regions
-remain outside this bounded subset. A table style's `w:tblBorders`, from its own
-`w:tblPr` or its `wholeTable` region and resolved through the same chain, applies
-when the table declares no borders of its own. A style's `w:tblW`, `w:tblInd`,
-and table `w:jc` fill in only what the table itself leaves unset. Its
-`wholeTable` and bounded row-region `w:tcPr` supply cell shading and vertical
-alignment, and preserve percentage preferred width, for cells that declare
-none; preview grid geometry still comes from table/grid widths rather than
-per-cell preferred width. A style's
+apply only to the model-backed cell presentation subset; conditional borders and
+paragraph/run formatting remain outside it. A table style's `w:tblBorders`, from
+its own `w:tblPr` or its `wholeTable` region and resolved through the same chain,
+applies when the table declares no borders of its own. A style's `w:tblW`,
+`w:tblInd`, and table `w:jc` fill in only what the table itself leaves unset. Its bounded
+conditional `w:tcPr` regions supply cell margins, shading, vertical alignment,
+and percentage preferred width for cells that declare none; preview grid
+geometry still comes from table/grid widths rather than per-cell preferred
+width. A style's
 `w:tblLayout` and `w:bidiVisual` apply
 when the table declares neither.
 Rotated raster bounds drive proportional
