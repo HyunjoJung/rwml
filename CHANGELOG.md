@@ -57,6 +57,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Honors legacy `.doc` `LVLF.fNoRestart` restart thresholds, including levels
   supplied by an `LFOLVL` formatting override, so a deeper sequence continues
   across the configured levels but restarts after a more significant one.
+- Honors legacy `.doc` `LVLF.fLegal` on base and `LFOLVL` replacement levels,
+  rendering every current-level template placeholder as Arabic while preserving
+  an original ArabicLZ zero-padded format.
 - Preserves strict legacy `.doc` `sprmSFTitlePage` section state through the
   shared model and fresh `.docx` conversion/reopen for both single- and
   multi-section documents.

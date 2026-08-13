@@ -21,6 +21,8 @@ const MAX_XST_LEN: usize = 256;
 struct Level {
     nfc: u8,
     start: i32,
+    /// Whether every placeholder uses Arabic, except an original ArabicLZ value.
+    legal: bool,
     /// `ilvlRestartLim` when `fNoRestart` is set.
     restart_limit: Option<u8>,
     /// 1-based positions in `xst` of each level's number placeholder (0-term).
@@ -140,8 +142,9 @@ fn parse_lvl(table: &[u8], cur: &mut usize) -> Option<Level> {
     let lvlf = table.get(*cur..lvlf_end)?;
     let start = i32::from_le_bytes(lvlf[0..4].try_into().ok()?);
     let nfc = lvlf[4];
-    // [MS-DOC] 2.9.150: flags byte bit 3 gates ilvlRestartLim at byte 26.
-    let restart_limit = ((lvlf[5] >> 3) & 1 != 0).then_some(lvlf[26]);
+    // [MS-DOC] 2.9.150: flags byte bits 2/3 carry fLegal/fNoRestart.
+    let legal = lvlf[5] & (1 << 2) != 0;
+    let restart_limit = (lvlf[5] & (1 << 3) != 0).then_some(lvlf[26]);
     let mut rgbxch_nums = [0u8; 9];
     rgbxch_nums.copy_from_slice(&lvlf[6..15]);
     let ixch_follow = lvlf[15];
@@ -172,6 +175,7 @@ fn parse_lvl(table: &[u8], cur: &mut usize) -> Option<Level> {
     Some(Level {
         nfc,
         start,
+        legal,
         restart_limit,
         rgbxch_nums,
         ixch_follow,
@@ -399,7 +403,12 @@ impl<'a> Numberer<'a> {
         for (pos, &ch) in level.xst.iter().enumerate() {
             if placeholders.contains(&((pos + 1) as u8)) {
                 let k = (ch as usize).min(8);
-                let knfc = level_for(k).map(|level| level.nfc).unwrap_or(level.nfc);
+                let original_nfc = level_for(k).map(|level| level.nfc).unwrap_or(level.nfc);
+                let knfc = if level.legal && original_nfc != 0x16 {
+                    0x00
+                } else {
+                    original_nfc
+                };
                 out.push_str(&numfmt::format(counters[k].max(0) as u32, knfc));
             } else if let Some(c) = char::from_u32(ch as u32) {
                 out.push(c);
@@ -422,6 +431,7 @@ mod tests {
         Level {
             nfc: 0,
             start,
+            legal: false,
             restart_limit: None,
             rgbxch_nums,
             ixch_follow,
@@ -554,6 +564,11 @@ mod tests {
     fn with_restart_limit(mut level: Vec<u8>, limit: u8) -> Vec<u8> {
         level[5] |= 1 << 3;
         level[26] = limit;
+        level
+    }
+
+    fn with_legal(mut level: Vec<u8>) -> Vec<u8> {
+        level[5] |= 1 << 2;
         level
     }
 
@@ -871,6 +886,87 @@ mod tests {
         assert_eq!(numberer.label(1, 2).as_deref(), Some("1.1.1"));
         assert_eq!(numberer.label(1, 1).as_deref(), Some("1.2"));
         assert_eq!(numberer.label(1, 2).as_deref(), Some("1.2.1"));
+    }
+
+    #[test]
+    fn lvlf_legal_formats_current_and_inherited_placeholders_as_arabic() {
+        let levels = vec![
+            serialized_lvl(1, 0x01, [1, 0, 0, 0, 0, 0, 0, 0, 0], 2, &[0]),
+            with_legal(serialized_lvl(
+                1,
+                0x04,
+                [1, 3, 0, 0, 0, 0, 0, 0, 0],
+                2,
+                &[0, '.' as u16, 1],
+            )),
+        ];
+        let lists = parsed_multilevel_decimal_lists(levels, Vec::new());
+        let mut numberer = Numberer::new(&lists);
+
+        assert_eq!(numberer.label(1, 0).as_deref(), Some("I"));
+        assert_eq!(numberer.label(1, 1).as_deref(), Some("1.1"));
+    }
+
+    #[test]
+    fn lvlf_without_legal_keeps_each_placeholder_format() {
+        let levels = vec![
+            serialized_lvl(1, 0x01, [1, 0, 0, 0, 0, 0, 0, 0, 0], 2, &[0]),
+            serialized_lvl(1, 0x04, [1, 3, 0, 0, 0, 0, 0, 0, 0], 2, &[0, '.' as u16, 1]),
+        ];
+        let lists = parsed_multilevel_decimal_lists(levels, Vec::new());
+        let mut numberer = Numberer::new(&lists);
+
+        assert_eq!(numberer.label(1, 1).as_deref(), Some("I.a"));
+    }
+
+    #[test]
+    fn lvlf_legal_preserves_inherited_arabic_lz() {
+        let levels = vec![
+            serialized_lvl(1, 0x16, [1, 0, 0, 0, 0, 0, 0, 0, 0], 2, &[0]),
+            with_legal(serialized_lvl(
+                1,
+                0x03,
+                [1, 3, 0, 0, 0, 0, 0, 0, 0],
+                2,
+                &[0, '.' as u16, 1],
+            )),
+        ];
+        let lists = parsed_multilevel_decimal_lists(levels, Vec::new());
+        let mut numberer = Numberer::new(&lists);
+
+        assert_eq!(numberer.label(1, 1).as_deref(), Some("01.1"));
+    }
+
+    #[test]
+    fn lvlf_legal_preserves_current_arabic_lz() {
+        let levels = vec![
+            serialized_lvl(1, 0x01, [1, 0, 0, 0, 0, 0, 0, 0, 0], 2, &[0]),
+            with_legal(serialized_lvl(
+                1,
+                0x16,
+                [1, 3, 0, 0, 0, 0, 0, 0, 0],
+                2,
+                &[0, '.' as u16, 1],
+            )),
+        ];
+        let lists = parsed_multilevel_decimal_lists(levels, Vec::new());
+        let mut numberer = Numberer::new(&lists);
+
+        assert_eq!(numberer.label(1, 1).as_deref(), Some("1.01"));
+    }
+
+    #[test]
+    fn replacement_lvlf_legal_controls_effective_formatting() {
+        let levels = vec![
+            serialized_lvl(1, 0x01, [1, 0, 0, 0, 0, 0, 0, 0, 0], 2, &[0]),
+            serialized_lvl(1, 0x04, [1, 3, 0, 0, 0, 0, 0, 0, 0], 2, &[0, '.' as u16, 1]),
+        ];
+        let replacement = with_legal(levels[1].clone());
+        let lists =
+            parsed_multilevel_decimal_lists(levels, vec![formatting_override(1, 99, replacement)]);
+        let mut numberer = Numberer::new(&lists);
+
+        assert_eq!(numberer.label(1, 1).as_deref(), Some("1.1"));
     }
 
     #[test]
