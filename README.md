@@ -346,12 +346,14 @@ border paint. Opened
 `.docx` rows, including recursively flattened nested rows, may split across
 pages by default, while effective `w:cantSplit` from direct row properties or
 an inherited table-style chain keeps a fitting row together and an over-tall
-row still splits at line boundaries. Table styles
-include direct non-conditional row properties and bounded
-`wholeTable`/`band1Horz`/`band2Horz`/`firstRow`/`lastRow` conditional regions
-selected by direct table `w:tblLook` or row `w:cnfStyle`. Inherited style and
-direct-table `w:tblStyleRowBandSize` values use Word's 0-3 row grouping; later
-regions and direct row formatting retain Word precedence. Model-only renders
+row still splits at line boundaries. Table styles include direct non-conditional
+row properties and bounded `wholeTable`, horizontal and vertical bands,
+first/last rows and columns, and all four corner conditional row properties
+selected by direct table `w:tblLook` or row `w:cnfStyle`. Named and hexadecimal
+selector masks, inherited style and direct-table `w:tblStyleRowBandSize` /
+`w:tblStyleColBandSize` values use Word's 0-3 grouping rules; the effective
+table visual direction maps physical corners, later regions and direct row
+formatting retain Word precedence. Model-only renders
 retain the established keep-together default. Opened legacy `.doc` rows follow direct
 `sprmTFCantSplit` and compatibility `sprmTFCantSplit90`: absent properties
 retain the MS-DOC splittable default, the modern property takes precedence when
@@ -513,8 +515,9 @@ bridges.
 > section columns, or section-local page geometry. Unknown fields, remaining
 > layout-dependent TOC/REF/NOTEREF cases, and unsupported value-changing field
 > semantics retain their cached display text with diagnostics.
-> Conditional table-style vertical bands, first/last-column and corner regions,
-> and `w:tblPrEx` row-group exceptions do not yet contribute `cantSplit`.
+> `w:tblPrEx` remains a table-property exception path for the supported
+> row-local `w:tblCellMar` behavior; other `w:tblPrEx` properties are outside
+> this renderer slice, and `w:cantSplit` remains a `w:trPr` property.
 > Exact/at-least line rules, nonzero line-unit before/after spacing,
 > enabled automatic/contextual paragraph spacing, nonzero character-unit indents,
 > theme/automatic/pattern paragraph shading, and table/list/conditional-style

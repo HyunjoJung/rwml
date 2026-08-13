@@ -11,6 +11,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Prunes an unreferenced internal image relationship and unreachable `word/media/*`
   target when `remove_body_block` removes the last retained reference, while
   preserving shared media, other relationship kinds, and unrelated package parts.
+- Extends opened-DOCX table-style `w:cantSplit` pagination to all twelve
+  bounded row/cell conditional selectors: horizontal and vertical bands,
+  first/last columns and rows, and four corners. Named and hexadecimal
+  `w:cnfStyle`, direct `w:tblLook`, inherited row/column band sizes, effective
+  table visual direction, style precedence, and direct-row overrides are
+  covered; `w:tblPrEx` remains margin-only for the supported exception path and
+  other table-property exceptions remain outside this renderer slice.
 - Makes strict render validation account for ActualText-aware RTL list-marker
   punctuation boundaries; the current 21-fixture public render corpus now
   reports 1.000 mean text recall with no fixture below the 0.97 floor.
@@ -505,13 +512,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   bounds intersect body text.
 - Opened `.docx` rendering now honors effective table-row `w:cantSplit` from
   direct row properties and inherited table-style chains, including bounded
-  `wholeTable`, horizontal `band1Horz`/`band2Horz`, `firstRow`, and `lastRow`
-  conditional regions selected by direct table `w:tblLook` or row `w:cnfStyle`.
-  Horizontal bands honor inherited style and direct-table
-  `w:tblStyleRowBandSize` values in Word's 0-3 range. Default rows may use
-  remaining page space, fitting protected rows move whole, and over-tall rows
-  still split deterministically. Vertical/column/corner and `w:tblPrEx` cases
-  remain unsupported.
+  `wholeTable`, all horizontal/vertical band, first/last row/column, and
+  corner conditional regions selected by direct table `w:tblLook` or row
+  `w:cnfStyle`. Row and column band sizes honor inherited and direct-table
+  0-3 values, effective table visual direction, and later-region precedence.
+  Default rows may use remaining page space, fitting protected rows move whole,
+  and over-tall rows still split deterministically. `w:tblPrEx` remains a
+  margin-exception path; its other table properties do not contribute row
+  pagination.
 - Opened legacy `.doc` rendering now honors direct table-row
   `sprmTFCantSplit` and compatibility `sprmTFCantSplit90`: rows remain
   splittable by default, fitting protected rows move whole, the modern property

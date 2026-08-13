@@ -426,6 +426,21 @@ fn horizontal_band_table_style_pagination_docx(direct_row_props: &str) -> Vec<u8
 }
 
 #[cfg(feature = "render")]
+fn first_column_table_style_pagination_docx(direct_row_props: &str) -> Vec<u8> {
+    table_pagination_docx(
+        r#"<w:tblStyle w:val="FirstColumnKeep"/><w:tblLook w:firstColumn="1" w:noHBand="1" w:noVBand="1"/>"#,
+        direct_row_props,
+        r#"<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+            <w:style w:type="table" w:styleId="FirstColumnKeep">
+                <w:tblStylePr w:type="firstCol">
+                    <w:trPr><w:cantSplit/></w:trPr>
+                </w:tblStylePr>
+            </w:style>
+        </w:styles>"#,
+    )
+}
+
+#[cfg(feature = "render")]
 fn conditional_cell_presentation_render_docx(presentation: &str) -> Vec<u8> {
     let content_types = content_types(true);
     let styles_xml = format!(
@@ -1034,6 +1049,33 @@ fn opened_docx_render_honors_horizontal_table_style_band_cant_split() {
         (banded_pages, direct_off_pages),
         (3, 2),
         "the selected horizontal band keeps the row together while direct off restores splitting"
+    );
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn opened_docx_render_honors_first_column_table_style_cant_split() {
+    let first_column =
+        Document::open(&first_column_table_style_pagination_docx("")).expect("fixture opens");
+    let direct_off = Document::open(&first_column_table_style_pagination_docx(
+        r#"<w:trPr><w:cantSplit w:val="off"/></w:trPr>"#,
+    ))
+    .expect("fixture opens");
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+    let first_column_pages = first_column
+        .layout_pages_with_fonts(&fonts)
+        .expect("first-column table style lays out")
+        .pages;
+    let direct_off_pages = direct_off
+        .layout_pages_with_fonts(&fonts)
+        .expect("direct override lays out")
+        .pages;
+
+    assert_eq!(
+        (first_column_pages, direct_off_pages),
+        (3, 2),
+        "the selected first-column style keeps the row together while direct off restores splitting"
     );
 }
 

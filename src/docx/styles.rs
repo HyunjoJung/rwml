@@ -107,11 +107,35 @@ impl Styles {
         if regions.band2_horizontal {
             overlay_cant_split(&mut value, props.band2_horizontal);
         }
+        if regions.band1_vertical {
+            overlay_cant_split(&mut value, props.band1_vertical);
+        }
+        if regions.band2_vertical {
+            overlay_cant_split(&mut value, props.band2_vertical);
+        }
+        if regions.first_column {
+            overlay_cant_split(&mut value, props.first_column);
+        }
+        if regions.last_column {
+            overlay_cant_split(&mut value, props.last_column);
+        }
         if regions.first_row {
             overlay_cant_split(&mut value, props.first_row);
         }
         if regions.last_row {
             overlay_cant_split(&mut value, props.last_row);
+        }
+        if regions.north_west {
+            overlay_cant_split(&mut value, props.north_west);
+        }
+        if regions.north_east {
+            overlay_cant_split(&mut value, props.north_east);
+        }
+        if regions.south_west {
+            overlay_cant_split(&mut value, props.south_west);
+        }
+        if regions.south_east {
+            overlay_cant_split(&mut value, props.south_east);
         }
         value
     }
@@ -171,8 +195,16 @@ impl Styles {
 pub(crate) struct TableRowStyleRegions {
     pub(crate) first_row: bool,
     pub(crate) last_row: bool,
+    pub(crate) first_column: bool,
+    pub(crate) last_column: bool,
+    pub(crate) band1_vertical: bool,
+    pub(crate) band2_vertical: bool,
     pub(crate) band1_horizontal: bool,
     pub(crate) band2_horizontal: bool,
+    pub(crate) north_west: bool,
+    pub(crate) north_east: bool,
+    pub(crate) south_west: bool,
+    pub(crate) south_east: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -196,9 +228,16 @@ impl From<TableRowStyleRegions> for TableCellStyleRegions {
         Self {
             first_row: regions.first_row,
             last_row: regions.last_row,
+            first_column: regions.first_column,
+            last_column: regions.last_column,
+            band1_vertical: regions.band1_vertical,
+            band2_vertical: regions.band2_vertical,
             band1_horizontal: regions.band1_horizontal,
             band2_horizontal: regions.band2_horizontal,
-            ..Self::default()
+            north_west: regions.north_west,
+            north_east: regions.north_east,
+            south_west: regions.south_west,
+            south_east: regions.south_east,
         }
     }
 }
@@ -1448,8 +1487,16 @@ struct TableRowStyleProps {
     whole_table: TableRowProps,
     band1_horizontal: TableRowProps,
     band2_horizontal: TableRowProps,
+    band1_vertical: TableRowProps,
+    band2_vertical: TableRowProps,
+    first_column: TableRowProps,
+    last_column: TableRowProps,
     first_row: TableRowProps,
     last_row: TableRowProps,
+    north_west: TableRowProps,
+    north_east: TableRowProps,
+    south_west: TableRowProps,
+    south_east: TableRowProps,
     row_band_size: Option<u8>,
 }
 
@@ -1583,8 +1630,16 @@ impl TableRowStyleProps {
             || self.whole_table.cant_split.is_some()
             || self.band1_horizontal.cant_split.is_some()
             || self.band2_horizontal.cant_split.is_some()
+            || self.band1_vertical.cant_split.is_some()
+            || self.band2_vertical.cant_split.is_some()
+            || self.first_column.cant_split.is_some()
+            || self.last_column.cant_split.is_some()
             || self.first_row.cant_split.is_some()
             || self.last_row.cant_split.is_some()
+            || self.north_west.cant_split.is_some()
+            || self.north_east.cant_split.is_some()
+            || self.south_west.cant_split.is_some()
+            || self.south_east.cant_split.is_some()
             || self.row_band_size.is_some()
     }
 
@@ -1593,8 +1648,16 @@ impl TableRowStyleProps {
         self.whole_table.overlay(other.whole_table);
         self.band1_horizontal.overlay(other.band1_horizontal);
         self.band2_horizontal.overlay(other.band2_horizontal);
+        self.band1_vertical.overlay(other.band1_vertical);
+        self.band2_vertical.overlay(other.band2_vertical);
+        self.first_column.overlay(other.first_column);
+        self.last_column.overlay(other.last_column);
         self.first_row.overlay(other.first_row);
         self.last_row.overlay(other.last_row);
+        self.north_west.overlay(other.north_west);
+        self.north_east.overlay(other.north_east);
+        self.south_west.overlay(other.south_west);
+        self.south_east.overlay(other.south_east);
         if other.row_band_size.is_some() {
             self.row_band_size = other.row_band_size;
         }
@@ -1605,9 +1668,16 @@ impl TableRowStyleProps {
             TableStyleRegion::WholeTable => Some(&mut self.whole_table),
             TableStyleRegion::Band1Horizontal => Some(&mut self.band1_horizontal),
             TableStyleRegion::Band2Horizontal => Some(&mut self.band2_horizontal),
+            TableStyleRegion::Band1Vertical => Some(&mut self.band1_vertical),
+            TableStyleRegion::Band2Vertical => Some(&mut self.band2_vertical),
+            TableStyleRegion::FirstColumn => Some(&mut self.first_column),
+            TableStyleRegion::LastColumn => Some(&mut self.last_column),
             TableStyleRegion::FirstRow => Some(&mut self.first_row),
             TableStyleRegion::LastRow => Some(&mut self.last_row),
-            _ => None,
+            TableStyleRegion::NorthWest => Some(&mut self.north_west),
+            TableStyleRegion::NorthEast => Some(&mut self.north_east),
+            TableStyleRegion::SouthWest => Some(&mut self.south_west),
+            TableStyleRegion::SouthEast => Some(&mut self.south_east),
         }
     }
 }
@@ -3378,6 +3448,7 @@ mod tests {
                 last_row: true,
                 band1_horizontal: true,
                 band2_horizontal: true,
+                ..Default::default()
             },
         );
 
@@ -3623,6 +3694,84 @@ mod tests {
         assert_eq!(
             styles.table_row_cant_split_for_regions(Some("BandDerived"), band2),
             Some(true)
+        );
+    }
+
+    #[test]
+    fn resolves_all_conditional_table_row_region_properties() {
+        let styles = parse(
+            r#"<w:styles>
+                <w:style w:type="table" w:styleId="AllRows">
+                    <w:tblStylePr w:type="band1Vert"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="band2Vert"><w:trPr><w:cantSplit w:val="off"/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="firstCol"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="lastCol"><w:trPr><w:cantSplit w:val="off"/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="nwCell"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="neCell"><w:trPr><w:cantSplit w:val="off"/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="swCell"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="seCell"><w:trPr><w:cantSplit w:val="off"/></w:trPr></w:tblStylePr>
+                </w:style>
+            </w:styles>"#,
+        );
+        let region = |region: TableRowStyleRegions| {
+            styles.table_row_cant_split_for_regions(Some("AllRows"), region)
+        };
+
+        assert_eq!(
+            region(TableRowStyleRegions {
+                band1_vertical: true,
+                ..Default::default()
+            }),
+            Some(true)
+        );
+        assert_eq!(
+            region(TableRowStyleRegions {
+                band2_vertical: true,
+                ..Default::default()
+            }),
+            Some(false)
+        );
+        assert_eq!(
+            region(TableRowStyleRegions {
+                first_column: true,
+                ..Default::default()
+            }),
+            Some(true)
+        );
+        assert_eq!(
+            region(TableRowStyleRegions {
+                last_column: true,
+                ..Default::default()
+            }),
+            Some(false)
+        );
+        assert_eq!(
+            region(TableRowStyleRegions {
+                north_west: true,
+                ..Default::default()
+            }),
+            Some(true)
+        );
+        assert_eq!(
+            region(TableRowStyleRegions {
+                north_east: true,
+                ..Default::default()
+            }),
+            Some(false)
+        );
+        assert_eq!(
+            region(TableRowStyleRegions {
+                south_west: true,
+                ..Default::default()
+            }),
+            Some(true)
+        );
+        assert_eq!(
+            region(TableRowStyleRegions {
+                south_east: true,
+                ..Default::default()
+            }),
+            Some(false)
         );
     }
 

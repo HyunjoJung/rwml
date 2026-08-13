@@ -5733,6 +5733,13 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Table, TablePagina
         .or_else(|| ctx.styles.table_col_band_size(props.style_id.as_deref()))
         // Word also uses zero for an omitted column-band size.
         .unwrap_or(0);
+    let style_geometry = ctx.styles.table_geometry(props.style_id.as_deref());
+    if !props.fixed_layout_declared {
+        props.fixed_layout = style_geometry.fixed_layout.unwrap_or(props.fixed_layout);
+    }
+    if !props.bidi_visual_declared {
+        props.bidi_visual = style_geometry.bidi_visual.unwrap_or(props.bidi_visual);
+    }
     let row_regions: Vec<_> = rows
         .iter()
         .enumerate()
@@ -5742,7 +5749,20 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Table, TablePagina
                     index,
                     row_count,
                     row_band_size,
+                    col_band_size,
+                    grid_widths.len().max(
+                        rows.iter()
+                            .map(|row| {
+                                row.cells
+                                    .iter()
+                                    .map(|cell| cell.col_span as usize)
+                                    .sum::<usize>()
+                            })
+                            .max()
+                            .unwrap_or(0),
+                    ),
                     row.props.header.unwrap_or(false),
+                    props.bidi_visual,
                 )
             })
         })
@@ -5759,16 +5779,9 @@ fn read_table(r: &mut Xml<'_>, ctx: &Ctx<'_>, depth: u32) -> (Table, TablePagina
         .collect();
     let style_cell_props = ctx.styles.table_cell_props(props.style_id.as_deref());
     // A table style's geometry fills in only what the table left unset.
-    let style_geometry = ctx.styles.table_geometry(props.style_id.as_deref());
     props.width_pct = props.width_pct.or(style_geometry.width_pct);
     props.indent_twips = props.indent_twips.or(style_geometry.indent_twips);
     props.align = props.align.or(style_geometry.align);
-    if !props.fixed_layout_declared {
-        props.fixed_layout = style_geometry.fixed_layout.unwrap_or(props.fixed_layout);
-    }
-    if !props.bidi_visual_declared {
-        props.bidi_visual = style_geometry.bidi_visual.unwrap_or(props.bidi_visual);
-    }
     // A table style's borders apply unless the table declares its own.
     if !props.borders_declared {
         if let Some(borders) = ctx.styles.table_borders(props.style_id.as_deref()) {
@@ -5968,23 +5981,48 @@ impl TableLook {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn row_regions(
         self,
         index: usize,
         row_count: usize,
         row_band_size: u8,
+        col_band_size: u8,
+        column_count: usize,
         is_header: bool,
+        bidi_visual: bool,
     ) -> TableRowStyleRegions {
-        let band = self
+        let horizontal_band = self
             .horizontal_banding
             .then_some(row_band_size)
             .filter(|size| *size != 0)
             .map(|size| (index / size as usize) % 2);
+        let vertical_band = self
+            .vertical_banding
+            .then_some(col_band_size)
+            .filter(|size| *size != 0);
+        let first_row = self.first_row && (index == 0 || is_header);
+        let last_row = self.last_row && index.checked_add(1) == Some(row_count);
+        let first_column = self.first_column && column_count != 0;
+        let last_column = self.last_column && column_count != 0;
+        let (west, east) = if bidi_visual {
+            (last_column, first_column)
+        } else {
+            (first_column, last_column)
+        };
         TableRowStyleRegions {
-            first_row: self.first_row && (index == 0 || is_header),
-            last_row: self.last_row && index.checked_add(1) == Some(row_count),
-            band1_horizontal: band == Some(0),
-            band2_horizontal: band == Some(1),
+            first_row,
+            last_row,
+            first_column,
+            last_column,
+            band1_vertical: vertical_band.is_some(),
+            band2_vertical: vertical_band.is_some_and(|size| column_count > size as usize),
+            band1_horizontal: horizontal_band == Some(0),
+            band2_horizontal: horizontal_band == Some(1),
+            north_west: first_row && index == 0 && west,
+            north_east: first_row && index == 0 && east,
+            south_west: last_row && index.checked_add(1) == Some(row_count) && west,
+            south_east: last_row && index.checked_add(1) == Some(row_count) && east,
         }
     }
 
@@ -6790,9 +6828,21 @@ fn read_row_style_regions(e: &BytesStart<'_>) -> Option<TableRowStyleRegions> {
         return Some(TableRowStyleRegions {
             first_row: attr_local(e, b"firstRow").is_some_and(|value| toggle_on(Some(value))),
             last_row: attr_local(e, b"lastRow").is_some_and(|value| toggle_on(Some(value))),
+            first_column: attr_local(e, b"firstColumn").is_some_and(|value| toggle_on(Some(value))),
+            last_column: attr_local(e, b"lastColumn").is_some_and(|value| toggle_on(Some(value))),
+            band1_vertical: attr_local(e, b"oddVBand").is_some_and(|value| toggle_on(Some(value))),
+            band2_vertical: attr_local(e, b"evenVBand").is_some_and(|value| toggle_on(Some(value))),
             band1_horizontal: attr_local(e, b"oddHBand")
                 .is_some_and(|value| toggle_on(Some(value))),
             band2_horizontal: attr_local(e, b"evenHBand")
+                .is_some_and(|value| toggle_on(Some(value))),
+            north_west: attr_local(e, b"firstRowFirstColumn")
+                .is_some_and(|value| toggle_on(Some(value))),
+            north_east: attr_local(e, b"firstRowLastColumn")
+                .is_some_and(|value| toggle_on(Some(value))),
+            south_west: attr_local(e, b"lastRowFirstColumn")
+                .is_some_and(|value| toggle_on(Some(value))),
+            south_east: attr_local(e, b"lastRowLastColumn")
                 .is_some_and(|value| toggle_on(Some(value))),
         });
     }
@@ -6806,8 +6856,16 @@ fn read_row_style_regions(e: &BytesStart<'_>) -> Option<TableRowStyleRegions> {
     Some(TableRowStyleRegions {
         first_row: mask[0] == b'1',
         last_row: mask[1] == b'1',
+        first_column: mask[2] == b'1',
+        last_column: mask[3] == b'1',
+        band1_vertical: mask[4] == b'1',
+        band2_vertical: mask[5] == b'1',
         band1_horizontal: mask[6] == b'1',
         band2_horizontal: mask[7] == b'1',
+        north_east: mask[8] == b'1',
+        north_west: mask[9] == b'1',
+        south_east: mask[10] == b'1',
+        south_west: mask[11] == b'1',
     })
 }
 
@@ -8310,6 +8368,128 @@ mod tests {
                 ],
                 vec![TableRowPaginationHint { cant_split: false }],
                 vec![TableRowPaginationHint { cant_split: true }],
+            ]
+        );
+    }
+
+    #[test]
+    fn table_row_pagination_uses_all_explicit_conditional_region_masks() {
+        let styles = super::super::styles::parse(
+            r#"<w:styles>
+                <w:style w:type="table" w:styleId="AllRows">
+                    <w:tblStylePr w:type="band1Vert"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="band2Vert"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="firstCol"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="lastCol"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="nwCell"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="neCell"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="swCell"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="seCell"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                </w:style>
+                <w:style w:type="table" w:styleId="CornersOnly">
+                    <w:tblStylePr w:type="nwCell"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="neCell"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="swCell"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="seCell"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                </w:style>
+            </w:styles>"#,
+        );
+        let xml = r#"<w:document><w:body>
+            <w:tbl>
+                <w:tblPr><w:tblStyle w:val="AllRows"/><w:tblLook w:noHBand="1" w:noVBand="1"/></w:tblPr>
+                <w:tr><w:trPr><w:cnfStyle w:oddVBand="1"/></w:trPr><w:tc><w:p><w:r><w:t>band one</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:trPr><w:cnfStyle w:evenVBand="1"/></w:trPr><w:tc><w:p><w:r><w:t>band two</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:trPr><w:cnfStyle w:firstColumn="1"/></w:trPr><w:tc><w:p><w:r><w:t>first column</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:trPr><w:cnfStyle w:lastColumn="1"/></w:trPr><w:tc><w:p><w:r><w:t>last column</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:trPr><w:cnfStyle w:firstRowFirstColumn="1"/></w:trPr><w:tc><w:p><w:r><w:t>north west</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:trPr><w:cnfStyle w:firstRowLastColumn="1"/></w:trPr><w:tc><w:p><w:r><w:t>north east</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:trPr><w:cnfStyle w:lastRowFirstColumn="1"/></w:trPr><w:tc><w:p><w:r><w:t>south west</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:trPr><w:cnfStyle w:lastRowLastColumn="1"/></w:trPr><w:tc><w:p><w:r><w:t>south east</w:t></w:r></w:p></w:tc></w:tr>
+                <w:tr><w:trPr><w:cnfStyle w:val="111111111111"/></w:trPr><w:tc><w:p><w:r><w:t>all regions mask</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+        </w:body></w:document>"#;
+
+        let (_, _, _, table_rows, _, _) =
+            parse_with_media_styles_and_pagination(xml, HashMap::new(), styles, true);
+
+        assert_eq!(
+            table_rows,
+            vec![vec![
+                TableRowPaginationHint { cant_split: true },
+                TableRowPaginationHint { cant_split: true },
+                TableRowPaginationHint { cant_split: true },
+                TableRowPaginationHint { cant_split: true },
+                TableRowPaginationHint { cant_split: true },
+                TableRowPaginationHint { cant_split: true },
+                TableRowPaginationHint { cant_split: true },
+                TableRowPaginationHint { cant_split: true },
+                TableRowPaginationHint { cant_split: true },
+            ]]
+        );
+    }
+
+    #[test]
+    fn table_row_pagination_uses_table_look_for_vertical_and_corner_regions() {
+        let styles = super::super::styles::parse(
+            r#"<w:styles>
+                <w:style w:type="table" w:styleId="AllRows">
+                    <w:tblPr><w:tblStyleColBandSize w:val="1"/></w:tblPr>
+                    <w:tblStylePr w:type="band1Vert"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="band2Vert"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="firstCol"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="lastCol"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="nwCell"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="neCell"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="swCell"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                    <w:tblStylePr w:type="seCell"><w:trPr><w:cantSplit/></w:trPr></w:tblStylePr>
+                </w:style>
+            </w:styles>"#,
+        );
+        let xml = r#"<w:document><w:body>
+            <w:tbl><w:tblPr><w:tblStyle w:val="AllRows"/><w:tblLook w:noHBand="1" w:noVBand="0"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>band one</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl><w:tblPr><w:tblStyle w:val="AllRows"/><w:tblLook w:noHBand="1" w:noVBand="0"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>band two a</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>band two b</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl><w:tblPr><w:tblStyle w:val="AllRows"/><w:tblLook w:firstColumn="1" w:noHBand="1" w:noVBand="1"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>first column</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl><w:tblPr><w:tblStyle w:val="AllRows"/><w:tblLook w:lastColumn="1" w:noHBand="1" w:noVBand="1"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>last column</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl><w:tblPr><w:tblStyle w:val="AllRows"/><w:tblLook w:firstRow="1" w:firstColumn="1" w:noHBand="1" w:noVBand="1"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>north west</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl><w:tblPr><w:tblStyle w:val="AllRows"/><w:tblLook w:firstRow="1" w:lastColumn="1" w:noHBand="1" w:noVBand="1"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>north east</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl><w:tblPr><w:tblStyle w:val="AllRows"/><w:tblLook w:lastRow="1" w:firstColumn="1" w:noHBand="1" w:noVBand="1"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>south west</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl><w:tblPr><w:tblStyle w:val="AllRows"/><w:tblLook w:lastRow="1" w:lastColumn="1" w:noHBand="1" w:noVBand="1"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>south east</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+            <w:tbl><w:tblPr><w:tblStyle w:val="CornersOnly"/><w:tblLook w:firstColumn="1" w:noHBand="1" w:noVBand="1"/></w:tblPr>
+                <w:tr><w:tc><w:p><w:r><w:t>corner selector disabled</w:t></w:r></w:p></w:tc></w:tr>
+            </w:tbl>
+        </w:body></w:document>"#;
+
+        let (_, _, _, table_rows, _, _) =
+            parse_with_media_styles_and_pagination(xml, HashMap::new(), styles, true);
+
+        assert_eq!(
+            table_rows,
+            vec![
+                vec![TableRowPaginationHint { cant_split: true }],
+                vec![TableRowPaginationHint { cant_split: true }],
+                vec![TableRowPaginationHint { cant_split: true }],
+                vec![TableRowPaginationHint { cant_split: true }],
+                vec![TableRowPaginationHint { cant_split: true }],
+                vec![TableRowPaginationHint { cant_split: true }],
+                vec![TableRowPaginationHint { cant_split: true }],
+                vec![TableRowPaginationHint { cant_split: true }],
+                vec![TableRowPaginationHint { cant_split: false }],
             ]
         );
     }
