@@ -16,10 +16,10 @@ use crate::clx::Piece;
 use crate::fib::{self, Fib};
 use crate::list::Numberer;
 use crate::model::{
-    normalize_field_instruction, Align, Block, CharProps, DocMeta, DocModel, DocSetup, FieldRole,
-    Image, Indent, ListInfo, PageNumberFormat, PageSetup, PaginationHint, ParaProps, Paragraph,
-    SectionBreakKind, SectionSetup, SourceRegion, SourceRegionKind, Spacing, Stats,
-    TableCellPaginationHints, TableRowPaginationHint,
+    normalize_field_instruction, Align, Block, CharProps, DocGrid, DocGridType, DocMeta, DocModel,
+    DocSetup, FieldRole, Image, Indent, ListInfo, PageNumberFormat, PageSetup, PaginationHint,
+    ParaProps, Paragraph, SectionBreakKind, SectionSetup, SourceRegion, SourceRegionKind, Spacing,
+    Stats, TableCellPaginationHints, TableRowPaginationHint,
 };
 use crate::papx::{
     PapxTable, ParagraphIndentOverrides, ParagraphJustification, ParagraphLineSpacing,
@@ -162,6 +162,7 @@ fn legacy_doc_setup_from_regions(
         setup.title_page = span.title_page;
         setup.page_number_start = span.page_number_start;
         setup.page_number_format = span.page_number_format;
+        setup.doc_grid = span.doc_grid;
     }
     setup
 }
@@ -196,6 +197,7 @@ fn legacy_doc_section_setups_from_regions(
         setup.title_page = span.title_page;
         setup.page_number_start = span.page_number_start;
         setup.page_number_format = span.page_number_format;
+        setup.doc_grid = span.doc_grid;
         setup.section_break = Some(span.section_break);
     }
     for region in regions.iter().filter(|region| {
@@ -262,6 +264,7 @@ fn apply_legacy_section_setup_to_doc_setup(section: &SectionSetup, setup: &mut D
     setup.title_page = section.title_page;
     setup.page_number_start = section.page_number_start;
     setup.page_number_format = section.page_number_format;
+    setup.doc_grid = section.doc_grid;
 }
 
 fn build_legacy_region_blocks(
@@ -477,6 +480,9 @@ const SPRM_S_DXA_LEFT: u16 = 0xB021;
 const SPRM_S_DXA_RIGHT: u16 = 0xB022;
 const SPRM_S_DYA_TOP: u16 = 0x9023;
 const SPRM_S_DYA_BOTTOM: u16 = 0x9024;
+const SPRM_S_DXT_CHAR_SPACE: u16 = 0x7030;
+const SPRM_S_DYA_LINE_PITCH: u16 = 0x9031;
+const SPRM_S_CLM: u16 = 0x5032;
 const SPRM_S_PGN_START: u16 = 0x7044;
 
 fn legacy_header_footer_setup_slot(
@@ -562,6 +568,7 @@ struct LegacySectionSpan {
     title_page: bool,
     page_number_start: Option<u32>,
     page_number_format: Option<PageNumberFormat>,
+    doc_grid: Option<DocGrid>,
     section_break: SectionBreakKind,
 }
 
@@ -572,6 +579,7 @@ struct LegacySectionProperties {
     title_page: bool,
     page_number_start: Option<u32>,
     page_number_format: Option<PageNumberFormat>,
+    doc_grid: Option<DocGrid>,
     section_break: SectionBreakKind,
 }
 
@@ -637,6 +645,7 @@ fn parse_legacy_section_spans(
             title_page: properties.title_page,
             page_number_start: properties.page_number_start,
             page_number_format: properties.page_number_format,
+            doc_grid: properties.doc_grid,
             section_break: properties.section_break,
         });
     }
@@ -669,6 +678,10 @@ fn scan_legacy_section_grpprl(grpprl: &[u8]) -> Option<LegacySectionProperties> 
     let mut columns_evenly_spaced = true;
     let mut page_number_restart = false;
     let mut page_number_start = None;
+    // [MS-DOC] 2.6.4 and 2.9.237 require a valid line pitch for every enabled mode.
+    let mut doc_grid_type = None;
+    let mut doc_grid_line_pitch = None;
+    let mut doc_grid_character_space = None;
     let mut pos = 0usize;
     while pos < grpprl.len() {
         let sprm = u16le(grpprl, pos)?;
@@ -753,6 +766,30 @@ fn scan_legacy_section_grpprl(grpprl: &[u8]) -> Option<LegacySectionProperties> 
                     properties.page.margin_bottom_pt = Some(f32::from(value) / 20.0);
                 }
             }
+            SPRM_S_DXT_CHAR_SPACE => {
+                let value = u32le(operand, 0)? as i32;
+                if (-670_925..=6_488_064).contains(&value) {
+                    // The shared model is unsigned; a valid negative value must
+                    // still clear an earlier representable source-order value.
+                    doc_grid_character_space = u32::try_from(value).ok();
+                }
+            }
+            SPRM_S_DYA_LINE_PITCH => {
+                if let Some(value @ 1..=31_680) = u16le(operand, 0) {
+                    doc_grid_line_pitch = Some(u32::from(value));
+                }
+            }
+            SPRM_S_CLM => {
+                if let Some(value) = u16le(operand, 0) {
+                    match value {
+                        0 => doc_grid_type = None,
+                        1 => doc_grid_type = Some(DocGridType::LinesAndChars),
+                        2 => doc_grid_type = Some(DocGridType::Lines),
+                        3 => doc_grid_type = Some(DocGridType::SnapToChars),
+                        _ => {}
+                    }
+                }
+            }
             SPRM_S_PGN_START => {
                 if let Some(value @ 0..=2_147_483_646) = u32le(operand, 0) {
                     page_number_start = Some(value);
@@ -765,6 +802,13 @@ fn scan_legacy_section_grpprl(grpprl: &[u8]) -> Option<LegacySectionProperties> 
     properties.columns = columns_evenly_spaced.then_some(column_count).flatten();
     properties.page_number_start =
         page_number_restart.then_some(page_number_start.unwrap_or(0).max(1));
+    properties.doc_grid = doc_grid_type
+        .zip(doc_grid_line_pitch)
+        .map(|(grid_type, line_pitch)| DocGrid {
+            grid_type,
+            line_pitch: Some(line_pitch),
+            character_space: doc_grid_character_space,
+        });
     Some(properties)
 }
 
@@ -806,6 +850,7 @@ fn legacy_section_properties_default() -> LegacySectionProperties {
         title_page: false,
         page_number_start: None,
         page_number_format: None,
+        doc_grid: None,
         section_break: SectionBreakKind::NextPage,
     }
 }
@@ -2216,6 +2261,78 @@ mod tests {
     }
 
     #[test]
+    fn legacy_sepx_scanner_preserves_bounded_document_grid_state() {
+        let mut grpprl = Vec::new();
+        let push_mode = |grpprl: &mut Vec<u8>, value: u16| {
+            grpprl.extend_from_slice(&SPRM_S_CLM.to_le_bytes());
+            grpprl.extend_from_slice(&value.to_le_bytes());
+        };
+        let push_line_pitch = |grpprl: &mut Vec<u8>, value: u16| {
+            grpprl.extend_from_slice(&SPRM_S_DYA_LINE_PITCH.to_le_bytes());
+            grpprl.extend_from_slice(&value.to_le_bytes());
+        };
+        let push_character_space = |grpprl: &mut Vec<u8>, value: i32| {
+            grpprl.extend_from_slice(&SPRM_S_DXT_CHAR_SPACE.to_le_bytes());
+            grpprl.extend_from_slice(&value.to_le_bytes());
+        };
+
+        push_mode(&mut grpprl, 1);
+        push_character_space(&mut grpprl, 40_960);
+        assert_eq!(scan_legacy_section_grpprl(&grpprl).unwrap().doc_grid, None);
+
+        push_line_pitch(&mut grpprl, 360);
+        assert_eq!(
+            scan_legacy_section_grpprl(&grpprl).unwrap().doc_grid,
+            Some(DocGrid {
+                grid_type: DocGridType::LinesAndChars,
+                line_pitch: Some(360),
+                character_space: Some(40_960),
+            })
+        );
+
+        push_mode(&mut grpprl, 4);
+        push_line_pitch(&mut grpprl, 0);
+        push_line_pitch(&mut grpprl, 31_681);
+        push_character_space(&mut grpprl, 6_488_065);
+        push_character_space(&mut grpprl, -670_926);
+        assert_eq!(
+            scan_legacy_section_grpprl(&grpprl).unwrap().doc_grid,
+            Some(DocGrid {
+                grid_type: DocGridType::LinesAndChars,
+                line_pitch: Some(360),
+                character_space: Some(40_960),
+            })
+        );
+
+        push_character_space(&mut grpprl, -4_096);
+        push_line_pitch(&mut grpprl, 720);
+        push_mode(&mut grpprl, 3);
+        assert_eq!(
+            scan_legacy_section_grpprl(&grpprl).unwrap().doc_grid,
+            Some(DocGrid {
+                grid_type: DocGridType::SnapToChars,
+                line_pitch: Some(720),
+                character_space: None,
+            })
+        );
+
+        push_mode(&mut grpprl, 0);
+        assert_eq!(scan_legacy_section_grpprl(&grpprl).unwrap().doc_grid, None);
+
+        let mut lines_only = Vec::new();
+        push_mode(&mut lines_only, 2);
+        push_line_pitch(&mut lines_only, 480);
+        assert_eq!(
+            scan_legacy_section_grpprl(&lines_only).unwrap().doc_grid,
+            Some(DocGrid {
+                grid_type: DocGridType::Lines,
+                line_pitch: Some(480),
+                character_space: None,
+            })
+        );
+    }
+
+    #[test]
     fn legacy_sepx_parser_rejects_malformed_payloads() {
         assert!(scan_legacy_section_grpprl(&[0x1D]).is_none());
         assert!(scan_legacy_section_grpprl(&[0x00, 0xC0, 0x02, 0xAA]).is_none());
@@ -2270,6 +2387,7 @@ mod tests {
                     title_page: false,
                     page_number_start: None,
                     page_number_format: None,
+                    doc_grid: None,
                     section_break: SectionBreakKind::NextPage,
                 },
                 LegacySectionSpan {
@@ -2280,6 +2398,7 @@ mod tests {
                     title_page: false,
                     page_number_start: None,
                     page_number_format: None,
+                    doc_grid: None,
                     section_break: SectionBreakKind::NextPage,
                 },
             ],

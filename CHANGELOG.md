@@ -63,6 +63,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Preserves strict legacy `.doc` `sprmSFTitlePage` section state through the
   shared model and fresh `.docx` conversion/reopen for both single- and
   multi-section documents.
+- Preserves complete legacy `.doc` document-grid modes and valid line pitch from
+  `sprmSClm` and `sprmSDyaLinePitch`, plus nonnegative `sprmSDxtCharSpace`,
+  through each section's shared model state and fresh `.docx`
+  conversion/reopen. Enabled grids without their required valid line pitch are
+  omitted, invalid operands leave prior source-order state intact, and a valid
+  negative character-pitch delta clears an earlier representable value because
+  the existing public model stores that field as unsigned.
 - Preserves legacy `.doc` section page-number formats and restart values from
   `sprmSNfcPgn`, `sprmSFPgnRestart`, `sprmSPgnStart97`, and `sprmSPgnStart`
   through the shared model and fresh `.docx` conversion/reopen. Supported

@@ -5955,6 +5955,21 @@ mod tests {
         grpprl.extend_from_slice(&start.to_le_bytes());
     }
 
+    fn push_section_document_grid_mode(grpprl: &mut Vec<u8>, mode: u16) {
+        grpprl.extend_from_slice(&0x5032u16.to_le_bytes());
+        grpprl.extend_from_slice(&mode.to_le_bytes());
+    }
+
+    fn push_section_document_grid_line_pitch(grpprl: &mut Vec<u8>, line_pitch: u16) {
+        grpprl.extend_from_slice(&0x9031u16.to_le_bytes());
+        grpprl.extend_from_slice(&line_pitch.to_le_bytes());
+    }
+
+    fn push_section_document_grid_character_space(grpprl: &mut Vec<u8>, character_space: i32) {
+        grpprl.extend_from_slice(&0x7030u16.to_le_bytes());
+        grpprl.extend_from_slice(&character_space.to_le_bytes());
+    }
+
     fn legacy_doc_with_section_page_grpprls(
         text: &str,
         section_cps: &[u32],
@@ -7090,6 +7105,125 @@ mod tests {
             assert_eq!(
                 reopened.model().setup.page_number_format,
                 Some(PageNumberFormat::DecimalZero)
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_doc_sepx_preserves_document_grid_state_in_source_order() {
+        let section_cps = [0, 5, 10, 15];
+        let mut first = section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        let mut disabled = first.clone();
+        let mut final_section = first.clone();
+
+        push_section_document_grid_mode(&mut first, 1);
+        push_section_document_grid_line_pitch(&mut first, 360);
+        push_section_document_grid_character_space(&mut first, 40_960);
+
+        push_section_document_grid_mode(&mut disabled, 1);
+        push_section_document_grid_line_pitch(&mut disabled, 480);
+        push_section_document_grid_mode(&mut disabled, 0);
+
+        push_section_document_grid_mode(&mut final_section, 3);
+        push_section_document_grid_line_pitch(&mut final_section, 720);
+        push_section_document_grid_character_space(&mut final_section, 20_480);
+        push_section_document_grid_character_space(&mut final_section, -4_096);
+
+        let sepx_grpprls = [
+            first.as_slice(),
+            disabled.as_slice(),
+            final_section.as_slice(),
+        ];
+        let bytes =
+            legacy_doc_with_section_page_grpprls("AAAAABBBBBCCCCC", &section_cps, &sepx_grpprls);
+
+        let doc = Document::open(&bytes).unwrap();
+        let model = doc.model();
+        let section_grids = model
+            .blocks
+            .iter()
+            .filter_map(|block| match block {
+                Block::SectionBreak(setup) => Some(setup.doc_grid),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            section_grids,
+            vec![
+                Some(DocGrid {
+                    grid_type: DocGridType::LinesAndChars,
+                    line_pitch: Some(360),
+                    character_space: Some(40_960),
+                }),
+                None,
+            ]
+        );
+        assert_eq!(
+            model.setup.doc_grid,
+            Some(DocGrid {
+                grid_type: DocGridType::SnapToChars,
+                line_pitch: Some(720),
+                character_space: None,
+            })
+        );
+
+        #[cfg(feature = "docx")]
+        {
+            let docx = doc.to_docx();
+            let document_xml = docx_part(&docx, "word/document.xml");
+            assert_eq!(document_xml.matches("<w:docGrid").count(), 2);
+            assert!(document_xml.contains(
+                r#"<w:docGrid w:type="linesAndChars" w:linePitch="360" w:charSpace="40960"/>"#
+            ));
+            assert!(document_xml.contains(r#"<w:docGrid w:type="snapToChars" w:linePitch="720"/>"#));
+
+            let reopened = Document::open(&docx).unwrap();
+            let reopened_model = reopened.model();
+            let reopened_section_grids = reopened_model
+                .blocks
+                .iter()
+                .filter_map(|block| match block {
+                    Block::SectionBreak(setup) => Some(setup.doc_grid),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(reopened_section_grids, section_grids);
+            assert_eq!(reopened_model.setup.doc_grid, model.setup.doc_grid);
+        }
+    }
+
+    #[test]
+    fn legacy_doc_sepx_preserves_single_section_line_grid() {
+        let section_cps = [0, 4];
+        let mut only = section_page_grpprl(12_240, 15_840, 1_440, 1_440, 1_440, 1_440, false);
+        push_section_document_grid_mode(&mut only, 2);
+        push_section_document_grid_line_pitch(&mut only, 480);
+        let sepx_grpprls = [only.as_slice()];
+        let bytes = legacy_doc_with_section_page_grpprls("ONLY", &section_cps, &sepx_grpprls);
+
+        let doc = Document::open(&bytes).unwrap();
+        let model = doc.model();
+        let expected = Some(DocGrid {
+            grid_type: DocGridType::Lines,
+            line_pitch: Some(480),
+            character_space: None,
+        });
+
+        assert!(model
+            .blocks
+            .iter()
+            .all(|block| !matches!(block, Block::SectionBreak(_))));
+        assert_eq!(model.setup.doc_grid, expected);
+
+        #[cfg(feature = "docx")]
+        {
+            let docx = doc.to_docx();
+            assert!(docx_part(&docx, "word/document.xml")
+                .contains(r#"<w:docGrid w:type="lines" w:linePitch="480"/>"#));
+            assert_eq!(
+                Document::open(&docx).unwrap().model().setup.doc_grid,
+                expected
             );
         }
     }
