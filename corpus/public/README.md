@@ -19,8 +19,9 @@ Every file here is safe to redistribute:
   synthetic set and permissively licensed vendored files. It is checked by
   `tests/public_corpus.rs`.
 - `RENDER_MANIFEST.tsv` — expected native-render page counts and render warning
-  classes for the synthetic fixtures. It is checked when tests run with
-  `--features render`.
+  classes for every manifest-listed fixture. It is checked when tests run with
+  `--features render` and keeps strict release validation aligned with
+  `MANIFEST.tsv`.
 - `benchmark/` — three generated `.doc` fixtures, exact report expectations, and
   Apache POI 5.2.3 / LibreOffice 26.2.3.2 extraction goldens. It is also the
   self-contained input for the strict public extraction benchmark.
