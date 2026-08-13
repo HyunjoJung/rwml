@@ -16,7 +16,7 @@ use super::{
     attr_local, attr_local_trimmed, attr_u16, attr_u8, local, parse_rgb_hex_color, toggle_on,
 };
 use crate::model::{
-    CharProps, Color, Indent, Spacing, TabAlignment, TabStop, VertAlign, MAX_TAB_STOPS,
+    CharProps, Color, Indent, Spacing, TabAlignment, TabLeader, TabStop, VertAlign, MAX_TAB_STOPS,
 };
 use crate::stsh::heading_from_name;
 
@@ -589,12 +589,22 @@ pub(super) fn tab_stop(e: &BytesStart<'_>) -> Option<TabStop> {
         Some("center") => TabAlignment::Center,
         Some("right") | Some("end") => TabAlignment::Right,
         Some("decimal") | Some("num") => TabAlignment::Decimal,
+        Some("bar") => TabAlignment::Bar,
         Some("clear") => TabAlignment::Clear,
         _ => return None,
+    };
+    let leader = match attr_local_trimmed(e, b"leader").as_deref() {
+        Some("dot") => TabLeader::Dot,
+        Some("hyphen") => TabLeader::Hyphen,
+        Some("underscore") => TabLeader::Underscore,
+        Some("heavy") => TabLeader::Heavy,
+        Some("middleDot") => TabLeader::MiddleDot,
+        _ => TabLeader::None,
     };
     Some(TabStop {
         position_pt,
         alignment,
+        leader,
     })
 }
 
@@ -2490,6 +2500,7 @@ mod tests {
             vec![TabStop {
                 position_pt: 36.0,
                 alignment: TabAlignment::Right,
+                leader: TabLeader::None,
             }]
         );
     }
@@ -2551,6 +2562,38 @@ mod tests {
             .paragraph_props(Some("InvalidToggle"))
             .layout
             .page_break_before());
+    }
+
+    #[test]
+    fn tab_stops_preserve_supported_leaders_and_bar_alignment() {
+        let styles = parse(
+            r#"<w:styles><w:style w:type="paragraph" w:styleId="Tabs"><w:pPr><w:tabs>
+                <w:tab w:val="right" w:pos="1440" w:leader="dot"/>
+                <w:tab w:val="bar" w:pos="2160"/>
+                <w:tab w:val="decimal" w:pos="2880" w:leader="middleDot"/>
+            </w:tabs></w:pPr></w:style></w:styles>"#,
+        );
+
+        assert_eq!(
+            styles.paragraph_props(Some("Tabs")).tab_stops,
+            vec![
+                TabStop {
+                    position_pt: 72.0,
+                    alignment: TabAlignment::Right,
+                    leader: TabLeader::Dot,
+                },
+                TabStop {
+                    position_pt: 108.0,
+                    alignment: TabAlignment::Bar,
+                    leader: TabLeader::None,
+                },
+                TabStop {
+                    position_pt: 144.0,
+                    alignment: TabAlignment::Decimal,
+                    leader: TabLeader::MiddleDot,
+                },
+            ]
+        );
     }
 
     #[test]

@@ -47,9 +47,9 @@ use parley::{FontContext, Layout, LayoutContext};
 use crate::model::{
     Align, Block, Cell, CellMargins, CharProps, Chart, ChartKind, ChartShape, Color, DocModel,
     FieldRole, Image, ListInfo, PageSetup, PaginationHint, ParaProps, Paragraph, Run,
-    SectionBreakKind, SectionSetup, Spacing, TabAlignment, TabStop, Table, TableBorderSide,
-    TableCellNestedPaginationHints, TableCellPaginationHints, TableCellTabStopHints,
-    TablePaginationHints, TableRowPaginationHint, VCell, VertAlign,
+    SectionBreakKind, SectionSetup, Spacing, TabAlignment, TabLeader, TabStop, Table,
+    TableBorderSide, TableCellNestedPaginationHints, TableCellPaginationHints,
+    TableCellTabStopHints, TablePaginationHints, TableRowPaginationHint, VCell, VertAlign,
 };
 use crate::report::{self, FeatureInventory, RenderReport, RenderWarning, RenderedPdf};
 use crate::{Error, Result};
@@ -218,6 +218,14 @@ struct LineBackground {
     width: f32,
 }
 
+#[derive(Clone, Copy)]
+struct TabLeaderSpan {
+    start: f32,
+    end: f32,
+    style: TabLeader,
+    color: rgb::Color,
+}
+
 impl RunDraw {
     /// Advance width of the run in points (sum of glyph advances × size).
     fn width(&self) -> f32 {
@@ -238,6 +246,7 @@ struct LineLayout {
     cell_spacing: CellLineSpacing,
     cell_paragraph: Option<CellParagraphLine>,
     cell_cant_split_group: Option<NonZeroUsize>,
+    leaders: Vec<TabLeaderSpan>,
     runs: Vec<RunDraw>,
 }
 
@@ -2199,6 +2208,7 @@ fn shape_extract_lines(
             cell_spacing: CellLineSpacing::default(),
             cell_paragraph: None,
             cell_cant_split_group: None,
+            leaders: Vec::new(),
             runs,
         });
     }
@@ -2315,7 +2325,7 @@ fn explicit_tab_field_start(
     field: TabFieldMetrics,
     width: f32,
     origin: f32,
-) -> Option<f32> {
+) -> Option<(TabStop, f32)> {
     let absolute_cursor = origin + cursor;
     let absolute_end = origin + width;
     if !absolute_cursor.is_finite() || !absolute_end.is_finite() {
@@ -2329,6 +2339,7 @@ fn explicit_tab_field_start(
                 TabAlignment::Center => field.advance / 2.0,
                 TabAlignment::Right => field.advance,
                 TabAlignment::Decimal => field.decimal_offset.unwrap_or(field.advance),
+                TabAlignment::Bar => return None,
                 TabAlignment::Clear => return None,
             };
             let absolute_field_start = stop.position_pt - alignment_offset;
@@ -2337,10 +2348,33 @@ fn explicit_tab_field_start(
                 && stop.position_pt > absolute_cursor + f32::EPSILON
                 && absolute_field_start >= absolute_cursor
                 && absolute_field_end <= absolute_end)
-                .then_some((stop.position_pt, absolute_field_start - origin))
+                .then_some((stop.position_pt, *stop, absolute_field_start - origin))
         })
         .min_by(|left, right| left.0.total_cmp(&right.0))
-        .map(|(_, field_start)| field_start)
+        .map(|(_, stop, field_start)| (stop, field_start))
+}
+
+fn next_bar_tab_position(
+    tab_stops: &[TabStop],
+    cursor: f32,
+    width: f32,
+    origin: f32,
+) -> Option<f32> {
+    let absolute_cursor = origin + cursor;
+    let absolute_end = origin + width;
+    if !absolute_cursor.is_finite() || !absolute_end.is_finite() {
+        return None;
+    }
+    tab_stops
+        .iter()
+        .filter(|stop| {
+            stop.alignment == TabAlignment::Bar
+                && stop.position_pt.is_finite()
+                && stop.position_pt > absolute_cursor + f32::EPSILON
+                && stop.position_pt <= absolute_end
+        })
+        .min_by(|left, right| left.position_pt.total_cmp(&right.position_pt))
+        .map(|stop| stop.position_pt - origin)
 }
 
 #[cfg(test)]
@@ -2381,6 +2415,7 @@ fn apply_tab_stops(
 ) -> Vec<TabReservation> {
     let mut reservations = Vec::with_capacity(lines.len());
     for line in lines {
+        line.leaders.clear();
         let mut accumulated_shift = 0.0;
         let mut line_end: f32 = 0.0;
         for run_index in 0..line.runs.len() {
@@ -2392,8 +2427,11 @@ fn apply_tab_stops(
                 let original_advance = glyph.x_advance * run_size;
                 if glyph_text(text, glyph) == Some("\t") && run_size > 0.0 {
                     let field = tab_field_metrics(text, line, run_index, glyph_index);
+                    let explicit =
+                        explicit_tab_field_start(tab_stops, cursor, field, width, origin);
                     let field_start =
-                        explicit_tab_field_start(tab_stops, cursor, field, width, origin)
+                        explicit
+                            .map(|(_, field_start)| field_start)
                             .unwrap_or_else(|| {
                                 default_tab_field_start_with_interval(
                                     cursor,
@@ -2402,6 +2440,25 @@ fn apply_tab_stops(
                                     default_tab_stop_pt,
                                 )
                             });
+                    if let Some((stop, _)) = explicit {
+                        if stop.leader != TabLeader::None && field_start > cursor {
+                            line.leaders.push(TabLeaderSpan {
+                                start: cursor,
+                                end: field_start,
+                                style: stop.leader,
+                                color: line.runs[run_index].color,
+                            });
+                        }
+                    } else if let Some(bar) =
+                        next_bar_tab_position(tab_stops, cursor, width, origin)
+                    {
+                        line.leaders.push(TabLeaderSpan {
+                            start: bar,
+                            end: bar,
+                            style: TabLeader::Bar,
+                            color: line.runs[run_index].color,
+                        });
+                    }
                     let advance = (field_start - cursor)
                         .max(0.0)
                         .min((width - cursor).max(0.0));
@@ -2487,6 +2544,7 @@ fn explicit_rtl_tab_field_start(
                 TabAlignment::Center => field.advance / 2.0,
                 TabAlignment::Right => field.advance,
                 TabAlignment::Decimal => field.decimal_offset.unwrap_or(field.advance),
+                TabAlignment::Bar => return None,
                 TabAlignment::Clear => return None,
             };
             let absolute_field_start = stop.position_pt - alignment_offset;
@@ -4466,6 +4524,7 @@ fn draw_table_cell_content(
         let after = line.cell_spacing.after;
         let line_x = cell_line_origin(placement.x, cell.insets, &line);
         draw_line_background(surface, &line, line_x, line_top);
+        draw_line_leaders(surface, &line, line_x, line_top, baseline);
         for run in line.runs {
             if let Some(url) = run.link.clone() {
                 let left = line_x + run.x;
@@ -4493,6 +4552,52 @@ fn draw_line_background(surface: &mut Surface<'_>, line: &LineLayout, x_abs: f32
             line.height,
             background.color,
         );
+    }
+}
+
+fn draw_line_leaders(
+    surface: &mut Surface<'_>,
+    line: &LineLayout,
+    x_abs: f32,
+    top: f32,
+    baseline: f32,
+) {
+    for leader in &line.leaders {
+        let start = x_abs + leader.start.min(leader.end);
+        let end = x_abs + leader.start.max(leader.end);
+        if !start.is_finite() || !end.is_finite() || !top.is_finite() || !baseline.is_finite() {
+            continue;
+        }
+        if leader.style == TabLeader::Bar {
+            fill_rect_color(
+                surface,
+                start - 0.4,
+                top + 1.0,
+                0.8,
+                (line.height - 2.0).max(0.8),
+                leader.color,
+            );
+            continue;
+        }
+        let (dash, gap, y, height): (f32, f32, f32, f32) = match leader.style {
+            TabLeader::Dot => (1.0, 3.0, baseline - 1.0, 1.0),
+            TabLeader::Hyphen => (3.0, 3.0, baseline - 1.2, 0.8),
+            TabLeader::Underscore => (end - start, 0.0, baseline + 1.0, 0.8),
+            TabLeader::Heavy => (4.0, 2.0, baseline - 1.8, 1.6),
+            TabLeader::MiddleDot => (2.0, 3.0, baseline - 1.8, 1.8),
+            TabLeader::None | TabLeader::Bar => continue,
+        };
+        if dash <= 0.0 || !dash.is_finite() || !gap.is_finite() {
+            continue;
+        }
+        let mut x = start;
+        let mut segments = 0usize;
+        while x < end && segments < 2048 {
+            let width = dash.min(end - x);
+            fill_rect_color(surface, x, y, width, height, leader.color);
+            x += dash + gap;
+            segments += 1;
+        }
     }
 }
 
@@ -7823,6 +7928,7 @@ fn render_pdf(
             let baseline = hy + line.baseline;
             let x0 = geom.left + line.x_indent;
             draw_line_background(&mut surface, line, x0, hy);
+            draw_line_leaders(&mut surface, line, x0, hy, baseline);
             for run in &line.runs {
                 draw_run_with_page_context(
                     &mut surface,
@@ -7844,6 +7950,7 @@ fn render_pdf(
             let baseline = fy + line.baseline;
             let x0 = geom.left + line.x_indent;
             draw_line_background(&mut surface, line, x0, fy);
+            draw_line_leaders(&mut surface, line, x0, fy, baseline);
             for run in &line.runs {
                 draw_run_with_page_context(
                     &mut surface,
@@ -7862,6 +7969,7 @@ fn render_pdf(
                     let baseline = fy + line.baseline;
                     let x0 = geom.left + line.x_indent;
                     draw_line_background(&mut surface, &line, x0, fy);
+                    draw_line_leaders(&mut surface, &line, x0, fy, baseline);
                     for run in line.runs {
                         draw_run(&mut surface, run, x0, baseline);
                     }
@@ -7899,6 +8007,7 @@ fn render_pdf(
                     let x0 = geom.left + column_x + line.x_indent;
                     let lh = line.height;
                     draw_line_background(&mut surface, &line, x0, top);
+                    draw_line_leaders(&mut surface, &line, x0, top, baseline);
                     for run in line.runs {
                         if let Some(url) = run.link.clone() {
                             let l = x0 + run.x;
@@ -8049,8 +8158,8 @@ mod tests {
     use crate::model::{
         Align, Block, Cell, CellMargins, CharProps, Color, DocModel, FieldRole, Image, Indent,
         ListInfo, PageSetup, PaginationHint, ParaProps, Paragraph, Row, Run, SectionBreakKind,
-        SectionSetup, Spacing, TabAlignment, TabStop, Table, TableBorderSide, TablePaginationHints,
-        TableRowPaginationHint, VCell, VertAlign,
+        SectionSetup, Spacing, TabAlignment, TabLeader, TabStop, Table, TableBorderSide,
+        TablePaginationHints, TableRowPaginationHint, VCell, VertAlign,
     };
     use crate::report::FeatureInventory;
     use crate::{FloatingShape, ShapeEffectExtent, ShapeExtent, ShapePoint, ShapePosition};
@@ -8478,6 +8587,7 @@ mod tests {
                 TabAlignment::Left | TabAlignment::Decimal => bounds.0,
                 TabAlignment::Center => (bounds.0 + bounds.1) / 2.0,
                 TabAlignment::Right => bounds.1,
+                TabAlignment::Bar => unreachable!(),
                 TabAlignment::Clear => unreachable!(),
             }
     }
@@ -8901,6 +9011,7 @@ mod tests {
                 &[TabStop {
                     position_pt: 100.0,
                     alignment: TabAlignment::Left,
+                    leader: TabLeader::None,
                 }],
             );
             let line = &lines[0];
@@ -8973,6 +9084,7 @@ mod tests {
             &[TabStop {
                 position_pt: 100.0,
                 alignment: TabAlignment::Left,
+                leader: TabLeader::None,
             }],
         );
         let line = &lines[0];
@@ -9016,6 +9128,7 @@ mod tests {
                 &[TabStop {
                     position_pt: 100.0,
                     alignment,
+                    leader: TabLeader::None,
                 }],
             );
             let rendered = &lines[0].runs[0].text;
@@ -9035,6 +9148,7 @@ mod tests {
                     TabAlignment::Left | TabAlignment::Decimal => bounds.0,
                     TabAlignment::Center => (bounds.0 + bounds.1) / 2.0,
                     TabAlignment::Right => bounds.1,
+                    TabAlignment::Bar => unreachable!(),
                     TabAlignment::Clear => unreachable!(),
                 };
             assert!(
@@ -9061,6 +9175,7 @@ mod tests {
                 &[TabStop {
                     position_pt,
                     alignment: TabAlignment::Center,
+                    leader: TabLeader::None,
                 }],
             );
             let rendered = &lines[0].runs[0].text;
@@ -9087,6 +9202,7 @@ mod tests {
                 &[TabStop {
                     position_pt,
                     alignment: TabAlignment::Left,
+                    leader: TabLeader::None,
                 }],
             );
             let rendered = &lines[0].runs[0].text;
@@ -9348,6 +9464,7 @@ mod tests {
                     &[TabStop {
                         position_pt,
                         alignment,
+                        leader: TabLeader::None,
                     }],
                 );
                 let actual = tab_aligned_position(&lines[0], measured, alignment);
@@ -9357,6 +9474,42 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn tab_leaders_and_bar_tabs_create_bounded_line_decorations() {
+        let lines = paragraph_lines_with_marker_and_tabs(
+            ParaProps::default(),
+            vec![Run {
+                text: "A\tB\tC".to_string(),
+                ..Run::default()
+            }],
+            None,
+            &[
+                TabStop {
+                    position_pt: 100.0,
+                    alignment: TabAlignment::Right,
+                    leader: TabLeader::Dot,
+                },
+                TabStop {
+                    position_pt: 140.0,
+                    alignment: TabAlignment::Bar,
+                    leader: TabLeader::None,
+                },
+            ],
+        );
+        let leaders = &lines[0].leaders;
+        assert_eq!(leaders.len(), 2);
+        assert_eq!(leaders[0].style, TabLeader::Dot);
+        assert!(leaders[0].start < leaders[0].end);
+        assert_eq!(leaders[1].style, TabLeader::Bar);
+        assert_eq!(leaders[1].start, leaders[1].end);
+        assert!((leaders[1].start - 140.0).abs() <= 0.01);
+        assert!(leaders.iter().all(|leader| {
+            [leader.start, leader.end]
+                .into_iter()
+                .all(|value| value.is_finite() && (0.0..=220.0).contains(&value))
+        }));
     }
 
     #[test]
@@ -9379,6 +9532,7 @@ mod tests {
                 &[TabStop {
                     position_pt,
                     alignment: TabAlignment::Left,
+                    leader: TabLeader::None,
                 }],
             );
             let field_start = "A\t".len();
@@ -9414,6 +9568,7 @@ mod tests {
                 &[TabStop {
                     position_pt: 1.0,
                     alignment: TabAlignment::Left,
+                    leader: TabLeader::None,
                 }],
             );
             let baseline_position = tab_aligned_position(
@@ -9463,6 +9618,7 @@ mod tests {
             &[TabStop {
                 position_pt: 100.0,
                 alignment: TabAlignment::Left,
+                leader: TabLeader::None,
             }],
         );
         let b_bounds = text_bounds(&lines[0], 2..3).expect("B glyph");
@@ -9519,6 +9675,7 @@ mod tests {
                     &[TabStop {
                         position_pt: 100.0,
                         alignment,
+                        leader: TabLeader::None,
                     }],
                 );
                 let actual = tab_aligned_position(&lines[0], measured, alignment);
@@ -9551,6 +9708,7 @@ mod tests {
             &[TabStop {
                 position_pt: 100.0,
                 alignment: TabAlignment::Left,
+                leader: TabLeader::None,
             }],
         );
         let b_start = text.find('B').unwrap();
@@ -9591,6 +9749,7 @@ mod tests {
                 &[TabStop {
                     position_pt,
                     alignment,
+                    leader: TabLeader::None,
                 }],
             );
             let field_start = text.find('\t').unwrap() + 1;
@@ -9654,6 +9813,7 @@ mod tests {
             &[TabStop {
                 position_pt: DEFAULT_TAB_STOP_PT,
                 alignment: TabAlignment::Left,
+                leader: TabLeader::None,
             }],
         );
         let b_bounds = text_bounds(&lines[0], 2..3).expect("B glyph");
@@ -9684,6 +9844,7 @@ mod tests {
             &[TabStop {
                 position_pt: 1_000.0,
                 alignment: TabAlignment::Left,
+                leader: TabLeader::None,
             }],
         );
         let b_bounds = text_bounds(&lines[0], 2..3).expect("B glyph");
@@ -9721,6 +9882,7 @@ mod tests {
             &[TabStop {
                 position_pt: 160.0,
                 alignment: TabAlignment::Right,
+                leader: TabLeader::None,
             }],
         );
         let field_start = text.find('\t').unwrap() + 1;
@@ -13020,6 +13182,7 @@ mod tests {
                 cell_spacing: Default::default(),
                 cell_paragraph: None,
                 cell_cant_split_group: None,
+                leaders: Vec::new(),
                 runs: Vec::new(),
             })
         };
@@ -13050,6 +13213,7 @@ mod tests {
             cell_spacing: Default::default(),
             cell_paragraph: None,
             cell_cant_split_group: None,
+            leaders: Vec::new(),
             runs: Vec::new(),
         })
     }
@@ -13077,6 +13241,7 @@ mod tests {
                 cell_spacing: Default::default(),
                 cell_paragraph: None,
                 cell_cant_split_group: None,
+                leaders: Vec::new(),
                 runs: Vec::new(),
             })
             .collect::<Vec<_>>();
@@ -14101,6 +14266,7 @@ mod tests {
                 cell_spacing: Default::default(),
                 cell_paragraph: None,
                 cell_cant_split_group: None,
+                leaders: Vec::new(),
                 runs: Vec::new(),
             })
         };

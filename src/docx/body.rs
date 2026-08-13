@@ -7698,7 +7698,7 @@ fn normalize_table_grid_widths(widths: &[u32], model_grid_cols: usize) -> Vec<f3
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Block, VertAlign};
+    use crate::model::{Block, TabLeader, VertAlign};
 
     type ParsedWithRenderHints = (
         Vec<Block>,
@@ -7904,14 +7904,17 @@ mod tests {
                 TabStop {
                     position_pt: 72.0,
                     alignment: TabAlignment::Center,
+                    leader: TabLeader::None,
                 },
                 TabStop {
                     position_pt: 108.0,
                     alignment: TabAlignment::Right,
+                    leader: TabLeader::None,
                 },
                 TabStop {
                     position_pt: 144.0,
                     alignment: TabAlignment::Decimal,
+                    leader: TabLeader::None,
                 },
             ]
         );
@@ -10716,6 +10719,7 @@ mod tests {
             vec![TabStop {
                 position_pt: 72.0,
                 alignment: TabAlignment::Right,
+                leader: TabLeader::None,
             }]
         );
         let Block::Paragraph(empty_choice) = &blocks[1] else {

@@ -356,7 +356,21 @@ pub(crate) enum TabAlignment {
     Center,
     Right,
     Decimal,
+    Bar,
     Clear,
+}
+
+#[cfg(any(feature = "docx", feature = "render"))]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) enum TabLeader {
+    #[default]
+    None,
+    Dot,
+    Hyphen,
+    Underscore,
+    Heavy,
+    MiddleDot,
+    Bar,
 }
 
 #[cfg(any(feature = "docx", feature = "render"))]
@@ -364,6 +378,7 @@ pub(crate) enum TabAlignment {
 pub(crate) struct TabStop {
     pub(crate) position_pt: f32,
     pub(crate) alignment: TabAlignment,
+    pub(crate) leader: TabLeader,
 }
 
 #[cfg(any(feature = "docx", feature = "render"))]

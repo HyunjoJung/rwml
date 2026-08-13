@@ -576,6 +576,30 @@ fn aligned_tab_render_docx(jc: &str, stop_twips: Option<u32>) -> Vec<u8> {
 }
 
 #[cfg(feature = "render")]
+fn leader_tab_render_docx(tabs: &str) -> Vec<u8> {
+    let content_types = content_types(false);
+    let document_xml = format!(
+        r#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+            <w:p><w:pPr>{tabs}</w:pPr>
+                <w:r><w:t>A</w:t><w:tab/><w:t>B</w:t><w:tab/><w:t>C</w:t></w:r>
+            </w:p>
+            <w:sectPr><w:pgSz w:w="4400" w:h="2600"/>
+                <w:pgMar w:top="200" w:right="200" w:bottom="200" w:left="200"/>
+            </w:sectPr>
+        </w:body></w:document>"#
+    );
+    docx_fixture(&[
+        ("[Content_Types].xml", &content_types),
+        (
+            "_rels/.rels",
+            r#"<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>"#,
+        ),
+        ("word/_rels/document.xml.rels", document_rels(false)),
+        ("word/document.xml", &document_xml),
+    ])
+}
+
+#[cfg(feature = "render")]
 fn rtl_tab_render_docx(tab_val: &str, text: &str, stop_twips: Option<u32>) -> Vec<u8> {
     let content_types = content_types(false);
     let tabs = stop_twips.map_or_else(String::new, |twips| {
@@ -1138,6 +1162,40 @@ fn opened_docx_render_uses_explicit_tabs_in_non_left_paragraph_alignments() {
             "explicit {jc} tab rendering must remain deterministic"
         );
     }
+}
+
+#[cfg(feature = "render")]
+#[test]
+fn opened_docx_render_draws_tab_leaders_and_bar_tabs() {
+    let plain = Document::open(&leader_tab_render_docx("")).expect("plain tab fixture opens");
+    let decorated = Document::open(&leader_tab_render_docx(
+        r#"<w:tabs>
+            <w:tab w:val="right" w:pos="2000" w:leader="dot"/>
+            <w:tab w:val="bar" w:pos="3000"/>
+        </w:tabs>"#,
+    ))
+    .expect("leader and bar tab fixture opens");
+    let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+
+    let plain_pdf = plain.to_pdf_with_fonts(&fonts);
+    let decorated_pdf = decorated.to_pdf_with_fonts(&fonts);
+    let model_pdf = rwml::try_render_pdf_with_fonts(&decorated.model(), &fonts)
+        .expect("model-only leader fixture renders");
+    assert!(plain_pdf.starts_with(b"%PDF-"));
+    assert!(decorated_pdf.starts_with(b"%PDF-"));
+    assert_ne!(
+        plain_pdf, decorated_pdf,
+        "leader and bar tabs must affect PDF paint"
+    );
+    assert_ne!(
+        decorated_pdf, model_pdf,
+        "opened-document tab decorations must stay sidecar-only"
+    );
+    assert_eq!(
+        decorated_pdf,
+        decorated.to_pdf_with_fonts(&fonts),
+        "leader and bar tab rendering must remain deterministic"
+    );
 }
 
 #[cfg(feature = "render")]

@@ -382,9 +382,11 @@ recursively nested table-cell paragraphs use the same bounded path as supported
 top-level paragraphs. Explicit left-aligned LTR stops in center-, right-, and
 justified-aligned paragraphs use that path when the resolved stop is reachable.
 The same bounded path reaches ordinary RTL table-cell paragraphs for
-center/end/decimal stops. Leaders/bar tabs, settings-defined default-tab
-intervals for unsupported contexts, and implicit hanging-indent/list-marker
-tabs remain outside this
+center/end/decimal stops. Supported LTR dot, hyphen, underscore, heavy, and
+middle-dot leaders plus bar tabs now paint through the same bounded sidecar
+path in top-level and table-cell paragraphs. RTL leaders/bar tabs, settings-
+defined default-tab intervals in unsupported contexts, and implicit hanging-
+indent/list-marker tabs remain outside this
 bounded tab support. Within
 the supported LTR and RTL paths, resolved tab advances now reserve line width
 before breaking, so content that no longer fits after a tab moves to the next
