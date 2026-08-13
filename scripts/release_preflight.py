@@ -55,6 +55,44 @@ def run_to_file(command: Sequence[str], path: pathlib.Path) -> None:
         run(command, stdout=stream)
 
 
+def run_json_to_file(command: Sequence[str], path: pathlib.Path) -> None:
+    printable = " ".join(str(part) for part in command)
+    print(f"$ {printable}")
+    completed = subprocess.run(
+        command,
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=COMMAND_ENV,
+    )
+    if completed.stderr:
+        sys.stderr.write(completed.stderr)
+    if completed.returncode != 0:
+        raise subprocess.CalledProcessError(
+            completed.returncode,
+            command,
+            output=completed.stdout,
+            stderr=completed.stderr,
+        )
+    payload_start = completed.stdout.find("{")
+    if payload_start < 0:
+        raise RuntimeError(f"JSON-producing command emitted no object: {printable}")
+    try:
+        payload, payload_end = json.JSONDecoder().raw_decode(
+            completed.stdout[payload_start:]
+        )
+    except json.JSONDecodeError as error:
+        raise RuntimeError(f"JSON-producing command emitted invalid JSON: {printable}") from error
+    if completed.stdout[payload_start + payload_end :].strip():
+        raise RuntimeError(f"JSON-producing command emitted trailing text: {printable}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
 def git_output(*arguments: str) -> str:
     return subprocess.check_output(
         ["git", *arguments], cwd=ROOT, text=True, env=COMMAND_ENV
@@ -166,7 +204,7 @@ def build_preflight(output_dir: pathlib.Path) -> dict[str, object]:
     manifest = output_dir / "rwml-release-manifest.json"
     render_python = ensure_render_tools(output_dir)
     run_to_file(run_python("public_hygiene_audit.py", "--json"), hygiene_report)
-    run_to_file(
+    run_json_to_file(
         run_python_with(
             render_python,
             "render_validate.py",
