@@ -41,6 +41,7 @@ type CtRecordIdentity = (String, String);
 const CT_NS: &str = "http://schemas.openxmlformats.org/package/2006/content-types";
 const REL_NS: &str = "http://schemas.openxmlformats.org/package/2006/relationships";
 const CT_RELS: &str = "application/vnd.openxmlformats-package.relationships+xml";
+const REL_IMAGE: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
 const XML_DECL: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?>"#;
 const CONTENT_TYPES: &str = "[Content_Types].xml";
 
@@ -794,7 +795,7 @@ impl Package {
             for rel in entries {
                 let target = resolve_rel_target(content_part, rel_target_part_path(&rel.target));
                 let removable = !rel.external
-                    && rel.rel_type.ends_with("/image")
+                    && rel.rel_type == REL_IMAGE
                     && is_word_media_part(&target)
                     && !references.contains(rel.id.as_bytes());
                 if removable {

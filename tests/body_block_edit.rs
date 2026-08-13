@@ -286,15 +286,16 @@ fn remove_body_block_prunes_only_unreferenced_image_media() {
         ),
         (
             "word/_rels/document.xml.rels",
-            br#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdRemoved" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/removed.png"/><Relationship Id="rIdSharedRemoved" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/shared.png"/><Relationship Id="rIdKept" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/kept.png"/><Relationship Id="rIdSharedKept" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/shared.png"/></Relationships>"#,
+            br#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdRemoved" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/removed.png"/><Relationship Id="rIdSharedRemoved" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/shared.png"/><Relationship Id="rIdKept" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/kept.png"/><Relationship Id="rIdSharedKept" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/shared.png"/><Relationship Id="rIdVendor" Type="https://vendor.example/image" Target="media/vendor.bin"/></Relationships>"#,
         ),
         (
             "word/document.xml",
-            br#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p data-id="removed"><w:r><w:drawing><w:opaque r:embed="rIdRemoved"/><w:opaque r:embed="rIdSharedRemoved"/></w:drawing></w:r></w:p><w:p data-id="kept" data-mention="rIdRemoved"><w:r><w:drawing><w:opaque r:embed="rIdKept"/><w:opaque r:embed="rIdSharedKept"/></w:drawing></w:r></w:p><w:sectPr/></w:body></w:document>"#,
+            br#"<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p data-id="removed"><w:r><w:drawing><w:opaque r:embed="rIdRemoved"/><w:opaque r:embed="rIdSharedRemoved"/><w:opaque r:embed="rIdVendor"/></w:drawing></w:r></w:p><w:p data-id="kept" data-mention="rIdRemoved"><w:r><w:drawing><w:opaque r:embed="rIdKept"/><w:opaque r:embed="rIdSharedKept"/></w:drawing></w:r></w:p><w:sectPr/></w:body></w:document>"#,
         ),
         ("word/media/removed.png", b"removed-media"),
         ("word/media/kept.png", b"kept-media"),
         ("word/media/shared.png", b"shared-media"),
+        ("word/media/vendor.bin", b"vendor-media"),
     ]);
     let mut document = Document::open(&bytes).unwrap();
 
@@ -308,10 +309,12 @@ fn remove_body_block_prunes_only_unreferenced_image_media() {
     assert!(!parts.contains_key("word/media/removed.png"));
     assert!(parts.contains_key("word/media/kept.png"));
     assert!(parts.contains_key("word/media/shared.png"));
+    assert!(parts.contains_key("word/media/vendor.bin"));
     assert!(!rels.contains("rIdRemoved"), "{rels}");
     assert!(!rels.contains("rIdSharedRemoved"), "{rels}");
     assert!(rels.contains("rIdKept"), "{rels}");
     assert!(rels.contains("rIdSharedKept"), "{rels}");
+    assert!(rels.contains("rIdVendor"), "{rels}");
     assert!(document
         .edited_parts()
         .iter()
